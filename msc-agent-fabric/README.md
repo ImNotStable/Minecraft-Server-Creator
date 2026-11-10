@@ -18,7 +18,7 @@ A server-side Fabric mod that speaks `msc-protocol`, giving Fabric servers the s
 
 ## Stack
 
-Java 21, Gradle Kotlin DSL.
+Java 25, Gradle Kotlin DSL.
 
 ## More
 

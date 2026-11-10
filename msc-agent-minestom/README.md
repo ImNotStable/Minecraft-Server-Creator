@@ -18,7 +18,7 @@ A Minestom extension or library hook that speaks `msc-protocol`, giving Minestom
 
 ## Stack
 
-Java 21, Gradle Kotlin DSL.
+Java 25, Gradle Kotlin DSL.
 
 ## More
 

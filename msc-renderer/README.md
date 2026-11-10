@@ -17,7 +17,7 @@ A headless renderer that turns a region into images so the AI can check how a bu
 
 ## Stack
 
-Java 21, Gradle Kotlin DSL.
+Java 25, Gradle Kotlin DSL.
 
 ## More
 

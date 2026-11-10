@@ -1,0 +1,26 @@
+# Minecraft Server Creator
+
+A toolset that helps an AI develop custom Minecraft servers. One Gradle monorepo; each `msc-*` folder is a module. The plan is in `msc-docs/docs/plan.md`, decisions in its Decisions table and in `msc-docs/docs/adr/`.
+
+## Build
+
+- Java 25 (Gradle downloads it if missing), Gradle 9.9 wrapper, Kotlin DSL.
+- `./gradlew build` builds and tests everything. `./gradlew :msc-protocol:test` for one module.
+- Versions live only in `gradle/libs.versions.toml`. Shared build setup lives in `build-logic/` (`msc.java-conventions`, `msc.application-conventions`).
+- `-Xlint:all -Werror` is on: fix warnings, don't suppress them broadly.
+
+## Code
+
+- Package root: `io.github.imnotstable.msc.<module>`, for example `io.github.imnotstable.msc.core`, `io.github.imnotstable.msc.agent.paper`.
+- Every change comes with tests (JUnit 6 + AssertJ). Keep test output short.
+- Prefer records and small classes. No new libraries without a catalog entry.
+
+## Ownership while threads work in parallel
+
+- Shared files: `settings.gradle.kts`, `gradle.properties`, `gradle/`, `build-logic/`, `msc-protocol/`, this file. Only the foundation thread changes them; other threads ask for changes.
+- Each module thread stays inside its own `msc-*` folder.
+- The core-to-agent contract is `msc-protocol` (`Ops`, `Events`, messages); overview in `msc-docs/docs/protocol.md`.
+
+## Git
+
+- Commit to `main` in small commits with clear messages. No force pushes, no history rewrites.

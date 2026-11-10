@@ -15,4 +15,14 @@ A toolset that helps an AI develop custom Minecraft servers on any platform. Thi
 | [msc-renderer](msc-renderer/README.md) | Post-MVP |
 | [msc-textures](msc-textures/README.md) | Post-MVP |
 
+## Build
+
+Java 25 and Gradle 9.9 (wrapper). Gradle downloads Java 25 if it is not installed.
+
+```
+./gradlew build
+```
+
+Working conventions for humans and AI are in [CLAUDE.md](CLAUDE.md).
+
 The full plan is in [msc-docs/docs/plan.md](msc-docs/docs/plan.md).

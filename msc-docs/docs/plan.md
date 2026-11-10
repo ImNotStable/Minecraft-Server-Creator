@@ -4,7 +4,7 @@ Source of truth while planning: [shared plan doc](https://claude.ai/artifact/DLk
 
 ## Goal and success metrics
 
-Minecraft Server Creator is a toolset an AI agent uses to develop custom Minecraft servers on any platform (Paper, Fabric, Minestom and others), so the work comes out better, faster and cheaper in tokens than an agent working without it. Beyond writing code, the agent must be able to build in the world, understand the 3D world it sees, and generate textures. Stack: Java 21, Gradle Kotlin DSL.
+Minecraft Server Creator is a toolset an AI agent uses to develop custom Minecraft servers on any platform (Paper, Fabric, Minestom and others), so the work comes out better, faster and cheaper in tokens than an agent working without it. Beyond writing code, the agent must be able to build in the world, understand the 3D world it sees, and generate textures. Stack: Java 25, Gradle Kotlin DSL.
 
 | Area | What we measure | How |
 | --- | --- | --- |
@@ -63,12 +63,25 @@ One monorepo; each module is a folder, later a Gradle subproject.
 | msc-renderer | Post-MVP | A headless renderer that turns a region into images so the AI can check how a build looks. |
 | msc-textures | Post-MVP | Advanced texture and model generation beyond the MVP's palette-grid textures. |
 
-## Open decisions
+## Decisions
 
-All decided on 2026-11-10:
+Product decisions were made by Jeremiah on 2026-11-10. Build and design decisions were made by Claude on 2026-11-10, after Jeremiah handed over day-to-day decisions; each links to its ADR where there is one.
 
-- [x] First platform: Paper, on the latest stable Minecraft release.
-- [x] Layout and names: one monorepo, modules keep the `msc-` names.
-- [x] Textures in the MVP: AI-drawn pixel art only; image models stay post-MVP.
-- [x] Benchmark targets: run the baseline first, then set targets from the numbers.
-- [x] Visibility: private for now; pick a license when going public.
+| Area | Decision | Record |
+| --- | --- | --- |
+| First platform | Paper | product |
+| Minecraft version | Latest stable release: 26.3 (Paper 26.3 stable since 2026-10-11) | product |
+| Repo layout | One monorepo, `msc-` module names | product |
+| Textures in the MVP | AI-drawn pixel art only; image models post-MVP | product |
+| Benchmark targets | Measure a baseline first, then set targets | product |
+| Visibility | Private for now; license chosen when going public | product |
+| Java | Java 25 (current LTS, required by Minecraft 26.x); Gradle downloads it if missing | [ADR 0001](adr/0001-build-setup.md) |
+| Build | Gradle 9.9.0 wrapper, Kotlin DSL, `build-logic` convention plugins, one version catalog | [ADR 0001](adr/0001-build-setup.md) |
+| Paper API version | `26.3.build.+`, Paper's recommended form for the latest 26.3 build | [ADR 0001](adr/0001-build-setup.md) |
+| Group and packages | `io.github.imnotstable.msc`, one package root per module | [ADR 0001](adr/0001-build-setup.md) |
+| Ownership | Root build files, version catalog, `build-logic` and `msc-protocol` are owned by the foundation thread; module threads stay inside their folder | [ADR 0001](adr/0001-build-setup.md) |
+| Protocol transport | JSON lines over loopback TCP; the agent connects to the core using `MSC_CORE_ADDRESS` and `MSC_TOKEN` | [ADR 0002](adr/0002-protocol.md) |
+| JSON library | Gson, because Paper, Fabric and Minestom all ship it | [ADR 0002](adr/0002-protocol.md) |
+| Agent scope | Agents only read and write blocks, run commands and apply packs; all AI-facing shaping happens in the core | [ADR 0002](adr/0002-protocol.md) |
+| Block data | Vanilla block-state strings; palette + indices in Y-Z-X order; at most 1,048,576 blocks per call | [ADR 0002](adr/0002-protocol.md) |
+| MCP server | Official MCP Java SDK (2.1.0) in `msc-core` | [ADR 0002](adr/0002-protocol.md) |

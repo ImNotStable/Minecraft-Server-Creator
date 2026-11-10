@@ -17,7 +17,7 @@ Starter server projects per platform, ready for the AI to build on, with tests a
 
 ## Stack
 
-Java 21, Gradle Kotlin DSL.
+Java 25, Gradle Kotlin DSL.
 
 ## More
 

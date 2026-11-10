@@ -17,7 +17,7 @@ Benchmark tasks and a runner that measure whether the toolset makes AI server de
 
 ## Stack
 
-Java 21, Gradle Kotlin DSL.
+Java 25, Gradle Kotlin DSL.
 
 ## More
 

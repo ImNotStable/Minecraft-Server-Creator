@@ -18,7 +18,7 @@ Advanced texture and model generation beyond the MVP's palette-grid textures.
 
 ## Stack
 
-Java 21, Gradle Kotlin DSL.
+Java 25, Gradle Kotlin DSL.
 
 ## More
 

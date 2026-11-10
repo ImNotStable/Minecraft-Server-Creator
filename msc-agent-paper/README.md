@@ -20,7 +20,7 @@ A Paper plugin that runs inside the dev server and carries out the core's world 
 
 ## Stack
 
-Java 21, Gradle Kotlin DSL.
+Java 25, Gradle Kotlin DSL.
 
 ## More
 

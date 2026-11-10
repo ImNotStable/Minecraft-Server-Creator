@@ -24,7 +24,7 @@ The MCP server the AI talks to. It runs servers, condenses their output, answers
 
 ## Stack
 
-Java 21, Gradle Kotlin DSL.
+Java 25, Gradle Kotlin DSL.
 
 ## More
 
