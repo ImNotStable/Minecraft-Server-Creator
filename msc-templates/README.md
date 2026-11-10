@@ -3,7 +3,7 @@
 Starter server projects per platform, ready for the AI to build on, with tests and conventions wired in. `msc-core` scaffolds them through a small Java API; nothing else needs to know how they are stored.
 
 **Phase:** MVP  
-**Status:** Paper plugin and Paper dev server templates done. Fabric and Minestom later.
+**Status:** Paper plugin and Paper dev server templates done and verified (Java 25, Paper 26.3.build.248, MockBukkit 4.120.0). Fabric and Minestom later.
 
 ## Templates
 
