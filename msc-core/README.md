@@ -3,7 +3,7 @@
 The MCP server the AI talks to. It runs servers, condenses their output, answers API questions, and drives building, world views and textures through the agents.
 
 **Phase:** MVP  
-**Status:** Planning. No code yet.
+**Status:** MVP implemented (0.1): 24 MCP tools, tested against a fake agent. Not yet run against a real Paper server.
 
 ## Scope
 
@@ -15,6 +15,21 @@ The MCP server the AI talks to. It runs servers, condenses their output, answers
 - World views: layer slices as character grids, heightmaps and region summaries, each with a size budget.
 - Basic textures: palette-grid to PNG, palette checks, resource pack build and serve.
 - Token and timing logging for every tool call.
+
+## Run
+
+`./gradlew :msc-core:run` starts the MCP server on stdin/stdout. Configuration is by environment variables (`MSC_WORKSPACE` and others); see the tool catalogue in `msc-docs/docs/tools.md`.
+
+## Layout
+
+- `tool/`: tool registry, argument parsing, result budgets. `mcp/McpBridge` is the only class that uses the MCP SDK.
+- `agent/AgentHub`: the core's end of `msc-protocol`.
+- `server/`: server process, Paper download, build runner, log condensing.
+- `api/`: API index read from class files.
+- `world/`: text structure format, views, edits with undo, schematics.
+- `texture/`: palette-grid textures and the resource pack.
+- `metrics/ToolLog`: per-call log for `msc-bench`.
+- Tests use `FakeAgent` (an in-memory world) and fake server and build processes.
 
 ## Depends on
 

@@ -1,0 +1,170 @@
+package io.github.imnotstable.msc.core;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+import com.sun.net.httpserver.HttpServer;
+import io.github.imnotstable.msc.core.fixture.FakeBuildMain;
+import io.github.imnotstable.msc.core.fixture.FakeServerMain;
+import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.util.HexFormat;
+import java.util.List;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+class LifecycleToolsTest {
+    @TempDir
+    Path workspace;
+    private CoreHarness h;
+    private Path project;
+
+    private static List<String> java(Class<?> main) {
+        return List.of(Path.of(System.getProperty("java.home"), "bin", "java").toString(),
+                "-cp", System.getProperty("java.class.path"), main.getName());
+    }
+
+    @BeforeEach
+    void start() throws Exception {
+        project = Files.createDirectories(workspace.resolve("demo"));
+        Files.writeString(project.resolve("version.txt"), "1.0");
+        h = new CoreHarness(workspace, c -> c.withServerCommand(java(FakeServerMain.class))
+                .withBuildCommand(java(FakeBuildMain.class)).withToolLog(workspace.resolve("calls.jsonl")));
+    }
+
+    @AfterEach
+    void stop() throws Exception {
+        h.close();
+    }
+
+    @Test
+    void startConnectsTheAgentAndStopEndsTheProcess() {
+        assertThat(h.ok("server_start", "timeoutSeconds", 30))
+                .startsWith("server ready in ").endsWith("s, agent connected\nno errors or warnings");
+        assertThat(h.ok("msc_status")).contains("server: running").contains("agent: paper fake, minecraft 26.3, 9 operations");
+        assertThat(h.ok("world_summary", "region", "0,60,0 1,61,1")).contains("blocks: stone 8");
+        assertThat(h.ok("server_command", "command", "/say hi")).isEqualTo("ran say hi");
+        assertThat(h.ok("server_logs", "mode", "tail", "lines", 1)).contains("Done (0.1s)!");
+        assertThat(h.ok("server_logs", "mode", "grep", "pattern", "starting")).contains("Starting minecraft server");
+        assertThat(h.ok("server_logs")).endsWith("lines, 0 errors, 0 warnings");
+        assertThat(h.error("server_start")).contains("already running");
+        assertThat(h.ok("server_stop")).isEqualTo("server stopped");
+        assertThat(h.ok("server_stop")).isEqualTo("server was not running");
+        assertThat(h.core.server().running()).isFalse();
+    }
+
+    @Test
+    void failedStartupReturnsTheErrorNotTheWholeLog() throws Exception {
+        Files.createDirectories(workspace.resolve("run"));
+        Files.writeString(workspace.resolve("run/crash.flag"), "");
+        String result = h.ok("server_start", "timeoutSeconds", 30);
+        assertThat(result).startsWith("server exited during startup after ")
+                .contains("12:00:01 ERROR Failed to start the minecraft server").doesNotContain("Starting minecraft");
+    }
+
+    @Test
+    void devCycleBuildsDeploysRestartsAndReportsRuntimeErrors() throws Exception {
+        h.ok("server_start", "timeoutSeconds", 30);
+        String first = h.ok("dev_cycle", "project", "demo");
+        assertThat(first).startsWith("build ok in ").contains("deployed demo-1.0.jar as plugins/demo.jar")
+                .contains("agent connected").endsWith("no errors or warnings");
+        assertThat(h.ok("server_logs", "mode", "grep", "pattern", "Demo")).contains("Enabling Demo v1.0");
+
+        Files.writeString(project.resolve("version.txt"), "2.0");
+        Files.writeString(workspace.resolve("run/error.flag"), "");
+        String second = h.ok("dev_cycle", "project", "demo");
+        assertThat(second).contains("1 errors, 0 warnings")
+                .contains("java.lang.IllegalStateException: arena missing")
+                .contains("\tat com.example.demo.Demo.onEnable(Demo.java:17)")
+                .contains("... 1 framework frames");
+        assertThat(h.ok("server_logs", "mode", "grep", "pattern", "\\[Demo\\]")).contains("Demo v2.0").doesNotContain("v1.0");
+    }
+
+    @Test
+    void devCycleStopsAtABrokenBuildAndLeavesTheServerAlone() throws Exception {
+        h.ok("server_start", "timeoutSeconds", 30);
+        Files.writeString(project.resolve("broken.flag"), "");
+        String result = h.ok("dev_cycle", "project", "demo");
+        assertThat(result).startsWith("BUILD FAILED in ").contains("Demo.java:12: error: cannot find symbol")
+                .doesNotContain("* Try").doesNotContain("--info");
+        assertThat(h.core.server().running()).isTrue();
+        assertThat(h.error("dev_cycle", "project", "nowhere")).contains("no project at");
+    }
+
+    @Test
+    void scaffoldCreatesAProjectOnceAndRefusesToOverwrite() {
+        assertThat(h.ok("project_scaffold", "name", "MyPlugin", "dir", "fresh"))
+                .startsWith("created paper-plugin project in ").doesNotContain("assword").endsWith("next: edit the code, then dev_cycle");
+        assertThat(workspace.resolve("fresh")).isNotEmptyDirectory();
+        assertThat(h.error("project_scaffold", "name", "MyPlugin", "dir", "fresh")).startsWith("error: ");
+        assertThat(h.error("project_scaffold", "name", "X", "template", "nope")).contains("unknown template nope");
+        assertThat(h.error("project_scaffold")).isEqualTo("error: missing argument: name");
+    }
+
+    @Test
+    void setupDownloadsTheNewestStableBuildAndInstallsTheAgent() throws Exception {
+        byte[] jar = "paper jar bytes".getBytes(StandardCharsets.UTF_8);
+        String sha = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(jar));
+        HttpServer fill = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        String base = "http://127.0.0.1:" + fill.getAddress().getPort();
+        int[] downloads = {0};
+        fill.createContext("/v3/projects/paper/versions/26.3/builds", exchange -> {
+            String body = "[{\"id\":7,\"channel\":\"ALPHA\",\"downloads\":{\"server:default\":{\"url\":\"" + base + "/bad.jar\"}}},"
+                    + "{\"id\":5,\"channel\":\"STABLE\",\"downloads\":{\"server:default\":{\"name\":\"paper-26.3-5.jar\",\"url\":\""
+                    + base + "/paper.jar\",\"checksums\":{\"sha256\":\"" + sha + "\"}}}}]";
+            byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(exchange.getRequestHeaders().getFirst("User-Agent").startsWith("msc-core") ? 200 : 403,
+                    bytes.length);
+            exchange.getResponseBody().write(bytes);
+            exchange.close();
+        });
+        fill.createContext("/paper.jar", exchange -> {
+            downloads[0]++;
+            exchange.sendResponseHeaders(200, jar.length);
+            exchange.getResponseBody().write(jar);
+            exchange.close();
+        });
+        fill.start();
+        Path agentJar = Files.writeString(workspace.resolve("agent.jar"), "agent");
+        try (CoreHarness s = new CoreHarness(workspace.resolve("ws2"), c -> c.withDownloadsUrl(base))) {
+            String first = s.ok("server_setup");
+            assertThat(first).contains("paper 26.3 build 5 (downloaded)").contains("warning: msc agent plugin not found");
+            Path run = workspace.resolve("ws2/run");
+            assertThat(run.resolve("paper.jar")).hasBinaryContent(jar);
+            assertThat(run.resolve("eula.txt")).exists();
+            Files.createDirectories(workspace.resolve("ws2/.msc/agent"));
+            Files.copy(agentJar, workspace.resolve("ws2/.msc/agent/msc-agent-paper-0.1.0.jar"));
+            assertThat(s.ok("server_setup")).contains("build 5 (cached)").contains("agent plugin installed");
+            assertThat(run.resolve("plugins/msc-agent-paper.jar")).hasContent("agent");
+            assertThat(downloads[0]).isEqualTo(1);
+            assertThat(s.error("server_setup", "version", "1.0")).contains("Paper has no version 1.0").doesNotContain("internal");
+        } finally {
+            fill.stop(0);
+        }
+    }
+
+    @Test
+    void everyCallIsLoggedForTheBenchmark() throws Exception {
+        h.ok("msc_status");
+        h.error("server_logs", "mode", "bogus");
+        h.error("server_command", "command", "say hi");
+        List<String> lines = Files.readAllLines(workspace.resolve("calls.jsonl"));
+        assertThat(lines).hasSize(3);
+        JsonObject ok = JsonParser.parseString(lines.get(0)).getAsJsonObject();
+        assertThat(ok.keySet()).containsExactly("v", "ts", "tool", "ok", "durationMs", "argsChars", "resultChars", "resultTokens");
+        assertThat(ok.get("tool").getAsString()).isEqualTo("msc_status");
+        assertThat(ok.get("ok").getAsBoolean()).isTrue();
+        assertThat(ok.get("resultTokens").getAsInt()).isEqualTo((ok.get("resultChars").getAsInt() + 3) / 4);
+        JsonObject failed = JsonParser.parseString(lines.get(2)).getAsJsonObject();
+        assertThat(failed.get("ok").getAsBoolean()).isFalse();
+        assertThat(failed.get("error").getAsString()).isEqualTo("error: server is not running");
+        assertThat(h.ok("msc_stats")).startsWith("tool calls errors ms resultTokens\nmsc_status 1 0 ")
+                .contains("\nserver_command 1 1 ").contains("\ntotal 3 2 ");
+    }
+}

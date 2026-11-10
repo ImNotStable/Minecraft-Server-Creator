@@ -1,0 +1,125 @@
+# MCP tool catalogue (msc-core 0.1)
+
+The AI talks to `msc-core` over MCP (stdio). This page lists every tool, its arguments and the size budget of its result. Source of truth is the code in `msc-core` (`io.github.imnotstable.msc.core.tools`); design reasons are in [ADR 0005](adr/0005-core-tools.md).
+
+## Rules every tool follows
+
+- Results are plain text, no Markdown and no JSON, shaped to be read by a model.
+- Every result has a size budget. One token is counted as four characters. The default cap is 6,000 characters (about 1,500 tokens); tools with a `maxChars` argument accept 200 to 24,000. A cut result ends with `[truncated: N more lines, M chars. <what to do>]`.
+- Errors come back as `error: <what is wrong and what to do>` with MCP `isError` set. They never contain a Java stack trace.
+- Coordinates are strings: a position is `"x,y,z"`, a region is `"x1,y1,z1 x2,y2,z2"` (two corners, inclusive, any order), an area is `"x1,z1 x2,z2"`.
+- Block names may omit `minecraft:`. Properties use vanilla syntax: `oak_stairs[facing=north]`.
+- `world` is optional everywhere and defaults to the server's first world.
+- Every call is logged (see "Tool log").
+- The whole tool list costs about 2,500 tokens per conversation. A test fails if it grows past 10,500 characters.
+
+## Typical loop
+
+`project_scaffold` once, `server_setup` once, then edit code and call `dev_cycle` until it reports `no errors or warnings`. Look names up with `api_search` instead of guessing. Look at the world with `world_summary`, then `world_slice`; build with `build_structure`.
+
+## Status
+
+| Tool | Arguments | Result | Budget |
+| --- | --- | --- | --- |
+| `msc_status` | none | Core version, workspace, server state, agent, API index | 5 lines |
+| `msc_stats` | none | Calls, errors, milliseconds and result tokens per tool this session | 1 line per tool used |
+
+## Project and server lifecycle
+
+| Tool | Arguments | Result | Budget |
+| --- | --- | --- | --- |
+| `project_scaffold` | `name`, `dir`?, `template`? (default `paper-plugin`) | Where the project was created and its template values (no passwords) | about 15 lines |
+| `server_setup` | `version`? (default 26.3) | Paper build used, whether dev defaults and the agent plugin were installed | 4 lines |
+| `server_start` | `timeoutSeconds`? (180) | `server ready in 8.2s, agent connected` plus startup warnings and errors only | 6,000 chars |
+| `server_stop` | none | One line | 1 line |
+| `dev_cycle` | `project`? (workspace), `restart`? (true), `maxChars`? | Build, deploy, restart, report in one call. On a failed build: compiler and test errors only. Otherwise: startup warnings and errors, or `no errors or warnings` | `maxChars` |
+| `server_logs` | `mode`? (`errors`, `tail`, `grep`), `pattern`?, `lines`? (30), `all`? (false), `maxChars`? | `errors`: warnings and errors, stack traces cut to project frames, repeats collapsed to `(xN)` | `maxChars` |
+| `server_command` | `command` | The command's output | 6,000 chars |
+
+How logs are condensed: only WARN and ERROR entries and anything with a stack trace are kept. In a trace, the exception lines, the first frame and all frames outside framework packages (`java.`, `net.minecraft.`, `org.bukkit.`, `io.papermc.` and similar) are kept; runs of framework frames become `... N framework frames`. Identical entries are shown once with a count. By default `server_logs` looks only at lines since the last start.
+
+## API index
+
+Built on first use from the Paper API and Adventure jars in the Gradle cache (or `MSC_API_JARS`), by reading class files directly. No network, no Javadoc.
+
+| Tool | Arguments | Result | Budget |
+| --- | --- | --- | --- |
+| `api_search` | `query`, `kind`? (`class`, `interface`, `enum`, `record`, `annotation`, `event`), `limit`? (15) | One line per match: `interface org.bukkit.entity.Player` or `Player#void sendMessage(String message)` | `limit` lines |
+| `api_class` | `name`, `filter`?, `inherited`? (false), `limit`? (40) | Header with supertypes, enum constants, then one member signature per line | `limit` lines |
+
+## Seeing the world
+
+| Tool | Arguments | Result | Budget |
+| --- | --- | --- | --- |
+| `world_summary` | `region` (up to 8,388,608 blocks) | Size, air share, top 15 block counts, bounds of non-air blocks, non-air count per layer, entity counts | about 6 lines |
+| `world_slice` | `region` (up to 128 wide, 1,048,576 blocks), `states`? (false), `maxChars`? | The region in the text structure format | `maxChars` |
+| `world_heightmap` | `area` (up to 256 x 256), `maxChars`? | Min, max, mean, then one character per column (`height - min`, 0-9 then a-z); plain numbers when the range is over 35 | `maxChars` |
+
+A 16 x 16 slice costs about 70 tokens per layer; identical and uniform layers cost one line each.
+
+## Text structure format
+
+Used by `world_slice` (output) and `build_structure` (input), so a slice can be edited and written back.
+
+```
+legend: .=air #=stone_bricks g=glass
+y=64
+#####
+#...#
+#####
+y=65 same as y=64
+y=66 all #
+```
+
+- One character per block. Rows run from the lowest Z (top row) to the highest; columns from the lowest X (left) to the highest.
+- `.` is air and `_` means "leave unchanged", unless the legend redefines them.
+- Layers are listed by Y. In `build_structure` the numbers only give the order: the lowest layer is placed at the `at` position.
+- `y=N same as y=M` repeats a layer; `y=N all #` fills a layer with one symbol or block.
+- Symbols are handed out by frequency. With `states=false` (default) blocks that differ only in properties share a symbol.
+
+## Building
+
+Every build tool answers `edit eN: <count> blocks changed`. The id undoes the whole edit, even when the core split it into several agent calls.
+
+| Tool | Arguments | Notes |
+| --- | --- | --- |
+| `build_fill` | `region`, `block`, `replace`? (list) | Up to 8,388,608 blocks |
+| `build_set` | `blocks` (list of `"x,y,z block"`), `physics`? (false) | For details such as doors and torches |
+| `build_structure` | `at`, `structure`, `physics`? (false) | Text structure format, up to 1,048,576 blocks |
+| `build_copy` | `region`, `to`, `air`? (true) | Reads everything first, so source and target may overlap |
+| `build_undo` | `edit`? (default: most recent) | Edits are remembered for the life of the core process |
+| `structure_save` | `region`, `file` | Sponge schematic v2 (`.schem`), blocks only |
+| `structure_load` | `file`, `at`, `air`? (true) | Reads Sponge v2 and v3, blocks only |
+
+## Textures and resource pack
+
+Pixel art is drawn as text; no image model is involved. The pack source lives in `<workspace>/.msc/pack`.
+
+| Tool | Arguments | Result |
+| --- | --- | --- |
+| `texture_create` | `name` (`item/ruby` or `ns:block/ruby_ore`; default namespace `msc`), `palette` (list of `symbol=#rrggbb` or `#rrggbbaa`), `rows` (list of strings), `model`? (`item`, `block`, `none`) | Writes the PNG, plus a model and item definition so the texture is usable through the `item_model` component. Warns about odd sizes and large palettes |
+| `texture_view` | `name` | The texture as a palette line and pixel rows (about 80 tokens for 16 x 16) |
+| `pack_build` | `description`?, `apply`? (true), `required`? (false) | Zips the pack (same content gives the same SHA-1), serves it over HTTP and sends it through the agent |
+
+## Tool log
+
+One JSON line per call, appended to `MSC_TOOL_LOG` (default `<workspace>/.msc/tool-calls.jsonl`). Fields: `v` (1), `ts`, `tool`, `ok`, `durationMs`, `argsChars`, `resultChars`, `resultTokens` (`ceil(resultChars / 4)`), and `error` on failures. `msc-bench` reads this file; the contract is recorded in the bench ADR.
+
+## Configuration (environment variables)
+
+| Variable | Meaning | Default |
+| --- | --- | --- |
+| `MSC_WORKSPACE` | Project directory | current directory |
+| `MSC_SERVER_DIR` | Dev server directory | `<workspace>/run` |
+| `MSC_CORE_ADDRESS`, `MSC_TOKEN` | Where agents connect and the shared token. Set both to attach a server that is already running | free port, random token |
+| `MSC_TOOL_LOG` | Tool log file | `<workspace>/.msc/tool-calls.jsonl` |
+| `MSC_AGENT_JAR` | Agent plugin to install into the server | first jar in `<workspace>/.msc/agent` |
+| `MSC_API_JARS` | Jars to index, separated by the path separator | Paper API and Adventure from `~/.gradle` |
+| `MSC_MINECRAFT` | Default Minecraft version | 26.3 |
+| `MSC_JAVA` | Java used to run the server | the Java running the core |
+| `MSC_DOWNLOADS_URL` | Paper downloads service | `https://fill.papermc.io` |
+| `MSC_PACK_HOST`, `MSC_PACK_FORMAT` | Resource pack server address and pack format number | `127.0.0.1`, 75 |
+
+## Not in 0.1
+
+Vanilla structure `.nbt` files, block entities and entities in schematics, rendered views, image-model textures, RCON, and Fabric or Minestom agents.

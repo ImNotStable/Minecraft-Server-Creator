@@ -2,10 +2,16 @@
 
 Phase: MVP. Steps are in order; each ends with passing tests.
 
-- [ ] Gradle KTS app skeleton with an MCP server and one health tool.
-- [ ] Lifecycle tools and condensed logs, tested against a Paper server.
-- [ ] API index for Paper.
-- [ ] World build tools and the text structure format, through `msc-agent-paper`.
-- [ ] World view tools with size budgets.
-- [ ] Palette-grid textures and resource pack serving.
-- [ ] Token and timing logging feeding `msc-bench`.
+- [x] Gradle KTS app skeleton with an MCP server and one health tool.
+- [x] Lifecycle tools and condensed logs. Tested against fake server and build processes.
+- [x] API index for Paper.
+- [x] World build tools and the text structure format. Tested against a fake agent.
+- [x] World view tools with size budgets.
+- [x] Palette-grid textures and resource pack serving.
+- [x] Token and timing logging feeding `msc-bench`.
+
+## Next
+
+- [ ] Run the full loop against a real Paper 26.3 server with `msc-agent-paper` and fix what differs (open points in ADR 0005).
+- [ ] Vanilla `.nbt` structures; block entities in schematics.
+- [ ] Shrink tool descriptions further once the benchmark shows which ones the AI misuses.

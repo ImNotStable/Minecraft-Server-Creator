@@ -86,3 +86,4 @@ Product decisions were made by Jeremiah on 2026-11-10. Build and design decision
 | Block data | Vanilla block-state strings; palette + indices in Y-Z-X order; at most 1,048,576 blocks per call | [ADR 0002](adr/0002-protocol.md) |
 | MCP server | Official MCP Java SDK (2.1.0) in `msc-core` | [ADR 0002](adr/0002-protocol.md) |
 | Starter templates | msc-templates renders `{{var}}` templates via `Templates.scaffold`; `paper-plugin` (Gradle KTS, Brigadier command, MockBukkit test, CLAUDE.md, dev server in `run/`) and `paper-server` (offline, loopback, RCON, flat world) | [ADR 0003](adr/0003-templates.md) |
+| Core tools | 24 coarse MCP tools with text results capped by a size budget; one text structure format for viewing and building; API index read from class files; tool catalogue in [tools.md](tools.md) | [ADR 0005](adr/0005-core-tools.md) |

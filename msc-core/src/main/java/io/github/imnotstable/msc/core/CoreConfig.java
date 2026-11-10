@@ -1,0 +1,122 @@
+package io.github.imnotstable.msc.core;
+
+import io.github.imnotstable.msc.protocol.Limits;
+import java.nio.file.Path;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+
+/**
+ * Everything the core reads from its environment. Tests build one by hand.
+ *
+ * @param workspace     the project the AI is working in
+ * @param serverDir     where the dev server lives
+ * @param agentPort     loopback port agents connect to; 0 picks a free one
+ * @param token         shared secret agents must present
+ * @param toolLog       JSON Lines file for tool calls, or null for none
+ * @param javaCommand   java executable used to run the game server
+ * @param serverCommand full command that starts the server, or null for {@code java -jar <paper jar> --nogui}
+ * @param buildCommand  full command that builds a project, or null for its Gradle wrapper
+ * @param downloadsUrl  base URL of the Paper downloads service
+ * @param minecraft     Minecraft version used when a tool is not given one
+ * @param apiJars       jars to index for API lookups; empty means find paper-api in the Gradle cache
+ * @param packHost      interface the resource pack server binds and advertises
+ * @param packFormat    resource pack format number written to pack.mcmeta
+ * @param agentJar      the msc agent plugin to install into the server, or null to look in {@code .msc/agent}
+ */
+public record CoreConfig(Path workspace, Path serverDir, int agentPort, String token, Path toolLog,
+                         String javaCommand, List<String> serverCommand, List<String> buildCommand,
+                         String downloadsUrl, String minecraft, List<Path> apiJars, String packHost,
+                         int packFormat, Path agentJar) {
+    public static final String ENV_WORKSPACE = "MSC_WORKSPACE";
+    public static final String ENV_SERVER_DIR = "MSC_SERVER_DIR";
+    public static final String ENV_TOOL_LOG = "MSC_TOOL_LOG";
+    public static final String ENV_JAVA = "MSC_JAVA";
+    public static final String ENV_DOWNLOADS_URL = "MSC_DOWNLOADS_URL";
+    public static final String ENV_MINECRAFT = "MSC_MINECRAFT";
+    public static final String ENV_API_JARS = "MSC_API_JARS";
+    public static final String ENV_PACK_HOST = "MSC_PACK_HOST";
+    public static final String ENV_PACK_FORMAT = "MSC_PACK_FORMAT";
+    public static final String ENV_AGENT_JAR = "MSC_AGENT_JAR";
+
+    public static final String DEFAULT_DOWNLOADS_URL = "https://fill.papermc.io";
+    public static final String DEFAULT_MINECRAFT = "26.3";
+    /** Lowest format the pack claims to support; see ADR 0005 for why this is configurable. */
+    public static final int DEFAULT_PACK_FORMAT = 75;
+
+    public CoreConfig {
+        workspace = workspace.toAbsolutePath().normalize();
+        serverDir = serverDir.toAbsolutePath().normalize();
+        apiJars = List.copyOf(apiJars);
+    }
+
+    /** Defaults for a workspace; used by tests and as the base for {@link #fromEnvironment}. */
+    public static CoreConfig forWorkspace(Path workspace) {
+        String java = Path.of(System.getProperty("java.home"), "bin", "java").toString();
+        return new CoreConfig(workspace, workspace.resolve("run"), 0, UUID.randomUUID().toString(), null, java,
+                null, null, DEFAULT_DOWNLOADS_URL, DEFAULT_MINECRAFT, List.of(), "127.0.0.1", DEFAULT_PACK_FORMAT, null);
+    }
+
+    public static CoreConfig fromEnvironment(Map<String, String> env) {
+        Path workspace = Path.of(env.getOrDefault(ENV_WORKSPACE, "."));
+        CoreConfig base = forWorkspace(workspace);
+        int port = 0;
+        String address = env.get(Limits.ENV_CORE_ADDRESS);
+        if (address != null && address.contains(":")) {
+            port = Integer.parseInt(address.substring(address.lastIndexOf(':') + 1).trim());
+        }
+        String logFile = env.get(ENV_TOOL_LOG);
+        List<Path> jars = env.containsKey(ENV_API_JARS)
+                ? List.of(env.get(ENV_API_JARS).split(java.io.File.pathSeparator)).stream().map(Path::of).toList()
+                : List.of();
+        return new CoreConfig(
+                workspace,
+                env.containsKey(ENV_SERVER_DIR) ? Path.of(env.get(ENV_SERVER_DIR)) : base.serverDir(),
+                port,
+                env.getOrDefault(Limits.ENV_TOKEN, base.token()),
+                logFile != null ? Path.of(logFile) : base.dataDir().resolve("tool-calls.jsonl"),
+                env.getOrDefault(ENV_JAVA, base.javaCommand()),
+                null, null,
+                env.getOrDefault(ENV_DOWNLOADS_URL, DEFAULT_DOWNLOADS_URL),
+                env.getOrDefault(ENV_MINECRAFT, DEFAULT_MINECRAFT),
+                jars,
+                env.getOrDefault(ENV_PACK_HOST, "127.0.0.1"),
+                Integer.parseInt(env.getOrDefault(ENV_PACK_FORMAT, String.valueOf(DEFAULT_PACK_FORMAT))),
+                env.containsKey(ENV_AGENT_JAR) ? Path.of(env.get(ENV_AGENT_JAR)) : null);
+    }
+
+    /** {@code <workspace>/.msc}: caches, the resource pack source and logs. */
+    public Path dataDir() {
+        return workspace.resolve(".msc");
+    }
+
+    public CoreConfig withServerCommand(List<String> command) {
+        return new CoreConfig(workspace, serverDir, agentPort, token, toolLog, javaCommand, command, buildCommand,
+                downloadsUrl, minecraft, apiJars, packHost, packFormat, agentJar);
+    }
+
+    public CoreConfig withBuildCommand(List<String> command) {
+        return new CoreConfig(workspace, serverDir, agentPort, token, toolLog, javaCommand, serverCommand, command,
+                downloadsUrl, minecraft, apiJars, packHost, packFormat, agentJar);
+    }
+
+    public CoreConfig withToolLog(Path file) {
+        return new CoreConfig(workspace, serverDir, agentPort, token, file, javaCommand, serverCommand, buildCommand,
+                downloadsUrl, minecraft, apiJars, packHost, packFormat, agentJar);
+    }
+
+    public CoreConfig withDownloadsUrl(String url) {
+        return new CoreConfig(workspace, serverDir, agentPort, token, toolLog, javaCommand, serverCommand,
+                buildCommand, url, minecraft, apiJars, packHost, packFormat, agentJar);
+    }
+
+    public CoreConfig withApiJars(List<Path> jars) {
+        return new CoreConfig(workspace, serverDir, agentPort, token, toolLog, javaCommand, serverCommand,
+                buildCommand, downloadsUrl, minecraft, jars, packHost, packFormat, agentJar);
+    }
+
+    /** Resolve a path argument against the workspace. */
+    public Path resolve(String path) {
+        return workspace.resolve(path).normalize();
+    }
+}

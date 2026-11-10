@@ -1,0 +1,169 @@
+package io.github.imnotstable.msc.core;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+class WorldToolsTest {
+    @TempDir
+    Path workspace;
+    private CoreHarness h;
+
+    @BeforeEach
+    void start() throws Exception {
+        h = new CoreHarness(workspace).withAgent();
+    }
+
+    @AfterEach
+    void stop() throws Exception {
+        h.close();
+    }
+
+    @Test
+    void fillThenSliceShowsLayersWithLegend() {
+        assertThat(h.ok("build_fill", "region", "0,64,0 3,64,2", "block", "oak_planks"))
+                .isEqualTo("edit e1: 12 blocks changed");
+        h.ok("build_set", "blocks", List.of("1,65,1 glass", "2,65,1 oak_stairs[facing=north]"));
+        String slice = h.ok("world_slice", "region", "0,63,0 3,66,2");
+        assertThat(slice).isEqualTo("""
+                region world 0,63,0 3,66,2 size 4x4x3 rows=z cols=x
+                legend: .=air #=stone a=oak_planks b=glass c=oak_stairs
+                y=63 all #
+                y=64 all a
+                y=65
+                ....
+                .bc.
+                ....
+                y=66 all .""");
+        assertThat(h.ok("world_slice", "region", "2,65,1 2,65,1", "states", true))
+                .contains("#=oak_stairs[facing=north]");
+    }
+
+    @Test
+    void sliceCanBePastedBackWithBuildStructure() {
+        h.ok("build_structure", "at", "10,64,10", "structure", """
+                legend: #=stone_bricks g=glass
+                y=0
+                ###
+                #.#
+                ###
+                y=1
+                #g#
+                g_g
+                #g#
+                y=2 same as y=0
+                y=3 all #
+                """);
+        assertThat(h.agent.get(11, 64, 11)).isEqualTo("minecraft:air");
+        assertThat(h.agent.get(11, 65, 10)).isEqualTo("minecraft:glass");
+        assertThat(h.agent.get(11, 66, 11)).isEqualTo("minecraft:air");
+        assertThat(h.agent.get(11, 67, 11)).isEqualTo("minecraft:stone_bricks");
+        String slice = h.ok("world_slice", "region", "10,64,10 12,67,12");
+        String body = slice.substring(slice.indexOf("legend:"));
+        h.ok("build_structure", "at", "20,64,20", "structure", body);
+        String copy = h.ok("world_slice", "region", "20,64,20 22,67,22");
+        assertThat(copy.substring(copy.indexOf("legend:"))).isEqualTo(body);
+    }
+
+    @Test
+    void structureErrorsSayWhatToFix() {
+        assertThat(h.error("build_structure", "at", "0,64,0", "structure", "y=0\n#x\n"))
+                .contains("symbol '#'").contains("not in the legend");
+        assertThat(h.error("build_structure", "at", "0,64,0", "structure", "legend: #=stone\ny=0\n##\n#\n"))
+                .contains("row 2 has 1 columns, expected 2");
+        assertThat(h.error("build_fill", "region", "0,64,0 3,64", "block", "stone")).contains("x1,y1,z1 x2,y2,z2");
+    }
+
+    @Test
+    void undoRestoresTheLastEditAndForgetsIt() {
+        h.ok("build_fill", "region", "0,64,0 1,64,1", "block", "gold_block");
+        assertThat(h.agent.get(0, 64, 0)).isEqualTo("minecraft:gold_block");
+        assertThat(h.ok("build_undo")).isEqualTo("undid e1: 4 blocks restored");
+        assertThat(h.agent.get(0, 64, 0)).isEqualTo("minecraft:air");
+        assertThat(h.error("build_undo")).contains("nothing to undo");
+    }
+
+    @Test
+    void largeFillIsSplitAndUndoneAsOneEdit() {
+        // 200 x 1 x 200: two 128-wide pieces per axis, so four agent calls behind one edit id.
+        assertThat(h.ok("build_fill", "region", "0,70,0 199,70,199", "block", "glass"))
+                .isEqualTo("edit e1: 40000 blocks changed");
+        // Volume fits one call; widen past it to force a split.
+        assertThat(h.ok("build_fill", "region", "0,71,0 199,140,199", "block", "glass", "replace", List.of("air")))
+                .isEqualTo("edit e2: 2800000 blocks changed");
+        assertThat(h.ok("build_undo", "edit", "e2")).isEqualTo("undid e2: 2800000 blocks restored");
+        assertThat(h.agent.get(150, 100, 150)).isEqualTo("minecraft:air");
+        assertThat(h.agent.get(150, 70, 150)).isEqualTo("minecraft:glass");
+    }
+
+    @Test
+    void copyMovesBlocksAndCanSkipAir() {
+        h.ok("build_set", "blocks", List.of("0,64,0 diamond_block"));
+        h.ok("build_fill", "region", "5,64,5 6,64,5", "block", "dirt");
+        assertThat(h.ok("build_copy", "region", "0,64,0 1,64,0", "to", "5,64,5", "air", false))
+                .isEqualTo("edit e3: 1 blocks changed, region world 5,64,5 6,64,5");
+        assertThat(h.agent.get(5, 64, 5)).isEqualTo("minecraft:diamond_block");
+        assertThat(h.agent.get(6, 64, 5)).isEqualTo("minecraft:dirt");
+    }
+
+    @Test
+    void summaryCountsBlocksAndLayers() {
+        h.ok("build_fill", "region", "0,64,0 3,64,3", "block", "oak_planks");
+        h.ok("build_set", "blocks", List.of("1,66,1 glass"));
+        assertThat(h.ok("world_summary", "region", "0,62,0 3,67,3")).isEqualTo("""
+                region world 0,62,0 3,67,3 size 4x6x4 = 96 blocks, 49% air
+                blocks: stone 32, oak_planks 16, glass 1
+                non-air bounds: 0,62,0 3,66,3
+                non-air per layer (y:count): 62..64:16 65:0 66:1 67:0
+                entities: 1 cow""");
+    }
+
+    @Test
+    void heightmapIsCompact() {
+        h.ok("build_fill", "region", "1,64,1 2,66,2", "block", "stone");
+        assertThat(h.ok("world_heightmap", "area", "0,0 3,3")).isEqualTo("""
+                heightmap world x 0..3 z 0..3 min 63 max 66 mean 64 rows=z cols=x
+                each char = height - 63 (0-9 then a-z)
+                0000
+                0330
+                0330
+                0000""");
+        assertThat(h.ok("world_heightmap", "area", "10,10 12,12")).endsWith("flat at y=63");
+    }
+
+    @Test
+    void resultsAreCutToTheBudgetWithAHint() {
+        h.ok("build_structure", "at", "0,64,0", "structure",
+                "legend: a=stone b=dirt\ny=0\n" + "ab".repeat(16).concat("\n").repeat(16)
+                        + "y=1\n" + "ba".repeat(16).concat("\n").repeat(16));
+        String slice = h.ok("world_slice", "region", "0,64,0 31,65,15", "maxChars", 400);
+        assertThat(slice.length()).isLessThan(520);
+        assertThat(slice).contains("[truncated:").contains("smaller area");
+    }
+
+    @Test
+    void schematicRoundTrip() throws Exception {
+        h.ok("build_structure", "at", "0,64,0", "structure", "legend: #=stone_bricks s=oak_stairs[facing=east]\ny=0\n#s\n.#\n");
+        assertThat(h.ok("structure_save", "region", "0,64,0 1,64,1", "file", "out/tiny.schem")).startsWith("saved 2x1x2 to ");
+        assertThat(Files.size(workspace.resolve("out/tiny.schem"))).isPositive();
+        h.ok("structure_load", "file", "out/tiny.schem", "at", "8,80,8");
+        assertThat(h.agent.get(8, 80, 8)).isEqualTo("minecraft:stone_bricks");
+        assertThat(h.agent.get(9, 80, 8)).isEqualTo("minecraft:oak_stairs[facing=east]");
+        assertThat(h.agent.get(9, 80, 9)).isEqualTo("minecraft:stone_bricks");
+        assertThat(h.error("structure_load", "file", "missing.schem", "at", "0,0,0")).contains("no file");
+    }
+
+    @Test
+    void worldToolsExplainAMissingAgent() throws Exception {
+        try (CoreHarness alone = new CoreHarness(workspace.resolve("other"))) {
+            assertThat(alone.error("world_summary", "region", "0,0,0 1,1,1"))
+                    .contains("no server agent connected").contains("server_start");
+        }
+    }
+}
