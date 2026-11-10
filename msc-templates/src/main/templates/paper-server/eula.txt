@@ -1,0 +1,3 @@
+# Written by Minecraft Server Creator for a local development server.
+# By running this server you agree to the Minecraft EULA: https://aka.ms/MinecraftEULA
+eula=true

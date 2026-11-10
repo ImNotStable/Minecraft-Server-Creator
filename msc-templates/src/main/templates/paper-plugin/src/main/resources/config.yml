@@ -1,0 +1,4 @@
+# MiniMessage format: https://docs.papermc.io/adventure/minimessage/format/
+# <player> is replaced with the player's name.
+join-message: "<green>Welcome, <player>!"
+hello-message: "<yellow>Hello, <player>!"
