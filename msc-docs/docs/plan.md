@@ -87,3 +87,4 @@ Product decisions were made by Jeremiah on 2026-11-10. Build and design decision
 | MCP server | Official MCP Java SDK (2.1.0) in `msc-core` | [ADR 0002](adr/0002-protocol.md) |
 | Starter templates | msc-templates renders `{{var}}` templates via `Templates.scaffold`; `paper-plugin` (Gradle KTS, Brigadier command, MockBukkit test, CLAUDE.md, dev server in `run/`) and `paper-server` (offline, loopback, RCON, flat world) | [ADR 0003](adr/0003-templates.md) |
 | Core tools | 24 coarse MCP tools with text results capped by a size budget; one text structure format for viewing and building; API index read from class files; tool catalogue in [tools.md](tools.md) | [ADR 0005](adr/0005-core-tools.md) |
+| Paper agent | Implements exactly the `Ops` catalogue; main-thread work in 20 ms slices per tick; physics off for fills; in-memory undo of about 8 full-size edits, where undo returns a new id (redo); one shaded plugin jar | [ADR 0006](adr/0006-paper-agent.md) |
