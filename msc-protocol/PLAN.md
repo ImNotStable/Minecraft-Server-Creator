@@ -2,7 +2,7 @@
 
 Phase: MVP. Steps are in order; each ends with passing tests.
 
-- [ ] Gradle KTS subproject, Java 21, published to Maven local.
-- [ ] Define message types for the MVP tool catalogue.
-- [ ] Implement the transport and handshake with round-trip tests.
-- [ ] Document how an agent implements the protocol.
+- [x] Gradle KTS subproject, Java 25, consumed by other modules as a project dependency.
+- [x] Define message types for the MVP tool catalogue.
+- [x] Implement the transport and handshake with round-trip tests.
+- [x] Document how an agent implements the protocol.
