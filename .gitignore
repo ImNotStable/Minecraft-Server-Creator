@@ -17,3 +17,6 @@ Thumbs.db
 run/
 servers/
 *.log
+
+# Kotlin DSL / build-logic
+.kotlin/

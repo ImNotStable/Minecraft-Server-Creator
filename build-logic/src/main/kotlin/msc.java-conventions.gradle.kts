@@ -1,0 +1,39 @@
+// Shared Java setup for every module: toolchain, compiler flags, JUnit + AssertJ.
+plugins {
+    `java-library`
+}
+
+val libs = the<VersionCatalogsExtension>().named("libs")
+val javaVersion = providers.gradleProperty("msc.javaVersion").map(String::toInt).orElse(25)
+
+java {
+    toolchain {
+        languageVersion = javaVersion.map(JavaLanguageVersion::of)
+    }
+}
+
+tasks.withType<JavaCompile>().configureEach {
+    options.encoding = "UTF-8"
+    options.release = javaVersion
+    options.compilerArgs.addAll(listOf("-parameters", "-Xlint:all,-processing,-serial", "-Werror"))
+}
+
+tasks.withType<Javadoc>().configureEach {
+    (options as StandardJavadocDocletOptions).addStringOption("Xdoclint:none", "-quiet")
+}
+
+dependencies {
+    testImplementation(platform(libs.findLibrary("junit-bom").get()))
+    testImplementation(libs.findLibrary("junit-jupiter").get())
+    testImplementation(libs.findLibrary("assertj").get())
+    testRuntimeOnly(libs.findLibrary("junit-platform-launcher").get())
+}
+
+tasks.withType<Test>().configureEach {
+    useJUnitPlatform()
+    // Keep test output short: only failures, with full exception details.
+    testLogging {
+        events("failed")
+        exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+    }
+}
