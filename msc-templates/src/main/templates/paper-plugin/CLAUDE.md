@@ -24,7 +24,7 @@ Paper plugin for Minecraft {{mcVersion}}, Java {{javaVersion}}, Gradle Kotlin DS
 - Never block the main thread (no I/O, sleeps or network in event handlers or commands). Use `getServer().getScheduler().runTaskAsynchronously(...)`, then hop back with `runTask(...)` before touching the world.
 - World, entity and inventory access only on the main thread.
 - Read settings from `getConfig()`; add every new key with a default to `config.yml`.
-- Prefer small final classes and records. Pass dependencies through constructors; avoid static state so MockBukkit tests stay isolated.
+- Prefer small final classes and records, except the main plugin class: MockBukkit must subclass it, so never make it final. Pass dependencies through constructors; avoid static state so MockBukkit tests stay isolated.
 
 ## Tests
 

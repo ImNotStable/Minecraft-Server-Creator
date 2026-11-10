@@ -47,7 +47,7 @@ class TemplatesTest {
             }
         }
         assertThat(Files.readString(r.root().resolve("src/main/java/com/example/spawnlobby/SpawnLobbyPlugin.java")))
-                .contains("package com.example.spawnlobby;", "public final class SpawnLobbyPlugin extends JavaPlugin");
+                .contains("package com.example.spawnlobby;", "public class SpawnLobbyPlugin extends JavaPlugin");
         assertThat(Files.readString(r.root().resolve("src/main/resources/plugin.yml")))
                 .contains("name: SpawnLobby", "main: com.example.spawnlobby.SpawnLobbyPlugin", "version: '${version}'");
         assertThat(Files.readString(r.root().resolve("settings.gradle.kts"))).contains("rootProject.name = \"spawn-lobby\"");

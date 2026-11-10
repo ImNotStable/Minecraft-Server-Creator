@@ -3,8 +3,11 @@ package {{packageName}};
 import io.papermc.paper.plugin.lifecycle.event.types.LifecycleEvents;
 import org.bukkit.plugin.java.JavaPlugin;
 
-/** Plugin entry point: wires config, listeners and commands, and holds no game logic itself. */
-public final class {{mainClass}} extends JavaPlugin {
+/**
+ * Plugin entry point: wires config, listeners and commands, and holds no game logic itself.
+ * Not final: MockBukkit subclasses the main class when loading it in tests.
+ */
+public class {{mainClass}} extends JavaPlugin {
     @Override
     public void onEnable() {
         saveDefaultConfig();

@@ -26,7 +26,8 @@ class TemplateBuildTest {
 
         boolean windows = System.getProperty("os.name").toLowerCase().contains("win");
         List<String> command = windows
-                ? List.of("cmd", "/c", "gradlew.bat", "build", "--no-daemon", "-q")
+                // Explicit .\\ path: cmd may not search the current directory (NoDefaultCurrentDirectoryInExePath).
+                ? List.of("cmd", "/c", ".\\gradlew.bat", "build", "--no-daemon", "-q")
                 : List.of("./gradlew", "build", "--no-daemon", "-q");
         Process p = new ProcessBuilder(command).directory(dir.toFile()).redirectErrorStream(true)
                 .redirectOutput(dir.resolve("build-output.txt").toFile()).start();

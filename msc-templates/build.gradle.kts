@@ -85,7 +85,7 @@ abstract class PackTemplates : DefaultTask() {
     }
 }
 
-val packTemplates by tasks.registering(PackTemplates::class) {
+val packTemplates = tasks.register<PackTemplates>("packTemplates") {
     templatesDir = layout.projectDirectory.dir("src/main/templates")
     wrapperRoot = rootProject.layout.projectDirectory
     versions = templateVersions
@@ -98,7 +98,7 @@ sourceSets.main {
 
 // Scaffolds every template into build/ and runs its own Gradle build (compile + MockBukkit tests).
 // Needs Java 25 and repo.papermc.io, so it is not part of `check`: run it on a dev machine.
-val verifyTemplates by tasks.registering(Test::class) {
+tasks.register<Test>("verifyTemplates") {
     description = "Scaffolds each template and builds it with its own Gradle wrapper."
     group = "verification"
     testClassesDirs = sourceSets.test.get().output.classesDirs
