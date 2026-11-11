@@ -14,6 +14,7 @@ fun catalogVersion(name: String): String =
         .orElseThrow { GradleException("Version '$name' is missing from gradle/libs.versions.toml") }
 
 val paperApi = catalogVersion("paper")
+val minestom = catalogVersion("minestom")
 
 // Versions written into scaffolded projects. Java 25 is what Minecraft 26.x requires, so it is
 // fixed here and not taken from msc.javaVersion (which only changes how this repo compiles).
@@ -29,7 +30,18 @@ val templateVersions = mapOf(
     "fabricLoaderVersion" to catalogVersion("fabric-loader"),
     "fabricApiVersion" to catalogVersion("fabric-api"),
     "fabricLoomVersion" to catalogVersion("fabric-loom"),
+    "minestomVersion" to minestom,
+    "minestomMcVersion" to minestom.substringAfterLast("-"),
+    "slf4jVersion" to catalogVersion("slf4j"),
+    "shadowVersion" to catalogVersion("shadow"),
 )
+
+// The Minestom agent jar (msc-protocol bundled), shipped in minestom-server as libs/msc-agent-minestom.jar.
+val minestomAgent = configurations.dependencyScope("minestomAgent")
+val minestomAgentJar = configurations.resolvable("minestomAgentJar") { extendsFrom(minestomAgent.get()) }
+dependencies {
+    minestomAgent(project(path = ":msc-agent-minestom", configuration = "shadowRuntimeElements")) { isTransitive = false }
+}
 
 abstract class PackTemplates : DefaultTask() {
     @get:InputDirectory
@@ -43,6 +55,10 @@ abstract class PackTemplates : DefaultTask() {
     @get:PathSensitive(PathSensitivity.RELATIVE)
     val wrapperInputs: Provider<List<File>>
         get() = wrapperRoot.map { root -> WRAPPER_FILES.map(root.asFile::resolve) }
+
+    @get:InputFiles
+    @get:PathSensitive(PathSensitivity.NONE)
+    abstract val minestomAgent: ConfigurableFileCollection
 
     @get:Input
     abstract val versions: MapProperty<String, String>
@@ -77,6 +93,11 @@ abstract class PackTemplates : DefaultTask() {
                 addTree(root.resolve("paper-server"), "run/")
                 WRAPPER_FILES.forEach { files[it] = wrapper.resolve(it) }
             }
+            if (id == "minestom-server") {
+                // A Minestom server is its own project: own wrapper, agent jar on its classpath.
+                WRAPPER_FILES.forEach { files[it] = wrapper.resolve(it) }
+                files["libs/msc-agent-minestom.jar"] = minestomAgent.singleFile
+            }
             val description = files.remove("template.properties")
             for ((path, file) in files) {
                 file.copyTo(out.resolve("$id/files/$path"), overwrite = true)
@@ -94,6 +115,7 @@ val packTemplates = tasks.register<PackTemplates>("packTemplates") {
     templatesDir = layout.projectDirectory.dir("src/main/templates")
     wrapperRoot = rootProject.layout.projectDirectory
     versions = templateVersions
+    minestomAgent.from(minestomAgentJar)
     outputDir = layout.buildDirectory.dir("generated/templates")
 }
 
@@ -102,7 +124,7 @@ sourceSets.main {
 }
 
 // Scaffolds every project template into build/ and runs its own Gradle build (compile + tests).
-// Needs Java 25, repo.papermc.io and maven.fabricmc.net, so it is not part of `check`: run it on a dev machine.
+// Needs Java 25, repo.papermc.io, maven.fabricmc.net and Maven Central, so it is not part of `check`: run it on a dev machine.
 tasks.register<Test>("verifyTemplates") {
     description = "Scaffolds each template and builds it with its own Gradle wrapper."
     group = "verification"

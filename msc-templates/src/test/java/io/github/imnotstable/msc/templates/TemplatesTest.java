@@ -22,8 +22,9 @@ class TemplatesTest {
 
     @Test
     void listsTemplates() {
-        assertThat(Templates.ids()).containsExactly(Templates.FABRIC_MOD, Templates.PAPER_PLUGIN, Templates.PAPER_SERVER);
+        assertThat(Templates.ids()).containsExactly(Templates.FABRIC_MOD, Templates.MINESTOM_SERVER, Templates.PAPER_PLUGIN, Templates.PAPER_SERVER);
         assertThat(Templates.info(Templates.FABRIC_MOD)).containsEntry("platform", "fabric");
+        assertThat(Templates.info(Templates.MINESTOM_SERVER)).containsEntry("platform", "minestom");
         assertThat(Templates.versions()).containsKeys("fabricLoaderVersion", "fabricApiVersion", "fabricLoomVersion");
         assertThat(Templates.versions().get("fabricApiVersion")).endsWith("+" + Templates.versions().get("mcVersion"));
         assertThat(Templates.info(Templates.PAPER_PLUGIN)).containsEntry("platform", "paper").containsKey("description");
@@ -87,6 +88,33 @@ class TemplatesTest {
         assertThat(Files.isExecutable(r.root().resolve("gradlew"))).isTrue();
         assertThat(Files.size(r.root().resolve("gradle/wrapper/gradle-wrapper.jar"))).isGreaterThan(10_000);
         assertThat(r.values()).containsEntry("rconPassword", "secret").containsEntry("serverPort", "25565").containsKey("mcVersion");
+    }
+
+    @Test
+    void scaffoldsAMinestomServer() throws IOException {
+        ScaffoldResult r = Templates.scaffold(Templates.MINESTOM_SERVER, dir.resolve("m"), vars);
+
+        assertThat(relative(r)).contains(
+                "build.gradle.kts", "settings.gradle.kts", ".gitignore", "CLAUDE.md", "gradle/libs.versions.toml",
+                "gradlew", "gradle/wrapper/gradle-wrapper.jar", "libs/msc-agent-minestom.jar",
+                "src/main/java/com/example/spawnlobby/SpawnLobbyServer.java",
+                "src/main/java/com/example/spawnlobby/Console.java",
+                "src/test/java/com/example/spawnlobby/SpawnLobbyServerTest.java");
+        assertThat(relative(r)).noneMatch(p -> p.endsWith(".tmpl") || p.contains("eula") || p.startsWith("run/"));
+        for (Path f : r.files()) {
+            if (!f.toString().endsWith(".jar")) {
+                assertThat(Files.readString(f)).as(f.toString()).doesNotContain("{{");
+            }
+        }
+        assertThat(Files.readString(r.root().resolve("src/main/java/com/example/spawnlobby/SpawnLobbyServer.java")))
+                .contains("package com.example.spawnlobby;", "MscAgent.start();", "server.start(\"127.0.0.1\", 25565);");
+        assertThat(Files.readString(r.root().resolve("build.gradle.kts")))
+                .contains("mainClass = \"com.example.spawnlobby.SpawnLobbyServer\"", "libs/msc-agent-minestom.jar");
+        assertThat(Files.readString(r.root().resolve("gradle/libs.versions.toml")))
+                .contains("minestom = \"" + Templates.versions().get("minestomVersion") + "\"");
+        assertThat(Templates.versions().get("minestomVersion")).endsWith("-" + Templates.versions().get("minestomMcVersion"));
+        assertThat(Files.size(r.root().resolve("libs/msc-agent-minestom.jar"))).isGreaterThan(10_000);
+        assertThat(Files.isExecutable(r.root().resolve("gradlew"))).isTrue();
     }
 
     @Test

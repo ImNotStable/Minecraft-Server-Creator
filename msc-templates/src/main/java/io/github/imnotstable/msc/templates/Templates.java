@@ -29,6 +29,8 @@ public final class Templates {
     public static final String FABRIC_MOD = "fabric-mod";
     /** Only the dev server config ({@code server.properties}, {@code eula.txt}), for a server directory. */
     public static final String PAPER_SERVER = "paper-server";
+    /** A Minestom server project with the msc agent built in, tests and conventions. No EULA step. */
+    public static final String MINESTOM_SERVER = "minestom-server";
 
     private static final String ROOT = "msc/templates/";
     private static final String TEMPLATE_SUFFIX = ".tmpl";

@@ -14,7 +14,8 @@ import org.junit.jupiter.api.Test;
 
 /**
  * Scaffolds each project template and runs its own {@code gradlew build}, which compiles it
- * against Paper or Fabric and runs its tests. Only runs via {@code ./gradlew :msc-templates:verifyTemplates}.
+ * against Paper, Fabric or Minestom and runs its tests. Only runs via
+ * {@code ./gradlew :msc-templates:verifyTemplates}.
  */
 @Tag("template-build")
 class TemplateBuildTest {
@@ -28,10 +29,15 @@ class TemplateBuildTest {
         buildsAndPassesItsTests(Templates.FABRIC_MOD);
     }
 
-    private static void buildsAndPassesItsTests(String template) throws IOException, InterruptedException {
-        Path dir = Path.of(System.getProperty("msc.templates.verifyDir")).resolve(template);
+    @Test
+    void minestomServerBuildsAndPassesItsTests() throws IOException, InterruptedException {
+        buildsAndPassesItsTests(Templates.MINESTOM_SERVER);
+    }
+
+    private static void buildsAndPassesItsTests(String id) throws IOException, InterruptedException {
+        Path dir = Path.of(System.getProperty("msc.templates.verifyDir")).resolve(id);
         deleteRecursively(dir);
-        ScaffoldResult r = Templates.scaffold(template, dir, TemplateVariables.of("Verify Me"));
+        ScaffoldResult r = Templates.scaffold(id, dir, TemplateVariables.of("Verify Me"));
 
         boolean windows = System.getProperty("os.name").toLowerCase().contains("win");
         List<String> command = windows

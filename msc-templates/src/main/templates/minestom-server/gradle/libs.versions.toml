@@ -1,0 +1,20 @@
+# Every version this project uses. Change versions here only.
+[versions]
+java = "{{javaVersion}}"
+minestom = "{{minestomVersion}}"
+slf4j = "{{slf4jVersion}}"
+junit = "{{junitVersion}}"
+assertj = "{{assertjVersion}}"
+shadow = "{{shadowVersion}}"
+
+[libraries]
+minestom = { module = "net.minestom:minestom", version.ref = "minestom" }
+minestom-testing = { module = "net.minestom:testing", version.ref = "minestom" }
+slf4j-simple = { module = "org.slf4j:slf4j-simple", version.ref = "slf4j" }
+junit-bom = { module = "org.junit:junit-bom", version.ref = "junit" }
+junit-jupiter = { module = "org.junit.jupiter:junit-jupiter" }
+junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher" }
+assertj = { module = "org.assertj:assertj-core", version.ref = "assertj" }
+
+[plugins]
+shadow = { id = "com.gradleup.shadow", version.ref = "shadow" }

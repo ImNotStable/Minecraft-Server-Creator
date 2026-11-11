@@ -15,6 +15,8 @@ minecraft = "26.3"          # Fabric targets the same Minecraft release as Paper
 fabric-loader = "0.20.1"
 fabric-api = "0.166.0+26.3"
 fabric-loom = "1.19.4"     # also pinned in settings.gradle.kts, which cannot read this catalog
+minestom = "2026.10.07-26.2"  # Minestom lags Paper: newest build targets Minecraft 26.2
+slf4j = "2.0.20"  # matches Minestom's slf4j-api; scaffolded Minestom servers log through slf4j-simple
 
 [libraries]
 paper-api = { module = "io.papermc.paper:paper-api", version.ref = "paper" }
@@ -28,6 +30,8 @@ minecraft = { module = "com.mojang:minecraft", version.ref = "minecraft" }
 fabric-loader = { module = "net.fabricmc:fabric-loader", version.ref = "fabric-loader" }
 fabric-loader-junit = { module = "net.fabricmc:fabric-loader-junit", version.ref = "fabric-loader" }
 fabric-api = { module = "net.fabricmc.fabric-api:fabric-api", version.ref = "fabric-api" }
+minestom = { module = "net.minestom:minestom", version.ref = "minestom" }
+minestom-testing = { module = "net.minestom:testing", version.ref = "minestom" }
 mockbukkit = { module = "org.mockbukkit.mockbukkit:mockbukkit-v26.3", version.ref = "mockbukkit" }
 
 [plugins]
