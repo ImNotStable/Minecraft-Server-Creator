@@ -11,7 +11,8 @@ The AI talks to `msc-core` over MCP (stdio). This page lists every tool, its arg
 - Block names may omit `minecraft:`. Properties use vanilla syntax: `oak_stairs[facing=north]`.
 - `world` is optional everywhere and defaults to the server's first world.
 - Every call is logged (see "Tool log").
-- The whole tool list costs about 2,500 tokens per conversation. A test fails if it grows past 10,500 characters.
+- The whole tool list (30 tools) costs about 3,500 tokens per conversation. A test fails if it grows past 14,100 characters.
+- Results are text. The one exception is `world_render`, which adds one PNG image next to its text.
 
 ## Typical loop
 
@@ -54,6 +55,8 @@ Built on first use from the Paper API and Adventure jars in the Gradle cache (or
 | `world_summary` | `region` (up to 8,388,608 blocks) | Size, air share, top 15 block counts, bounds of non-air blocks, non-air count per layer, entity counts | about 6 lines |
 | `world_slice` | `region` (up to 128 wide, 1,048,576 blocks), `states`? (false), `maxChars`? | The region in the text structure format | `maxChars` |
 | `world_heightmap` | `area` (up to 256 x 256), `maxChars`? | Min, max, mean, then one character per column (`height - min`, 0-9 then a-z); plain numbers when the range is over 35 | `maxChars` |
+
+| `world_render` | `region` (up to 16,000,000 blocks; read in protocol-sized pieces and stitched), `view`? (`iso`; also `top`, `north`, `south`, `east`, `west`, `iso-ne`/`nw`/`sw`/`se`, `eye x,y,z look x,y,z`, `eye x,y,z yaw N pitch N`), `size`? (512, 64 to 1568) | A PNG as MCP image content, drawn by `msc-renderer` with the pack's textures, plus a caption: view, pixels per block, image size and token estimate, visible blocks, and the path of the copy saved under `<workspace>/.msc/renders/` | image about 330 tokens at 512 px, caption 2 to 3 lines |
 
 A 16 x 16 slice costs about 70 tokens per layer; identical and uniform layers cost one line each.
 
@@ -98,12 +101,17 @@ Pixel art is drawn as text; no image model is involved. The pack source lives in
 | Tool | Arguments | Result |
 | --- | --- | --- |
 | `texture_create` | `name` (`item/ruby` or `ns:block/ruby_ore`; default namespace `msc`), `palette` (list of `symbol=#rrggbb` or `#rrggbbaa`), `rows` (list of strings), `model`? (`item`, `block`, `none`) | Writes the PNG, plus a model and item definition so the texture is usable through the `item_model` component. Warns about odd sizes and large palettes |
+| `texture_generate` | `name`, `kind` (`noise`, `ore`, `planks`, `bricks`, or 16 x 16 shapes `gem`, `ingot`, `orb`), `color`, `accent`? (ore or mortar color), `size`? (16, 32, 64), `seed`? (1), `contrast`? (0.2 to 1.5; 1 for shapes, 0.6 for patterns), `model`? (item for shapes, block for patterns) | Shades the color into a 5-step ramp, draws the pattern or shape with `msc-textures`, writes it like `texture_create`. Returns a stats line (size, colors, opaque share, main hue) and the palette text |
+| `texture_recolor` | `from`, `name`, `color`, `model`? (item) | Maps the source's colors, darkest to lightest, onto a ramp of `color`, keeping the shading |
+| `texture_animate` | `name`, `mode` (`scroll` or `pulse`), `frames`, `frametime` (ticks), `dx`? (0), `dy`? (1) | Replaces the still texture with a frame strip and writes its `.png.mcmeta`. `pulse` waves the texture's own shades. Writing a still texture over it later removes the `.mcmeta` |
+| `model_create` | `name` (model, such as `block/ruby_log`), `kind` (`cube_all`, `cube_column`, `cube_bottom_top`, `orientable`, `cross`, `item`, `handheld`), `textures` (list of `slot=texture`; one bare name fills every slot), `item`? (true) | Writes the model and, unless `item=false`, an item definition named after it |
 | `texture_view` | `name` | The texture as a palette line and pixel rows (about 80 tokens for 16 x 16) |
-| `pack_build` | `description`?, `apply`? (true), `required`? (false) | Zips the pack (same content gives the same SHA-1), serves it over HTTP and sends it through the agent |
+| `pack_check` | `limit`? (30) | `msc-textures` `PackLint` on the pack sources: a summary line (files, errors, warnings, notes), then findings such as a model pointing at a missing texture. A missing `pack.mcmeta` is not reported before the first `pack_build`, which writes it |
+| `pack_build` | `description`?, `apply`? (true), `required`? (false) | Zips the pack (same content gives the same SHA-1), serves it over HTTP and sends it through the agent. Ends with the `pack_check` summary line |
 
 ## Tool log
 
-One JSON line per call, appended to `MSC_TOOL_LOG` (default `<workspace>/.msc/tool-calls.jsonl`). Fields: `v` (1), `ts`, `tool`, `ok`, `durationMs`, `argsChars`, `resultChars`, `resultTokens` (`ceil(resultChars / 4)`), and `error` on failures. `msc-bench` reads this file; the contract is recorded in the bench ADR.
+One JSON line per call, appended to `MSC_TOOL_LOG` (default `<workspace>/.msc/tool-calls.jsonl`). Fields: `v` (1), `ts`, `tool`, `ok`, `durationMs`, `argsChars`, `resultChars`, `resultTokens` (`ceil(resultChars / 4)`), `imageTokens` (only on calls that returned an image: the renderer's estimate), and `error` on failures. `msc-bench` reads this file; the contract is recorded in the bench ADR.
 
 ## Configuration (environment variables)
 
@@ -116,6 +124,7 @@ One JSON line per call, appended to `MSC_TOOL_LOG` (default `<workspace>/.msc/to
 | `MSC_AGENT_JAR` | Agent plugin to install into the server | first jar in `<workspace>/.msc/agent` |
 | `MSC_API_JARS` | Jars to index, separated by the path separator | Paper API and Adventure from `~/.gradle` |
 | `MSC_MINECRAFT` | Default Minecraft version | 26.3 |
+| `MSC_CLIENT_JAR` | A Minecraft client jar whose textures `world_render` uses after the project's pack | none (colour table) |
 | `MSC_JAVA` | Java used to run the server | the Java running the core |
 | `MSC_DOWNLOADS_URL` | Paper downloads service | `https://fill.papermc.io` |
 | `MSC_PACK_HOST`, `MSC_PACK_FORMAT` | Resource pack server address and pack format number | `127.0.0.1`, 97 (26.3) |

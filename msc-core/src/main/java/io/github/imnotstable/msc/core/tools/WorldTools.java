@@ -3,6 +3,7 @@ package io.github.imnotstable.msc.core.tools;
 import io.github.imnotstable.msc.core.CoreConfig;
 import io.github.imnotstable.msc.core.tool.Budget;
 import io.github.imnotstable.msc.core.tool.Schema;
+import io.github.imnotstable.msc.core.tool.Tool;
 import io.github.imnotstable.msc.core.tool.ToolException;
 import io.github.imnotstable.msc.core.tool.ToolRegistry;
 import io.github.imnotstable.msc.core.world.BlockNames;
@@ -14,6 +15,11 @@ import io.github.imnotstable.msc.protocol.op.Ops;
 import io.github.imnotstable.msc.protocol.world.BlockGrid;
 import io.github.imnotstable.msc.protocol.world.BlockPos;
 import io.github.imnotstable.msc.protocol.world.Region;
+import io.github.imnotstable.msc.renderer.PackTextures;
+import io.github.imnotstable.msc.renderer.RenderOptions;
+import io.github.imnotstable.msc.renderer.RenderResult;
+import io.github.imnotstable.msc.renderer.View;
+import io.github.imnotstable.msc.renderer.WorldRenderer;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -26,6 +32,9 @@ public final class WorldTools {
     private static final String FORMAT = "Text structure format: a line \"legend: #=stone g=glass\", then per layer a line "
             + "\"y=N\" followed by rows of symbols (rows = z, columns = x). \".\" is air, \"_\" leaves the block unchanged. "
             + "Shortcuts: \"y=N same as y=M\", \"y=N all #\".";
+
+    /** Largest region one world_render reads, stitched from protocol-sized reads. */
+    static final long MAX_RENDER_BLOCKS = 16_000_000L;
 
     private WorldTools() {
     }
@@ -44,6 +53,34 @@ public final class WorldTools {
                         .opt("maxChars", "integer", "Result size cap. Default 6000"),
                 args -> world.heightmap(Coords.area(world.world(args.str("world", null)), args.str("area")),
                         Budget.of(args)));
+        List<Path> textureRoots = new ArrayList<>(List.of(config.dataDir().resolve("pack")));
+        // shortcut: read straight from the environment, not CoreConfig; move it there if more renderer settings appear.
+        String clientJar = System.getenv("MSC_CLIENT_JAR");
+        if (clientJar != null && !clientJar.isBlank()) {
+            textureRoots.add(Path.of(clientJar));
+        }
+        WorldRenderer renderer = new WorldRenderer(new PackTextures(textureRoots));
+        registry.addImage("world_render",
+                "See a region as a small PNG image to check how a build looks. Views: iso (default), top, north, "
+                        + "south, east, west, iso-ne/nw/sw/se, \"eye x,y,z look x,y,z\".",
+                Schema.of().req("region", "string", REGION).opt("view", "string", "Camera. Default iso")
+                        .opt("size", "integer", "Longest side in pixels, 64 to 1568. Default 512")
+                        .opt("world", "string", WORLD),
+                args -> {
+                    View view;
+                    RenderOptions options;
+                    try {
+                        view = View.parse(args.str("view", "iso"));
+                        options = RenderOptions.defaults().withMaxSize(args.integer("size", RenderOptions.DEFAULT_SIZE));
+                    } catch (IllegalArgumentException e) {
+                        throw new ToolException(e.getMessage());
+                    }
+                    Region region = Coords.region(world.world(args.str("world", null)), args.str("region"));
+                    RenderResult r = renderer.render(world.readAll(region, MAX_RENDER_BLOCKS, "world_render"), view, options);
+                    Path dir = Files.createDirectories(config.dataDir().resolve("renders"));
+                    Path file = Files.write(Files.createTempFile(dir, "render-", ".png"), r.png());
+                    return new Tool.Output(r.caption() + "\nsaved: " + file, r.png(), r.estimatedTokens());
+                });
         registry.add("world_summary",
                 "Summarize a region in a few lines: block counts, non-air bounds, fill per layer, entities. Use before world_slice on unknown areas.",
                 Schema.of().req("region", "string", REGION).opt("world", "string", WORLD),

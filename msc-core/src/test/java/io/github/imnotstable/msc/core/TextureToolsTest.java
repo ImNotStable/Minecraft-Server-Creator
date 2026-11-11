@@ -90,6 +90,74 @@ class TextureToolsTest {
     }
 
     @Test
+    void generateWritesAShadedTextureThatTheOtherToolsRead() throws Exception {
+        String gem = h.ok("texture_generate", "name", "item/ruby", "kind", "gem", "color", "#d4263a");
+        assertThat(gem).startsWith("wrote msc:item/ruby: 16x16, ").contains("main hue 0 (red)")
+                .contains("; item_model msc:ruby\n16x16\npalette: .=transparent").endsWith("pack_build");
+        assertThat(h.ok("texture_view", "name", "item/ruby")).startsWith("16x16\npalette:");
+        String ore = h.ok("texture_generate", "name", "block/ruby_ore", "kind", "ore", "color", "#7f7f7f",
+                "accent", "#d4263a", "size", 32, "seed", 7, "contrast", 0.5);
+        assertThat(ore).startsWith("wrote msc:block/ruby_ore: 32x32, ").contains("item_model msc:ruby_ore");
+        assertThat(workspace.resolve(".msc/pack/assets/msc/models/block/ruby_ore.json")).content().contains("cube_all");
+        assertThat(h.error("texture_generate", "name", "item/x", "kind", "star", "color", "#fff"))
+                .isEqualTo("error: kind must be noise, ore, planks, bricks, gem, ingot or orb");
+        assertThat(h.error("texture_generate", "name", "item/x", "kind", "gem", "color", "#fff", "contrast", 3))
+                .contains("contrast must be 0.2 to 1.5");
+    }
+
+    @Test
+    void recolorKeepsTheShadingOnNewColors() {
+        h.ok("texture_generate", "name", "item/ruby", "kind", "gem", "color", "#d4263a");
+        assertThat(h.ok("texture_recolor", "from", "item/ruby", "name", "item/sapphire", "color", "#2050e0"))
+                .startsWith("wrote msc:item/sapphire: 16x16, ").contains("(blue)").endsWith("next: pack_build");
+        assertThat(h.error("texture_recolor", "from", "item/nope", "name", "item/x", "color", "#fff"))
+                .isEqualTo("error: no texture msc:item/nope in the pack");
+    }
+
+    @Test
+    void animateStacksFramesAndWritesTheTiming() throws Exception {
+        h.ok("texture_generate", "name", "block/lava", "kind", "noise", "color", "#e05010");
+        assertThat(h.ok("texture_animate", "name", "block/lava", "mode", "scroll", "frames", 4, "frametime", 3))
+                .startsWith("animated msc:block/lava: 4 frames, 3 ticks each");
+        Path png = workspace.resolve(".msc/pack/assets/msc/textures/block/lava.png");
+        assertThat(ImageIO.read(png.toFile()).getHeight()).isEqualTo(64);
+        assertThat(png.resolveSibling("lava.png.mcmeta")).content().contains("\"frametime\":3");
+        assertThat(h.error("texture_animate", "name", "block/lava", "mode", "scroll", "frames", 2, "frametime", 1))
+                .contains("scroll needs a square texture");
+        h.ok("texture_generate", "name", "item/orb", "kind", "orb", "color", "#40c0ff");
+        assertThat(h.ok("texture_animate", "name", "item/orb", "mode", "pulse", "frames", 8, "frametime", 2))
+                .contains("8 frames, 2 ticks each");
+        assertThat(h.error("texture_animate", "name", "block/lava", "mode", "spin", "frames", 2, "frametime", 1))
+                .isEqualTo("error: mode must be scroll or pulse");
+        h.ok("texture_generate", "name", "block/lava", "kind", "noise", "color", "#e05010");
+        assertThat(png.resolveSibling("lava.png.mcmeta")).doesNotExist();
+    }
+
+    @Test
+    void modelCreateFillsTheSlotsOfAVanillaParent() {
+        assertThat(h.ok("model_create", "name", "block/ruby_log", "kind", "cube_column",
+                "textures", List.of("end=block/ruby_log_top", "side=block/ruby_log")))
+                .isEqualTo("wrote model msc:block/ruby_log; item_model msc:ruby_log\nnext: pack_build");
+        assertThat(workspace.resolve(".msc/pack/assets/msc/models/block/ruby_log.json")).content()
+                .contains("\"parent\":\"minecraft:block/cube_column\"").contains("\"side\":\"msc:block/ruby_log\"");
+        assertThat(workspace.resolve(".msc/pack/assets/msc/items/ruby_log.json")).exists();
+        assertThat(h.error("model_create", "name", "block/x", "kind", "cube_all", "textures", List.of("a=block/a", "b=block/b")))
+                .contains("cube_all needs textures for all; missing all");
+        assertThat(h.error("model_create", "name", "block/x", "kind", "slab", "textures", List.of("block/a")))
+                .contains("unknown model kind \"slab\"");
+    }
+
+    @Test
+    void packCheckFindsMissingTexturesAndPackBuildPrintsTheSummary() {
+        assertThat(h.error("pack_check")).contains("the pack is empty");
+        h.ok("model_create", "name", "block/ghost", "kind", "cube_all", "textures", List.of("block/ghost"));
+        assertThat(h.ok("pack_check")).startsWith("pack check: 2 files, 1 errors, ")
+                .contains("texture all = msc:block/ghost is not in the pack").doesNotContain("pack.mcmeta");
+        assertThat(h.ok("pack_build", "apply", false)).endsWith("\npack check: 3 files, 1 errors, 0 warnings, 0 notes");
+        assertThat(h.error("pack_check", "limit", "x")).contains("argument limit must be an integer");
+    }
+
+    @Test
     void packIsZippedServedAndSentToTheServer() throws Exception {
         h.ok("texture_create", "name", "item/ruby", "palette", List.of("r=#d4263a"), "rows", List.of("rr", "rr"));
         String result = h.ok("pack_build");

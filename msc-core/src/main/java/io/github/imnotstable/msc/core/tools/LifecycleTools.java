@@ -105,7 +105,7 @@ public final class LifecycleTools {
         out.append("created ").append(template).append(" project in ").append(dir).append(" (")
                 .append(result.files().size()).append(" files)");
         result.values().forEach((k, v) -> {
-            if (!k.toLowerCase().contains("password")) {
+            if (!k.toLowerCase().contains("password") && !k.equals("eula")) {
                 out.append('\n').append(k).append(": ").append(v);
             }
         });

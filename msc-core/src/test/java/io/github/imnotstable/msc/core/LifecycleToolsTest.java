@@ -100,7 +100,8 @@ class LifecycleToolsTest {
     @Test
     void scaffoldCreatesAProjectOnceAndRefusesToOverwrite() {
         assertThat(h.ok("project_scaffold", "name", "MyPlugin", "dir", "fresh"))
-                .startsWith("created paper-plugin project in ").doesNotContain("assword").endsWith("next: edit the code, then dev_cycle");
+                .startsWith("created paper-plugin project in ").doesNotContain("assword").doesNotContain("eula")
+                .endsWith("next: edit the code, then dev_cycle");
         assertThat(workspace.resolve("fresh")).isNotEmptyDirectory();
         assertThat(h.error("project_scaffold", "name", "MyPlugin", "dir", "fresh")).startsWith("error: ");
         assertThat(h.error("project_scaffold", "name", "X", "template", "nope")).contains("unknown template nope");
@@ -116,6 +117,11 @@ class LifecycleToolsTest {
             assertThat(other.ok("project_scaffold", "name", "MyPlugin")).startsWith("created paper-plugin project in " + ws);
         }
         assertThat(ws.resolve("build.gradle.kts")).exists();
+        assertThat(ws.resolve("run/server.properties")).isRegularFile();
+        assertThat(ws.resolve("run/eula.txt")).content().contains("eula=false");
+        try (var src = Files.walk(ws.resolve("src"))) {
+            assertThat(src.filter(p -> p.toString().endsWith("Test.java"))).hasSize(2);
+        }
         assertThat(ws.resolve(".msc")).isDirectory();
         try (var left = Files.list(ws.resolve(".msc"))) {
             assertThat(left.filter(p -> p.getFileName().toString().startsWith("scaffold-"))).isEmpty();

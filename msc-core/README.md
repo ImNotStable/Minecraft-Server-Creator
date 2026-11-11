@@ -3,7 +3,7 @@
 The MCP server the AI talks to. It runs servers, condenses their output, answers API questions, and drives building, world views and textures through the agents.
 
 **Phase:** MVP  
-**Status:** MVP implemented (0.1): 24 MCP tools, tested against a fake agent and run end to end against Paper 26.3 with msc-agent-paper (2026-11-11).
+**Status:** MVP implemented (0.1): 30 MCP tools, tested against a fake agent and run end to end against Paper 26.3 with msc-agent-paper (2026-11-11).
 
 ## Scope
 
@@ -12,8 +12,8 @@ The MCP server the AI talks to. It runs servers, condenses their output, answers
 - Condensed logs: errors, stack traces trimmed to project frames, duplicates collapsed.
 - Local API index per platform: signatures, events and registries in a few lines.
 - World building: set, fill, replace, copy/paste, undo, schematics, and a compact text structure format.
-- World views: layer slices as character grids, heightmaps and region summaries, each with a size budget.
-- Basic textures: palette-grid to PNG, palette checks, resource pack build and serve.
+- World views: layer slices as character grids, heightmaps, region summaries and rendered PNG images (through `msc-renderer`), each with a size budget.
+- Textures: palette-grid to PNG, generated patterns and shapes, recolouring, animation, models and pack checks (through `msc-textures`), resource pack build and serve.
 - Token and timing logging for every tool call.
 
 ## Run
@@ -35,6 +35,8 @@ The MCP server the AI talks to. It runs servers, condenses their output, answers
 
 - `msc-protocol`
 - `msc-templates`
+- `msc-textures`
+- `msc-renderer`
 - An agent such as `msc-agent-paper` for world tools.
 
 ## Stack

@@ -10,6 +10,7 @@ import io.github.imnotstable.msc.protocol.world.BlockGrid;
 import io.github.imnotstable.msc.protocol.world.BlockPos;
 import io.github.imnotstable.msc.protocol.world.Region;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -57,6 +58,40 @@ public final class WorldService {
                     + Limits.MAX_REGION_VOLUME + " (128x64x128). Use a smaller region.");
         }
         return hub.call(Ops.WORLD_READ, new Ops.ReadParams(region, false)).grid();
+    }
+
+    /** Read a region of up to {@code max} blocks as one grid, stitching protocol-sized reads together. */
+    public BlockGrid readAll(Region region, long max, String tool) throws InterruptedException {
+        if (region.volume() > max) {
+            throw new ToolException("region has " + region.volume() + " blocks; " + tool + " takes at most " + max);
+        }
+        List<Region> parts = Coords.split(region);
+        if (parts.size() == 1) {
+            return read(region);
+        }
+        int[] blocks = new int[(int) region.volume()];
+        List<String> palette = new ArrayList<>();
+        Map<String, Integer> index = new HashMap<>();
+        for (Region part : parts) {
+            BlockGrid grid = read(part);
+            int[] remap = new int[grid.palette().size()];
+            for (int i = 0; i < remap.length; i++) {
+                remap[i] = index.computeIfAbsent(grid.palette().get(i), s -> {
+                    palette.add(s);
+                    return palette.size() - 1;
+                });
+            }
+            Region r = grid.region();
+            for (int y = r.min().y(); y <= r.max().y(); y++) {
+                for (int z = r.min().z(); z <= r.max().z(); z++) {
+                    for (int x = r.min().x(); x <= r.max().x(); x++) {
+                        int b = grid.blocks()[r.index(x, y, z)];
+                        blocks[region.index(x, y, z)] = b < 0 ? -1 : remap[b];
+                    }
+                }
+            }
+        }
+        return new BlockGrid(region, palette, blocks);
     }
 
     public String slice(Region region, boolean states, int maxChars) throws InterruptedException {

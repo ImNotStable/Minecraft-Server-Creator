@@ -15,6 +15,7 @@ import io.modelcontextprotocol.spec.McpSchema;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 
@@ -41,7 +42,12 @@ public final class McpBridge {
                 JsonObject args = request.arguments() == null ? new JsonObject()
                         : GSON.toJsonTree(request.arguments()).getAsJsonObject();
                 ToolRegistry.Result result = registry.call(tool.name(), args);
-                return McpSchema.CallToolResult.builder().addTextContent(result.text()).isError(!result.ok()).build();
+                McpSchema.CallToolResult.Builder reply = McpSchema.CallToolResult.builder();
+                if (result.png() != null) {
+                    reply.addContent(McpSchema.ImageContent.builder(Base64.getEncoder().encodeToString(result.png()),
+                            "image/png").build());
+                }
+                return reply.addTextContent(result.text()).isError(!result.ok()).build();
             }));
         }
         return McpServer.sync(new StdioServerTransportProvider(McpJsonDefaults.getMapper(), in, out))

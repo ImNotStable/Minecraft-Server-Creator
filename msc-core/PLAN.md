@@ -9,6 +9,8 @@ Phase: MVP. Steps are in order; each ends with passing tests.
 - [x] World view tools with size budgets.
 - [x] Palette-grid textures and resource pack serving.
 - [x] Token and timing logging feeding `msc-bench`.
+- [x] Texture tools on `msc-textures`: `texture_generate`, `texture_recolor`, `texture_animate`, `model_create`, `pack_check` (2026-11-11).
+- [x] `world_render` on `msc-renderer`: PNG image content, stitched reads up to 16M blocks, image tokens in the tool log (2026-11-11).
 
 ## Next
 

@@ -61,6 +61,11 @@ public final class ResourcePack implements AutoCloseable {
         this.packFormat = packFormat;
     }
 
+    /** The pack's source folder, holding {@code assets/}. */
+    public Path root() {
+        return root;
+    }
+
     /** {@code ns:block/ruby_ore} or {@code block/ruby_ore} (namespace {@code msc}). */
     public static TextureId id(String text) {
         String t = text.trim();
@@ -99,6 +104,8 @@ public final class ResourcePack implements AutoCloseable {
         Path file = texturePath(id);
         Files.createDirectories(file.getParent());
         ImageIO.write(image, "png", file.toFile());
+        // A still image replaces an animation, so drop its frame timing.
+        Files.deleteIfExists(file.resolveSibling(file.getFileName() + ".mcmeta"));
         if (model.equals("none")) {
             return null;
         }

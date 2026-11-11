@@ -32,7 +32,7 @@ public final class ToolLog {
     }
 
     public synchronized void record(String tool, boolean ok, long durationMs, int argsChars, int resultChars,
-                                    String error) {
+                                    String error, int imageTokens) {
         totals.merge(tool, new Totals(0, 0, 0, 0).plus(ok, durationMs, resultChars),
                 (a, b) -> a.plus(ok, durationMs, resultChars));
         if (file == null) {
@@ -47,6 +47,9 @@ public final class ToolLog {
         line.addProperty("argsChars", argsChars);
         line.addProperty("resultChars", resultChars);
         line.addProperty("resultTokens", Budget.tokens(resultChars));
+        if (imageTokens > 0) {
+            line.addProperty("imageTokens", imageTokens);
+        }
         if (error != null) {
             line.addProperty("error", error.length() > 200 ? error.substring(0, 200) : error);
         }

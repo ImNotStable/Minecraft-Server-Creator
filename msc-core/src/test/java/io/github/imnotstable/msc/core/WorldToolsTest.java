@@ -2,9 +2,13 @@ package io.github.imnotstable.msc.core;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.imnotstable.msc.core.tool.ToolRegistry;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import javax.imageio.ImageIO;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -23,6 +27,36 @@ class WorldToolsTest {
     @AfterEach
     void stop() throws Exception {
         h.close();
+    }
+
+    @Test
+    void renderReturnsAPngWithACaptionAndLogsItsTokens() throws Exception {
+        Path ws = workspace.resolve("logged");
+        try (CoreHarness r = new CoreHarness(ws, c -> c.withToolLog(ws.resolve("calls.jsonl"))).withAgent()) {
+            r.ok("build_fill", "region", "0,64,0 3,66,3", "block", "oak_planks");
+            ToolRegistry.Result result = r.call("world_render", "region", "0,62,0 5,67,5", "view", "top", "size", 128);
+            assertThat(result.ok()).isTrue();
+            BufferedImage image = ImageIO.read(new ByteArrayInputStream(result.png()));
+            assertThat(Math.max(image.getWidth(), image.getHeight())).isLessThanOrEqualTo(128);
+            assertThat(result.text()).startsWith("Top view").contains("oak_planks").contains("\nsaved: ");
+            Path saved = Path.of(result.text().substring(result.text().indexOf("saved: ") + 7));
+            assertThat(saved).hasBinaryContent(result.png()).startsWith(ws.resolve(".msc/renders"));
+            assertThat(Files.readString(ws.resolve("calls.jsonl"))).containsPattern("\"tool\":\"world_render\".*\"imageTokens\":\\d+");
+        }
+        assertThat(h.error("world_render", "region", "0,0,0 1,1,1", "view", "sideways")).startsWith("error: ").doesNotContain("\n");
+        assertThat(h.error("world_render", "region", "0,0,0 1,1,1", "size", 10)).contains("64");
+        assertThat(h.agent.reads).isEmpty();
+    }
+
+    @Test
+    void renderStitchesLargeRegionsAndRefusesHugeOnes() {
+        ToolRegistry.Result result = h.call("world_render", "region", "0,0,0 129,63,127", "size", 64);
+        assertThat(result.ok()).as(result.text()).isTrue();
+        assertThat(h.agent.reads).hasSize(2);
+        assertThat(result.png()).isNotEmpty();
+        assertThat(h.error("world_render", "region", "0,0,0 999,63,999"))
+                .isEqualTo("error: region has 64000000 blocks; world_render takes at most 16000000");
+        assertThat(h.agent.reads).hasSize(2);
     }
 
     @Test
