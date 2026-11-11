@@ -13,7 +13,7 @@ For each task and each mode (`baseline` = Claude Code alone, `toolset` = Claude 
 2. For world tasks, starts the Paper server and runs the task's setup commands over RCON.
 3. Runs the agent headless (`claude -p ... --output-format json`) in the workspace, with a time limit.
 4. Runs the task's checks: files, build commands, PNGs, zips, and the live world and plugins over RCON.
-5. Stops the server and records time, turns, tokens and cost (from Claude Code's JSON result) plus tool-call totals (from msc-core's tool log, [ADR 0004](../msc-docs/docs/adr/0004-bench.md)).
+5. Stops the server and records time, turns, tokens and cost (from Claude Code's JSON result) plus tool-call totals, including image tokens from rendered views (from msc-core's tool log, [ADR 0004](../msc-docs/docs/adr/0004-bench.md)).
 
 Attempts are interleaved (task 1 baseline, task 1 toolset, task 2 ...) so drift in model speed hits both modes alike. Results go to `runs/<timestamp>/results.jsonl` and `report.md`; each attempt keeps its workspace, prompt, agent output and server log under `attempts/`.
 

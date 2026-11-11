@@ -53,11 +53,12 @@ class ResultParsingTest {
         Files.writeString(log, """
                 {"v":1,"ts":"2026-11-10T13:00:00Z","tool":"world.slice","ok":true,"durationMs":12,"argsChars":30,"resultChars":400,"resultTokens":100}
                 {"v":1,"tool":"server.start","ok":false,"durationMs":3000,"resultChars":41,"error":"no jar"}
+                {"v":1,"tool":"world_render","ok":true,"durationMs":0,"resultChars":0,"resultTokens":0,"imageTokens":1500}
                 {"v":1,"tool":"half a li
                 {"v":2,"tool":"future","resultTokens":999}
                 """);
 
-        assertThat(ToolLogReader.read(log)).isEqualTo(new ToolStats(2, 1, 111, 441, 3012));
+        assertThat(ToolLogReader.read(log)).isEqualTo(new ToolStats(3, 1, 111, 1500, 441, 3012));
         assertThat(ToolLogReader.read(dir.resolve("missing.jsonl"))).isEqualTo(ToolStats.NONE);
     }
 }

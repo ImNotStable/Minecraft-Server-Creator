@@ -25,6 +25,7 @@ public final class ToolLogReader {
         int calls = 0;
         int errors = 0;
         long tokens = 0;
+        long images = 0;
         long chars = 0;
         long duration = 0;
         for (String line : Files.readAllLines(log)) {
@@ -44,8 +45,9 @@ public final class ToolLogReader {
             long resultChars = o.has("resultChars") ? o.get("resultChars").getAsLong() : 0;
             chars += resultChars;
             tokens += o.has("resultTokens") ? o.get("resultTokens").getAsLong() : (resultChars + 3) / 4;
+            images += o.has("imageTokens") ? o.get("imageTokens").getAsLong() : 0;
             duration += o.has("durationMs") ? o.get("durationMs").getAsLong() : 0;
         }
-        return new ToolStats(calls, errors, tokens, chars, duration);
+        return new ToolStats(calls, errors, tokens, images, chars, duration);
     }
 }
