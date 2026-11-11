@@ -60,7 +60,7 @@ One monorepo; each module is a folder, later a Gradle subproject.
 | msc-bench | MVP | Benchmark tasks and a runner that measure whether the toolset makes AI server development better on quality, speed and tokens. |
 | msc-agent-fabric | Post-MVP | A server-side Fabric mod that speaks `msc-protocol`, giving Fabric servers the same world and server tools as Paper. |
 | msc-agent-minestom | Post-MVP | A Minestom extension or library hook that speaks `msc-protocol`, giving Minestom servers the same world and server tools. |
-| msc-renderer | Post-MVP | A headless renderer that turns a region into images so the AI can check how a build looks. |
+| msc-renderer | Post-MVP (library done; `world_render` tool in msc-core) | A headless renderer that turns a region into images so the AI can check how a build looks. |
 | msc-textures | Post-MVP | Advanced texture and model generation beyond the MVP's palette-grid textures. |
 
 ## Decisions
@@ -86,6 +86,7 @@ Product decisions were made by Jeremiah on 2026-11-10. Build and design decision
 | Block data | Vanilla block-state strings; palette + indices in Y-Z-X order; at most 1,048,576 blocks per call | [ADR 0002](adr/0002-protocol.md) |
 | MCP server | Official MCP Java SDK (2.1.0) in `msc-core` | [ADR 0002](adr/0002-protocol.md) |
 | Starter templates | msc-templates renders `{{var}}` templates via `Templates.scaffold`; `paper-plugin` (Gradle KTS, Brigadier command, MockBukkit test, CLAUDE.md, dev server in `run/`) and `paper-server` (offline, loopback, RCON, flat world) | [ADR 0003](adr/0003-templates.md) |
-| Core tools | 24 coarse MCP tools with text results capped by a size budget; one text structure format for viewing and building; API index read from class files; tool catalogue in [tools.md](tools.md) | [ADR 0005](adr/0005-core-tools.md) |
+| Core tools | 30 coarse MCP tools with text results capped by a size budget; one text structure format for viewing and building; API index read from class files; tool catalogue in [tools.md](tools.md) | [ADR 0005](adr/0005-core-tools.md) |
 | Paper agent | Implements exactly the `Ops` catalogue; main-thread work in 20 ms slices per tick; physics off for fills; in-memory undo of about 8 full-size edits, where undo returns a new id (redo); one shaded plugin jar | [ADR 0006](adr/0006-paper-agent.md) |
 | Advanced textures | No image model; colour ramps, seeded patterns, item templates and pack checks in a plain library | [ADR 0007](adr/0007-textures.md) |
+| Renderer | Pure-Java software ray caster; own colour table, resource-pack textures when present; 512 px default image budget | [ADR 0008](adr/0008-renderer.md) |
