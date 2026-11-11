@@ -20,6 +20,8 @@ Date: 2026-11-10. Status: accepted. Decided by Claude under Jeremiah's instructi
 10. **Schematics: Sponge v2, blocks only.** WorldEdit reads it. Vanilla `.nbt` structures, block entities and entities are left for later.
 11. **Resource pack.** Sources in `<workspace>/.msc/pack`, zipped deterministically so the SHA-1 changes only with content, served from a loopback HTTP server, applied with `pack.apply`. Textures get a model and an item definition so they work through the `item_model` component.
 
+12. **The core never accepts the Minecraft EULA.** It passes no EULA flag; `eula.txt` in the server directory decides, and `server_setup` says whether it is accepted.
+
 ## Open points, to check on a real Paper 26.3 server
 
 These could not be verified in the cloud sandbox (no access to PaperMC or Mojang hosts, no JDK 25):
@@ -27,7 +29,7 @@ These could not be verified in the cloud sandbox (no access to PaperMC or Mojang
 - The Paper downloads API shape (`/v3/projects/paper/versions/<v>/builds`, `downloads["server:default"]`). Tested only against a local fake.
 - `MSC_PACK_FORMAT` default (75) and the `min_format` / `max_format` fields for 26.3.
 - The schematic `DataVersion` constant (4671).
-- `-Dcom.mojang.eula.agree=true` and the server start flags.
+- The server start flags (`-Xmx2G -jar paper.jar --nogui`).
 
 ## Consequences
 

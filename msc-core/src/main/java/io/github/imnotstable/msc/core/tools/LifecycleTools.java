@@ -137,6 +137,13 @@ public final class LifecycleTools {
             out.append("warning: msc agent plugin not found, so world and build tools will not work. Put its jar in ")
                     .append(config.dataDir().resolve("agent")).append(" or set MSC_AGENT_JAR, then run server_setup again\n");
         }
+        Path eula = dir.resolve("eula.txt");
+        if (!Files.exists(eula) || !Files.readString(eula).contains("eula=true")) {
+            out.append("the Minecraft EULA is not accepted: the user must agree to https://aka.ms/MinecraftEULA and set "
+                    + "eula=true in ").append(eula).append(" before server_start will work\n");
+        } else {
+            out.append("note: eula.txt has eula=true; running the server means the user agrees to https://aka.ms/MinecraftEULA\n");
+        }
         out.append("server ready in ").append(dir).append("; next: server_start or dev_cycle");
         return out.toString();
     }

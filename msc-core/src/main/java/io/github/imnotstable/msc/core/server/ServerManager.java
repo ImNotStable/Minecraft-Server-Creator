@@ -61,7 +61,8 @@ public final class ServerManager implements AutoCloseable {
         if (serverJar() == null) {
             throw new ToolException("no server in " + config.serverDir() + ". Run server_setup first.");
         }
-        return List.of(config.javaCommand(), "-Xmx2G", "-Dcom.mojang.eula.agree=true", "-jar", "paper.jar", "--nogui");
+        // The EULA is the user's to accept: eula.txt in the server directory decides, never a flag set here.
+        return List.of(config.javaCommand(), "-Xmx2G", "-jar", "paper.jar", "--nogui");
     }
 
     /** Start the server and wait until it is ready, it exits, or the timeout passes. */
