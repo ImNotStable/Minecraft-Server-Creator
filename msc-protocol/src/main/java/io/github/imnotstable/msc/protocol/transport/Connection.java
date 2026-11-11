@@ -22,6 +22,9 @@ import java.time.Duration;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
@@ -30,6 +33,12 @@ import java.util.function.Consumer;
 /**
  * An open, handshaken link between the core and one agent. Both sides use the same class: either
  * side can send requests and events, and each answers the other's requests with its handler.
+ *
+ * <p>Threading: one platform daemon thread per connection only reads and decodes frames. It never
+ * writes to the socket and never runs caller code, so it always keeps draining the socket even
+ * while a large frame is being written in either direction. Responses complete their futures on
+ * virtual threads, events reach the {@link Listener} in order on one virtual thread, pongs and
+ * request handlers run on their own virtual threads.
  */
 public final class Connection implements AutoCloseable {
     /** Callbacks for what arrives on the connection. */
@@ -49,6 +58,7 @@ public final class Connection implements AutoCloseable {
     private final Map<Long, CompletableFuture<Response>> pending = new ConcurrentHashMap<>();
     private final Map<Long, CompletableFuture<Long>> pings = new ConcurrentHashMap<>();
     private final AtomicBoolean closed = new AtomicBoolean();
+    private final ExecutorService events = Executors.newSingleThreadExecutor(Thread.ofVirtual().name("msc-events").factory());
     private volatile Throwable closeCause;
     private RequestHandler handler = RequestHandler.none();
     private Listener listener = new Listener() {
@@ -72,7 +82,7 @@ public final class Connection implements AutoCloseable {
     void start(RequestHandler handler, Listener listener) {
         this.handler = handler;
         this.listener = listener;
-        Thread.ofVirtual().name("msc-conn-" + label).start(this::readLoop);
+        Thread.ofPlatform().daemon().name("msc-conn-" + label).start(this::readLoop);
     }
 
     // ---- sending ----------------------------------------------------------------------------
@@ -151,7 +161,7 @@ public final class Connection implements AutoCloseable {
             }
         } catch (ProtocolException e) {
             cause = e;
-            trySend(new Goodbye(ErrorCodes.BAD_FRAME, e.getMessage()));
+            sendLater(new Goodbye(ErrorCodes.BAD_FRAME, e.getMessage()));
         } catch (IOException e) {
             cause = e;
         }
@@ -165,15 +175,16 @@ public final class Connection implements AutoCloseable {
             case Response response -> {
                 CompletableFuture<Response> future = pending.get(response.id());
                 if (future != null) {
-                    future.complete(response);
+                    // Completing runs the caller's dependent stages; keep them off the read thread.
+                    Thread.ofVirtual().name("msc-resp").start(() -> future.complete(response));
                 }
             }
-            case Event event -> listener.onEvent(event);
-            case Ping ping -> trySend(new Pong(ping.nonce()));
+            case Event event -> runEvent(() -> listener.onEvent(event));
+            case Ping ping -> sendLater(new Pong(ping.nonce()));
             case Pong pong -> {
                 CompletableFuture<Long> future = pings.get(pong.nonce());
                 if (future != null) {
-                    future.complete(pong.nonce());
+                    Thread.ofVirtual().name("msc-pong").start(() -> future.complete(pong.nonce()));
                 }
             }
             case Goodbye goodbye -> {
@@ -197,6 +208,11 @@ public final class Connection implements AutoCloseable {
             response = Response.fail(request.id(), ErrorCodes.INTERNAL, e.getClass().getSimpleName() + ": " + e.getMessage());
         }
         trySend(response);
+    }
+
+    /** Send without blocking the calling thread (used from the read thread). */
+    private void sendLater(Message message) {
+        Thread.ofVirtual().name("msc-send").start(() -> trySend(message));
     }
 
     private void trySend(Message message) {
@@ -237,8 +253,22 @@ public final class Connection implements AutoCloseable {
             // Already closing.
         }
         ConnectionClosedException closedException = new ConnectionClosedException("connection " + label + " closed", closeCause);
-        pending.values().forEach(f -> f.completeExceptionally(closedException));
-        pings.values().forEach(f -> f.completeExceptionally(closedException));
-        listener.onClose(closeCause);
+        Throwable cause0 = closeCause;
+        Thread.ofVirtual().name("msc-close").start(() -> {
+            pending.values().forEach(f -> f.completeExceptionally(closedException));
+            pings.values().forEach(f -> f.completeExceptionally(closedException));
+        });
+        // Runs after any events already queued, so a listener sees close last.
+        runEvent(() -> listener.onClose(cause0));
+        events.shutdown();
+    }
+
+    /** Queues listener work; after shutdown the connection is closed and late events are dropped. */
+    private void runEvent(Runnable task) {
+        try {
+            events.execute(task);
+        } catch (RejectedExecutionException ignored) {
+            // Closed while the read loop was still dispatching.
+        }
     }
 }
