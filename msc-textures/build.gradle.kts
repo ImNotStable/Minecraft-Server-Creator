@@ -2,4 +2,8 @@ plugins {
     id("msc.java-conventions")
 }
 
-description = "Post-MVP: see README.md. No code yet."
+description = "Pixel-art texture generation, models, animation and resource-pack checks."
+
+dependencies {
+    api(libs.gson)
+}
