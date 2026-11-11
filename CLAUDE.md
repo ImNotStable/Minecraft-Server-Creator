@@ -15,6 +15,12 @@ A toolset that helps an AI develop custom Minecraft servers. One Gradle monorepo
 - Every change comes with tests (JUnit 6 + AssertJ). Keep test output short.
 - Prefer records and small classes. No new libraries without a catalog entry.
 
+## Code graph (graphify)
+
+- A code graph of the repo lives in `D:\Projects\Minecraft Server Creator\graphify-out\` (main checkout only, git-excluded). Read `GRAPH_REPORT.md` there before broad searches.
+- Ask it: `graphify query "<question>"`, `graphify explain "AgentHub"`, `graphify affected "Region"`, `graphify path "A" "B"`. From a worktree add `--graph "D:\Projects\Minecraft Server Creator\graphify-out\graph.json"`.
+- Refresh after changes, from the main checkout: `graphify update .` (local AST, no API key).
+
 ## Ownership while threads work in parallel
 
 - Shared files: `settings.gradle.kts`, `gradle.properties`, `gradle/`, `build-logic/`, `msc-protocol/`, this file. Only the foundation thread changes them; other threads ask for changes.
