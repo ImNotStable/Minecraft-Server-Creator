@@ -50,6 +50,7 @@ tasks.test {
 
 tasks.runServer {
     // Dev server lives in run/ (server.properties and eula.txt are already there).
+    // It starts only after the owner accepts the Minecraft EULA in run/eula.txt.
     minecraftVersion(libs.versions.minecraft.get())
-    jvmArgs("-Xms1G", "-Xmx2G", "-Dcom.mojang.eula.agree=true")
+    jvmArgs("-Xms1G", "-Xmx2G")
 }

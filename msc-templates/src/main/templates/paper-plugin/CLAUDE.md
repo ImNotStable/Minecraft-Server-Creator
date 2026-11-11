@@ -35,5 +35,6 @@ Paper plugin for Minecraft {{mcVersion}}, Java {{javaVersion}}, Gradle Kotlin DS
 ## Dev server
 
 - Offline mode, bound to {{serverIp}}:{{serverPort}}, flat creative world, peaceful, no nether, no structures.
+- `run/eula.txt` must say `eula=true` before the server starts. Accepting the Minecraft EULA (https://aka.ms/MinecraftEULA) is the owner's decision: if it says `false`, ask them, never change it yourself.
 - RCON on port {{rconPort}}; the password is `rcon.password` in `run/server.properties`.
 - If Minecraft Server Creator tools are available, use them to start the server, read condensed logs and inspect the world instead of reading raw `run/logs/latest.log`.

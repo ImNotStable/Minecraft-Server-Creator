@@ -53,6 +53,8 @@ class TemplatesTest {
         assertThat(Files.readString(r.root().resolve("settings.gradle.kts"))).contains("rootProject.name = \"spawn-lobby\"");
         assertThat(Files.readString(r.root().resolve("run/server.properties")))
                 .contains("rcon.password=secret", "rcon.port=25575", "online-mode=false", "server-ip=127.0.0.1");
+        assertThat(Files.readString(r.root().resolve(".gitignore"))).contains(".msc/");
+        assertThat(Files.readString(r.root().resolve("build.gradle.kts"))).doesNotContain("eula.agree");
         assertThat(Files.isExecutable(r.root().resolve("gradlew"))).isTrue();
         assertThat(Files.size(r.root().resolve("gradle/wrapper/gradle-wrapper.jar"))).isGreaterThan(10_000);
         assertThat(r.values()).containsEntry("rconPassword", "secret").containsEntry("serverPort", "25565").containsKey("mcVersion");
@@ -62,6 +64,13 @@ class TemplatesTest {
     void scaffoldsServerDefaultsOnly() throws IOException {
         ScaffoldResult r = Templates.scaffold(Templates.PAPER_SERVER, dir, vars);
         assertThat(relative(r)).containsExactlyInAnyOrder("eula.txt", "server.properties");
+        assertThat(Files.readString(dir.resolve("eula.txt"))).containsPattern("(?m)^eula=false$").doesNotContainPattern("(?m)^eula=true$");
+        assertThat(Files.readString(dir.resolve("server.properties"))).contains("generator-settings={\"biome\"");
+    }
+
+    @Test
+    void writesEulaTrueOnlyWhenAccepted() throws IOException {
+        Templates.scaffold(Templates.PAPER_SERVER, dir, vars.withAcceptEula(true));
         assertThat(Files.readString(dir.resolve("eula.txt"))).contains("eula=true");
     }
 

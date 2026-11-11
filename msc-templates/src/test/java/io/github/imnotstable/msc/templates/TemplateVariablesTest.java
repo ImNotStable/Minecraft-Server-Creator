@@ -20,6 +20,10 @@ class TemplateVariablesTest {
     @Test
     void handlesAcronymsDigitsAndPluginSuffix() {
         assertThat(TemplateVariables.of("PvP arena 2").projectId()).isEqualTo("pv-p-arena-2");
+        assertThat(TemplateVariables.of("E2eDemo").name()).isEqualTo("E2eDemo");
+        assertThat(TemplateVariables.of("E2eDemo").projectId()).isEqualTo("e2e-demo");
+        assertThat(TemplateVariables.of("spawn2 lobby").projectId()).isEqualTo("spawn2-lobby");
+        assertThat(TemplateVariables.of("HTTPServer").projectId()).isEqualTo("http-server");
         assertThat(TemplateVariables.of("MSC tools").name()).isEqualTo("MscTools");
         assertThat(TemplateVariables.of("MyPlugin").mainClass()).isEqualTo("MyPlugin");
     }
@@ -32,6 +36,11 @@ class TemplateVariablesTest {
         assertThat(v.rconPort()).isEqualTo(25575);
         assertThat(v.rconPassword()).hasSize(24).isNotEqualTo(TemplateVariables.of("x").rconPassword());
         assertThat(v.levelType()).isEqualTo("minecraft:flat");
+        assertThat(v.acceptEula()).isFalse();
+        assertThat(v.asMap()).containsEntry("eula", "false");
+        assertThat(v.asMap().get("generatorSettings")).contains("\"layers\"", "minecraft:bedrock");
+        assertThat(v.withLevelType("minecraft:normal").asMap()).containsEntry("generatorSettings", "{}");
+        assertThat(v.withAcceptEula(true).asMap()).containsEntry("eula", "true");
         assertThat(v.asMap()).containsEntry("packagePath", "com/example/x");
     }
 

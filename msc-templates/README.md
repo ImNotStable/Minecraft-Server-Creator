@@ -10,7 +10,7 @@ Starter server projects per platform, ready for the AI to build on, with tests a
 | Id | What you get |
 | --- | --- |
 | `paper-plugin` | A Paper plugin project: Java 25, Gradle KTS with its own wrapper and version catalog, a `/hello` command (Brigadier) and a join listener, a plain JUnit test and a MockBukkit test, `CLAUDE.md` conventions for the AI, and a dev server in `run/` (`./gradlew runServer`, via run-paper). |
-| `paper-server` | Only the dev server config, for a server directory the core manages itself: `eula.txt` and `server.properties` (offline mode, bound to 127.0.0.1, RCON on, flat creative world, peaceful, no nether or structures). |
+| `paper-server` | Only the dev server config, for a server directory the core manages itself: `eula.txt` and `server.properties` (offline mode, bound to 127.0.0.1, RCON on, flat creative world with explicit layers, peaceful, no nether or structures). `eula=false` unless the variables say the user accepted it.. |
 
 ## Using it from msc-core
 
@@ -30,7 +30,7 @@ result.values().get("rconPassword");  // plus rconPort, serverPort, serverIp, mc
 
 ### Variables
 
-`TemplateVariables.of(name)` splits the name into words (`"spawn lobby"`, `"spawn-lobby"` and `"SpawnLobby"` all work) and derives:
+`TemplateVariables.of(name)` splits the name into words (`"spawn lobby"`, `"spawn-lobby"` and `"SpawnLobby"` all work; digits stay with their word, so `"E2eDemo"` gives `e2e-demo`) and derives:
 
 | Variable | Default for "Spawn Lobby" | Override |
 | --- | --- | --- |
@@ -45,7 +45,8 @@ result.values().get("rconPassword");  // plus rconPort, serverPort, serverIp, mc
 | `serverPort` | `25565` | `withServerPort` |
 | `rconPort` | `25575` | `withRconPort` |
 | `rconPassword` | 24 random hex characters | `withRconPassword` |
-| `levelType` | `minecraft:flat` | `withLevelType` |
+| `levelType` | `minecraft:flat` (also sets `generator-settings` layers) | `withLevelType` |
+| `acceptEula` | `false`: writes `eula=false`. Set it only when the user has accepted the [Minecraft EULA](https://aka.ms/MinecraftEULA) | `withAcceptEula(boolean)` |
 
 Invalid values throw `IllegalArgumentException` when the variables are built. Pinned versions (`javaVersion`, `mcVersion`, `paperVersion`, `mockbukkitVersion`, `junitVersion`, `assertjVersion`, `runPaperVersion`, `foojayVersion`) come from the repo's version catalog at build time and are also available as placeholders.
 

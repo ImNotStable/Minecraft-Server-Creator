@@ -1,3 +1,3 @@
-# Written by Minecraft Server Creator for a local development server.
-# By running this server you agree to the Minecraft EULA: https://aka.ms/MinecraftEULA
-eula=true
+# Minecraft EULA: https://aka.ms/MinecraftEULA
+# The server only starts once this says eula=true. Only the server's owner may accept it.
+eula={{eula}}

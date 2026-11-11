@@ -25,6 +25,8 @@ import java.util.regex.Pattern;
  * @param rconPort     RCON port
  * @param rconPassword RCON password, random by default
  * @param levelType    world type, {@code minecraft:flat} by default
+ * @param acceptEula   whether the user has accepted the Minecraft EULA; {@code false} by default.
+ *                     Only set it when the user said so: it writes {@code eula=true}.
  */
 public record TemplateVariables(
         String name,
@@ -38,14 +40,18 @@ public record TemplateVariables(
         int serverPort,
         int rconPort,
         String rconPassword,
-        String levelType) {
+        String levelType,
+        boolean acceptEula) {
 
     private static final Pattern NAME = Pattern.compile("[A-Z][A-Za-z0-9]*");
     private static final Pattern PROJECT_ID = Pattern.compile("[a-z][a-z0-9]*(-[a-z0-9]+)*");
     private static final Pattern PACKAGE = Pattern.compile("[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*");
     private static final Pattern CLASS = Pattern.compile("[A-Z][A-Za-z0-9]*");
-    private static final Pattern WORD = Pattern.compile("[A-Z]+(?![a-z])|[A-Z]?[a-z]+|[0-9]+");
+    private static final Pattern WORD = Pattern.compile("[A-Z]?[a-z0-9]+|[A-Z]+(?![a-z0-9])");
     private static final Pattern VERSION = Pattern.compile("[A-Za-z0-9][A-Za-z0-9._+-]*");
+    private static final String FLAT_LAYERS = "{\"biome\":\"minecraft:plains\",\"layers\":["
+            + "{\"block\":\"minecraft:bedrock\",\"height\":1},{\"block\":\"minecraft:dirt\",\"height\":2},"
+            + "{\"block\":\"minecraft:grass_block\",\"height\":1}]}";
     private static final SecureRandom RANDOM = new SecureRandom();
 
     public TemplateVariables {
@@ -96,7 +102,8 @@ public record TemplateVariables(
                 25565,
                 25575,
                 randomPassword(),
-                "minecraft:flat");
+                "minecraft:flat",
+                false);
     }
 
     private static List<String> words(String projectName) {
@@ -114,18 +121,20 @@ public record TemplateVariables(
         return HexFormat.of().formatHex(bytes);
     }
 
-    public TemplateVariables withName(String v) { return new TemplateVariables(v, projectId, packageName, mainClass, version, description, author, serverIp, serverPort, rconPort, rconPassword, levelType); }
-    public TemplateVariables withProjectId(String v) { return new TemplateVariables(name, v, packageName, mainClass, version, description, author, serverIp, serverPort, rconPort, rconPassword, levelType); }
-    public TemplateVariables withPackageName(String v) { return new TemplateVariables(name, projectId, v, mainClass, version, description, author, serverIp, serverPort, rconPort, rconPassword, levelType); }
-    public TemplateVariables withMainClass(String v) { return new TemplateVariables(name, projectId, packageName, v, version, description, author, serverIp, serverPort, rconPort, rconPassword, levelType); }
-    public TemplateVariables withVersion(String v) { return new TemplateVariables(name, projectId, packageName, mainClass, v, description, author, serverIp, serverPort, rconPort, rconPassword, levelType); }
-    public TemplateVariables withDescription(String v) { return new TemplateVariables(name, projectId, packageName, mainClass, version, v, author, serverIp, serverPort, rconPort, rconPassword, levelType); }
-    public TemplateVariables withAuthor(String v) { return new TemplateVariables(name, projectId, packageName, mainClass, version, description, v, serverIp, serverPort, rconPort, rconPassword, levelType); }
-    public TemplateVariables withServerIp(String v) { return new TemplateVariables(name, projectId, packageName, mainClass, version, description, author, v, serverPort, rconPort, rconPassword, levelType); }
-    public TemplateVariables withServerPort(int v) { return new TemplateVariables(name, projectId, packageName, mainClass, version, description, author, serverIp, v, rconPort, rconPassword, levelType); }
-    public TemplateVariables withRconPort(int v) { return new TemplateVariables(name, projectId, packageName, mainClass, version, description, author, serverIp, serverPort, v, rconPassword, levelType); }
-    public TemplateVariables withRconPassword(String v) { return new TemplateVariables(name, projectId, packageName, mainClass, version, description, author, serverIp, serverPort, rconPort, v, levelType); }
-    public TemplateVariables withLevelType(String v) { return new TemplateVariables(name, projectId, packageName, mainClass, version, description, author, serverIp, serverPort, rconPort, rconPassword, v); }
+    public TemplateVariables withName(String v) { return new TemplateVariables(v, projectId, packageName, mainClass, version, description, author, serverIp, serverPort, rconPort, rconPassword, levelType, acceptEula); }
+    public TemplateVariables withProjectId(String v) { return new TemplateVariables(name, v, packageName, mainClass, version, description, author, serverIp, serverPort, rconPort, rconPassword, levelType, acceptEula); }
+    public TemplateVariables withPackageName(String v) { return new TemplateVariables(name, projectId, v, mainClass, version, description, author, serverIp, serverPort, rconPort, rconPassword, levelType, acceptEula); }
+    public TemplateVariables withMainClass(String v) { return new TemplateVariables(name, projectId, packageName, v, version, description, author, serverIp, serverPort, rconPort, rconPassword, levelType, acceptEula); }
+    public TemplateVariables withVersion(String v) { return new TemplateVariables(name, projectId, packageName, mainClass, v, description, author, serverIp, serverPort, rconPort, rconPassword, levelType, acceptEula); }
+    public TemplateVariables withDescription(String v) { return new TemplateVariables(name, projectId, packageName, mainClass, version, v, author, serverIp, serverPort, rconPort, rconPassword, levelType, acceptEula); }
+    public TemplateVariables withAuthor(String v) { return new TemplateVariables(name, projectId, packageName, mainClass, version, description, v, serverIp, serverPort, rconPort, rconPassword, levelType, acceptEula); }
+    public TemplateVariables withServerIp(String v) { return new TemplateVariables(name, projectId, packageName, mainClass, version, description, author, v, serverPort, rconPort, rconPassword, levelType, acceptEula); }
+    public TemplateVariables withServerPort(int v) { return new TemplateVariables(name, projectId, packageName, mainClass, version, description, author, serverIp, v, rconPort, rconPassword, levelType, acceptEula); }
+    public TemplateVariables withRconPort(int v) { return new TemplateVariables(name, projectId, packageName, mainClass, version, description, author, serverIp, serverPort, v, rconPassword, levelType, acceptEula); }
+    public TemplateVariables withRconPassword(String v) { return new TemplateVariables(name, projectId, packageName, mainClass, version, description, author, serverIp, serverPort, rconPort, v, levelType, acceptEula); }
+    public TemplateVariables withLevelType(String v) { return new TemplateVariables(name, projectId, packageName, mainClass, version, description, author, serverIp, serverPort, rconPort, rconPassword, v, acceptEula); }
+
+    public TemplateVariables withAcceptEula(boolean v) { return new TemplateVariables(name, projectId, packageName, mainClass, version, description, author, serverIp, serverPort, rconPort, rconPassword, levelType, v); }
 
     /** Placeholder values, including {@code packagePath} derived from the package. */
     Map<String, String> asMap() {
@@ -143,6 +152,9 @@ public record TemplateVariables(
         m.put("rconPort", Integer.toString(rconPort));
         m.put("rconPassword", rconPassword);
         m.put("levelType", levelType);
+        // A flat world needs explicit layers: an empty {} logs "No key layers" on world creation.
+        m.put("generatorSettings", levelType.equals("minecraft:flat") || levelType.equals("flat") ? FLAT_LAYERS : "{}");
+        m.put("eula", Boolean.toString(acceptEula));
         return m;
     }
 
