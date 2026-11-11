@@ -24,7 +24,7 @@ import org.junit.jupiter.api.io.TempDir;
 class McpBridgeTest {
     @Test
     void listsAndCallsToolsOverStdio(@TempDir Path workspace) throws Exception {
-        try (CoreHarness h = new CoreHarness(workspace);
+        try (CoreHarness h = new CoreHarness(workspace).withAgent();
              PipedOutputStream toServer = new PipedOutputStream();
              PipedInputStream serverIn = new PipedInputStream(toServer, 1 << 16);
              PipedOutputStream serverOut = new PipedOutputStream();
@@ -51,14 +51,14 @@ class McpBridgeTest {
                         "texture_create", "texture_generate", "texture_recolor", "texture_animate", "model_create", "texture_view",
                         "pack_check", "pack_build");
                 // The tool list is paid for in every conversation: keep it small.
-                assertThat(listed.toString().length()).isLessThan(14100);
+                assertThat(listed.toString().length()).isLessThan(14200);
                 JsonObject fill = tools.get(names.indexOf("build_fill")).getAsJsonObject().getAsJsonObject("inputSchema");
                 assertThat(fill.getAsJsonArray("required").toString()).isEqualTo("[\"region\",\"block\"]");
 
                 send(toServer, "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"msc_status\",\"arguments\":{}}}");
                 JsonObject status = read(reader, 3).getAsJsonObject("result");
                 assertThat(status.getAsJsonArray("content").get(0).getAsJsonObject().get("text").getAsString())
-                        .startsWith("msc-core ").contains("agent: not connected");
+                        .startsWith("msc-core ").contains("agent: paper fake");
                 assertThat(status.get("isError").getAsBoolean()).isFalse();
 
                 send(toServer, "{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"tools/call\",\"params\":{\"name\":\"build_undo\",\"arguments\":{}}}");
@@ -66,6 +66,16 @@ class McpBridgeTest {
                 assertThat(failed.get("isError").getAsBoolean()).isTrue();
                 assertThat(failed.getAsJsonArray("content").get(0).getAsJsonObject().get("text").getAsString())
                         .isEqualTo("error: nothing to undo");
+
+                send(toServer, "{\"jsonrpc\":\"2.0\",\"id\":5,\"method\":\"tools/call\",\"params\":{\"name\":\"world_render\","
+                        + "\"arguments\":{\"region\":\"0,60,0 3,63,3\",\"view\":\"top\",\"size\":64}}}");
+                JsonArray rendered = read(reader, 5).getAsJsonObject("result").getAsJsonArray("content");
+                JsonObject image = rendered.get(0).getAsJsonObject();
+                assertThat(image.get("type").getAsString()).isEqualTo("image");
+                assertThat(image.get("mimeType").getAsString()).isEqualTo("image/png");
+                byte[] png = java.util.Base64.getDecoder().decode(image.get("data").getAsString());
+                assertThat(javax.imageio.ImageIO.read(new java.io.ByteArrayInputStream(png))).isNotNull();
+                assertThat(rendered.get(1).getAsJsonObject().get("text").getAsString()).startsWith("Top view");
             } finally {
                 server.close();
             }

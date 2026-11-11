@@ -3,7 +3,7 @@
 The MCP server the AI talks to. It runs servers, condenses their output, answers API questions, and drives building, world views and textures through the agents.
 
 **Phase:** MVP  
-**Status:** MVP implemented (0.1): 30 MCP tools, tested against a fake agent and run end to end against Paper 26.3 with msc-agent-paper (2026-11-11).
+**Status:** MVP implemented (0.1): 30 MCP tools, tested against a fake agent and run end to end against Paper 26.3 with msc-agent-paper and against a Minestom server (2026-11-11). Lifecycle tools cover Paper, Fabric and Minestom (ADR 0011); a Fabric server start is not yet run.
 
 ## Scope
 
@@ -24,7 +24,7 @@ The MCP server the AI talks to. It runs servers, condenses their output, answers
 
 - `tool/`: tool registry, argument parsing, result budgets. `mcp/McpBridge` is the only class that uses the MCP SDK.
 - `agent/AgentHub`: the core's end of `msc-protocol`.
-- `server/`: server process, Paper download, build runner, log condensing.
+- `server/`: server process, platforms (Paper, Fabric, Minestom), Paper and Fabric downloads, build runner, log condensing.
 - `api/`: API index read from class files.
 - `world/`: text structure format, views, edits with undo, schematics.
 - `texture/`: palette-grid textures and the resource pack.

@@ -22,7 +22,8 @@ import java.util.concurrent.locks.ReentrantLock;
 public final class AgentHub implements AutoCloseable {
     /** How long a world tool waits for an agent that is not connected yet. */
     public static final Duration CONNECT_WAIT = Duration.ofSeconds(30);
-    public static final Duration CALL_TIMEOUT = Duration.ofSeconds(60);
+    /** Longer than the agents' own 2 minute limit per operation, so the agent's answer (or its timeout error) wins. */
+    public static final Duration CALL_TIMEOUT = Duration.ofSeconds(130);
 
     private final ReentrantLock lock = new ReentrantLock();
     private final Condition changed = lock.newCondition();
@@ -131,7 +132,7 @@ public final class AgentHub implements AutoCloseable {
             while (session == null || !session.connection().isOpen()) {
                 if (nanos <= 0) {
                     throw new ToolException("no server agent connected. Start the server with server_start "
-                            + "(the msc agent plugin must be in its plugins folder).");
+                            + "(server_setup installs the msc agent; a Minestom project has it built in).");
                 }
                 nanos = changed.awaitNanos(nanos);
             }
@@ -153,10 +154,18 @@ public final class AgentHub implements AutoCloseable {
             if (e.getCause() instanceof OpException op2) {
                 throw op2;
             }
+            if (e.getCause() instanceof TimeoutException) {
+                throw timedOut(op.name());
+            }
             throw new ToolException("agent call " + op.name() + " failed: " + e.getCause());
         } catch (TimeoutException e) {
-            throw new ToolException("agent call " + op.name() + " timed out");
+            throw timedOut(op.name());
         }
+    }
+
+    private static ToolException timedOut(String op) {
+        return new ToolException("the server did not answer " + op + " within " + CALL_TIMEOUT.toSeconds()
+                + "s. Try a smaller region, or check server_logs: the server may be overloaded or stopped.");
     }
 
     @Override

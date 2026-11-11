@@ -11,9 +11,11 @@ Phase: MVP. Steps are in order; each ends with passing tests.
 - [x] Token and timing logging feeding `msc-bench`.
 - [x] Texture tools on `msc-textures`: `texture_generate`, `texture_recolor`, `texture_animate`, `model_create`, `pack_check` (2026-11-11).
 - [x] `world_render` on `msc-renderer`: PNG image content, stitched reads up to 16M blocks, image tokens in the tool log (2026-11-11).
+- [x] Platform-aware lifecycle tools: Fabric (launcher, Fabric API, agent in `mods/`) and Minestom (project jar is the server), ADR 0011 (2026-11-11). Minestom run end to end.
 
 ## Next
 
-- [ ] Run the full loop against a real Paper 26.3 server with `msc-agent-paper` and fix what differs (open points in ADR 0005).
+- [ ] Start a Fabric server and run `dev_cycle` on a Fabric mod on the PC (needs the accepted `eula.txt`).
+- [ ] Re-run the stitched `world_render` on Paper with the msc-protocol connection fix.
 - [ ] Vanilla `.nbt` structures; block entities in schematics.
 - [ ] Shrink tool descriptions further once the benchmark shows which ones the AI misuses.

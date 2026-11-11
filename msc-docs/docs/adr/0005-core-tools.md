@@ -39,6 +39,12 @@ Five tools from [ADR 0007](0007-textures.md) are added, making 29: `texture_gene
 
 `world_render` ([ADR 0008](0008-renderer.md)) makes 30 tools. It reads the region with `world.read`, stitching protocol-sized reads into one `BlockGrid` up to 16,000,000 blocks, and draws it with one `WorldRenderer` per core over `PackTextures(<workspace>/.msc/pack, MSC_CLIENT_JAR?)`. Results stay text-first: `Tool.Output` carries an optional PNG, only tools registered with `ToolRegistry.addImage` produce one, and `McpBridge` adds it as MCP image content before the text. Every other tool is unchanged. The PNG is also saved under `<workspace>/.msc/renders/` (the caption names the file) for clients that drop images, and the tool log gains an optional `imageTokens` field so `msc-bench` can count image cost. The tool list grew to 14,025 characters; the size limit is 14,100.
 
+## Addendum 2026-11-11: new tools on real Paper, and platforms
+
+The six newer tools were run against Paper 26.3 build 248 on Windows through MCP. `texture_generate` (all seven kinds), `texture_view`, `texture_recolor`, `texture_animate` (scroll and pulse), `model_create`, `pack_check` and `pack_build` pass. `world_render` passes for regions that fit one `world.read` in every view, with valid PNGs as MCP image content and `imageTokens` in the tool log. A stitched render (several multi-megabyte `world.read` replies in a row) hung between agent and core; the cause was in msc-protocol's connection code (unbuffered one-byte reads and a read loop that could stop draining), fixed there, and needs a re-run on Paper. On the core side the agent call timeout is now 130 s, longer than the agents' own 2 minute limit per operation, so the agent's answer or its timeout error arrives first, and a timeout says so in one line with a hint to try a smaller region.
+
+`project_scaffold` now prints only `projectId`, `packageName` and `version` instead of every template value. Fabric and Minestom support in the lifecycle tools is recorded in [ADR 0011](0011-core-platforms.md).
+
 ## Consequences
 
 - Adding a tool means one `registry.add(...)` call and a row in `tools.md`; the size test keeps the list honest.

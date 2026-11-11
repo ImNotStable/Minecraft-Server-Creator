@@ -55,18 +55,46 @@ public final class ApiIndex {
     }
 
     /**
-     * Find the Paper API (and Adventure) jars Gradle already downloaded.
+     * Find the platform's API jars that Gradle already downloaded: Paper API and Adventure for {@code paper},
+     * the Minecraft server, Fabric API and loader for {@code fabric}, Minestom and Adventure for {@code minestom}.
      *
      * @param gradleHome usually {@code ~/.gradle}
+     * @param platform   paper, fabric or minestom
      */
-    public static List<Path> findJars(Path gradleHome) throws IOException {
+    public static List<Path> findJars(Path gradleHome, String platform) throws IOException {
         Path files = gradleHome.resolve("caches").resolve("modules-2").resolve("files-2.1");
         List<Path> out = new ArrayList<>();
-        addNewest(out, files.resolve("io.papermc.paper").resolve("paper-api"));
+        switch (platform) {
+            case "fabric" -> {
+                // Loom keeps the (unobfuscated since 26.x) Minecraft jars in its own local Maven layout.
+                addNewest(out, gradleHome.resolve("caches").resolve("fabric-loom").resolve("minecraftMaven")
+                        .resolve("net").resolve("minecraft"));
+                Path api = files.resolve("net.fabricmc.fabric-api");
+                if (Files.isDirectory(api)) {
+                    try (Stream<Path> modules = Files.list(api)) {
+                        for (Path module : modules.sorted().toList()) {
+                            addNewest(out, module);
+                        }
+                    }
+                }
+                addNewest(out, files.resolve("net.fabricmc").resolve("fabric-loader"));
+            }
+            case "minestom" -> {
+                addNewest(out, files.resolve("net.minestom").resolve("minestom"));
+                addAdventure(out, files);
+            }
+            default -> {
+                addNewest(out, files.resolve("io.papermc.paper").resolve("paper-api"));
+                addAdventure(out, files);
+            }
+        }
+        return out;
+    }
+
+    private static void addAdventure(List<Path> out, Path files) throws IOException {
         for (String module : List.of("adventure-api", "adventure-key", "adventure-text-minimessage")) {
             addNewest(out, files.resolve("net.kyori").resolve(module));
         }
-        return out;
     }
 
     private static void addNewest(List<Path> out, Path moduleDir) throws IOException {

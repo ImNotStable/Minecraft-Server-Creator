@@ -177,22 +177,111 @@ class LifecycleToolsTest {
         Path agentJar = Files.writeString(workspace.resolve("agent.jar"), "agent");
         try (CoreHarness s = new CoreHarness(workspace.resolve("ws2"), c -> c.withDownloadsUrl(base))) {
             String first = s.ok("server_setup");
-            assertThat(first).contains("paper 26.3 build 5 (downloaded)").contains("warning: msc agent plugin not found");
+            assertThat(first).contains("paper 26.3 build 5 (downloaded)").contains("warning: msc paper agent not found");
             Path run = workspace.resolve("ws2/run");
             assertThat(run.resolve("paper.jar")).hasBinaryContent(jar);
             assertThat(run.resolve("eula.txt")).content().contains("eula=false");
             assertThat(first).contains("EULA is not accepted").contains("acceptEula=true");
             Files.createDirectories(workspace.resolve("ws2/.msc/agent"));
             Files.copy(agentJar, workspace.resolve("ws2/.msc/agent/msc-agent-paper-0.1.0.jar"));
-            assertThat(s.ok("server_setup")).contains("build 5 (cached)").contains("agent plugin installed");
+            assertThat(s.ok("server_setup")).contains("build 5 (cached)").contains("agent installed in plugins/");
             assertThat(run.resolve("plugins/msc-agent-paper.jar")).hasContent("agent");
             assertThat(downloads[0]).isEqualTo(1);
             assertThat(s.ok("server_setup", "acceptEula", true)).contains("eula.txt has eula=true");
             assertThat(run.resolve("eula.txt")).content().contains("eula=true").doesNotContain("eula=false");
             assertThat(s.error("server_setup", "version", "1.0")).contains("Paper has no version 1.0").doesNotContain("internal");
+            assertThat(s.ok("msc_status")).contains("platform: paper\n").contains("server: stopped");
         } finally {
             fill.stop(0);
         }
+    }
+
+    @Test
+    void fabricSetupInstallsTheLauncherFabricApiAndTheFabricAgent() throws Exception {
+        String api = io.github.imnotstable.msc.templates.Templates.versions().get("fabricApiVersion");
+        String loader = io.github.imnotstable.msc.templates.Templates.versions().get("fabricLoaderVersion");
+        String minecraft = api.substring(api.indexOf('+') + 1);
+        HttpServer fabric = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        String base = "http://127.0.0.1:" + fabric.getAddress().getPort();
+        List<String> paths = new java.util.concurrent.CopyOnWriteArrayList<>();
+        fabric.createContext("/", exchange -> {
+            String path = exchange.getRequestURI().getRawPath();
+            paths.add(path);
+            byte[] bytes;
+            if (path.equals("/meta/v2/versions/installer")) {
+                bytes = "[{\"version\":\"9.9.9\",\"stable\":false},{\"version\":\"1.1.2\",\"stable\":true}]"
+                        .getBytes(StandardCharsets.UTF_8);
+            } else if (path.equals("/meta/v2/versions/loader/" + minecraft + "/" + loader + "/1.1.2/server/jar")) {
+                bytes = "launcher".getBytes(StandardCharsets.UTF_8);
+            } else if (path.startsWith("/maven/net/fabricmc/fabric-api/fabric-api/") && path.endsWith(".jar")) {
+                bytes = "fabric api".getBytes(StandardCharsets.UTF_8);
+            } else {
+                exchange.sendResponseHeaders(404, -1);
+                exchange.close();
+                return;
+            }
+            exchange.sendResponseHeaders(200, bytes.length);
+            exchange.getResponseBody().write(bytes);
+            exchange.close();
+        });
+        fabric.start();
+        Path ws = Files.createDirectories(workspace.resolve("fab"));
+        Files.createDirectories(ws.resolve(".msc/agent"));
+        Files.writeString(ws.resolve(".msc/agent/msc-agent-paper-0.1.0.jar"), "paper agent");
+        try (CoreHarness s = new CoreHarness(ws, c -> c.withFabricUrls(base + "/meta", base + "/maven")
+                .withMinecraft(minecraft))) {
+            String first = s.ok("server_setup", "platform", "fabric");
+            assertThat(first).contains("fabric launcher for " + minecraft + ", loader " + loader + " (downloaded)")
+                    .contains("fabric api " + api + " (downloaded)").contains("warning: msc fabric agent not found")
+                    .contains("EULA is not accepted").endsWith("next: server_start or dev_cycle");
+            Path run = ws.resolve("run");
+            assertThat(run.resolve("fabric-server-launch.jar")).hasContent("launcher");
+            assertThat(run.resolve("mods/fabric-api.jar")).hasContent("fabric api");
+            assertThat(run.resolve("eula.txt")).content().contains("eula=false");
+            assertThat(run.resolve("plugins")).doesNotExist();
+            assertThat(ws.resolve(".msc/platform")).hasContent("fabric\n");
+            assertThat(s.ok("msc_status")).contains("platform: fabric\n").contains("server: stopped");
+            assertThat(s.error("server_start")).contains("Minecraft EULA is not accepted");
+
+            Files.writeString(ws.resolve(".msc/agent/msc-agent-fabric-0.1.0.jar"), "fabric agent");
+            int before = paths.size();
+            assertThat(s.ok("server_setup")).contains("(cached)").contains("agent installed in mods/");
+            assertThat(run.resolve("mods/msc-agent-fabric.jar")).hasContent("fabric agent");
+            assertThat(paths).hasSize(before);
+            assertThat(s.error("server_setup", "version", "1.0")).contains("Fabric setup supports Minecraft " + minecraft);
+            assertThat(s.error("server_setup", "platform", "forge")).contains("unknown platform forge")
+                    .contains("paper, fabric, minestom");
+        } finally {
+            fabric.stop(0);
+        }
+    }
+
+    @Test
+    void minestomNeedsNoSetupAndRunsTheProjectJarAsTheServer() throws Exception {
+        Path ws = Files.createDirectories(workspace.resolve("mini"));
+        try (CoreHarness s = new CoreHarness(ws, c -> c.withBuildCommand(java(FakeBuildMain.class)))) {
+            assertThat(s.ok("project_scaffold", "name", "Lobby", "template", "minestom-server"))
+                    .startsWith("created minestom-server project in ");
+            assertThat(ws.resolve(".msc/platform")).hasContent("minestom\n");
+            assertThat(ws.resolve("libs/msc-agent-minestom.jar")).isRegularFile();
+            assertThat(s.ok("server_setup")).startsWith("minestom needs no server download").contains("next: dev_cycle");
+            assertThat(ws.resolve("run/eula.txt")).doesNotExist();
+            assertThat(s.error("server_start")).contains("no minestom server in").contains("Run dev_cycle");
+            Files.writeString(ws.resolve("version.txt"), "3.0");
+            assertThat(s.ok("dev_cycle", "restart", false)).contains("deployed demo-1.0.jar as server.jar");
+            assertThat(ws.resolve("run/server.jar")).hasContent("3.0");
+            assertThat(s.ok("msc_status")).contains("platform: minestom\n").contains("server: stopped");
+        }
+    }
+
+    @Test
+    void devCycleDeploysAFabricModIntoMods() throws Exception {
+        Files.createDirectories(project.resolve("src/main/resources"));
+        Files.writeString(project.resolve("src/main/resources/fabric.mod.json"), "{}");
+        assertThat(h.ok("dev_cycle", "project", "demo", "restart", false)).contains("deployed demo-1.0.jar as mods/demo.jar");
+        assertThat(workspace.resolve("run/mods/demo.jar")).hasContent("1.0");
+        assertThat(workspace.resolve("run/plugins")).doesNotExist();
+        assertThat(workspace.resolve(".msc/platform")).hasContent("fabric\n");
     }
 
     @Test

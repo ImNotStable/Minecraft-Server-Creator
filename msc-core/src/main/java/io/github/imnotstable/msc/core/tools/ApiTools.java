@@ -2,6 +2,7 @@ package io.github.imnotstable.msc.core.tools;
 
 import io.github.imnotstable.msc.core.CoreConfig;
 import io.github.imnotstable.msc.core.api.ApiIndex;
+import io.github.imnotstable.msc.core.server.Platform;
 import io.github.imnotstable.msc.core.tool.Budget;
 import io.github.imnotstable.msc.core.tool.Schema;
 import io.github.imnotstable.msc.core.tool.ToolException;
@@ -23,11 +24,12 @@ public final class ApiTools {
         if (index == null) {
             List<Path> jars = config.apiJars();
             if (jars.isEmpty()) {
-                jars = ApiIndex.findJars(Path.of(System.getProperty("user.home"), ".gradle"));
-            }
-            if (jars.isEmpty()) {
-                throw new ToolException("no Paper API jar found. Build the project once (dev_cycle) so Gradle "
-                        + "downloads it, or set MSC_API_JARS.");
+                String platform = Platform.current(config).id();
+                jars = ApiIndex.findJars(Path.of(System.getProperty("user.home"), ".gradle"), platform);
+                if (jars.isEmpty()) {
+                    throw new ToolException("no " + platform + " API jar found. Build the project once (dev_cycle) so "
+                            + "Gradle downloads it, or set MSC_API_JARS.");
+                }
             }
             index = ApiIndex.load(jars);
         }
@@ -41,7 +43,7 @@ public final class ApiTools {
 
     public void register(ToolRegistry registry) {
         registry.add("api_search",
-                "Search the server API (Paper, Bukkit, Adventure) by class, method, field or enum constant name. "
+                "Search the platform API (Paper, Fabric or Minestom) by class, method, field or enum constant name. "
                         + "Returns one line per match with full signatures.",
                 Schema.of().req("query", "string", "Words that must all match, for example \"player teleport\"")
                         .opt("kind", "string", "Only classes of this kind: class, interface, enum, record, annotation or event")

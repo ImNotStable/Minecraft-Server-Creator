@@ -3,7 +3,9 @@ package io.github.imnotstable.msc.core.tools;
 import io.github.imnotstable.msc.core.CoreConfig;
 import io.github.imnotstable.msc.core.agent.AgentHub;
 import io.github.imnotstable.msc.core.server.LogCondenser;
+import io.github.imnotstable.msc.core.server.FabricDownloader;
 import io.github.imnotstable.msc.core.server.PaperDownloader;
+import io.github.imnotstable.msc.core.server.Platform;
 import io.github.imnotstable.msc.core.server.ProjectBuilder;
 import io.github.imnotstable.msc.core.server.ServerManager;
 import io.github.imnotstable.msc.core.tool.Args;
@@ -23,6 +25,7 @@ import java.nio.file.StandardCopyOption;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 import java.util.stream.Stream;
@@ -36,10 +39,12 @@ public final class LifecycleTools {
     private final ServerManager server;
     private final ProjectBuilder builder;
     private final PaperDownloader downloader;
+    private final FabricDownloader fabric;
     private volatile long startMark;
 
     private LifecycleTools(CoreConfig config, AgentHub hub, ServerManager server, ProjectBuilder builder,
-                           PaperDownloader downloader) {
+                           PaperDownloader downloader, FabricDownloader fabric) {
+        this.fabric = fabric;
         this.config = config;
         this.hub = hub;
         this.server = server;
@@ -48,18 +53,19 @@ public final class LifecycleTools {
     }
 
     public static void register(ToolRegistry registry, CoreConfig config, AgentHub hub, ServerManager server,
-                                ProjectBuilder builder, PaperDownloader downloader) {
-        LifecycleTools t = new LifecycleTools(config, hub, server, builder, downloader);
+                                ProjectBuilder builder, PaperDownloader downloader, FabricDownloader fabric) {
+        LifecycleTools t = new LifecycleTools(config, hub, server, builder, downloader, fabric);
         registry.add("project_scaffold",
-                "Create a new plugin project from a template (Gradle KTS, tests wired in). Target directory must be empty.",
-                Schema.of().req("name", "string", "Plugin name, for example MyPlugin")
+                "Create a new project from a template (Gradle KTS, tests wired in). Target directory must be empty.",
+                Schema.of().req("name", "string", "Project name, for example MyPlugin")
                         .opt("dir", "string", "Target directory, relative to the workspace. Default: the workspace itself")
-                        .opt("template", "string", "Template id. Default paper-plugin")
+                        .opt("template", "string", "paper-plugin (default), fabric-mod or minestom-server")
                         .opt("acceptEula", "boolean", EULA_ARG),
                 t::scaffold);
         registry.add("server_setup",
-                "Prepare the dev server: download the Paper jar, write dev defaults, install the msc agent plugin.",
+                "Prepare the dev server: download Paper or the Fabric launcher, write dev defaults, install the msc agent.",
                 Schema.of().opt("version", "string", "Minecraft version. Default " + config.minecraft())
+                        .opt("platform", "string", "paper, fabric or minestom. Default: the project's")
                         .opt("acceptEula", "boolean", EULA_ARG),
                 t::setup);
         registry.add("server_start", "Start the dev server and wait until it is ready. Returns startup errors only.",
@@ -67,7 +73,7 @@ public final class LifecycleTools {
         registry.add("server_stop", "Stop the dev server.", Schema.of(), args ->
                 server.stop(Duration.ofSeconds(30)) ? "server stopped" : "server was not running");
         registry.add("dev_cycle",
-                "Build the plugin, deploy the jar, restart the server and report: one call for the whole edit-test loop. "
+                "Build the project, deploy its jar, restart the server and report: one call for the whole edit-test loop. "
                         + "Returns compile or test failures, or runtime errors from startup.",
                 Schema.of().opt("project", "string", "Project directory, relative to the workspace. Default: the workspace")
                         .opt("restart", "boolean", "Restart the server after deploying. Default true")
@@ -101,14 +107,20 @@ public final class LifecycleTools {
         } catch (IllegalArgumentException | IllegalStateException e) {
             throw new ToolException(String.valueOf(e.getMessage()));
         }
+        String platformId = Templates.info(template).get("platform");
+        if (platformId != null && !template.equals(Templates.PAPER_SERVER)
+                && (dir.equals(config.workspace()) || !Files.exists(Platform.file(config)))) {
+            Platform.remember(config, Platform.of(platformId));
+        }
         StringBuilder out = new StringBuilder();
         out.append("created ").append(template).append(" project in ").append(dir).append(" (")
                 .append(result.files().size()).append(" files)");
-        result.values().forEach((k, v) -> {
-            if (!k.toLowerCase().contains("password") && !k.equals("eula")) {
-                out.append('\n').append(k).append(": ").append(v);
+        // Only what the AI needs to find its way around; the template's pinned versions are in its build files.
+        for (String key : List.of("projectId", "packageName", "version")) {
+            if (result.values().containsKey(key)) {
+                out.append('\n').append(key).append(": ").append(result.values().get(key));
             }
-        });
+        }
         out.append("\nnext: edit the code, then dev_cycle");
         return out.toString();
     }
@@ -145,7 +157,17 @@ public final class LifecycleTools {
         }
         String version = args.str("version", config.minecraft());
         boolean acceptEula = args.bool("acceptEula", false);
+        Platform platform = server.platform();
+        if (args.str("platform", null) != null) {
+            platform = Platform.of(args.str("platform"));
+            Platform.remember(config, platform);
+        }
         Path dir = config.serverDir();
+        if (platform == Platform.MINESTOM) {
+            Files.createDirectories(dir);
+            return "minestom needs no server download and has no EULA step: the project's own jar is the server and "
+                    + "the msc agent is built into it. Server directory: " + dir + "; next: dev_cycle";
+        }
         StringBuilder out = new StringBuilder();
         boolean empty = !Files.exists(dir);
         if (!empty) {
@@ -154,22 +176,28 @@ public final class LifecycleTools {
             }
         }
         if (empty && Templates.ids().contains(Templates.PAPER_SERVER)) {
+            // paper-server holds plain vanilla server config (server.properties, eula.txt), so Fabric uses it too.
             ScaffoldResult defaults = Templates.scaffold(Templates.PAPER_SERVER, dir,
                     TemplateVariables.of("server").withAcceptEula(acceptEula));
             out.append("wrote ").append(defaults.files().size()).append(" default config files\n");
         }
-        Files.createDirectories(dir.resolve("plugins"));
-        PaperDownloader.Download d = downloader.download(version);
-        Files.copy(d.jar(), dir.resolve("paper.jar"), StandardCopyOption.REPLACE_EXISTING);
-        out.append("paper ").append(d.version()).append(" build ").append(d.build())
-                .append(d.cached() ? " (cached)" : " (downloaded)").append('\n');
-        Path agent = findAgentJar();
-        if (agent != null) {
-            Files.copy(agent, dir.resolve("plugins").resolve("msc-agent-paper.jar"), StandardCopyOption.REPLACE_EXISTING);
-            out.append("agent plugin installed\n");
+        Path addons = Files.createDirectories(dir.resolve(platform.addonDir()));
+        if (platform == Platform.FABRIC) {
+            setupFabric(version, dir, addons, out);
         } else {
-            out.append("warning: msc agent plugin not found, so world and build tools will not work. Put its jar in ")
-                    .append(config.dataDir().resolve("agent")).append(" or set MSC_AGENT_JAR, then run server_setup again\n");
+            PaperDownloader.Download d = downloader.download(version);
+            Files.copy(d.jar(), dir.resolve(platform.serverJar()), StandardCopyOption.REPLACE_EXISTING);
+            out.append("paper ").append(d.version()).append(" build ").append(d.build())
+                    .append(d.cached() ? " (cached)" : " (downloaded)").append('\n');
+        }
+        Path agent = findAgentJar(platform);
+        if (agent != null) {
+            Files.copy(agent, addons.resolve("msc-agent-" + platform.id() + ".jar"), StandardCopyOption.REPLACE_EXISTING);
+            out.append("agent installed in ").append(platform.addonDir()).append("/\n");
+        } else {
+            out.append("warning: msc ").append(platform.id()).append(" agent not found, so world and build tools will "
+                    + "not work. Put its jar in ").append(config.dataDir().resolve("agent"))
+                    .append(" or set MSC_AGENT_JAR, then run server_setup again\n");
         }
         Path eula = dir.resolve("eula.txt");
         if (acceptEula && Files.exists(eula) && !ServerManager.eulaAccepted(eula)) {
@@ -182,11 +210,34 @@ public final class LifecycleTools {
         } else {
             out.append("note: eula.txt has eula=true; running the server means the user agrees to https://aka.ms/MinecraftEULA\n");
         }
-        out.append("server ready in ").append(dir).append("; next: server_start or dev_cycle");
+        out.append(platform.id()).append(" server ready in ").append(dir).append("; next: server_start or dev_cycle");
         return out.toString();
     }
 
-    private Path findAgentJar() throws IOException {
+    /** Fabric: the server launcher plus the Fabric API mod, at the versions the fabric-mod template pins. */
+    private void setupFabric(String version, Path dir, Path mods, StringBuilder out) throws IOException, InterruptedException {
+        Map<String, String> pinned = Templates.versions();
+        String loader = pinned.get("fabricLoaderVersion");
+        String api = pinned.get("fabricApiVersion");
+        if (loader == null || api == null) {
+            throw new ToolException("this build of msc-core has no Fabric versions pinned");
+        }
+        if (!api.endsWith("+" + version)) {
+            throw new ToolException("Fabric setup supports Minecraft " + api.substring(api.indexOf('+') + 1)
+                    + " (the pinned Fabric API is " + api + "), not " + version);
+        }
+        FabricDownloader.Download launcher = fabric.launcher(version, loader);
+        Files.copy(launcher.jar(), dir.resolve(Platform.FABRIC.serverJar()), StandardCopyOption.REPLACE_EXISTING);
+        out.append("fabric launcher for ").append(version).append(", loader ").append(loader)
+                .append(launcher.cached() ? " (cached)" : " (downloaded)")
+                .append("; it downloads the Minecraft server on first start\n");
+        FabricDownloader.Download apiJar = fabric.api(api);
+        Files.copy(apiJar.jar(), mods.resolve("fabric-api.jar"), StandardCopyOption.REPLACE_EXISTING);
+        out.append("fabric api ").append(api).append(apiJar.cached() ? " (cached)" : " (downloaded)").append('\n');
+    }
+
+    /** The agent jar for a platform: the configured one, else the best match in {@code .msc/agent}. */
+    private Path findAgentJar(Platform platform) throws IOException {
         if (config.agentJar() != null) {
             return Files.exists(config.agentJar()) ? config.agentJar() : null;
         }
@@ -195,7 +246,15 @@ public final class LifecycleTools {
             return null;
         }
         try (Stream<Path> list = Files.list(dir)) {
-            return list.filter(p -> p.getFileName().toString().endsWith(".jar")).findFirst().orElse(null);
+            List<Path> jars = list.filter(p -> p.getFileName().toString().endsWith(".jar")).sorted().toList();
+            for (Path jar : jars) {
+                if (jar.getFileName().toString().contains(platform.id())) {
+                    return jar;
+                }
+            }
+            // A jar named for another platform would not load; an unmarked one is taken on trust.
+            return jars.stream().filter(jar -> java.util.Arrays.stream(Platform.values())
+                    .noneMatch(other -> jar.getFileName().toString().contains(other.id()))).findFirst().orElse(null);
         }
     }
 
@@ -245,17 +304,32 @@ public final class LifecycleTools {
         if (wasRunning && restart) {
             server.stop(Duration.ofSeconds(30));
         }
-        Path plugins = config.serverDir().resolve("plugins");
-        Files.createDirectories(plugins);
-        String name = project.getFileName() == null ? "plugin" : project.getFileName().toString();
-        Path target = plugins.resolve(name + ".jar");
+        Platform platform = Platform.detect(project);
+        if (platform == null) {
+            platform = server.platform();
+        } else if (!Files.exists(Platform.file(config))) {
+            Platform.remember(config, platform);
+        }
+        Path target;
+        String shown;
+        if (platform.addonDir() == null) {
+            // Minestom: the project jar is the server itself.
+            Files.createDirectories(config.serverDir());
+            target = config.serverDir().resolve(platform.serverJar());
+            shown = platform.serverJar();
+        } else {
+            Path addons = Files.createDirectories(config.serverDir().resolve(platform.addonDir()));
+            String name = project.getFileName() == null ? "project" : project.getFileName().toString();
+            target = addons.resolve(name + ".jar");
+            shown = platform.addonDir() + "/" + target.getFileName();
+        }
         try {
             Files.copy(build.jar(), target, StandardCopyOption.REPLACE_EXISTING);
         } catch (IOException e) {
             throw new ToolException("cannot replace " + target + " (" + e.getMessage()
                     + "). The server holds the jar open; call dev_cycle with restart=true.");
         }
-        out.append(", deployed ").append(build.jar().getFileName()).append(" as plugins/").append(target.getFileName());
+        out.append(", deployed ").append(build.jar().getFileName()).append(" as ").append(shown);
         if (!restart) {
             return out.append(wasRunning ? "; server still running the old jar until restarted" : "").toString();
         }

@@ -22,15 +22,15 @@ The AI talks to `msc-core` over MCP (stdio). This page lists every tool, its arg
 
 | Tool | Arguments | Result | Budget |
 | --- | --- | --- | --- |
-| `msc_status` | none | Core version, workspace, server state, agent, API index | 5 lines |
+| `msc_status` | none | Core version, workspace, platform, server state, agent, API index | 6 lines |
 | `msc_stats` | none | Calls, errors, milliseconds and result tokens per tool this session | 1 line per tool used |
 
 ## Project and server lifecycle
 
 | Tool | Arguments | Result | Budget |
 | --- | --- | --- | --- |
-| `project_scaffold` | `name`, `dir`?, `template`? (default `paper-plugin`), `acceptEula`? (false) | Where the project was created and its template values (no passwords) | about 15 lines |
-| `server_setup` | `version`? (default 26.3), `acceptEula`? (false) | Paper build used, whether dev defaults and the agent plugin were installed, whether `eula.txt` says `eula=true` | 4 lines |
+| `project_scaffold` | `name`, `dir`?, `template`? (`paper-plugin` default, `fabric-mod`, `minestom-server`), `acceptEula`? (false) | Where the project was created, its `projectId`, `packageName` and `version`. Remembers the template's platform for the workspace | 5 lines |
+| `server_setup` | `version`? (default 26.3), `platform`? (`paper`, `fabric`, `minestom`; default the project's), `acceptEula`? (false) | Paper: build used. Fabric: launcher and Fabric API versions. Both: whether dev defaults and the agent were installed and whether `eula.txt` says `eula=true`. Minestom: one line saying nothing is needed | 5 lines |
 | `server_start` | `timeoutSeconds`? (180) | `server ready in 8.2s, agent connected` plus startup warnings and errors only. Fails at once with a one-line error if `eula.txt` lacks `eula=true` | 6,000 chars |
 | `server_stop` | none | One line | 1 line |
 | `dev_cycle` | `project`? (workspace), `restart`? (true), `maxChars`? | Build, deploy, restart, report in one call. On a failed build: compiler and test errors only. Otherwise: startup warnings and errors, or `no errors or warnings` | `maxChars` |
@@ -39,9 +39,19 @@ The AI talks to `msc-core` over MCP (stdio). This page lists every tool, its arg
 
 How logs are condensed: only WARN and ERROR entries and anything with a stack trace are kept. In a trace, the exception lines, the first frame and all frames outside framework packages (`java.`, `net.minecraft.`, `org.bukkit.`, `io.papermc.` and similar) are kept; runs of framework frames become `... N framework frames`. Identical entries are shown once with a count. By default `server_logs` looks only at lines since the last start.
 
+### Platforms
+
+The workspace has one platform: `paper` (default), `fabric` or `minestom`. `project_scaffold` remembers the template's platform in `<workspace>/.msc/platform`, `server_setup platform=...` sets it, and without either the core looks at the project files (`fabric.mod.json`, a Minestom dependency in the build files).
+
+| Platform | `server_setup` installs | Server starts as | `dev_cycle` deploys to | EULA step |
+|---|---|---|---|---|
+| `paper` | `paper.jar`, agent in `plugins/` | `java -Xmx2G -jar paper.jar --nogui` | `plugins/<project>.jar` | yes |
+| `fabric` | `fabric-server-launch.jar` (fetches the Minecraft server on first start), `mods/fabric-api.jar`, agent in `mods/` | `java -Xmx2G -jar fabric-server-launch.jar nogui` | `mods/<project>.jar` | yes |
+| `minestom` | nothing (the agent is built into the project) | `java -Xmx1G -jar server.jar` | `server.jar` in the server directory | no |
+
 ## API index
 
-Built on first use from the Paper API and Adventure jars in the Gradle cache (or `MSC_API_JARS`), by reading class files directly. No network, no Javadoc. Parameter names appear only when the jar records them; the published paper-api jar does not, so signatures show types only.
+Built on first use from the platform's jars in the Gradle cache (or `MSC_API_JARS`), by reading class files directly: Paper API and Adventure for Paper, the Minecraft server jar from Loom's cache plus Fabric API and loader for Fabric, Minestom and Adventure for Minestom. No network, no Javadoc. Parameter names appear only when the jar records them; the published paper-api jar does not, so signatures show types only.
 
 | Tool | Arguments | Result | Budget |
 | --- | --- | --- | --- |
@@ -121,12 +131,13 @@ One JSON line per call, appended to `MSC_TOOL_LOG` (default `<workspace>/.msc/to
 | `MSC_SERVER_DIR` | Dev server directory | `<workspace>/run` |
 | `MSC_CORE_ADDRESS`, `MSC_TOKEN` | Where agents connect and the shared token. Set both to attach a server that is already running | free port, random token |
 | `MSC_TOOL_LOG` | Tool log file | `<workspace>/.msc/tool-calls.jsonl` |
-| `MSC_AGENT_JAR` | Agent plugin to install into the server | first jar in `<workspace>/.msc/agent` |
-| `MSC_API_JARS` | Jars to index, separated by the path separator | Paper API and Adventure from `~/.gradle` |
+| `MSC_AGENT_JAR` | Agent plugin or mod to install into the server | the jar in `<workspace>/.msc/agent` named for the platform (`...paper...`, `...fabric...`), else one with no platform in its name |
+| `MSC_API_JARS` | Jars to index, separated by the path separator | the platform's jars from `~/.gradle` |
 | `MSC_MINECRAFT` | Default Minecraft version | 26.3 |
 | `MSC_CLIENT_JAR` | A Minecraft client jar whose textures `world_render` uses after the project's pack | none (colour table) |
 | `MSC_JAVA` | Java used to run the server | the Java running the core |
 | `MSC_DOWNLOADS_URL` | Paper downloads service | `https://fill.papermc.io` |
+| `MSC_FABRIC_META_URL`, `MSC_FABRIC_MAVEN_URL` | Fabric's meta service (server launcher) and Maven repository (Fabric API) | `https://meta.fabricmc.net`, `https://maven.fabricmc.net` |
 | `MSC_PACK_HOST`, `MSC_PACK_FORMAT` | Resource pack server address and pack format number | `127.0.0.1`, 97 (26.3) |
 
 ## Not in 0.1

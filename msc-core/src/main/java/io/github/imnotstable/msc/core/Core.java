@@ -2,6 +2,7 @@ package io.github.imnotstable.msc.core;
 
 import io.github.imnotstable.msc.core.agent.AgentHub;
 import io.github.imnotstable.msc.core.metrics.ToolLog;
+import io.github.imnotstable.msc.core.server.FabricDownloader;
 import io.github.imnotstable.msc.core.server.PaperDownloader;
 import io.github.imnotstable.msc.core.server.ProjectBuilder;
 import io.github.imnotstable.msc.core.server.ServerManager;
@@ -38,7 +39,8 @@ public final class Core implements AutoCloseable {
         ApiTools api = new ApiTools(config);
         MetaTools.register(registry, config, hub, server, log, api);
         LifecycleTools.register(registry, config, hub, server, new ProjectBuilder(config),
-                new PaperDownloader(config.downloadsUrl(), config.dataDir().resolve("cache")));
+                new PaperDownloader(config.downloadsUrl(), config.dataDir().resolve("cache")),
+                new FabricDownloader(config.fabricMetaUrl(), config.fabricMavenUrl(), config.dataDir().resolve("cache")));
         api.register(registry);
         WorldTools.register(registry, config, world);
         TextureTools.register(registry, hub, pack);

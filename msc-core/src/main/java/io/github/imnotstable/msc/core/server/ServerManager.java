@@ -48,9 +48,14 @@ public final class ServerManager implements AutoCloseable {
         return process != null && process.isAlive();
     }
 
-    /** The jar {@code server_setup} put in place, or null. */
+    /** The platform this workspace targets. */
+    public Platform platform() {
+        return Platform.current(config);
+    }
+
+    /** The jar the server starts from ({@code server_setup} or, for Minestom, {@code dev_cycle} put it there), or null. */
     public Path serverJar() {
-        Path jar = config.serverDir().resolve("paper.jar");
+        Path jar = config.serverDir().resolve(platform().serverJar());
         return Files.exists(jar) ? jar : null;
     }
 
@@ -58,16 +63,21 @@ public final class ServerManager implements AutoCloseable {
         if (config.serverCommand() != null) {
             return config.serverCommand();
         }
+        Platform platform = platform();
         if (serverJar() == null) {
-            throw new ToolException("no server in " + config.serverDir() + ". Run server_setup first.");
+            throw new ToolException("no " + platform.id() + " server in " + config.serverDir() + ". "
+                    + (platform == Platform.MINESTOM ? "Run dev_cycle to build the project and put its jar there."
+                    : "Run server_setup first."));
         }
-        // The EULA is the user's to accept: eula.txt in the server directory decides, never a flag set here.
-        Path eula = config.serverDir().resolve("eula.txt");
-        if (!eulaAccepted(eula)) {
-            throw new ToolException("the Minecraft EULA is not accepted (no eula=true in " + eula + "): once the user "
-                    + "agrees to https://aka.ms/MinecraftEULA, run server_setup with acceptEula=true");
+        if (platform.needsEula()) {
+            // The EULA is the user's to accept: eula.txt in the server directory decides, never a flag set here.
+            Path eula = config.serverDir().resolve("eula.txt");
+            if (!eulaAccepted(eula)) {
+                throw new ToolException("the Minecraft EULA is not accepted (no eula=true in " + eula + "): once the "
+                        + "user agrees to https://aka.ms/MinecraftEULA, run server_setup with acceptEula=true");
+            }
         }
-        return List.of(config.javaCommand(), "-Xmx2G", "-jar", "paper.jar", "--nogui");
+        return platform.launchCommand(config.javaCommand());
     }
 
     /** True when {@code eulaFile} exists and has an {@code eula=true} line. */
