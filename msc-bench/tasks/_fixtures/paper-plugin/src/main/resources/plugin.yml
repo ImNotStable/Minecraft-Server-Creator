@@ -1,0 +1,4 @@
+name: BenchPlugin
+version: 1.0.0
+main: bench.plugin.BenchPlugin
+api-version: '26.3'

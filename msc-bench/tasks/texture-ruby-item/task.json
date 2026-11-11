@@ -1,0 +1,10 @@
+{
+  "category": "texture",
+  "title": "Draw a 16x16 ruby item texture",
+  "timeoutSeconds": 600,
+  "checks": [
+    {"type": "png", "name": "ruby texture", "path": "textures/ruby.png",
+     "width": 16, "height": 16, "maxColors": 8, "minOpaqueFraction": 0.2, "maxOpaqueFraction": 0.85,
+     "hue": {"from": 330, "to": 15, "minFraction": 0.5, "minSaturation": 0.35}}
+  ]
+}

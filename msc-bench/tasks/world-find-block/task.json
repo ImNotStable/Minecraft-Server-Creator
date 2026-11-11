@@ -1,0 +1,28 @@
+{
+  "category": "world",
+  "title": "Find one gold block among look-alikes and report where it is",
+  "fixtures": ["_fixtures/paper-server"],
+  "timeoutSeconds": 900,
+  "server": {
+    "startBefore": true,
+    "setup": [
+      "forceload add -32 -32 63 63",
+      "fill 0 -60 0 31 -60 31 minecraft:stone",
+      "fill 0 -59 10 31 -54 10 minecraft:cobblestone",
+      "fill 4 -59 24 8 -55 28 minecraft:oak_leaves[persistent=true]",
+      "setblock 5 -58 7 minecraft:yellow_wool",
+      "setblock 27 -55 3 minecraft:gold_ore",
+      "setblock 14 -52 30 minecraft:raw_gold_block",
+      "setblock 9 -59 19 minecraft:yellow_concrete",
+      "setblock 30 -50 15 minecraft:honey_block",
+      "setblock 13 -57 22 minecraft:gold_block"
+    ]
+  },
+  "checks": [
+    {"type": "file", "name": "answer", "path": "answer.txt", "contains": "\\A\\s*13\\s+-57\\s+22\\s*\\z"},
+    {"type": "blocks", "name": "world unchanged", "blocks": [
+      {"pos": [13, -57, 22], "block": "minecraft:gold_block"},
+      {"pos": [27, -55, 3], "block": "minecraft:gold_ore"}
+    ]}
+  ]
+}

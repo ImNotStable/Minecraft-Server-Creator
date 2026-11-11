@@ -1,0 +1,38 @@
+{
+  "category": "build",
+  "title": "Build a stone-brick hut with a door, windows and a roof",
+  "fixtures": ["_fixtures/paper-server"],
+  "timeoutSeconds": 900,
+  "server": {
+    "startBefore": true,
+    "setup": ["forceload add -32 -32 63 63"]
+  },
+  "checks": [
+    {"type": "blocks", "name": "walls", "regions": [
+      {"from": [0, -60, 0], "to": [2, -57, 0], "block": "minecraft:stone_bricks"},
+      {"from": [4, -60, 0], "to": [6, -57, 0], "block": "minecraft:stone_bricks"},
+      {"from": [3, -58, 0], "to": [3, -57, 0], "block": "minecraft:stone_bricks"},
+      {"from": [0, -60, 6], "to": [6, -57, 6], "block": "minecraft:stone_bricks"},
+      {"from": [0, -60, 1], "to": [0, -57, 2], "block": "minecraft:stone_bricks"},
+      {"from": [0, -60, 4], "to": [0, -57, 5], "block": "minecraft:stone_bricks"},
+      {"from": [0, -60, 3], "to": [0, -59, 3], "block": "minecraft:stone_bricks"},
+      {"from": [0, -57, 3], "to": [0, -57, 3], "block": "minecraft:stone_bricks"},
+      {"from": [6, -60, 1], "to": [6, -57, 2], "block": "minecraft:stone_bricks"},
+      {"from": [6, -60, 4], "to": [6, -57, 5], "block": "minecraft:stone_bricks"},
+      {"from": [6, -60, 3], "to": [6, -59, 3], "block": "minecraft:stone_bricks"},
+      {"from": [6, -57, 3], "to": [6, -57, 3], "block": "minecraft:stone_bricks"}
+    ]},
+    {"type": "blocks", "name": "door and windows", "blocks": [
+      {"pos": [3, -60, 0], "block": "minecraft:oak_door[half=lower]"},
+      {"pos": [3, -59, 0], "block": "minecraft:oak_door[half=upper]"},
+      {"pos": [0, -58, 3], "block": "minecraft:glass"},
+      {"pos": [6, -58, 3], "block": "minecraft:glass"}
+    ]},
+    {"type": "blocks", "name": "roof", "regions": [
+      {"from": [0, -56, 0], "to": [6, -56, 6], "block": "minecraft:oak_planks"}
+    ]},
+    {"type": "blocks", "name": "empty inside", "regions": [
+      {"from": [1, -60, 1], "to": [5, -57, 5], "block": "minecraft:air"}
+    ]}
+  ]
+}

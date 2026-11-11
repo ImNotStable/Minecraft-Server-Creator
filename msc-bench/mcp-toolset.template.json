@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "msc": {
+      "command": "java",
+      "args": ["-cp", "{coreLib}/*", "io.github.imnotstable.msc.core.Main"],
+      "env": {
+        "MSC_WORKSPACE": "{workspace}",
+        "MSC_SERVER_DIR": "{workspace}/server",
+        "MSC_AGENT_JAR": "{agentJar}",
+        "MSC_TOOL_LOG": "{toolLog}",
+        "MSC_CORE_ADDRESS": "127.0.0.1:{corePort}",
+        "MSC_TOKEN": "{coreToken}"
+      }
+    }
+  }
+}

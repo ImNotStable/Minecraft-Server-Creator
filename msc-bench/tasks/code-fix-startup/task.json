@@ -1,0 +1,10 @@
+{
+  "category": "code",
+  "title": "Find and fix why /stats does not work",
+  "fixtures": ["_fixtures/paper-server", "_fixtures/paper-plugin"],
+  "timeoutSeconds": 1200,
+  "checks": [
+    {"type": "command", "name": "plugin builds", "run": ["{gradlew}", "build", "--quiet"], "timeoutSeconds": 900},
+    {"type": "rcon", "name": "stats replies", "command": "stats", "expect": "^Loaded worlds: 3$"}
+  ]
+}

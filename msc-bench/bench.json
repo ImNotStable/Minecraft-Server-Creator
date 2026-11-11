@@ -1,0 +1,30 @@
+{
+  "minecraftVersion": "26.3",
+  "agent": {
+    "command": ["claude", "-p", "{prompt}", "--output-format", "json", "--dangerously-skip-permissions", "--strict-mcp-config"],
+    "timeoutSeconds": 1800
+  },
+  "modes": {
+    "baseline": {},
+    "toolset": {
+      "extraArgs": ["--mcp-config", "{mcpConfig}"],
+      "mcpConfigTemplate": "mcp-toolset.template.json",
+      "serverEnv": {"MSC_CORE_ADDRESS": "127.0.0.1:{corePort}", "MSC_TOKEN": "{coreToken}"},
+      "serverPlugins": ["{agentJar}"],
+      "paperCacheSeed": ".msc/cache"
+    }
+  },
+  "paths": {
+    "coreLib": "../msc-core/build/install/msc-core/lib",
+    "agentJar": "../msc-agent-paper/build/libs/msc-agent-paper-0.1.0-SNAPSHOT.jar"
+  },
+  "gradleWrapperFrom": "..",
+  "corePort": 25590,
+  "server": {
+    "acceptEula": false,
+    "serverPort": 25566,
+    "rconPort": 25576,
+    "rconPassword": "msc-bench",
+    "startTimeoutSeconds": 180
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "category": "code",
+  "title": "Add a /greet command to a Paper plugin",
+  "fixtures": ["_fixtures/paper-server", "_fixtures/paper-plugin"],
+  "timeoutSeconds": 1200,
+  "checks": [
+    {"type": "command", "name": "plugin builds", "run": ["{gradlew}", "build", "--quiet"], "timeoutSeconds": 900},
+    {"type": "rcon", "name": "greet with a name", "command": "greet Steve", "expect": "^Hello, Steve!$"},
+    {"type": "rcon", "name": "greet without a name", "command": "greet", "expect": "^Usage: /greet <name>$"}
+  ]
+}

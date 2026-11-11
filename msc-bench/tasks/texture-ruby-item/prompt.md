@@ -1,0 +1,1 @@
+Draw a pixel-art item texture of a red ruby gem in the Minecraft style and save it as `textures/ruby.png`: 16 by 16 pixels, transparent background, at most 8 colours, mostly red with shading and a highlight.

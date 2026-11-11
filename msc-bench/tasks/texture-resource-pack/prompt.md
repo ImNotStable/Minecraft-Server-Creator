@@ -1,0 +1,1 @@
+Make a resource pack for Minecraft {minecraftVersion} that replaces the diamond item texture with a red ruby (16 by 16 pixel art, transparent background, at most 8 colours). Give it a `pack.mcmeta` with the right pack format for this version and a description. Save the pack as `ruby-pack.zip` with `pack.mcmeta` at the root of the zip.

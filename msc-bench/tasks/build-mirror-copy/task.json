@@ -1,0 +1,37 @@
+{
+  "category": "build",
+  "title": "Build a mirror image of an existing structure",
+  "fixtures": ["_fixtures/paper-server"],
+  "timeoutSeconds": 900,
+  "server": {
+    "startBefore": true,
+    "setup": [
+      "forceload add -32 -32 63 63",
+      "fill 20 -60 0 24 -60 4 minecraft:polished_andesite",
+      "fill 21 -59 1 21 -57 1 minecraft:red_wool",
+      "fill 22 -59 2 22 -57 2 minecraft:oak_log[axis=y]",
+      "setblock 22 -56 2 minecraft:gold_block",
+      "setblock 23 -59 3 minecraft:blue_wool",
+      "setblock 20 -59 4 minecraft:oak_stairs[facing=east]"
+    ]
+  },
+  "checks": [
+    {"type": "blocks", "name": "mirrored copy", "regions": [
+      {"from": [40, -60, 0], "to": [44, -60, 4], "block": "minecraft:polished_andesite"},
+      {"from": [43, -59, 1], "to": [43, -57, 1], "block": "minecraft:red_wool"},
+      {"from": [42, -59, 2], "to": [42, -57, 2], "block": "minecraft:oak_log[axis=y]"}
+    ], "blocks": [
+      {"pos": [42, -56, 2], "block": "minecraft:gold_block"},
+      {"pos": [41, -59, 3], "block": "minecraft:blue_wool"},
+      {"pos": [44, -59, 4], "block": "minecraft:oak_stairs[facing=west]"},
+      {"pos": [40, -59, 4], "block": "minecraft:air"},
+      {"pos": [43, -59, 3], "block": "minecraft:air"},
+      {"pos": [41, -59, 1], "block": "minecraft:air"}
+    ]},
+    {"type": "blocks", "name": "original untouched", "blocks": [
+      {"pos": [21, -58, 1], "block": "minecraft:red_wool"},
+      {"pos": [22, -56, 2], "block": "minecraft:gold_block"},
+      {"pos": [20, -59, 4], "block": "minecraft:oak_stairs[facing=east]"}
+    ]}
+  ]
+}

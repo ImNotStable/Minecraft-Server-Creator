@@ -1,0 +1,1 @@
+The server is running a flat world. Somewhere in the overworld box x 0 to 31, y -60 to -50, z 0 to 31 there is exactly one `minecraft:gold_block`. Find it and write its coordinates to `answer.txt` as three integers separated by spaces (`x y z`), and nothing else. Do not change the world.

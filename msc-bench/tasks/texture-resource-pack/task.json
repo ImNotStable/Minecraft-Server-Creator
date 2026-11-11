@@ -1,0 +1,18 @@
+{
+  "category": "texture",
+  "title": "Make a resource pack that turns diamonds into rubies",
+  "timeoutSeconds": 600,
+  "checks": [
+    {"type": "zip", "name": "resource pack", "path": "ruby-pack.zip",
+     "entries": ["pack.mcmeta"],
+     "textEntries": [
+       {"entry": "pack.mcmeta", "contains": "\"(pack_format|min_format)\"\\s*:"},
+       {"entry": "pack.mcmeta", "contains": "\"description\"\\s*:"}
+     ],
+     "pngEntries": [
+       {"entry": "assets/minecraft/textures/item/diamond.png",
+        "width": 16, "height": 16, "maxColors": 8, "minOpaqueFraction": 0.2, "maxOpaqueFraction": 0.85,
+        "hue": {"from": 330, "to": 15, "minFraction": 0.5, "minSaturation": 0.35}}
+     ]}
+  ]
+}
