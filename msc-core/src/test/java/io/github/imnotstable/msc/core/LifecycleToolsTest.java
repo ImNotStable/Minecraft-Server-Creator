@@ -108,6 +108,43 @@ class LifecycleToolsTest {
     }
 
     @Test
+    void scaffoldIntoTheWorkspaceIgnoresTheCoresOwnDataFolder() throws Exception {
+        Path ws = Files.createDirectories(workspace.resolve("ws"));
+        Files.createDirectories(ws.resolve(".msc"));
+        try (CoreHarness other = new CoreHarness(ws)) {
+            other.ok("msc_status");
+            assertThat(other.ok("project_scaffold", "name", "MyPlugin")).startsWith("created paper-plugin project in " + ws);
+        }
+        assertThat(ws.resolve("build.gradle.kts")).exists();
+        assertThat(ws.resolve(".msc")).isDirectory();
+        try (var left = Files.list(ws.resolve(".msc"))) {
+            assertThat(left.filter(p -> p.getFileName().toString().startsWith("scaffold-"))).isEmpty();
+        }
+    }
+
+    @Test
+    void scaffoldWritesTheEulaOnlyWhenAccepted() {
+        h.ok("project_scaffold", "name", "Srv", "dir", "a", "template", "paper-server");
+        h.ok("project_scaffold", "name", "Srv", "dir", "b", "template", "paper-server", "acceptEula", true);
+        assertThat(workspace.resolve("a/eula.txt")).content().contains("eula=false");
+        assertThat(workspace.resolve("b/eula.txt")).content().contains("eula=true");
+    }
+
+    @Test
+    void startFailsFastWithoutTheEula() throws Exception {
+        Path ws = Files.createDirectories(workspace.resolve("ws3"));
+        Files.createDirectories(ws.resolve("run"));
+        Files.writeString(ws.resolve("run/paper.jar"), "not a jar");
+        try (CoreHarness s = new CoreHarness(ws)) {
+            assertThat(s.error("server_start")).contains("Minecraft EULA is not accepted").contains("acceptEula=true")
+                    .doesNotContain("\n");
+            Files.writeString(ws.resolve("run/eula.txt"), "eula=false\n");
+            assertThat(s.error("server_start")).contains("EULA is not accepted");
+            assertThat(s.core.server().running()).isFalse();
+        }
+    }
+
+    @Test
     void setupDownloadsTheNewestStableBuildAndInstallsTheAgent() throws Exception {
         byte[] jar = "paper jar bytes".getBytes(StandardCharsets.UTF_8);
         String sha = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(jar));
@@ -137,12 +174,15 @@ class LifecycleToolsTest {
             assertThat(first).contains("paper 26.3 build 5 (downloaded)").contains("warning: msc agent plugin not found");
             Path run = workspace.resolve("ws2/run");
             assertThat(run.resolve("paper.jar")).hasBinaryContent(jar);
-            assertThat(run.resolve("eula.txt")).exists();
+            assertThat(run.resolve("eula.txt")).content().contains("eula=false");
+            assertThat(first).contains("EULA is not accepted").contains("acceptEula=true");
             Files.createDirectories(workspace.resolve("ws2/.msc/agent"));
             Files.copy(agentJar, workspace.resolve("ws2/.msc/agent/msc-agent-paper-0.1.0.jar"));
             assertThat(s.ok("server_setup")).contains("build 5 (cached)").contains("agent plugin installed");
             assertThat(run.resolve("plugins/msc-agent-paper.jar")).hasContent("agent");
             assertThat(downloads[0]).isEqualTo(1);
+            assertThat(s.ok("server_setup", "acceptEula", true)).contains("eula.txt has eula=true");
+            assertThat(run.resolve("eula.txt")).content().contains("eula=true").doesNotContain("eula=false");
             assertThat(s.error("server_setup", "version", "1.0")).contains("Paper has no version 1.0").doesNotContain("internal");
         } finally {
             fill.stop(0);

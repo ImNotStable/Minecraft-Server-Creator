@@ -33,13 +33,22 @@ public final class ProjectBuilder {
             if (!Files.exists(projectDir.resolve(windows ? "gradlew.bat" : "gradlew"))) {
                 throw new ToolException("no Gradle wrapper in " + projectDir + ". Create the project with project_scaffold.");
             }
-            command = windows
-                    ? List.of("cmd", "/c", "gradlew.bat", "build", "--console=plain", "-q")
-                    : List.of("sh", "gradlew", "build", "--console=plain", "-q");
+            command = wrapperCommand(projectDir, windows);
         }
         ProcessRunner.Result r = ProcessRunner.run(command, projectDir, timeout);
         String output = r.timedOut() ? r.output() + "\nbuild timed out after " + timeout.toSeconds() + "s" : r.output();
         return new BuildResult(r.ok(), output, r.ok() ? newestJar(projectDir) : null, r.millis());
+    }
+
+    /**
+     * The wrapper by absolute path: with {@code NoDefaultCurrentDirectoryInExePath} set (Claude Code sets it),
+     * cmd does not run a bare {@code gradlew.bat} from the working directory.
+     */
+    static List<String> wrapperCommand(Path projectDir, boolean windows) {
+        Path dir = projectDir.toAbsolutePath();
+        return windows
+                ? List.of("cmd", "/c", dir.resolve("gradlew.bat").toString(), "build", "--console=plain", "-q")
+                : List.of("sh", dir.resolve("gradlew").toString(), "build", "--console=plain", "-q");
     }
 
     /** Newest jar in build/libs that is not a sources, javadoc or plain jar. */

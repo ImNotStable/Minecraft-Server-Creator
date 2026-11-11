@@ -41,8 +41,8 @@ public record CoreConfig(Path workspace, Path serverDir, int agentPort, String t
 
     public static final String DEFAULT_DOWNLOADS_URL = "https://fill.papermc.io";
     public static final String DEFAULT_MINECRAFT = "26.3";
-    /** Lowest format the pack claims to support; see ADR 0005 for why this is configurable. */
-    public static final int DEFAULT_PACK_FORMAT = 75;
+    /** Lowest resource pack format the pack claims: 97 is 26.3 (pack_version.resource_major 97, minor 1). */
+    public static final int DEFAULT_PACK_FORMAT = 97;
 
     public CoreConfig {
         workspace = workspace.toAbsolutePath().normalize();

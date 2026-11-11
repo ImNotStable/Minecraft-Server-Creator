@@ -29,6 +29,8 @@ import java.util.stream.Stream;
 
 /** Project and server lifecycle: scaffold, set up, start, stop, build-deploy-restart, logs, commands. */
 public final class LifecycleTools {
+    private static final String EULA_ARG =
+            "Set true only if the user has agreed to the Minecraft EULA (https://aka.ms/MinecraftEULA)";
     private final CoreConfig config;
     private final AgentHub hub;
     private final ServerManager server;
@@ -52,11 +54,13 @@ public final class LifecycleTools {
                 "Create a new plugin project from a template (Gradle KTS, tests wired in). Target directory must be empty.",
                 Schema.of().req("name", "string", "Plugin name, for example MyPlugin")
                         .opt("dir", "string", "Target directory, relative to the workspace. Default: the workspace itself")
-                        .opt("template", "string", "Template id. Default paper-plugin"),
+                        .opt("template", "string", "Template id. Default paper-plugin")
+                        .opt("acceptEula", "boolean", EULA_ARG),
                 t::scaffold);
         registry.add("server_setup",
                 "Prepare the dev server: download the Paper jar, write dev defaults, install the msc agent plugin.",
-                Schema.of().opt("version", "string", "Minecraft version. Default " + config.minecraft()),
+                Schema.of().opt("version", "string", "Minecraft version. Default " + config.minecraft())
+                        .opt("acceptEula", "boolean", EULA_ARG),
                 t::setup);
         registry.add("server_start", "Start the dev server and wait until it is ready. Returns startup errors only.",
                 Schema.of().opt("timeoutSeconds", "integer", "Default 180"), t::start);
@@ -91,12 +95,14 @@ public final class LifecycleTools {
         }
         ScaffoldResult result;
         try {
-            result = Templates.scaffold(template, dir, TemplateVariables.of(name));
+            TemplateVariables vars = TemplateVariables.of(name).withAcceptEula(args.bool("acceptEula", false));
+            result = onlyCoreData(dir) ? scaffoldBesideCoreData(template, dir, vars)
+                    : Templates.scaffold(template, dir, vars);
         } catch (IllegalArgumentException | IllegalStateException e) {
             throw new ToolException(String.valueOf(e.getMessage()));
         }
         StringBuilder out = new StringBuilder();
-        out.append("created ").append(template).append(" project in ").append(result.root()).append(" (")
+        out.append("created ").append(template).append(" project in ").append(dir).append(" (")
                 .append(result.files().size()).append(" files)");
         result.values().forEach((k, v) -> {
             if (!k.toLowerCase().contains("password")) {
@@ -107,11 +113,38 @@ public final class LifecycleTools {
         return out.toString();
     }
 
+    /** True when {@code dir} holds nothing but the core's own {@code .msc} folder, as the workspace does after any call. */
+    private boolean onlyCoreData(Path dir) throws IOException {
+        if (!Files.isDirectory(dir)) {
+            return false;
+        }
+        try (Stream<Path> list = Files.list(dir)) {
+            List<Path> entries = list.toList();
+            return entries.size() == 1 && entries.getFirst().equals(config.dataDir());
+        }
+    }
+
+    /** Templates only write into empty directories, so render into a staging folder and move the files in. */
+    private ScaffoldResult scaffoldBesideCoreData(String template, Path dir, TemplateVariables vars) throws IOException {
+        Path staging = Files.createTempDirectory(config.dataDir(), "scaffold-");
+        Path staged = staging.resolve("project");
+        ScaffoldResult result = Templates.scaffold(template, staged, vars);
+        try (Stream<Path> list = Files.list(staged)) {
+            for (Path entry : list.toList()) {
+                Files.move(entry, dir.resolve(entry.getFileName().toString()));
+            }
+        }
+        Files.delete(staged);
+        Files.delete(staging);
+        return result;
+    }
+
     private String setup(Args args) throws IOException, InterruptedException {
         if (server.running()) {
             throw new ToolException("stop the server before server_setup");
         }
         String version = args.str("version", config.minecraft());
+        boolean acceptEula = args.bool("acceptEula", false);
         Path dir = config.serverDir();
         StringBuilder out = new StringBuilder();
         boolean empty = !Files.exists(dir);
@@ -121,7 +154,8 @@ public final class LifecycleTools {
             }
         }
         if (empty && Templates.ids().contains(Templates.PAPER_SERVER)) {
-            ScaffoldResult defaults = Templates.scaffold(Templates.PAPER_SERVER, dir, TemplateVariables.of("server"));
+            ScaffoldResult defaults = Templates.scaffold(Templates.PAPER_SERVER, dir,
+                    TemplateVariables.of("server").withAcceptEula(acceptEula));
             out.append("wrote ").append(defaults.files().size()).append(" default config files\n");
         }
         Files.createDirectories(dir.resolve("plugins"));
@@ -138,9 +172,13 @@ public final class LifecycleTools {
                     .append(config.dataDir().resolve("agent")).append(" or set MSC_AGENT_JAR, then run server_setup again\n");
         }
         Path eula = dir.resolve("eula.txt");
-        if (!Files.exists(eula) || !Files.readString(eula).contains("eula=true")) {
-            out.append("the Minecraft EULA is not accepted: the user must agree to https://aka.ms/MinecraftEULA and set "
-                    + "eula=true in ").append(eula).append(" before server_start will work\n");
+        if (acceptEula && Files.exists(eula) && !ServerManager.eulaAccepted(eula)) {
+            Files.writeString(eula, Files.readString(eula).replaceAll("(?m)^eula=false[ \t]*$", "eula=true"));
+        }
+        if (!ServerManager.eulaAccepted(eula)) {
+            out.append("the Minecraft EULA is not accepted: once the user agrees to https://aka.ms/MinecraftEULA, run "
+                    + "server_setup with acceptEula=true (or set eula=true in ").append(eula)
+                    .append("); server_start refuses until then\n");
         } else {
             out.append("note: eula.txt has eula=true; running the server means the user agrees to https://aka.ms/MinecraftEULA\n");
         }

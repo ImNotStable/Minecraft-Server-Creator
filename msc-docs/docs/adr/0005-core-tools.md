@@ -13,23 +13,23 @@ Date: 2026-11-10. Status: accepted. Decided by Claude under Jeremiah's instructi
 3. **Few, coarse tools.** 24 tools, about 2,500 tokens for the whole list, guarded by a test. `dev_cycle` replaces build, copy, stop, start and read log. Coordinates are strings (`"x1,y1,z1 x2,y2,z2"`) instead of six numeric fields, which keeps schemas and calls short.
 4. **One text structure format for seeing and building.** `world_slice` prints what `build_structure` accepts: a legend and one character per block per layer, with `same as` and `all` shortcuts. A model can read, edit and write back without a second format.
 5. **Edits are grouped in the core.** The protocol limits one call to 1,048,576 blocks. The core splits larger jobs and hands back one edit id (`e7`) that undoes all the pieces.
-6. **API index from class files.** The index is read straight from the Paper API jar in the Gradle cache with a small class-file reader (names, generic signatures, parameter names, deprecation). No class loading, no network, no extra library. Javadoc text is not included; that is acceptable for "what is it called and what does it take".
+6. **API index from class files.** The index is read straight from the Paper API jar in the Gradle cache with a small class-file reader (names, generic signatures, parameter names when the jar has them, deprecation). No class loading, no network, no extra library. Javadoc text is not included; that is acceptable for "what is it called and what does it take".
 7. **Logs are filtered, not summarized.** Warnings, errors and stack traces are kept verbatim but trimmed to project frames and deduplicated. Nothing is rewritten, so the AI sees real messages.
 8. **Any agent may attach.** The core listens for agents from startup. With `MSC_CORE_ADDRESS` and `MSC_TOKEN` set it uses that port and token, so `msc-bench` can attach a server it started itself. The newest connection wins.
 9. **Templates are rendered by `msc-templates`.** The core calls `Templates.scaffold` and never touches template files.
 10. **Schematics: Sponge v2, blocks only.** WorldEdit reads it. Vanilla `.nbt` structures, block entities and entities are left for later.
 11. **Resource pack.** Sources in `<workspace>/.msc/pack`, zipped deterministically so the SHA-1 changes only with content, served from a loopback HTTP server, applied with `pack.apply`. Textures get a model and an item definition so they work through the `item_model` component.
 
-12. **The core never accepts the Minecraft EULA.** It passes no EULA flag; `eula.txt` in the server directory decides, and `server_setup` says whether it is accepted.
+12. **The core never accepts the Minecraft EULA on its own.** It passes no EULA flag; `eula.txt` in the server directory decides. `project_scaffold` and `server_setup` take an optional `acceptEula` argument (default false) that the AI sets only when the user has agreed to https://aka.ms/MinecraftEULA: it renders `eula=true`, and `server_setup` also rewrites an existing `eula=false` line. `server_setup` reports the state, and `server_start` (and the restart in `dev_cycle`) refuses with a one-line error naming the EULA and `acceptEula` instead of launching a server that would exit. The check is skipped when a custom server command is configured.
 
-## Open points, to check on a real Paper 26.3 server
+## Open points, checked on a real Paper 26.3 server (2026-11-11)
 
-These could not be verified in the cloud sandbox (no access to PaperMC or Mojang hosts, no JDK 25):
+Run end to end on Windows 11 against Paper 26.3 build 248 with `msc-agent-paper`, through MCP calls only:
 
-- The Paper downloads API shape (`/v3/projects/paper/versions/<v>/builds`, `downloads["server:default"]`). Tested only against a local fake.
-- `MSC_PACK_FORMAT` default (75) and the `min_format` / `max_format` fields for 26.3.
-- The schematic `DataVersion` constant (4671).
-- The server start flags (`-Xmx2G -jar paper.jar --nogui`).
+- Paper downloads API: confirmed as coded. `GET /v3/projects/paper/versions/26.3/builds` returns an array of builds with `id`, `channel` (`STABLE`) and `downloads["server:default"]` with `url` and `checksums.sha256`; the jar is served from `fill-data.papermc.io` and the User-Agent is accepted.
+- Resource pack format: 26.3 is format 97.1 (`pack_version.resource_major` 97, `resource_minor` 1 in the server's `version.json`). The default is now 97; `min_format` 97 and `max_format` 9999 are written. `pack.apply` answers; whether a client accepts the pack still needs a player to join.
+- Schematic `DataVersion`: 26.3's `world_version` is 5023; the constant is now 5023.
+- Start flags: `-Xmx2G -jar paper.jar --nogui` work; readiness ("Done" line or agent hello) is detected in about 7 s on a warm start, and the agent connects.
 
 ## Consequences
 

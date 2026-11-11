@@ -111,6 +111,9 @@ class TextureToolsTest {
         }
         assertThat(names).containsExactlyInAnyOrder("pack.mcmeta", "assets/msc/textures/item/ruby.png",
                 "assets/msc/models/item/ruby.json", "assets/msc/items/ruby.json");
+        // 26.3 is resource pack format 97.1; packs at 65 or newer are matched by min_format and max_format.
+        assertThat(Files.readString(workspace.resolve(".msc/pack/pack.mcmeta")))
+                .contains("\"min_format\":97").contains("\"max_format\":9999");
         // Same content, same hash: the client will not download it again.
         assertThat(h.ok("pack_build", "apply", false)).contains("sha1: " + sha1);
     }

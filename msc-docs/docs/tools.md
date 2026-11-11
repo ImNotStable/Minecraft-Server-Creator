@@ -28,9 +28,9 @@ The AI talks to `msc-core` over MCP (stdio). This page lists every tool, its arg
 
 | Tool | Arguments | Result | Budget |
 | --- | --- | --- | --- |
-| `project_scaffold` | `name`, `dir`?, `template`? (default `paper-plugin`) | Where the project was created and its template values (no passwords) | about 15 lines |
-| `server_setup` | `version`? (default 26.3) | Paper build used, whether dev defaults and the agent plugin were installed | 4 lines |
-| `server_start` | `timeoutSeconds`? (180) | `server ready in 8.2s, agent connected` plus startup warnings and errors only | 6,000 chars |
+| `project_scaffold` | `name`, `dir`?, `template`? (default `paper-plugin`), `acceptEula`? (false) | Where the project was created and its template values (no passwords) | about 15 lines |
+| `server_setup` | `version`? (default 26.3), `acceptEula`? (false) | Paper build used, whether dev defaults and the agent plugin were installed, whether `eula.txt` says `eula=true` | 4 lines |
+| `server_start` | `timeoutSeconds`? (180) | `server ready in 8.2s, agent connected` plus startup warnings and errors only. Fails at once with a one-line error if `eula.txt` lacks `eula=true` | 6,000 chars |
 | `server_stop` | none | One line | 1 line |
 | `dev_cycle` | `project`? (workspace), `restart`? (true), `maxChars`? | Build, deploy, restart, report in one call. On a failed build: compiler and test errors only. Otherwise: startup warnings and errors, or `no errors or warnings` | `maxChars` |
 | `server_logs` | `mode`? (`errors`, `tail`, `grep`), `pattern`?, `lines`? (30), `all`? (false), `maxChars`? | `errors`: warnings and errors, stack traces cut to project frames, repeats collapsed to `(xN)` | `maxChars` |
@@ -40,11 +40,11 @@ How logs are condensed: only WARN and ERROR entries and anything with a stack tr
 
 ## API index
 
-Built on first use from the Paper API and Adventure jars in the Gradle cache (or `MSC_API_JARS`), by reading class files directly. No network, no Javadoc.
+Built on first use from the Paper API and Adventure jars in the Gradle cache (or `MSC_API_JARS`), by reading class files directly. No network, no Javadoc. Parameter names appear only when the jar records them; the published paper-api jar does not, so signatures show types only.
 
 | Tool | Arguments | Result | Budget |
 | --- | --- | --- | --- |
-| `api_search` | `query`, `kind`? (`class`, `interface`, `enum`, `record`, `annotation`, `event`), `limit`? (15) | One line per match: `interface org.bukkit.entity.Player` or `Player#void sendMessage(String message)` | `limit` lines |
+| `api_search` | `query`, `kind`? (`class`, `interface`, `enum`, `record`, `annotation`, `event`), `limit`? (15) | One line per match: `interface org.bukkit.entity.Player` or `Player#void sendMessage(String)` | `limit` lines |
 | `api_class` | `name`, `filter`?, `inherited`? (false), `limit`? (40) | Header with supertypes, enum constants, then one member signature per line | `limit` lines |
 
 ## Seeing the world
@@ -118,7 +118,7 @@ One JSON line per call, appended to `MSC_TOOL_LOG` (default `<workspace>/.msc/to
 | `MSC_MINECRAFT` | Default Minecraft version | 26.3 |
 | `MSC_JAVA` | Java used to run the server | the Java running the core |
 | `MSC_DOWNLOADS_URL` | Paper downloads service | `https://fill.papermc.io` |
-| `MSC_PACK_HOST`, `MSC_PACK_FORMAT` | Resource pack server address and pack format number | `127.0.0.1`, 75 |
+| `MSC_PACK_HOST`, `MSC_PACK_FORMAT` | Resource pack server address and pack format number | `127.0.0.1`, 97 (26.3) |
 
 ## Not in 0.1
 

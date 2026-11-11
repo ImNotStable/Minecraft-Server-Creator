@@ -21,8 +21,8 @@ import java.util.Map;
  * versions 2 and 3. Blocks only: block entities (chest contents, sign text) and entities are not kept.
  */
 public final class Schematic {
-    /** Data version written to files; readers use it only to decide whether to upgrade block names. */
-    static final int DATA_VERSION = 4671;
+    /** Data version written to files (26.3's world_version); readers use it only to decide whether to upgrade block names. */
+    static final int DATA_VERSION = 5023;
 
     private Schematic() {
     }

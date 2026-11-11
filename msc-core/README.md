@@ -3,7 +3,7 @@
 The MCP server the AI talks to. It runs servers, condenses their output, answers API questions, and drives building, world views and textures through the agents.
 
 **Phase:** MVP  
-**Status:** MVP implemented (0.1): 24 MCP tools, tested against a fake agent. Not yet run against a real Paper server.
+**Status:** MVP implemented (0.1): 24 MCP tools, tested against a fake agent and run end to end against Paper 26.3 with msc-agent-paper (2026-11-11).
 
 ## Scope
 

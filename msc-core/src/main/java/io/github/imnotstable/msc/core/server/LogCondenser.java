@@ -22,7 +22,7 @@ public final class LogCondenser {
     private static final List<String> FRAMEWORK = List.of("java.", "javax.", "jdk.", "sun.", "com.sun.",
             "net.minecraft.", "com.mojang.", "org.bukkit.", "org.spigotmc.", "io.papermc.", "com.destroystokyo.",
             "io.netty.", "org.apache.", "com.google.", "it.unimi.", "org.slf4j.", "co.aikar.", "ca.spottedleaf.",
-            "org.gradle.", "org.junit.", "kotlin.", "worker.org.gradle.");
+            "org.gradle.", "org.junit.", "kotlin.", "worker.org.gradle.", "oshi.");
 
     private static final List<Pattern> BUILD_NOISE = List.of(
             Pattern.compile("^> Task (?!.*FAILED).*"),
@@ -169,7 +169,9 @@ public final class LogCondenser {
         boolean skipping = false;
         for (String raw : output.split("\\R")) {
             String line = stripAnsi(raw).stripTrailing();
-            if (line.startsWith("* Try:") || line.startsWith("* Get more help") || line.startsWith("* Exception is:")) {
+            // Gradle 9 repeats the whole compiler output, indented, after this line.
+            if (line.startsWith("* Try:") || line.startsWith("* Get more help") || line.startsWith("* Exception is:")
+                    || line.startsWith("> Compilation failed; see the compiler output below")) {
                 skipping = true;
                 continue;
             }
