@@ -96,7 +96,7 @@ public record TemplateVariables(
                 "com.example." + lower,
                 name.endsWith("Plugin") ? name : name + "Plugin",
                 "0.1.0-SNAPSHOT",
-                name + ", a Paper plugin made with Minecraft Server Creator.",
+                name + ", made with Minecraft Server Creator.",
                 "",
                 "127.0.0.1",
                 25565,

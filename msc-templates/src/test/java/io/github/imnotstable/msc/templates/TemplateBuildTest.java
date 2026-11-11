@@ -13,16 +13,25 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
- * Scaffolds the Paper plugin template and runs its own {@code gradlew build}, which compiles it
- * against Paper and runs its MockBukkit tests. Only runs via {@code ./gradlew :msc-templates:verifyTemplates}.
+ * Scaffolds each project template and runs its own {@code gradlew build}, which compiles it
+ * against Paper or Fabric and runs its tests. Only runs via {@code ./gradlew :msc-templates:verifyTemplates}.
  */
 @Tag("template-build")
 class TemplateBuildTest {
     @Test
     void paperPluginBuildsAndPassesItsTests() throws IOException, InterruptedException {
-        Path dir = Path.of(System.getProperty("msc.templates.verifyDir")).resolve("paper-plugin");
+        buildsAndPassesItsTests(Templates.PAPER_PLUGIN);
+    }
+
+    @Test
+    void fabricModBuildsAndPassesItsTests() throws IOException, InterruptedException {
+        buildsAndPassesItsTests(Templates.FABRIC_MOD);
+    }
+
+    private static void buildsAndPassesItsTests(String template) throws IOException, InterruptedException {
+        Path dir = Path.of(System.getProperty("msc.templates.verifyDir")).resolve(template);
         deleteRecursively(dir);
-        ScaffoldResult r = Templates.scaffold(Templates.PAPER_PLUGIN, dir, TemplateVariables.of("Verify Me"));
+        ScaffoldResult r = Templates.scaffold(template, dir, TemplateVariables.of("Verify Me"));
 
         boolean windows = System.getProperty("os.name").toLowerCase().contains("win");
         List<String> command = windows

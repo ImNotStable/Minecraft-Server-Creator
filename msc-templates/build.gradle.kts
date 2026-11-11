@@ -26,6 +26,9 @@ val templateVersions = mapOf(
     "runPaperVersion" to catalogVersion("run-paper"),
     "mockbukkitVersion" to catalogVersion("mockbukkit"),
     "foojayVersion" to catalogVersion("foojay"),
+    "fabricLoaderVersion" to catalogVersion("fabric-loader"),
+    "fabricApiVersion" to catalogVersion("fabric-api"),
+    "fabricLoomVersion" to catalogVersion("fabric-loom"),
 )
 
 abstract class PackTemplates : DefaultTask() {
@@ -48,6 +51,7 @@ abstract class PackTemplates : DefaultTask() {
     abstract val outputDir: DirectoryProperty
 
     companion object {
+        val PROJECT_TEMPLATES = setOf("paper-plugin", "fabric-mod")
         val WRAPPER_FILES = listOf(
             "gradlew", "gradlew.bat", "gradle/wrapper/gradle-wrapper.jar", "gradle/wrapper/gradle-wrapper.properties")
     }
@@ -67,8 +71,9 @@ abstract class PackTemplates : DefaultTask() {
                 files[prefix + it.relativeTo(dir).invariantSeparatorsPath] = it
             }
             addTree(root.resolve(id), "")
-            if (id == "paper-plugin") {
-                // A plugin project carries its own dev server in run/ and its own wrapper.
+            if (id in PROJECT_TEMPLATES) {
+                // A plugin or mod project carries its own dev server in run/ and its own wrapper.
+                // paper-server's files are plain vanilla server config, so Fabric uses them too.
                 addTree(root.resolve("paper-server"), "run/")
                 WRAPPER_FILES.forEach { files[it] = wrapper.resolve(it) }
             }
@@ -96,8 +101,8 @@ sourceSets.main {
     resources.srcDir(packTemplates)
 }
 
-// Scaffolds every template into build/ and runs its own Gradle build (compile + MockBukkit tests).
-// Needs Java 25 and repo.papermc.io, so it is not part of `check`: run it on a dev machine.
+// Scaffolds every project template into build/ and runs its own Gradle build (compile + tests).
+// Needs Java 25, repo.papermc.io and maven.fabricmc.net, so it is not part of `check`: run it on a dev machine.
 tasks.register<Test>("verifyTemplates") {
     description = "Scaffolds each template and builds it with its own Gradle wrapper."
     group = "verification"

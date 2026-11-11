@@ -2,8 +2,16 @@
 
 Phase: Post-MVP. Steps are in order; each ends with passing tests.
 
-- [ ] Fabric mod skeleton (Gradle KTS, Loom).
-- [ ] Handshake and command execution.
-- [ ] Block edits and region reads.
-- [ ] API index from Yarn or Mojang mappings.
-- [ ] Fabric template in `msc-templates`.
+- [x] Fabric mod skeleton (Gradle KTS, Loom, server-only, jar-in-jar).
+- [x] Handshake and command execution.
+- [x] Block edits with undo, and region reads.
+- [x] Unit tests and a smoke test against a real `CoreServer` socket.
+- [x] Fabric template in `msc-templates` (`fabric-mod`).
+- [ ] msc-core starts Fabric servers (Fabric server launcher, agent in `mods/`). Owned by msc-core.
+- [ ] Smoke test on a real Fabric 26.3 server started by `msc-core`.
+
+## Next
+
+- API index for Fabric: Minecraft 26.x is unobfuscated, so the core's class-file index can read the server jar and Fabric API jars directly; no mappings needed.
+- Extract the classes shared with the Paper agent into `msc-agent-common` when the Minestom agent needs them too.
+- Persist undo history across restarts.

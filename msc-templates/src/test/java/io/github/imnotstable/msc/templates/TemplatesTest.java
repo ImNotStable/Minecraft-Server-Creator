@@ -22,10 +22,39 @@ class TemplatesTest {
 
     @Test
     void listsTemplates() {
-        assertThat(Templates.ids()).containsExactly(Templates.PAPER_PLUGIN, Templates.PAPER_SERVER);
+        assertThat(Templates.ids()).containsExactly(Templates.FABRIC_MOD, Templates.PAPER_PLUGIN, Templates.PAPER_SERVER);
+        assertThat(Templates.info(Templates.FABRIC_MOD)).containsEntry("platform", "fabric");
+        assertThat(Templates.versions()).containsKeys("fabricLoaderVersion", "fabricApiVersion", "fabricLoomVersion");
+        assertThat(Templates.versions().get("fabricApiVersion")).endsWith("+" + Templates.versions().get("mcVersion"));
         assertThat(Templates.info(Templates.PAPER_PLUGIN)).containsEntry("platform", "paper").containsKey("description");
         assertThat(Templates.versions()).containsEntry("javaVersion", "25").containsKeys("paperVersion", "mcVersion", "mockbukkitVersion");
         assertThat(Templates.versions().get("paperVersion")).startsWith(Templates.versions().get("mcVersion") + ".build");
+    }
+
+    @Test
+    void scaffoldsAFabricMod() throws IOException {
+        ScaffoldResult r = Templates.scaffold(Templates.FABRIC_MOD, dir.resolve("f"), vars);
+
+        assertThat(relative(r)).contains(
+                "build.gradle.kts", "settings.gradle.kts", ".gitignore", "CLAUDE.md", "gradle/libs.versions.toml",
+                "gradlew", "gradle/wrapper/gradle-wrapper.jar",
+                "src/main/java/com/example/spawnlobby/SpawnLobbyPlugin.java",
+                "src/main/java/com/example/spawnlobby/HelloCommand.java",
+                "src/test/java/com/example/spawnlobby/HelloCommandTest.java",
+                "src/main/resources/fabric.mod.json", "run/server.properties", "run/eula.txt");
+        assertThat(relative(r)).noneMatch(p -> p.endsWith(".tmpl") || p.contains("template.properties"));
+        for (Path f : r.files()) {
+            if (!f.toString().endsWith(".jar")) {
+                assertThat(Files.readString(f)).as(f.toString()).doesNotContain("{{");
+            }
+        }
+        assertThat(Files.readString(r.root().resolve("src/main/resources/fabric.mod.json")))
+                .contains("\"id\": \"spawn-lobby\"", "\"server\": [\"com.example.spawnlobby.SpawnLobbyPlugin\"]",
+                        "\"version\": \"${version}\"");
+        assertThat(Files.readString(r.root().resolve("gradle/libs.versions.toml")))
+                .contains("fabric-api = \"" + Templates.versions().get("fabricApiVersion") + "\"");
+        assertThat(Files.readString(r.root().resolve("run/server.properties"))).contains("rcon.password=secret");
+        assertThat(Files.isExecutable(r.root().resolve("gradlew"))).isTrue();
     }
 
     @Test

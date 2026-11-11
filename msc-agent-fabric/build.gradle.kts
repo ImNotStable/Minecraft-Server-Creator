@@ -1,5 +1,49 @@
 plugins {
     id("msc.java-conventions")
+    // Version comes from settings.gradle.kts, where Loom's repository plugin is applied.
+    id("net.fabricmc.fabric-loom")
 }
 
-description = "Post-MVP: see README.md. No code yet."
+description = "Fabric server mod that carries out msc-core's operations inside a running server."
+
+loom {
+    // The agent is server-side only, so compile against the dedicated server jar alone.
+    serverOnlyMinecraftJar()
+}
+
+// The two Fabric API modules the agent uses. They are nested in the mod jar (jar-in-jar), so the
+// server needs only Fabric Loader and this one jar; Loader picks the newest copy if the server
+// also has Fabric API installed.
+val fabricApiModules = listOf("fabric-api-base", "fabric-lifecycle-events-v1", "fabric-networking-api-v1")
+
+dependencies {
+    minecraft(libs.minecraft)
+    implementation(libs.fabric.loader)
+    for (module in fabricApiModules) {
+        val dep = fabricApi.module(module, libs.versions.fabric.api.get())
+        implementation(dep)
+        include(dep)
+    }
+    implementation(project(":msc-protocol")) {
+        // Minecraft ships Gson.
+        exclude(group = "com.google.code.gson")
+    }
+    include(project(":msc-protocol"))
+
+    testImplementation(libs.fabric.loader.junit)
+}
+
+tasks.processResources {
+    val props = mapOf(
+        "version" to project.version.toString(),
+        "loaderVersion" to libs.versions.fabric.loader.get(),
+        "minecraftVersion" to libs.versions.minecraft.get(),
+    )
+    inputs.properties(props)
+    filesMatching("fabric.mod.json") { expand(props) }
+}
+
+tasks.test {
+    // fabric-loader-junit starts Fabric Loader in the test JVM; this mod only has the server jar.
+    systemProperty("fabric.side", "server")
+}

@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "msc-agent",
+  "version": "${version}",
+  "name": "MSC Agent",
+  "description": "Carries out Minecraft Server Creator's world and server operations.",
+  "authors": ["ImNotStable"],
+  "license": "All-Rights-Reserved",
+  "environment": "server",
+  "entrypoints": {
+    "server": ["io.github.imnotstable.msc.agent.fabric.MscAgentMod"]
+  },
+  "depends": {
+    "fabricloader": ">=${loaderVersion}",
+    "minecraft": "~${minecraftVersion}",
+    "java": ">=25",
+    "fabric-lifecycle-events-v1": "*",
+    "fabric-networking-api-v1": "*"
+  }
+}
