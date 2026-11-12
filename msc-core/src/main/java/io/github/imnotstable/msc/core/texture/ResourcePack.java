@@ -311,6 +311,32 @@ public final class ResourcePack implements AutoCloseable {
         }
     }
 
+    /**
+     * Stop the standalone host this session started on server_detach, once the detached server was stopped after
+     * all. The next build serves in-process again, on the same port. Returns true when there was one.
+     */
+    public synchronized boolean stopOwnHost() {
+        if (hostProcess == null) {
+            return false;
+        }
+        ProcessHandle h = hostProcess.toHandle();
+        hostProcess.destroy();
+        hostProcess = null;
+        try {
+            h.onExit().get(5, java.util.concurrent.TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        } catch (java.util.concurrent.ExecutionException | java.util.concurrent.TimeoutException e) {
+            // Its port frees a moment later; a build then falls back to a free port.
+        }
+        try {
+            Files.deleteIfExists(hostPidFile());
+        } catch (IOException ignored) {
+            // A stale file is checked against the process start time anyway.
+        }
+        return true;
+    }
+
     /** Stop a pack host an earlier, detached session left running. Returns a note, or null when there was none. */
     public synchronized String stopLeftoverHost() {
         if (hostProcess != null && hostProcess.isAlive()) {

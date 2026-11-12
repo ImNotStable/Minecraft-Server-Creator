@@ -108,6 +108,20 @@ class LifecycleToolsTest {
     }
 
     @Test
+    void stoppingADetachedServerInTheSameSessionStopsItsPackHostToo() throws Exception {
+        h.ok("server_start", "timeoutSeconds", 30);
+        h.ok("texture_create", "name", "item/dot", "palette", List.of("a=#ff0000"), "rows", List.of("a"));
+        String url = h.ok("pack_build", "apply", false).lines().filter(l -> l.startsWith("url: ")).findFirst()
+                .orElseThrow().substring(5);
+        h.ok("server_detach");
+        assertThat(h.ok("server_stop")).isEqualTo("server stopped, and the pack host it kept running");
+        assertThat(fetch(url)).isEqualTo(-1);
+        assertThat(workspace.resolve(".msc/pack-host.pid")).doesNotExist();
+        assertThat(h.ok("pack_build", "apply", false)).contains(url);
+        assertThat(fetch(url)).isEqualTo(200);
+    }
+
+    @Test
     void aRestartSendsTheAppliedPackAgain() {
         assertThat(h.ok("server_start", "timeoutSeconds", 30)).doesNotContain("resource pack");
         h.ok("texture_create", "name", "item/dot", "palette", List.of("a=#ff0000"), "rows", List.of("a"));

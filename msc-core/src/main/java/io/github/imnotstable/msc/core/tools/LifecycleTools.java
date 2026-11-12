@@ -88,7 +88,8 @@ public final class LifecycleTools {
         registry.add("server_stop", "Stop the dev server.", Schema.of(), args -> {
             String host = pack.stopLeftoverHost();
             if (server.stop(Duration.ofSeconds(30))) {
-                return "server stopped";
+                // Detached earlier in this session: its pack host goes with it, as server_detach promises.
+                return pack.stopOwnHost() ? "server stopped, and the pack host it kept running" : "server stopped";
             }
             String leftover = server.stopLeftover();
             return leftover != null ? leftover : host != null ? host : "server was not running";
