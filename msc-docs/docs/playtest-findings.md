@@ -129,7 +129,8 @@ EULA wait on Minestom. The game's own test environment replaced polling: no `ser
 3. **`project_scaffold` refused the workspace** after `msc_workspace` or `server_setup` had created `.msc`. Fixed: `.msc`
    no longer counts as content.
 4. **The bridge is still needed** for a fresh install: the session's own MSC is pinned to the old install, so
-   `msc_workspace` cannot help until Claude Code restarts. Open.
+   `msc_workspace` cannot help until Claude Code restarts. Fixed by the `msc` plugin (ADR 0021): it starts the
+   newest install, so `/mcp` reconnect picks up a fresh install and no bridge is needed.
 5. **`msc_status` says "server: stopped"** for a server detached by an earlier core, while `server_stop` finds and
    stops it. Open, small.
 6. **`api_class` hides inherited interface constants**: `MinecraftServer.PROTOCOL_VERSION`, `Attribute.SCALE` and

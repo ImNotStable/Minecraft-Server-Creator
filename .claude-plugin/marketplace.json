@@ -1,0 +1,16 @@
+{
+  "name": "msc",
+  "owner": {
+    "name": "ImNotStable"
+  },
+  "metadata": {
+    "description": "Minecraft Server Creator as a Claude Code plugin."
+  },
+  "plugins": [
+    {
+      "name": "msc",
+      "source": "./msc-plugin",
+      "description": "MCP tools to build, run, view and test custom Minecraft servers. Runs the newest msc-core under ~/.msc/core."
+    }
+  ]
+}
