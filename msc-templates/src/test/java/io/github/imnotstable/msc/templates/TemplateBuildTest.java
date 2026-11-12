@@ -25,6 +25,11 @@ class TemplateBuildTest {
     }
 
     @Test
+    void paperGameBuildsAndPassesItsTests() throws IOException, InterruptedException {
+        buildsAndPassesItsTests(Templates.PAPER_GAME);
+    }
+
+    @Test
     void fabricModBuildsAndPassesItsTests() throws IOException, InterruptedException {
         buildsAndPassesItsTests(Templates.FABRIC_MOD);
     }

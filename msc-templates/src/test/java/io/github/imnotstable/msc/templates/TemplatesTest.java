@@ -22,7 +22,9 @@ class TemplatesTest {
 
     @Test
     void listsTemplates() {
-        assertThat(Templates.ids()).containsExactly(Templates.FABRIC_MOD, Templates.MINESTOM_SERVER, Templates.PAPER_PLUGIN, Templates.PAPER_SERVER);
+        assertThat(Templates.ids()).containsExactly(
+                Templates.FABRIC_MOD, Templates.MINESTOM_SERVER, Templates.PAPER_GAME, Templates.PAPER_PLUGIN, Templates.PAPER_SERVER);
+        assertThat(Templates.info(Templates.PAPER_GAME)).containsEntry("platform", "paper");
         assertThat(Templates.info(Templates.FABRIC_MOD)).containsEntry("platform", "fabric");
         assertThat(Templates.info(Templates.MINESTOM_SERVER)).containsEntry("platform", "minestom");
         assertThat(Templates.versions()).containsKeys("fabricLoaderVersion", "fabricApiVersion", "fabricLoomVersion");
@@ -88,6 +90,29 @@ class TemplatesTest {
         assertThat(Files.isExecutable(r.root().resolve("gradlew"))).isTrue();
         assertThat(Files.size(r.root().resolve("gradle/wrapper/gradle-wrapper.jar"))).isGreaterThan(10_000);
         assertThat(r.values()).containsEntry("rconPassword", "secret").containsEntry("serverPort", "25565").containsKey("mcVersion");
+    }
+
+    @Test
+    void scaffoldsAPaperGame() throws IOException {
+        ScaffoldResult r = Templates.scaffold(Templates.PAPER_GAME, dir.resolve("g"), vars);
+
+        String pkg = "src/main/java/com/example/spawnlobby/";
+        assertThat(relative(r)).contains(
+                "build.gradle.kts", "settings.gradle.kts", ".gitignore", "CLAUDE.md", "gradlew",
+                "gradle/wrapper/gradle-wrapper.jar", "run/server.properties", "run/eula.txt",
+                pkg + "SpawnLobbyPlugin.java", pkg + "Game.java", pkg + "GameCommand.java", pkg + "GameConfig.java",
+                "src/test/java/com/example/spawnlobby/SpawnLobbyPluginTest.java",
+                "src/main/resources/plugin.yml", "src/main/resources/config.yml");
+        for (Path f : r.files()) {
+            if (!f.toString().endsWith(".jar")) {
+                assertThat(Files.readString(f)).as(f.toString()).doesNotContain("{{");
+            }
+        }
+        assertThat(Files.readString(r.root().resolve("src/main/resources/plugin.yml")))
+                .contains("main: com.example.spawnlobby.SpawnLobbyPlugin", "spawn-lobby.admin:");
+        assertThat(Files.readString(r.root().resolve(pkg + "SpawnLobbyPlugin.java")))
+                .contains("ADMIN_PERMISSION = \"spawn-lobby.admin\"");
+        assertThat(Files.isExecutable(r.root().resolve("gradlew"))).isTrue();
     }
 
     @Test
