@@ -29,6 +29,9 @@ public final class McpBridge {
             + "change; it builds, runs tests, deploys, restarts and reports errors only. Look up API names with "
             + "api_search before guessing. Dev worlds are superflat: server_start and dev_cycle say where the ground "
             + "is. See the world with world_summary, world_slice or world_render; build with build_structure. "
+            + "Testing a game: server_setup mode=game (survival), world_entities to check mobs and NPCs, server_wait "
+            + "until=<regex> instead of polling, server_command \"tick sprint 600\" to skip ahead; chunks with no "
+            + "player nearby do not tick, so keep game areas loaded with chunk tickets or forceload. "
             + "Results are size-capped; narrow the request rather than raising maxChars.";
 
     private McpBridge() {

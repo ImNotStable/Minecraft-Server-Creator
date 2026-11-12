@@ -1,6 +1,6 @@
 # Tools reference
 
-All 30 tools, one line each. You rarely call them by name: ask Claude in plain words and it picks the tool. Full arguments are in [tools.md](https://github.com/ImNotStable/Minecraft-Server-Creator/blob/main/msc-docs/docs/tools.md).
+All 33 tools, one line each. You rarely call them by name: ask Claude in plain words and it picks the tool. Full arguments are in [tools.md](https://github.com/ImNotStable/Minecraft-Server-Creator/blob/main/msc-docs/docs/tools.md).
 
 Coordinates are text: a position is `x,y,z`, a region is `x1,y1,z1 x2,y2,z2`, an area is `x1,z1 x2,z2`.
 
@@ -16,13 +16,14 @@ Coordinates are text: a position is `x,y,z`, a region is `x1,y1,z1 x2,y2,z2`, an
 | Tool | What it does |
 | --- | --- |
 | `project_scaffold` | Creates a new project from a template (`paper-plugin`, `fabric-mod`, `minestom-server`). |
-| `server_setup` | Downloads the server and installs the agent and dev settings. |
+| `server_setup` | Downloads the server and installs the agent and dev settings. `mode=game` switches to survival and normal difficulty for testing games; `mode=build` back to creative and peaceful. |
 | `server_start` | Starts the server and reports only startup warnings and errors. |
 | `server_stop` | Stops the server. |
 | `server_detach` | Keeps the server and the resource pack running after Claude Code closes, so you can play. The next session stops them. |
 | `dev_cycle` | Builds, deploys, restarts and reports errors, all in one call. |
 | `server_logs` | Shows errors, the last lines, or lines matching a pattern, with stack traces trimmed. |
-| `server_command` | Runs a console command and returns its output. |
+| `server_command` | Runs a console command and returns its output. `tick sprint 600` skips 30 game seconds ahead. |
+| `server_wait` | Waits until a log or chat line matches a pattern, instead of polling. |
 
 ## API lookup
 
@@ -37,6 +38,7 @@ Coordinates are text: a position is `x,y,z`, a region is `x1,y1,z1 x2,y2,z2`, an
 | --- | --- |
 | `world_summary` | Counts blocks and entities in a region, in about six lines. |
 | `world_slice` | Shows a region as text, one character per block, layer by layer. |
+| `world_entities` | Lists the entities in a region with name, position, health and tags. |
 | `world_heightmap` | Shows the ground height of an area, one character per column. |
 | `world_render` | Draws a region as a PNG picture from any angle. |
 

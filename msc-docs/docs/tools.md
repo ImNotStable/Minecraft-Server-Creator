@@ -12,7 +12,7 @@ The AI talks to `msc-core` over MCP (stdio). This page lists every tool, its arg
 - `world` is optional everywhere and defaults to the server's first world.
 - Every call is logged (see "Tool log").
 - World and build tools fail at once with `error: the server is not running...` when the core has no server running and none was attached with `MSC_CORE_ADDRESS`.
-- The whole tool list (30 tools) costs about 3,500 tokens per conversation. A test fails if it grows past 14,100 characters.
+- The whole tool list (33 tools) costs about 3,900 tokens per conversation. A test fails if it grows past 15,500 characters.
 - Results are text. The one exception is `world_render`, which adds one PNG image next to its text.
 
 ## Typical loop
@@ -31,13 +31,14 @@ The AI talks to `msc-core` over MCP (stdio). This page lists every tool, its arg
 | Tool | Arguments | Result | Budget |
 | --- | --- | --- | --- |
 | `project_scaffold` | `name`, `dir`?, `template`? (`paper-plugin` default, `fabric-mod`, `minestom-server`), `package`? (`com.example.<name>`), `acceptEula`? (false) | Where the project was created, its `projectId`, `packageName` and `version`, and the next step (EULA and `server_setup` first when the Paper or Fabric server is not set up). Remembers the template's platform for the workspace | 5 lines |
-| `server_setup` | `version`? (default 26.3), `platform`? (`paper`, `fabric`, `minestom`; default the project's), `acceptEula`? (false) | Paper: build used. Fabric: launcher and Fabric API versions. Both: whether dev defaults and the agent were installed and whether `eula.txt` says `eula=true`. Minestom: one line saying nothing is needed | 5 lines |
-| `server_start` | `timeoutSeconds`? (180) | `server ready in 8.2s, agent connected`, then `world world: ground is y=-61 (most common top block around 0,0; build from y=-60)` (dev worlds are superflat, far below y=64), plus startup warnings and errors only. Fails at once with a one-line error if `eula.txt` lacks `eula=true`. Replaces an installed agent jar that differs from the one in `.msc/agent` (or `MSC_AGENT_JAR`) first, and says `agent jar updated` | 6,000 chars |
+| `server_setup` | `version`? (default 26.3), `platform`? (`paper`, `fabric`, `minestom`; default the project's), `mode`? (`build` or `game`), `acceptEula`? (false) | `mode=game` sets `gamemode=survival`, `difficulty=normal` and `force-gamemode=true` in `server.properties` (`mode=build`: creative, peaceful); without `mode` a new server gets build defaults and an existing one keeps its settings. Paper: build used. Fabric: launcher and Fabric API versions. Both: whether dev defaults and the agent were installed and whether `eula.txt` says `eula=true`. Minestom: one line saying nothing is needed | 5 lines |
+| `server_start` | `timeoutSeconds`? (180) | `server ready in 8.2s, agent connected`, then `world world: ground is y=-61 (most common top block around 0,0; build from y=-60)` (dev worlds are superflat, far below y=64), then `mode: creative, peaceful difficulty (server_setup mode=game for survival, normal: ...)` from `server.properties`, plus startup warnings and errors only. Fails at once with a one-line error if `eula.txt` lacks `eula=true`. Replaces an installed agent jar that differs from the one in `.msc/agent` (or `MSC_AGENT_JAR`) first, and says `agent jar updated` | 6,000 chars |
 | `server_detach` | none | One line: the running server, and the pack host if a pack was built, keep running after this core exits (the pack host moves to a standalone process on the same port, pid in `.msc/pack-host.pid`). The next `server_start`, `dev_cycle` or `server_stop` stops both, the server over RCON | 2 lines |
 | `server_stop` | none | One line. Also stops a server an earlier core left running (pid and start time in `.msc/server.pid`), as `server_start` and `dev_cycle` do first: over RCON so it saves, killed only if that fails | 1 line |
 | `dev_cycle` | `project`? (workspace), `restart`? (true), `maxChars`? | Build, deploy, restart, report in one call. On a failed build: compiler errors and each failed test with its project frames. Otherwise: startup warnings and errors, or `no errors or warnings` | `maxChars` |
 | `server_logs` | `mode`? (`errors`, `tail`, `grep`), `pattern`?, `lines`? (30), `all`? (false), `maxChars`? | `errors`: warnings and errors, stack traces cut to project frames, repeats collapsed to `(xN)` | `maxChars` |
 | `server_command` | `command` | The command's output; a command with bad syntax fails with the parser's message (`command failed`, then where it stopped) | 6,000 chars |
+| `server_wait` | `until` (regex, case-insensitive), `timeoutSeconds`? (60, at most 600) | `matched after 4.1s: <line>` for the first matching log or chat line, or `no line matched in 60s` (or `the server stopped after ...`) with the last 5 lines. Looks at lines since the last `server_command`, `server_wait` match or start, so a line printed between two calls is not missed and one line never matches twice. Not an error on timeout. Only for a server this core started | 1 line, or 6 on timeout |
 
 How logs are condensed: the dev server's fixed banners (running as root or administrator, offline mode) and the Windows system-report noise (`[oshi.*]` messages, `Failed to get system info for ...`) are dropped. Otherwise only WARN and ERROR entries and anything with a stack trace are kept. In a trace, the exception lines, the first frame and all frames outside framework packages (`java.`, `net.minecraft.`, `org.bukkit.`, `io.papermc.` and similar) are kept; runs of framework frames become `... N framework frames`. Identical entries are shown once with a count. By default `server_logs` looks only at lines since the last start.
 
@@ -66,11 +67,20 @@ Built on first use from the platform's jars in the Gradle cache (or `MSC_API_JAR
 | --- | --- | --- | --- |
 | `world_summary` | `region` (up to 8,388,608 blocks) | Size, air share, top 15 block counts, bounds of non-air blocks, non-air count per layer, entity counts | about 6 lines |
 | `world_slice` | `region` (up to 128 wide, 1,048,576 blocks), `states`? (false), `maxChars`? | The region in the text structure format | `maxChars` |
+| `world_entities` | `region` (up to 2,048 x 2,048 wide, any height), `type`? (`zombie`), `limit`? (50), `ids`? (false) | A count line with totals per type, then one line per entity sorted by type and position: `zombie "Brute" 2.5,-60,3 hp 7/20 tags boss,wave`. The name is a player name, custom name or (Paper, Minestom) a text display's text; `ids=true` adds the UUID for commands. Loaded chunks only. Minestom has no scoreboard tags | 6,000 chars |
 | `world_heightmap` | `area` (up to 256 x 256), `maxChars`? | Min, max, mean, then one character per column (`height - min`, 0-9 then a-z); when the range is over 35, numbers per column with runs as `v*n` and repeated rows as `(xN)` | `maxChars` |
 
 | `world_render` | `region` (up to 16,000,000 blocks; read in protocol-sized pieces and stitched), `view`? (`iso`; also `top`, `north`, `south`, `east`, `west`, `iso-ne`/`nw`/`sw`/`se`, `eye x,y,z look x,y,z`, `eye x,y,z yaw N pitch N`), `size`? (512, 64 to 1568) | A PNG as MCP image content, drawn by `msc-renderer` with the pack's textures, plus a caption: view, pixels per block, image size and token estimate, visible blocks, and the path of the copy saved under `<workspace>/.msc/renders/` | image about 330 tokens at 512 px, caption 2 to 3 lines |
 
 A 16 x 16 slice costs about 70 tokens per layer; identical and uniform layers cost one line each.
+
+## Testing a game
+
+- `server_setup mode=game` before testing combat, damage or hunger: the default dev server is creative and peaceful, so mobs despawn and players take no damage.
+- `world_entities` checks wave spawns, NPCs and holograms (text displays) without a player.
+- `server_wait until="Wave 3"` waits for a log or chat line instead of polling `server_command`. Log what the game does (stage changes, wins, losses) so it can be waited for.
+- `server_command "tick sprint 600"` runs 600 ticks (30 game seconds) as fast as the server can, so timers and waves come sooner. `tick rate 40` doubles the speed; `tick rate 20` restores it.
+- Chunks with no player nearby are not loaded, so nothing in them moves: mobs spawned there freeze and redstone stops. Keep game areas loaded with a plugin chunk ticket (Paper: `world.addPluginChunkTicket(chunkX, chunkZ, plugin)`) or `forceload add x1 z1 x2 z2`. Vanilla spawner blocks and natural spawning also need a player close by, so spawn waves from the plugin.
 
 ## Text structure format
 
