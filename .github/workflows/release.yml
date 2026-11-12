@@ -67,7 +67,7 @@ jobs:
         run: |
           mkdir dist
           cp "msc-core/build/distributions/msc-core-$VERSION.zip" dist/
-          for platform in paper fabric minestom; do
+          for platform in paper fabric minestom neoforge forge; do
             cp "msc-agent-$platform/build/libs/msc-agent-$platform-$VERSION.jar" dist/
           done
           (cd dist && sha256sum * > SHA256SUMS.txt)
