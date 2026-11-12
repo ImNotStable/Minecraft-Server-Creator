@@ -86,7 +86,8 @@ public final class ServerProperties {
         }
         left.forEach((k, v) -> lines.add(k + "=" + v));
         Files.createDirectories(file.toAbsolutePath().getParent());
-        Files.write(file, lines);
+        // "\n" on every OS, so the file and its tests do not depend on where MSC runs.
+        Files.writeString(file, String.join("\n", lines) + "\n");
     }
 
     /**
