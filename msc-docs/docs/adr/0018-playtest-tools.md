@@ -1,4 +1,4 @@
-# ADR 0017: Tools for an AI to check the game it built
+# ADR 0018: Tools for an AI to check the game it built
 
 Status: accepted, 2026-11-12. Decided by Claude under Jeremiah's hand-over of build decisions.
 
