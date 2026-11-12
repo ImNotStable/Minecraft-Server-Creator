@@ -38,6 +38,16 @@ and the threads wrote a private stdio-to-HTTP bridge to reach a fresh core witho
    running one; the stale-checkout and repo-workspace warnings now point at `/mcp` reconnect and `msc_workspace`
    instead of `claude mcp add`.
 
+8. **An older flat install keeps working.** (Added after a cloud session kept running its old core: it was registered with
+   the ADR 0013 `claude mcp add` line on `<root>/lib/*`, which a versioned install never touches.) When the install root
+   still holds a flat install (`<root>/lib/msc-core-*.jar`), `installMsc` runs the new core once
+   (`Main refresh-legacy-install`, `LegacyInstall`) to copy the new `lib/`, `agents/`, `bot/` and `bin/` over it,
+   along with `install.properties`. A jar the new install lacks is renamed to `<name>.replaced`, so `lib/*` skips it
+   and nothing is deleted. It also rewrites `claude-mcp-add.txt` to the working line plus a pointer to the plugin.
+   A core that still holds those jars on Windows makes the copy fail, and `installMsc` says to close the session and
+   run it again. The stale-checkout warning now gives the exact command, including `-Pmsc.installDir` when the install
+   is not in `~/.msc/core`.
+
 ## Checked
 
 - `./gradlew build`; `:msc-plugin:test` starts the real core through the launcher in-process and as a child and gets
@@ -50,5 +60,5 @@ and the threads wrote a private stdio-to-HTTP bridge to reach a fresh core witho
 ## Consequences
 
 - A user needs `java` 17+ on PATH for the launcher, besides the Java 25 that runs the core (often the same).
-- Users of the old `claude mcp add msc` line must remove it (`claude mcp remove msc -s user`), or both servers run.
+- Users of the old `claude mcp add msc` line should remove it (`claude mcp remove msc -s user`), or both servers run if they add the plugin. Until then, point 8 keeps that line on the newest core.
 - The bench and any script that registered MSC by hand keep working: the core's command line is unchanged.

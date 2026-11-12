@@ -38,7 +38,7 @@ You do not need to install Java 25 yourself. The build downloads it if it is mis
 
    Use the folder you cloned into, or `ImNotStable/Minecraft-Server-Creator` to add it straight from GitHub. The plugin runs a small launcher that starts the newest MSC under `~/.msc/core`, in the folder Claude Code runs in.
 
-   Already registered MSC by hand with `claude mcp add` (older versions)? Remove that first, or you get two copies: `claude mcp remove msc -s user`.
+   Already registered MSC by hand with `claude mcp add` (older versions)? Remove that first, or you get two copies: `claude mcp remove msc -s user`. Until you do, `installMsc` keeps that older registration on the newest core too.
 
 4. Make an empty folder for your server and start Claude Code in it.
 

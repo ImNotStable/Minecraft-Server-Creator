@@ -44,6 +44,8 @@ class SetupCheckTest {
         assertThat(SetupCheck.staleInstall(install(repo, 1_999_000_000_000L)))
                 .startsWith("warning: this msc-core (installed ")
                 .contains("msc-core/src/main/java/Main.java changed 2033-05-18T03:33:20Z")
+                .contains("Run `\"" + LegacyInstall.slash(repo.resolve("gradlew")) + "\" -p \"" + LegacyInstall.slash(repo)
+                        + "\" :msc-core:installMsc -Pmsc.installDir=")
                 .endsWith("then reconnect msc in /mcp.");
         assertThat(SetupCheck.staleInstall(install(repo, 2_001_000_000_000L))).isNull();
         assertThat(SetupCheck.staleInstall(dir.resolve("nowhere"))).isNull();

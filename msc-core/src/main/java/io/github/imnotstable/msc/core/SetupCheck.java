@@ -94,8 +94,8 @@ public final class SetupCheck {
         }
         return "warning: this msc-core (installed " + seconds(installed) + " in " + installDir + ") is older than its "
                 + "checkout: " + Path.of(source).relativize(newest).toString().replace('\\', '/') + " changed "
-                + seconds(newestTime) + ". Tools may be missing or behave differently. Run `./gradlew "
-                + ":msc-core:installMsc` in " + source + ", then reconnect msc in /mcp.";
+                + seconds(newestTime) + ". Tools may be missing or behave differently. Run `"
+                + LegacyInstall.installCommand(installDir, Path.of(source), home()) + "`, then reconnect msc in /mcp.";
     }
 
     /**
@@ -146,6 +146,11 @@ public final class SetupCheck {
         } catch (IOException e) {
             return false;
         }
+    }
+
+    private static Path home() {
+        String home = System.getProperty("user.home");
+        return home == null ? null : Path.of(home);
     }
 
     private static Instant seconds(long millis) {
