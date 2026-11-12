@@ -79,7 +79,8 @@ public final class LifecycleTools {
                 "Create a new project from a template (Gradle KTS, tests wired in). Target directory must be empty.",
                 Schema.of().req("name", "string", "Project name, for example MyPlugin")
                         .opt("dir", "string", "Target directory, relative to the workspace. Default: the workspace itself")
-                        .opt("template", "string", "paper-plugin (default), paper-game (minigame base: kit, stages, saved progress, /game debug commands), fabric-mod or minestom-server")
+                        .opt("template", "string", "paper-plugin (default), fabric-mod, minestom-server, or a minigame base (kit, stages, saved progress, /game debug "
+                                + "commands): paper-game, fabric-game, minestom-game")
                         .opt("package", "string", "Java package. Default com.example.<name>")
                         .opt("acceptEula", "boolean", EULA_ARG),
                 t::scaffold);

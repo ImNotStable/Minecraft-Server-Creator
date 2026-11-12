@@ -56,6 +56,12 @@ class McpBridgeTest {
                 assertThat(listed.toString().length()).isLessThan(16000);
                 JsonObject batch = tools.get(names.indexOf("build_batch")).getAsJsonObject().getAsJsonObject("inputSchema");
                 assertThat(batch.getAsJsonArray("required").toString()).isEqualTo("[\"steps\"]");
+                // Every project template the jar ships (paper-server is only nested in others) is named in project_scaffold's schema, so none goes unseen.
+                String templates = tools.get(names.indexOf("project_scaffold")).getAsJsonObject()
+                        .getAsJsonObject("inputSchema").getAsJsonObject("properties").getAsJsonObject("template")
+                        .get("description").getAsString();
+                assertThat(templates).contains(io.github.imnotstable.msc.templates.Templates.ids().stream()
+                        .filter(id -> !id.equals(io.github.imnotstable.msc.templates.Templates.PAPER_SERVER)).toList());
 
                 send(toServer, "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"msc_status\",\"arguments\":{}}}");
                 JsonObject status = read(reader, 3).getAsJsonObject("result");
