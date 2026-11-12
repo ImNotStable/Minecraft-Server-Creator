@@ -124,49 +124,24 @@ final class WorldOps {
 
     // ---- edits ----------------------------------------------------------------------------
 
-    Ops.EditResult fill(Ops.FillParams params) {
-        Region region = withinLimit(params.region());
-        World world = world(region.world());
-        requireBuildHeight(world, region.min().y(), region.max().y());
-        BlockData target = parse(params.state());
-        List<BlockData> onlyReplace = params.onlyReplace() == null ? List.of()
-                : params.onlyReplace().stream().map(this::parse).toList();
-        return apply(world, new RegionCursor(region, target), onlyReplace, false);
-    }
-
     Ops.EditResult write(Ops.WriteParams params) {
         BlockGrid grid = params.grid();
         Region region = withinLimit(grid.region());
         World world = world(region.world());
         requireBuildHeight(world, region.min().y(), region.max().y());
         List<BlockData> palette = grid.palette().stream().map(this::parse).toList();
-        return apply(world, new GridCursor(region, grid.blocks(), palette), List.of(), params.updatePhysics());
-    }
-
-    Ops.EditResult setBlocks(Ops.SetBlocksParams params) {
-        if (params.changes().size() > Limits.MAX_REGION_VOLUME) {
-            throw new OpException(ErrorCodes.TOO_LARGE,
-                    params.changes().size() + " changes exceed " + Limits.MAX_REGION_VOLUME);
-        }
-        World world = world(params.world());
-        Map<String, BlockData> parsed = new HashMap<>();
-        List<BlockData> targets = new ArrayList<>(params.changes().size());
-        for (Ops.BlockChange change : params.changes()) {
-            requireBuildHeight(world, change.y(), change.y());
-            targets.add(parsed.computeIfAbsent(change.state(), this::parse));
-        }
-        return apply(world, new ListCursor(params.changes(), targets), List.of(), params.updatePhysics());
+        return apply(world, new GridCursor(region, grid.blocks(), palette), params.updatePhysics());
     }
 
     Ops.EditResult undo(Ops.UndoParams params) {
         UndoRecord record = history.take(params.editId())
                 .orElseThrow(() -> new OpException(ErrorCodes.NOT_FOUND, "no undo kept for edit " + params.editId()));
         World world = world(record.world());
-        return apply(world, record.restore(), List.of(), false);
+        return apply(world, record.restore(), false);
     }
 
-    private Ops.EditResult apply(World world, ChangeSource changes, List<BlockData> onlyReplace, boolean physics) {
-        UndoRecord record = main.run(new EditJob(world, changes, onlyReplace, physics));
+    private Ops.EditResult apply(World world, ChangeSource changes, boolean physics) {
+        UndoRecord record = main.run(new EditJob(world, changes, physics));
         return new Ops.EditResult(history.add(record), record.size());
     }
 
@@ -225,50 +200,6 @@ final class WorldOps {
 
     // ---- cursors --------------------------------------------------------------------------
 
-    /** Every block of a region, Y-Z-X order, with one target. */
-    private static final class RegionCursor implements ChangeSource {
-        private final Region region;
-        private final BlockData target;
-        private final int volume;
-        private int i = -1;
-
-        RegionCursor(Region region, BlockData target) {
-            this.region = region;
-            this.target = target;
-            this.volume = Math.toIntExact(region.volume());
-        }
-
-        @Override
-        public boolean advance() {
-            return ++i < volume;
-        }
-
-        @Override
-        public int x() {
-            return region.min().x() + i % region.sizeX();
-        }
-
-        @Override
-        public int y() {
-            return region.min().y() + i / (region.sizeX() * region.sizeZ());
-        }
-
-        @Override
-        public int z() {
-            return region.min().z() + (i % (region.sizeX() * region.sizeZ())) / region.sizeX();
-        }
-
-        @Override
-        public BlockData target() {
-            return target;
-        }
-
-        @Override
-        public long size() {
-            return volume;
-        }
-    }
-
     /** Grid cells that are not -1. */
     private static final class GridCursor implements ChangeSource {
         private final Region region;
@@ -316,45 +247,4 @@ final class WorldOps {
         }
     }
 
-    /** An explicit list of changes. */
-    private static final class ListCursor implements ChangeSource {
-        private final List<Ops.BlockChange> changes;
-        private final List<BlockData> targets;
-        private int i = -1;
-
-        ListCursor(List<Ops.BlockChange> changes, List<BlockData> targets) {
-            this.changes = changes;
-            this.targets = targets;
-        }
-
-        @Override
-        public boolean advance() {
-            return ++i < changes.size();
-        }
-
-        @Override
-        public int x() {
-            return changes.get(i).x();
-        }
-
-        @Override
-        public int y() {
-            return changes.get(i).y();
-        }
-
-        @Override
-        public int z() {
-            return changes.get(i).z();
-        }
-
-        @Override
-        public BlockData target() {
-            return targets.get(i);
-        }
-
-        @Override
-        public long size() {
-            return changes.size();
-        }
-    }
 }

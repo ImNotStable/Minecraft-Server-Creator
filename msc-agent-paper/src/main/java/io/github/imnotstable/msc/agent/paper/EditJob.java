@@ -13,20 +13,13 @@ final class EditJob implements SlicedJob<UndoRecord> {
 
     private final World world;
     private final ChangeSource changes;
-    private final List<BlockData> onlyReplace;
     private final boolean physics;
     private final UndoRecord.Builder undo;
     private UndoRecord result;
 
-    /**
-     * @param onlyReplace when not empty, only blocks matching one of these are replaced; a state
-     *                    without properties (for example {@code minecraft:stone}) matches any
-     *                    state of that block
-     */
-    EditJob(World world, ChangeSource changes, List<BlockData> onlyReplace, boolean physics) {
+    EditJob(World world, ChangeSource changes, boolean physics) {
         this.world = world;
         this.changes = changes;
-        this.onlyReplace = onlyReplace == null ? List.of() : onlyReplace;
         this.physics = physics;
         this.undo = new UndoRecord.Builder(world.getName(), changes.size());
     }
@@ -40,7 +33,7 @@ final class EditJob implements SlicedJob<UndoRecord> {
             int z = changes.z();
             BlockData target = changes.target();
             BlockData current = world.getBlockData(x, y, z);
-            if (!current.equals(target) && replaces(current)) {
+            if (!current.equals(target)) {
                 undo.add(x, y, z, current);
                 world.getBlockAt(x, y, z).setBlockData(target, physics);
             }
@@ -50,18 +43,6 @@ final class EditJob implements SlicedJob<UndoRecord> {
         }
         result = undo.build();
         return true;
-    }
-
-    private boolean replaces(BlockData current) {
-        if (onlyReplace.isEmpty()) {
-            return true;
-        }
-        for (BlockData filter : onlyReplace) {
-            if (current.matches(filter)) {
-                return true;
-            }
-        }
-        return false;
     }
 
     @Override

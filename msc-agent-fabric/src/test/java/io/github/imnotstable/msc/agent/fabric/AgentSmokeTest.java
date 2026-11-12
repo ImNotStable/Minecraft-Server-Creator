@@ -11,6 +11,8 @@ import io.github.imnotstable.msc.protocol.transport.CoreServer;
 import io.github.imnotstable.msc.protocol.transport.OpRouter;
 import io.github.imnotstable.msc.protocol.transport.RequestHandler;
 import io.github.imnotstable.msc.protocol.world.Region;
+import io.github.imnotstable.msc.protocol.world.BlockGrid;
+import java.util.List;
 import java.time.Duration;
 import java.util.Optional;
 import java.util.concurrent.BlockingQueue;
@@ -99,8 +101,9 @@ class AgentSmokeTest {
         assertThat(ready).isNotNull();
         assertThat(ready.name()).isEqualTo(Events.SERVER_READY);
 
-        Ops.EditResult fill = session.connection().call(Ops.WORLD_FILL,
-                new Ops.FillParams(Region.of("world", 0, 64, 0, 3, 64, 3), "minecraft:stone", null), TIMEOUT)
+        Ops.EditResult fill = session.connection().call(Ops.WORLD_WRITE,
+                new Ops.WriteParams(new BlockGrid(Region.of("world", 0, 64, 0, 3, 64, 3), List.of("minecraft:stone"),
+                        new int[16]), false), TIMEOUT)
                 .get(TIMEOUT.toSeconds(), TimeUnit.SECONDS);
         assertThat(fill.changed()).isEqualTo(16);
 
