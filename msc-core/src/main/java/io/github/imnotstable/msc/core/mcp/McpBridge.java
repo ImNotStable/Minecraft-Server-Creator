@@ -23,7 +23,8 @@ import java.util.Map;
 public final class McpBridge {
     private static final Gson GSON = new Gson();
     private static final String INSTRUCTIONS = "Tools for developing a Minecraft server (Paper, Fabric or Minestom). "
-            + "New project: project_scaffold into the workspace, then read its CLAUDE.md for conventions. Paper and "
+            + "New project: project_scaffold into the workspace (template paper-game for a minigame: kit, stages, saved "
+            + "progress and /game status and stage-jump commands), then read its CLAUDE.md for conventions. Paper and "
             + "Fabric need the user's agreement to the Minecraft EULA (https://aka.ms/MinecraftEULA): ask them, then "
             + "server_setup acceptEula=true; never accept it for them. Then edit code and call dev_cycle after each "
             + "change; it builds, runs tests, deploys, restarts and reports errors only. Look up API names with "
