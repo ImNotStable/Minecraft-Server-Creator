@@ -31,6 +31,10 @@ public final class Core implements AutoCloseable {
         this.config = config;
         this.hub = new AgentHub(config.agentPort(), config.token());
         this.server = new ServerManager(config, hub);
+        if (config.agentPort() == 0) {
+            // No fixed address, so only a server this core starts can connect (MSC_CORE_ADDRESS attaches others).
+            hub.agentExpected(server::running);
+        }
         this.pack = new ResourcePack(config.dataDir().resolve("pack"), config.dataDir().resolve("build"),
                 config.packHost(), config.packFormat());
         this.log = new ToolLog(config.toolLog());

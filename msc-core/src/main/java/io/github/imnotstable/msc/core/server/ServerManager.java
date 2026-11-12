@@ -110,6 +110,7 @@ public final class ServerManager implements AutoCloseable {
             sawDone = false;
             started = pb.start();
             process = started;
+            rememberPid(started);
             Thread.ofVirtual().name("msc-server-log").start(() -> pump(started));
         }
         long deadline = begin + timeout.toNanos();
@@ -151,6 +152,63 @@ public final class ServerManager implements AutoCloseable {
         in.flush();
     }
 
+    /** {@code .msc/server.pid}: the running server's pid and start time, so a later core can find it. */
+    Path pidFile() {
+        return config.dataDir().resolve("server.pid");
+    }
+
+    private void rememberPid(Process p) {
+        try {
+            long started = p.info().startInstant().map(java.time.Instant::toEpochMilli).orElse(0L);
+            Files.createDirectories(config.dataDir());
+            Files.writeString(pidFile(), p.pid() + " " + started + "\n");
+        } catch (IOException e) {
+            // Only leftover detection depends on it.
+        }
+    }
+
+    /**
+     * Stop a server that an earlier core started and left running (on Windows a core killed with its Claude Code
+     * session cannot stop its server, which then holds the world lock). The pid file's start time must match, so a
+     * reused pid is never touched. Returns a one-line note, or null when there was none.
+     */
+    public synchronized String stopLeftover() throws InterruptedException {
+        Path file = pidFile();
+        if (running() || !Files.exists(file)) {
+            return null;
+        }
+        String[] parts;
+        try {
+            parts = Files.readString(file).strip().split(" ");
+            Files.deleteIfExists(file);
+        } catch (IOException e) {
+            return null;
+        }
+        if (parts.length != 2) {
+            return null;
+        }
+        long pid;
+        long startedAt;
+        try {
+            pid = Long.parseLong(parts[0]);
+            startedAt = Long.parseLong(parts[1]);
+        } catch (NumberFormatException e) {
+            return null;
+        }
+        ProcessHandle h = ProcessHandle.of(pid).orElse(null);
+        if (h == null || !h.isAlive() || startedAt == 0
+                || h.info().startInstant().map(java.time.Instant::toEpochMilli).orElse(-1L) != startedAt) {
+            return null;
+        }
+        h.destroy();
+        try {
+            h.onExit().get(20, TimeUnit.SECONDS);
+        } catch (java.util.concurrent.ExecutionException | java.util.concurrent.TimeoutException e) {
+            h.destroyForcibly();
+        }
+        return "stopped a server left running by an earlier session (pid " + pid + ")";
+    }
+
     /** Ask the server to stop, and kill it if it does not within the timeout. Returns false if it was not running. */
     public boolean stop(Duration timeout) throws InterruptedException {
         Process p;
@@ -169,6 +227,11 @@ public final class ServerManager implements AutoCloseable {
             p.descendants().forEach(ProcessHandle::destroyForcibly);
             p.destroyForcibly();
             p.waitFor(10, TimeUnit.SECONDS);
+        }
+        try {
+            Files.deleteIfExists(pidFile());
+        } catch (IOException ignored) {
+            // A stale file is checked against the process start time anyway.
         }
         return true;
     }

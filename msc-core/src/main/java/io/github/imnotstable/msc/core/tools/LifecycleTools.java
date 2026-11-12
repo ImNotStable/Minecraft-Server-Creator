@@ -15,6 +15,7 @@ import io.github.imnotstable.msc.core.tool.ToolException;
 import io.github.imnotstable.msc.core.tool.ToolRegistry;
 import io.github.imnotstable.msc.protocol.op.Ops;
 import io.github.imnotstable.msc.protocol.transport.CoreServer;
+import io.github.imnotstable.msc.protocol.world.BlockPos;
 import io.github.imnotstable.msc.templates.ScaffoldResult;
 import io.github.imnotstable.msc.templates.TemplateVariables;
 import io.github.imnotstable.msc.templates.Templates;
@@ -26,6 +27,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 import java.util.stream.Stream;
@@ -70,8 +72,13 @@ public final class LifecycleTools {
                 t::setup);
         registry.add("server_start", "Start the dev server and wait until it is ready. Returns startup errors only.",
                 Schema.of().opt("timeoutSeconds", "integer", "Default 180"), t::start);
-        registry.add("server_stop", "Stop the dev server.", Schema.of(), args ->
-                server.stop(Duration.ofSeconds(30)) ? "server stopped" : "server was not running");
+        registry.add("server_stop", "Stop the dev server.", Schema.of(), args -> {
+            if (server.stop(Duration.ofSeconds(30))) {
+                return "server stopped";
+            }
+            String leftover = server.stopLeftover();
+            return leftover != null ? leftover : "server was not running";
+        });
         registry.add("dev_cycle",
                 "Build the project, deploy its jar, restart the server and report: one call for the whole edit-test loop. "
                         + "Returns compile or test failures, or runtime errors from startup.",
@@ -102,7 +109,7 @@ public final class LifecycleTools {
         ScaffoldResult result;
         try {
             TemplateVariables vars = TemplateVariables.of(name).withAcceptEula(args.bool("acceptEula", false));
-            result = onlyCoreData(dir) ? scaffoldBesideCoreData(template, dir, vars)
+            result = onlyToolFiles(dir) ? scaffoldBesideToolFiles(template, dir, vars)
                     : Templates.scaffold(template, dir, vars);
         } catch (IllegalArgumentException | IllegalStateException e) {
             throw new ToolException(String.valueOf(e.getMessage()));
@@ -125,20 +132,26 @@ public final class LifecycleTools {
         return out.toString();
     }
 
-    /** True when {@code dir} holds nothing but the core's own {@code .msc} folder, as the workspace does after any call. */
-    private boolean onlyCoreData(Path dir) throws IOException {
+    /**
+     * Entries a folder may already hold and still count as empty for a scaffold: the core's own {@code .msc},
+     * Claude Code's project config, git and editor folders. None of them collide with template files.
+     */
+    private static final Set<String> TOOL_FILES = Set.of(".msc", ".mcp.json", ".claude", ".git", ".idea", ".vscode");
+
+    /** True when {@code dir} exists and holds nothing but {@link #TOOL_FILES}, as a fresh workspace does. */
+    private static boolean onlyToolFiles(Path dir) throws IOException {
         if (!Files.isDirectory(dir)) {
             return false;
         }
         try (Stream<Path> list = Files.list(dir)) {
             List<Path> entries = list.toList();
-            return entries.size() == 1 && entries.getFirst().equals(config.dataDir());
+            return !entries.isEmpty() && entries.stream().allMatch(e -> TOOL_FILES.contains(e.getFileName().toString()));
         }
     }
 
     /** Templates only write into empty directories, so render into a staging folder and move the files in. */
-    private ScaffoldResult scaffoldBesideCoreData(String template, Path dir, TemplateVariables vars) throws IOException {
-        Path staging = Files.createTempDirectory(config.dataDir(), "scaffold-");
+    private ScaffoldResult scaffoldBesideToolFiles(String template, Path dir, TemplateVariables vars) throws IOException {
+        Path staging = Files.createTempDirectory(Files.createDirectories(config.dataDir()), "scaffold-");
         Path staged = staging.resolve("project");
         ScaffoldResult result = Templates.scaffold(template, staged, vars);
         try (Stream<Path> list = Files.list(staged)) {
@@ -236,12 +249,22 @@ public final class LifecycleTools {
         out.append("fabric api ").append(api).append(apiJar.cached() ? " (cached)" : " (downloaded)").append('\n');
     }
 
-    /** The agent jar for a platform: the configured one, else the best match in {@code .msc/agent}. */
+    /**
+     * The agent jar for a platform: the configured one, else the best match in {@code .msc/agent}, else the one
+     * shipped in the core's install folder ({@code agents/}).
+     */
     private Path findAgentJar(Platform platform) throws IOException {
         if (config.agentJar() != null) {
             return Files.exists(config.agentJar()) ? config.agentJar() : null;
         }
-        Path dir = config.dataDir().resolve("agent");
+        Path found = agentIn(config.dataDir().resolve("agent"), platform);
+        if (found == null && config.installDir() != null) {
+            found = agentIn(config.installDir().resolve("agents"), platform);
+        }
+        return found;
+    }
+
+    private static Path agentIn(Path dir, Platform platform) throws IOException {
         if (!Files.isDirectory(dir)) {
             return null;
         }
@@ -263,6 +286,7 @@ public final class LifecycleTools {
     }
 
     private String startAndReport(int timeoutSeconds, int maxChars) throws IOException, InterruptedException {
+        String leftover = server.stopLeftover();
         boolean agentUpdated = refreshAgent();
         ServerManager.StartResult r = server.start(Duration.ofSeconds(timeoutSeconds));
         startMark = r.logMark();
@@ -271,12 +295,18 @@ public final class LifecycleTools {
         String condensed = analysis.text();
         boolean clean = analysis.clean();
         StringBuilder out = new StringBuilder();
+        if (leftover != null) {
+            out.append(leftover).append('\n');
+        }
         if (r.ready()) {
             out.append("server ready in ").append(seconds(r.millis()));
             CoreServer.AgentSession s = hub.current();
             out.append(s != null ? ", agent connected" : ", no agent connected (world tools unavailable)");
             if (agentUpdated) {
                 out.append(", agent jar updated");
+            }
+            if (s != null) {
+                out.append(groundLine());
             }
             out.append('\n').append(clean ? "no errors or warnings" : condensed);
         } else if (r.exited()) {
@@ -288,6 +318,29 @@ public final class LifecycleTools {
             out.append("server not ready after ").append(timeoutSeconds).append("s (still starting)\n").append(condensed);
         }
         return out.toString();
+    }
+
+    /**
+     * Where the ground is, so the AI does not build in the air: dev worlds are superflat with the surface far below
+     * y=64. Best effort; a start never fails because of it.
+     */
+    private String groundLine() {
+        try {
+            Ops.ServerInfo info = hub.call(Ops.SERVER_INFO, new Ops.Empty());
+            if (info.worlds().isEmpty()) {
+                return "";
+            }
+            String world = info.worlds().getFirst();
+            BlockPos origin = new BlockPos(0, 0, 0);
+            Ops.HeightmapResult h = hub.call(Ops.WORLD_HEIGHTMAP, new Ops.HeightmapParams(world, origin, origin));
+            int y = h.heights()[0];
+            return "\nworld " + world + ": top block at 0,0 is y=" + y + " (build from y=" + (y + 1) + ")";
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return "";
+        } catch (RuntimeException e) {
+            return "";
+        }
     }
 
     /**
