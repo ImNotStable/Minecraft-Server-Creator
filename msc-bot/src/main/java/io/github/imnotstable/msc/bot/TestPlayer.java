@@ -25,6 +25,7 @@ import org.geysermc.mcprotocollib.network.event.session.SessionAdapter;
 import org.geysermc.mcprotocollib.network.factory.ClientNetworkSessionFactory;
 import org.geysermc.mcprotocollib.network.packet.Packet;
 import org.geysermc.mcprotocollib.protocol.MinecraftProtocol;
+import org.geysermc.mcprotocollib.protocol.codec.MinecraftCodec;
 import org.geysermc.mcprotocollib.protocol.data.game.ClientCommand;
 import org.geysermc.mcprotocollib.protocol.data.game.ResourcePackStatus;
 import org.geysermc.mcprotocollib.protocol.data.game.entity.object.Direction;
@@ -70,6 +71,8 @@ import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.player.Serv
  * through the agent, sends what a real client sends each tick, and records what the server tells it.
  */
 public final class TestPlayer implements AutoCloseable {
+    /** The Minecraft version this player speaks; it cannot join a server on another version. */
+    public static final String MINECRAFT_VERSION = MinecraftCodec.CODEC.getMinecraftVersion();
     /** A tracked entity near the player. */
     record Tracked(String type, double x, double y, double z) {
     }
@@ -116,7 +119,8 @@ public final class TestPlayer implements AutoCloseable {
         TestPlayer p = new TestPlayer(name, host, port, blocks);
         p.session.addListener(p.new Listener());
         p.session.connect(true);
-        if (!p.spawned.await(timeout.toMillis(), TimeUnit.MILLISECONDS)) {
+        // A kick during login also ends the wait, so check for it too.
+        if (!p.spawned.await(timeout.toMillis(), TimeUnit.MILLISECONDS) || p.disconnect != null) {
             String why = p.disconnect;
             p.close();
             throw new IllegalStateException("could not join " + host + ":" + port + " as " + name

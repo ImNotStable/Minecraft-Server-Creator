@@ -27,4 +27,13 @@ class PlayerToolsTest {
                     .contains("survival, adventure or creative");
         }
     }
+
+    @Test
+    void saysSoWhenTheServerIsAnotherMinecraftVersion() throws Exception {
+        try (CoreHarness h = new CoreHarness(workspace).withAgent()) {
+            h.agent.minecraft = "26.2";
+            assertThat(h.error("player_test", "actions", List.of("jump")))
+                    .contains("Minecraft 26.2", "speaks " + io.github.imnotstable.msc.bot.TestPlayer.MINECRAFT_VERSION);
+        }
+    }
 }

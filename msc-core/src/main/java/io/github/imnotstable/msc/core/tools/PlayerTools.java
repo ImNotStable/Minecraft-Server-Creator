@@ -69,6 +69,13 @@ public final class PlayerTools implements AutoCloseable {
             player = null;
         }
         if (player == null) {
+            if (info.minecraftVersion() != null && !info.minecraftVersion().equals(TestPlayer.MINECRAFT_VERSION)) {
+                throw new ToolException("this " + info.platform() + " server runs Minecraft " + info.minecraftVersion()
+                        + " but the test player speaks " + TestPlayer.MINECRAFT_VERSION + ", so it cannot join."
+                        + ("minestom".equals(info.platform())
+                                ? " Test players in Minestom's test environment instead (@EnvTest, env.createPlayer, env.tick)."
+                                : ""));
+            }
             String[] address = address();
             try {
                 player = TestPlayer.join(name, address[0], Integer.parseInt(address[1]),
