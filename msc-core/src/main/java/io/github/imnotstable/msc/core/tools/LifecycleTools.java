@@ -72,8 +72,9 @@ public final class LifecycleTools {
                         .opt("all", "boolean", "Look at the whole log, not only since the last start. Default false")
                         .opt("maxChars", "integer", "Result size cap. Default 6000"),
                 console::logs);
-        registry.add("server_command", "Run a console command on the server and return its output.",
-                Schema.of().req("command", "string", "Command without the leading slash"), console::command);
+        registry.add("server_command", "Run console commands on the server and return their output.",
+                Schema.of().req("command", "string", "Command without the leading slash; several: one per line"),
+                console::command);
         registry.add("server_wait", "Wait until a log or chat line matches a regex, instead of polling.",
                 Schema.of().req("until", "string", "Regex, case-insensitive")
                         .opt("timeoutSeconds", "integer", "Default 60"), console::await);

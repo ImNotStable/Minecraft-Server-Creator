@@ -1,5 +1,6 @@
 package io.github.imnotstable.msc.core.tools;
 
+import io.github.imnotstable.msc.core.CoreConfig;
 import io.github.imnotstable.msc.core.agent.AgentHub;
 import io.github.imnotstable.msc.core.texture.PackProperties;
 import io.github.imnotstable.msc.core.texture.PaletteTexture;
@@ -33,6 +34,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 /** Pixel-art textures drawn as text, and the resource pack that carries them. */
@@ -40,13 +42,14 @@ public final class TextureTools {
     private TextureTools() {
     }
 
-    public static void register(ToolRegistry registry, AgentHub hub, ResourcePack pack, Path serverDir) {
+    public static void register(ToolRegistry registry, AgentHub hub, ResourcePack pack, CoreConfig config) {
+        Path serverDir = config.serverDir();
         PackSource source = new PackSource(pack.root());
         registry.add("texture",
                 "Add a pixel-art texture to the project's resource pack, in one of three ways: draw it as text "
                         + "(palette, rows), generate it (kind, color) or recolor a pack texture (copy, color). "
                         + "animate makes it an animation; with only name and animate, animates the texture already there.",
-                Schema.of().req("name", "string", "Texture name such as item/ruby or myplugin:block/ruby_ore")
+                Schema.of().req("name", "string", "Texture name such as item/ruby or myplugin:block/ruby_ore, or a .png path for a file outside the pack")
                         .opt("palette", "strings", "Draw: symbol=#rrggbb or #rrggbbaa entries, for example \"r=#d4263a\". \".\" is transparent")
                         .opt("rows", "strings", "Draw: pixel rows, top first, all the same length (16 is standard)")
                         .opt("kind", "string", "Generate: pattern noise, ore, planks or bricks, or 16x16 shape gem, ingot, orb, "
@@ -62,7 +65,7 @@ public final class TextureTools {
                         .opt("frametime", "integer", "Ticks per frame. Default 2")
                         .opt("model", "string", "Also write a model and item definition: item (flat), handheld (tools), "
                                 + "block (cube) or none. Default block for patterns, handheld for sword and pickaxe, none for minecraft:, else item"),
-                textures(args -> texture(args, pack, source)));
+                textures(args -> texture(args, pack, source, config)));
         registry.add("texture_view",
                 "Show a pack texture as a palette and pixel rows, the format texture draws. Animations show frame 1.",
                 Schema.of().req("name", "string", "Texture name such as item/ruby"),
@@ -138,7 +141,10 @@ public final class TextureTools {
     }
 
     /** The texture tool: one of draw, generate or recolor, then an optional animation; or only animate. */
-    private static String texture(Args args, ResourcePack pack, PackSource source) throws IOException {
+    private static String texture(Args args, ResourcePack pack, PackSource source, CoreConfig config) throws IOException {
+        if (args.str("name").toLowerCase(Locale.ROOT).endsWith(".png")) {
+            return looseFile(args, source, config.resolve(args.str("name")));
+        }
         List<String> ways = new ArrayList<>();
         for (String way : List.of("rows", "kind", "copy")) {
             if (args.has(way)) {
@@ -171,21 +177,7 @@ public final class TextureTools {
             }
         } else if (kind != null) {
             boolean shape = Shapes.NAMES.contains(kind);
-            if (!shape && !Patterns.NAMES.contains(kind)) {
-                throw new ToolException("kind must be noise, ore, planks, bricks, gem, ingot, orb, sword, pickaxe or food");
-            }
-            Ramp ramp = Ramp.from(color(args), 5, number(args, "contrast", shape ? 1.0 : 0.6));
-            Integer accent = args.has("accent") ? Colors.parse(args.str("accent")) : null;
-            Texture t;
-            if (shape) {
-                if (args.integer("size", 16) != 16) {
-                    throw new ToolException("shapes are 16x16; leave out size");
-                }
-                t = Shapes.draw(kind, ramp, accent, null);
-            } else {
-                t = Patterns.generate(kind, args.integer("size", 16), ramp,
-                        accent == null ? null : Ramp.from(accent, 4, 1.0), args.integer("seed", 1));
-            }
+            Texture t = generated(args);
             String model = shape ? (kind.equals("sword") || kind.equals("pickaxe") ? "handheld" : "item") : "block";
             out.append(written(pack, id, t, model(args, id, model)));
             if (!args.has("animate")) {
@@ -199,6 +191,59 @@ public final class TextureTools {
             out.append(out.isEmpty() ? "" : "\n").append(animate(args, source, ResourceId.parse(id.toString())));
         }
         return out.append("\nnext: pack").toString();
+    }
+
+    /**
+     * A texture written as a plain PNG at a workspace path, outside the pack: no model, no animation. Saves the
+     * write-then-copy round trip when a task wants the image itself.
+     */
+    private static String looseFile(Args args, PackSource source, Path file) throws IOException {
+        if (args.has("animate")) {
+            throw new ToolException("animate needs a pack texture name such as item/ruby, not a .png path");
+        }
+        Texture t;
+        List<String> warnings = List.of();
+        if (args.has("rows")) {
+            if (!args.has("palette")) {
+                throw new ToolException("rows need a palette");
+            }
+            PaletteTexture.Parsed parsed = PaletteTexture.parse(args.strings("palette"), args.strings("rows"));
+            t = Texture.of(parsed.image());
+            warnings = parsed.warnings();
+        } else if (args.has("kind")) {
+            t = generated(args);
+        } else if (args.has("copy")) {
+            t = Edits.recolor(firstFrame(source, ResourceId.parse(args.str("copy"))), Ramp.from(color(args), 5));
+        } else {
+            throw new ToolException("give rows and palette to draw, kind and color to generate, or copy and color to recolor");
+        }
+        Files.createDirectories(file.toAbsolutePath().getParent());
+        javax.imageio.ImageIO.write(t.toImage(), "png", file.toFile());
+        StringBuilder out = new StringBuilder("wrote ").append(file).append(": ").append(Stats.of(t));
+        warnings.forEach(w -> out.append("\nwarning: ").append(w));
+        if (args.has("kind")) {
+            out.append('\n').append(Budget.truncate(PaletteText.render(t), Budget.DEFAULT_CHARS, "Too large to show."));
+        }
+        return out.toString();
+    }
+
+    /** The texture of {@code kind}: a 16x16 shape or a tiling pattern. */
+    private static Texture generated(Args args) {
+        String kind = args.str("kind");
+        boolean shape = Shapes.NAMES.contains(kind);
+        if (!shape && !Patterns.NAMES.contains(kind)) {
+            throw new ToolException("kind must be noise, ore, planks, bricks, gem, ingot, orb, sword, pickaxe or food");
+        }
+        Ramp ramp = Ramp.from(color(args), 5, number(args, "contrast", shape ? 1.0 : 0.6));
+        Integer accent = args.has("accent") ? Colors.parse(args.str("accent")) : null;
+        if (shape) {
+            if (args.integer("size", 16) != 16) {
+                throw new ToolException("shapes are 16x16; leave out size");
+            }
+            return Shapes.draw(kind, ramp, accent, null);
+        }
+        return Patterns.generate(kind, args.integer("size", 16), ramp,
+                accent == null ? null : Ramp.from(accent, 4, 1.0), args.integer("seed", 1));
     }
 
     private static String animate(Args args, PackSource source, ResourceId id) throws IOException {

@@ -215,12 +215,17 @@ public final class WorldService {
         out.append('\n');
     }
 
+    /** Block kinds with at most this many blocks in a summary are listed with their positions. */
+    static final int RARE = 3;
+
     public String summary(Region region, int maxChars) throws InterruptedException {
         if (region.volume() > MAX_BULK_VOLUME) {
             throw new ToolException("region has " + region.volume() + " blocks; world_summary takes at most "
                     + MAX_BULK_VOLUME);
         }
         Map<String, Long> counts = new LinkedHashMap<>();
+        // Where each block kind is, up to RARE + 1 places: rare kinds are listed with their positions.
+        Map<String, List<String>> places = new HashMap<>();
         Map<String, Integer> entities = new TreeMap<>();
         long[] perLayer = new long[region.sizeY()];
         long air = 0;
@@ -237,6 +242,10 @@ public final class WorldService {
                 ids[i] = BlockNames.brief(BlockNames.id(grid.palette().get(i)));
             }
             long[] local = new long[ids.length];
+            List<List<String>> localPlaces = new ArrayList<>();
+            for (int p = 0; p < ids.length; p++) {
+                localPlaces.add(new ArrayList<>());
+            }
             int i = 0;
             for (int y = r.min().y(); y <= r.max().y(); y++) {
                 for (int z = r.min().z(); z <= r.max().z(); z++) {
@@ -246,7 +255,9 @@ public final class WorldService {
                             air++;
                             continue;
                         }
-                        local[b]++;
+                        if (local[b]++ <= RARE) {
+                            localPlaces.get(b).add(x + "," + y + "," + z);
+                        }
                         perLayer[y - region.min().y()]++;
                         lo[0] = Math.min(lo[0], x);
                         lo[1] = Math.min(lo[1], y);
@@ -260,6 +271,8 @@ public final class WorldService {
             for (int p = 0; p < ids.length; p++) {
                 if (local[p] > 0) {
                     counts.merge(ids[p], local[p], Long::sum);
+                    List<String> at = places.computeIfAbsent(ids[p], k -> new ArrayList<>());
+                    at.addAll(localPlaces.get(p).subList(0, Math.min(localPlaces.get(p).size(), RARE + 1 - at.size())));
                 }
             }
             if (result.entities() != null) {
@@ -281,7 +294,11 @@ public final class WorldService {
             out.append("blocks:");
             int shown = Math.min(15, sorted.size());
             for (int i = 0; i < shown; i++) {
-                out.append(i == 0 ? " " : ", ").append(sorted.get(i).getKey()).append(' ').append(sorted.get(i).getValue());
+                Map.Entry<String, Long> kind = sorted.get(i);
+                out.append(i == 0 ? " " : ", ").append(kind.getKey()).append(' ').append(kind.getValue());
+                if (kind.getValue() <= RARE) {
+                    out.append(" at ").append(String.join(" ", places.get(kind.getKey())));
+                }
             }
             if (sorted.size() > shown) {
                 out.append(" (+").append(sorted.size() - shown).append(" more kinds)");
