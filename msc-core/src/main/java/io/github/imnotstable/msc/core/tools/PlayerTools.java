@@ -77,7 +77,11 @@ public final class PlayerTools implements AutoCloseable {
                         region -> hub.call(Ops.WORLD_READ, new Ops.ReadParams(region, false)).grid(),
                         Duration.ofSeconds(20), config.installDir() == null ? null : config.installDir().resolve("bot"));
             } catch (IllegalStateException e) {
-                throw new ToolException(e.getMessage());
+                throw new ToolException(e.getMessage() + (e.getMessage().contains("not_whitelisted")
+                        // whitelist add can't help: offline mode stores the lowercased name's UUID.
+                        ? ". The whitelist is on: server_command \"whitelist off\", and set white-list=false"
+                                + " in server.properties so it stays off"
+                        : ""));
             }
             // A dev-server test player: op so commands and tp work, in the mode real players will have.
             // Minestom has only the commands the server registered, so these may not exist there.

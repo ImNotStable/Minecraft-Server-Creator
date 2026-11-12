@@ -83,4 +83,12 @@ class ApiIndexTest {
             assertThat(h.ok("msc_status")).contains("api index: 3 classes").contains("agent: not connected");
         }
     }
+
+    @Test
+    void statusNamesOnlyTheFirstJarsOfALongList(@TempDir Path workspace) throws Exception {
+        try (CoreHarness h = new CoreHarness(workspace, c -> c.withApiJars(List.of(jar, jar, jar, jar, jar)))) {
+            h.ok("api_search", "query", "gadget");
+            assertThat(h.ok("msc_status")).contains("and 2 more jars");
+        }
+    }
 }
