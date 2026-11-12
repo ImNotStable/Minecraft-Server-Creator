@@ -14,6 +14,7 @@ import net.minecraft.world.level.block.state.BlockState;
 final class TestLevel implements AgentLevel, Levels {
     final Map<Long, BlockState> blocks = new HashMap<>();
     final List<Ops.EntitySummary> entities = new ArrayList<>();
+    final List<Ops.EntityInfo> entityInfos = new ArrayList<>();
     int writes;
     boolean lastPhysics;
 
@@ -62,6 +63,13 @@ final class TestLevel implements AgentLevel, Levels {
     public List<Ops.EntitySummary> entities(Region region, int max) {
         return entities.stream().filter(e -> region.contains((int) Math.floor(e.x()), (int) Math.floor(e.y()),
                 (int) Math.floor(e.z()))).limit(max).toList();
+    }
+
+    @Override
+    public List<Ops.EntityInfo> entityInfos(Region region, String type) {
+        return entityInfos.stream().filter(e -> type == null || type.equals(e.type()))
+                .filter(e -> region.contains((int) Math.floor(e.x()), (int) Math.floor(e.y()), (int) Math.floor(e.z())))
+                .toList();
     }
 
     // ---- Levels: this is the only world ----

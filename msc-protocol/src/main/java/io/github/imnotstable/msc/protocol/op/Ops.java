@@ -67,6 +67,57 @@ public final class Ops {
     public record EntitySummary(String type, double x, double y, double z, String name) {
     }
 
+    /**
+     * List the entities in a region with what a game check needs: type, name, scoreboard tags, health and position.
+     * Unlike {@link #WORLD_READ} it reads no blocks, so the region may be far larger than
+     * {@code Limits.MAX_REGION_VOLUME}. Only loaded chunks are searched.
+     */
+    public static final OpSpec<EntitiesParams, EntitiesResult> WORLD_ENTITIES =
+            new OpSpec<>("world.entities", EntitiesParams.class, EntitiesResult.class);
+
+    /**
+     * @param type  only entities of this type, such as {@code minecraft:zombie}; null for all
+     * @param limit most entities to return; {@code total} still counts them all
+     */
+    public record EntitiesParams(Region region, String type, int limit) {
+        public EntitiesParams {
+            Objects.requireNonNull(region, "region");
+        }
+    }
+
+    public record EntitiesResult(List<EntityInfo> entities, int total) {
+        /** Most entities one answer carries. */
+        public static final int MAX_ENTITIES = 1000;
+
+        /**
+         * What every agent answers: {@code found} sorted by type, then x, z and y, cut to {@code limit} (at most
+         * {@link #MAX_ENTITIES}; 0 or less means that maximum), with {@code total} counting them all.
+         */
+        public static EntitiesResult of(List<EntityInfo> found, int limit) {
+            int max = limit <= 0 ? MAX_ENTITIES : Math.min(limit, MAX_ENTITIES);
+            List<EntityInfo> sorted = found.stream().sorted(java.util.Comparator.comparing(EntityInfo::type)
+                    .thenComparingDouble(EntityInfo::x).thenComparingDouble(EntityInfo::z)
+                    .thenComparingDouble(EntityInfo::y)).limit(max).toList();
+            return new EntitiesResult(sorted, found.size());
+        }
+    }
+
+    /**
+     * One entity.
+     *
+     * @param name      player name, custom name or a text display's text; null when it has none
+     * @param tags      scoreboard tags, empty when none
+     * @param health    current health; null for entities that are not alive (items, displays, minecarts)
+     * @param maxHealth maximum health; null like {@code health}
+     */
+    public record EntityInfo(String type, String uuid, double x, double y, double z, String name,
+                             List<String> tags, Double health, Double maxHealth) {
+        public EntityInfo {
+            Objects.requireNonNull(type, "type");
+            tags = tags == null ? List.of() : List.copyOf(tags);
+        }
+    }
+
     /** Highest non-air block per column over an X-Z area. */
     public static final OpSpec<HeightmapParams, HeightmapResult> WORLD_HEIGHTMAP =
             new OpSpec<>("world.heightmap", HeightmapParams.class, HeightmapResult.class);
@@ -163,7 +214,7 @@ public final class Ops {
 
     /** All operations, for capability lists and dispatch tables. */
     public static final List<OpSpec<?, ?>> ALL = List.of(
-            SERVER_INFO, SERVER_COMMAND, WORLD_READ, WORLD_HEIGHTMAP,
+            SERVER_INFO, SERVER_COMMAND, WORLD_READ, WORLD_ENTITIES, WORLD_HEIGHTMAP,
             WORLD_FILL, WORLD_WRITE, WORLD_SET_BLOCKS, WORLD_UNDO, PACK_APPLY);
 
     /** Operation names, in the same order as {@link #ALL}. */

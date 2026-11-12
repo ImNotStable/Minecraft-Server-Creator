@@ -40,6 +40,7 @@ Defined with their Java types in `Ops`. Block states are vanilla strings such as
 | `server.info` | `{}` | `platform, platformVersion, minecraftVersion, worlds[], onlinePlayers, tps` |
 | `server.command` | `command` | `success, output[]` |
 | `world.read` | `region, includeEntities` | `grid, entities[]` |
+| `world.entities` | `region, type?, limit` | `entities[{type, uuid, x, y, z, name?, tags[], health?, maxHealth?}], total` (no blocks read, so no volume limit; loaded chunks only) |
 | `world.heightmap` | `world, min, max` (x/z only) | `minX, minZ, sizeX, sizeZ, heights[]` (Z then X) |
 | `world.fill` | `region, state, onlyReplace[]?` | `editId, changed` |
 | `world.write` | `grid, updatePhysics` | `editId, changed` |

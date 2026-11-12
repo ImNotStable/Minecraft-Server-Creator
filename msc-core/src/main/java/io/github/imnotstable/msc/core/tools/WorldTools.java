@@ -86,6 +86,12 @@ public final class WorldTools {
                 Schema.of().req("region", "string", REGION).opt("world", "string", WORLD),
                 args -> world.summary(Coords.region(world.world(args.str("world", null)), args.str("region")),
                         Budget.DEFAULT_CHARS));
+        registry.add("world_entities", "List entities in a region: type, name, position, health, tags. Loaded chunks only.",
+                Schema.of().req("region", "string", REGION).opt("type", "string", "Only this type, such as zombie")
+                        .opt("limit", "integer", "Default 50").opt("ids", "boolean", "Add UUIDs")
+                        .opt("world", "string", WORLD),
+                args -> world.entities(Coords.region(world.world(args.str("world", null)), args.str("region")),
+                        args.str("type", null), args.integer("limit", 50), args.bool("ids", false), Budget.DEFAULT_CHARS));
         registry.add("build_fill", "Fill a region with one block. Returns an edit id for build_undo.",
                 Schema.of().req("region", "string", REGION)
                         .req("block", "string", "Block state, for example stone or oak_stairs[facing=north]")

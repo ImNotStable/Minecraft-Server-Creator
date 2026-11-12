@@ -4,11 +4,13 @@ import io.github.imnotstable.msc.protocol.op.Ops;
 import io.github.imnotstable.msc.protocol.world.Region;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.TreeSet;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
@@ -79,6 +81,28 @@ final class FabricLevel implements AgentLevel {
             }
             String type = BuiltInRegistries.ENTITY_TYPE.getKey(e.getType()).toString();
             out.add(new Ops.EntitySummary(type, e.getX(), e.getY(), e.getZ(), name(e)));
+        }
+        return out;
+    }
+
+    @Override
+    public List<Ops.EntityInfo> entityInfos(Region region, String type) {
+        AABB box = new AABB(region.min().x(), region.min().y(), region.min().z(),
+                region.max().x() + 1, region.max().y() + 1, region.max().z() + 1);
+        List<Ops.EntityInfo> out = new ArrayList<>();
+        for (Entity e : level.getEntities((Entity) null, box, e -> true)) {
+            String key = BuiltInRegistries.ENTITY_TYPE.getKey(e.getType()).toString();
+            if (type != null && !type.equals(key)) {
+                continue;
+            }
+            Double health = null;
+            Double maxHealth = null;
+            if (e instanceof LivingEntity living) {
+                health = (double) living.getHealth();
+                maxHealth = (double) living.getMaxHealth();
+            }
+            out.add(new Ops.EntityInfo(key, e.getUUID().toString(), e.getX(), e.getY(), e.getZ(), name(e),
+                    List.copyOf(new TreeSet<>(e.entityTags())), health, maxHealth));
         }
         return out;
     }

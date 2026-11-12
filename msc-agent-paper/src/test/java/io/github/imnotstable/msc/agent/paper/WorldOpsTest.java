@@ -10,8 +10,12 @@ import io.github.imnotstable.msc.protocol.world.BlockGrid;
 import io.github.imnotstable.msc.protocol.world.BlockPos;
 import io.github.imnotstable.msc.protocol.world.Region;
 import java.util.List;
+import net.kyori.adventure.text.Component;
+import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.World;
+import org.bukkit.entity.EntityType;
+import org.bukkit.entity.Zombie;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -129,6 +133,34 @@ class WorldOpsTest {
         assertThat(grid.stateAt(0, 70, 0)).isEqualTo("minecraft:air");
         assertThat(grid.palette()).hasSize(3);
         assertThat(result.entities()).isEmpty();
+    }
+
+    @Test
+    void entitiesReportNameTagsAndHealthAndFilterByType() {
+        Zombie zombie = (Zombie) world.spawnEntity(new Location(world, 2.5, 70, 2.5), EntityType.ZOMBIE);
+        zombie.customName(Component.text("Brute"));
+        zombie.addScoreboardTag("wave");
+        zombie.addScoreboardTag("boss");
+        zombie.setHealth(7);
+        world.spawnEntity(new Location(world, 1.5, 70, 1.5), EntityType.ZOMBIE);
+        world.spawnEntity(new Location(world, 3.5, 70, 3.5), EntityType.PIG);
+        world.spawnEntity(new Location(world, 50.5, 70, 50.5), EntityType.ZOMBIE);
+
+        Ops.EntitiesResult all = ops.entities(new Ops.EntitiesParams(box(0, 60, 0, 10, 80, 10), null, 0));
+        Ops.EntitiesResult zombies = ops.entities(new Ops.EntitiesParams(box(0, 60, 0, 10, 80, 10), "minecraft:zombie", 1));
+
+        assertThat(all.total()).isEqualTo(3);
+        assertThat(all.entities()).extracting(Ops.EntityInfo::type)
+                .containsExactly("minecraft:pig", "minecraft:zombie", "minecraft:zombie");
+        Ops.EntityInfo brute = all.entities().get(2);
+        assertThat(brute.name()).isEqualTo("Brute");
+        assertThat(brute.tags()).containsExactly("boss", "wave");
+        assertThat(brute.health()).isEqualTo(7.0);
+        assertThat(brute.maxHealth()).isEqualTo(20.0);
+        assertThat(brute.uuid()).isEqualTo(zombie.getUniqueId().toString());
+        assertThat(zombies.total()).isEqualTo(2);
+        assertThat(zombies.entities()).hasSize(1);
+        assertThat(zombies.entities().getFirst().x()).isEqualTo(1.5);
     }
 
     @Test

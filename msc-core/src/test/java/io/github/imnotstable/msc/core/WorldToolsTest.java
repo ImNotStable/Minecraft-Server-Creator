@@ -7,6 +7,7 @@ import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import io.github.imnotstable.msc.protocol.op.Ops;
 import java.util.List;
 import javax.imageio.ImageIO;
 import org.junit.jupiter.api.AfterEach;
@@ -222,5 +223,26 @@ class WorldToolsTest {
             assertThat(alone.error("world_summary", "region", "0,0,0 1,1,1"))
                     .contains("no server agent connected").contains("server_start");
         }
+    }
+
+    @Test
+    void entitiesListsNameHealthAndTagsAndFiltersByType() throws Exception {
+        h.agent.entities.add(new Ops.EntityInfo("minecraft:zombie", "00000000-0000-0000-0000-000000000001",
+                2.5, 64, 3.25, "Brute", List.of("boss", "wave"), 7.0, 20.0));
+        h.agent.entities.add(new Ops.EntityInfo("minecraft:text_display", "00000000-0000-0000-0000-000000000002",
+                0.5, 66, 0.5, "Wave 3", List.of(), null, null));
+        h.agent.entities.add(new Ops.EntityInfo("minecraft:zombie", "00000000-0000-0000-0000-000000000003",
+                90, 64, 90, null, List.of(), 20.0, 20.0));
+
+        assertThat(h.ok("world_entities", "region", "0,60,0 10,70,10")).isEqualTo("""
+                2 entities: 1 text_display 1 zombie
+                zombie "Brute" 2.5,64,3.3 hp 7/20 tags boss,wave
+                text_display "Wave 3" 0.5,66,0.5""");
+        assertThat(h.ok("world_entities", "region", "0,60,0 100,70,100", "type", "zombie", "limit", 1, "ids", true))
+                .isEqualTo("2 entities, first 1 shown\nzombie \"Brute\" 2.5,64,3.3 hp 7/20 tags boss,wave"
+                        + " id 00000000-0000-0000-0000-000000000001");
+        assertThat(h.ok("world_entities", "region", "0,60,0 1,61,1", "type", "pig"))
+                .startsWith("no pig entities in the region");
+        assertThat(h.error("world_entities", "region", "0,0,0 5000,1,1")).contains("2048");
     }
 }
