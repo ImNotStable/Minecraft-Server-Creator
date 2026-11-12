@@ -1,4 +1,4 @@
-package io.github.imnotstable.msc.agent.fabric;
+package io.github.imnotstable.msc.agent.vanilla;
 
 /**
  * World names in Paper's style, so the core and the AI see the same names on both platforms: the

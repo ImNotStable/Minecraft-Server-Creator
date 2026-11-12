@@ -1,4 +1,4 @@
-package io.github.imnotstable.msc.agent.fabric;
+package io.github.imnotstable.msc.agent.vanilla;
 
 import io.github.imnotstable.msc.agent.common.MainThread;
 import io.github.imnotstable.msc.agent.common.SlicedJob;

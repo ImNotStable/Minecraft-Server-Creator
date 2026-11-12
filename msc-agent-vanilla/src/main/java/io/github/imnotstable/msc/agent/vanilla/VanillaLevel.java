@@ -1,4 +1,4 @@
-package io.github.imnotstable.msc.agent.fabric;
+package io.github.imnotstable.msc.agent.vanilla;
 
 import io.github.imnotstable.msc.agent.common.AgentWorld;
 import io.github.imnotstable.msc.protocol.op.Ops;
@@ -22,7 +22,7 @@ import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.phys.AABB;
 
 /** {@link AgentWorld} on a {@code ServerLevel}. Main thread only. */
-final class FabricLevel implements AgentWorld<BlockState> {
+final class VanillaLevel implements AgentWorld<BlockState> {
     /**
      * Without physics a block lands exactly as written: clients are told, but neighbours don't
      * react, the block's own placement logic doesn't run, and replaced containers don't spill
@@ -37,7 +37,7 @@ final class FabricLevel implements AgentWorld<BlockState> {
     private final String name;
     private final BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
 
-    FabricLevel(ServerLevel level, String name) {
+    VanillaLevel(ServerLevel level, String name) {
         this.level = level;
         this.name = name;
     }

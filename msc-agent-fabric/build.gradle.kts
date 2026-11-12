@@ -6,6 +6,13 @@ plugins {
 
 description = "Fabric server mod that carries out msc-core's operations inside a running server."
 
+// The Minecraft side every mod-loader agent shares (ADR 0027): compiled here against Loom's Minecraft, and tested here,
+// since fabric-loader-junit gives the tests a bootstrapped Minecraft.
+sourceSets {
+    main { java.srcDir(rootProject.file("msc-agent-vanilla/src/main/java")) }
+    test { java.srcDir(rootProject.file("msc-agent-vanilla/src/test/java")) }
+}
+
 loom {
     // The agent is server-side only, so compile against the dedicated server jar alone.
     serverOnlyMinecraftJar()
@@ -37,7 +44,8 @@ dependencies {
 tasks.processResources {
     val props = mapOf(
         "version" to project.version.toString(),
-        "loaderVersion" to libs.versions.fabric.loader.get(),
+        // Quilt Loader provides fabricloader 0.19.x, and the agent uses nothing newer from the loader itself.
+        "loaderFloor" to "0.17.0",
         "minecraftVersion" to libs.versions.minecraft.get(),
     )
     inputs.properties(props)

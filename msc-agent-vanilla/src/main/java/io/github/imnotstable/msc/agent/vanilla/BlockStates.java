@@ -1,4 +1,4 @@
-package io.github.imnotstable.msc.agent.fabric;
+package io.github.imnotstable.msc.agent.vanilla;
 
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import net.minecraft.commands.arguments.blocks.BlockStateParser;

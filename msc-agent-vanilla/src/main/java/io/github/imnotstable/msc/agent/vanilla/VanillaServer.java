@@ -1,10 +1,9 @@
-package io.github.imnotstable.msc.agent.fabric;
+package io.github.imnotstable.msc.agent.vanilla;
 
 import io.github.imnotstable.msc.agent.common.AgentServer;
 import java.util.List;
 import java.util.Optional;
 import java.util.function.Consumer;
-import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.SharedConstants;
 import net.minecraft.commands.CommandSource;
 import net.minecraft.commands.CommandSourceStack;
@@ -14,29 +13,29 @@ import net.minecraft.network.protocol.common.ClientboundResourcePackPushPacket;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 
-/** {@link AgentServer} on a running {@code MinecraftServer}. */
-final class FabricServerAccess implements AgentServer {
-    static final String PLATFORM = "fabric";
-
+/**
+ * {@link AgentServer} on a running {@code MinecraftServer}. Only vanilla Minecraft classes: the loader the agent runs
+ * on (Fabric, Quilt, NeoForge, Forge) only names itself through {@link Loader}.
+ */
+final class VanillaServer implements AgentServer {
     private final MinecraftServer server;
-    private final FabricLevels levels;
+    private final VanillaLevels levels;
+    private final Loader loader;
 
-    FabricServerAccess(MinecraftServer server, FabricLevels levels) {
+    VanillaServer(MinecraftServer server, VanillaLevels levels, Loader loader) {
         this.server = server;
         this.levels = levels;
+        this.loader = loader;
     }
 
     @Override
     public String platform() {
-        return PLATFORM;
+        return loader.platform();
     }
 
-    /** Fabric Loader's version. */
     @Override
     public String platformVersion() {
-        return FabricLoader.getInstance().getModContainer("fabricloader")
-                .map(c -> c.getMetadata().getVersion().getFriendlyString())
-                .orElse("unknown");
+        return loader.version();
     }
 
     @Override

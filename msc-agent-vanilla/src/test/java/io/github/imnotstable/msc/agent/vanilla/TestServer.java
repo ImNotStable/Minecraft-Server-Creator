@@ -1,4 +1,4 @@
-package io.github.imnotstable.msc.agent.fabric;
+package io.github.imnotstable.msc.agent.vanilla;
 
 import io.github.imnotstable.msc.agent.common.AgentServer;
 import java.util.ArrayList;
@@ -12,7 +12,7 @@ final class TestServer implements AgentServer {
 
     @Override
     public String platform() {
-        return FabricServerAccess.PLATFORM;
+        return "fabric";
     }
 
     @Override

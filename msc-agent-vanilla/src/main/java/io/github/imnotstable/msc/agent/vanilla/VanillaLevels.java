@@ -1,4 +1,4 @@
-package io.github.imnotstable.msc.agent.fabric;
+package io.github.imnotstable.msc.agent.vanilla;
 
 import io.github.imnotstable.msc.agent.common.AgentWorlds;
 import java.util.ArrayList;
@@ -10,10 +10,10 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.storage.LevelResource;
 
 /** The server's levels under Paper-style names (see {@link LevelNames}). Main thread only. */
-final class FabricLevels implements AgentWorlds<BlockState> {
+final class VanillaLevels implements AgentWorlds<BlockState> {
     private final MinecraftServer server;
 
-    FabricLevels(MinecraftServer server) {
+    VanillaLevels(MinecraftServer server) {
         this.server = server;
     }
 
@@ -39,12 +39,12 @@ final class FabricLevels implements AgentWorlds<BlockState> {
     }
 
     @Override
-    public Optional<FabricLevel> byName(String name) {
+    public Optional<VanillaLevel> byName(String name) {
         String levelName = levelName();
         for (ServerLevel level : server.getAllLevels()) {
             String dimension = level.dimension().identifier().toString();
             if (LevelNames.matches(name, levelName, dimension)) {
-                return Optional.of(new FabricLevel(level, LevelNames.name(levelName, dimension)));
+                return Optional.of(new VanillaLevel(level, LevelNames.name(levelName, dimension)));
             }
         }
         return Optional.empty();
