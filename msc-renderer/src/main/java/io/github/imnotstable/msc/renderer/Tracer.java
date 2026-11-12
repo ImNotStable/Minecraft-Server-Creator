@@ -61,7 +61,7 @@ final class Tracer {
         b = 0;
         a = 0;
         firstHit = -1;
-        march(ox, oy, oz, dx, dy, dz, footprint, footprintPerT, false);
+        march(ox, oy, oz, dx, dy, dz, footprint, footprintPerT, false, Double.POSITIVE_INFINITY);
         double rest = 1 - a;
         int ri = (int) Math.round(r + rest * ((BACKGROUND >> 16) & 0xff));
         int gi = (int) Math.round(g + rest * ((BACKGROUND >> 8) & 0xff));
@@ -70,11 +70,19 @@ final class Tracer {
     }
 
     /**
-     * Walks the grid along a ray. In shadow mode it only answers "is something solid in the way"
-     * (returns true); otherwise it accumulates colour front to back until the ray is opaque.
+     * True when something solid (not glass or another see-through block) lies on the ray within {@code maxT}
+     * blocks of its start. {@code (dx, dy, dz)} must be a unit vector.
+     */
+    boolean blocked(double ox, double oy, double oz, double dx, double dy, double dz, double maxT) {
+        return march(ox, oy, oz, dx, dy, dz, 0, 0, true, maxT);
+    }
+
+    /**
+     * Walks the grid along a ray. In shadow mode it only answers "is something solid in the way before
+     * {@code maxT}" (returns true); otherwise it accumulates colour front to back until the ray is opaque.
      */
     private boolean march(double ox, double oy, double oz, double dx, double dy, double dz, double footprint,
-            double footprintPerT, boolean shadowMode) {
+            double footprintPerT, boolean shadowMode, double maxT) {
         double tEnter = 0;
         double tLeave = Double.POSITIVE_INFINITY;
         int face = -1;
@@ -133,7 +141,7 @@ final class Tracer {
                     // A ray that starts inside a full block (face -1) looks out of it, not at it.
                     if (face >= 0) {
                         if (shadowMode) {
-                            return true;
+                            return t <= maxT;
                         }
                         hit(index, look, Box.FULL, face, t, cell, o, d, footprint + footprintPerT * t);
                     }
@@ -155,7 +163,7 @@ final class Tracer {
                             break;
                         }
                         if (shadowMode) {
-                            return true;
+                            return nearestT <= maxT;
                         }
                         hit(index, look, nearest, nearestFace, nearestT, cell, o, d, footprint + footprintPerT * nearestT);
                         if (a > 0.98) {
@@ -170,6 +178,9 @@ final class Tracer {
             }
             int axis = tNext[0] <= tNext[1] ? (tNext[0] <= tNext[2] ? 0 : 2) : (tNext[1] <= tNext[2] ? 1 : 2);
             t = tNext[axis];
+            if (t > maxT) {
+                return false;
+            }
             cell[axis] += step[axis];
             if (cell[axis] < 0 || cell[axis] >= size[axis]) {
                 return false;
@@ -260,7 +271,8 @@ final class Tracer {
         double[] n = NORMALS[face];
         if (shadows && n[0] * SUN[0] + n[1] * SUN[1] + n[2] * SUN[2] > 0) {
             // Shadow mode never touches the colour state, so the nested walk is safe here.
-            boolean dark = march(wx + n[0] * 1e-3, wy + n[1] * 1e-3, wz + n[2] * 1e-3, SUN[0], SUN[1], SUN[2], 0, 0, true);
+            boolean dark = march(wx + n[0] * 1e-3, wy + n[1] * 1e-3, wz + n[2] * 1e-3, SUN[0], SUN[1], SUN[2], 0, 0, true,
+                    Double.POSITIVE_INFINITY);
             if (dark) {
                 light *= SHADOW;
             }
