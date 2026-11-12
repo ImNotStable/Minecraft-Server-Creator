@@ -7,7 +7,7 @@ Fabric server mod for Minecraft {{mcVersion}}, Java {{javaVersion}}, Gradle Kotl
 - `./gradlew build`: compile and run all tests. Run it after every change; it must pass before you stop.
 - `./gradlew test --tests '*GreeterTest'`: one test class.
 - `./gradlew runServer`: start the dev server in `run/` with this mod and Fabric API loaded. Stop it with `stop` on the console or over RCON.
-- Mod jar: `build/libs/{{projectId}}-{{version}}.jar`. A server needs Fabric Loader and Fabric API installed next to it.
+- Mod jar: `build/libs/{{projectId}}-{{version}}.jar`. A server needs Fabric Loader (or Quilt Loader, which runs Fabric mods) and Fabric API installed next to it.
 
 ## Layout
 

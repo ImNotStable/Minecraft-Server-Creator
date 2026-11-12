@@ -23,8 +23,14 @@ class TemplatesTest {
     @Test
     void listsTemplates() {
         assertThat(Templates.ids()).containsExactly(
-                Templates.FABRIC_GAME, Templates.FABRIC_MOD, Templates.MINESTOM_GAME, Templates.MINESTOM_SERVER,
-                Templates.PAPER_GAME, Templates.PAPER_PLUGIN, Templates.PAPER_SERVER);
+                Templates.FABRIC_GAME, Templates.FABRIC_MOD, Templates.FORGE_MOD, Templates.MINESTOM_GAME,
+                Templates.MINESTOM_SERVER, Templates.NEOFORGE_MOD, Templates.PAPER_GAME, Templates.PAPER_PLUGIN,
+                Templates.PAPER_SERVER);
+        assertThat(Templates.info(Templates.NEOFORGE_MOD)).containsEntry("platform", "neoforge");
+        assertThat(Templates.info(Templates.FORGE_MOD)).containsEntry("platform", "forge");
+        assertThat(Templates.versions().get("neoforgeVersion")).startsWith(Templates.versions().get("mcVersion") + ".");
+        assertThat(Templates.versions().get("forgeVersion")).startsWith(Templates.versions().get("mcVersion") + "-");
+        assertThat(Templates.versions()).containsKeys("quiltLoaderVersion", "quiltInstallerVersion");
         assertThat(Templates.info(Templates.FABRIC_GAME)).containsEntry("platform", "fabric");
         assertThat(Templates.info(Templates.MINESTOM_GAME)).containsEntry("platform", "minestom");
         assertThat(Templates.info(Templates.PAPER_GAME)).containsEntry("platform", "paper");
@@ -61,6 +67,42 @@ class TemplatesTest {
                 .contains("fabric-api = \"" + Templates.versions().get("fabricApiVersion") + "\"");
         assertThat(Files.readString(r.root().resolve("run/server.properties"))).contains("rcon.password=secret").contains("white-list=false");
         assertThat(Files.isExecutable(r.root().resolve("gradlew"))).isTrue();
+    }
+
+    @Test
+    void scaffoldsANeoForgeModWithAModIdWithoutHyphens() throws IOException {
+        ScaffoldResult r = Templates.scaffold(Templates.NEOFORGE_MOD, dir.resolve("n"), vars);
+
+        assertThat(relative(r)).contains("build.gradle.kts", "CLAUDE.md", "gradlew", "run/eula.txt",
+                "src/main/resources/META-INF/neoforge.mods.toml",
+                "src/test/java/com/example/spawnlobby/HelloCommandTest.java");
+        assertNoPlaceholders(r);
+        assertThat(Files.readString(r.root().resolve("src/main/resources/META-INF/neoforge.mods.toml")))
+                .contains("modId = \"spawn_lobby\"", "[[dependencies.spawn_lobby]]", "version = \"${version}\"");
+        assertThat(Files.readString(r.root().resolve("src/main/java/com/example/spawnlobby/SpawnLobbyPlugin.java")))
+                .contains("MOD_ID = \"spawn_lobby\"");
+        assertThat(Files.readString(r.root().resolve("build.gradle.kts"))).contains("create(\"spawn_lobby\")");
+    }
+
+    @Test
+    void scaffoldsAForgeMod() throws IOException {
+        ScaffoldResult r = Templates.scaffold(Templates.FORGE_MOD, dir.resolve("g"), vars);
+
+        assertThat(relative(r)).contains("build.gradle.kts", "settings.gradle.kts", "CLAUDE.md", "gradlew",
+                "src/main/resources/META-INF/mods.toml", "src/test/java/com/example/spawnlobby/GreeterTest.java");
+        assertNoPlaceholders(r);
+        assertThat(Files.readString(r.root().resolve("src/main/resources/META-INF/mods.toml")))
+                .contains("modId = \"spawn_lobby\"", "loaderVersion = \"[${forgeMajor},)\"");
+        assertThat(Files.readString(r.root().resolve("gradle/libs.versions.toml")))
+                .contains("forge = \"" + Templates.versions().get("forgeVersion") + "\"");
+    }
+
+    private static void assertNoPlaceholders(ScaffoldResult r) throws IOException {
+        for (Path f : r.files()) {
+            if (!f.toString().endsWith(".jar")) {
+                assertThat(Files.readString(f)).as(f.toString()).doesNotContain("{{");
+            }
+        }
     }
 
     @Test

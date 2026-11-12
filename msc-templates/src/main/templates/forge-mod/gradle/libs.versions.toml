@@ -1,0 +1,20 @@
+# Every version this project uses. Change versions here only.
+[versions]
+java = "{{javaVersion}}"
+minecraft = "{{mcVersion}}"
+forge = "{{forgeVersion}}"
+forgegradle = "{{forgeGradleVersion}}"
+eventbus = "{{forgeEventbusVersion}}"
+junit = "{{junitVersion}}"
+assertj = "{{assertjVersion}}"
+
+[libraries]
+forge = { module = "net.minecraftforge:forge", version.ref = "forge" }
+eventbus-validator = { module = "net.minecraftforge:eventbus-validator", version.ref = "eventbus" }
+junit-bom = { module = "org.junit:junit-bom", version.ref = "junit" }
+junit-jupiter = { module = "org.junit.jupiter:junit-jupiter" }
+junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher" }
+assertj = { module = "org.assertj:assertj-core", version.ref = "assertj" }
+
+[plugins]
+forgegradle = { id = "net.minecraftforge.gradle", version.ref = "forgegradle" }
