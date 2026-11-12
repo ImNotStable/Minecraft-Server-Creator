@@ -221,8 +221,8 @@ three times, and progress was lost on every reconnect.
    frames now count as framework).
 6. **`installMsc` made a launcher that is not executable** on Linux (`copyRecursively` drops file modes). Fixed.
 7. **`path` routes cannot be followed as written.** Routes merge straight runs and do not mark jumps, so `goto` on
-   block centres walked off a branch twice. Open: mark jump segments, or give `player_test` a `walk x,y,z` that follows
-   the same route.
+   block centres walked off a branch twice. Fixed: `player_test` `walk x,y,z` plans the same route and follows it
+   step by step, jumping each gap and step up, and says where it falls off or gets stuck.
 8. **`api_class` misses constants from package-private interfaces.** `Attribute.MAX_HEALTH` lives in the
    package-private `Attributes`, so neither `api_class Attribute` nor `api_class Attributes` shows it. Open.
 9. **`build_batch line ... w=2` is one block wide on a diagonal.** Open; fills were used instead.

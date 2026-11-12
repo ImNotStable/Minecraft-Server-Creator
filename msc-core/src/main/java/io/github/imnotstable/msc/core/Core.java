@@ -60,7 +60,7 @@ public final class Core implements AutoCloseable {
             WorldTools.register(tools, config, world);
             BuildTools.register(tools, config, world, new Builder(hub, world));
             TextureTools.register(tools, hub, pack, config.serverDir());
-            PlayerTools players = PlayerTools.register(tools, config, hub);
+            PlayerTools players = PlayerTools.register(tools, config, hub, world);
             return new Bench(config, hub, server, pack, players, tools);
         }
 

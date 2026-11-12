@@ -133,8 +133,45 @@ public final class Walk {
 
     private static final int[][] DIRS = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
 
+    /** What the search found: how each block was reached, and the block that came closest to the goal. */
+    private record Search(int[] parent, byte[] how, int goal, int best, BlockPos start, BlockPos target) {
+        boolean reached() {
+            return parent[goal] != -2;
+        }
+    }
+
     /** The answer: a route, or the place closest to the target and what stops the player there. */
     public String path(BlockPos from, BlockPos to) {
+        Search found = search(from, to);
+        int sx = region.sizeX();
+        int layer = sx * region.sizeZ();
+        if (found.reached()) {
+            return route(found.parent(), found.how(), found.goal(), layer, sx);
+        }
+        return blocked(found.start(), found.target(), pos(found.best(), layer, sx));
+    }
+
+    /**
+     * The route block by block, for a player to follow: each entry is {x, y, z, move} with the feet block and how
+     * it is reached ({@code w} walk, {@code u} up one, {@code d} drop, {@code j} jump a gap, {@code c} climb or swim);
+     * the first entry is the start. Throws with the same explanation as {@link #path} when there is no route.
+     */
+    public List<int[]> steps(BlockPos from, BlockPos to) {
+        Search found = search(from, to);
+        int sx = region.sizeX();
+        int layer = sx * region.sizeZ();
+        if (!found.reached()) {
+            throw new ToolException(blocked(found.start(), found.target(), pos(found.best(), layer, sx)));
+        }
+        List<int[]> out = new ArrayList<>();
+        for (int i = found.goal(); i != -1; i = found.parent()[i]) {
+            BlockPos p = pos(i, layer, sx);
+            out.add(0, new int[] {p.x(), p.y(), p.z(), found.parent()[i] == -1 ? 'w' : found.how()[i]});
+        }
+        return out;
+    }
+
+    private Search search(BlockPos from, BlockPos to) {
         BlockPos start = feet(from, "from");
         BlockPos goal = feet(to, "to");
         int n = kind.length;
@@ -206,10 +243,7 @@ public final class Walk {
                 }
             }
         }
-        if (parent[g] != -2) {
-            return route(parent, how, g, layer, sx);
-        }
-        return blocked(start, goal, pos(best, layer, sx));
+        return new Search(parent, how, g, best, start, goal);
     }
 
     private boolean clear(int x, int z, int[] dir, int gap, int y, int dy) {

@@ -82,6 +82,7 @@ public final class TestPlayer implements Bot {
     private final ClientSession session;
     private final ScheduledExecutorService ticker;
     private final BlockSource blocks;
+    private final RoutePlanner planner;
     private final List<String> events = new ArrayList<>();
     private final Map<Integer, Tracked> entities = new ConcurrentHashMap<>();
     private final AtomicInteger sequence = new AtomicInteger();
@@ -105,9 +106,10 @@ public final class TestPlayer implements Bot {
     private Script.Step current;
     private long ticks;
 
-    private TestPlayer(String name, String host, int port, BlockSource blocks) {
+    private TestPlayer(String name, String host, int port, BlockSource blocks, RoutePlanner planner) {
         this.name = name;
         this.blocks = blocks;
+        this.planner = planner;
         this.session = ClientNetworkSessionFactory.factory().setAddress(host, port)
                 .setProtocol(new MinecraftProtocol(name)).create();
         this.ticker = Executors.newSingleThreadScheduledExecutor(r -> {
@@ -120,7 +122,13 @@ public final class TestPlayer implements Bot {
     /** Join the server and wait until the player is in the world. */
     public static TestPlayer join(String name, String host, int port, BlockSource blocks, Duration timeout)
             throws InterruptedException {
-        TestPlayer p = new TestPlayer(name, host, port, blocks);
+        return join(name, host, port, blocks, null, timeout);
+    }
+
+    /** As {@link #join(String, String, int, BlockSource, Duration)}, with a planner for the walk action. */
+    public static TestPlayer join(String name, String host, int port, BlockSource blocks, RoutePlanner planner,
+                                  Duration timeout) throws InterruptedException {
+        TestPlayer p = new TestPlayer(name, host, port, blocks, planner);
         p.session.addListener(p.new Listener());
         p.session.connect(true);
         // A kick also releases the latch, so check for one: being turned away is not a join.
@@ -178,6 +186,7 @@ public final class TestPlayer implements Bot {
                         .append('\n');
                 break;
             }
+            step.prepare(this); // outside the lock: it may read the world through the agent
             synchronized (this) {
                 step.start(this);
                 current = step;
@@ -274,6 +283,19 @@ public final class TestPlayer implements Bot {
             session.send(new ServerboundPlayerInputPacket(in.forward() > 0, in.forward() < 0, in.strafe() > 0,
                     in.strafe() < 0, in.jump(), false, sprint));
         }
+    }
+
+    /** A route from the block the player stands in to {@code to}, from the core's planner. */
+    List<int[]> plan(io.github.imnotstable.msc.protocol.world.BlockPos to) throws Exception {
+        if (planner == null) {
+            throw new IllegalStateException("this test player has no route planner");
+        }
+        io.github.imnotstable.msc.protocol.world.BlockPos from;
+        synchronized (this) {
+            from = new io.github.imnotstable.msc.protocol.world.BlockPos((int) Math.floor(body.x),
+                    (int) Math.floor(body.y + 0.01), (int) Math.floor(body.z));
+        }
+        return planner.route(from, to);
     }
 
     long ticks() {
