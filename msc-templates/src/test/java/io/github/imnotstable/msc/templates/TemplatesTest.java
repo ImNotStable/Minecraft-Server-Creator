@@ -132,7 +132,7 @@ class TemplatesTest {
             }
         }
         assertThat(Files.readString(r.root().resolve("src/main/java/com/example/spawnlobby/SpawnLobbyServer.java")))
-                .contains("package com.example.spawnlobby;", "MscAgent.start();", "server.start(\"127.0.0.1\", 25565);");
+                .contains("package com.example.spawnlobby;", "MscAgent.start();", "new AnvilLoader(", "server.start(\"127.0.0.1\", 25565);");
         assertThat(Files.readString(r.root().resolve("build.gradle.kts")))
                 .contains("mainClass = \"com.example.spawnlobby.SpawnLobbyServer\"", "libs/msc-agent-minestom.jar");
         assertThat(Files.readString(r.root().resolve("gradle/libs.versions.toml")))
@@ -164,5 +164,16 @@ class TemplatesTest {
         assertThatThrownBy(() -> Templates.scaffold(Templates.PAPER_SERVER, dir, vars))
                 .isInstanceOf(IllegalStateException.class);
         assertThat(Files.readString(dir.resolve("existing.txt"))).isEqualTo("x");
+    }
+
+    @Test
+    void scaffoldsIntoAWorkspaceThatOnlyHasMscData() throws IOException {
+        Files.createDirectories(dir.resolve(".msc"));
+        Files.writeString(dir.resolve(".msc/tool-calls.jsonl"), "{}");
+
+        Templates.scaffold(Templates.MINESTOM_SERVER, dir, vars);
+
+        assertThat(dir.resolve("build.gradle.kts")).exists();
+        assertThat(dir.resolve(".msc/tool-calls.jsonl")).hasContent("{}");
     }
 }
