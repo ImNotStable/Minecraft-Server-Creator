@@ -124,7 +124,11 @@ public final class FakeAgent {
         }
         List<Ops.EntitySummary> entities = p.includeEntities()
                 ? List.of(new Ops.EntitySummary("minecraft:cow", 1.5, 64, 1.5, null)) : List.of();
-        return new Ops.ReadResult(new BlockGrid(r, palette, out), entities);
+        BlockGrid grid = new BlockGrid(r, palette, out);
+        // Every sign the fake world holds reads "Welcome" on its front.
+        List<Ops.SignText> signs = p.includeSigns() ? Ops.SignText.positions(grid).stream()
+                .map(s -> new Ops.SignText(s.x(), s.y(), s.z(), List.of("Welcome"), null)).toList() : List.of();
+        return new Ops.ReadResult(grid, entities, signs);
     }
 
     private synchronized Ops.EntitiesResult entities(Ops.EntitiesParams p) {

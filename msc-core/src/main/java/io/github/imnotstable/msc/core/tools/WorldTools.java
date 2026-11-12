@@ -61,7 +61,7 @@ public final class WorldTools {
                         + "south, east, west, iso-ne/nw/sw/se, \"eye x,y,z look x,y,z\".",
                 Schema.of().req("region", "string", REGION).opt("view", "string", "Camera. Default iso")
                         .opt("size", "integer", "Longest side in pixels, 64 to 1568. Default 512")
-                        .opt("entities", "boolean", "Mark entities as numbered dots and show hologram text. Default true")
+                        .opt("entities", "boolean", "Mark entities as numbered dots and show hologram and sign text. Default true")
                         .opt("world", "string", WORLD),
                 args -> {
                     View view;
@@ -73,9 +73,11 @@ public final class WorldTools {
                         throw new ToolException(e.getMessage());
                     }
                     Region region = Coords.region(world.world(args.str("world", null)), args.str("region"));
-                    List<Ops.EntitySummary> entities = args.bool("entities", true) ? new ArrayList<>() : null;
-                    BlockGrid grid = world.readAll(region, MAX_RENDER_BLOCKS, "world_render", entities);
-                    RenderResult r = renderer.render(grid, view, options, markers(entities));
+                    boolean marked = args.bool("entities", true);
+                    List<Ops.EntitySummary> entities = marked ? new ArrayList<>() : null;
+                    List<Ops.SignText> signs = marked ? new ArrayList<>() : null;
+                    BlockGrid grid = world.readAll(region, MAX_RENDER_BLOCKS, "world_render", entities, signs);
+                    RenderResult r = renderer.render(grid, view, options, markers(entities, signs));
                     Path dir = Files.createDirectories(config.dataDir().resolve("renders"));
                     Path file = Files.write(Files.createTempFile(dir, "render-", ".png"), r.png());
                     return new Tool.Output(r.caption() + "\nsaved: " + file, r.png(), r.estimatedTokens());
@@ -107,11 +109,24 @@ public final class WorldTools {
                 });
     }
 
-    /** One marker per entity, coloured by kind; holograms (text displays, named armor stands) show their text. */
-    static List<Marker> markers(List<Ops.EntitySummary> entities) {
-        if (entities == null) {
-            return List.of();
+    /**
+     * One marker per entity, coloured by kind; holograms (text displays, named armor stands) show their text. Each
+     * sign with text gets a sign marker with its front lines, then its back lines.
+     */
+    static List<Marker> markers(List<Ops.EntitySummary> entities, List<Ops.SignText> signs) {
+        List<Marker> out = new ArrayList<>();
+        if (entities != null) {
+            entities.forEach(e -> out.add(Marker.entity(e.type(), e.name(), e.x(), e.y(), e.z())));
         }
-        return entities.stream().map(e -> Marker.entity(e.type(), e.name(), e.x(), e.y(), e.z())).toList();
+        if (signs != null) {
+            for (Ops.SignText s : signs) {
+                List<String> lines = new ArrayList<>(s.front());
+                if (s.back() != null) {
+                    lines.addAll(s.back());
+                }
+                out.add(Marker.sign(s.x(), s.y(), s.z(), lines));
+            }
+        }
+        return out;
     }
 }

@@ -64,6 +64,16 @@ class WorldToolsTest {
     }
 
     @Test
+    void renderLabelsSignsWithTheirText() {
+        h.ok("build_batch", "steps", "set 2,64,2 oak_sign");
+
+        assertThat(h.ok("world_render", "region", "0,62,0 5,67,5", "view", "top", "size", 64))
+                .contains("sign \"Welcome\" at 2.5,64.5,2.5");
+        assertThat(h.ok("world_render", "region", "0,62,0 5,67,5", "view", "top", "size", 64, "entities", false))
+                .doesNotContain("Welcome");
+    }
+
+    @Test
     void renderStitchesLargeRegionsAndRefusesHugeOnes() {
         ToolRegistry.Result result = h.call("world_render", "region", "0,0,0 129,63,127", "size", 64);
         assertThat(result.ok()).as(result.text()).isTrue();
