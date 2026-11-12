@@ -1,0 +1,44 @@
+# Weekly, grouped dependency updates to keep PR noise and Actions minutes low. See ADR 0012.
+version: 2
+updates:
+  - package-ecosystem: gradle
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "deps"
+    groups:
+      # Server platforms move together with the Minecraft version; one PR so they stay in step.
+      minecraft-platforms:
+        patterns:
+          - "io.papermc*"
+          - "net.fabricmc*"
+          - "fabric-loom*"
+          - "net.minestom*"
+          - "org.mockbukkit*"
+          - "com.mojang*"
+      # Everything else (Gson, MCP SDK, JUnit, AssertJ, Shadow, run-paper, foojay...).
+      libraries-and-plugins:
+        patterns:
+          - "*"
+        exclude-patterns:
+          - "io.papermc*"
+          - "net.fabricmc*"
+          - "fabric-loom*"
+          - "net.minestom*"
+          - "org.mockbukkit*"
+          - "com.mojang*"
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: "ci"
+    groups:
+      actions:
+        patterns:
+          - "*"
