@@ -56,7 +56,7 @@ class TemplatesTest {
                         "\"version\": \"${version}\"");
         assertThat(Files.readString(r.root().resolve("gradle/libs.versions.toml")))
                 .contains("fabric-api = \"" + Templates.versions().get("fabricApiVersion") + "\"");
-        assertThat(Files.readString(r.root().resolve("run/server.properties"))).contains("rcon.password=secret");
+        assertThat(Files.readString(r.root().resolve("run/server.properties"))).contains("rcon.password=secret").contains("white-list=false");
         assertThat(Files.isExecutable(r.root().resolve("gradlew"))).isTrue();
     }
 

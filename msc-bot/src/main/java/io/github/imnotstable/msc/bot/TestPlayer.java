@@ -32,7 +32,9 @@ import org.geysermc.mcprotocollib.protocol.data.game.entity.object.Direction;
 import org.geysermc.mcprotocollib.protocol.data.game.entity.player.Hand;
 import org.geysermc.mcprotocollib.protocol.data.game.entity.player.PlayerState;
 import org.geysermc.mcprotocollib.protocol.data.game.entity.player.PositionElement;
+import org.geysermc.mcprotocollib.protocol.packet.common.clientbound.ClientboundPingPacket;
 import org.geysermc.mcprotocollib.protocol.packet.common.clientbound.ClientboundResourcePackPushPacket;
+import org.geysermc.mcprotocollib.protocol.packet.common.serverbound.ServerboundPongPacket;
 import org.geysermc.mcprotocollib.protocol.packet.common.serverbound.ServerboundResourcePackPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.ClientboundLoginPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.ClientboundPlayerChatPacket;
@@ -376,6 +378,8 @@ public final class TestPlayer implements AutoCloseable {
                 case ClientboundSetSubtitleTextPacket p -> event("[subtitle] " + Text.plain(p.getText()));
                 case ClientboundSetActionBarTextPacket p -> event("[actionbar] " + Text.plain(p.getText()));
                 case ClientboundResourcePackPushPacket p -> pack(s, p);
+                // Like the vanilla client; Fabric API's configuration waits for this pong.
+                case ClientboundPingPacket p -> s.send(new ServerboundPongPacket(p.getId()));
                 case ClientboundChunkBatchFinishedPacket p -> s.send(new ServerboundChunkBatchReceivedPacket(64f));
                 case ClientboundAddEntityPacket p -> entities.put(p.getEntityId(), new Tracked(
                         p.getType().name().toLowerCase(java.util.Locale.ROOT), p.getX(), p.getY(), p.getZ()));
