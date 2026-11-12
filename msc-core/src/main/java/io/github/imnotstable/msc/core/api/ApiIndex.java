@@ -56,10 +56,12 @@ public final class ApiIndex {
 
     /**
      * Find the platform's API jars that Gradle already downloaded: Paper API and Adventure for {@code paper},
-     * the Minecraft server, Fabric API and loader for {@code fabric}, Minestom and Adventure for {@code minestom}.
+     * the Minecraft server, Fabric API and loader for {@code fabric}, Minestom and Adventure for {@code minestom}, the
+     * NeoForge or Forge API jars for {@code neoforge} and {@code forge}.
      *
      * @param gradleHome usually {@code ~/.gradle}
-     * @param platform   paper, fabric or minestom
+     * @param platform   an agent family ({@link io.github.imnotstable.msc.core.server.Platform#agent()}): paper,
+     *                   fabric, neoforge, forge or minestom
      */
     public static List<Path> findJars(Path gradleHome, String platform) throws IOException {
         Path files = gradleHome.resolve("caches").resolve("modules-2").resolve("files-2.1");
@@ -78,6 +80,15 @@ public final class ApiIndex {
                     }
                 }
                 addNewest(out, files.resolve("net.fabricmc").resolve("fabric-loader"));
+            }
+            case "neoforge" -> {
+                addNewest(out, files.resolve("net.neoforged").resolve("neoforge"));
+                addNewest(out, files.resolve("net.neoforged").resolve("bus"));
+            }
+            case "forge" -> {
+                addNewest(out, files.resolve("net.minecraftforge").resolve("forge"));
+                addNewest(out, files.resolve("net.minecraftforge").resolve("eventbus"));
+                addNewest(out, files.resolve("net.minecraftforge").resolve("fmlcore"));
             }
             case "minestom" -> {
                 addNewest(out, files.resolve("net.minestom").resolve("minestom"));

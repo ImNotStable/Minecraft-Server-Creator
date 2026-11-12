@@ -120,7 +120,10 @@ final class DevCycle {
         }
     }
 
-    /** The project's platform, remembered for the workspace when none is yet; else the workspace's. */
+    /**
+     * The project's platform, remembered for the workspace when none is yet; else the workspace's. A workspace set up
+     * as a platform that runs the same projects (Quilt for a Fabric mod, Purpur for a Paper plugin) keeps its own.
+     */
     private Platform platform(Path project) throws IOException {
         Platform platform = Platform.detect(project);
         if (platform == null) {
@@ -128,8 +131,10 @@ final class DevCycle {
         }
         if (!Files.exists(Platform.file(config))) {
             Platform.remember(config, platform);
+            return platform;
         }
-        return platform;
+        Platform workspace = server.platform();
+        return workspace.agent().equals(platform.agent()) ? workspace : platform;
     }
 
     private String deployAndRestart(Path project, Platform platform, ProjectBuilder.BuildResult build, boolean restart,

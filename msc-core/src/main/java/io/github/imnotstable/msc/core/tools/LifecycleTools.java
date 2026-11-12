@@ -36,15 +36,15 @@ public final class LifecycleTools {
                 "Create a new project from a template (Gradle KTS, tests wired in). Target directory must be empty.",
                 Schema.of().req("name", "string", "Project name, for example MyPlugin")
                         .opt("dir", "string", "Target directory, relative to the workspace. Default: the workspace itself")
-                        .opt("template", "string", "paper-plugin (default), fabric-mod, minestom-server, or a minigame base (kit, stages, saved progress, /game debug "
+                        .opt("template", "string", "paper-plugin (default), fabric-mod (also Quilt), neoforge-mod, forge-mod, minestom-server, or a minigame base (kit, stages, saved progress, /game debug "
                                 + "commands): paper-game, fabric-game, minestom-game")
                         .opt("package", "string", "Java package. Default com.example.<name>")
                         .opt("acceptEula", "boolean", EulaPrompts.EULA_ARG),
                 scaffold::run);
         registry.add("server_setup",
-                "Prepare the dev server: download Paper or the Fabric launcher, write dev defaults, install the msc agent.",
+                "Prepare the dev server: download or install it, write dev defaults, install the msc agent.",
                 Schema.of().opt("version", "string", "Minecraft version. Default " + config.minecraft())
-                        .opt("platform", "string", "paper, fabric or minestom. Default: the project's")
+                        .opt("platform", "string", "paper, purpur, fabric, quilt, neoforge, forge or minestom. Default: the project's")
                         .opt("mode", "string", "build (creative, peaceful) or game (survival, normal)")
                         .opt("acceptEula", "boolean", EulaPrompts.EULA_ARG),
                 setup::run);
