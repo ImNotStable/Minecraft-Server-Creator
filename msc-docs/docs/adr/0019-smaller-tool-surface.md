@@ -26,7 +26,7 @@ An audit against the three playtests ([findings](../playtest-findings.md); Lumen
 
 - 30 tools, 15,750 characters of tool list (down 15%), about 700 fewer tokens per conversation before instructions. The tool-list guard in `McpBridgeTest` drops from 19,000 to 16,000 characters.
 - A big solid fill now goes through `world.write` grids instead of the agent's `world.fill`. Same 8,388,608-block limit; more bytes on the local socket, but one code path and the name check before any block is placed.
-- The protocol ops `world.fill` and `world.setBlocks` are no longer called by the core. They stay in `msc-protocol` and the agents for now (the protocol is the foundation thread's); removing them is a follow-up with a protocol version note.
+- The protocol ops `world.fill` and `world.setBlocks` are no longer called by the core. Removed in a follow-up (see the addendum).
 - Old prompts or notes that call `build_fill` get "unknown tool". The tool list the client fetches shows `build_batch`, so an AI recovers in one call.
 
 ## Next candidates, not done here
@@ -34,3 +34,9 @@ An audit against the three playtests ([findings](../playtest-findings.md); Lumen
 - `texture_create`, `texture_generate`, `texture_recolor` and `model_create` overlap in their `model` argument; a single `texture` tool with a `from` mode could save about 1,000 characters, but texture work has had no playtest data yet.
 - `server_start`, `server_stop` and `server_detach` are short; merging them saves little.
 - Response sizes: measure `dev_cycle`, `server_start` and `player_test` results from the bench tool log before trimming.
+
+## Addendum 2026-11-12: `world.fill` and `world.setBlocks` removed
+
+The follow-up PR removes both ops from `msc-protocol`, the Paper, Fabric and Minestom agents and the test fakes, together with what only they used: the agents' region and list cursors, the `onlyReplace` check in each `EditJob`, and the Fabric and Minestom `BlockStates.Filter`. `world.write` is the one block-writing op; `replace=` filtering happens in the core (`Canvas.mask`), before anything is sent. Agents now list 8 operations.
+
+The protocol version stays 1. Core and agents ship in one install (`installMsc`, release zips), so a new agent never meets an old core in practice; if it did, the old core's `build_fill` would get `unknown_op` from the agent, which names the problem.

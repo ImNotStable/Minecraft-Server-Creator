@@ -35,6 +35,16 @@ class WorldOpsTest {
         return Region.of("world", x1, y1, z1, x2, y2, z2);
     }
 
+    /** One block over the whole region, through {@code world.write}, the only block-writing op. */
+    private Ops.EditResult fill(Region region, String state) {
+        return write(region, state, false);
+    }
+
+    private Ops.EditResult write(Region region, String state, boolean physics) {
+        int[] cells = new int[Math.toIntExact(region.volume())];
+        return ops.write(new Ops.WriteParams(new BlockGrid(region, List.of(state), cells), physics));
+    }
+
     private Block at(int x, int y, int z) {
         return world.get(x, y, z).getBlock();
     }
@@ -44,10 +54,10 @@ class WorldOpsTest {
     }
 
     @Test
-    void fillChangesEveryBlockAndCountsOnlyRealChanges() {
+    void writeChangesEveryBlockAndCountsOnlyRealChanges() {
         put(1, 70, 1, Blocks.STONE);
 
-        Ops.EditResult result = ops.fill(new Ops.FillParams(box(0, 70, 0, 2, 71, 2), "minecraft:stone", null));
+        Ops.EditResult result = fill(box(0, 70, 0, 2, 71, 2), "minecraft:stone");
 
         assertThat(result.changed()).isEqualTo(17);
         assertThat(at(0, 70, 0)).isEqualTo(Blocks.STONE);
@@ -58,7 +68,7 @@ class WorldOpsTest {
     @Test
     void undoRestoresTheEditAndCanItselfBeUndone() {
         put(0, 70, 0, Blocks.DIRT);
-        Ops.EditResult fill = ops.fill(new Ops.FillParams(box(0, 70, 0, 1, 70, 0), "minecraft:stone", null));
+        Ops.EditResult fill = fill(box(0, 70, 0, 1, 70, 0), "minecraft:stone");
 
         Ops.EditResult undo = ops.undo(new Ops.UndoParams(fill.editId()));
 
@@ -70,20 +80,6 @@ class WorldOpsTest {
         assertThat(at(0, 70, 0)).isEqualTo(Blocks.STONE);
         assertThatThrownBy(() -> ops.undo(new Ops.UndoParams(fill.editId())))
                 .isInstanceOfSatisfying(OpException.class, e -> assertThat(e.code()).isEqualTo(ErrorCodes.NOT_FOUND));
-    }
-
-    @Test
-    void fillWithOnlyReplaceLeavesOtherBlocks() {
-        put(0, 70, 0, Blocks.DIRT);
-        put(1, 70, 0, Blocks.STONE);
-
-        Ops.EditResult result = ops.fill(new Ops.FillParams(box(0, 70, 0, 2, 70, 0), "minecraft:gold_block",
-                List.of("minecraft:dirt")));
-
-        assertThat(result.changed()).isEqualTo(1);
-        assertThat(at(0, 70, 0)).isEqualTo(Blocks.GOLD_BLOCK);
-        assertThat(at(1, 70, 0)).isEqualTo(Blocks.STONE);
-        assertThat(at(2, 70, 0)).isEqualTo(Blocks.AIR);
     }
 
     @Test
@@ -102,10 +98,9 @@ class WorldOpsTest {
     }
 
     @Test
-    void setBlocksKeepsBlockStateProperties() {
-        ops.setBlocks(new Ops.SetBlocksParams("world", List.of(
-                new Ops.BlockChange(5, 70, 5, "minecraft:oak_stairs[facing=east]"),
-                new Ops.BlockChange(6, 70, 5, "minecraft:glass")), false));
+    void writeKeepsBlockStateProperties() {
+        fill(box(5, 70, 5, 5, 70, 5), "minecraft:oak_stairs[facing=east]");
+        fill(box(6, 70, 5, 6, 70, 5), "minecraft:glass");
 
         assertThat(BlockStates.serialize(world.get(5, 70, 5))).contains("facing=east");
         assertThat(at(6, 70, 5)).isEqualTo(Blocks.GLASS);
@@ -136,8 +131,8 @@ class WorldOpsTest {
 
     @Test
     void readThenWriteCopiesAStructure() {
-        ops.fill(new Ops.FillParams(box(0, 70, 0, 2, 72, 2), "minecraft:bricks", null));
-        ops.setBlocks(new Ops.SetBlocksParams("world", List.of(new Ops.BlockChange(1, 72, 1, "minecraft:glowstone")), false));
+        fill(box(0, 70, 0, 2, 72, 2), "minecraft:bricks");
+        fill(box(1, 72, 1, 1, 72, 1), "minecraft:glowstone");
         BlockGrid copy = ops.read(new Ops.ReadParams(box(0, 70, 0, 2, 72, 2), false)).grid();
 
         Region target = box(10, 70, 0, 12, 72, 2);
@@ -163,23 +158,23 @@ class WorldOpsTest {
 
     @Test
     void reportsClearErrors() {
-        assertThatThrownBy(() -> ops.fill(new Ops.FillParams(Region.of("nether", 0, 0, 0, 1, 1, 1), "minecraft:stone", null)))
+        assertThatThrownBy(() -> fill(Region.of("nether", 0, 0, 0, 1, 1, 1), "minecraft:stone"))
                 .isInstanceOfSatisfying(OpException.class, e -> assertThat(e.code()).isEqualTo(ErrorCodes.NOT_FOUND));
-        assertThatThrownBy(() -> ops.fill(new Ops.FillParams(box(0, 0, 0, 200, 100, 200), "minecraft:stone", null)))
+        assertThatThrownBy(() -> fill(box(0, 0, 0, 200, 100, 200), "minecraft:stone"))
                 .isInstanceOfSatisfying(OpException.class, e -> assertThat(e.code()).isEqualTo(ErrorCodes.TOO_LARGE));
-        assertThatThrownBy(() -> ops.fill(new Ops.FillParams(box(0, 70, 0, 0, 70, 0), "minecraft:not_a_block", null)))
+        assertThatThrownBy(() -> fill(box(0, 70, 0, 0, 70, 0), "minecraft:not_a_block"))
                 .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("not_a_block");
         int top = world.maxY();
-        assertThatThrownBy(() -> ops.fill(new Ops.FillParams(box(0, top, 0, 0, top, 0), "minecraft:stone", null)))
+        assertThatThrownBy(() -> fill(box(0, top, 0, 0, top, 0), "minecraft:stone"))
                 .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("build height");
     }
 
     @Test
-    void physicsFollowsTheRequestAndFillNeverUsesIt() {
-        ops.setBlocks(new Ops.SetBlocksParams("world", List.of(new Ops.BlockChange(0, 70, 0, "minecraft:sand")), true));
+    void physicsFollowsTheRequest() {
+        write(box(0, 70, 0, 0, 70, 0), "minecraft:sand", true);
         assertThat(world.lastPhysics).isTrue();
 
-        ops.fill(new Ops.FillParams(box(0, 71, 0, 0, 71, 0), "minecraft:sand", null));
+        fill(box(0, 71, 0, 0, 71, 0), "minecraft:sand");
         assertThat(world.lastPhysics).isFalse();
     }
 

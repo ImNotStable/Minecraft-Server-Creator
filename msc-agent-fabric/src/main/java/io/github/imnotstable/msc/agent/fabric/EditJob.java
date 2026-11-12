@@ -12,16 +12,13 @@ final class EditJob implements SlicedJob<UndoRecord> {
 
     private final AgentLevel level;
     private final ChangeSource changes;
-    private final List<BlockStates.Filter> onlyReplace;
     private final boolean physics;
     private final UndoRecord.Builder undo;
     private UndoRecord result;
 
-    /** @param onlyReplace when not empty, only blocks matching one of these filters are replaced */
-    EditJob(AgentLevel level, ChangeSource changes, List<BlockStates.Filter> onlyReplace, boolean physics) {
+    EditJob(AgentLevel level, ChangeSource changes, boolean physics) {
         this.level = level;
         this.changes = changes;
-        this.onlyReplace = onlyReplace == null ? List.of() : onlyReplace;
         this.physics = physics;
         this.undo = new UndoRecord.Builder(level.name(), changes.size());
     }
@@ -35,7 +32,7 @@ final class EditJob implements SlicedJob<UndoRecord> {
             int z = changes.z();
             BlockState target = changes.target();
             BlockState current = level.get(x, y, z);
-            if (current != target && replaces(current)) {
+            if (current != target) {
                 undo.add(x, y, z, current);
                 level.set(x, y, z, target, physics);
             }
@@ -45,18 +42,6 @@ final class EditJob implements SlicedJob<UndoRecord> {
         }
         result = undo.build();
         return true;
-    }
-
-    private boolean replaces(BlockState current) {
-        if (onlyReplace.isEmpty()) {
-            return true;
-        }
-        for (BlockStates.Filter filter : onlyReplace) {
-            if (filter.matches(current)) {
-                return true;
-            }
-        }
-        return false;
     }
 
     @Override

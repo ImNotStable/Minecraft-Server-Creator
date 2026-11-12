@@ -82,9 +82,7 @@ public final class FakeAgent {
                 .on(Ops.WORLD_READ, this::read)
                 .on(Ops.WORLD_ENTITIES, this::entities)
                 .on(Ops.WORLD_HEIGHTMAP, this::heightmap)
-                .on(Ops.WORLD_FILL, this::fill)
                 .on(Ops.WORLD_WRITE, this::write)
-                .on(Ops.WORLD_SET_BLOCKS, this::setBlocks)
                 .on(Ops.WORLD_UNDO, this::undo)
                 .on(Ops.PACK_APPLY, p -> {
                     synchronized (this) {
@@ -158,23 +156,6 @@ public final class FakeAgent {
         return new Ops.HeightmapResult(r.min().x(), r.min().z(), r.sizeX(), r.sizeZ(), heights);
     }
 
-    private synchronized Ops.EditResult fill(Ops.FillParams p) {
-        Region r = p.region().requireWithinLimit();
-        known(p.state());
-        Map<BlockPos, String> before = new HashMap<>();
-        long changed = 0;
-        for (int y = r.min().y(); y <= r.max().y(); y++) {
-            for (int z = r.min().z(); z <= r.max().z(); z++) {
-                for (int x = r.min().x(); x <= r.max().x(); x++) {
-                    if (p.onlyReplace() == null || p.onlyReplace().isEmpty() || p.onlyReplace().contains(get(x, y, z))) {
-                        changed += put(before, x, y, z, p.state());
-                    }
-                }
-            }
-        }
-        return finish(before, changed);
-    }
-
     private synchronized Ops.EditResult write(Ops.WriteParams p) {
         Region r = p.grid().region().requireWithinLimit();
         p.grid().palette().forEach(FakeAgent::known);
@@ -190,16 +171,6 @@ public final class FakeAgent {
                     }
                 }
             }
-        }
-        return finish(before, changed);
-    }
-
-    private synchronized Ops.EditResult setBlocks(Ops.SetBlocksParams p) {
-        p.changes().forEach(c -> known(c.state()));
-        Map<BlockPos, String> before = new HashMap<>();
-        long changed = 0;
-        for (Ops.BlockChange c : p.changes()) {
-            changed += put(before, c.x(), c.y(), c.z(), c.state());
         }
         return finish(before, changed);
     }

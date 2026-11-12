@@ -42,9 +42,7 @@ Defined with their Java types in `Ops`. Block states are vanilla strings such as
 | `world.read` | `region, includeEntities` | `grid, entities[]` |
 | `world.entities` | `region, type?, limit` | `entities[{type, uuid, x, y, z, name?, tags[], health?, maxHealth?}], total` (no blocks read, so no volume limit; loaded chunks only) |
 | `world.heightmap` | `world, min, max` (x/z only) | `minX, minZ, sizeX, sizeZ, heights[]` (Z then X) |
-| `world.fill` | `region, state, onlyReplace[]?` | `editId, changed` |
-| `world.write` | `grid, updatePhysics` | `editId, changed` |
-| `world.setBlocks` | `world, changes[{x,y,z,state}], updatePhysics` | `editId, changed` |
+| `world.write` | `grid, updatePhysics` | `editId, changed` (the only block-writing op; every build is a grid) |
 | `world.undo` | `editId` | `editId, changed` |
 | `pack.apply` | `url, sha1, required` | `playersSent` |
 
@@ -54,6 +52,7 @@ Defined with their Java types in `Ops`. Block states are vanilla strings such as
 - `grid` = `{"region":..., "palette":["minecraft:air","minecraft:stone"], "blocks":[0,1,1,...]}`.
 - `blocks` is ordered Y, then Z, then X (X fastest): index = `((y - minY) * sizeZ + (z - minZ)) * sizeX + (x - minX)`.
 - In writes, `-1` leaves a block unchanged.
+- `world.fill` and `world.setBlocks` were removed in [ADR 0019](adr/0019-smaller-tool-surface.md): a core and its agents come from one install, so the protocol version stays 1.
 - One call covers at most 1,048,576 blocks (`Limits.MAX_REGION_VOLUME`). The core splits larger jobs.
 
 ## Events (agent tells core)
@@ -65,7 +64,7 @@ Defined with their Java types in `Ops`. Block states are vanilla strings such as
 ```java
 OpRouter router = new OpRouter()
         .on(Ops.SERVER_INFO, p -> new Ops.ServerInfo("paper", paperVersion, mcVersion, worlds, online, tps))
-        .on(Ops.WORLD_FILL, p -> fill(p.region(), p.state(), p.onlyReplace()));
+        .on(Ops.WORLD_WRITE, p -> write(p.grid(), p.updatePhysics()));
 AgentInfo info = new AgentInfo("paper", paperVersion, mcVersion, router.operations());
 AgentClient.Session session = AgentClient.connectFromEnvironment(info, router, new Connection.Listener() {}, Duration.ofSeconds(10));
 ```
@@ -77,5 +76,5 @@ Handlers run on virtual threads, so they may block while waiting for the server'
 ```java
 CoreServer server = CoreServer.start(0, token, RequestHandler.none(), listener, Duration.ofSeconds(10));
 // pass server.address() and token to the game server's environment
-Ops.EditResult r = session.connection().call(Ops.WORLD_FILL, new Ops.FillParams(region, "minecraft:stone", null), Duration.ofSeconds(30)).get();
+Ops.EditResult r = session.connection().call(Ops.WORLD_WRITE, new Ops.WriteParams(grid, false), Duration.ofSeconds(30)).get();
 ```
