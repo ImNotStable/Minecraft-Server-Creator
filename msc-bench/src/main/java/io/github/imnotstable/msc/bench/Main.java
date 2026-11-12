@@ -111,6 +111,10 @@ public final class Main {
         Map<String, String> preambles = new HashMap<>();
         preambles.put(TaskDef.PAPER, readIfPresent(tasksDir.resolve("_preamble.md")));
         preambles.put(TaskDef.MINESTOM, readIfPresent(tasksDir.resolve("_preamble-minestom.md")));
+        Path noServer = tasksDir.resolve("_preamble-no-server.md");
+        if (Files.exists(noServer)) {
+            preambles.put(BenchRunner.PAPER_NO_SERVER, Files.readString(noServer));
+        }
 
         BenchRunner runner = new BenchRunner(config, runDir, preambles, out);
         List<RunRecord> records = runner.run(tasks, modes, repeat);
