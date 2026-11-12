@@ -119,7 +119,7 @@ Pixel art is drawn as text; no image model is involved. The pack source lives in
 | `model_create` | `name` (model, such as `block/ruby_log`), `kind` (`cube_all`, `cube_column`, `cube_bottom_top`, `orientable`, `cross`, `item`, `handheld`), `textures` (list of `slot=texture`; one bare name fills every slot), `item`? (true) | Writes the model and, unless `item=false`, an item definition named after it |
 | `texture_view` | `name` | The texture as a palette line and pixel rows (about 80 tokens for 16 x 16) |
 | `pack_check` | `limit`? (30) | `msc-textures` `PackLint` on the pack sources: a summary line (files, errors, warnings, notes), then findings such as a model pointing at a missing texture. A missing `pack.mcmeta` is not reported before the first `pack_build`, which writes it |
-| `pack_build` | `description`?, `apply`? (true), `required`? (false) | Zips the pack (same content gives the same SHA-1), serves it over HTTP and sends it through the agent. Ends with the `pack_check` summary line |
+| `pack_build` | `description`?, `apply`? (true), `required`? (false) | Zips the pack (same content gives the same SHA-1), serves it over HTTP and sends it through the agent. The agent also sends it to players who join later, and the next `server_start` or `dev_cycle` in the same session serves and sends it again (`resource pack sent again`), because a restarted server has forgotten it. Ends with the `pack_check` summary line |
 
 ## Tool log
 

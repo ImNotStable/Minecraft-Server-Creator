@@ -344,7 +344,7 @@ public final class LifecycleTools {
                 out.append(", agent jar updated");
             }
             if (s != null) {
-                out.append(groundLine());
+                out.append(groundLine()).append(packLine());
             }
             out.append('\n').append(clean ? "no errors or warnings" : condensed);
         } else if (r.exited()) {
@@ -381,6 +381,27 @@ public final class LifecycleTools {
             return "";
         } catch (RuntimeException e) {
             return "";
+        }
+    }
+
+    /**
+     * A restarted server has forgotten the pack that pack_build sent, and a detached pack host was just stopped,
+     * so serve and send it again. Best effort, like the ground line.
+     */
+    private String packLine() {
+        ResourcePack.Applied applied = pack.applied();
+        if (applied == null) {
+            return "";
+        }
+        try {
+            ResourcePack.Built built = pack.build(applied.description());
+            hub.call(Ops.PACK_APPLY, new Ops.PackParams(built.url(), built.sha1(), applied.required()));
+            return "\nresource pack sent again: players who join get it";
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return "";
+        } catch (IOException | RuntimeException e) {
+            return "\nresource pack not sent again (" + e.getMessage() + "): run pack_build";
         }
     }
 
