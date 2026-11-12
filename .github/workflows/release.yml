@@ -87,5 +87,8 @@ jobs:
           else
             flags+=(--verify-tag)
           fi
+          # Hand-written highlights, when present, go above GitHub's generated PR list.
+          notes="msc-docs/releases/$TAG.md"
+          if [[ -f "$notes" ]]; then flags+=(--notes-file "$notes"); fi
           gh release create "$TAG" dist/* --generate-notes \
             --title "Minecraft Server Creator $VERSION" "${flags[@]}"
