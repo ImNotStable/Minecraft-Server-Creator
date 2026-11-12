@@ -184,6 +184,62 @@ public sealed interface Step {
     }
 
     /**
+     * A spiral rising from {@code base} (its bottom centre block): {@code turns} full turns over {@code height}
+     * layers, clockwise seen from above (counter-clockwise when negative), starting at {@code start} degrees
+     * (0 = north, 90 = east). {@code width} blocks across, from the radius inward: a spiral stair's treads.
+     */
+    record Helix(String world, BlockPos base, int radius, int height, double turns, int width, int start,
+                 BlockPattern block, List<String> replace) implements Step {
+        @Override
+        public Region bounds() {
+            return Region.of(world, base.x() - radius, base.y(), base.z() - radius, base.x() + radius,
+                    base.y() + height - 1, base.z() + radius);
+        }
+
+        @Override
+        public void draw(Canvas c) throws InterruptedException {
+            Canvas.Mask mask = c.mask(bounds(), replace);
+            double arc = Math.abs(turns) * 2 * Math.PI * radius;
+            int samples = (int) Math.ceil(Math.max(arc, height) * 4) + 1;
+            for (int i = 0; i <= samples; i++) {
+                double t = (double) i / samples;
+                double angle = Math.toRadians(start) + turns * 2 * Math.PI * t;
+                int y = base.y() + Math.min(height - 1, (int) Math.floor(t * height));
+                for (int r = radius - width + 1; r <= radius; r++) {
+                    int x = base.x() + (int) Math.round(r * Math.sin(angle));
+                    int z = base.z() - (int) Math.round(r * Math.cos(angle));
+                    if (mask.allows(x, y, z)) {
+                        c.set(x, y, z, block.at(x, y, z));
+                    }
+                }
+            }
+        }
+    }
+
+    /** Several steps drawn in order, such as the copies of one step made by {@code repeat=}. */
+    record Group(List<Step> steps) implements Step {
+        @Override
+        public Region bounds() {
+            Region out = null;
+            for (Step s : steps) {
+                Region b = s.bounds();
+                out = out == null ? b : Region.of(b.world(), Math.min(out.min().x(), b.min().x()),
+                        Math.min(out.min().y(), b.min().y()), Math.min(out.min().z(), b.min().z()),
+                        Math.max(out.max().x(), b.max().x()), Math.max(out.max().y(), b.max().y()),
+                        Math.max(out.max().z(), b.max().z()));
+            }
+            return out;
+        }
+
+        @Override
+        public void draw(Canvas c) throws InterruptedException {
+            for (Step s : steps) {
+                s.draw(c);
+            }
+        }
+    }
+
+    /**
      * Rings around {@code base} out to each radius in turn, {@code height} blocks tall: an island's
      * grass, then beach, then water. {@code jitter} wobbles every edge by up to that many blocks.
      */

@@ -33,8 +33,8 @@ import java.util.regex.Pattern;
 public final class BuildScript {
     /** What every step verb takes, for the tool descriptions. */
     public static final String HELP = """
-            One step per line, in order; later steps win. B is a block or a weighted mix such as \
-            grass_block:78,moss_block:10. Every step takes replace=a,b (change only those; air = empty) and seed=N.
+            One step per line; later steps win. B = a block or a mix like grass_block:78,moss_block:10. Every step \
+            takes replace=a,b (change only those; air = empty), seed=N, repeat=N step=DX,DY,DZ.
             fill X,Y,Z X,Y,Z B [hollow|outline|walls]
             set X,Y,Z B
             cylinder X,Y,Z r=R h=H B [hollow] [thick=T] [inner=R]   (X,Y,Z = bottom centre)
@@ -42,13 +42,14 @@ public final class BuildScript {
             disc X,Y,Z r=R B [inner=R]
             sphere|dome X,Y,Z r=R B [hollow] [thick=T]   (dome: X,Y,Z = floor centre)
             line X,Y,Z X,Y,Z B [w=W]
-            bands X,Y,Z [h=H] R1=B R2=B ... [jitter=J]   (rings out to each radius: land, beach, water)
-            structure X,Y,Z [X,Y,Z ...] [rotate=90] [face=X,Z] [anchor=center] [repeat=N step=DX,DY,DZ] [air=false] [file=PATH]
-              then the text and a line "end", unless file= (.schem or text) is given. Text: "legend: #=stone g=glass", \
-            then per layer "y=N" and rows of symbols (rows = z, columns = x); "." is air, "_" unchanged; \
-            "y=N same as y=M", "y=N all #". rotate turns clockwise seen from above; face=X,Z turns each copy's north \
-            side (first row) toward X,Z.
-            copy X,Y,Z X,Y,Z to=X,Y,Z [structure options]   (copies the world as it was before this call)""";
+            helix X,Y,Z r=R h=H B [turns=T] [w=W] [start=DEG]   (bottom centre; turns<0 anticlockwise; \
+            start=0 north)
+            bands X,Y,Z [h=H] R1=B R2=B ... [jitter=J]   (rings to each radius: land, beach, water)
+            structure X,Y,Z [X,Y,Z ...] [rotate=90] [face=X,Z] [anchor=center] [air=false] [file=PATH]
+              then the text and "end", unless file= (.schem or text). Text: "legend: #=stone g=glass", then per \
+            layer "y=N" and rows (z) of symbols (x); "." air, "_" unchanged; "y=N same as y=M", "y=N all #". rotate \
+            turns clockwise seen from above; face=X,Z turns each copy's north side (first row) toward X,Z.
+            copy X,Y,Z X,Y,Z to=X,Y,Z [structure options]   (reads the world before this call)""";
 
     private static final Pattern POS = Pattern.compile("-?\\d+,-?\\d+,-?\\d+");
     private static final Pattern OPTION = Pattern.compile("[a-z]+=.*");
@@ -150,6 +151,9 @@ public final class BuildScript {
 
     /** Build a step from its parts. */
     public Step step(Parts p) throws java.io.IOException, InterruptedException {
+        if (p.options().containsKey("repeat") && !p.verb().equals("structure") && !p.verb().equals("copy")) {
+            return repeated(p);
+        }
         Options o = new Options(p);
         Step step = switch (p.verb()) {
             case "fill" -> {
@@ -194,6 +198,17 @@ public final class BuildScript {
                 int w = o.integer("w", 1, 1, 64);
                 yield new Step.Line(world, p.points().get(0), p.points().get(1), w, o.block(), o.replace());
             }
+            case "helix" -> {
+                o.points(1);
+                o.flags(Set.of());
+                int r = o.integer("r", null, 1, 512);
+                int h = o.integer("h", null, 1, 4096);
+                // One block of rise per block of arc: a stair a player can walk up.
+                double turns = o.decimal("turns", (h - 1) / (2 * Math.PI * r), -1024, 1024);
+                int w = o.integer("w", 1, 1, r + 1);
+                int start = o.integer("start", 0, -360, 360);
+                yield new Step.Helix(world, p.points().get(0), r, h, turns, w, start, o.block(), o.replace());
+            }
             case "bands" -> {
                 o.points(1);
                 o.flags(Set.of());
@@ -231,12 +246,39 @@ public final class BuildScript {
             }
             case "copy" -> copy(p);
             default -> throw new ToolException("unknown step \"" + p.verb()
-                    + "\"; use fill, set, cylinder, ring, disc, sphere, dome, line, bands, structure or copy");
+                    + "\"; use fill, set, cylinder, ring, disc, sphere, dome, line, helix, bands, structure or copy");
         };
         if (!p.verb().equals("structure") && !p.verb().equals("copy")) {
             o.done();
         }
         return step;
+    }
+
+    /** {@code repeat=N step=DX,DY,DZ} on a shape step: the step N times, each copy moved by one more step. */
+    private Step repeated(Parts p) throws java.io.IOException, InterruptedException {
+        Map<String, String> options = new LinkedHashMap<>(p.options());
+        String repeatText = options.remove("repeat").trim();
+        String stepText = options.remove("step");
+        int repeat;
+        try {
+            repeat = Integer.parseInt(repeatText);
+        } catch (NumberFormatException e) {
+            throw new ToolException("repeat must be a whole number, got " + repeatText);
+        }
+        if (repeat < 1 || repeat > 1024) {
+            throw new ToolException("repeat must be 1 to 1024, got " + repeat);
+        }
+        if (stepText == null) {
+            throw new ToolException("repeat needs step=DX,DY,DZ, the offset between copies");
+        }
+        BlockPos d = Coords.pos(stepText);
+        List<Step> copies = new ArrayList<>(repeat);
+        for (int i = 0; i < repeat; i++) {
+            int k = i;
+            List<BlockPos> moved = p.points().stream().map(q -> q.offset(d.x() * k, d.y() * k, d.z() * k)).toList();
+            copies.add(step(new Parts(p.verb(), moved, options, p.flags(), p.bands(), p.block())));
+        }
+        return new Step.Group(copies);
     }
 
     /** Read a region of the world now and stamp it at {@code to=}, with every structure option. */
@@ -387,6 +429,23 @@ public final class BuildScript {
             }
             if (n < min || n > max) {
                 throw new ToolException(key + " must be " + min + " to " + max + ", got " + n);
+            }
+            return n;
+        }
+
+        double decimal(String key, double fallback, double min, double max) {
+            String v = string(key);
+            if (v == null) {
+                return fallback;
+            }
+            double n;
+            try {
+                n = Double.parseDouble(v.trim());
+            } catch (NumberFormatException e) {
+                throw new ToolException(key + " must be a number, got " + v);
+            }
+            if (!(n >= min && n <= max)) {
+                throw new ToolException(key + " must be " + (int) min + " to " + (int) max + ", got " + v);
             }
             return n;
         }

@@ -61,13 +61,13 @@ Built on first use from the platform's jars in the Gradle cache (or `MSC_API_JAR
 | Tool | Arguments | Result | Budget |
 | --- | --- | --- | --- |
 | `api_search` | `query`, `kind`? (`class`, `interface`, `enum`, `record`, `annotation`, `event`), `limit`? (15) | One line per match: `interface org.bukkit.entity.Player` or `Player#void sendMessage(String)` | `limit` lines |
-| `api_class` | `name`, `filter`?, `inherited`? (false), `limit`? (40) | Header with supertypes, enum constants, then one member signature per line | `limit` lines |
+| `api_class` | `name`, `filter`?, `inherited`? (false), `limit`? (40) | Header with supertypes, enum constants, then one member signature per line; constants inherited from interfaces and superclasses are always listed (`<- Owner`) | `limit` lines |
 
 ## Seeing the world
 
 | Tool | Arguments | Result | Budget |
 | --- | --- | --- | --- |
-| `world_summary` | `region` (up to 8,388,608 blocks) | Size, air share, top 15 block counts, bounds of non-air blocks, non-air count per layer, entity counts | about 6 lines |
+| `world_summary` | `region` (up to 8,388,608 blocks), `path`? (`"x,y,z x,y,z"`), `diff`? (a `structure_save` file) | Size, air share, top 15 block counts, bounds of non-air blocks, non-air count per layer, entity counts. With `path`: whether a player can walk and jump from A to B inside the region (walk, step up 1, drop up to 3, jump gaps up to 3 flat, 2 going up, 4 going down, ladders, vines, water; block shapes judged by name), with the route's turning points, or the closest point and the wall, gap, fence, iron door or lava that stops the player. With `diff`: blocks changed since the snapshot, counts per kind and the first 12 positions | about 6 lines |
 | `world_slice` | `region` (up to 128 wide, 1,048,576 blocks), `states`? (false), `maxChars`? | The region in the text structure format | `maxChars` |
 | `world_entities` | `region` (up to 2,048 x 2,048 wide, any height), `type`? (`zombie`), `limit`? (50), `ids`? (false) | A count line with totals per type, then one line per entity sorted by type and position: `zombie "Brute" 2.5,-60,3 hp 7/20 tags boss,wave`. The name is a player name, custom name or (Paper, Minestom) a text display's text; `ids=true` adds the UUID for commands. Loaded chunks only: with no player online, run `forceload add x1 z1 x2 z2` first (an empty result says so, with the region's corners). Minestom has no scoreboard tags | 6,000 chars |
 | `world_heightmap` | `area` (up to 256 x 256), `maxChars`? | Min, max, mean, then one character per column (`height - min`, 0-9 then a-z); when the range is over 35, numbers per column with runs as `v*n` and repeated rows as `(xN)` | `maxChars` |
@@ -111,7 +111,7 @@ y=66 all #
 | Tool | Arguments | Notes |
 | --- | --- | --- |
 | `build_undo` | `edit`? (default: most recent) | Edits are remembered for the life of the core process |
-| `build_batch` | `steps` (one per line), `dryRun`? (false), `physics`? (false) | The one build tool: `fill` (solid, `hollow`, `outline`, `walls`), `set`, `cylinder`, `ring`, `disc`, `sphere`, `dome`, `line`, `bands`, stamped `structure`s (inline text or `file=` `.schem`/text), `copy` (reads the world before the call, so source and target may overlap); weighted mixes such as `grass_block:78,moss_block:10`; checks every name first; one undo id; up to 8,388,608 blocks. See [ADR 0015](adr/0015-build-batch.md) and [ADR 0019](adr/0019-smaller-tool-surface.md) |
+| `build_batch` | `steps` (one per line), `dryRun`? (false), `physics`? (false) | The one build tool: `fill` (solid, `hollow`, `outline`, `walls`), `set`, `cylinder`, `ring`, `disc`, `sphere`, `dome`, `line`, `helix` (spiral stair: `r`, `h`, `turns`, `w` inward, `start` degrees from north), `bands`, `repeat=N step=DX,DY,DZ` on every step, stamped `structure`s (inline text or `file=` `.schem`/text), `copy` (reads the world before the call, so source and target may overlap); weighted mixes such as `grass_block:78,moss_block:10`; checks every name first; one undo id; up to 8,388,608 blocks. See [ADR 0015](adr/0015-build-batch.md) and [ADR 0019](adr/0019-smaller-tool-surface.md) |
 | `structure_save` | `region`, `file` | Sponge schematic v2 (`.schem`), blocks only |
 
 ## Play-testing
