@@ -1,0 +1,58 @@
+# Builds and tests every module on pushes to main and on pull requests. See ADR 0012.
+name: CI
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "docs/**"
+      - "msc-docs/**"
+      - "*.md"
+      - "msc-*/README.md"
+      - "msc-*/PLAN.md"
+  pull_request:
+    paths-ignore:
+      - "docs/**"
+      - "msc-docs/**"
+      - "*.md"
+      - "msc-*/README.md"
+      - "msc-*/PLAN.md"
+  workflow_dispatch:
+
+# A newer push to the same branch or PR cancels the older run (saves Actions minutes).
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build and test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 25
+
+      # Caches Gradle's dependencies, wrapper and build cache (including Loom's Minecraft files).
+      # Only main writes the cache; other branches and PRs read it.
+      - uses: gradle/actions/setup-gradle@v6
+
+      # The default build runs unit tests only. Template builds (verifyTemplates) and anything
+      # that starts a real Minecraft server are not part of it, and nothing here accepts the EULA.
+      - name: Build
+        run: ./gradlew build --console=plain
+
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-reports
+          path: "**/build/reports/tests/"
+          retention-days: 7
