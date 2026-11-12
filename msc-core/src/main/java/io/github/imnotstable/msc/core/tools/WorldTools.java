@@ -86,7 +86,7 @@ public final class WorldTools {
                     return new Tool.Output(r.caption() + "\nsaved: " + file, r.png(), r.estimatedTokens());
                 });
         registry.add("world_summary",
-                "Summarize a region in a few lines: block counts, non-air bounds, fill per layer, entities. Use before world_slice on unknown areas.",
+                "Summarize a region in a few lines: block counts (with where rare ones are), non-air bounds, fill per layer, entities. Use before world_slice on unknown areas and to find a block.",
                 Schema.of().req("region", "string", REGION).opt("world", "string", WORLD)
                         .opt("path", "string", "\"x,y,z x,y,z\": can a player walk/jump from A to B; else the wall or gap")
                         .opt("diff", "string", "structure_save file of this region: what changed since"),

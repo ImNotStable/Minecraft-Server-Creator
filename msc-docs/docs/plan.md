@@ -12,7 +12,16 @@ Minecraft Server Creator is a toolset an AI agent uses to develop custom Minecra
 | Speed | Wall-clock time and agent turns per task | Same benchmark run |
 | Token usage | Tokens per task, and tokens per tool result | Token counts logged by the core per tool call |
 
-Targets are set after a baseline run without the toolset.
+Targets, set from the first full run (2026-11-12: 8 Paper tasks × 3 repeats per mode, claude-sonnet-4-6; [ADR 0004](adr/0004-bench.md)). The toolset is measured against the baseline in the same run:
+
+| Area | First full run (baseline → toolset) | Target |
+| --- | --- | --- |
+| Quality | 24/24 → 24/24 passing (22/24 as scored; the 2 misses were a bench false negative, fixed) | Toolset passes every task the baseline passes, and the game task `game-sky-sprint` |
+| Speed | Median 75 s → 49 s (−35%); median turns 12 → 10 | Median time at least 30% lower, and no task more than 10% slower (now: `world-find-block` +45%, `code-fix-startup` +9%) |
+| Tokens | Median 210k → 205k (−2%); cost $8.47 → $4.67 (−45%) | Median tokens at least 20% lower and cost at least 40% lower, and no task more than 10% higher (now: `texture-ruby-item` +69%, `build-hut` +35%) |
+| Tool results | `world_slice` 469 tokens per call, 7,048 of about 8,500 tool-result tokens | No tool above 300 tokens per call in the bench (roadmap R9) |
+
+The big win is seeing the world: `build-mirror-copy` drops from 549 s and 1.3M tokens to 76 s and 130k. The gaps to close are where a tool replaced a cheap plain-file step (`texture-ruby-item`, `build-hut`) and finding blocks (`world-find-block`).
 
 ## Architecture
 
@@ -75,7 +84,7 @@ Product decisions were made by Jeremiah on 2026-11-10. Build and design decision
 | Minecraft version | Latest stable release: 26.3 (Paper 26.3 stable since 2026-10-11) | product |
 | Repo layout | One monorepo, `msc-` module names | product |
 | Textures in the MVP | AI-drawn pixel art only; image models post-MVP | product |
-| Benchmark targets | Measure a baseline first, then set targets | product |
+| Benchmark targets | Measure a baseline first, then set targets; set on 2026-11-12 from the first full run (see Goal and success metrics) | product, [ADR 0004](adr/0004-bench.md) |
 | Visibility | Private for now; license chosen when going public | product |
 | Java | Java 25 (current LTS, required by Minecraft 26.x); Gradle downloads it if missing | [ADR 0001](adr/0001-build-setup.md) |
 | Build | Gradle 9.9.0 wrapper, Kotlin DSL, `build-logic` convention plugins, one version catalog | [ADR 0001](adr/0001-build-setup.md) |
@@ -109,3 +118,5 @@ Product decisions were made by Jeremiah on 2026-11-10. Build and design decision
 | Shared agent code | `msc-agent-common` holds the operations, jobs, undo and core link once, generic over the block state type; Paper, Fabric and Minestom keep only adapters (`AgentWorlds`, `AgentWorld`, `AgentServer`, `MainThread`) | [ADR 0024](adr/0024-agent-common.md) |
 | CI cost | Pull requests run only the Ubuntu build; Windows and the Minestom e2e job run on main, nightly, by hand, or on a `full-ci` label | [ADR 0025](adr/0025-ci-cost.md) |
 | Generated tool docs | `tools.md` tool tables come from the tool definitions (`./gradlew :msc-core:toolDocs`); `checkToolDocs` in `build` fails when they or the wiki tool page are stale | [ADR 0026](adr/0026-generated-tool-docs.md) |
+| More platforms | NeoForge, Forge, Quilt and Purpur join Paper, Fabric and Minestom. The Minecraft side of the mod agents is one shared source folder (`msc-agent-vanilla`); new `msc-agent-neoforge` and `msc-agent-forge`; Quilt runs the Fabric agent, Purpur the Paper agent; `server_setup` runs each loader's installer; `neoforge-mod` and `forge-mod` templates. Folia and proxies left out | [ADR 0027](adr/0027-more-platforms.md) |
+| First-build warmup | `project_scaffold` starts the first build of `neoforge-mod` and `forge-mod` in the background (`warmup=true` in `template.properties`); `dev_cycle` waits for it. Forge/NeoForge log lines parsed without the logger tag; OSHI noise and `Transformer Audit` dropped | [ADR 0028](adr/0028-first-build-warmup.md) |

@@ -27,24 +27,25 @@ public final class LifecycleTools {
                                 FabricDownloader fabric) {
         EulaPrompts eula = new EulaPrompts(config);
         LogMarks marks = new LogMarks();
-        Scaffold scaffold = new Scaffold(config, eula);
+        BuildWarmup warmup = new BuildWarmup(builder);
+        Scaffold scaffold = new Scaffold(config, eula, warmup);
         ServerSetup setup = new ServerSetup(config, server, downloader, fabric, eula);
         ServerRun run = new ServerRun(config, hub, server, pack, setup, eula, marks);
-        DevCycle cycle = new DevCycle(config, server, builder, run);
+        DevCycle cycle = new DevCycle(config, server, builder, run, warmup);
         ServerConsole console = new ServerConsole(hub, server, marks);
         registry.add("project_scaffold",
                 "Create a new project from a template (Gradle KTS, tests wired in). Target directory must be empty.",
                 Schema.of().req("name", "string", "Project name, for example MyPlugin")
                         .opt("dir", "string", "Target directory, relative to the workspace. Default: the workspace itself")
-                        .opt("template", "string", "paper-plugin (default), fabric-mod, minestom-server, or a minigame base (kit, stages, saved progress, /game debug "
+                        .opt("template", "string", "paper-plugin (default), fabric-mod (also Quilt), neoforge-mod, forge-mod, minestom-server, or a minigame base (kit, stages, saved progress, /game debug "
                                 + "commands): paper-game, fabric-game, minestom-game")
                         .opt("package", "string", "Java package. Default com.example.<name>")
                         .opt("acceptEula", "boolean", EulaPrompts.EULA_ARG),
                 scaffold::run);
         registry.add("server_setup",
-                "Prepare the dev server: download Paper or the Fabric launcher, write dev defaults, install the msc agent.",
+                "Prepare the dev server: download or install it, write dev defaults, install the msc agent.",
                 Schema.of().opt("version", "string", "Minecraft version. Default " + config.minecraft())
-                        .opt("platform", "string", "paper, fabric or minestom. Default: the project's")
+                        .opt("platform", "string", "paper, purpur, fabric, quilt, neoforge, forge or minestom. Default: the project's")
                         .opt("mode", "string", "build (creative, peaceful) or game (survival, normal)")
                         .opt("acceptEula", "boolean", EulaPrompts.EULA_ARG),
                 setup::run);
@@ -72,8 +73,9 @@ public final class LifecycleTools {
                         .opt("all", "boolean", "Look at the whole log, not only since the last start. Default false")
                         .opt("maxChars", "integer", "Result size cap. Default 6000"),
                 console::logs);
-        registry.add("server_command", "Run a console command on the server and return its output.",
-                Schema.of().req("command", "string", "Command without the leading slash"), console::command);
+        registry.add("server_command", "Run console commands on the server and return their output.",
+                Schema.of().req("command", "string", "Command without the leading slash; several: one per line"),
+                console::command);
         registry.add("server_wait", "Wait until a log or chat line matches a regex, instead of polling.",
                 Schema.of().req("until", "string", "Regex, case-insensitive")
                         .opt("timeoutSeconds", "integer", "Default 60"), console::await);

@@ -22,7 +22,7 @@ Coordinates are text: a position is `x,y,z`, a region is `x1,y1,z1 x2,y2,z2`, an
 | `server_detach` | Keeps the server and the resource pack running after Claude Code closes, so you can play. The next session stops them. |
 | `dev_cycle` | Builds, deploys, restarts and reports errors, all in one call. |
 | `server_logs` | Shows errors, the last lines, or lines matching a pattern, with stack traces trimmed. |
-| `server_command` | Runs a console command and returns its output. `tick sprint 600` skips 30 game seconds ahead. |
+| `server_command` | Runs a console command and returns its output; several commands, one per line, run in one call. `tick sprint 600` skips 30 game seconds ahead. |
 | `server_wait` | Waits until a log or chat line matches a pattern, instead of polling. |
 
 ## API lookup
@@ -36,7 +36,7 @@ Coordinates are text: a position is `x,y,z`, a region is `x1,y1,z1 x2,y2,z2`, an
 
 | Tool | What it does |
 | --- | --- |
-| `world_summary` | Counts blocks and entities in a region, in about six lines. With `path`, says whether a player can walk and jump from one point to another and names the first wall or gap; with `diff`, lists what changed since a `structure_save` snapshot. |
+| `world_summary` | Counts blocks and entities in a region, in about six lines, with the positions of kinds that have three blocks or fewer. With `path`, says whether a player can walk and jump from one point to another and names the first wall or gap; with `diff`, lists what changed since a `structure_save` snapshot. |
 | `world_slice` | Shows a region as text, one character per block, layer by layer. |
 | `world_entities` | Lists the entities in a region with name, position, health and tags. |
 | `world_heightmap` | Shows the ground height of an area, one character per column. |
@@ -54,13 +54,13 @@ Coordinates are text: a position is `x,y,z`, a region is `x1,y1,z1 x2,y2,z2`, an
 
 | Tool | What it does |
 | --- | --- |
-| `player_test` | A test player joins your dev server and plays: walks to points, sprints and jumps gaps, presses buttons, attacks, right-clicks NPCs, runs commands. It reports what happened, such as damage, deaths, chat, titles and whether the resource pack downloaded. Ask it for `inventory` to see what it holds and any menu the server opened, or `hud` for boss bars, the sidebar, the action bar and whether the resource pack loaded. It speaks Minecraft 26.3 and 26.2, so it also joins Minestom servers, which are one version behind. If the server kicks it, the call fails and says why. Movement follows vanilla closely, so a jump it misses is usually hard for people too, but not always. |
+| `player_test` | A test player joins your dev server and plays: walks to points, follows the `world_summary path` route with `walk x,y,z` (saying where it falls off or gets stuck), sprints and jumps gaps, presses buttons, attacks, right-clicks NPCs, runs commands. It reports what happened, such as damage, deaths, chat, titles and whether the resource pack downloaded. Ask it for `inventory` to see what it holds and any menu the server opened, or `hud` for boss bars, the sidebar, the action bar and whether the resource pack loaded. It speaks Minecraft 26.3 and 26.2, so it also joins Minestom servers, which are one version behind. If the server kicks it, the call fails and says why. Movement follows vanilla closely, so a jump it misses is usually hard for people too, but not always. |
 
 ## Textures and resource pack
 
 | Tool | What it does |
 | --- | --- |
-| `texture` | Adds a texture: draws it from a palette and rows of characters, generates it from a pattern (noise, ore, planks, bricks) or shape (gem, ingot, orb, sword, pickaxe, food), or copies one in a new colour. Can also animate it (scroll or pulse). |
+| `texture` | Adds a texture: draws it from a palette and rows of characters, generates it from a pattern (noise, ore, planks, bricks) or shape (gem, ingot, orb, sword, pickaxe, food), or copies one in a new colour. Can also animate it (scroll or pulse). Give a `.png` path as the name to write a plain image file outside the pack. |
 | `texture_view` | Shows a texture back as text. |
 | `model_create` | Makes a block or item model for textures. |
 | `pack` | Zips the pack, serves it, sends it to players and lists any problems. `check` only checks it. |

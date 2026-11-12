@@ -77,6 +77,34 @@ class LogCondenserTest {
     }
 
     @Test
+    void forgeStyleLinesDropTheLoggerAndTheSameNoiseIsDropped() {
+        List<String> log = List.of(
+                "[14:03:37] [main/WARN] [os.dr.wi.re.HkeyPerformanceDataUtil/]: Unable to locate English counter names",
+                "[14:03:37] [Server thread/WARN] [oshi.util.platform.windows.PerfCounterQuery/]: Unable to locate counters",
+                "[14:03:38] [Server thread/WARN] [minecraft/SystemReport]: Failed to get system info for Process Loads",
+                "[14:03:39] [Server thread/WARN] [ne.mi.co.ForgeMod/CORE]: Something worth reading",
+                "[14:03:40] [Server thread/INFO] [minecraft/DedicatedServer]: Done (3.1s)! For help, type \"help\"");
+        assertThat(LogCondenser.condense(log, 6000))
+                .isEqualTo("5 lines, 0 errors, 1 warnings\n14:03:39 WARN Something worth reading");
+    }
+
+    @Test
+    void forgesTransformerAuditIsCutFromTraces() {
+        List<String> log = List.of(
+                "[14:03:39] [Server thread/ERROR] [minecraft/MinecraftServer]: Encountered an unexpected exception",
+                "java.lang.IllegalStateException: boom",
+                "\tat com.example.mymod.Arena.start(Arena.java:12) ~[mymod.jar%23171!/:?] {re:classloading}",
+                "Transformer Audit:",
+                "  com.example.mymod.Arena",
+                "    REASON: classloading",
+                "  net.minecraft.server.MinecraftServer",
+                "    REASON: classloading",
+                "    PLUGIN: accesstransformer:BEFORE");
+        assertThat(LogCondenser.condense(log, 6000)).doesNotContain("Transformer Audit", "REASON")
+                .contains("IllegalStateException: boom", "Arena.start(Arena.java:12)");
+    }
+
+    @Test
     void buildOutputKeepsFailedTestsAndDropsJdkWarnings() {
         String output = """
                 Starting a Gradle Daemon, 2 incompatible Daemons could not be reused, use --status for details

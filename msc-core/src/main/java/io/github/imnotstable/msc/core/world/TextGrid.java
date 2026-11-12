@@ -21,22 +21,27 @@ import java.util.regex.Pattern;
  * model can read a slice, edit it and write it back.
  *
  * <pre>
- * legend: .=air #=stone_bricks g=glass
+ * legend: .=air #=stone_bricks g=glass@2,66,0
  * y=64
  * #####
- * #...#
+ * #...# (x3)
  * #####
- * y=65 same as y=64
- * y=66 all #
+ * y=65..66 same as y=64
+ * y=67 all #
  * </pre>
  *
  * Rows run from the lowest Z (top) to the highest; columns from the lowest X (left) to the highest.
- * {@code .} is air and {@code _} means "leave unchanged" unless the legend says otherwise.
+ * {@code .} is air and {@code _} means "leave unchanged" unless the legend says otherwise. To keep results small,
+ * a row followed by {@code (xN)} stands for N equal rows, {@code y=a..b} covers a run of equal layers, and a block
+ * that occurs once says where it is ({@code @x,y,z}, ignored when building).
  */
 public final class TextGrid {
     /** Symbols handed out by frequency, most common block first. */
     static final String SYMBOLS = "#abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@%&*+~^!$";
-    private static final Pattern LAYER = Pattern.compile("^y=(-?\\d+)(?:\\s+same as y=(-?\\d+)|\\s+all\\s+(\\S+))?\\s*:?$");
+    private static final Pattern LAYER = Pattern.compile("^y=(-?\\d+)(?:\\.\\.(-?\\d+))?(?:\\s+same as y=(-?\\d+)|\\s+all\\s+(\\S+))?\\s*:?$");
+
+    /** A row written once for N equal rows: {@code #...# (x3)}. */
+    private static final Pattern REPEAT = Pattern.compile("^(.*\\S) \\(x(\\d{1,4})\\)$");
 
     private TextGrid() {
     }
@@ -67,9 +72,12 @@ public final class TextGrid {
             toName[i] = idx;
         }
         long[] counts = new long[names.size()];
-        for (int b : grid.blocks()) {
+        int[] lastAt = new int[names.size()];
+        for (int i = 0; i < grid.blocks().length; i++) {
+            int b = grid.blocks()[i];
             if (b >= 0) {
                 counts[toName[b]]++;
+                lastAt[toName[b]] = i;
             }
         }
         Integer[] order = new Integer[names.size()];
@@ -95,6 +103,12 @@ public final class TextGrid {
                 continue;
             }
             legend.append(' ').append(symbol[idx]).append('=').append(names.get(idx));
+            if (counts[idx] == 1 && symbol[idx] != '.') {
+                // A single block says where it is, so finding it needs no column counting.
+                int i = lastAt[idx];
+                legend.append('@').append(r.min().x() + i % sx).append(',').append(r.min().y() + i / (sx * sz))
+                        .append(',').append(r.min().z() + i / sx % sz);
+            }
         }
         if (others > 0) {
             legend.append(" ?=").append(others).append("_other_kinds");
@@ -102,7 +116,11 @@ public final class TextGrid {
         StringBuilder out = new StringBuilder();
         out.append("region ").append(Coords.show(r)).append(" size ").append(sx).append('x').append(sy).append('x')
                 .append(sz).append(" rows=z cols=x\n").append(legend).append('\n');
+        // Each layer is "all c", "same as y=N" or rows; runs of equal "all"/"same as" layers share one line.
         Map<String, Integer> seenLayers = new HashMap<>();
+        String pending = null;
+        int runStart = 0;
+        int runEnd = 0;
         for (int y = 0; y < sy; y++) {
             StringBuilder layer = new StringBuilder(sz * (sx + 1));
             char first = 0;
@@ -121,19 +139,54 @@ public final class TextGrid {
                 layer.append('\n');
             }
             int worldY = r.min().y() + y;
-            out.append("y=").append(worldY);
             String text = layer.toString();
             Integer same = seenLayers.putIfAbsent(text, worldY);
-            if (uniform && sx * sz > 1) {
-                out.append(" all ").append(first).append('\n');
-            } else if (same != null) {
-                out.append(" same as y=").append(same).append('\n');
-            } else {
-                out.append('\n').append(text);
+            String shortForm = uniform && sx * sz > 1 ? " all " + first : same != null ? " same as y=" + same : null;
+            if (pending != null && pending.equals(shortForm) && runEnd == worldY - 1) {
+                runEnd = worldY;
+                continue;
+            }
+            appendRun(out, pending, runStart, runEnd);
+            pending = shortForm;
+            runStart = worldY;
+            runEnd = worldY;
+            if (shortForm == null) {
+                out.append("y=").append(worldY).append('\n').append(repeatRows(text));
             }
         }
+        appendRun(out, pending, runStart, runEnd);
         return Budget.truncate(out.toString().stripTrailing(), maxChars,
                 "Ask for fewer layers or a smaller area, or raise maxChars.");
+    }
+
+    private static void appendRun(StringBuilder out, String shortForm, int from, int to) {
+        if (shortForm != null) {
+            out.append("y=").append(from).append(from == to ? "" : ".." + to).append(shortForm).append('\n');
+        }
+    }
+
+    /** A layer's rows with runs of equal rows written once, followed by {@code (xN)}. */
+    private static String repeatRows(String layer) {
+        StringBuilder out = new StringBuilder(layer.length());
+        String previous = null;
+        int count = 0;
+        for (String row : layer.split("\n")) {
+            if (row.equals(previous)) {
+                count++;
+                continue;
+            }
+            appendRow(out, previous, count);
+            previous = row;
+            count = 1;
+        }
+        appendRow(out, previous, count);
+        return out.toString();
+    }
+
+    private static void appendRow(StringBuilder out, String row, int count) {
+        if (row != null) {
+            out.append(row).append(count > 1 ? " (x" + count + ")" : "").append('\n');
+        }
     }
 
     // ---- parse ------------------------------------------------------------------------------
@@ -162,20 +215,28 @@ public final class TextGrid {
                     if (entry.length() < 3 || entry.charAt(1) != '=') {
                         throw new ToolException("bad legend entry \"" + entry + "\"; use symbol=block, for example #=stone");
                     }
-                    legend.put(entry.charAt(0), entry.substring(2));
+                    String state = entry.substring(2);
+                    int at = state.lastIndexOf('@');
+                    legend.put(entry.charAt(0), at > 0 ? state.substring(0, at) : state);
                 }
                 continue;
             }
             Matcher m = LAYER.matcher(line);
             if (m.matches()) {
-                int y = Integer.parseInt(m.group(1));
-                current = new Layer();
-                if (m.group(2) != null) {
-                    current.sameAs = Integer.parseInt(m.group(2));
+                int from = Integer.parseInt(m.group(1));
+                int to = m.group(2) == null ? from : Integer.parseInt(m.group(2));
+                if (to < from || (to > from && m.group(3) == null && m.group(4) == null)) {
+                    throw new ToolException("y=" + from + ".." + to + " needs a rising range and \"same as\" or \"all\"");
                 }
-                current.all = m.group(3);
-                if (layers.put(y, current) != null) {
-                    throw new ToolException("layer y=" + y + " appears twice");
+                for (int y = from; y <= to; y++) {
+                    current = new Layer();
+                    if (m.group(3) != null) {
+                        current.sameAs = Integer.parseInt(m.group(3));
+                    }
+                    current.all = m.group(4);
+                    if (layers.put(y, current) != null) {
+                        throw new ToolException("layer y=" + y + " appears twice");
+                    }
                 }
                 continue;
             }
@@ -186,7 +247,11 @@ public final class TextGrid {
             if (current.sameAs != null || current.all != null) {
                 throw new ToolException("layer with \"same as\" or \"all\" must not have rows");
             }
-            current.rows.add(line);
+            Matcher repeat = REPEAT.matcher(line);
+            int times = repeat.matches() ? Integer.parseInt(repeat.group(2)) : 1;
+            for (int i = 0; i < times; i++) {
+                current.rows.add(repeat.matches() ? repeat.group(1) : line);
+            }
         }
         if (layers.isEmpty()) {
             throw new ToolException("structure has no layers");

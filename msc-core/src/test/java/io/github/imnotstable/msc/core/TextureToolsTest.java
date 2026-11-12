@@ -45,6 +45,18 @@ class TextureToolsTest {
     }
 
     @Test
+    void aPngPathWritesALooseFileOutsideThePack() throws Exception {
+        String gem = h.ok("texture", "name", "textures/ruby.png", "kind", "gem", "color", "#d4263a");
+        assertThat(gem).startsWith("wrote " + workspace.resolve("textures/ruby.png") + ": 16x16, ").contains("palette:");
+        assertThat(ImageIO.read(workspace.resolve("textures/ruby.png").toFile()).getWidth()).isEqualTo(16);
+        assertThat(workspace.resolve(".msc/pack/assets")).doesNotExist();
+        assertThat(h.ok("texture", "name", "out/Drawn.PNG", "palette", List.of("r=#d4263a"), "rows", List.of("r.", ".r")))
+                .startsWith("wrote " + workspace.resolve("out/Drawn.PNG") + ": 2x2");
+        assertThat(h.error("texture", "name", "a.png", "kind", "gem", "color", "#d4263a", "animate", "pulse"))
+                .contains("pack texture name");
+    }
+
+    @Test
     void createWritesPngModelAndItemDefinition() throws Exception {
         String result = h.ok("texture", "name", "item/ruby",
                 "palette", List.of("r=#d4263a d=#701", "g=#00ff0080"), "rows", ruby());
@@ -153,6 +165,15 @@ class TextureToolsTest {
         h.ok("texture", "name", "item/drumstick", "kind", "food", "color", "#c07a3a", "accent", "#ffffff");
         assertThat(workspace.resolve(".msc/pack/assets/msc/models/item/drumstick.json")).content()
                 .contains("minecraft:item/generated");
+    }
+
+    @Test
+    void retexturingAVanillaTextureKeepsVanillasModels() {
+        assertThat(h.ok("texture", "name", "minecraft:block/crimson_stem", "kind", "noise", "color", "#4a1530"))
+                .startsWith("wrote minecraft:block/crimson_stem").doesNotContain("item_model");
+        assertThat(workspace.resolve(".msc/pack/assets/minecraft/textures/block/crimson_stem.png")).exists();
+        assertThat(workspace.resolve(".msc/pack/assets/minecraft/models/block/crimson_stem.json")).doesNotExist();
+        assertThat(workspace.resolve(".msc/pack/assets/minecraft/items/crimson_stem.json")).doesNotExist();
     }
 
     @Test

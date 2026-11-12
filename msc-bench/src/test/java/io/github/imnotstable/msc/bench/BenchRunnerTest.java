@@ -190,7 +190,8 @@ class BenchRunnerTest {
         Files.writeString(configFile, """
                 {"agent":{"command":["%s","-cp","%s","io.github.imnotstable.msc.bench.FakeAgent","{prompt}"]},
                  "modes":{"toolset":{"requireMcp":"msc","env":{"FAKE_MCP_COUNTER":"%s"}},
-                          "other":{"requireMcp":"missing","env":{"FAKE_MCP_COUNTER":"%s"}}}}
+                          "other":{"requireMcp":"missing","env":{"FAKE_MCP_COUNTER":"%s"}},
+                          "late":{"requireMcp":"missing","env":{"MSC_TOOL_LOG":"{toolLog}"}}}}
                 """.formatted(java, classpath, counter, counter));
         BenchRunner runner = new BenchRunner(BenchConfig.load(configFile), dir.resolve("run"), "",
                 new PrintStream(new ByteArrayOutputStream(), true, StandardCharsets.UTF_8));
@@ -200,6 +201,10 @@ class BenchRunnerTest {
         assertThat(retried.passed()).isTrue();
         assertThat(retried.agent().mcpConnected()).containsExactly("msc");
         assertThat(dir.resolve("run/attempts/write-file/toolset-1-try2/workspace/done.txt")).exists();
+
+        RunRecord lateButUsed = runner.run(taskDefs, List.of("late"), 1).getFirst();
+        assertThat(lateButUsed.passed()).as("init listed no server, but the tool log shows calls").isTrue();
+        assertThat(dir.resolve("run/attempts/write-file/late-1-try2")).doesNotExist();
 
         RunRecord gaveUp = runner.run(taskDefs, List.of("other"), 1).getFirst();
         assertThat(gaveUp.passed()).isFalse();

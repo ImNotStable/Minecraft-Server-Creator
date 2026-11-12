@@ -163,11 +163,11 @@ public final class ServerManager implements AutoCloseable {
     /** How long a start waits after "Done" for an agent that has not connected yet. */
     static final Duration AGENT_GRACE = Duration.ofSeconds(10);
 
-    /** Minestom servers have the agent built in; Paper and Fabric have one when it is installed in the addon folder. */
+    /** Minestom servers have the agent built in; the others have one when it is installed in the addon folder. */
     private boolean expectsAgent() {
         Platform platform = platform();
         return platform.addonDir() == null
-                || Files.exists(config.serverDir().resolve(platform.addonDir()).resolve("msc-agent-" + platform.id() + ".jar"));
+                || Files.exists(config.serverDir().resolve(platform.addonDir()).resolve("msc-agent-" + platform.agent() + ".jar"));
     }
 
     private void pump(Process p) {

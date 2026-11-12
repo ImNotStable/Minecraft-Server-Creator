@@ -176,3 +176,64 @@ downloaded with a matching SHA-1. 32 calls, 4,645 result tokens in total; the te
     Open, for R9.
 
 Not checked: how the pack looks in a real client (needs the owner's client).
+
+## Release-gate playtest: Hollowroot on Minestom (2026-11-12, roadmap R10)
+
+An original six-trial game built from `minestom-game` on main `ac9dc73`, driven through an installed core over MCP stdio
+in the cloud: the heartseed of a giant hollow tree went dark. Trials: wake four sporecaps in a root maze, climb a
+four-turn spiral inside the trunk, survive three bark-beetle waves (a spider brute in the last), ring three
+growing bell echoes back in order, a 120-second jump run across the canopy, and the Blight Warden, a ravager shielded
+by three blight roots that regrow at half health. Custom items (Thorn Blade, Sap Bread that heals, Heartseed), an
+animated retextured shroomlight and a recoloured blight stem. The test player finished all six trials and the game.
+
+| | Tidewright | Hollowroot |
+|---|---|---|
+| Start to finished playtest | 19 min (to playable) | 25 min (thread start to the bot finishing the game) |
+| MSC calls | 76 | 120: 31 `player_test`, 28 `api_search`, 17 `server_command`, 11 `dev_cycle`, 8 `world_summary`, 6 `build_batch`, 5 `texture` |
+| Errors | not counted | 3 (a wrong `path` end point, a missing argument, a package-private class) |
+| Tool time | not counted | 633 s, 512 of them in `player_test` (it plays in real time) |
+| Result text | not counted | 80k chars, 49k from `player_test` |
+| Game code | 1,000 lines | about 700 new lines plus 450 lines of tests |
+
+**What worked.** The world was one `build_batch` (17,719 blocks, dry run first) and five small fixes. `helix` made the
+trunk staircase in one line. `world_summary path` caught two unwalkable branches and the blocked top of the spiral
+before the bot tried them. `dev_cycle` took 10 s per edit with tests (1 s jar, 2.5 s restart, tests in parallel) and
+1.6 s unchanged. The new `player_test` steps carried the whole playtest: `inventory` showed the custom item models,
+`hud` the boss bar, action bar, titles and pack, `use x,y,z` the block clicks, `attack <type>` the fights, `slot` and
+`use` the healing bread. It found five game bugs no unit test had: the beetles killed the player in three seconds,
+the Warden spawn-camped the respawn point, the spiral's top was capped by its own platform, a heartseed was given
+three times, and progress was lost on every reconnect.
+
+**Findings, worst first.**
+1. **`minestom-game` loses progress on every reconnect.** Without Mojang auth Minestom gives a random UUID at each
+   login, and `Progress` saves by UUID. Fixed in the PR with this section: the template sets vanilla's offline UUID
+   from the name at pre-login.
+2. **Resource pack sources are not committed.** Every template's `.gitignore` ignores `.msc/`, which holds the pack
+   sources the `texture` tool writes, so a game's custom textures are lost on a fresh clone. Fixed: `.msc/*` with
+   `!.msc/pack/`.
+3. **Retexturing a vanilla texture replaced vanilla's models.** `texture name=minecraft:block/crimson_stem` also wrote
+   a `cube_all` block model and an item definition over vanilla's `cube_column` stem. Fixed: `minecraft:` textures
+   get no model unless `model=` asks for one.
+4. **`use x,y,z` clicked blocks 30 blocks away, through walls.** Minestom accepts it, so a trial "passed" that a
+   player could not. Fixed: the result says when the block is beyond a player's reach. The game now checks reach too.
+5. **A failed `server_command` hid the exception.** The last 30 console lines were all framework frames, without the
+   `NullPointerException: Unloaded chunk` line. Fixed: the console lines are trimmed like `server_logs` (Minestom
+   frames now count as framework).
+6. **`installMsc` made a launcher that is not executable** on Linux (`copyRecursively` drops file modes). Fixed.
+7. **`path` routes cannot be followed as written.** Routes merge straight runs and do not mark jumps, so `goto` on
+   block centres walked off a branch twice. Fixed: `player_test` `walk x,y,z` plans the same route and follows it
+   step by step, jumping each gap and step up, and says where it falls off or gets stuck.
+8. **`api_class` misses constants from package-private interfaces.** `Attribute.MAX_HEALTH` lives in the
+   package-private `Attributes`, so neither `api_class Attribute` nor `api_class Attributes` shows it. Open.
+9. **`build_batch line ... w=2` is one block wide on a diagonal.** Open; fills were used instead.
+10. **`player_test` details.** Open, small: `inventory` right after joining shows an empty hotbar (the kit arrives a
+    tick later); `goto` keeps walking after the server teleports the player and reports a server teleport as a fall;
+    `tp` is sent as a vanilla command, which Minestom does not have; death messages show translation keys
+    (`death.attack.mob`); health can read -1.0.
+11. **Template still open from Emberwright, confirmed:** `GameConfigTest` fails with "Should have been bound" as soon
+    as the kit has a custom item; it had to become an `@EnvTest` with an `Env` parameter.
+12. **Small.** `server_logs` shows the cloud's `Picked up JAVA_TOOL_OPTIONS` line; `server_setup mode=game` is ignored
+    on Minestom (said clearly); a spider brute with `MeleeAttackGoal` never closed in (Minestom pathing for wide mobs).
+
+Not checked: how it looks in a real client, and multiplayer (beetle waves and the Warden are shared, the other trials
+are per player). graphify and ponytail run only on the owner's PC and were not reachable from this cloud thread.

@@ -35,12 +35,14 @@ final class DevCycle {
     private final ServerManager server;
     private final ProjectBuilder builder;
     private final ServerRun run;
+    private final BuildWarmup warmup;
 
-    DevCycle(CoreConfig config, ServerManager server, ProjectBuilder builder, ServerRun run) {
+    DevCycle(CoreConfig config, ServerManager server, ProjectBuilder builder, ServerRun run, BuildWarmup warmup) {
         this.config = config;
         this.server = server;
         this.builder = builder;
         this.run = run;
+        this.warmup = warmup;
     }
 
     /** Phase timings, shown on one line at the end so a slow phase is easy to spot. */
@@ -63,6 +65,10 @@ final class DevCycle {
         Path project = config.resolve(args.str("project", "."));
         boolean restart = args.bool("restart", true);
         Timings time = new Timings();
+        long warmed = warmup.await(project);
+        if (warmed >= 0) {
+            time.add("waited for first build", warmed);
+        }
         Platform platform = platform(project);
         ProjectBuilder.BuildResult jar = builder.devJar(project, BUILD_TIMEOUT, platform.addonDir() == null);
         time.add("jar", jar.millis());
@@ -120,7 +126,10 @@ final class DevCycle {
         }
     }
 
-    /** The project's platform, remembered for the workspace when none is yet; else the workspace's. */
+    /**
+     * The project's platform, remembered for the workspace when none is yet; else the workspace's. A workspace set up
+     * as a platform that runs the same projects (Quilt for a Fabric mod, Purpur for a Paper plugin) keeps its own.
+     */
     private Platform platform(Path project) throws IOException {
         Platform platform = Platform.detect(project);
         if (platform == null) {
@@ -128,8 +137,10 @@ final class DevCycle {
         }
         if (!Files.exists(Platform.file(config))) {
             Platform.remember(config, platform);
+            return platform;
         }
-        return platform;
+        Platform workspace = server.platform();
+        return workspace.agent().equals(platform.agent()) ? workspace : platform;
     }
 
     private String deployAndRestart(Path project, Platform platform, ProjectBuilder.BuildResult build, boolean restart,

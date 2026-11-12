@@ -1,0 +1,24 @@
+modLoader = "javafml"
+loaderVersion = "[${forgeMajor},)"
+license = "All-Rights-Reserved"
+
+[[mods]]
+modId = "{{modId}}"
+version = "${version}"
+displayName = "{{name}}"
+authors = "{{author}}"
+description = "{{description}}"
+
+[[dependencies.{{modId}}]]
+modId = "forge"
+mandatory = true
+versionRange = "[${forgeMajor},)"
+ordering = "NONE"
+side = "SERVER"
+
+[[dependencies.{{modId}}]]
+modId = "minecraft"
+mandatory = true
+versionRange = "[${minecraftVersion},)"
+ordering = "NONE"
+side = "SERVER"

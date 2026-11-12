@@ -24,7 +24,7 @@ public final class ApiTools {
         if (index == null) {
             List<Path> jars = config.apiJars();
             if (jars.isEmpty()) {
-                String platform = Platform.current(config).id();
+                String platform = Platform.current(config).agent();
                 jars = ApiIndex.findJars(Path.of(System.getProperty("user.home"), ".gradle"), platform);
                 if (jars.isEmpty()) {
                     throw new ToolException("no " + platform + " API jar found. Build the project once (dev_cycle) so "
@@ -48,7 +48,7 @@ public final class ApiTools {
 
     public void register(ToolRegistry registry) {
         registry.add("api_search",
-                "Search the platform API (Paper, Fabric or Minestom) by class, method, field or constant name; "
+                "Search the platform API (Paper, Fabric, NeoForge, Forge or Minestom) by class, method, field or constant name; "
                         + "one line per match with full signature.",
                 Schema.of().req("query", "string", "Words that must all match, for example \"player teleport\"")
                         .opt("kind", "string", "class, interface, enum, record, annotation or event")

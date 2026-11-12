@@ -1,14 +1,18 @@
 # Platforms
 
-MSC supports three server platforms. Each workspace uses one of them.
+MSC supports seven server platforms. Each workspace uses one of them.
 
-| Platform | What you write | Minecraft | EULA needed |
-| --- | --- | --- | --- |
-| **Paper** (default) | A plugin | 26.3 | Yes |
-| **Fabric** | A server-side mod | 26.3 | Yes |
-| **Minestom** | The whole server, from scratch | 26.2 | No |
+| Platform | What you write | Template | Minecraft | EULA needed |
+| --- | --- | --- | --- | --- |
+| **Paper** (default) | A plugin | `paper-plugin`, `paper-game` | 26.3 | Yes |
+| **Purpur** | A Paper plugin (Purpur is a Paper fork) | `paper-plugin`, `paper-game` | 26.3 | Yes |
+| **Fabric** | A server-side mod | `fabric-mod`, `fabric-game` | 26.3 | Yes |
+| **Quilt** | A Fabric mod (Quilt loads Fabric mods) | `fabric-mod`, `fabric-game` | 26.3 | Yes |
+| **NeoForge** | A server-side mod | `neoforge-mod` | 26.3 | Yes |
+| **Forge** | A server-side mod | `forge-mod` | 26.3 | Yes |
+| **Minestom** | The whole server, from scratch | `minestom-server`, `minestom-game` | 26.2 | No |
 
-The platform is picked by the template you scaffold. The Paper and Fabric agents are installed with MSC, and `server_setup` puts the right one in the server. You can also change it with `server_setup platform=...`.
+The platform is picked by the template you scaffold. The agents are installed with MSC, and `server_setup` puts the right one in the server. You can also change it with `server_setup platform=...`, which is how you pick Purpur or Quilt for a Paper or Fabric project.
 
 ## Paper
 
@@ -43,6 +47,28 @@ For mods that change the game itself. Uses Fabric Loader and Fabric API.
 Note: building a Fabric project needs Java 25 for Gradle (Fabric Loom). The template sets this up.
 
 For a game, use `template fabric-game`: the same minigame base as [`paper-game`](#making-a-minigame-the-paper-game-template), set in `GameConfig.game()` in Java instead of `config.yml`.
+
+## Purpur and Quilt
+
+Purpur runs Paper plugins and Quilt runs Fabric mods, so they use the Paper and Fabric templates and agents.
+
+1. Scaffold as for Paper or Fabric.
+2. "server_setup platform=purpur" (or `platform=quilt`). Purpur comes from Purpur's download service; Quilt runs Quilt's installer and adds Fabric API to `mods/`.
+3. `dev_cycle` keeps the workspace on Purpur or Quilt even though the project looks like Paper or Fabric.
+
+## NeoForge and Forge
+
+For mods on the Forge family of loaders.
+
+1. Ask: "project_scaffold a NeoForge mod called My Mod, template neoforge-mod" (or `forge-mod`).
+   The mod id is the project id with `_` for `-` (`my_mod`): these loaders allow no hyphens.
+2. Accept the [EULA](https://aka.ms/MinecraftEULA) yourself, then: "server_setup with acceptEula=true."
+   This runs the loader's own installer in the server folder (a few minutes the first time) and puts the agent in `mods/`.
+3. "Start the server." `dev_cycle` deploys your mod into `mods/`.
+
+Right after scaffolding, MSC starts the project's first build in the background, because these loaders set up Minecraft once (several minutes for Forge). `dev_cycle` waits for it if it is still running.
+
+`neoforge-mod` builds with ModDevGradle and runs its tests inside NeoForge, so command tests use the real Minecraft classes. `forge-mod` builds with ForgeGradle 7; its tests are plain JUnit.
 
 ## Minestom
 

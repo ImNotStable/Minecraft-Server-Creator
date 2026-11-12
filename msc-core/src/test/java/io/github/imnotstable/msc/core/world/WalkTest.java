@@ -51,6 +51,15 @@ class WalkTest {
     }
 
     @Test
+    void stepsListEveryBlockWithItsMove() {
+        java.util.List<int[]> steps = row("###...####", "........##").steps(FROM, new BlockPos(9, 2, 0));
+        assertThat(steps.stream().map(s -> s[0] + "," + s[1] + (char) s[3]).toList())
+                .containsExactly("0,1w", "1,1w", "2,1w", "6,1j", "7,1w", "8,2u", "9,2w");
+        assertThatThrownBy(() -> row("###....###").steps(FROM, TO)).isInstanceOf(ToolException.class)
+                .hasMessageContaining("gap to the east: 4 blocks");
+    }
+
+    @Test
     void climbsLaddersAndDropsSafely() {
         assertThat(row("##########", "....H#....", "....H#....", "....H#....").path(FROM, new BlockPos(5, 4, 0)))
                 .isEqualTo("reachable: 6 moves, 2 up, 1 climbed or swum\nroute: 0,1,0 > 3,1,0 > 4,2,0 > 4,3,0 > 5,4,0");

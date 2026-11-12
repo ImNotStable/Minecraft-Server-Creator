@@ -98,8 +98,26 @@ final class ServerConsole {
         return why + (last.isEmpty() ? "; no new lines" : "; last lines:\n" + last);
     }
 
+    /** Most commands one server_command call runs. */
+    static final int MAX_COMMANDS = 64;
+
+    /** One command, or several (one per line) run in order, each output under its command, in one tool call. */
     String command(Args args) throws IOException, InterruptedException {
-        String command = args.str("command").strip();
+        List<String> commands = args.str("command").lines().map(String::strip).filter(c -> !c.isEmpty()).toList();
+        if (commands.size() > MAX_COMMANDS) {
+            throw new ToolException("at most " + MAX_COMMANDS + " commands per call; got " + commands.size());
+        }
+        if (commands.size() <= 1) {
+            return one(commands.isEmpty() ? "" : commands.getFirst());
+        }
+        StringBuilder out = new StringBuilder();
+        for (String command : commands) {
+            out.append(out.isEmpty() ? "" : "\n").append("> ").append(command).append('\n').append(one(command));
+        }
+        return Budget.truncate(out.toString(), Budget.DEFAULT_CHARS, "Output cut.");
+    }
+
+    private String one(String command) throws IOException, InterruptedException {
         if (command.startsWith("/")) {
             command = command.substring(1);
         }
@@ -142,10 +160,23 @@ final class ServerConsole {
             }
             seen = now;
         }
+        return consoleLines(server.log().since(mark), returned);
+    }
+
+    /**
+     * Console lines without log prefixes and without lines the command returned, at most 30. Stack traces are trimmed
+     * like {@code server_logs} does, so an exception's header ("NullPointerException: Unloaded chunk") survives
+     * instead of being pushed out by framework frames.
+     */
+    static List<String> consoleLines(List<String> lines, List<String> returned) {
+        List<String> raw = new ArrayList<>();
+        for (String line : lines) {
+            raw.add(LOG_PREFIX.matcher(LogText.clean(line)).replaceFirst("").stripTrailing());
+        }
         Set<String> skip = new HashSet<>(returned);
         List<String> out = new ArrayList<>();
-        for (String line : server.log().since(mark)) {
-            String text = LOG_PREFIX.matcher(LogText.clean(line)).replaceFirst("").strip();
+        for (String line : LogCondenser.trimTrace(raw)) {
+            String text = line.strip();
             if (!text.isEmpty() && !skip.contains(text)) {
                 out.add(text);
             }

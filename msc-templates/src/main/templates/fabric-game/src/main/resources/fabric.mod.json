@@ -10,7 +10,7 @@
     "server": ["{{packageName}}.{{mainClass}}"]
   },
   "depends": {
-    "fabricloader": ">=${loaderVersion}",
+    "fabricloader": ">=${loaderFloor}",
     "minecraft": "~${minecraftVersion}",
     "java": ">={{javaVersion}}",
     "fabric-api": "*"

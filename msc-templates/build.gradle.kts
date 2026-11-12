@@ -30,6 +30,13 @@ val templateVersions = mapOf(
     "fabricLoaderVersion" to catalogVersion("fabric-loader"),
     "fabricApiVersion" to catalogVersion("fabric-api"),
     "fabricLoomVersion" to catalogVersion("fabric-loom"),
+    "quiltLoaderVersion" to catalogVersion("quilt-loader"),
+    "quiltInstallerVersion" to catalogVersion("quilt-installer"),
+    "neoforgeVersion" to catalogVersion("neoforge"),
+    "moddevVersion" to catalogVersion("moddev"),
+    "forgeVersion" to catalogVersion("forge"),
+    "forgeGradleVersion" to catalogVersion("forgegradle"),
+    "forgeEventbusVersion" to catalogVersion("forge-eventbus"),
     "minestomVersion" to minestom,
     "minestomMcVersion" to minestom.substringAfterLast("-"),
     "slf4jVersion" to catalogVersion("slf4j"),
@@ -67,7 +74,7 @@ abstract class PackTemplates : DefaultTask() {
     abstract val outputDir: DirectoryProperty
 
     companion object {
-        val PROJECT_TEMPLATES = setOf("paper-plugin", "paper-game", "fabric-mod", "fabric-game")
+        val PROJECT_TEMPLATES = setOf("paper-plugin", "paper-game", "fabric-mod", "fabric-game", "neoforge-mod", "forge-mod")
         val MINESTOM_TEMPLATES = setOf("minestom-server", "minestom-game")
         val WRAPPER_FILES = listOf(
             "gradlew", "gradlew.bat", "gradle/wrapper/gradle-wrapper.jar", "gradle/wrapper/gradle-wrapper.properties")
@@ -125,7 +132,7 @@ sourceSets.main {
 }
 
 // Scaffolds every project template into build/ and runs its own Gradle build (compile + tests).
-// Needs Java 25, repo.papermc.io, maven.fabricmc.net and Maven Central, so it is not part of `check`: run it on a dev machine.
+// Needs Java 25, repo.papermc.io, maven.fabricmc.net, maven.neoforged.net, maven.minecraftforge.net and Maven Central, so it is not part of `check`: run it on a dev machine.
 tasks.register<Test>("verifyTemplates") {
     description = "Scaffolds each template and builds it with its own Gradle wrapper."
     group = "verification"

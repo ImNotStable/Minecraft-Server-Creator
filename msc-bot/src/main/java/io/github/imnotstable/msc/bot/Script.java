@@ -9,11 +9,20 @@ import java.util.concurrent.TimeoutException;
 
 /** The test player's actions, one per script line. Each runs on the tick thread until it reports a result. */
 final class Script {
-    static final String HELP = "goto x,y,z|x,z [sprint] [jump], forward ticks [sprint] [jump], jump, look yaw pitch, "
+    static final String HELP = "goto x,y,z|x,z [sprint] [jump], walk x,y,z [sprint], forward ticks [sprint] [jump], jump, look yaw pitch, "
             + "lookat x,y,z, wait ticks, use, use x,y,z, attack [type], interact [type], slot 1-9, say text, /command, "
             + "tp x,y,z, entities, inventory, hud, close";
     /** How far from the eyes to an entity's middle attack and interact look, as before: hitbox reach is about 3. */
     private static final double REACH = 4.5;
+
+    /**
+     * The result of {@code use x,y,z}. The packet is sent from any distance and many servers (Minestom) accept it, so
+     * say when a real player could not have reached the block: a test that passes only from there proves nothing.
+     */
+    static String clicked(double eyeDistance) {
+        return eyeDistance <= REACH + 0.5 ? "clicked the block"
+                : String.format(Locale.ROOT, "clicked the block from %.1f blocks: beyond a player's reach (%.1f), goto closer", eyeDistance, REACH);
+    }
     private static final int MAX_TICKS = 20 * 60;
 
     private Script() {
@@ -30,6 +39,15 @@ final class Script {
 
         String text() {
             return text;
+        }
+
+        /** A movement step: a server teleport ends it, since where it was going no longer applies. */
+        boolean endsOnTeleport() {
+            return false;
+        }
+
+        /** Called once before {@link #start}, without the player's lock, for work that may wait. */
+        void prepare(TestPlayer p) {
         }
 
         /** Called once, under the player's lock, before the step's first tick. */
@@ -98,6 +116,10 @@ final class Script {
                 double[] v = numbers(arg(w, line), 2, 3, line);
                 yield new Goto(line, v[0], v.length == 3 ? v[1] : Double.NaN, v[v.length - 1], sprint, jump);
             }
+            case "walk" -> {
+                double[] v = numbers(arg(w, line), 3, 3, line);
+                yield new Route(line, (int) Math.floor(v[0]), (int) Math.floor(v[1]), (int) Math.floor(v[2]), sprint);
+            }
             case "forward" -> new Forward(line, (int) numbers(arg(w, line), 1, 1, line)[0], sprint, jump);
             case "jump" -> new Jump(line);
             case "wait" -> new Wait(line, (int) numbers(arg(w, line), 1, 1, line)[0]);
@@ -131,8 +153,12 @@ final class Script {
                 }
                 double[] v = numbers(w[1], 3, 3, line);
                 yield once(line, p -> {
-                    p.useOn((int) Math.floor(v[0]), (int) Math.floor(v[1]), (int) Math.floor(v[2]));
-                    return "clicked the block";
+                    int bx = (int) Math.floor(v[0]);
+                    int by = (int) Math.floor(v[1]);
+                    int bz = (int) Math.floor(v[2]);
+                    p.useOn(bx, by, bz);
+                    return clicked(Math.sqrt(Math.pow(bx + 0.5 - p.body.x, 2) + Math.pow(by + 0.5 - (p.body.y + 1.62), 2)
+                            + Math.pow(bz + 0.5 - p.body.z, 2)));
                 }, 5);
             }
             case "attack" -> {
@@ -264,6 +290,11 @@ final class Script {
     }
 
     static final class Jump extends Step {
+        @Override
+        boolean endsOnTeleport() {
+            return true;
+        }
+
         private boolean pressed;
         private boolean left;
         private double startY;
@@ -302,7 +333,175 @@ final class Script {
         }
     }
 
+    /**
+     * Follow the route {@code world_summary path} finds, block by block: walk the straight runs, jump at the edge of
+     * each gap and onto each block up, drop where it drops. Reports the first place where the player falls off the
+     * route or stops making progress, with the route step it was trying to reach.
+     */
+    static final class Route extends Step {
+        @Override
+        boolean endsOnTeleport() {
+            return true;
+        }
+
+        private final int tx;
+        private final int ty;
+        private final int tz;
+        private final boolean sprint;
+        private List<int[]> route;
+        private String noRoute;
+        private int next = 1;
+        private double best;
+        private long bestTick;
+        private int jumps;
+
+        Route(String text, int tx, int ty, int tz, boolean sprint) {
+            super(text);
+            this.tx = tx;
+            this.ty = ty;
+            this.tz = tz;
+            this.sprint = sprint;
+        }
+
+        @Override
+        void prepare(TestPlayer p) {
+            try {
+                route = p.plan(new io.github.imnotstable.msc.protocol.world.BlockPos(tx, ty, tz));
+            } catch (Exception e) {
+                noRoute = e.getMessage() == null ? e.toString() : e.getMessage();
+            }
+        }
+
+        @Override
+        void start(TestPlayer p) {
+            super.start(p);
+            best = Double.MAX_VALUE;
+            bestTick = p.ticks();
+            if (noRoute != null) {
+                finish("no route: " + noRoute);
+            } else if (route.size() < 2) {
+                finish("already there");
+            }
+        }
+
+        private int[] at(int i) {
+            return route.get(i);
+        }
+
+        private static char move(int[] step) {
+            return (char) step[3];
+        }
+
+        private double horizontal(TestPlayer p, int[] step) {
+            return Math.hypot(step[0] + 0.5 - p.body.x, step[2] + 0.5 - p.body.z);
+        }
+
+        /** The furthest step of the straight, level walk that starts at the next step: aim there, not block by block. */
+        private int aim() {
+            int a = next;
+            while (a + 1 < route.size() && move(at(a + 1)) == 'w' && move(at(a)) == 'w' && at(a + 1)[1] == at(a)[1]
+                    && at(a + 1)[0] - at(a)[0] == at(a)[0] - at(a - 1)[0]
+                    && at(a + 1)[2] - at(a)[2] == at(a)[2] - at(a - 1)[2]) {
+                a++;
+            }
+            return a;
+        }
+
+        @Override
+        Physics.Input input(TestPlayer p) {
+            if (route == null || next >= route.size()) {
+                return Physics.Input.NONE;
+            }
+            int[] step = at(next);
+            int[] target = at(aim());
+            double d = horizontal(p, target);
+            p.yaw = (float) Math.toDegrees(Math.atan2(-(target[0] + 0.5 - p.body.x), target[2] + 0.5 - p.body.z));
+            char move = move(step);
+            boolean jumpAhead = move == 'j' || next + 1 < route.size() && move(at(next + 1)) == 'j';
+            boolean jump = false;
+            if (p.body.onGround) {
+                if (move == 'u') {
+                    jump = horizontal(p, step) < 1.3 && p.body.y < step[1] - 0.4;
+                } else if (move == 'j') {
+                    // Take off at the edge: the floor ends a few ticks ahead.
+                    double lead = 2.5;
+                    jump = !p.body.supportedAt(p.body.x + p.body.vx * lead, p.body.z + p.body.vz * lead, p.view());
+                } else if (move != 'd' && p.body.horizontalCollision) {
+                    jump = true;
+                }
+                if (jump && move == 'j') {
+                    jumps++;
+                }
+            } else if (move == 'c') {
+                jump = step[1] > p.body.y - 0.1;
+            }
+            boolean last = aim() == route.size() - 1;
+            double forward = last && d < 0.6 ? 0.3 : 1;
+            return new Physics.Input(forward, 0, jump, (sprint || jumpAhead) && d > 1.0, p.yaw);
+        }
+
+        private boolean reached(TestPlayer p, int i) {
+            int[] step = at(i);
+            double near = i == route.size() - 1 ? 0.4 : 0.6;
+            return horizontal(p, step) < near && Math.abs(p.body.y - step[1]) < 0.6
+                    && (p.body.onGround || move(step) == 'c');
+        }
+
+        @Override
+        boolean check(TestPlayer p) {
+            if (route == null || next >= route.size()) {
+                return super.check(p);
+            }
+            for (int i = aim(); i >= next; i--) {
+                if (reached(p, i)) {
+                    next = i + 1;
+                    best = Double.MAX_VALUE;
+                    bestTick = p.ticks();
+                    break;
+                }
+            }
+            if (next >= route.size()) {
+                finish(String.format("reached in %.1fs, %d steps%s", elapsed(p) / 20.0, route.size() - 1,
+                        jumps > 0 ? ", " + jumps + (jumps == 1 ? " jump" : " jumps") : ""));
+                return super.check(p);
+            }
+            int[] step = at(next);
+            double d = Math.hypot(horizontal(p, step), p.body.y - step[1]);
+            if (p.body.onGround && p.body.y < Math.min(step[1], at(next - 1)[1]) - 1.5) {
+                finish(String.format("fell: landed at %.1f,%.1f,%.1f, off the route %s", p.body.x, p.body.y,
+                        p.body.z, where(next)));
+            } else if (d < best - 0.1) {
+                best = d;
+                bestTick = p.ticks();
+            } else if (p.ticks() - bestTick > 40) {
+                finish(String.format("stuck at %.1f,%.1f,%.1f for 2s %s", p.body.x, p.body.y, p.body.z, where(next)));
+            } else if (elapsed(p) > MAX_TICKS) {
+                finish("timed out after 60s " + where(next));
+            }
+            return super.check(p);
+        }
+
+        /** "before step 4/12 (jump to 6,1,0)": the step the player was trying to make. */
+        private String where(int i) {
+            int[] s = at(i);
+            String what = switch (move(s)) {
+                case 'j' -> "jump";
+                case 'u' -> "step up";
+                case 'd' -> "drop";
+                case 'c' -> "climb";
+                default -> "walk";
+            };
+            return "before step " + i + "/" + (route.size() - 1) + " (" + what + " to " + s[0] + "," + s[1] + "," + s[2]
+                    + ")";
+        }
+    }
+
     static final class Forward extends Step {
+        @Override
+        boolean endsOnTeleport() {
+            return true;
+        }
+
         private final int ticks;
         private final boolean sprint;
         private final boolean jump;
@@ -342,6 +541,11 @@ final class Script {
      * one-block steps, the way a player crosses parkour.
      */
     static final class Goto extends Step {
+        @Override
+        boolean endsOnTeleport() {
+            return true;
+        }
+
         private final double tx;
         private final double ty;
         private final double tz;

@@ -53,6 +53,8 @@ class LifecycleToolsTest {
         assertThat(h.ok("msc_status")).startsWith("msc-core ").contains("server: running").contains("agent: paper fake, minecraft 26.3, 8 operations");
         assertThat(h.ok("world_summary", "region", "0,60,0 1,61,1")).contains("blocks: stone 8");
         assertThat(h.ok("server_command", "command", "/say hi")).isEqualTo("ran say hi");
+        assertThat(h.ok("server_command", "command", "say a\n\n/say b\n")).isEqualTo("> say a\nran say a\n> /say b\nran say b");
+        assertThat(h.error("server_command", "command", "say x\n".repeat(65))).contains("at most 64 commands");
         assertThat(h.ok("server_logs", "mode", "tail", "lines", 1)).contains("Done (0.1s)!");
         assertThat(h.ok("server_logs", "mode", "grep", "pattern", "starting")).contains("Starting minecraft server");
         assertThat(h.ok("server_logs")).endsWith("lines, 0 errors, 0 warnings");
@@ -527,8 +529,15 @@ class LifecycleToolsTest {
             assertThat(run.resolve("mods/msc-agent-fabric.jar")).hasContent("fabric agent");
             assertThat(paths).hasSize(before);
             assertThat(s.error("server_setup", "version", "1.0")).contains("Fabric setup supports Minecraft " + minecraft);
-            assertThat(s.error("server_setup", "platform", "forge")).contains("unknown platform forge")
-                    .contains("paper, fabric, minestom");
+            assertThat(s.error("server_setup", "platform", "spigot")).contains("unknown platform spigot")
+                    .contains("paper, purpur, fabric, quilt, neoforge, forge, minestom");
+            // Quilt runs Fabric mods: a version Fabric API does not cover is refused before any download.
+            assertThat(s.error("server_setup", "platform", "quilt", "version", "1.0"))
+                    .contains("Fabric setup supports Minecraft " + minecraft);
+            assertThat(s.error("server_setup", "platform", "neoforge", "version", "1.0"))
+                    .contains("NeoForge setup supports Minecraft " + minecraft);
+            assertThat(s.error("server_setup", "platform", "forge", "version", "1.0"))
+                    .contains("Forge setup supports Minecraft " + minecraft);
         } finally {
             fabric.stop(0);
         }

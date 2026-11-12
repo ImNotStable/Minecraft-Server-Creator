@@ -26,10 +26,12 @@ final class Scaffold {
 
     private final CoreConfig config;
     private final EulaPrompts eula;
+    private final BuildWarmup warmup;
 
-    Scaffold(CoreConfig config, EulaPrompts eula) {
+    Scaffold(CoreConfig config, EulaPrompts eula, BuildWarmup warmup) {
         this.config = config;
         this.eula = eula;
+        this.warmup = warmup;
     }
 
     String run(Args args) throws IOException {
@@ -62,6 +64,11 @@ final class Scaffold {
             if (result.values().containsKey(key)) {
                 out.append('\n').append(key).append(": ").append(result.values().get(key));
             }
+        }
+        if (Boolean.parseBoolean(Templates.info(template).get("warmup"))) {
+            warmup.start(dir);
+            out.append("\nfirst build started in the background (the loader sets up Minecraft once, which takes "
+                    + "minutes); dev_cycle waits for it");
         }
         Platform platform = platformId == null ? null : Platform.of(platformId);
         if (platform != null && platform.needsEula()
