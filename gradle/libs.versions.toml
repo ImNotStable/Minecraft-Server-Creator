@@ -16,6 +16,14 @@ minecraft = "26.3"          # Fabric targets the same Minecraft release as Paper
 fabric-loader = "0.20.1"
 fabric-api = "0.166.0+26.3"
 fabric-loom = "1.19.4"     # also pinned in settings.gradle.kts, which cannot read this catalog
+neoforge = "26.3.0.102"     # NeoForge for Minecraft 26.3
+neoform = "26.3-1"          # vanilla Minecraft 26.3 for ModDevGradle's vanilla mode (msc-agent-forge compiles against it)
+moddev = "2.0.148"          # NeoForge ModDevGradle; also pinned in settings.gradle.kts, which cannot read this catalog
+forge = "26.3-66.1.5"       # Minecraft Forge for 26.3 (the recommended build)
+forge-eventbus = "7.0.6"    # the EventBus that Forge 26.3 ships
+forgegradle = "7.0.40"      # only written into the forge-mod template; the repo build compiles against Forge's jars
+quilt-loader = "0.30.2"     # newest stable Quilt Loader; runs the Fabric agent and Fabric mods
+quilt-installer = "0.15.1"
 minestom = "2026.10.07-26.2"  # Minestom lags Paper: newest build targets Minecraft 26.2
 mcprotocollib = "26.3-3"  # GeyserMC Java Edition protocol client for the msc-bot test player (opencollab repo)
 mcprotocollib-previous = "26.2"  # the previous Minecraft version, for servers that lag Paper (Minestom); stays one behind
@@ -34,6 +42,10 @@ minecraft = { module = "com.mojang:minecraft", version.ref = "minecraft" }
 fabric-loader = { module = "net.fabricmc:fabric-loader", version.ref = "fabric-loader" }
 fabric-loader-junit = { module = "net.fabricmc:fabric-loader-junit", version.ref = "fabric-loader" }
 fabric-api = { module = "net.fabricmc.fabric-api:fabric-api", version.ref = "fabric-api" }
+forge-universal = { module = "net.minecraftforge:forge", version.ref = "forge" }
+forge-fmlcore = { module = "net.minecraftforge:fmlcore", version.ref = "forge" }
+forge-javafmllanguage = { module = "net.minecraftforge:javafmllanguage", version.ref = "forge" }
+forge-eventbus = { module = "net.minecraftforge:eventbus", version.ref = "forge-eventbus" }
 minestom = { module = "net.minestom:minestom", version.ref = "minestom" }
 minestom-testing = { module = "net.minestom:testing", version.ref = "minestom" }
 mcprotocollib = { module = "org.geysermc.mcprotocollib:protocol", version.ref = "mcprotocollib" }

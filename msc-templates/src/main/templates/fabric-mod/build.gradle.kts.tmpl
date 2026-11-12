@@ -42,7 +42,8 @@ tasks.withType<JavaCompile>().configureEach {
 tasks.processResources {
     val props = mapOf(
         "version" to version,
-        "loaderVersion" to libs.versions.fabric.loader.get(),
+        // The floor stays at 0.17: Quilt Loader runs Fabric mods and answers as fabricloader 0.19.
+        "loaderFloor" to "0.17.0",
         "minecraftVersion" to libs.versions.minecraft.get(),
     )
     inputs.properties(props)

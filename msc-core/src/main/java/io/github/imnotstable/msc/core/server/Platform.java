@@ -16,20 +16,30 @@ import java.util.stream.Collectors;
  */
 public enum Platform {
     /** Paper jar, plugins in {@code plugins/}. */
-    PAPER("paper.jar", "plugins", true),
+    PAPER("paper.jar", "plugins", true, "paper"),
+    /** Purpur, a Paper fork: Paper plugins and the Paper agent run on it unchanged. See ADR 0027. */
+    PURPUR("purpur.jar", "plugins", true, "paper"),
     /** Fabric server launcher, mods in {@code mods/}. */
-    FABRIC("fabric-server-launch.jar", "mods", true),
+    FABRIC("fabric-server-launch.jar", "mods", true, "fabric"),
+    /** Quilt server launcher; Quilt loads Fabric mods, so the Fabric agent and Fabric API run on it. See ADR 0027. */
+    QUILT("quilt-server-launch.jar", "mods", true, "fabric"),
+    /** NeoForge's server starter jar (it reads the installer's argument files), mods in {@code mods/}. */
+    NEOFORGE("server.jar", "mods", true, "neoforge"),
+    /** Minecraft Forge's runnable shim jar, copied to a fixed name, mods in {@code mods/}. */
+    FORGE("forge-server.jar", "mods", true, "forge"),
     /** The project's own runnable jar is the server; the agent is built into it. No Mojang EULA step. */
-    MINESTOM("server.jar", null, false);
+    MINESTOM("server.jar", null, false, "minestom");
 
     private final String serverJar;
     private final String addonDir;
     private final boolean eula;
+    private final String agent;
 
-    Platform(String serverJar, String addonDir, boolean eula) {
+    Platform(String serverJar, String addonDir, boolean eula, String agent) {
         this.serverJar = serverJar;
         this.addonDir = addonDir;
         this.eula = eula;
+        this.agent = agent;
     }
 
     public String id() {
@@ -44,6 +54,14 @@ public enum Platform {
     /** Folder in the server directory that plugins or mods go in, or null when the project jar is the server. */
     public String addonDir() {
         return addonDir;
+    }
+
+    /**
+     * Which msc agent runs on this platform, and so also which API and project layout it shares: {@code paper},
+     * {@code fabric}, {@code neoforge}, {@code forge} or {@code minestom}. Purpur shares Paper's, Quilt Fabric's.
+     */
+    public String agent() {
+        return agent;
     }
 
     /** True when the server is Mojang's and so needs an accepted {@code eula.txt}. */
@@ -90,8 +108,18 @@ public enum Platform {
 
     /** Platform of the Gradle project in {@code project}, or null when it does not say. */
     public static Platform detect(Path project) {
-        if (Files.isRegularFile(project.resolve("src/main/resources/fabric.mod.json"))) {
+        Path resources = project.resolve("src/main/resources");
+        if (Files.isRegularFile(resources.resolve("quilt.mod.json"))) {
+            return QUILT;
+        }
+        if (Files.isRegularFile(resources.resolve("fabric.mod.json"))) {
             return FABRIC;
+        }
+        if (Files.isRegularFile(resources.resolve("META-INF/neoforge.mods.toml"))) {
+            return NEOFORGE;
+        }
+        if (Files.isRegularFile(resources.resolve("META-INF/mods.toml"))) {
+            return FORGE;
         }
         if (Files.isRegularFile(project.resolve("src/main/resources/paper-plugin.yml"))
                 || Files.isRegularFile(project.resolve("src/main/resources/plugin.yml"))) {
@@ -113,8 +141,8 @@ public enum Platform {
     /** The command that starts this platform's server from its directory. */
     public List<String> launchCommand(String java) {
         return switch (this) {
-            case PAPER -> List.of(java, "-Xmx2G", "-jar", serverJar, "--nogui");
-            case FABRIC -> List.of(java, "-Xmx2G", "-jar", serverJar, "nogui");
+            case PAPER, PURPUR -> List.of(java, "-Xmx2G", "-jar", serverJar, "--nogui");
+            case FABRIC, QUILT, NEOFORGE, FORGE -> List.of(java, "-Xmx2G", "-jar", serverJar, "nogui");
             case MINESTOM -> List.of(java, "-Xmx1G", "-jar", serverJar);
         };
     }

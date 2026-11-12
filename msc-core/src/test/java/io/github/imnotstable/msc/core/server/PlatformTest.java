@@ -24,7 +24,38 @@ class PlatformTest {
         assertThat(Platform.MINESTOM.needsEula()).isFalse();
         assertThat(Platform.MINESTOM.addonDir()).isNull();
         assertThat(Platform.of(" Fabric\n")).isEqualTo(Platform.FABRIC);
-        assertThatThrownBy(() -> Platform.of("forge")).isInstanceOf(ToolException.class).hasMessageContaining("paper, fabric, minestom");
+        assertThatThrownBy(() -> Platform.of("spigot")).isInstanceOf(ToolException.class)
+                .hasMessageContaining("paper, purpur, fabric, quilt, neoforge, forge, minestom");
+    }
+
+    @Test
+    void forksAndCompatibleLoadersShareTheirUpstreamsAgent() {
+        assertThat(Platform.PURPUR.agent()).isEqualTo("paper");
+        assertThat(Platform.PURPUR.addonDir()).isEqualTo("plugins");
+        assertThat(Platform.PURPUR.launchCommand("java")).containsExactly("java", "-Xmx2G", "-jar", "purpur.jar", "--nogui");
+        assertThat(Platform.QUILT.agent()).isEqualTo("fabric");
+        assertThat(Platform.QUILT.launchCommand("java"))
+                .containsExactly("java", "-Xmx2G", "-jar", "quilt-server-launch.jar", "nogui");
+        assertThat(Platform.NEOFORGE.agent()).isEqualTo("neoforge");
+        assertThat(Platform.NEOFORGE.launchCommand("java")).containsExactly("java", "-Xmx2G", "-jar", "server.jar", "nogui");
+        assertThat(Platform.FORGE.agent()).isEqualTo("forge");
+        assertThat(Platform.FORGE.launchCommand("java")).containsExactly("java", "-Xmx2G", "-jar", "forge-server.jar", "nogui");
+        for (Platform p : Platform.values()) {
+            assertThat(p.needsEula()).as(p.id()).isEqualTo(p != Platform.MINESTOM);
+        }
+    }
+
+    @Test
+    void modMetadataNamesTheLoader() throws Exception {
+        Path resources = Files.createDirectories(dir.resolve("src/main/resources/META-INF"));
+        Files.writeString(resources.resolve("mods.toml"), "");
+        assertThat(Platform.detect(dir)).isEqualTo(Platform.FORGE);
+        Files.writeString(resources.resolve("neoforge.mods.toml"), "");
+        assertThat(Platform.detect(dir)).isEqualTo(Platform.NEOFORGE);
+        Files.writeString(dir.resolve("src/main/resources/fabric.mod.json"), "{}");
+        assertThat(Platform.detect(dir)).isEqualTo(Platform.FABRIC);
+        Files.writeString(dir.resolve("src/main/resources/quilt.mod.json"), "{}");
+        assertThat(Platform.detect(dir)).isEqualTo(Platform.QUILT);
     }
 
     @Test

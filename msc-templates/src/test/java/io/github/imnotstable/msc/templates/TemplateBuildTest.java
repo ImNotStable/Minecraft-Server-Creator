@@ -14,7 +14,7 @@ import org.junit.jupiter.api.Test;
 
 /**
  * Scaffolds each project template and runs its own {@code gradlew build}, which compiles it
- * against Paper, Fabric or Minestom and runs its tests. Only runs via
+ * against Paper, Fabric, NeoForge, Forge or Minestom and runs its tests. Only runs via
  * {@code ./gradlew :msc-templates:verifyTemplates}.
  */
 @Tag("template-build")
@@ -32,6 +32,16 @@ class TemplateBuildTest {
     @Test
     void fabricModBuildsAndPassesItsTests() throws IOException, InterruptedException {
         buildsAndPassesItsTests(Templates.FABRIC_MOD);
+    }
+
+    @Test
+    void neoforgeModBuildsAndPassesItsTests() throws IOException, InterruptedException {
+        buildsAndPassesItsTests(Templates.NEOFORGE_MOD);
+    }
+
+    @Test
+    void forgeModBuildsAndPassesItsTests() throws IOException, InterruptedException {
+        buildsAndPassesItsTests(Templates.FORGE_MOD);
     }
 
     @Test

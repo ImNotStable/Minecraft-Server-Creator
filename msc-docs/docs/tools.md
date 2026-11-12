@@ -14,7 +14,7 @@ The tool tables are generated from the tool definitions in `msc-core` (`io.githu
 - `world` is optional everywhere and defaults to the server's first world.
 - Every call is logged (see "Tool log").
 - World and build tools fail at once with `error: the server is not running...` when the core has no server running and none was attached with `MSC_CORE_ADDRESS`.
-- <!-- tool-list -->The tool definitions (26 tools: names, descriptions, argument schemas) are 15,130 characters, about 3,783 tokens in every conversation before MCP framing.<!-- /tool-list --> `McpBridgeTest` fails if the tool list as the client receives it grows past 16,000 characters ([ADR 0019](adr/0019-smaller-tool-surface.md), [ADR 0023](adr/0023-texture-tools.md)).
+- <!-- tool-list -->The tool definitions (26 tools: names, descriptions, argument schemas) are 15,213 characters, about 3,804 tokens in every conversation before MCP framing.<!-- /tool-list --> `McpBridgeTest` fails if the tool list as the client receives it grows past 16,000 characters ([ADR 0019](adr/0019-smaller-tool-surface.md), [ADR 0023](adr/0023-texture-tools.md)).
 - Results are text. The one exception is `world_render`, which adds one PNG image next to its text.
 
 ## Typical loop
@@ -40,8 +40,8 @@ Results:
 <!-- tools: project_scaffold server_setup server_start server_detach server_stop dev_cycle server_logs server_command server_wait -->
 | Tool | Arguments | What it does |
 | --- | --- | --- |
-| `project_scaffold` | `name` (string): Project name, for example MyPlugin<br>`dir`? (string): Target directory, relative to the workspace. Default: the workspace itself<br>`template`? (string): paper-plugin (default), fabric-mod, minestom-server, or a minigame base (kit, stages, saved progress, /game debug commands): paper-game, fabric-game, minestom-game<br>`package`? (string): Java package. Default com.example.&lt;name&gt;<br>`acceptEula`? (boolean): Only on the user's yes to https://aka.ms/MinecraftEULA; kept for this machine | Create a new project from a template (Gradle KTS, tests wired in). Target directory must be empty. |
-| `server_setup` | `version`? (string): Minecraft version. Default 26.3<br>`platform`? (string): paper, fabric or minestom. Default: the project's<br>`mode`? (string): build (creative, peaceful) or game (survival, normal)<br>`acceptEula`? (boolean): Only on the user's yes to https://aka.ms/MinecraftEULA; kept for this machine | Prepare the dev server: download Paper or the Fabric launcher, write dev defaults, install the msc agent. |
+| `project_scaffold` | `name` (string): Project name, for example MyPlugin<br>`dir`? (string): Target directory, relative to the workspace. Default: the workspace itself<br>`template`? (string): paper-plugin (default), fabric-mod (also Quilt), neoforge-mod, forge-mod, minestom-server, or a minigame base (kit, stages, saved progress, /game debug commands): paper-game, fabric-game, minestom-game<br>`package`? (string): Java package. Default com.example.&lt;name&gt;<br>`acceptEula`? (boolean): Only on the user's yes to https://aka.ms/MinecraftEULA; kept for this machine | Create a new project from a template (Gradle KTS, tests wired in). Target directory must be empty. |
+| `server_setup` | `version`? (string): Minecraft version. Default 26.3<br>`platform`? (string): paper, purpur, fabric, quilt, neoforge, forge or minestom. Default: the project's<br>`mode`? (string): build (creative, peaceful) or game (survival, normal)<br>`acceptEula`? (boolean): Only on the user's yes to https://aka.ms/MinecraftEULA; kept for this machine | Prepare the dev server: download or install it, write dev defaults, install the msc agent. |
 | `server_start` | `timeoutSeconds`? (integer): Default 180<br>`acceptEula`? (boolean): Only on the user's yes to https://aka.ms/MinecraftEULA; kept for this machine | Start the dev server and wait until it is ready. Returns startup errors only. |
 | `server_detach` | none | Keep the dev server and the pack host running after this session ends, so the user can play. The next session's server_start, dev_cycle or server_stop stops them. |
 | `server_stop` | none | Stop the dev server. |
@@ -84,7 +84,7 @@ Built on first use from the platform's jars in the Gradle cache (or `MSC_API_JAR
 <!-- tools: api_search api_class -->
 | Tool | Arguments | What it does |
 | --- | --- | --- |
-| `api_search` | `query` (string): Words that must all match, for example "player teleport"<br>`kind`? (string): class, interface, enum, record, annotation or event<br>`limit`? (integer): Default 15 | Search the platform API (Paper, Fabric or Minestom) by class, method, field or constant name; one line per match with full signature. |
+| `api_search` | `query` (string): Words that must all match, for example "player teleport"<br>`kind`? (string): class, interface, enum, record, annotation or event<br>`limit`? (integer): Default 15 | Search the platform API (Paper, Fabric, NeoForge, Forge or Minestom) by class, method, field or constant name; one line per match with full signature. |
 | `api_class` | `name` (string): Simple or full class name, for example Player or org.bukkit.entity.Player<br>`filter`? (string): Only members whose name contains this<br>`inherited`? (boolean): Include members of supertypes<br>`limit`? (integer): Default 40 | Show one API class: supertypes, constants (with inherited) and public members with signatures. |
 <!-- /tools -->
 
@@ -124,21 +124,19 @@ Results:
 Used by `world_slice` (output) and `build_batch` `structure` steps (input), so a slice can be edited and written back.
 
 ```
-legend: .=air #=stone_bricks g=glass@2,66,0
+legend: .=air #=stone_bricks g=glass
 y=64
 #####
-#...# (x3)
+#...#
 #####
-y=65..66 same as y=64
-y=67 all #
+y=65 same as y=64
+y=66 all #
 ```
 
 - One character per block. Rows run from the lowest Z (top row) to the highest; columns from the lowest X (left) to the highest.
 - `.` is air and `_` means "leave unchanged", unless the legend redefines them.
 - Layers are listed by Y. In a `structure` step the numbers only give the order: the lowest layer is placed at the step's position.
-- `y=N same as y=M` repeats a layer; `y=N all #` fills a layer with one symbol or block. Both take a range of layers: `y=65..66 same as y=64`, `y=69..80 all .`.
-- A row followed by ` (xN)` stands for N equal rows, so a wall ring or a mostly empty layer stays a few lines.
-- A block that occurs once in a slice gets its position in the legend (`g=glass@2,66,0`), so it can be found without counting columns. Building ignores the `@` part.
+- `y=N same as y=M` repeats a layer; `y=N all #` fills a layer with one symbol or block.
 - Symbols are handed out by frequency. With `states=false` (default) blocks that differ only in properties share a symbol.
 
 ## Building
@@ -158,7 +156,7 @@ y=67 all #
 <!-- tools: player_test -->
 | Tool | Arguments | What it does |
 | --- | --- | --- |
-| `player_test` | `actions` (list of string): goto x,y,z\|forward ticks [sprint] [jump], walk x,y,z (path route), jump, look yaw pitch, lookat x,y,z, wait ticks, use [x,y,z], attack\|interact [type], slot 1-9, say text, /command, tp x,y,z, entities, inventory, hud, close<br>`name`? (string): Default MscTester<br>`gamemode`? (string): survival (default), adventure, creative<br>`leave`? (boolean): Disconnect after. Default false | Play-test: a headless player joins the dev server, runs actions, reports results, damage, deaths, chat, titles. Stays joined. Vanilla-like moves; a missed jump may suit people. inventory/hud: items, menu, bossbars, sidebar, pack. |
+| `player_test` | `actions` (list of string): goto x,y,z\|forward ticks [sprint] [jump], walk x,y,z (path route), jump, look yaw pitch, lookat x,y,z, wait ticks, use [x,y,z], attack\|interact [type], slot 1-9, say text, /command, tp x,y,z, entities, inventory, hud, close<br>`name`? (string): Default MscTester<br>`gamemode`? (string): survival, adventure, creative. Default: the game's<br>`leave`? (boolean): Disconnect after. Default false | Play-test: a headless player joins the dev server, runs actions, reports results, damage, deaths, chat, titles. Stays joined. Vanilla-like moves; a missed jump may suit people. inventory/hud: items, menu, bossbars, sidebar, pack. |
 <!-- /tools -->
 
 A headless client joins the running dev server (offline mode, Minecraft 26.3 or 26.2, picked from the server's own answer), is made op and put in the game mode where the server has those commands, then runs the actions. Being kicked, while joining or during the actions, makes the call fail with the reason. Each action gets a result line; chat, titles, damage, deaths, respawns, server corrections and the pack offer are listed under it. `inventory` lists the held item, hotbar, backpack, armour and any menu the server opened (vanilla names plus custom name, `item_model` and lore); `interact` right-clicks the nearest entity (an NPC or villager), `close` closes the menu. `hud` lists boss bars, the sidebar, the last action bar and title, the tab list header and whether the resource pack loaded (downloaded, SHA-1 matches, `pack.mcmeta` at the root). These report only when asked. Ends with position, health and food. Movement copies vanilla (walk 4.3, sprint 5.6 blocks/s, jump 1.25); see [ADR 0016](adr/0016-test-player.md) for what is not simulated.

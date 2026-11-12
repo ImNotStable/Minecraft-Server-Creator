@@ -1,6 +1,6 @@
 # msc-agent-fabric
 
-A server-side Fabric mod that runs inside the dev server and carries out the core's world and server operations, the same way `msc-agent-paper` does on Paper.
+A server-side Fabric mod that runs inside the dev server and carries out the core's world and server operations, the same way `msc-agent-paper` does on Paper. It also runs on Quilt, which loads Fabric mods ([ADR 0027](../msc-docs/docs/adr/0027-more-platforms.md)).
 
 **Phase:** Post-MVP  
 **Status:** Built and unit tested on Minecraft 26.3 (Fabric Loader 0.20.1, Fabric API 0.166.0+26.3). Loads on a real Fabric 26.3 server. Design decisions: [ADR 0009](../msc-docs/docs/adr/0009-fabric-agent.md).
@@ -27,17 +27,13 @@ Gradle must run on Java 25 for Fabric Loom; `gradle/gradle-daemon-jvm.properties
 
 | Class | Role |
 | --- | --- |
-| `MscAgentMod` | Entry point: wires the shared operations and core link to Fabric events |
-| `FabricLevels`, `FabricLevel`, `LevelNames` | Worlds by Paper-style name; one world's blocks, entities and signs |
-| `FabricServerAccess` | Versions, TPS, commands, packs on the real server |
-| `BlockStates` | Block state strings to states and back |
-| `TickMainThread` | Runs work on the server thread in per-tick slices |
+| `MscAgentMod` | Entry point: forwards Fabric API's server events to the shared `VanillaAgent`, and names the loader (`fabric`, or `quilt` on Quilt) |
 
-Operations, sliced jobs, undo and the core connection live in [msc-agent-common](../msc-agent-common/README.md); this module only adapts the server API to them.
+Everything that touches Minecraft (worlds, server access, block states, the tick-driven main thread) is the shared [msc-agent-vanilla](../msc-agent-vanilla/README.md) source folder, compiled into this jar and tested here. Operations, sliced jobs, undo and the core connection live in [msc-agent-common](../msc-agent-common/README.md).
 
 ## Tests
 
-`./gradlew :msc-agent-fabric:test` runs its tests inside Fabric Loader (`fabric-loader-junit`) with Minecraft's registries loaded: the shared operations on real block states, the tick-driven main thread, server ops against a fake server, and a smoke test of the whole agent against a real `CoreServer` socket.
+`./gradlew :msc-agent-fabric:test` runs its own tests and msc-agent-vanilla's inside Fabric Loader (`fabric-loader-junit`) with Minecraft's registries loaded: the shared operations on real block states, the tick-driven main thread, server ops against a fake server, and a smoke test of the whole agent against a real `CoreServer` socket.
 
 ## Depends on
 
