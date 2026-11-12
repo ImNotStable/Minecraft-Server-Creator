@@ -61,7 +61,7 @@ public final class TextureTools {
                         .opt("frames", "integer", "Animation frames, 2 to 64. Default: one full loop for scroll, 8 for pulse")
                         .opt("frametime", "integer", "Ticks per frame. Default 2")
                         .opt("model", "string", "Also write a model and item definition: item (flat), handheld (tools), "
-                                + "block (cube) or none. Default block for patterns, handheld for sword and pickaxe, else item"),
+                                + "block (cube) or none. Default block for patterns, handheld for sword and pickaxe, none for minecraft:, else item"),
                 textures(args -> texture(args, pack, source)));
         registry.add("texture_view",
                 "Show a pack texture as a palette and pixel rows, the format texture draws. Animations show frame 1.",
@@ -160,7 +160,7 @@ public final class TextureTools {
                 throw new ToolException("rows need a palette");
             }
             PaletteTexture.Parsed parsed = PaletteTexture.parse(args.strings("palette"), args.strings("rows"));
-            String itemModel = pack.writeTexture(id, parsed.image(), args.str("model", "item"));
+            String itemModel = pack.writeTexture(id, parsed.image(), model(args, id, "item"));
             out.append("wrote ").append(id).append(' ').append(parsed.image().getWidth()).append('x')
                     .append(parsed.image().getHeight());
             if (itemModel != null) {
@@ -187,13 +187,13 @@ public final class TextureTools {
                         accent == null ? null : Ramp.from(accent, 4, 1.0), args.integer("seed", 1));
             }
             String model = shape ? (kind.equals("sword") || kind.equals("pickaxe") ? "handheld" : "item") : "block";
-            out.append(written(pack, id, t, args.str("model", model)));
+            out.append(written(pack, id, t, model(args, id, model)));
             if (!args.has("animate")) {
                 out.append('\n').append(Budget.truncate(PaletteText.render(t), Budget.DEFAULT_CHARS, "Use texture_view."));
             }
         } else if (ways.contains("copy")) {
             Texture in = firstFrame(source, ResourceId.parse(args.str("copy")));
-            out.append(written(pack, id, Edits.recolor(in, Ramp.from(color(args), 5)), args.str("model", "item")));
+            out.append(written(pack, id, Edits.recolor(in, Ramp.from(color(args), 5)), model(args, id, "item")));
         }
         if (args.has("animate")) {
             out.append(out.isEmpty() ? "" : "\n").append(animate(args, source, ResourceId.parse(id.toString())));
@@ -284,6 +284,14 @@ public final class TextureTools {
         } catch (NumberFormatException e) {
             throw new ToolException("argument " + name + " must be a number");
         }
+    }
+
+    /**
+     * The model to write: the one asked for, else {@code fallback}; but a vanilla texture ({@code minecraft:block/...})
+     * is a retexture, and a written model would replace vanilla's (a stem's cube_column with a cube_all), so none.
+     */
+    static String model(Args args, ResourcePack.TextureId id, String fallback) {
+        return args.str("model", id.namespace().equals("minecraft") ? "none" : fallback);
     }
 
     private static String written(ResourcePack pack, ResourcePack.TextureId id, Texture t, String model) throws IOException {

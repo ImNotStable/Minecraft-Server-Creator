@@ -88,6 +88,8 @@ val installMsc = tasks.register("installMsc") {
             throw GradleException("$dir already exists; run installMsc again in a second")
         }
         from.get().copyRecursively(dir)
+        // copyRecursively drops file modes: without this the Linux and macOS launcher is not executable.
+        dir.resolve("bin").listFiles().orEmpty().filter { !it.name.endsWith(".bat") }.forEach { it.setExecutable(true) }
         // Read by the launcher (installed, java) and by the core's stale-install check (source).
         val props = Properties()
         props["source"] = source
