@@ -11,12 +11,17 @@ final class Text {
     }
 
     static String plain(Component c) {
+        return raw(c).strip();
+    }
+
+    /** Plain text with its spaces kept, for pieces joined later such as a team prefix. */
+    static String raw(Component c) {
         if (c == null) {
             return "";
         }
         StringBuilder out = new StringBuilder();
         append(c, out);
-        return out.toString().strip();
+        return out.toString();
     }
 
     private static void append(Component c, StringBuilder out) {
