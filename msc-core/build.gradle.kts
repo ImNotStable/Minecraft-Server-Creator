@@ -158,3 +158,24 @@ val installMsc = tasks.register("installMsc") {
         }
     }
 }
+
+// e2eTest: a real Minestom server driven through the installed core over MCP stdio (MinestomEndToEndTest, tag e2e).
+// Not part of `build`: it scaffolds a project and runs its own Gradle build. CI runs it on Linux and Windows.
+tasks.test {
+    useJUnitPlatform { excludeTags("e2e") }
+}
+
+tasks.register<Test>("e2eTest") {
+    description = "Scaffolds minestom-game and drives a real Minestom server end to end through the installed core."
+    group = "verification"
+    testClassesDirs = sourceSets.test.get().output.classesDirs
+    classpath = sourceSets.test.get().runtimeClasspath
+    useJUnitPlatform { includeTags("e2e") }
+    dependsOn(installDist)
+    val install = installDist.map { it.destinationDir.absolutePath }
+    val report = layout.buildDirectory.dir("e2e").map { it.asFile.absolutePath }
+    jvmArgumentProviders.add(CommandLineArgumentProvider {
+        listOf("-Dmsc.e2e.install=${install.get()}", "-Dmsc.e2e.report=${report.get()}")
+    })
+    outputs.upToDateWhen { false }
+}
