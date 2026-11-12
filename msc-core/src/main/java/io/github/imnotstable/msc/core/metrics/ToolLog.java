@@ -13,7 +13,7 @@ import java.util.TreeMap;
 
 /**
  * Records every tool call: one JSON line per call for msc-bench (format in the bench ADR in msc-docs), plus running
- * totals for the {@code msc_stats} tool.
+ * totals for the {@code msc_status stats=true}.
  */
 public final class ToolLog {
     /** Totals for one tool. */

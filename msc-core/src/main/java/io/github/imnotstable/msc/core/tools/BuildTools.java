@@ -12,13 +12,14 @@ import io.github.imnotstable.msc.core.world.TextGrid;
 import io.github.imnotstable.msc.core.world.WorldService;
 import io.github.imnotstable.msc.protocol.world.BlockGrid;
 import io.github.imnotstable.msc.protocol.world.BlockPos;
+import io.github.imnotstable.msc.protocol.world.Region;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
 /** Shapes, stamps and batches: many blocks per call, one undo id per call, every block name checked first. */
 public final class BuildTools {
-    private static final String WORLD = "World name. Default: the server's main world";
+    private static final String WORLD = "World. Default: the main world";
     private static final String DRY_RUN = "Only check names and count blocks. Default false";
     private static final String PHYSICS = "Apply block updates. Default false";
 
@@ -26,12 +27,22 @@ public final class BuildTools {
     }
 
     public static void register(ToolRegistry registry, CoreConfig config, WorldService world, Builder builder) {
-        BuildScript.StructureFiles files = (path, worldName) -> load(config, path, worldName);
+        BuildScript.StructureFiles files = new BuildScript.StructureFiles() {
+            @Override
+            public BlockGrid load(String path, String worldName) throws java.io.IOException {
+                return BuildTools.load(config, path, worldName);
+            }
+
+            @Override
+            public BlockGrid read(Region region) throws InterruptedException {
+                return world.readAll(region, Builder.MAX_VOLUME, "build_batch");
+            }
+        };
         registry.add("build_batch",
-                "Build many steps as one edit with one undo id: fills and rooms, blocks, round shapes, lines, terrain "
-                        + "bands, and structures stamped, turned or repeated. Checks every block name before placing "
-                        + "any. Use it instead of many build_fill or build_set calls or a generator script.\n"
-                        + BuildScript.HELP,
+                "The one build tool: fills and rooms, single blocks, round shapes, lines, terrain bands, text or "
+                        + ".schem structures stamped, turned or repeated, and copies. All steps are one edit with one "
+                        + "undo id, and every block name is checked before any is placed. Put a whole build in one "
+                        + "call, not a generator script.\n" + BuildScript.HELP,
                 Schema.of().req("steps", "string", "The steps, one per line")
                         .opt("world", "string", WORLD).opt("physics", "boolean", PHYSICS)
                         .opt("dryRun", "boolean", DRY_RUN),
