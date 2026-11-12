@@ -22,9 +22,10 @@ Do [Installation](Installation) first. Then open Claude Code in your server fold
 5. **Ask for a feature.**
    For example: "Add a /spawn command that teleports the player to 0, -60, 0."
    Claude edits the code and calls `dev_cycle`. That builds, deploys, restarts and reports only the errors, including the names of failed tests. It repeats until it sees `no errors or warnings`.
+   On Windows, `oshi` system-info warnings at startup are harmless; ignore them.
 
 6. **Try it.**
-   Ask: "Run /spawn on the server with server_command" or join the game at `127.0.0.1:25565` (offline mode).
+   Check it loaded: "Run plugins with server_command." To try `/spawn` itself, join the game at `127.0.0.1:25565` (offline mode) and type `/spawn`. Console commands can't run player-only commands.
 
 7. **Build something.**
    Ask: "Build a small stone hut at 10, -60, 10 and show me a picture of it."
