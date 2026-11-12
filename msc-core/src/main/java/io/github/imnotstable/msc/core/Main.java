@@ -30,6 +30,11 @@ public final class Main {
                     CoreConfig.fromEnvironment(System.getenv()).eulaFile(), installDir, EulaCommand.console(),
                     Clock.systemUTC(), System.getProperty("user.name"), EulaCommand.hostName()));
         }
+        if (args.length == 3 && args[0].equals("refresh-legacy-install")) {
+            // Run by installMsc after each install: see LegacyInstall.
+            LegacyInstall.refresh(Path.of(args[1]), Path.of(args[2])).forEach(System.out::println);
+            return;
+        }
         System.setProperty("java.awt.headless", "true");
         // stdout carries MCP frames only; anything a library prints must go to stderr.
         OutputStream protocolOut = new FileOutputStream(FileDescriptor.out);

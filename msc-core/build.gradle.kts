@@ -110,6 +110,18 @@ val installMsc = tasks.register("installMsc") {
                 doomed.deleteRecursively()
             }
         }
+        // An install from before the plugin (one flat folder, registered with a fixed `claude mcp add` line) would
+        // keep running its old jars: refresh it from this one. Overwrites and renames only, never deletes.
+        val refresh = ProcessBuilder(javaPath.get(), "-cp", dir.resolve("lib").absolutePath + File.separator + "*",
+            "io.github.imnotstable.msc.core.Main", "refresh-legacy-install", rootDir.absolutePath, dir.absolutePath)
+            .redirectErrorStream(true).start()
+        val said = refresh.inputStream.bufferedReader().readText()
+        if (refresh.waitFor() != 0) {
+            println("Could not refresh the older install in $rootDir (is a session using it? Close it and run installMsc again).")
+            println(said.lines().take(3).joinToString("\n"))
+        } else {
+            print(said)
+        }
         // The owner's one-time EULA acceptance for this machine (ADR 0020). Printed, never run: only the owner can
         // answer it, in an interactive terminal. It lives in the install root, so its path stays the same; each
         // install rewrites it to point at the newest install's jars.
