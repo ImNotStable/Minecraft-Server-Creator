@@ -5,6 +5,7 @@ import io.github.imnotstable.msc.protocol.message.ErrorCodes;
 import io.github.imnotstable.msc.protocol.op.Ops;
 import io.github.imnotstable.msc.protocol.transport.OpException;
 import io.github.imnotstable.msc.protocol.world.BlockGrid;
+import io.github.imnotstable.msc.protocol.world.BlockPos;
 import io.github.imnotstable.msc.protocol.world.Region;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -57,7 +58,26 @@ final class WorldOps {
         loadChunks(instance, region.min().x(), region.min().z(), region.max().x(), region.max().z());
         BlockGrid grid = main.run(new ReadJob(instance, region));
         List<Ops.EntitySummary> entities = params.includeEntities() ? main.call(() -> entities(instance, region)) : List.of();
-        return new Ops.ReadResult(grid, entities);
+        List<Ops.SignText> signs = params.includeSigns() ? signs(instance, grid) : List.of();
+        return new Ops.ReadResult(grid, entities, signs);
+    }
+
+    /** Text of the signs in a grid, from each sign block's NBT; looked up only where the grid has a sign. */
+    private List<Ops.SignText> signs(Instance instance, BlockGrid grid) {
+        List<BlockPos> at = Ops.SignText.positions(grid);
+        if (at.isEmpty()) {
+            return List.of();
+        }
+        return main.call(() -> {
+            List<Ops.SignText> out = new ArrayList<>();
+            for (BlockPos p : at) {
+                Ops.SignText text = SignNbt.read(p.x(), p.y(), p.z(), instance.getBlock(p.x(), p.y(), p.z()).nbt());
+                if (text != null) {
+                    out.add(text);
+                }
+            }
+            return out;
+        });
     }
 
     private static List<Ops.EntitySummary> entities(Instance instance, Region region) {

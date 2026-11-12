@@ -107,6 +107,20 @@ class WorldOpsTest {
     }
 
     @Test
+    void readReportsSignTextOnlyWhereTheGridHasASign() {
+        world.set(1, 70, 1, Blocks.OAK_SIGN.defaultBlockState(), false);
+        world.signs.put(PackedPos.pack(1, 70, 1), new Ops.SignText(1, 70, 1, List.of("Shop"), null));
+        // Text left behind where there is no sign block must not be reported.
+        world.signs.put(PackedPos.pack(2, 70, 1), new Ops.SignText(2, 70, 1, List.of("stale"), null));
+
+        Ops.ReadResult with = ops.read(new Ops.ReadParams(box(0, 70, 0, 3, 71, 3), false, true));
+        Ops.ReadResult without = ops.read(new Ops.ReadParams(box(0, 70, 0, 3, 71, 3), false));
+
+        assertThat(with.signs()).containsExactly(new Ops.SignText(1, 70, 1, List.of("Shop", "", "", ""), null));
+        assertThat(without.signs()).isEmpty();
+    }
+
+    @Test
     void readReturnsAPaletteGridInYzxOrder() {
         put(1, 70, 0, Blocks.STONE);
         put(0, 71, 1, Blocks.GLASS);

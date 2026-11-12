@@ -11,6 +11,9 @@ import io.github.imnotstable.msc.protocol.world.BlockPos;
 import io.github.imnotstable.msc.protocol.world.Region;
 import java.time.Duration;
 import java.util.List;
+import net.kyori.adventure.nbt.CompoundBinaryTag;
+import net.kyori.adventure.nbt.ListBinaryTag;
+import net.kyori.adventure.nbt.StringBinaryTag;
 import net.minestom.server.instance.Instance;
 import net.minestom.server.instance.block.Block;
 import net.minestom.testing.Env;
@@ -110,6 +113,25 @@ class WorldOpsTest {
 
         assertThat(at(5, 70, 5).getProperty("facing")).isEqualTo("east");
         assertThat(at(40, 70, 5)).isEqualTo(Block.GLASS);
+    }
+
+    @Test
+    void readReportsSignTextFromBlockNbtOnlyWhenAsked(Env env) {
+        setUp(env);
+        CompoundBinaryTag front = CompoundBinaryTag.builder().put("messages", ListBinaryTag.builder()
+                .add(StringBinaryTag.stringBinaryTag("Shop"))
+                .add(CompoundBinaryTag.builder().putString("text", "Op")
+                        .put("extra", ListBinaryTag.builder().add(StringBinaryTag.stringBinaryTag("en")).build()).build())
+                .add(StringBinaryTag.stringBinaryTag(""))
+                .add(StringBinaryTag.stringBinaryTag("")).build()).build();
+        set(1, 70, 1, Block.OAK_SIGN.withNbt(CompoundBinaryTag.builder().put("front_text", front).build()));
+        set(2, 70, 1, Block.OAK_SIGN);
+
+        Ops.ReadResult with = ops.read(new Ops.ReadParams(box(0, 70, 0, 3, 71, 3), false, true));
+        Ops.ReadResult without = ops.read(new Ops.ReadParams(box(0, 70, 0, 3, 71, 3), false));
+
+        assertThat(with.signs()).containsExactly(new Ops.SignText(1, 70, 1, List.of("Shop", "Open", "", ""), null));
+        assertThat(without.signs()).isEmpty();
     }
 
     @Test

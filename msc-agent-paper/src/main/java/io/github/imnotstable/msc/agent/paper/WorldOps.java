@@ -5,6 +5,7 @@ import io.github.imnotstable.msc.protocol.message.ErrorCodes;
 import io.github.imnotstable.msc.protocol.op.Ops;
 import io.github.imnotstable.msc.protocol.transport.OpException;
 import io.github.imnotstable.msc.protocol.world.BlockGrid;
+import io.github.imnotstable.msc.protocol.world.BlockPos;
 import io.github.imnotstable.msc.protocol.world.Region;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -18,7 +19,10 @@ import org.bukkit.Server;
 import org.bukkit.World;
 import org.bukkit.attribute.Attribute;
 import org.bukkit.attribute.AttributeInstance;
+import org.bukkit.block.Sign;
 import org.bukkit.block.data.BlockData;
+import org.bukkit.block.sign.Side;
+import org.bukkit.block.sign.SignSide;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
@@ -49,7 +53,33 @@ final class WorldOps {
         World world = world(region.world());
         BlockGrid grid = main.run(new ReadJob(world, region));
         List<Ops.EntitySummary> entities = params.includeEntities() ? main.call(() -> entities(world, region)) : List.of();
-        return new Ops.ReadResult(grid, entities);
+        List<Ops.SignText> signs = params.includeSigns() ? signs(world, grid) : List.of();
+        return new Ops.ReadResult(grid, entities, signs);
+    }
+
+    /** Text of the signs in a grid; block entities are looked up only where the grid has a sign. */
+    private List<Ops.SignText> signs(World world, BlockGrid grid) {
+        List<BlockPos> at = Ops.SignText.positions(grid);
+        if (at.isEmpty()) {
+            return List.of();
+        }
+        return main.call(() -> {
+            List<Ops.SignText> out = new ArrayList<>();
+            for (BlockPos p : at) {
+                if (world.getBlockAt(p.x(), p.y(), p.z()).getState() instanceof Sign sign) {
+                    Ops.SignText text = Ops.SignText.of(p.x(), p.y(), p.z(), lines(sign.getSide(Side.FRONT)),
+                            lines(sign.getSide(Side.BACK)));
+                    if (text != null) {
+                        out.add(text);
+                    }
+                }
+            }
+            return out;
+        });
+    }
+
+    private static List<String> lines(SignSide side) {
+        return side.lines().stream().map(PlainTextComponentSerializer.plainText()::serialize).toList();
     }
 
     private static List<Ops.EntitySummary> entities(World world, Region region) {
