@@ -259,6 +259,9 @@ class LifecycleToolsTest {
         assertThat(workspace.resolve("fresh")).isNotEmptyDirectory();
         assertThat(h.error("project_scaffold", "name", "MyPlugin", "dir", "fresh")).startsWith("error: ");
         assertThat(h.error("project_scaffold", "name", "X", "template", "nope")).contains("unknown template nope");
+        assertThat(h.ok("project_scaffold", "name", "Arena", "dir", "game", "template", "paper-game"))
+                .startsWith("created paper-game project in ").contains("packageName: com.example.arena");
+        assertThat(workspace.resolve("game/src/main/java/com/example/arena/GameCommand.java")).isRegularFile();
         assertThat(h.error("project_scaffold")).isEqualTo("error: missing argument: name");
     }
 

@@ -2,6 +2,7 @@ package io.github.imnotstable.msc.core.tools;
 
 import io.github.imnotstable.msc.core.Core;
 import io.github.imnotstable.msc.core.CoreConfig;
+import io.github.imnotstable.msc.core.SetupCheck;
 import io.github.imnotstable.msc.core.agent.AgentHub;
 import io.github.imnotstable.msc.core.metrics.ToolLog;
 import io.github.imnotstable.msc.core.server.ServerManager;
@@ -39,6 +40,9 @@ public final class MetaTools {
                                 .append(s.agent().operations().size()).append(" operations");
                     }
                     out.append("\napi index: ").append(api.status());
+                    for (String w : SetupCheck.warnings(config)) {
+                        out.append('\n').append(w);
+                    }
                     return out.toString();
                 });
         registry.add("msc_stats", "This session's tool calls: count, errors, time and result tokens per tool.",

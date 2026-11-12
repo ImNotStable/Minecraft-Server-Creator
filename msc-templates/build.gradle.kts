@@ -67,7 +67,7 @@ abstract class PackTemplates : DefaultTask() {
     abstract val outputDir: DirectoryProperty
 
     companion object {
-        val PROJECT_TEMPLATES = setOf("paper-plugin", "fabric-mod")
+        val PROJECT_TEMPLATES = setOf("paper-plugin", "paper-game", "fabric-mod")
         val WRAPPER_FILES = listOf(
             "gradlew", "gradlew.bat", "gradle/wrapper/gradle-wrapper.jar", "gradle/wrapper/gradle-wrapper.properties")
     }

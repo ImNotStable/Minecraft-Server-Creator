@@ -17,13 +17,13 @@ The AI talks to `msc-core` over MCP (stdio). This page lists every tool, its arg
 
 ## Typical loop
 
-`project_scaffold` once, `server_setup` once, then edit code and call `dev_cycle` until it reports `no errors or warnings`. Look names up with `api_search` instead of guessing. Look at the world with `world_summary`, then `world_slice`; build with `build_structure`.
+`project_scaffold` once, `server_setup` once, then edit code and call `dev_cycle` until it reports `no errors or warnings`. Look names up with `api_search` instead of guessing. Look at the world with `world_summary`, then `world_slice`; build with `build_structure`, and use `build_batch` for many steps, round shapes, block mixes and repeated pieces.
 
 ## Status
 
 | Tool | Arguments | Result | Budget |
 | --- | --- | --- | --- |
-| `msc_status` | none | Core version, workspace, platform, server state, agent, API index | 6 lines |
+| `msc_status` | none | Core version, workspace, platform, server state, agent, API index, then any setup warnings (workspace is the MSC repo; install older than its checkout). The same warnings go in front of the session's first tool result | 6 lines (+ warnings) |
 | `msc_workspace` | `path`? (absolute, or relative to the current workspace), `create`? (false) | Switches every tool to another folder without restarting the MCP server: closes the old workspace like a session end (its dev server stops unless detached) and opens the new one. The server folder and tool log move along when they were the defaults. No `path`: shows the current workspace | 3 lines |
 | `msc_stats` | none | Calls, errors, milliseconds and result tokens per tool this session | 1 line per tool used |
 
@@ -31,7 +31,7 @@ The AI talks to `msc-core` over MCP (stdio). This page lists every tool, its arg
 
 | Tool | Arguments | Result | Budget |
 | --- | --- | --- | --- |
-| `project_scaffold` | `name`, `dir`?, `template`? (`paper-plugin` default, `fabric-mod`, `minestom-server`), `package`? (`com.example.<name>`), `acceptEula`? (false) | Where the project was created, its `projectId`, `packageName` and `version`, and the next step (EULA and `server_setup` first when the Paper or Fabric server is not set up). Remembers the template's platform for the workspace | 5 lines |
+| `project_scaffold` | `name`, `dir`?, `template`? (`paper-plugin` default, `paper-game`, `fabric-mod`, `minestom-server`), `package`? (`com.example.<name>`), `acceptEula`? (false) | Where the project was created, its `projectId`, `packageName` and `version`, and the next step (EULA and `server_setup` first when the Paper or Fabric server is not set up). Remembers the template's platform for the workspace | 5 lines |
 | `server_setup` | `version`? (default 26.3), `platform`? (`paper`, `fabric`, `minestom`; default the project's), `acceptEula`? (false) | Paper: build used. Fabric: launcher and Fabric API versions. Both: whether dev defaults and the agent were installed and whether `eula.txt` says `eula=true`. Minestom: one line saying nothing is needed | 5 lines |
 | `server_start` | `timeoutSeconds`? (180) | `server ready in 8.2s, agent connected`, then `world world: ground is y=-61 (most common top block around 0,0; build from y=-60)` (dev worlds are superflat, far below y=64), plus startup warnings and errors only. Fails at once with a one-line error if `eula.txt` lacks `eula=true`. Replaces an installed agent jar that differs from the one in `.msc/agent` (or `MSC_AGENT_JAR`) first, and says `agent jar updated` | 6,000 chars |
 | `server_detach` | none | One line: the running server, and the pack host if a pack was built, keep running after this core exits (the pack host moves to a standalone process on the same port, pid in `.msc/pack-host.pid`). When a pack was built, also writes `resource-pack`, `resource-pack-sha1`, `resource-pack-id` and `require-resource-pack` to `server.properties`, so a restart outside MSC still sends the pack. The next `server_start`, `dev_cycle` or `server_stop` stops both, the server over RCON; the next start serves the pack again on the same port and updates `server.properties` (or clears it if the pack is gone) | 3 lines |
@@ -99,13 +99,20 @@ Every build tool answers `edit eN: <count> blocks changed`. The id undoes the wh
 
 | Tool | Arguments | Notes |
 | --- | --- | --- |
-| `build_fill` | `region`, `block`, `replace`? (list) | Up to 8,388,608 blocks |
+| `build_fill` | `region`, `block`, `shape`? (`solid`, `hollow`: shell with air inside, `outline`: shell with inside kept, `walls`: four sides only), `replace`? (list); one edit id for all parts | Up to 8,388,608 blocks |
 | `build_set` | `blocks` (list of `"x,y,z block"`), `physics`? (false) | For details such as doors and torches |
 | `build_structure` | `at`, `structure`, `physics`? (false) | Text structure format, up to 1,048,576 blocks |
 | `build_copy` | `region`, `to`, `air`? (true) | Reads everything first, so source and target may overlap |
 | `build_undo` | `edit`? (default: most recent) | Edits are remembered for the life of the core process |
+| `build_batch` | `steps` (one per line), `dryRun`? (false), `physics`? (false) | Fills, rooms, `cylinder`, `ring`, `disc`, `sphere`, `dome`, `line`, `bands`, stamped `structure`s; weighted mixes such as `grass_block:78,moss_block:10`; checks every name first; one undo id. See [ADR 0015](adr/0015-build-batch.md) |
 | `structure_save` | `region`, `file` | Sponge schematic v2 (`.schem`), blocks only |
 | `structure_load` | `file`, `at`, `air`? (true) | Reads Sponge v2 and v3, blocks only |
+
+## Play-testing
+
+| Tool | Arguments | Notes |
+| --- | --- | --- |
+| `player_test` | `actions` (list, one per entry: `goto x,y,z [sprint] [jump]`, `forward ticks [sprint] [jump]`, `jump`, `look yaw pitch`, `lookat x,y,z`, `wait ticks`, `use`, `use x,y,z`, `attack`, `slot 1-9`, `say text`, `/command`, `tp x,y,z`, `entities`), `name`? (MscTester), `gamemode`? (survival), `leave`? (false) | A headless client joins the running dev server (offline mode), is made op and put in the game mode, then runs the actions. Each action gets a result line; chat, titles, damage, deaths, respawns, server corrections and the pack offer are listed under it. Ends with position, health and food. Stays joined between calls. Movement copies vanilla (walk 4.3, sprint 5.6 blocks/s, jump 1.25); see [ADR 0016](adr/0016-test-player.md) for what is not simulated |
 
 ## Textures and resource pack
 

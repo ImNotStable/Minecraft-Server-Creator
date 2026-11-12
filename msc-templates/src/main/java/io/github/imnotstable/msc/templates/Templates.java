@@ -25,6 +25,11 @@ import java.util.stream.Stream;
 public final class Templates {
     /** A Paper plugin project with tests, conventions and a dev server in {@code run/}. */
     public static final String PAPER_PLUGIN = "paper-plugin";
+    /**
+     * A Paper minigame project: {@link #PAPER_PLUGIN} plus a game base (kit, adventure mode, keep inventory,
+     * stage respawns, no natural spawns, fixed time, saved progress) and a {@code /game} admin command.
+     */
+    public static final String PAPER_GAME = "paper-game";
     /** A Fabric server mod project (Loom) with tests, conventions and a dev server in {@code run/}. */
     public static final String FABRIC_MOD = "fabric-mod";
     /** Only the dev server config ({@code server.properties}, {@code eula.txt}), for a server directory. */

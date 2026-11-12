@@ -1,6 +1,7 @@
 package io.github.imnotstable.msc.core;
 
 import io.github.imnotstable.msc.core.agent.AgentHub;
+import io.github.imnotstable.msc.core.building.Builder;
 import io.github.imnotstable.msc.core.metrics.ToolLog;
 import io.github.imnotstable.msc.core.server.FabricDownloader;
 import io.github.imnotstable.msc.core.server.PaperDownloader;
@@ -13,14 +14,17 @@ import io.github.imnotstable.msc.core.tool.Tool;
 import io.github.imnotstable.msc.core.tool.ToolException;
 import io.github.imnotstable.msc.core.tool.ToolRegistry;
 import io.github.imnotstable.msc.core.tools.ApiTools;
+import io.github.imnotstable.msc.core.tools.BuildTools;
 import io.github.imnotstable.msc.core.tools.LifecycleTools;
 import io.github.imnotstable.msc.core.tools.MetaTools;
+import io.github.imnotstable.msc.core.tools.PlayerTools;
 import io.github.imnotstable.msc.core.tools.TextureTools;
 import io.github.imnotstable.msc.core.tools.WorldTools;
 import io.github.imnotstable.msc.core.world.WorldService;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
@@ -34,7 +38,7 @@ public final class Core implements AutoCloseable {
 
     /** The services of one workspace and the tools bound to them. */
     private record Bench(CoreConfig config, AgentHub hub, ServerManager server, ResourcePack pack,
-                         ToolRegistry tools) {
+                         PlayerTools players, ToolRegistry tools) {
         static Bench open(CoreConfig config, ToolLog log) throws IOException {
             AgentHub hub = new AgentHub(config.agentPort(), config.token());
             ServerManager server = new ServerManager(config, hub);
@@ -54,12 +58,15 @@ public final class Core implements AutoCloseable {
                             config.dataDir().resolve("cache")));
             api.register(tools);
             WorldTools.register(tools, config, world);
+            BuildTools.register(tools, config, world, new Builder(hub, world));
             TextureTools.register(tools, hub, pack, config.serverDir());
-            return new Bench(config, hub, server, pack, tools);
+            PlayerTools players = PlayerTools.register(tools, config, hub);
+            return new Bench(config, hub, server, pack, players, tools);
         }
 
         /** Same as a session ending: a detached server and its pack host keep running, anything else stops. */
         void close() throws IOException {
+            players.close();
             pack.close(server.detached());
             server.close();
             hub.close();
@@ -85,6 +92,10 @@ public final class Core implements AutoCloseable {
                 Schema.of().opt("path", "string", "Folder, absolute or relative")
                         .opt("create", "boolean", "Create it if missing"),
                 this::switchWorkspace);
+        List<String> warnings = SetupCheck.warnings(config);
+        if (!warnings.isEmpty()) {
+            registry.noticeOnce(String.join("\n", warnings));
+        }
     }
 
     /** A handler that runs the current bench's tool of that name. */

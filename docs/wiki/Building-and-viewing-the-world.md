@@ -39,10 +39,11 @@ Go from cheap to detailed:
 
 1. **Plan** with `world_slice` of the spot, so the AI knows what is there.
 2. **Build** with one of:
-   - `build_fill`: walls, floors, clearing space (`air`).
+   - `build_fill`: floors, clearing space (`air`), and with `shape` a whole room in one call: `hollow` (walls, floor and roof, empty inside), `outline` (the same, keeping what is inside) or `walls` (four walls only).
    - `build_structure`: anything with detail. Same text format as `world_slice`, so the AI can copy a slice, edit it and write it back. `_` means "leave this block alone".
    - `build_set`: a few single blocks, such as doors or torches.
    - `build_copy`: repeat or move a build.
+   - `build_batch`: many steps in one call with one undo: rooms, circles and towers, spheres and domes, paths, an island's land, beach and water, and a structure placed at several spots, turned or repeated. Blocks can be mixes such as `grass_block:78,moss_block:10`. It checks every block name before building and can do a dry run.
 3. **Check** with `world_render` or `world_slice`.
 4. **Undo** if needed: every build answers `edit eN: <count> blocks changed`. `build_undo` undoes the last edit, or pass `edit=eN`. Undo history lasts until MSC restarts.
 

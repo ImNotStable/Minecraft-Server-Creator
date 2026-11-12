@@ -90,13 +90,16 @@ public final class WorldTools {
                 Schema.of().req("region", "string", REGION).opt("world", "string", WORLD),
                 args -> world.summary(Coords.region(world.world(args.str("world", null)), args.str("region")),
                         Budget.DEFAULT_CHARS));
-        registry.add("build_fill", "Fill a region with one block. Returns an edit id for build_undo.",
+        registry.add("build_fill", "Fill a region with one block, solid or as a room's shell or walls. "
+                        + "Returns an edit id for build_undo.",
                 Schema.of().req("region", "string", REGION)
                         .req("block", "string", "Block state, for example stone or oak_stairs[facing=north]")
+                        .opt("shape", "string", "solid (default), hollow (shell, air inside), outline (shell, "
+                                + "inside kept) or walls (4 sides, no floor or roof)")
                         .opt("replace", "strings", "Only replace these blocks")
                         .opt("world", "string", WORLD),
                 args -> world.fill(Coords.region(world.world(args.str("world", null)), args.str("region")),
-                        args.str("block"), args.strings("replace")));
+                        args.str("block"), args.strings("replace"), args.str("shape", "solid")));
         registry.add("build_set", "Set individual blocks.",
                 Schema.of().req("blocks", "strings", "Entries \"x,y,z block\", for example \"10,64,5 oak_door[half=lower]\"")
                         .opt("world", "string", WORLD)

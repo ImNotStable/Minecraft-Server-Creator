@@ -55,6 +55,14 @@ Another server is running. Stop it, ask Claude to `server_stop`, or change `serv
 
 `world_render` uses plain colours unless you set `MSC_CLIENT_JAR` to a Minecraft client jar you have. Your own pack's textures are always used.
 
+## "warning: the workspace is the Minecraft Server Creator repo"
+
+Claude Code was started in the MSC folder itself, so MSC treats the repo as your server project. Start Claude Code in your server's folder instead. To work from another folder anyway, register MSC for that folder only: `claude mcp add msc --scope local -e MSC_WORKSPACE=<server folder> -- <the command from installMsc>`.
+
+## "warning: this msc-core ... is older than its checkout"
+
+The MSC source changed after you installed it (for example after `git pull`), so the running tools are out of date. Close Claude Code, run `./gradlew :msc-core:installMsc` in the MSC folder, and open Claude Code again.
+
 ## Still stuck
 
 Open an issue on GitHub with what you asked, what happened, and the output of `msc_status` and `server_logs`.
