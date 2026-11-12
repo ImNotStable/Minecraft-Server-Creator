@@ -32,8 +32,8 @@ public final class MetaTools {
                     out.append("msc-core ").append(Core.VERSION).append(built()).append('\n');
                     out.append("workspace: ").append(config.workspace()).append('\n');
                     out.append("platform: ").append(server.platform().id()).append('\n');
-                    out.append("server: ").append(server.running() ? "running" : server.serverJar() != null
-                            ? "stopped" : "not set up").append(" (").append(config.serverDir()).append(")\n");
+                    out.append("server: ").append(serverState(server)).append(" (").append(config.serverDir())
+                            .append(")\n");
                     CoreServer.AgentSession s = hub.current();
                     out.append("agent: ");
                     if (s == null) {
@@ -49,6 +49,19 @@ public final class MetaTools {
                     }
                     return out.toString();
                 });
+    }
+
+    /** Running, also when an earlier session detached it: world tools then fail until a start takes it over. */
+    static String serverState(ServerManager server) {
+        if (server.running()) {
+            return server.detached() ? "running, detached" : "running";
+        }
+        long leftover = server.leftoverPid();
+        if (leftover >= 0) {
+            return "running, left by an earlier session (pid " + leftover + "; server_start or dev_cycle restarts it "
+                    + "under this session, server_stop stops it)";
+        }
+        return server.serverJar() != null ? "stopped" : "not set up";
     }
 
     /**

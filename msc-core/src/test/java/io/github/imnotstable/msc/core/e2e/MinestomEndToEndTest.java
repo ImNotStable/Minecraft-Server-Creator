@@ -20,7 +20,7 @@ import org.junit.jupiter.api.io.TempDir;
 /**
  * A real Minestom server driven end to end through the installed core over MCP stdio, the way Claude Code drives it:
  * scaffold minestom-game, dev_cycle (Gradle build, deploy, start), build_batch, world_slice, world_summary,
- * world_render, player_test (a real client joins), world_entities, a second dev_cycle (restart), server_logs and
+ * world_render, player_test (a real client joins), world_entities, an unchanged dev_cycle (no restart), an edit and a dev_cycle (restart), server_logs and
  * server_stop, then stdin closes and the core exits. Minestom has no EULA, so CI can run it. Run with {@code ./gradlew :msc-core:e2eTest}.
  */
 @Tag("e2e")
@@ -46,7 +46,7 @@ class MinestomEndToEndTest {
         env.put("MSC_JAVA", java.toString());
         try (McpStdioClient core = new McpStdioClient(pb.start())) {
             try {
-                run(core);
+                run(core, workspace);
                 // Closing stdin ends the session; the core stops cleanly.
                 assertThat(core.closeAndWait(SHORT)).as("core exit code").isZero();
             } catch (Throwable t) {
@@ -73,7 +73,7 @@ class MinestomEndToEndTest {
         }
     }
 
-    private void run(McpStdioClient core) throws Exception {
+    private void run(McpStdioClient core, Path workspace) throws Exception {
         core.initialize();
 
         ok(core, "project_scaffold", SHORT, "name", "E2eGame", "dir", "game", "template", "minestom-game");
@@ -107,7 +107,13 @@ class MinestomEndToEndTest {
         assertThat(ok(core, "world_entities", SHORT, "region", "-16,-64,-16 16,-40,16").text()).contains("MscE2e");
         ok(core, "player_test", SHORT, "actions", new String[] {"wait 5"}, "name", "MscE2e", "leave", true);
 
-        // The edit-test loop a second time: rebuild, restart, and what was built survives the restart.
+        // Nothing changed: the same jar, so the server keeps running.
+        assertThat(ok(core, "dev_cycle", BUILD, "project", "game").text()).contains("jar unchanged")
+                .doesNotContain("server ready");
+
+        // The edit-test loop a second time: an edit, a rebuild, a restart, and what was built survives the restart.
+        Path main = workspace.resolve("game/src/main/java/com/example/e2egame/E2eGameServer.java");
+        Files.writeString(main, Files.readString(main).replace("game ready: ", "game ready (edited): "));
         assertThat(ok(core, "dev_cycle", BUILD, "project", "game").text()).contains("server ready");
         assertThat(ok(core, "world_slice", SHORT, "region", "6,-57,6 6,-57,6").text()).contains("glowstone");
 
