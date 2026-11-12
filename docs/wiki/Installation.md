@@ -50,6 +50,26 @@ Next: [Quick start](Quick-start).
 
 MSC works in whatever folder you start Claude Code in, so each server gets its own folder. You only do steps 1 to 3 once: MSC is now available in all your projects. To remove it: `claude mcp remove msc -s user`.
 
+## Or: download the release instead of building
+
+Use this if you'd rather not build MSC. You need **Java 25** installed yourself (check with `java -version`), plus Claude Code.
+
+1. Open the [latest release](https://github.com/ImNotStable/Minecraft-Server-Creator/releases/latest). You need to be signed in to GitHub with access to the repo.
+2. Download `msc-core-0.1.0.zip` and unzip it somewhere it can stay, for example `~/msc`. You get a folder `msc-core-0.1.0` with `bin/`, `lib/` and `agents/` (the Paper and Fabric agents, found automatically).
+3. Register it with Claude Code. Replace the path with where you unzipped it, and keep the quotes:
+
+   ```
+   claude mcp add msc --scope user -- java -cp "/path/to/msc-core-0.1.0/lib/*" io.github.imnotstable.msc.core.Main
+   ```
+
+   On Windows, write the path like `"C:/Users/you/msc/msc-core-0.1.0/lib/*"`.
+
+4. Continue with steps 4 and 5 above: start `claude` in an empty folder and ask for `msc_status`.
+
+The release also has the agents as separate jars (`msc-agent-paper`, `msc-agent-fabric`, `msc-agent-minestom`) and `SHA256SUMS.txt` to check the downloads. You only need those if you want an agent on its own.
+
+To update: close Claude Code, unzip the new release, and run `claude mcp remove msc -s user` and then the new `claude mcp add` line.
+
 ## Updating MSC
 
 1. Close Claude Code. (On Windows the running files are locked.)
