@@ -5,6 +5,9 @@ pluginManagement {
         maven("https://maven.fabricmc.net/") {
             name = "fabric"
         }
+        maven("https://maven.neoforged.net/releases/") {
+            name = "neoforged"
+        }
     }
 }
 
@@ -15,6 +18,9 @@ plugins {
     // here it declares them on the settings, which RepositoriesMode.FAIL_ON_PROJECT_REPOS requires.
     // Keep the version equal to fabric-loom in gradle/libs.versions.toml. Needs Gradle on Java 25.
     id("net.fabricmc.fabric-loom-repositories") version "1.19.4"
+    // NeoForge's ModDevGradle (msc-agent-neoforge, msc-agent-forge) declares its repositories here for the same
+    // reason. Keep the version equal to moddev in gradle/libs.versions.toml.
+    id("net.neoforged.moddev.repositories") version "2.0.148"
 }
 
 dependencyResolutionManagement {
@@ -26,6 +32,11 @@ dependencyResolutionManagement {
         }
         maven("https://maven.fabricmc.net/") {
             name = "fabric"
+        }
+        // Forge's API jars, compiled against by msc-agent-forge (ForgeGradle needs project repositories).
+        maven("https://maven.minecraftforge.net/") {
+            name = "forge"
+            content { includeGroupByRegex("net\\.minecraftforge(\\..*)?") }
         }
         // MCProtocolLib and its own libraries, for msc-bot's test player.
         maven("https://repo.opencollab.dev/main/") {
@@ -54,6 +65,8 @@ include("msc-bench")
 // Post-MVP modules (empty for now, kept in the build so they stay wired in)
 include("msc-agent-fabric")
 include("msc-agent-minestom")
+include("msc-agent-neoforge")
+include("msc-agent-forge")
 include("msc-renderer")
 include("msc-textures")
 include("msc-bot")

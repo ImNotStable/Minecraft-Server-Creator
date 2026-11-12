@@ -1,0 +1,24 @@
+modLoader = "javafml"
+loaderVersion = "[${forgeMajor},)"
+license = "All-Rights-Reserved"
+
+[[mods]]
+modId = "msc_agent"
+version = "${version}"
+displayName = "MSC Agent"
+authors = "ImNotStable"
+description = "Carries out Minecraft Server Creator's world and server operations."
+
+[[dependencies.msc_agent]]
+modId = "forge"
+mandatory = true
+versionRange = "[${forgeMajor},)"
+ordering = "NONE"
+side = "SERVER"
+
+[[dependencies.msc_agent]]
+modId = "minecraft"
+mandatory = true
+versionRange = "[${minecraftVersion},)"
+ordering = "NONE"
+side = "SERVER"
