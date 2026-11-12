@@ -1,11 +1,14 @@
 package io.github.imnotstable.msc.agent.fabric;
 
-import com.google.gson.JsonObject;
-import io.github.imnotstable.msc.protocol.Limits;
+import io.github.imnotstable.msc.agent.common.AgentDefaults;
+import io.github.imnotstable.msc.agent.common.AgentLink;
+import io.github.imnotstable.msc.agent.common.AgentLog;
+import io.github.imnotstable.msc.agent.common.AgentRoutes;
+import io.github.imnotstable.msc.agent.common.EditHistory;
+import io.github.imnotstable.msc.agent.common.ServerOps;
+import io.github.imnotstable.msc.agent.common.WorldOps;
 import io.github.imnotstable.msc.protocol.message.AgentInfo;
-import io.github.imnotstable.msc.protocol.op.Events;
 import io.github.imnotstable.msc.protocol.transport.OpRouter;
-import java.time.Duration;
 import net.fabricmc.api.DedicatedServerModInitializer;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
@@ -21,12 +24,6 @@ import org.slf4j.LoggerFactory;
  * happens off the server thread so it never delays startup.
  */
 public final class MscAgentMod implements DedicatedServerModInitializer {
-    /** Main-thread time sliced jobs may use per tick. 20 ms of a 50 ms tick keeps the server at 20 TPS. */
-    static final Duration TICK_BUDGET = Duration.ofMillis(20);
-    static final Duration OP_TIMEOUT = Duration.ofMinutes(2);
-    /** Blocks of undo history kept, about 8 full-size edits. */
-    static final long UNDO_BLOCKS = 8 * Limits.MAX_REGION_VOLUME;
-
     private static final Logger LOG = LoggerFactory.getLogger("msc-agent");
 
     private TickMainThread main;
@@ -45,29 +42,46 @@ public final class MscAgentMod implements DedicatedServerModInitializer {
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
             ServerPlayer player = handler.getPlayer();
             serverOps.currentPack().ifPresent(pack -> FabricServerAccess.send(player, pack));
-            link.send(Events.PLAYER_JOIN, player(player));
+            link.playerJoined(player.getPlainTextName(), player.getUUID());
         });
         ServerPlayConnectionEvents.DISCONNECT.register((handler, server) ->
-                link.send(Events.PLAYER_QUIT, player(handler.getPlayer())));
+                link.playerQuit(handler.getPlayer().getPlainTextName(), handler.getPlayer().getUUID()));
     }
 
     private void starting(MinecraftServer server) {
-        main = new TickMainThread(server::isSameThread, TICK_BUDGET, OP_TIMEOUT);
-        Levels levels = new FabricLevels(server);
-        ServerAccess access = new FabricServerAccess(server, levels);
+        main = new TickMainThread(server::isSameThread, AgentDefaults.TICK_BUDGET, AgentDefaults.OP_TIMEOUT);
+        FabricLevels levels = new FabricLevels(server);
+        FabricServerAccess access = new FabricServerAccess(server, levels);
         serverOps = new ServerOps(access, main);
-        WorldOps worldOps = new WorldOps(levels, main, new EditHistory(UNDO_BLOCKS));
+        WorldOps<?> worldOps = new WorldOps<>(levels, main, new EditHistory<>(AgentDefaults.UNDO_BLOCKS));
         OpRouter router = AgentRoutes.router(serverOps, worldOps);
-        AgentInfo info = new AgentInfo(ServerOps.PLATFORM, access.platformVersion(), access.minecraftVersion(),
+        AgentInfo info = new AgentInfo(access.platform(), access.platformVersion(), access.minecraftVersion(),
                 router.operations());
-        link = new AgentLink(info, router, CoreAddress::resolve, LOG);
+        link = new AgentLink(info, router, log());
         link.start();
     }
 
-    private static JsonObject player(ServerPlayer player) {
-        JsonObject data = new JsonObject();
-        data.addProperty("name", player.getPlainTextName());
-        data.addProperty("uuid", player.getUUID().toString());
-        return data;
+    private static AgentLog log() {
+        return new AgentLog() {
+            @Override
+            public void debug(String message) {
+                LOG.debug(message);
+            }
+
+            @Override
+            public void info(String message) {
+                LOG.info(message);
+            }
+
+            @Override
+            public void warn(String message) {
+                LOG.warn(message);
+            }
+
+            @Override
+            public void error(String message) {
+                LOG.error(message);
+            }
+        };
     }
 }

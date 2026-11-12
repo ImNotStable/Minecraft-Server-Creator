@@ -1,5 +1,6 @@
 package io.github.imnotstable.msc.bench.check;
 
+import io.github.imnotstable.msc.bench.run.Workspaces;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -10,10 +11,11 @@ import java.util.regex.Pattern;
 /**
  * Runs a command in the workspace and passes on the expected exit code (and output pattern, if
  * given). The {@code {gradlew}} placeholder resolves to the workspace's Gradle wrapper for the
- * current OS.
+ * current OS. {@code addFiles} is a folder of the task copied into the workspace first, such as tests
+ * the agent never saw.
  */
-record CommandCheck(String name, List<String> run, int timeoutSeconds, int expectExit, Pattern outputMatches)
-        implements Check {
+record CommandCheck(String name, List<String> run, int timeoutSeconds, int expectExit, Pattern outputMatches,
+        Path addFiles) implements Check {
 
     CommandCheck {
         run = List.copyOf(run);
@@ -27,6 +29,9 @@ record CommandCheck(String name, List<String> run, int timeoutSeconds, int expec
         List<String> command = Placeholders.fill(run, context.placeholders());
         Path log = null;
         try {
+            if (addFiles != null) {
+                Workspaces.copyTree(addFiles, context.workspace());
+            }
             log = Files.createTempFile("msc-bench-check", ".log");
             Process process = new ProcessBuilder(command)
                     .directory(context.workspace().toFile())

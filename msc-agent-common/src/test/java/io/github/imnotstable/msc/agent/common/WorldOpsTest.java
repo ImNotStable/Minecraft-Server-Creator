@@ -1,0 +1,208 @@
+package io.github.imnotstable.msc.agent.common;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+import io.github.imnotstable.msc.protocol.message.ErrorCodes;
+import io.github.imnotstable.msc.protocol.op.Ops;
+import io.github.imnotstable.msc.protocol.transport.OpException;
+import io.github.imnotstable.msc.protocol.world.BlockGrid;
+import io.github.imnotstable.msc.protocol.world.BlockPos;
+import io.github.imnotstable.msc.protocol.world.Region;
+import java.util.List;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
+class WorldOpsTest {
+    private static final String STONE = "minecraft:stone";
+
+    private MapWorld world;
+    private WorldOps<String> ops;
+
+    @BeforeEach
+    void setUp() {
+        world = new MapWorld();
+        ops = new WorldOps<>(world, MainThread.inline(), new EditHistory<>(1_000_000));
+    }
+
+    private static Region box(int x1, int y1, int z1, int x2, int y2, int z2) {
+        return Region.of("world", x1, y1, z1, x2, y2, z2);
+    }
+
+    private Ops.EditResult fill(Region region, String state) {
+        return write(region, state, false);
+    }
+
+    private Ops.EditResult write(Region region, String state, boolean physics) {
+        int[] cells = new int[Math.toIntExact(region.volume())];
+        return ops.write(new Ops.WriteParams(new BlockGrid(region, List.of(state), cells), physics));
+    }
+
+    @Test
+    void writeChangesEveryBlockAndCountsOnlyRealChanges() {
+        world.set(1, 70, 1, STONE, false);
+
+        Ops.EditResult result = fill(box(0, 70, 0, 2, 71, 2), STONE);
+
+        assertThat(result.changed()).isEqualTo(17);
+        assertThat(world.get(0, 70, 0)).isEqualTo(STONE);
+        assertThat(world.get(2, 71, 2)).isEqualTo(STONE);
+        assertThat(world.get(3, 70, 0)).isEqualTo(MapWorld.AIR);
+        assertThat(world.loads).containsExactly("area 0,0..2,2");
+    }
+
+    @Test
+    void undoRestoresTheEditAndCanItselfBeUndone() {
+        world.set(0, 70, 0, "minecraft:dirt", false);
+        Ops.EditResult fill = fill(box(0, 70, 0, 1, 70, 0), STONE);
+
+        Ops.EditResult undo = ops.undo(new Ops.UndoParams(fill.editId()));
+
+        assertThat(undo.changed()).isEqualTo(2);
+        assertThat(world.get(0, 70, 0)).isEqualTo("minecraft:dirt");
+        assertThat(world.get(1, 70, 0)).isEqualTo(MapWorld.AIR);
+        assertThat(world.loads).endsWith("positions 2");
+
+        ops.undo(new Ops.UndoParams(undo.editId()));
+        assertThat(world.get(0, 70, 0)).isEqualTo(STONE);
+        assertThatThrownBy(() -> ops.undo(new Ops.UndoParams(fill.editId())))
+                .isInstanceOfSatisfying(OpException.class, e -> assertThat(e.code()).isEqualTo(ErrorCodes.NOT_FOUND));
+    }
+
+    @Test
+    void writeSkipsCellsMarkedMinusOne() {
+        Region r = box(0, 70, 0, 1, 70, 1);
+        // Y-Z-X order: (0,0) (1,0) (0,1) (1,1)
+        BlockGrid grid = new BlockGrid(r, List.of(STONE, "minecraft:oak_planks"), new int[]{0, -1, 1, 0});
+
+        Ops.EditResult result = ops.write(new Ops.WriteParams(grid, false));
+
+        assertThat(result.changed()).isEqualTo(3);
+        assertThat(world.get(0, 70, 0)).isEqualTo(STONE);
+        assertThat(world.get(1, 70, 0)).isEqualTo(MapWorld.AIR);
+        assertThat(world.get(0, 70, 1)).isEqualTo("minecraft:oak_planks");
+        assertThat(world.get(1, 70, 1)).isEqualTo(STONE);
+    }
+
+    @Test
+    void readReturnsAPaletteGridInYzxOrder() {
+        world.set(1, 70, 0, STONE, false);
+        world.set(0, 71, 1, "minecraft:glass", false);
+
+        Ops.ReadResult result = ops.read(new Ops.ReadParams(box(0, 70, 0, 1, 71, 1), false));
+
+        BlockGrid grid = result.grid();
+        assertThat(grid.blocks()).hasSize(8);
+        assertThat(grid.stateAt(1, 70, 0)).isEqualTo(STONE);
+        assertThat(grid.stateAt(0, 71, 1)).isEqualTo("minecraft:glass");
+        assertThat(grid.stateAt(0, 70, 0)).isEqualTo(MapWorld.AIR);
+        assertThat(grid.palette()).hasSize(3);
+        assertThat(result.entities()).isEmpty();
+        assertThat(result.signs()).isEmpty();
+    }
+
+    @Test
+    void readOutsideTheBuildHeightGivesVoidAir() {
+        int top = world.maxY();
+        BlockGrid grid = ops.read(new Ops.ReadParams(box(0, top - 1, 0, 0, top, 0), false)).grid();
+        assertThat(grid.stateAt(0, top, 0)).isEqualTo(ReadJob.OUTSIDE_WORLD);
+    }
+
+    @Test
+    void readReportsSignTextOnlyWhereTheGridHasASign() {
+        world.set(1, 70, 1, "minecraft:oak_sign", false);
+        world.signs.put(PackedPos.pack(1, 70, 1), new Ops.SignText(1, 70, 1, List.of("Shop"), null));
+        // Text left behind where there is no sign block must not be reported.
+        world.signs.put(PackedPos.pack(2, 70, 1), new Ops.SignText(2, 70, 1, List.of("stale"), null));
+
+        Ops.ReadResult with = ops.read(new Ops.ReadParams(box(0, 70, 0, 3, 71, 3), false, true));
+        Ops.ReadResult without = ops.read(new Ops.ReadParams(box(0, 70, 0, 3, 71, 3), false));
+
+        assertThat(with.signs()).containsExactly(new Ops.SignText(1, 70, 1, List.of("Shop", "", "", ""), null));
+        assertThat(without.signs()).isEmpty();
+    }
+
+    @Test
+    void readThenWriteCopiesAStructure() {
+        fill(box(0, 70, 0, 2, 72, 2), "minecraft:bricks");
+        fill(box(1, 72, 1, 1, 72, 1), "minecraft:glowstone");
+        BlockGrid copy = ops.read(new Ops.ReadParams(box(0, 70, 0, 2, 72, 2), false)).grid();
+
+        ops.write(new Ops.WriteParams(new BlockGrid(box(10, 70, 0, 12, 72, 2), copy.palette(), copy.blocks()), false));
+
+        assertThat(world.get(10, 70, 0)).isEqualTo("minecraft:bricks");
+        assertThat(world.get(11, 72, 1)).isEqualTo("minecraft:glowstone");
+    }
+
+    @Test
+    void heightmapGivesTheTopBlockPerColumn() {
+        world.set(0, 80, 0, STONE, false);
+        world.set(1, 75, 0, STONE, false);
+
+        Ops.HeightmapResult result = ops.heightmap(new Ops.HeightmapParams("world", new BlockPos(1, 0, 0), new BlockPos(0, 0, 1)));
+
+        assertThat(result.minX()).isZero();
+        assertThat(result.sizeX()).isEqualTo(2);
+        assertThat(result.sizeZ()).isEqualTo(2);
+        assertThat(result.heights()).containsExactly(80, 75, -65, -65);
+        assertThat(world.loads).containsExactly("area 0,0..1,1");
+    }
+
+    @Test
+    void reportsClearErrors() {
+        assertThatThrownBy(() -> fill(Region.of("nether", 0, 0, 0, 1, 1, 1), STONE))
+                .isInstanceOfSatisfying(OpException.class, e -> assertThat(e.code()).isEqualTo(ErrorCodes.NOT_FOUND))
+                .hasMessageContaining("worlds: [world]");
+        assertThatThrownBy(() -> fill(box(0, 0, 0, 200, 100, 200), STONE))
+                .isInstanceOfSatisfying(OpException.class, e -> assertThat(e.code()).isEqualTo(ErrorCodes.TOO_LARGE));
+        assertThatThrownBy(() -> ops.heightmap(new Ops.HeightmapParams("world", new BlockPos(0, 0, 0), new BlockPos(2000, 0, 2000))))
+                .isInstanceOfSatisfying(OpException.class, e -> assertThat(e.code()).isEqualTo(ErrorCodes.TOO_LARGE));
+        assertThatThrownBy(() -> fill(box(0, 70, 0, 0, 70, 0), "minecraft:not_a_block"))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("not_a_block");
+        int top = world.maxY();
+        assertThatThrownBy(() -> fill(box(0, top, 0, 0, top, 0), STONE))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("build height");
+        assertThat(world.writes).isZero();
+    }
+
+    @Test
+    void physicsFollowsTheRequestAndUndoNeverUsesIt() {
+        Ops.EditResult edit = write(box(0, 70, 0, 0, 70, 0), "minecraft:sand", true);
+        assertThat(world.lastPhysics).isTrue();
+
+        ops.undo(new Ops.UndoParams(edit.editId()));
+        assertThat(world.lastPhysics).isFalse();
+    }
+
+    @Test
+    void readListsEntitiesInsideTheRegionOnlyWhenAsked() {
+        world.entities.add(new Ops.EntitySummary("minecraft:pig", 1.5, 70, 1.5, null));
+        world.entities.add(new Ops.EntitySummary("minecraft:cow", 50.5, 70, 50.5, "Bessie"));
+
+        assertThat(ops.read(new Ops.ReadParams(box(0, 70, 0, 3, 71, 3), true)).entities())
+                .extracting(Ops.EntitySummary::type).containsExactly("minecraft:pig");
+        assertThat(ops.read(new Ops.ReadParams(box(0, 70, 0, 3, 71, 3), false)).entities()).isEmpty();
+    }
+
+    @Test
+    void entitiesAreSortedFilteredAndCounted() {
+        world.entityInfos.add(new Ops.EntityInfo("minecraft:zombie", "b", 2.5, 70, 2.5, "Brute", List.of("wave"), 7.0, 20.0));
+        world.entityInfos.add(new Ops.EntityInfo("minecraft:pig", "a", 1.5, 70, 1.5, null, List.of(), 10.0, 10.0));
+        world.entityInfos.add(new Ops.EntityInfo("minecraft:zombie", "c", 1.5, 70, 1.5, null, List.of(), 20.0, 20.0));
+        world.entityInfos.add(new Ops.EntityInfo("minecraft:zombie", "d", 50.5, 70, 50.5, null, List.of(), 20.0, 20.0));
+
+        Ops.EntitiesResult all = ops.entities(new Ops.EntitiesParams(box(0, 70, 0, 3, 71, 3), " ", 0));
+        Ops.EntitiesResult zombies = ops.entities(new Ops.EntitiesParams(box(0, 70, 0, 3, 71, 3), "minecraft:zombie", 1));
+
+        assertThat(all.total()).isEqualTo(3);
+        assertThat(all.entities()).extracting(Ops.EntityInfo::uuid).containsExactly("a", "c", "b");
+        assertThat(zombies.total()).isEqualTo(2);
+        assertThat(zombies.entities()).extracting(Ops.EntityInfo::uuid).containsExactly("c");
+    }
+
+    @Test
+    void routerServesEveryOperation() {
+        var router = AgentRoutes.router(new ServerOps(new FakeServer(), MainThread.inline()), ops);
+        assertThat(router.operations()).containsExactlyInAnyOrderElementsOf(Ops.names());
+    }
+}

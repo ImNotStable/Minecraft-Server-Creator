@@ -1,0 +1,121 @@
+package io.github.imnotstable.msc.agent.common;
+
+import io.github.imnotstable.msc.protocol.op.Ops;
+import io.github.imnotstable.msc.protocol.world.Region;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+
+/**
+ * An in-memory world whose block states are their own strings, overworld height (-64..319), all air
+ * until set. Also the server's only world. Parsing accepts {@code minecraft:<id>[props]} for any id
+ * except {@code minecraft:not_a_block}.
+ */
+final class MapWorld implements AgentWorld<String>, AgentWorlds<String> {
+    static final String AIR = "minecraft:air";
+
+    final Map<Long, String> blocks = new HashMap<>();
+    final List<Ops.EntitySummary> entities = new ArrayList<>();
+    final List<Ops.EntityInfo> entityInfos = new ArrayList<>();
+    final Map<Long, Ops.SignText> signs = new HashMap<>();
+    final List<String> loads = new ArrayList<>();
+    int writes;
+    boolean lastPhysics;
+
+    @Override
+    public String name() {
+        return "world";
+    }
+
+    @Override
+    public int minY() {
+        return -64;
+    }
+
+    @Override
+    public int maxY() {
+        return 320;
+    }
+
+    @Override
+    public String get(int x, int y, int z) {
+        return blocks.getOrDefault(PackedPos.pack(x, y, z), AIR);
+    }
+
+    @Override
+    public void set(int x, int y, int z, String state, boolean physics) {
+        writes++;
+        lastPhysics = physics;
+        if (state.equals(AIR)) {
+            blocks.remove(PackedPos.pack(x, y, z));
+        } else {
+            blocks.put(PackedPos.pack(x, y, z), state);
+        }
+    }
+
+    @Override
+    public String serialize(String state) {
+        return state;
+    }
+
+    @Override
+    public int surfaceY(int x, int z) {
+        for (int y = maxY() - 1; y >= minY(); y--) {
+            if (!get(x, y, z).equals(AIR)) {
+                return y;
+            }
+        }
+        return minY() - 1;
+    }
+
+    @Override
+    public List<Ops.EntitySummary> entities(Region region, int max) {
+        return entities.stream().filter(e -> region.contains((int) Math.floor(e.x()), (int) Math.floor(e.y()),
+                (int) Math.floor(e.z()))).limit(max).toList();
+    }
+
+    @Override
+    public List<Ops.EntityInfo> entityInfos(Region region, String type) {
+        return entityInfos.stream().filter(e -> type == null || type.equals(e.type()))
+                .filter(e -> region.contains((int) Math.floor(e.x()), (int) Math.floor(e.y()), (int) Math.floor(e.z())))
+                .toList();
+    }
+
+    @Override
+    public Ops.SignText sign(int x, int y, int z) {
+        return signs.get(PackedPos.pack(x, y, z));
+    }
+
+    @Override
+    public void loadArea(int minX, int minZ, int maxX, int maxZ) {
+        loads.add("area " + minX + "," + minZ + ".." + maxX + "," + maxZ);
+    }
+
+    @Override
+    public void loadPositions(long[] positions) {
+        loads.add("positions " + positions.length);
+    }
+
+    // ---- AgentWorlds: this is the only world ----
+
+    @Override
+    public List<String> names() {
+        return List.of(name());
+    }
+
+    @Override
+    public Optional<MapWorld> byName(String name) {
+        return name.equals(name()) ? Optional.of(this) : Optional.empty();
+    }
+
+    @Override
+    public String parse(String state) {
+        String s = state.strip();
+        if (!s.startsWith("minecraft:") || s.startsWith("minecraft:not_a_block")) {
+            throw new IllegalArgumentException("unknown block state: " + state);
+        }
+        return s;
+    }
+}

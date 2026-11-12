@@ -1,11 +1,14 @@
 package io.github.imnotstable.msc.agent.minestom;
 
-import io.github.imnotstable.msc.protocol.message.ErrorCodes;
-import io.github.imnotstable.msc.protocol.transport.OpException;
+import io.github.imnotstable.msc.agent.common.AgentWorlds;
+import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Optional;
 import java.util.function.Supplier;
 import net.minestom.server.instance.Instance;
+import net.minestom.server.instance.block.Block;
 import net.minestom.server.tag.Tag;
 
 /**
@@ -13,13 +16,16 @@ import net.minestom.server.tag.Tag;
  * {@link MscAgent#name(Instance, String)}, which stores the name in a tag on the instance. An
  * unnamed instance is known by its UUID.
  */
-final class Worlds {
+final class Worlds implements AgentWorlds<Block> {
     static final Tag<String> NAME = Tag.String("msc:world");
 
     private final Supplier<? extends Iterable<Instance>> instances;
+    private final Duration chunkTimeout;
 
-    Worlds(Supplier<? extends Iterable<Instance>> instances) {
+    /** @param chunkTimeout how long an operation waits for the chunks it touches to load */
+    Worlds(Supplier<? extends Iterable<Instance>> instances, Duration chunkTimeout) {
         this.instances = instances;
+        this.chunkTimeout = chunkTimeout;
     }
 
     static String nameOf(Instance instance) {
@@ -28,22 +34,29 @@ final class Worlds {
     }
 
     /** The instance with this name (or UUID). */
-    Instance get(String name) {
+    @Override
+    public Optional<MinestomWorld> byName(String name) {
         for (Instance instance : instances.get()) {
             if (name.equals(nameOf(instance))) {
-                return instance;
+                return Optional.of(new MinestomWorld(instance, name, chunkTimeout));
             }
         }
-        throw new OpException(ErrorCodes.NOT_FOUND, "no world named " + name + "; worlds: " + names());
+        return Optional.empty();
     }
 
     /** Every world name, named instances first, each group sorted. */
-    List<String> names() {
-        List<Instance> all = new java.util.ArrayList<>();
+    @Override
+    public List<String> names() {
+        List<Instance> all = new ArrayList<>();
         instances.get().forEach(all::add);
         return all.stream()
                 .sorted(Comparator.comparing((Instance i) -> i.getTag(NAME) == null).thenComparing(Worlds::nameOf))
                 .map(Worlds::nameOf)
                 .toList();
+    }
+
+    @Override
+    public Block parse(String state) {
+        return BlockStates.parse(state);
     }
 }

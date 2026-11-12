@@ -135,8 +135,8 @@ class LifecycleToolsTest {
     void aDetachedServerAndPackHostOutliveTheCoreUntilTheNextStart() throws Exception {
         assertThat(h.error("server_detach")).contains("the server is not running");
         h.ok("server_start", "timeoutSeconds", 30);
-        h.ok("texture_create", "name", "item/dot", "palette", List.of("a=#ff0000"), "rows", List.of("a"));
-        String url = h.ok("pack_build", "apply", false).lines().filter(l -> l.startsWith("url: ")).findFirst()
+        h.ok("texture", "name", "item/dot", "palette", List.of("a=#ff0000"), "rows", List.of("a"));
+        String url = h.ok("pack", "apply", false).lines().filter(l -> l.startsWith("url: ")).findFirst()
                 .orElseThrow().substring(5);
         assertThat(h.ok("server_detach")).startsWith("server detached").contains("and so does the resource pack host");
         assertThat(fetch(url)).isEqualTo(200);
@@ -157,22 +157,22 @@ class LifecycleToolsTest {
     @Test
     void stoppingADetachedServerInTheSameSessionStopsItsPackHostToo() throws Exception {
         h.ok("server_start", "timeoutSeconds", 30);
-        h.ok("texture_create", "name", "item/dot", "palette", List.of("a=#ff0000"), "rows", List.of("a"));
-        String url = h.ok("pack_build", "apply", false).lines().filter(l -> l.startsWith("url: ")).findFirst()
+        h.ok("texture", "name", "item/dot", "palette", List.of("a=#ff0000"), "rows", List.of("a"));
+        String url = h.ok("pack", "apply", false).lines().filter(l -> l.startsWith("url: ")).findFirst()
                 .orElseThrow().substring(5);
         h.ok("server_detach");
         assertThat(h.ok("server_stop")).isEqualTo("server stopped, and the pack host it kept running");
         assertThat(fetch(url)).isEqualTo(-1);
         assertThat(workspace.resolve(".msc/pack-host.pid")).doesNotExist();
-        assertThat(h.ok("pack_build", "apply", false)).contains(url);
+        assertThat(h.ok("pack", "apply", false)).contains(url);
         assertThat(fetch(url)).isEqualTo(200);
     }
 
     @Test
     void aRestartSendsTheAppliedPackAgain() {
         assertThat(h.ok("server_start", "timeoutSeconds", 30)).doesNotContain("resource pack");
-        h.ok("texture_create", "name", "item/dot", "palette", List.of("a=#ff0000"), "rows", List.of("a"));
-        assertThat(h.ok("pack_build")).contains("applied: sent to 1 players; players who join later get it too");
+        h.ok("texture", "name", "item/dot", "palette", List.of("a=#ff0000"), "rows", List.of("a"));
+        assertThat(h.ok("pack")).contains("applied: sent to 1 players; players who join later get it too");
         h.ok("server_stop");
         assertThat(h.ok("server_start", "timeoutSeconds", 30)).contains("\nresource pack sent again: players who join get it\n");
     }
@@ -248,7 +248,7 @@ class LifecycleToolsTest {
         h.ok("server_start", "timeoutSeconds", 30);
         String first = h.ok("dev_cycle", "project", "demo");
         assertThat(first).startsWith("build ok in ").contains("deployed demo-1.0.jar as plugins/demo.jar")
-                .contains("agent connected").endsWith("no errors or warnings");
+                .contains("agent connected").contains("\nno errors or warnings\ntime: ");
         assertThat(h.ok("server_logs", "mode", "grep", "pattern", "Demo")).contains("Enabling Demo v1.0");
 
         Files.writeString(project.resolve("version.txt"), "2.0");
@@ -549,7 +549,81 @@ class LifecycleToolsTest {
             assertThat(s.ok("dev_cycle", "restart", false)).contains("deployed demo-1.0.jar as server.jar");
             assertThat(ws.resolve("run/server.jar")).hasContent("3.0");
             assertThat(s.ok("msc_status")).contains("platform: minestom\n").contains("server: stopped");
+
+            // A thin server jar brings its dependency folder; a dependency the project dropped goes too.
+            Files.writeString(ws.resolve("thin.flag"), "dependency");
+            Files.createDirectories(ws.resolve("run/libs"));
+            Files.writeString(ws.resolve("run/libs/dropped-1.jar"), "old");
+            assertThat(s.ok("dev_cycle", "restart", false)).contains("deployed server.jar as server.jar");
+            assertThat(ws.resolve("run/server.jar")).hasContent("thin 3.0");
+            try (var libs = Files.list(ws.resolve("run/libs"))) {
+                assertThat(libs.map(p -> p.getFileName().toString())).containsExactly("dep-1.jar");
+            }
+            assertThat(ws.resolve("run/libs/dep-1.jar")).hasContent("dependency");
         }
+    }
+
+    @Test
+    void devCycleTimesEachPhaseAndKeepsTheServerWhenTheJarIsUnchanged() throws Exception {
+        String first = h.ok("dev_cycle", "project", "demo");
+        assertThat(first).contains("deployed demo-1.0.jar as plugins/demo.jar")
+                .containsPattern("\ntime: jar \\d+\\.\\ds, start \\d+\\.\\ds, agent \\d+\\.\\ds, tests \\d+\\.\\ds, total \\d+\\.\\ds$");
+        long logMark = h.core.server().log().mark();
+        assertThat(project.resolve("tasks.log")).hasContent("mscJar\ncheck");
+
+        String second = h.ok("dev_cycle", "project", "demo");
+        assertThat(second).contains("jar unchanged: plugins/demo.jar kept, server not restarted")
+                .doesNotContain("server ready").containsPattern("\ntime: jar [^,]+, tests [^,]+, total ");
+        assertThat(h.core.server().log().mark()).isEqualTo(logMark);
+
+        Files.writeString(project.resolve("version.txt"), "2.0");
+        assertThat(h.ok("dev_cycle", "project", "demo")).contains("\ntime: jar ").contains(", stop ")
+                .contains("server ready");
+        h.ok("server_stop");
+    }
+
+    @Test
+    void failingTestsAreReportedFirstWhileTheNewJarAlreadyRuns() throws Exception {
+        Files.writeString(project.resolve("failing-test.flag"), "");
+        String result = h.ok("dev_cycle", "project", "demo");
+        assertThat(result).startsWith("TESTS FAILED in ").contains("(the new jar is deployed anyway)")
+                .contains("DemoTest > greets() FAILED").contains("deployed demo-1.0.jar as plugins/demo.jar")
+                .contains("server ready");
+        assertThat(h.core.server().running()).isTrue();
+        h.ok("server_stop");
+    }
+
+    @Test
+    void statusShowsAServerAnEarlierSessionLeftRunning() throws Exception {
+        Process leftover = new ProcessBuilder(java(io.github.imnotstable.msc.core.fixture.SleepMain.class)).start();
+        try {
+            long started = leftover.info().startInstant().orElseThrow().toEpochMilli();
+            Files.createDirectories(workspace.resolve(".msc"));
+            Files.writeString(workspace.resolve(".msc/server.pid"), leftover.pid() + " " + started + "\n");
+            assertThat(h.ok("msc_status")).contains("server: running, left by an earlier session (pid " + leftover.pid());
+            assertThat(leftover.isAlive()).isTrue();
+            h.ok("server_stop");
+            assertThat(h.ok("msc_status")).doesNotContain("server: running");
+        } finally {
+            leftover.destroyForcibly();
+        }
+        h.ok("server_start", "timeoutSeconds", 30);
+        h.ok("server_detach");
+        assertThat(h.ok("msc_status")).contains("server: running, detached");
+        h.ok("server_stop");
+    }
+
+    @Test
+    void aStartWaitsForAnAgentThatConnectsAfterDone() throws Exception {
+        Files.createDirectories(workspace.resolve("run/plugins"));
+        Files.writeString(workspace.resolve("run/plugins/msc-agent-paper.jar"), "agent");
+        Files.writeString(workspace.resolve("run/late-agent.flag"), "");
+        assertThat(h.ok("server_start", "timeoutSeconds", 30)).contains(", agent connected");
+        h.ok("server_stop");
+        Files.delete(workspace.resolve("run/plugins/msc-agent-paper.jar"));
+        // No agent installed: nothing to wait for, so the start reports at "Done".
+        assertThat(h.ok("server_start", "timeoutSeconds", 30)).contains("no agent connected");
+        h.ok("server_stop");
     }
 
     @Test

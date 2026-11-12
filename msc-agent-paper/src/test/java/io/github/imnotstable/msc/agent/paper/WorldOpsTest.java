@@ -3,6 +3,10 @@ package io.github.imnotstable.msc.agent.paper;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.github.imnotstable.msc.agent.common.EditHistory;
+import io.github.imnotstable.msc.agent.common.MainThread;
+import io.github.imnotstable.msc.agent.common.ReadJob;
+import io.github.imnotstable.msc.agent.common.WorldOps;
 import io.github.imnotstable.msc.protocol.message.ErrorCodes;
 import io.github.imnotstable.msc.protocol.op.Ops;
 import io.github.imnotstable.msc.protocol.transport.OpException;
@@ -14,6 +18,8 @@ import net.kyori.adventure.text.Component;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.World;
+import org.bukkit.block.Sign;
+import org.bukkit.block.sign.Side;
 import org.bukkit.entity.EntityType;
 import org.bukkit.entity.Zombie;
 import org.junit.jupiter.api.AfterEach;
@@ -26,7 +32,7 @@ import org.mockbukkit.mockbukkit.world.WorldMock;
 class WorldOpsTest {
     private ServerMock server;
     private World world;
-    private WorldOps ops;
+    private WorldOps<?> ops;
 
     @BeforeEach
     void setUp() {
@@ -35,7 +41,7 @@ class WorldOpsTest {
         w.setName("world");
         server.addWorld(w);
         world = w;
-        ops = new WorldOps(server, MainThread.inline(), new EditHistory(1_000_000));
+        ops = new WorldOps<>(new PaperWorlds(server), MainThread.inline(), new EditHistory<>(1_000_000));
     }
 
     @AfterEach
@@ -112,6 +118,23 @@ class WorldOpsTest {
 
         assertThat(world.getBlockAt(5, 70, 5).getBlockData().getAsString()).contains("facing=east");
         assertThat(at(6, 70, 5)).isEqualTo(Material.GLASS);
+    }
+
+    @Test
+    void readReportsSignTextOnlyWhenAsked() {
+        world.getBlockAt(1, 70, 1).setType(Material.OAK_SIGN);
+        Sign sign = (Sign) world.getBlockAt(1, 70, 1).getState();
+        sign.getSide(Side.FRONT).line(0, Component.text("Shop"));
+        sign.getSide(Side.FRONT).line(2, Component.text("Open"));
+        sign.update(true, false);
+        world.getBlockAt(2, 70, 1).setType(Material.OAK_SIGN);
+
+        Ops.ReadResult with = ops.read(new Ops.ReadParams(box(0, 70, 0, 3, 71, 3), false, true));
+        Ops.ReadResult without = ops.read(new Ops.ReadParams(box(0, 70, 0, 3, 71, 3), false));
+
+        assertThat(with.signs()).containsExactly(
+                new Ops.SignText(1, 70, 1, List.of("Shop", "", "Open", ""), null));
+        assertThat(without.signs()).isEmpty();
     }
 
     @Test

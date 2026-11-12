@@ -64,6 +64,16 @@ class WorldToolsTest {
     }
 
     @Test
+    void renderLabelsSignsWithTheirText() {
+        h.ok("build_batch", "steps", "set 2,64,2 oak_sign");
+
+        assertThat(h.ok("world_render", "region", "0,62,0 5,67,5", "view", "top", "size", 64))
+                .contains("sign \"Welcome\" at 2.5,64.5,2.5");
+        assertThat(h.ok("world_render", "region", "0,62,0 5,67,5", "view", "top", "size", 64, "entities", false))
+                .doesNotContain("Welcome");
+    }
+
+    @Test
     void renderStitchesLargeRegionsAndRefusesHugeOnes() {
         ToolRegistry.Result result = h.call("world_render", "region", "0,0,0 129,63,127", "size", 64);
         assertThat(result.ok()).as(result.text()).isTrue();
@@ -193,6 +203,24 @@ class WorldToolsTest {
                 non-air bounds: 0,62,0 3,66,3
                 non-air per layer (y:count): 62..64:16 65:0 66:1 67:0
                 entities: 1 cow""");
+    }
+
+    @Test
+    void summaryChecksAPathAndADiffWithoutAPlayer() {
+        h.ok("build_batch", "steps", "fill 5,64,0 5,65,4 stone");
+        String region = "0,63,0 9,67,4";
+        assertThat(h.ok("world_summary", "region", region, "path", "0,64,2 9,64,2"))
+                .startsWith("not reachable from 0,64,2 to 9,64,2. Closest: 4,64,2\nwall to the east: stone at 5,64,2 (2 high");
+        h.ok("structure_save", "region", region, "file", "snap/before.schem");
+        h.ok("build_batch", "steps", "set 5,65,2 air");
+        assertThat(h.ok("world_summary", "region", region, "path", "0,64,2 9,64,2"))
+                .isEqualTo("reachable: 9 moves, 1 up, 1 drop\nroute: 0,64,2 > 4,64,2 > 5,65,2 > 6,64,2 > 9,64,2");
+        assertThat(h.ok("world_summary", "region", region, "diff", "snap/before.schem"))
+                .isEqualTo("1 block changed since snap/before.schem, in world 5,65,2 5,65,2\nchanges: stone -> air 1\n5,65,2 stone -> air");
+        assertThat(h.error("world_summary", "region", region, "diff", "snap/none.schem")).contains("structure_save");
+        assertThat(h.error("world_summary", "region", region, "path", "0,64,2")).contains("two positions");
+        assertThat(h.error("world_summary", "region", region, "path", "0,64,2 9,64,2", "diff", "a.schem"))
+                .contains("not both");
     }
 
     @Test

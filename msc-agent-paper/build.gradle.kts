@@ -7,8 +7,8 @@ description = "Paper plugin that carries out msc-core's operations inside a runn
 
 dependencies {
     compileOnly(libs.paper.api)
-    implementation(project(":msc-protocol")) {
-        // Paper provides Gson at runtime.
+    // Shared agent code; brings msc-protocol. Paper provides Gson at runtime.
+    implementation(project(":msc-agent-common")) {
         exclude(group = "com.google.code.gson")
     }
 
@@ -22,7 +22,7 @@ tasks.processResources {
     filesMatching("plugin.yml") { expand(props) }
 }
 
-// The plugin jar bundles msc-protocol (Gson comes from Paper).
+// The plugin jar bundles msc-agent-common and msc-protocol (Gson comes from Paper).
 tasks.shadowJar {
     archiveClassifier = ""
     mergeServiceFiles()

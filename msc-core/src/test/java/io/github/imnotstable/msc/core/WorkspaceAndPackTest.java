@@ -40,7 +40,7 @@ class WorkspaceAndPackTest {
     }
 
     private String pixel() {
-        return h.ok("texture_create", "name", "item/dot", "palette", List.of("a=#ff0000"), "rows", List.of("a"));
+        return h.ok("texture", "name", "item/dot", "palette", List.of("a=#ff0000"), "rows", List.of("a"));
     }
 
     private String url(String packBuild) {
@@ -69,11 +69,11 @@ class WorkspaceAndPackTest {
     @Test
     void theWorkspaceKeepsItsPackPortFromSessionToSession() throws Exception {
         pixel();
-        String before = url(h.ok("pack_build", "apply", false));
+        String before = url(h.ok("pack", "apply", false));
         h.close();
         h = new CoreHarness(first);
         pixel();
-        assertThat(url(h.ok("pack_build", "apply", false))).isEqualTo(before);
+        assertThat(url(h.ok("pack", "apply", false))).isEqualTo(before);
         assertThat(first.resolve(".msc/pack-port")).exists();
     }
 
@@ -82,7 +82,7 @@ class WorkspaceAndPackTest {
         serverProperties(first, "motd=Gearfall\nresource-pack=\nresource-pack-sha1=\nmax-players=8\n");
         h.ok("server_start", "timeoutSeconds", 30);
         pixel();
-        String url = url(h.ok("pack_build", "required", true));
+        String url = url(h.ok("pack", "required", true));
         assertThat(h.ok("server_detach")).contains("server.properties now offers the pack too");
         Path props = first.resolve("run/server.properties");
         String sha1 = url.substring(url.indexOf("/pack-") + 6, url.length() - 4);
@@ -97,8 +97,8 @@ class WorkspaceAndPackTest {
         h = new CoreHarness(first, c -> c.withServerCommand(java(FakeServerMain.class)));
         assertThat(h.ok("server_start", "timeoutSeconds", 30)).contains("stopped the pack host left running");
         assertThat(LifecycleToolsTest.fetchCode(url)).isEqualTo(200);
-        h.ok("texture_create", "name", "item/dot", "palette", List.of("a=#00ff00"), "rows", List.of("a"));
-        String rebuilt = url(h.ok("pack_build", "apply", false));
+        h.ok("texture", "name", "item/dot", "palette", List.of("a=#00ff00"), "rows", List.of("a"));
+        String rebuilt = url(h.ok("pack", "apply", false));
         assertThat(rebuilt).isNotEqualTo(url);
         assertThat(Files.readString(props)).contains("resource-pack=" + rebuilt.replace(":", "\\:"));
     }
@@ -121,7 +121,7 @@ class WorkspaceAndPackTest {
 
     @Test
     void handheldTexturesAreHeldLikeTools() throws Exception {
-        h.ok("texture_create", "name", "item/ruby_sword", "model", "handheld", "palette", List.of("a=#ff0000"),
+        h.ok("texture", "name", "item/ruby_sword", "model", "handheld", "palette", List.of("a=#ff0000"),
                 "rows", List.of("a"));
         assertThat(first.resolve(".msc/pack/assets/msc/models/item/ruby_sword.json")).content()
                 .contains("\"parent\":\"minecraft:item/handheld\"");

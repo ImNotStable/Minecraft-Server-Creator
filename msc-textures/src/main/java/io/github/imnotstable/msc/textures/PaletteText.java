@@ -6,7 +6,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Pixel art as text, the same format {@code msc-core}'s {@code texture_create} and {@code texture_view}
+ * Pixel art as text, the same format {@code msc-core}'s {@code texture} and {@code texture_view}
  * use: a palette of single characters and one string per pixel row. {@code .} is always transparent.
  *
  * <pre>

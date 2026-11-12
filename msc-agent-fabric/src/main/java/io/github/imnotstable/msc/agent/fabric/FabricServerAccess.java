@@ -1,5 +1,6 @@
 package io.github.imnotstable.msc.agent.fabric;
 
+import io.github.imnotstable.msc.agent.common.AgentServer;
 import java.util.List;
 import java.util.Optional;
 import java.util.function.Consumer;
@@ -13,16 +14,24 @@ import net.minecraft.network.protocol.common.ClientboundResourcePackPushPacket;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 
-/** {@link ServerAccess} on a running {@code MinecraftServer}. */
-final class FabricServerAccess implements ServerAccess {
-    private final MinecraftServer server;
-    private final Levels levels;
+/** {@link AgentServer} on a running {@code MinecraftServer}. */
+final class FabricServerAccess implements AgentServer {
+    static final String PLATFORM = "fabric";
 
-    FabricServerAccess(MinecraftServer server, Levels levels) {
+    private final MinecraftServer server;
+    private final FabricLevels levels;
+
+    FabricServerAccess(MinecraftServer server, FabricLevels levels) {
         this.server = server;
         this.levels = levels;
     }
 
+    @Override
+    public String platform() {
+        return PLATFORM;
+    }
+
+    /** Fabric Loader's version. */
     @Override
     public String platformVersion() {
         return FabricLoader.getInstance().getModContainer("fabricloader")

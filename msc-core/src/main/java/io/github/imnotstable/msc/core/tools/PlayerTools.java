@@ -33,14 +33,14 @@ public final class PlayerTools implements AutoCloseable {
     public static PlayerTools register(ToolRegistry registry, CoreConfig config, AgentHub hub) {
         PlayerTools t = new PlayerTools(config, hub);
         registry.add("player_test",
-                "Play-test: a headless player joins the dev server, runs the actions and reports results, "
-                        + "damage, deaths, chat, titles and the pack offer. Stays joined between calls. Vanilla-like "
-                        + "movement; a missed jump may still be fine for people.",
-                Schema.of().req("actions", "strings", "goto x,y,z [sprint] [jump], forward ticks [sprint] [jump], jump, "
-                                + "look yaw pitch, lookat x,y,z, wait ticks, use [x,y,z], attack, slot 1-9, say text, "
-                                + "/command, tp x,y,z, entities")
-                        .opt("name", "string", "Player name. Default MscTester")
-                        .opt("gamemode", "string", "survival (default), adventure or creative")
+                "Play-test: a headless player joins the dev server, runs actions, reports results, damage, deaths, "
+                        + "chat, titles. Stays joined. Vanilla-like moves; a missed jump may suit people. "
+                        + "inventory/hud: items, menu, bossbars, sidebar, pack.",
+                Schema.of().req("actions", "strings", "goto x,y,z|forward ticks [sprint] [jump], jump, "
+                                + "look yaw pitch, lookat x,y,z, wait ticks, use [x,y,z], attack|interact [type], "
+                                + "slot 1-9, say text, /command, tp x,y,z, entities, inventory, hud, close")
+                        .opt("name", "string", "Default MscTester")
+                        .opt("gamemode", "string", "survival (default), adventure, creative")
                         .opt("leave", "boolean", "Disconnect after. Default false"),
                 t::run);
         return t;

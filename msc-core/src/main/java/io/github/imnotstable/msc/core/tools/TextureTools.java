@@ -25,6 +25,7 @@ import io.github.imnotstable.msc.textures.Shapes;
 import io.github.imnotstable.msc.textures.Stats;
 import io.github.imnotstable.msc.textures.Texture;
 import io.github.imnotstable.msc.textures.TextureException;
+import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -41,99 +42,41 @@ public final class TextureTools {
 
     public static void register(ToolRegistry registry, AgentHub hub, ResourcePack pack, Path serverDir) {
         PackSource source = new PackSource(pack.root());
-        registry.add("texture_create",
-                "Draw a pixel-art texture from text and add it to the project's resource pack. "
-                        + "Give a palette of single characters and one string per pixel row (16x16 is standard).",
+        registry.add("texture",
+                "Add a pixel-art texture to the project's resource pack, in one of three ways: draw it as text "
+                        + "(palette, rows), generate it (kind, color) or recolor a pack texture (copy, color). "
+                        + "animate makes it an animation; with only name and animate, animates the texture already there.",
                 Schema.of().req("name", "string", "Texture name such as item/ruby or myplugin:block/ruby_ore")
-                        .req("palette", "strings", "Entries symbol=#rrggbb or symbol=#rrggbbaa, for example \"r=#d4263a\". \".\" is transparent")
-                        .req("rows", "strings", "Pixel rows, top first, each the same length")
-                        .opt("model", "string", "Also write a model and item definition: item (flat, default), handheld (tools), block (cube) or none"),
-                args -> {
-                    ResourcePack.TextureId id = ResourcePack.id(args.str("name"));
-                    PaletteTexture.Parsed parsed = PaletteTexture.parse(args.strings("palette"), args.strings("rows"));
-                    String itemModel = pack.writeTexture(id, parsed.image(), args.str("model", "item"));
-                    StringBuilder out = new StringBuilder();
-                    out.append("wrote ").append(id).append(' ').append(parsed.image().getWidth()).append('x')
-                            .append(parsed.image().getHeight());
-                    if (itemModel != null) {
-                        out.append("; use it by setting an item's item_model component to ").append(itemModel);
-                    }
-                    for (String warning : parsed.warnings()) {
-                        out.append("\nwarning: ").append(warning);
-                    }
-                    out.append("\nnext: pack_build");
-                    return out.toString();
-                });
-        registry.add("texture_generate",
-                "Generate a texture from a pattern (noise, ore, planks, bricks) or a 16x16 shape (gem, ingot, orb) "
-                        + "shaded from one color. Returns stats and the pixels as text.",
-                Schema.of().req("name", "string", "Texture name such as block/ruby_ore")
-                        .req("kind", "string", "noise, ore, planks, bricks, gem, ingot or orb")
-                        .req("color", "string", "Base color #rrggbb")
-                        .opt("accent", "string", "Second color: the ore in ore, the mortar in bricks")
-                        .opt("size", "integer", "16 (default), 32 or 64; shapes are 16")
+                        .opt("palette", "strings", "Draw: symbol=#rrggbb or #rrggbbaa entries, for example \"r=#d4263a\". \".\" is transparent")
+                        .opt("rows", "strings", "Draw: pixel rows, top first, all the same length (16 is standard)")
+                        .opt("kind", "string", "Generate: pattern noise, ore, planks or bricks, or 16x16 shape gem, ingot, orb, "
+                                + "sword, pickaxe or food")
+                        .opt("copy", "string", "Recolor: the pack texture to copy onto shades of color, keeping its shading")
+                        .opt("color", "string", "Base color #rrggbb, for kind and copy")
+                        .opt("accent", "string", "kind's second color: ore's ore, bricks' mortar, a tool's handle, food's bone")
+                        .opt("size", "integer", "Patterns: 16 (default), 32 or 64")
                         .opt("seed", "integer", "Pattern seed. Default 1")
                         .opt("contrast", "number", "0.2 to 1.5. Default 1 for shapes, 0.6 for patterns")
-                        .opt("model", "string", "As in texture_create; default item for shapes, block for patterns"),
-                textures(args -> {
-                    String kind = args.str("kind");
-                    boolean shape = Shapes.NAMES.contains(kind);
-                    if (!shape && !Patterns.NAMES.contains(kind)) {
-                        throw new ToolException("kind must be noise, ore, planks, bricks, gem, ingot or orb");
+                        .opt("animate", "string", "scroll (flows down), \"scroll dx,dy\" or pulse (glows)")
+                        .opt("frames", "integer", "Animation frames, 2 to 64. Default: one full loop for scroll, 8 for pulse")
+                        .opt("frametime", "integer", "Ticks per frame. Default 2")
+                        .opt("model", "string", "Also write a model and item definition: item (flat), handheld (tools), "
+                                + "block (cube) or none. Default block for patterns, handheld for sword and pickaxe, else item"),
+                textures(args -> texture(args, pack, source)));
+        registry.add("texture_view",
+                "Show a pack texture as a palette and pixel rows, the format texture draws. Animations show frame 1.",
+                Schema.of().req("name", "string", "Texture name such as item/ruby"),
+                args -> {
+                    ResourcePack.TextureId id = ResourcePack.id(args.str("name"));
+                    BufferedImage image = pack.readTexture(id);
+                    int frames = image.getHeight() / image.getWidth();
+                    String note = "";
+                    if (frames > 1 && image.getHeight() % image.getWidth() == 0 && animated(source, id)) {
+                        image = image.getSubimage(0, 0, image.getWidth(), image.getWidth());
+                        note = "frame 1 of " + frames + "\n";
                     }
-                    double contrast = number(args, "contrast", shape ? 1.0 : 0.6);
-                    Ramp ramp = Ramp.from(Colors.parse(args.str("color")), 5, contrast);
-                    Ramp accent = args.has("accent") ? Ramp.from(Colors.parse(args.str("accent")), 4, 1.0) : null;
-                    Texture t;
-                    if (shape) {
-                        if (args.integer("size", 16) != 16) {
-                            throw new ToolException("shapes are 16x16; leave out size");
-                        }
-                        t = Shapes.draw(kind, ramp, null);
-                    } else {
-                        t = Patterns.generate(kind, args.integer("size", 16), ramp, accent, args.integer("seed", 1));
-                    }
-                    return written(pack, args.str("name"), t, args.str("model", shape ? "item" : "block")) + "\n"
-                            + Budget.truncate(PaletteText.render(t), Budget.DEFAULT_CHARS, "Use texture_view.")
-                            + "\nnext: texture_create to touch up, pack_build";
-                }));
-        registry.add("texture_recolor",
-                "Copy a pack texture (not a vanilla one) onto new shades of one color, keeping its shading.",
-                Schema.of().req("from", "string", "Pack texture such as item/ruby")
-                        .req("name", "string", "New texture name")
-                        .req("color", "string", "Base color #rrggbb")
-                        .opt("model", "string", "As in texture_create. Default item"),
-                textures(args -> {
-                    Texture in = source.readTexture(ResourceId.parse(args.str("from")));
-                    Texture t = Edits.recolor(in, Ramp.from(Colors.parse(args.str("color")), 5));
-                    return written(pack, args.str("name"), t, args.str("model", "item")) + "\nnext: pack_build";
-                }));
-        registry.add("texture_animate",
-                "Turn a still pack texture into an animation: scroll (flowing) or pulse (glowing).",
-                Schema.of().req("name", "string", "Texture name")
-                        .req("mode", "string", "scroll or pulse")
-                        .req("frames", "integer", "Frame count, 2 to 64")
-                        .req("frametime", "integer", "Ticks per frame")
-                        .opt("dx", "integer", "Scroll pixels per frame across. Default 0")
-                        .opt("dy", "integer", "Scroll pixels per frame down. Default 1"),
-                textures(args -> {
-                    ResourceId id = ResourceId.parse(args.str("name"));
-                    Texture base = source.readTexture(id);
-                    int frames = args.integer("frames");
-                    int frametime = args.integer("frametime");
-                    Animation a = switch (args.str("mode")) {
-                        case "scroll" -> Animation.scroll(base, args.integer("dx", 0), args.integer("dy", 1), frames, frametime);
-                        case "pulse" -> {
-                            List<Integer> shades = new ArrayList<>(base.colors());
-                            shades.sort(Comparator.comparingDouble(Colors::luminance));
-                            yield Animation.pulse(base, new Ramp(shades), frames, frametime);
-                        }
-                        default -> throw new ToolException("mode must be scroll or pulse");
-                    };
-                    source.writeAnimation(id, a);
-                    return "animated " + id + ": " + a.frames().size() + " frames, " + frametime
-                            + " ticks each\nnext: pack_build";
-                }));
+                    return note + Budget.truncate(PaletteTexture.render(image), Budget.MAX_CHARS, "Texture too large to show.");
+                });
         registry.add("model_create",
                 "Write a block or item model from pack textures, and optionally an item definition.",
                 Schema.of().req("name", "string", "Model name such as block/ruby_log")
@@ -150,26 +93,24 @@ public final class TextureTools {
                     }
                     String item = source.writeModel(model, Models.Kind.parse(args.str("kind")), slots,
                             args.bool("item", true));
-                    return "wrote model " + model + (item == null ? "" : "; item_model " + item) + "\nnext: pack_build";
+                    return "wrote model " + model + (item == null ? "" : "; item_model " + item) + "\nnext: pack";
                 }));
-        registry.add("texture_view", "Read a texture from the project's resource pack back as a palette and pixel rows.",
-                Schema.of().req("name", "string", "Texture name such as item/ruby"),
-                args -> Budget.truncate(PaletteTexture.render(pack.readTexture(ResourcePack.id(args.str("name")))),
-                        Budget.MAX_CHARS, "Texture too large to show."));
-        registry.add("pack_check", "Check the project's resource pack for missing textures, bad models and other mistakes.",
-                Schema.of().opt("limit", "integer", "Most findings to list. Default 30"),
-                args -> {
-                    if (!Files.isDirectory(pack.root())) {
-                        throw new ToolException("the pack is empty. Create a texture first.");
-                    }
-                    return check(pack, Math.max(0, args.integer("limit", 30)));
-                });
-        registry.add("pack_build",
-                "Zip the project's resource pack, serve it over HTTP and send it to the server's players.",
-                Schema.of().opt("description", "string", "Pack description")
+        registry.add("pack",
+                "Zip the project's resource pack, serve it over HTTP, send it to the server's players and list "
+                        + "its problems. check=true: only list problems.",
+                Schema.of().opt("check", "boolean", "Only check the pack, do not build it. Default false")
+                        .opt("limit", "integer", "Most problems to list. Default 30 with check, 5 on a build")
+                        .opt("description", "string", "Pack description")
                         .opt("apply", "boolean", "Send to the running server. Default true")
                         .opt("required", "boolean", "Kick players who decline. Default false"),
                 args -> {
+                    if (args.bool("check", false)) {
+                        if (!Files.isDirectory(pack.root())) {
+                            throw new ToolException("the pack is empty. Add a texture first.");
+                        }
+                        return check(pack, Math.max(0, args.integer("limit", 30)));
+                    }
+                    int limit = Math.max(0, args.integer("limit", 5));
                     String description = args.str("description", LifecycleTools.DEFAULT_PACK_DESCRIPTION);
                     ResourcePack.Built built = pack.build(description);
                     StringBuilder out = new StringBuilder();
@@ -192,8 +133,126 @@ public final class TextureTools {
                             built.sha1(), args.bool("required", false))) {
                         out.append("\nserver.properties updated to offer this build");
                     }
-                    return out.append('\n').append(check(pack, 0).lines().findFirst().orElseThrow()).toString();
+                    return out.append('\n').append(check(pack, limit)).toString();
                 });
+    }
+
+    /** The texture tool: one of draw, generate or recolor, then an optional animation; or only animate. */
+    private static String texture(Args args, ResourcePack pack, PackSource source) throws IOException {
+        List<String> ways = new ArrayList<>();
+        for (String way : List.of("rows", "kind", "copy")) {
+            if (args.has(way)) {
+                ways.add(way);
+            }
+        }
+        if (ways.size() > 1) {
+            throw new ToolException("give one of rows, kind or copy, not " + String.join(" and ", ways));
+        }
+        if (ways.isEmpty() && !args.has("animate")) {
+            throw new ToolException("give rows and palette to draw, kind and color to generate, copy and color to "
+                    + "recolor, or animate to animate the texture already there");
+        }
+        ResourcePack.TextureId id = ResourcePack.id(args.str("name"));
+        StringBuilder out = new StringBuilder();
+        String kind = args.str("kind", null);
+        if (ways.contains("rows")) {
+            if (!args.has("palette")) {
+                throw new ToolException("rows need a palette");
+            }
+            PaletteTexture.Parsed parsed = PaletteTexture.parse(args.strings("palette"), args.strings("rows"));
+            String itemModel = pack.writeTexture(id, parsed.image(), args.str("model", "item"));
+            out.append("wrote ").append(id).append(' ').append(parsed.image().getWidth()).append('x')
+                    .append(parsed.image().getHeight());
+            if (itemModel != null) {
+                out.append("; item_model ").append(itemModel);
+            }
+            for (String warning : parsed.warnings()) {
+                out.append("\nwarning: ").append(warning);
+            }
+        } else if (kind != null) {
+            boolean shape = Shapes.NAMES.contains(kind);
+            if (!shape && !Patterns.NAMES.contains(kind)) {
+                throw new ToolException("kind must be noise, ore, planks, bricks, gem, ingot, orb, sword, pickaxe or food");
+            }
+            Ramp ramp = Ramp.from(color(args), 5, number(args, "contrast", shape ? 1.0 : 0.6));
+            Integer accent = args.has("accent") ? Colors.parse(args.str("accent")) : null;
+            Texture t;
+            if (shape) {
+                if (args.integer("size", 16) != 16) {
+                    throw new ToolException("shapes are 16x16; leave out size");
+                }
+                t = Shapes.draw(kind, ramp, accent, null);
+            } else {
+                t = Patterns.generate(kind, args.integer("size", 16), ramp,
+                        accent == null ? null : Ramp.from(accent, 4, 1.0), args.integer("seed", 1));
+            }
+            String model = shape ? (kind.equals("sword") || kind.equals("pickaxe") ? "handheld" : "item") : "block";
+            out.append(written(pack, id, t, args.str("model", model)));
+            if (!args.has("animate")) {
+                out.append('\n').append(Budget.truncate(PaletteText.render(t), Budget.DEFAULT_CHARS, "Use texture_view."));
+            }
+        } else if (ways.contains("copy")) {
+            Texture in = firstFrame(source, ResourceId.parse(args.str("copy")));
+            out.append(written(pack, id, Edits.recolor(in, Ramp.from(color(args), 5)), args.str("model", "item")));
+        }
+        if (args.has("animate")) {
+            out.append(out.isEmpty() ? "" : "\n").append(animate(args, source, ResourceId.parse(id.toString())));
+        }
+        return out.append("\nnext: pack").toString();
+    }
+
+    private static String animate(Args args, PackSource source, ResourceId id) throws IOException {
+        Texture base = firstFrame(source, id);
+        String[] mode = args.str("animate").trim().split("\\s+", 2);
+        int frametime = args.integer("frametime", 2);
+        Animation a = switch (mode[0]) {
+            case "scroll" -> {
+                int dx = 0;
+                int dy = 1;
+                if (mode.length > 1) {
+                    String[] d = mode[1].split(",");
+                    try {
+                        dx = Integer.parseInt(d[0].trim());
+                        dy = d.length > 1 ? Integer.parseInt(d[1].trim()) : 0;
+                    } catch (NumberFormatException e) {
+                        throw new ToolException("animate: write scroll dx,dy, for example \"scroll 0,1\"");
+                    }
+                }
+                int step = Math.max(1, Math.max(Math.abs(dx), Math.abs(dy)));
+                int loop = Math.clamp(base.width() / step, 2, Animation.MAX_FRAMES);
+                yield Animation.scroll(base, dx, dy, args.integer("frames", loop), frametime);
+            }
+            case "pulse" -> {
+                List<Integer> shades = new ArrayList<>(base.colors());
+                shades.sort(Comparator.comparingDouble(Colors::luminance));
+                yield Animation.pulse(base, new Ramp(shades), args.integer("frames", 8), frametime);
+            }
+            default -> throw new ToolException("animate must be scroll, \"scroll dx,dy\" or pulse");
+        };
+        source.writeAnimation(id, a);
+        return "animated " + id + ": " + a.frames().size() + " frames, " + frametime + " ticks each";
+    }
+
+    /** A pack texture, or the first frame when it is already animated, so it can be animated or copied again. */
+    private static Texture firstFrame(PackSource source, ResourceId id) throws IOException {
+        Texture t = source.readTexture(id);
+        if (t.height() > t.width() && t.height() % t.width() == 0
+                && Files.exists(source.texturePath(id).resolveSibling(source.texturePath(id).getFileName() + ".mcmeta"))) {
+            return Animation.fromStrip(t, 1, false).frames().getFirst();
+        }
+        return t;
+    }
+
+    private static boolean animated(PackSource source, ResourcePack.TextureId id) {
+        Path png = source.texturePath(ResourceId.parse(id.toString()));
+        return Files.exists(png.resolveSibling(png.getFileName() + ".mcmeta"));
+    }
+
+    private static int color(Args args) {
+        if (!args.has("color")) {
+            throw new ToolException("kind and copy need a color #rrggbb");
+        }
+        return Colors.parse(args.str("color"));
     }
 
     /** msc-textures reports bad input as TextureException; tools report it as a one-line error. */
@@ -207,7 +266,7 @@ public final class TextureTools {
         };
     }
 
-    /** Lint the pack sources. pack.mcmeta is written by pack_build, so its absence before a build is not reported. */
+    /** Lint the pack sources. pack.mcmeta is written by a build, so its absence before a build is not reported. */
     private static String check(ResourcePack pack, int limit) throws IOException {
         PackLint.Report r = PackLint.checkDirectory(pack.root());
         if (!Files.exists(pack.root().resolve("pack.mcmeta"))) {
@@ -227,8 +286,7 @@ public final class TextureTools {
         }
     }
 
-    private static String written(ResourcePack pack, String name, Texture t, String model) throws IOException {
-        ResourcePack.TextureId id = ResourcePack.id(name);
+    private static String written(ResourcePack pack, ResourcePack.TextureId id, Texture t, String model) throws IOException {
         String itemModel = pack.writeTexture(id, t.toImage(), model);
         return "wrote " + id + ": " + Stats.of(t) + (itemModel == null ? "" : "; item_model " + itemModel);
     }

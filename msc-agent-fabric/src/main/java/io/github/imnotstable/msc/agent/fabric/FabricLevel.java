@@ -1,5 +1,6 @@
 package io.github.imnotstable.msc.agent.fabric;
 
+import io.github.imnotstable.msc.agent.common.AgentWorld;
 import io.github.imnotstable.msc.protocol.op.Ops;
 import io.github.imnotstable.msc.protocol.world.Region;
 import java.util.ArrayList;
@@ -13,12 +14,15 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.entity.SignBlockEntity;
+import net.minecraft.world.level.block.entity.SignText;
+import net.minecraft.world.level.block.entity.SignTextSlot;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.phys.AABB;
 
-/** {@link AgentLevel} on a {@code ServerLevel}. Main thread only. */
-final class FabricLevel implements AgentLevel {
+/** {@link AgentWorld} on a {@code ServerLevel}. Main thread only. */
+final class FabricLevel implements AgentWorld<BlockState> {
     /**
      * Without physics a block lands exactly as written: clients are told, but neighbours don't
      * react, the block's own placement logic doesn't run, and replaced containers don't spill
@@ -63,6 +67,17 @@ final class FabricLevel implements AgentLevel {
         level.setBlock(pos.set(x, y, z), state, physics ? PHYSICS : NO_PHYSICS);
     }
 
+    /** Block states are interned singletons, so identity is equality. */
+    @Override
+    public boolean sameState(BlockState current, BlockState target) {
+        return current == target;
+    }
+
+    @Override
+    public String serialize(BlockState state) {
+        return BlockStates.serialize(state);
+    }
+
     @Override
     public int surfaceY(int x, int z) {
         // Level.getHeight answers minY for a chunk that is not loaded (26.x keeps no spawn chunks loaded), so load
@@ -103,6 +118,22 @@ final class FabricLevel implements AgentLevel {
             }
             out.add(new Ops.EntityInfo(key, e.getUUID().toString(), e.getX(), e.getY(), e.getZ(), name(e),
                     List.copyOf(new TreeSet<>(e.entityTags())), health, maxHealth));
+        }
+        return out;
+    }
+
+    @Override
+    public Ops.SignText sign(int x, int y, int z) {
+        if (!(level.getBlockEntity(pos.set(x, y, z)) instanceof SignBlockEntity sign)) {
+            return null;
+        }
+        return Ops.SignText.of(x, y, z, lines(sign.getText(SignTextSlot.FRONT)), lines(sign.getText(SignTextSlot.BACK)));
+    }
+
+    private static List<String> lines(SignText text) {
+        List<String> out = new ArrayList<>(SignText.LINES);
+        for (Component line : text.getMessages(false)) {
+            out.add(line.getString());
         }
         return out;
     }

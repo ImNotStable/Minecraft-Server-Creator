@@ -58,9 +58,11 @@ import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.Serverbound
 import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.ServerboundClientCommandPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.ServerboundClientTickEndPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.ServerboundPlayerLoadedPacket;
+import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.inventory.ServerboundContainerClosePacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.level.ServerboundChunkBatchReceivedPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.level.ServerboundPlayerInputPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.player.ServerboundAttackPacket;
+import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.player.ServerboundInteractPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.player.ServerboundMovePlayerPosRotPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.player.ServerboundPlayerCommandPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.player.ServerboundSetCarriedItemPacket;
@@ -84,6 +86,9 @@ public final class TestPlayer implements Bot {
     private final Map<Integer, Tracked> entities = new ConcurrentHashMap<>();
     private final AtomicInteger sequence = new AtomicInteger();
     private final CountDownLatch spawned = new CountDownLatch(1);
+    private final Inventory inventory = new Inventory(Items.forVersion(minecraftVersion()));
+    private final Hud hud = new Hud();
+    private final Outbox outbox = new Outbox();
     final Physics body = new Physics();
     private WorldView view;
     private volatile String disconnect;
@@ -243,9 +248,11 @@ public final class TestPlayer implements Bot {
                     }
                 }
                 sendInput(in);
-                session.send(new ServerboundMovePlayerPosRotPacket(body.onGround, body.horizontalCollision, body.x,
+                outbox.move(new ServerboundMovePlayerPosRotPacket(body.onGround, body.horizontalCollision, body.x,
                         body.y, body.z, yaw, pitch));
-                session.send(ServerboundClientTickEndPacket.INSTANCE);
+                for (Packet packet : outbox.drain(ServerboundClientTickEndPacket.INSTANCE)) {
+                    session.send(packet);
+                }
                 if (step != null && step.check(this)) {
                     current = null;
                 }
@@ -298,6 +305,26 @@ public final class TestPlayer implements Bot {
 
     void selectSlot(int slot) {
         session.send(new ServerboundSetCarriedItemPacket(slot));
+        inventory.select(slot);
+    }
+
+    String inventoryReport() {
+        return inventory.report();
+    }
+
+    String hudReport() {
+        return hud.report();
+    }
+
+    /** Close the menu a server opened, like pressing Escape; false when none is open. */
+    boolean closeMenu() {
+        int id = inventory.screenId();
+        if (id < 0) {
+            return false;
+        }
+        session.send(new ServerboundContainerClosePacket(id));
+        inventory.closed();
+        return true;
     }
 
     void useItem() {
@@ -321,8 +348,35 @@ public final class TestPlayer implements Bot {
                 false, false, sequence.incrementAndGet()));
     }
 
-    /** Attack the nearest entity within reach; returns what was hit, or null. */
-    String attackNearest(double reach) {
+    /** Attack the nearest entity within reach, of a type when one is given; returns what was hit, or null. */
+    String attackNearest(String type, double reach) {
+        Map.Entry<Integer, Tracked> target = faceNearest(type, reach);
+        if (target == null) {
+            return null;
+        }
+        outbox.after(new ServerboundAttackPacket(target.getKey()));
+        return describe(target.getValue());
+    }
+
+    /** Right-click the nearest entity within reach (an NPC, a villager, an interaction box); null when none. */
+    String interactNearest(String type, double reach) {
+        Map.Entry<Integer, Tracked> target = faceNearest(type, reach);
+        if (target == null) {
+            return null;
+        }
+        // Where on the entity the click lands, relative to its feet: about chest height.
+        outbox.after(new ServerboundInteractPacket(target.getKey(), Hand.MAIN_HAND, Vector3d.from(0, 0.9, 0),
+                false));
+        return describe(target.getValue());
+    }
+
+    private String describe(Tracked t) {
+        return String.format("%s at %.1f blocks", t.type(), Math.sqrt(Math.pow(t.x() - body.x, 2)
+                + Math.pow(t.y() + 0.9 - body.y - 1.62, 2) + Math.pow(t.z() - body.z, 2)));
+    }
+
+    /** Turn toward the nearest matching entity within reach of the eyes; null when none. */
+    private Map.Entry<Integer, Tracked> faceNearest(String type, double reach) {
         double ex = body.x;
         double ey = body.y + 1.62;
         double ez = body.z;
@@ -331,7 +385,7 @@ public final class TestPlayer implements Bot {
         for (Map.Entry<Integer, Tracked> e : entities.entrySet()) {
             Tracked t = e.getValue();
             double d = Math.sqrt(Math.pow(t.x() - ex, 2) + Math.pow(t.y() + 0.9 - ey, 2) + Math.pow(t.z() - ez, 2));
-            if (e.getKey() != entityId && d <= bestD) {
+            if (e.getKey() != entityId && d <= bestD && (type == null || t.type().equals(type))) {
                 best = e;
                 bestD = d;
             }
@@ -340,10 +394,12 @@ public final class TestPlayer implements Bot {
             return null;
         }
         Tracked t = best.getValue();
-        yaw = (float) Math.toDegrees(Math.atan2(-(t.x() - ex), t.z() - ez));
-        session.send(new ServerboundMovePlayerPosRotPacket(body.onGround, false, body.x, body.y, body.z, yaw, pitch));
-        session.send(new ServerboundAttackPacket(best.getKey()));
-        return String.format("%s at %.1f blocks", t.type(), bestD);
+        double dx = t.x() - ex;
+        double dz = t.z() - ez;
+        yaw = (float) Math.toDegrees(Math.atan2(-dx, dz));
+        pitch = (float) -Math.toDegrees(Math.atan2(t.y() + 0.9 - ey, Math.sqrt(dx * dx + dz * dz)));
+        // No move packet here: the next tick's move carries the new facing (see Outbox).
+        return best;
     }
 
     /** Nearby entities, nearest first. */
@@ -368,6 +424,11 @@ public final class TestPlayer implements Bot {
     private final class Listener extends SessionAdapter {
         @Override
         public void packetReceived(Session s, Packet packet) {
+            // Inventory and screen state is kept for the inventory and hud actions; events below still log titles.
+            if (inventory.accept(packet)) {
+                return;
+            }
+            hud.accept(packet);
             switch (packet) {
                 case ClientboundLoginPacket p -> entityId = p.getEntityId();
                 case ClientboundPlayerPositionPacket p -> position(p);
@@ -491,9 +552,24 @@ public final class TestPlayer implements Bot {
         }
     }
 
+    /** A client only loads a zip with pack.mcmeta at its root. */
+    static boolean hasPackMeta(byte[] zip) {
+        try (java.util.zip.ZipInputStream in = new java.util.zip.ZipInputStream(new java.io.ByteArrayInputStream(zip))) {
+            for (java.util.zip.ZipEntry e = in.getNextEntry(); e != null; e = in.getNextEntry()) {
+                if (e.getName().equals("pack.mcmeta")) {
+                    return true;
+                }
+            }
+            return false;
+        } catch (java.io.IOException e) {
+            return false;
+        }
+    }
+
     /** Accept the pack, and check that it downloads and matches its hash, which a real client would need. */
     private void pack(Session s, ClientboundResourcePackPushPacket p) {
         event("[pack] offered " + p.getUrl() + (p.isRequired() ? " (required)" : ""));
+        hud.pack("offered, downloading " + p.getUrl());
         s.send(new ServerboundResourcePackPacket(p.getId(), ResourcePackStatus.ACCEPTED));
         Thread.ofVirtual().start(() -> {
             ResourcePackStatus status;
@@ -503,11 +579,17 @@ public final class TestPlayer implements Bot {
                 String sha1 = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-1").digest(r.body()));
                 boolean ok = r.statusCode() == 200 && (p.getHash() == null || p.getHash().isEmpty()
                         || p.getHash().equalsIgnoreCase(sha1));
-                event("[pack] download: HTTP " + r.statusCode() + ", " + r.body().length + " bytes"
-                        + (r.statusCode() == 200 ? (ok ? ", sha1 matches" : ", sha1 DIFFERS from " + p.getHash()) : ""));
+                boolean pack = ok && hasPackMeta(r.body());
+                String result = "HTTP " + r.statusCode() + ", " + r.body().length + " bytes"
+                        + (r.statusCode() == 200 ? (ok ? ", sha1 matches" : ", sha1 DIFFERS from " + p.getHash()) : "")
+                        + (ok && !pack ? ", but no pack.mcmeta at the zip root" : "");
+                ok = pack;
+                event("[pack] download: " + result);
+                hud.pack((ok ? "loaded (" : "FAILED (") + result + ")" + (p.isRequired() ? ", required" : ""));
                 status = ok ? ResourcePackStatus.SUCCESSFULLY_LOADED : ResourcePackStatus.FAILED_DOWNLOAD;
             } catch (Exception e) {
                 event("[pack] download failed: " + e.getMessage());
+                hud.pack("FAILED (download: " + e.getMessage() + ")" + (p.isRequired() ? ", required" : ""));
                 status = ResourcePackStatus.FAILED_DOWNLOAD;
             }
             if (status == ResourcePackStatus.SUCCESSFULLY_LOADED) {

@@ -3,6 +3,10 @@ package io.github.imnotstable.msc.agent.minestom;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.github.imnotstable.msc.agent.common.EditHistory;
+import io.github.imnotstable.msc.agent.common.MainThread;
+import io.github.imnotstable.msc.agent.common.ReadJob;
+import io.github.imnotstable.msc.agent.common.WorldOps;
 import io.github.imnotstable.msc.protocol.message.ErrorCodes;
 import io.github.imnotstable.msc.protocol.op.Ops;
 import io.github.imnotstable.msc.protocol.transport.OpException;
@@ -11,6 +15,9 @@ import io.github.imnotstable.msc.protocol.world.BlockPos;
 import io.github.imnotstable.msc.protocol.world.Region;
 import java.time.Duration;
 import java.util.List;
+import net.kyori.adventure.nbt.CompoundBinaryTag;
+import net.kyori.adventure.nbt.ListBinaryTag;
+import net.kyori.adventure.nbt.StringBinaryTag;
 import net.minestom.server.instance.Instance;
 import net.minestom.server.instance.block.Block;
 import net.minestom.testing.Env;
@@ -23,13 +30,13 @@ class WorldOpsTest {
     private static final Duration TIMEOUT = Duration.ofSeconds(10);
 
     private Instance world;
-    private WorldOps ops;
+    private WorldOps<?> ops;
 
     private void setUp(Env env) {
         world = env.createEmptyInstance();
         MscAgent.name(world, "world");
-        ops = new WorldOps(new Worlds(() -> env.process().instance().getInstances()), MainThread.inline(),
-                new EditHistory(1_000_000), TIMEOUT);
+        ops = new WorldOps<>(new Worlds(() -> env.process().instance().getInstances(), TIMEOUT), MainThread.inline(),
+                new EditHistory<>(1_000_000));
     }
 
     private static Region box(int x1, int y1, int z1, int x2, int y2, int z2) {
@@ -110,6 +117,26 @@ class WorldOpsTest {
 
         assertThat(at(5, 70, 5).getProperty("facing")).isEqualTo("east");
         assertThat(at(40, 70, 5)).isEqualTo(Block.GLASS);
+    }
+
+    @Test
+    void readReportsSignTextFromBlockNbtOnlyWhenAsked(Env env) {
+        setUp(env);
+        CompoundBinaryTag front = CompoundBinaryTag.builder().put("messages", ListBinaryTag.builder()
+                // NBT lists hold one tag type: these messages are all text compounds, one with an extra part.
+                .add(CompoundBinaryTag.builder().putString("text", "Shop").build())
+                .add(CompoundBinaryTag.builder().putString("text", "Op")
+                        .put("extra", ListBinaryTag.builder().add(StringBinaryTag.stringBinaryTag("en")).build()).build())
+                .add(CompoundBinaryTag.builder().putString("text", "").build())
+                .add(CompoundBinaryTag.builder().putString("text", "").build()).build()).build();
+        set(1, 70, 1, Block.OAK_SIGN.withNbt(CompoundBinaryTag.builder().put("front_text", front).build()));
+        set(2, 70, 1, Block.OAK_SIGN);
+
+        Ops.ReadResult with = ops.read(new Ops.ReadParams(box(0, 70, 0, 3, 71, 3), false, true));
+        Ops.ReadResult without = ops.read(new Ops.ReadParams(box(0, 70, 0, 3, 71, 3), false));
+
+        assertThat(with.signs()).containsExactly(new Ops.SignText(1, 70, 1, List.of("Shop", "Open", "", ""), null));
+        assertThat(without.signs()).isEmpty();
     }
 
     @Test

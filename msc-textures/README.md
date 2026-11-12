@@ -17,7 +17,7 @@ Pixel-art textures without an image model: colour ramps, procedural block patter
 | `Models` | Block and item models on vanilla parents, item definitions for `item_model` |
 | `PackSource` | Writes textures, animations, models and `pack.mcmeta`; zips deterministically |
 | `PackLint` | Checks a pack folder or zip for broken references, sizes, palettes and metadata |
-| `PaletteText`, `Stats` | The text format shared with `texture_create`, and a one-line texture summary |
+| `PaletteText`, `Stats` | The text format shared with `msc-core`'s `texture` tool, and a one-line texture summary |
 
 ```java
 Ramp ruby = Ramp.from(Colors.parse("#d4263a"), 5);

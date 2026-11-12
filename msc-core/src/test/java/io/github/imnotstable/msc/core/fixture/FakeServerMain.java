@@ -37,6 +37,12 @@ public final class FakeServerMain {
             System.out.println("\tat com.example.demo.Demo.onEnable(Demo.java:17) ~[demo.jar:?]");
             System.out.println("\tat org.bukkit.plugin.java.JavaPlugin.setEnabled(JavaPlugin.java:288) ~[paper-api.jar:?]");
         }
+        // late-agent.flag: the agent connects only after "Done", as Minestom's built-in one can.
+        boolean late = Files.exists(Path.of("late-agent.flag"));
+        if (late) {
+            System.out.println("[12:00:02 INFO]: Done (0.1s)! For help, type \"help\"");
+            Thread.sleep(800);
+        }
         OpRouter router = new FakeAgent().router();
         AgentClient.Session session = AgentClient.connectFromEnvironment(
                 new AgentInfo("paper", "fake", "26.3", router.operations()), router, new Connection.Listener() {
@@ -44,7 +50,9 @@ public final class FakeServerMain {
         if (session != null) {
             session.connection().sendEvent(Events.SERVER_READY, new JsonObject());
         }
-        System.out.println("[12:00:02 INFO]: Done (0.1s)! For help, type \"help\"");
+        if (!late) {
+            System.out.println("[12:00:02 INFO]: Done (0.1s)! For help, type \"help\"");
+        }
         BufferedReader in = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8));
         String line;
         while ((line = in.readLine()) != null) {

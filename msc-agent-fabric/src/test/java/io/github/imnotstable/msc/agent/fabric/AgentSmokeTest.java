@@ -3,6 +3,14 @@ package io.github.imnotstable.msc.agent.fabric;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.google.gson.JsonObject;
+import io.github.imnotstable.msc.agent.common.AgentDefaults;
+import io.github.imnotstable.msc.agent.common.AgentLink;
+import io.github.imnotstable.msc.agent.common.AgentLog;
+import io.github.imnotstable.msc.agent.common.AgentRoutes;
+import io.github.imnotstable.msc.agent.common.CoreAddress;
+import io.github.imnotstable.msc.agent.common.EditHistory;
+import io.github.imnotstable.msc.agent.common.ServerOps;
+import io.github.imnotstable.msc.agent.common.WorldOps;
 import io.github.imnotstable.msc.protocol.message.AgentInfo;
 import io.github.imnotstable.msc.protocol.message.Event;
 import io.github.imnotstable.msc.protocol.op.Events;
@@ -23,7 +31,6 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.slf4j.LoggerFactory;
 
 /**
  * The agent's real wiring (link, routes, operations, tick-driven main thread) against a real
@@ -59,7 +66,7 @@ class AgentSmokeTest {
             }
         }, TIMEOUT);
         world = new TestLevel();
-        main = new TickMainThread(() -> Thread.currentThread() == ticker, MscAgentMod.TICK_BUDGET, TIMEOUT);
+        main = new TickMainThread(() -> Thread.currentThread() == ticker, AgentDefaults.TICK_BUDGET, TIMEOUT);
         ticker = Thread.ofPlatform().daemon().name("test-server-tick").start(() -> {
             while (!Thread.currentThread().isInterrupted()) {
                 main.tick();
@@ -72,12 +79,12 @@ class AgentSmokeTest {
         });
         TestServer server = new TestServer();
         ServerOps serverOps = new ServerOps(server, main);
-        OpRouter router = AgentRoutes.router(serverOps, new WorldOps(world, main, new EditHistory(MscAgentMod.UNDO_BLOCKS)));
-        AgentInfo info = new AgentInfo(ServerOps.PLATFORM,
+        OpRouter router = AgentRoutes.router(serverOps, new WorldOps<>(world, main, new EditHistory<>(AgentDefaults.UNDO_BLOCKS)));
+        AgentInfo info = new AgentInfo(server.platform(),
                 server.platformVersion(), server.minecraftVersion(), router.operations());
         Optional<CoreAddress> address = CoreAddress.resolve(
                 k -> k.equals("MSC_CORE_ADDRESS") ? core.address() : k.equals("MSC_TOKEN") ? "smoke-token" : null, k -> null);
-        link = new AgentLink(info, router, () -> address, LoggerFactory.getLogger("msc-agent-test"));
+        link = new AgentLink(info, router, () -> address, AgentLog.of(System.getLogger("msc-agent-test")));
         link.start();
     }
 

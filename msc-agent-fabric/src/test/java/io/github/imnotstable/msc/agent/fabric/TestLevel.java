@@ -1,5 +1,8 @@
 package io.github.imnotstable.msc.agent.fabric;
 
+import io.github.imnotstable.msc.agent.common.AgentWorld;
+import io.github.imnotstable.msc.agent.common.AgentWorlds;
+import io.github.imnotstable.msc.agent.common.PackedPos;
 import io.github.imnotstable.msc.protocol.op.Ops;
 import io.github.imnotstable.msc.protocol.world.Region;
 import java.util.ArrayList;
@@ -11,10 +14,11 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 
 /** An in-memory world, overworld height (-64..319), all air until set. */
-final class TestLevel implements AgentLevel, Levels {
+final class TestLevel implements AgentWorld<BlockState>, AgentWorlds<BlockState> {
     final Map<Long, BlockState> blocks = new HashMap<>();
     final List<Ops.EntitySummary> entities = new ArrayList<>();
     final List<Ops.EntityInfo> entityInfos = new ArrayList<>();
+    final Map<Long, Ops.SignText> signs = new HashMap<>();
     int writes;
     boolean lastPhysics;
 
@@ -50,6 +54,11 @@ final class TestLevel implements AgentLevel, Levels {
     }
 
     @Override
+    public String serialize(BlockState state) {
+        return BlockStates.serialize(state);
+    }
+
+    @Override
     public int surfaceY(int x, int z) {
         for (int y = maxY() - 1; y >= minY(); y--) {
             if (!get(x, y, z).isAir()) {
@@ -72,7 +81,12 @@ final class TestLevel implements AgentLevel, Levels {
                 .toList();
     }
 
-    // ---- Levels: this is the only world ----
+    @Override
+    public Ops.SignText sign(int x, int y, int z) {
+        return signs.get(PackedPos.pack(x, y, z));
+    }
+
+    // ---- AgentWorlds: this is the only world ----
 
     @Override
     public List<String> names() {
@@ -80,7 +94,12 @@ final class TestLevel implements AgentLevel, Levels {
     }
 
     @Override
-    public Optional<AgentLevel> byName(String name) {
+    public Optional<TestLevel> byName(String name) {
         return name.equals(name()) ? Optional.of(this) : Optional.empty();
+    }
+
+    @Override
+    public BlockState parse(String state) {
+        return BlockStates.parse(state);
     }
 }

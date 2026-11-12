@@ -5,6 +5,7 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Pattern;
 
 /**
  * Reads the final result Claude Code prints. Handles {@code --output-format json} as one result
@@ -60,6 +61,32 @@ public final class ClaudeResultParser {
                         ? String.join(",", result.getAsJsonObject("modelUsage").keySet())
                         : model,
                 mcpConnected);
+    }
+
+    private static final Pattern USAGE_LIMIT = Pattern.compile(
+            "(?i)\\b429\\b|usage limit|out of (extra )?usage|rate.?limit");
+
+    /**
+     * The agent's error text when its run ended on an account usage or rate limit (API error 429), else null. Every
+     * later attempt would fail the same way in a second, so the bench stops instead of recording them.
+     */
+    public static String usageLimit(String stdout) {
+        JsonObject result = null;
+        for (JsonObject o : events(stdout.strip())) {
+            if (isResult(o)) {
+                result = o;
+            }
+        }
+        if (result == null || !(bool(result, "is_error") || number(result, "api_error_status") == 429)) {
+            return null;
+        }
+        String text = result.has("result") && result.get("result").isJsonPrimitive()
+                ? result.get("result").getAsString().strip()
+                : "";
+        if (number(result, "api_error_status") == 429 || USAGE_LIMIT.matcher(text).find()) {
+            return text.isEmpty() ? "API error 429" : text.lines().findFirst().orElse(text);
+        }
+        return null;
     }
 
     private static List<JsonObject> events(String text) {

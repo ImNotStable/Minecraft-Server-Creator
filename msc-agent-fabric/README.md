@@ -27,23 +27,19 @@ Gradle must run on Java 25 for Fabric Loom; `gradle/gradle-daemon-jvm.properties
 
 | Class | Role |
 | --- | --- |
-| `MscAgentMod` | Entry point: wires everything to Fabric events |
-| `AgentLink` | Connection to the core: connect, reconnect, events |
-| `AgentRoutes` | Op name to handler table |
-| `WorldOps` | Reads, heightmaps, fill/write/setBlocks/undo |
-| `ServerOps` | Info, commands, resource packs |
-| `AgentLevel`, `FabricLevel`, `Levels`, `FabricLevels`, `LevelNames` | One world's blocks; worlds by name |
-| `ServerAccess`, `FabricServerAccess` | Versions, TPS, commands, packs on the real server |
+| `MscAgentMod` | Entry point: wires the shared operations and core link to Fabric events |
+| `FabricLevels`, `FabricLevel`, `LevelNames` | Worlds by Paper-style name; one world's blocks, entities and signs |
+| `FabricServerAccess` | Versions, TPS, commands, packs on the real server |
 | `BlockStates` | Block state strings to states and back |
-| `MainThread`, `TickMainThread`, `SlicedJob` | Running work on the server thread in per-tick slices |
-| `EditJob`, `ReadJob`, `HeightmapJob` | The sliced jobs |
-| `EditHistory`, `UndoRecord` | Undo |
+| `TickMainThread` | Runs work on the server thread in per-tick slices |
+
+Operations, sliced jobs, undo and the core connection live in [msc-agent-common](../msc-agent-common/README.md); this module only adapts the server API to them.
 
 ## Tests
 
-`./gradlew :msc-agent-fabric:test` runs 33 tests inside Fabric Loader (`fabric-loader-junit`) with Minecraft's registries loaded: operations against an in-memory world with real block states, the tick-driven main thread, server ops against a fake server, and a smoke test of the whole agent against a real `CoreServer` socket.
+`./gradlew :msc-agent-fabric:test` runs its tests inside Fabric Loader (`fabric-loader-junit`) with Minecraft's registries loaded: the shared operations on real block states, the tick-driven main thread, server ops against a fake server, and a smoke test of the whole agent against a real `CoreServer` socket.
 
 ## Depends on
 
-- `msc-protocol`
+- `msc-agent-common` (brings `msc-protocol`)
 - Minecraft 26.3 server, Fabric Loader, Fabric API (lifecycle events, networking).
