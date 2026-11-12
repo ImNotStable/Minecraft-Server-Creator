@@ -16,5 +16,5 @@ Every Fabric and Minestom break in the last round was found by a person play-tes
 ## Consequences
 
 - A PR that breaks scaffolding, the Minestom agent, the core's MCP layer, building, world reading, rendering or the test player fails CI on both systems.
-- CI costs two more jobs per run; locally the test takes about 40 seconds once Gradle has the dependencies.
+- CI costs two more jobs per run (since [ADR 0025](0025-ci-cost.md) only on `main`, nightly and `full-ci` PRs); locally the test takes about 40 seconds once Gradle has the dependencies.
 - Paper- and Fabric-only code paths (server downloads, `eula.txt`, plugin and mod deploys) are still covered only by unit tests and PC runs.

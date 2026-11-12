@@ -1,6 +1,6 @@
-# Builds and tests every module on pushes to main and on pull requests, on Linux and Windows
-# (the owner develops on Windows; #29 failed there only). See ADR 0012. The e2e job runs a real
-# Minestom server through the installed core and builds every template (ADR 0022).
+# Builds and tests every module. Pull requests run the Ubuntu build only; the Windows build and the
+# Minestom end-to-end job run on pushes to main, nightly, by hand, or on a PR labelled "full-ci"
+# (ADR 0025: Actions minutes on a private repo, Windows costs 2x). See ADR 0012 and ADR 0022.
 name: CI
 
 on:
@@ -13,12 +13,17 @@ on:
       - "msc-*/README.md"
       - "msc-*/PLAN.md"
   pull_request:
+    # "labeled" lets the full-ci label start a full run; other labels skip every job (see the job ifs).
+    types: [opened, synchronize, reopened, ready_for_review, labeled]
     paths-ignore:
       - "docs/**"
       - "msc-docs/**"
       - "*.md"
       - "msc-*/README.md"
       - "msc-*/PLAN.md"
+  schedule:
+    # Nightly full run (Windows + e2e) on main.
+    - cron: "17 3 * * *"
   workflow_dispatch:
 
 # A newer push to the same branch or PR cancels the older run (saves Actions minutes).
@@ -32,13 +37,16 @@ permissions:
 jobs:
   build:
     name: Build and test (${{ matrix.os }})
+    # On a labelled event, run only when the label is full-ci.
+    if: github.event.action != 'labeled' || github.event.label.name == 'full-ci'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     strategy:
       # One OS failing must not cancel the other: an OS-specific failure is the thing to see.
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        # PRs: Ubuntu only, unless labelled full-ci. Everything else: Ubuntu and Windows.
+        os: ${{ fromJSON((github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'full-ci')) && '["ubuntu-latest"]' || '["ubuntu-latest","windows-latest"]') }}
     defaults:
       run:
         # Git Bash on Windows, so ./gradlew and every run step read the same on both.
@@ -70,6 +78,8 @@ jobs:
 
   e2e:
     name: End to end on Minestom (${{ matrix.os }})
+    # Not on ordinary PRs: main, nightly, by hand, or a PR labelled full-ci.
+    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'full-ci')
     runs-on: ${{ matrix.os }}
     timeout-minutes: 40
     strategy:
