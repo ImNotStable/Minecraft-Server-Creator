@@ -24,10 +24,11 @@ dependencies {
         implementation(dep)
         include(dep)
     }
-    implementation(project(":msc-protocol")) {
-        // Minecraft ships Gson.
+    // Shared agent code; brings msc-protocol. Minecraft ships Gson.
+    implementation(project(":msc-agent-common")) {
         exclude(group = "com.google.code.gson")
     }
+    include(project(":msc-agent-common"))
     include(project(":msc-protocol"))
 
     testImplementation(libs.fabric.loader.junit)

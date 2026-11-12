@@ -1,5 +1,6 @@
 package io.github.imnotstable.msc.agent.fabric;
 
+import io.github.imnotstable.msc.agent.common.AgentWorld;
 import io.github.imnotstable.msc.protocol.op.Ops;
 import io.github.imnotstable.msc.protocol.world.Region;
 import java.util.ArrayList;
@@ -20,8 +21,8 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.phys.AABB;
 
-/** {@link AgentLevel} on a {@code ServerLevel}. Main thread only. */
-final class FabricLevel implements AgentLevel {
+/** {@link AgentWorld} on a {@code ServerLevel}. Main thread only. */
+final class FabricLevel implements AgentWorld<BlockState> {
     /**
      * Without physics a block lands exactly as written: clients are told, but neighbours don't
      * react, the block's own placement logic doesn't run, and replaced containers don't spill
@@ -64,6 +65,17 @@ final class FabricLevel implements AgentLevel {
     @Override
     public void set(int x, int y, int z, BlockState state, boolean physics) {
         level.setBlock(pos.set(x, y, z), state, physics ? PHYSICS : NO_PHYSICS);
+    }
+
+    /** Block states are interned singletons, so identity is equality. */
+    @Override
+    public boolean sameState(BlockState current, BlockState target) {
+        return current == target;
+    }
+
+    @Override
+    public String serialize(BlockState state) {
+        return BlockStates.serialize(state);
     }
 
     @Override

@@ -36,15 +36,14 @@ The jar is `build/libs/msc-agent-minestom-<version>.jar` (msc-protocol shaded in
 
 | Class | Role |
 | --- | --- |
-| `MscAgent` | Public entry point: start, name instances, connect, events |
-| `AgentRoutes` | Op name to handler table |
-| `WorldOps`, `Worlds`, `BlockStates` | Reads, heightmaps, edits, undo; world names; block state strings |
-| `ServerOps`, `CapturingSender`, `TickRate`, `MinestomServerFacts` | Info, commands, resource packs, TPS |
-| `MainThread`, `SchedulerMainThread`, `SlicedJob` | Running work in per-tick slices |
-| `EditJob`, `ReadJob`, `HeightmapJob` | The sliced jobs |
-| `EditHistory`, `UndoRecord`, `PackedPos` | Undo |
+| `MscAgent` | Public entry point: start, name instances; wires the shared operations and core link to Minestom events |
+| `Worlds`, `MinestomWorld`, `BlockStates`, `SignNbt` | World names; one instance's blocks (with chunk loading), entities and signs; block state strings |
+| `MinestomServer`, `CapturingSender`, `TickRate`, `MinestomServerFacts` | Info, commands, resource packs, TPS |
+| `SchedulerMainThread` | Runs work in per-tick slices |
+
+Operations, sliced jobs, undo and the core connection live in [msc-agent-common](../msc-agent-common/README.md); this module only adapts the server API to them.
 
 ## Depends on
 
-- `msc-protocol`
+- `msc-agent-common` (brings `msc-protocol`)
 - Minestom `2026.10.07-26.2` (compileOnly; Minecraft 26.2), `net.minestom:testing` for tests.

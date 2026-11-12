@@ -7,8 +7,8 @@ description = "Minestom library that carries out msc-core's operations inside a 
 
 dependencies {
     compileOnly(libs.minestom)
-    implementation(project(":msc-protocol")) {
-        // Minestom provides Gson at runtime.
+    // Shared agent code; brings msc-protocol. Minestom provides Gson at runtime.
+    implementation(project(":msc-agent-common")) {
         exclude(group = "com.google.code.gson")
     }
 

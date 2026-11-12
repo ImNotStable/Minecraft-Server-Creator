@@ -3,6 +3,10 @@ package io.github.imnotstable.msc.agent.minestom;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.github.imnotstable.msc.agent.common.EditHistory;
+import io.github.imnotstable.msc.agent.common.MainThread;
+import io.github.imnotstable.msc.agent.common.ReadJob;
+import io.github.imnotstable.msc.agent.common.WorldOps;
 import io.github.imnotstable.msc.protocol.message.ErrorCodes;
 import io.github.imnotstable.msc.protocol.op.Ops;
 import io.github.imnotstable.msc.protocol.transport.OpException;
@@ -26,13 +30,13 @@ class WorldOpsTest {
     private static final Duration TIMEOUT = Duration.ofSeconds(10);
 
     private Instance world;
-    private WorldOps ops;
+    private WorldOps<?> ops;
 
     private void setUp(Env env) {
         world = env.createEmptyInstance();
         MscAgent.name(world, "world");
-        ops = new WorldOps(new Worlds(() -> env.process().instance().getInstances()), MainThread.inline(),
-                new EditHistory(1_000_000), TIMEOUT);
+        ops = new WorldOps<>(new Worlds(() -> env.process().instance().getInstances(), TIMEOUT), MainThread.inline(),
+                new EditHistory<>(1_000_000));
     }
 
     private static Region box(int x1, int y1, int z1, int x2, int y2, int z2) {

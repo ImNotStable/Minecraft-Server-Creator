@@ -1,12 +1,9 @@
 package io.github.imnotstable.msc.agent.minestom;
 
-import io.github.imnotstable.msc.protocol.message.ErrorCodes;
-import io.github.imnotstable.msc.protocol.transport.OpException;
+import io.github.imnotstable.msc.agent.common.MainThread;
+import io.github.imnotstable.msc.agent.common.SlicedJob;
 import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import java.util.function.Supplier;
 import net.minestom.server.MinecraftServer;
 import net.minestom.server.timer.ExecutionType;
@@ -84,20 +81,6 @@ public final class SchedulerMainThread implements MainThread {
     }
 
     private <T> T await(CompletableFuture<T> future) {
-        try {
-            return future.get(timeout.toMillis(), TimeUnit.MILLISECONDS);
-        } catch (TimeoutException e) {
-            future.cancel(false);
-            throw new OpException(ErrorCodes.TIMEOUT, "server did not finish within " + timeout.toSeconds() + "s");
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new OpException(ErrorCodes.SHUTDOWN, "interrupted");
-        } catch (ExecutionException e) {
-            Throwable cause = e.getCause();
-            if (cause instanceof RuntimeException re) {
-                throw re;
-            }
-            throw new OpException(ErrorCodes.INTERNAL, String.valueOf(cause));
-        }
+        return MainThread.await(future, timeout);
     }
 }
