@@ -11,6 +11,8 @@ updates:
       prefix: "deps"
     groups:
       # Server platforms move together with the Minecraft version; one PR so they stay in step.
+      # mcprotocollib (msc-bot) has two refs; mcprotocollib-previous must stay one Minecraft version behind,
+      # so check that ref by hand in this group's PRs.
       minecraft-platforms:
         patterns:
           - "io.papermc*"
@@ -19,6 +21,7 @@ updates:
           - "net.minestom*"
           - "org.mockbukkit*"
           - "com.mojang*"
+          - "org.geysermc*"
       # Everything else (Gson, MCP SDK, JUnit, AssertJ, Shadow, run-paper, foojay...).
       libraries-and-plugins:
         patterns:
@@ -30,6 +33,7 @@ updates:
           - "net.minestom*"
           - "org.mockbukkit*"
           - "com.mojang*"
+          - "org.geysermc*"
 
   - package-ecosystem: github-actions
     directory: "/"
