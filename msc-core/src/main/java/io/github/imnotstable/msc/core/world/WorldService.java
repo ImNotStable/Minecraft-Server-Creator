@@ -301,14 +301,17 @@ public final class WorldService {
         }
         String full = type == null || type.isBlank() ? null : BlockNames.full(type.strip().toLowerCase(java.util.Locale.ROOT));
         Ops.EntitiesResult r = hub.call(Ops.WORLD_ENTITIES, new Ops.EntitiesParams(region, full, Math.max(1, limit)));
-        return Budget.truncate(formatEntities(r, full, ids), maxChars, "Pass type, a smaller region or a lower limit.");
+        return Budget.truncate(formatEntities(r, full, ids, region), maxChars, "Pass type, a smaller region or a lower limit.");
     }
 
     /** The listing: a count line with totals per type, then one line per entity. */
-    static String formatEntities(Ops.EntitiesResult r, String type, boolean ids) {
+    static String formatEntities(Ops.EntitiesResult r, String type, boolean ids, Region region) {
         if (r.total() == 0) {
+            // With no player online the region's chunks are usually unloaded, and their entities with them.
             return "no " + (type == null ? "entities" : BlockNames.brief(type) + " entities")
-                    + " in the region (only loaded chunks are searched)";
+                    + " in the region. Only loaded chunks are searched, and with no player nearby they are unloaded: "
+                    + "server_command \"forceload add " + region.min().x() + " " + region.min().z() + " "
+                    + region.max().x() + " " + region.max().z() + "\" loads them, then ask again";
         }
         Map<String, Integer> perType = new TreeMap<>();
         for (Ops.EntityInfo e : r.entities()) {

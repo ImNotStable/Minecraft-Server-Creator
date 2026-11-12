@@ -242,7 +242,7 @@ class WorldToolsTest {
                 .isEqualTo("2 entities, first 1 shown\nzombie \"Brute\" 2.5,64,3.3 hp 7/20 tags boss,wave"
                         + " id 00000000-0000-0000-0000-000000000001");
         assertThat(h.ok("world_entities", "region", "0,60,0 1,61,1", "type", "pig"))
-                .startsWith("no pig entities in the region");
+                .startsWith("no pig entities in the region").endsWith("\"forceload add 0 0 1 1\" loads them, then ask again");
         assertThat(h.error("world_entities", "region", "0,0,0 5000,1,1")).contains("2048");
     }
 }
