@@ -137,7 +137,8 @@ public final class Templates {
             throw new IllegalStateException("Target is a file: " + target);
         }
         try (Stream<Path> entries = Files.list(target)) {
-            if (entries.findAny().isPresent()) {
+            // .msc is MSC's own data (tool log, platform); msc_workspace or server_setup may have made it first.
+            if (entries.anyMatch(e -> !e.getFileName().toString().equals(".msc"))) {
                 throw new IllegalStateException("Target directory is not empty: " + target);
             }
         }

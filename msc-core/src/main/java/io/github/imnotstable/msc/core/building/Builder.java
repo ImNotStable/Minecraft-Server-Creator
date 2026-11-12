@@ -86,8 +86,10 @@ public final class Builder {
             throw e;
         }
         String id = world.remember(ids);
-        return "edit " + id + ": " + changed + " blocks changed (" + canvas.placed() + " placed), region "
-                + Coords.show(used) + "\n" + counts;
+        // One kind of block, or nothing left unchanged: the extra numbers say nothing new.
+        return "edit " + id + ": " + changed + " blocks changed"
+                + (changed == canvas.placed() ? "" : " (" + canvas.placed() + " placed)") + ", region "
+                + Coords.show(used) + (canvas.counts().size() > 1 ? "\n" + counts : "");
     }
 
     /**

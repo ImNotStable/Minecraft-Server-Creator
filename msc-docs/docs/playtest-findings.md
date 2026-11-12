@@ -97,3 +97,43 @@ scaffold `package` option (#19), pack sent again after a restart and render colo
 `dev_cycle` as one call, `api_search` and `api_class` for names that moved in 26.x, condensed logs ("no errors or warnings"), the ground-level line, text structures for
 irregular builds such as the maze, `world_render` for a quick look, `texture_create` from text, and
 `server_detach`.
+
+## Third playtest: Tidewright on Minestom (2026-11-12)
+
+A tide puzzle game (five different trials and a boss) built on Minestom with current main (3bc7a82), using
+`msc_workspace`, `build_batch`, `server_setup mode=game`, `server_wait` and `player_test`.
+
+| | Lumen Siege (Paper) | Gearfall (Paper) | Tidewright (Minestom) |
+|---|---|---|---|
+| Start to playable | 26 min (15 of them EULA wait) | about 20 min | 19 min |
+| MSC calls | 148 | not counted | 76 |
+| `server_command` calls | 81 (polling) | many | 4 |
+| Build calls | 14 `build_structure` from a 230-line script | dozens of fills from a script | 3 `build_batch` (35k blocks) |
+| Game code | 900 lines, compiled first time | 750 lines | 1,000 lines, one compile error |
+
+**What the new tools removed.** `build_batch` replaced the build scripts: the whole archipelago (6 islands, piers,
+sandbar, lighthouse, reef, a flooded tank, palms stamped six times) was one call, with a dry run that checked every
+block name first. A short generator was still needed for the lighthouse spiral (no helix shape) and for repeated
+posts. `msc_workspace` replaced the bridge's pinned folder and stopped Gearfall over RCON with a world save. No
+EULA wait on Minestom. The game's own test environment replaced polling: no `server_wait` was needed.
+
+**Friction, worst first.**
+1. **`player_test` cannot join Minestom.** The test player speaks 26.3 and Minestom is 26.2, so it is kicked at login,
+   yet the tool said "joined as MscTester (survival, op)" first. Fixed in the PR with this doc: the tool now says the
+   versions differ before trying, and a kick at login is an error. Then #30 made it join 26.2 servers: it pings the server and loads MCProtocolLib 26.2 in its own class loader (ADR 0016). Accepting any protocol on the server does not help
+   (the configuration packets differ). The trials were verified instead with Minestom's `@EnvTest` players, ticking
+   the real server: lighthouse flood, four raid waves, breath, boss shield. That worked well and is worth
+   recommending for Minestom.
+2. **Minestom worlds were not saved.** The template kept the world in memory, so every `dev_cycle` would have
+   erased what `build_batch` built. Fixed: the template now uses an `AnvilLoader` in `run/world` and saves on stop.
+3. **`project_scaffold` refused the workspace** after `msc_workspace` or `server_setup` had created `.msc`. Fixed: `.msc`
+   no longer counts as content.
+4. **The bridge is still needed** for a fresh install: the session's own MSC is pinned to the old install, so
+   `msc_workspace` cannot help until Claude Code restarts. Open.
+5. **`msc_status` says "server: stopped"** for a server detached by an earlier core, while `server_stop` finds and
+   stops it. Open, small.
+6. **`api_class` hides inherited interface constants**: `MinecraftServer.PROTOCOL_VERSION`, `Attribute.SCALE` and
+   `DimensionType.OVERWORLD` all come from interfaces and were missing. Open.
+7. **No spiral or helix shape** in `build_batch`, and no `repeat` for single `set` steps. Open, small.
+8. **Shadow warnings in `dev_cycle` failures** (ten lines of DuplicatesStrategy notes). Fixed in the template.
+9. **The tool log stays in the start folder** after `msc_workspace`. Open, small.

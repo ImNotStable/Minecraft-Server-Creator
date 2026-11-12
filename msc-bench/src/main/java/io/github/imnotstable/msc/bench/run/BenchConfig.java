@@ -50,6 +50,9 @@ public record BenchConfig(
      * @param serverPlugins      jars copied into {@code server/plugins} before the run; placeholders allowed
      * @param paperCacheSeed     workspace folder that gets a copy of the Paper jar under its cache name, so
      *                           msc-core finds it instead of downloading it during the timed run
+     * @param requireMcp         MCP server that must be connected when the agent starts; Claude Code in
+     *                           {@code -p} mode sometimes starts before its MCP servers connect, and such an
+     *                           attempt is retried instead of scored as a toolset run without tools
      */
     public record Mode(
             List<String> extraArgs,
@@ -57,7 +60,8 @@ public record BenchConfig(
             String mcpConfigTemplate,
             Map<String, String> serverEnv,
             List<String> serverPlugins,
-            String paperCacheSeed) {
+            String paperCacheSeed,
+            String requireMcp) {
 
         public Mode {
             extraArgs = extraArgs == null ? List.of() : List.copyOf(extraArgs);
@@ -141,7 +145,7 @@ public record BenchConfig(
 
         Map<String, Mode> fullModes = new LinkedHashMap<>();
         if (modes == null || modes.isEmpty()) {
-            fullModes.put("baseline", new Mode(null, null, null, null, null, null));
+            fullModes.put("baseline", new Mode(null, null, null, null, null, null, null));
         } else {
             modes.forEach((name, mode) -> fullModes.put(name, new Mode(
                     mode.extraArgs(),
@@ -149,7 +153,8 @@ public record BenchConfig(
                     mode.mcpConfigTemplate() == null ? null : resolve(base, mode.mcpConfigTemplate()),
                     mode.serverEnv(),
                     mode.serverPlugins().stream().map(p -> p.startsWith("{") ? p : resolve(base, p)).toList(),
-                    mode.paperCacheSeed())));
+                    mode.paperCacheSeed(),
+                    mode.requireMcp())));
         }
 
         Server s = server == null ? new Server(null, null, null, null, false, 0, 0, null, 0) : server;

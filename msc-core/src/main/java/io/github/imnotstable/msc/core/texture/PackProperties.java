@@ -86,7 +86,8 @@ public final class PackProperties {
             }
         }
         left.forEach((k, v) -> out.add(k + "=" + escape(v)));
-        Files.write(file, out, StandardCharsets.UTF_8);
+        // "\n" on every OS, so the file and its tests do not depend on where MSC runs.
+        Files.writeString(file, String.join("\n", out) + "\n", StandardCharsets.UTF_8);
         return true;
     }
 

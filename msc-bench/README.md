@@ -15,7 +15,7 @@ For each task and each mode (`baseline` = Claude Code alone, `toolset` = Claude 
 4. Runs the task's checks: files, build commands, PNGs, zips, and the live world and plugins over RCON.
 5. Stops the server and records time, turns, tokens and cost (from Claude Code's JSON result) plus tool-call totals, including image tokens from rendered views (from msc-core's tool log, [ADR 0004](../msc-docs/docs/adr/0004-bench.md)).
 
-Attempts are interleaved (task 1 baseline, task 1 toolset, task 2 ...) so drift in model speed hits both modes alike. Results go to `runs/<timestamp>/results.jsonl` and `report.md` (pass rate, time, turns and tokens per mode and task, plus a tool cost table: calls, tokens and time per msc-core tool); each attempt keeps its workspace, prompt, agent output and server log under `attempts/`.
+In toolset mode the runner checks Claude Code's init event: when the `msc` server was not connected at the start (Claude Code `-p` sometimes starts before its MCP servers connect), the attempt is retried, up to 3 tries, instead of being scored as a toolset run without tools. Attempts are interleaved (task 1 baseline, task 1 toolset, task 2 ...) so drift in model speed hits both modes alike. Results go to `runs/<timestamp>/results.jsonl` and `report.md` (pass rate, time, turns and tokens per mode and task, plus a tool cost table: calls, tokens and time per msc-core tool); each attempt keeps its workspace, prompt, agent output and server log under `attempts/`.
 
 ## Tasks
 
@@ -51,7 +51,7 @@ Before the first run:
 - EULA: the runner never accepts the Minecraft EULA for you. Tasks with a server fail with a clear message until you accept the [Minecraft EULA](https://aka.ms/MinecraftEULA) on your machine, by creating `msc-bench/bench.local.json` with `{"server": {"acceptEula": true}}`. That file is git-ignored, and its fields override `bench.json`, so use it for any other machine-specific setting too. The tracked `bench.json` keeps `acceptEula` false.
 - For `toolset` mode: run `./gradlew :msc-core:installDist :msc-agent-paper:shadowJar` first. Core starts from `paths.coreLib`, and the agent from `paths.agentJar` is put in `server/plugins` as `msc-agent-paper.jar` (the name core uses). Toolset workspaces also get the Paper jar in `.msc/cache`, so core does not download it during the timed run.
 
-The agent command runs Claude Code with `--setting-sources project,local`, so your own plugins, skills and memory stay out of the runs, and with `--dangerously-skip-permissions`, because nobody is there to answer prompts. Each attempt works in its own folder under `runs/`, but the agent can still run any command on the machine, so run the bench on a machine (or VM) where that is acceptable. Ports used: game 25566, RCON 25576, core 25590.
+The agent command runs Claude Code with `--setting-sources project,local`, so your own plugins, skills and memory stay out of the runs, with a pinned `--model` so runs compare like with like, and with `--dangerously-skip-permissions`, because nobody is there to answer prompts. Each attempt works in its own folder under `runs/`, but the agent can still run any command on the machine, so run the bench on a machine (or VM) where that is acceptable. Ports used: game 25566, RCON 25576, core 25590.
 
 ## Depends on
 

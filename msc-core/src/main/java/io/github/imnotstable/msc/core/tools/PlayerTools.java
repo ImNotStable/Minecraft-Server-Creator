@@ -70,6 +70,7 @@ public final class PlayerTools implements AutoCloseable {
             player = null;
         }
         if (player == null) {
+            // Bots pings the server and picks the client for its version, or says which versions it speaks.
             String[] address = address();
             try {
                 player = Bots.join(name, address[0], Integer.parseInt(address[1]),

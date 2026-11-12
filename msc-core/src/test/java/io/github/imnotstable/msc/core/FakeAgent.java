@@ -23,6 +23,8 @@ import java.util.Map;
 public final class FakeAgent {
     static final String AIR = "minecraft:air";
     static final String STONE = "minecraft:stone";
+    /** The Minecraft version SERVER_INFO reports. */
+    volatile String minecraft = "26.3";
 
     final Map<BlockPos, String> blocks = new HashMap<>();
     final List<String> commands = new ArrayList<>();
@@ -65,7 +67,7 @@ public final class FakeAgent {
 
     public OpRouter router() {
         return new OpRouter()
-                .on(Ops.SERVER_INFO, p -> new Ops.ServerInfo("paper", "fake", "26.3", List.of("world"), 0, 20.0))
+                .on(Ops.SERVER_INFO, p -> new Ops.ServerInfo("paper", "fake", minecraft, List.of("world"), 0, 20.0))
                 .on(Ops.SERVER_COMMAND, p -> {
                     synchronized (this) {
                         commands.add(p.command());
