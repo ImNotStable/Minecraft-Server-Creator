@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "id": "{{projectId}}",
+  "version": "${version}",
+  "name": "{{name}}",
+  "description": "{{description}}",
+  "authors": ["{{author}}"],
+  "environment": "server",
+  "entrypoints": {
+    "server": ["{{packageName}}.{{mainClass}}"]
+  },
+  "depends": {
+    "fabricloader": ">=${loaderVersion}",
+    "minecraft": "~${minecraftVersion}",
+    "java": ">={{javaVersion}}",
+    "fabric-api": "*"
+  }
+}

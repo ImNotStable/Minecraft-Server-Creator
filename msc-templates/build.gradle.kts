@@ -36,7 +36,7 @@ val templateVersions = mapOf(
     "shadowVersion" to catalogVersion("shadow"),
 )
 
-// The Minestom agent jar (msc-protocol bundled), shipped in minestom-server as libs/msc-agent-minestom.jar.
+// The Minestom agent jar (msc-protocol bundled), shipped in minestom-server and minestom-game as libs/msc-agent-minestom.jar.
 val minestomAgent = configurations.dependencyScope("minestomAgent")
 val minestomAgentJar = configurations.resolvable("minestomAgentJar") { extendsFrom(minestomAgent.get()) }
 dependencies {
@@ -67,7 +67,8 @@ abstract class PackTemplates : DefaultTask() {
     abstract val outputDir: DirectoryProperty
 
     companion object {
-        val PROJECT_TEMPLATES = setOf("paper-plugin", "paper-game", "fabric-mod")
+        val PROJECT_TEMPLATES = setOf("paper-plugin", "paper-game", "fabric-mod", "fabric-game")
+        val MINESTOM_TEMPLATES = setOf("minestom-server", "minestom-game")
         val WRAPPER_FILES = listOf(
             "gradlew", "gradlew.bat", "gradle/wrapper/gradle-wrapper.jar", "gradle/wrapper/gradle-wrapper.properties")
     }
@@ -93,7 +94,7 @@ abstract class PackTemplates : DefaultTask() {
                 addTree(root.resolve("paper-server"), "run/")
                 WRAPPER_FILES.forEach { files[it] = wrapper.resolve(it) }
             }
-            if (id == "minestom-server") {
+            if (id in MINESTOM_TEMPLATES) {
                 // A Minestom server is its own project: own wrapper, agent jar on its classpath.
                 WRAPPER_FILES.forEach { files[it] = wrapper.resolve(it) }
                 files["libs/msc-agent-minestom.jar"] = minestomAgent.singleFile
