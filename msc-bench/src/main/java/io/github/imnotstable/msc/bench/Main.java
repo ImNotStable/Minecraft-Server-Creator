@@ -8,6 +8,7 @@ import io.github.imnotstable.msc.bench.report.ReportWriter;
 import io.github.imnotstable.msc.bench.run.BenchConfig;
 import io.github.imnotstable.msc.bench.run.BenchRunner;
 import io.github.imnotstable.msc.bench.run.RunRecord;
+import io.github.imnotstable.msc.bench.run.Workspaces;
 import io.github.imnotstable.msc.bench.task.TaskDef;
 import io.github.imnotstable.msc.bench.task.TaskLoader;
 import java.io.IOException;
@@ -92,7 +93,8 @@ public final class Main {
 
     private static int list(Path tasksDir, PrintStream out) throws IOException {
         for (TaskDef task : TaskLoader.loadAll(tasksDir)) {
-            out.printf("%-26s %-8s %d checks  %s%n", task.id(), task.category(), task.checks().size(), task.title());
+            out.printf("%-26s %-8s %-8s %d checks  %s%n", task.id(), task.category(), task.platform(),
+                    task.checks().size(), task.title());
         }
         return 0;
     }
@@ -106,14 +108,25 @@ public final class Main {
         int repeat = Integer.parseInt(flags.getOrDefault("--repeat", "1"));
         Path runDir = Path.of(flags.getOrDefault("--out", "runs"))
                 .resolve(LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss")));
-        Path preambleFile = tasksDir.resolve("_preamble.md");
-        String preamble = Files.isRegularFile(preambleFile) ? Files.readString(preambleFile) : "";
+        Map<String, String> preambles = new HashMap<>();
+        preambles.put(TaskDef.PAPER, readIfPresent(tasksDir.resolve("_preamble.md")));
+        preambles.put(TaskDef.MINESTOM, readIfPresent(tasksDir.resolve("_preamble-minestom.md")));
 
-        List<RunRecord> records = new BenchRunner(config, runDir, preamble, out).run(tasks, modes, repeat);
+        BenchRunner runner = new BenchRunner(config, runDir, preambles, out);
+        List<RunRecord> records = runner.run(tasks, modes, repeat);
         Path reportFile = runDir.resolve("report.md");
         Files.writeString(reportFile, ReportWriter.render(records));
         out.println("Report: " + reportFile.toAbsolutePath());
+        if (runner.stoppedBy() != null) {
+            out.println("Stopped early on a usage limit (" + runner.stoppedBy() + "). After it resets, run the rest into "
+                    + "a new folder and put the results.jsonl files together before `report`.");
+            return 4;
+        }
         return records.stream().allMatch(RunRecord::passed) ? 0 : 3;
+    }
+
+    private static String readIfPresent(Path file) throws IOException {
+        return Files.isRegularFile(file) ? Files.readString(file) : "";
     }
 
     private static int check(Path tasksDir, String taskId, Path workspace, Map<String, String> flags, PrintStream out)
@@ -124,7 +137,10 @@ public final class Main {
         boolean windows = System.getProperty("os.name", "").toLowerCase().startsWith("windows");
         Map<String, String> values = Map.of(
                 "workspace", workspace.toAbsolutePath().toString(),
-                "gradlew", workspace.toAbsolutePath().resolve(windows ? "gradlew.bat" : "gradlew").toString());
+                "gradlew", workspace.toAbsolutePath().resolve(windows ? "gradlew.bat" : "gradlew").toString(),
+                "java", ProcessHandle.current().info().command().orElse("java"),
+                "serverPort", Integer.toString(config == null ? 25566 : config.server().serverPort()),
+                "scaffoldVersion", Workspaces.SCAFFOLD_VERSION);
         CheckContext context = new CheckContext() {
             private RconClient rcon;
 

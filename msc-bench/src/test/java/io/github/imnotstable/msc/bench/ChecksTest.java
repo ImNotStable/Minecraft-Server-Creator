@@ -1,8 +1,8 @@
 package io.github.imnotstable.msc.bench;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.catchThrowable;
 
-import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import io.github.imnotstable.msc.bench.check.Check;
 import io.github.imnotstable.msc.bench.check.CheckContext;
@@ -33,13 +33,18 @@ class ChecksTest {
     @TempDir
     Path workspace;
 
+    @TempDir
+    Path taskDir;
+
     private CheckResult run(String json) {
         return run(json, null);
     }
 
     private CheckResult run(String json, FakeRconServer server) {
-        JsonObject object = JsonParser.parseString(json).getAsJsonObject();
-        Check check = Checks.parse(object);
+        return run(Checks.parse(JsonParser.parseString(json).getAsJsonObject(), taskDir), server);
+    }
+
+    private CheckResult run(Check check, FakeRconServer server) {
         return check.run(new CheckContext() {
             @Override
             public Path workspace() {
@@ -48,7 +53,8 @@ class ChecksTest {
 
             @Override
             public Map<String, String> placeholders() {
-                return Map.of("java", ProcessHandle.current().info().command().orElse("java"));
+                return Map.of("java", ProcessHandle.current().info().command().orElse("java"),
+                        "classpath", System.getProperty("java.class.path"), "serverPort", "1");
             }
 
             @Override
@@ -56,6 +62,41 @@ class ChecksTest {
                 return RconClient.connect("127.0.0.1", server.port(), "pw", Duration.ofSeconds(5));
             }
         });
+    }
+
+    @Test
+    void commandCheckAddsTheTasksHiddenFilesFirst() throws IOException {
+        Files.createDirectories(taskDir.resolve("hidden/src"));
+        Files.writeString(taskDir.resolve("hidden/src/Hidden.txt"), "secret");
+
+        CheckResult result = run("{\"type\":\"command\",\"addFiles\":\"hidden\",\"run\":[\"{java}\",\"-version\"]}");
+
+        assertThat(result.passed()).isTrue();
+        assertThat(workspace.resolve("src/Hidden.txt")).hasContent("secret");
+        assertThat(catchThrowable(() -> run(
+                "{\"type\":\"command\",\"addFiles\":\"../outside\",\"run\":[\"x\"]}")))
+                .hasMessageContaining("no folder ../outside");
+    }
+
+    @Test
+    void playerCheckStartsTheBuiltJarAndMatchesConsoleReplies() throws IOException {
+        Files.createDirectories(workspace.resolve("build/libs"));
+        Files.writeString(workspace.resolve("build/libs/game-1.0.0.jar"), "stands in for the server jar");
+        String check = """
+                {"type":"player","jar":"build/libs/game-1.0.0.jar",
+                 "command":["{java}","-cp","{classpath}","io.github.imnotstable.msc.bench.FakeServer"],
+                 "console":["game best Steve"],"expect":[%s],"timeoutSeconds":30}
+                """;
+
+        CheckResult pass = run(check.formatted("\"reply to game best Steve\""));
+        CheckResult fail = run(check.formatted("\"Steve best: \\\\d\""));
+        CheckResult noJar = run(check.replace("game-1.0.0", "other").formatted("\"x\""));
+
+        assertThat(pass.passed()).as(pass.detail()).isTrue();
+        assertThat(workspace.resolve(".bench-player-check/server.jar")).hasContent("stands in for the server jar");
+        assertThat(fail.passed()).isFalse();
+        assertThat(fail.detail()).contains("no match for /Steve best: \\d/").contains("reply to game best Steve");
+        assertThat(noJar.detail()).contains("no server jar");
     }
 
     @Test

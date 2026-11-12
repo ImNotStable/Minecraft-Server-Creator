@@ -8,6 +8,7 @@ import io.github.imnotstable.msc.bench.check.CheckResult;
 import io.github.imnotstable.msc.bench.check.Placeholders;
 import io.github.imnotstable.msc.bench.rcon.RconClient;
 import io.github.imnotstable.msc.bench.task.TaskDef;
+import io.github.imnotstable.msc.templates.Templates;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
@@ -37,14 +38,30 @@ public final class BenchRunner {
 
     private final BenchConfig config;
     private final Path runDir;
-    private final String preamble;
+    private final Map<String, String> preambles;
     private final PrintStream log;
+    private String stoppedBy;
 
+    /** A runner whose Paper tasks get {@code preamble}. */
     public BenchRunner(BenchConfig config, Path runDir, String preamble, PrintStream log) {
+        this(config, runDir, Map.of(TaskDef.PAPER, preamble == null ? "" : preamble), log);
+    }
+
+    /** A runner with a preamble per platform ({@code paper}, {@code minestom}), put before each task's prompt. */
+    public BenchRunner(BenchConfig config, Path runDir, Map<String, String> preambles, PrintStream log) {
         this.config = config;
         this.runDir = runDir;
-        this.preamble = preamble == null ? "" : preamble.strip();
+        this.preambles = new LinkedHashMap<>();
+        preambles.forEach((platform, text) -> this.preambles.put(platform, text == null ? "" : text.strip()));
         this.log = log;
+    }
+
+    /**
+     * Why the last {@link #run} stopped before the end (the agent hit a usage limit), or null when it ran every
+     * attempt. The attempt that hit the limit is not recorded.
+     */
+    public String stoppedBy() {
+        return stoppedBy;
     }
 
     public List<RunRecord> run(List<TaskDef> tasks, List<String> modes, int repeats) throws IOException {
@@ -54,12 +71,26 @@ public final class BenchRunner {
             }
         }
         Files.createDirectories(runDir);
+        stoppedBy = null;
         List<RunRecord> records = new ArrayList<>();
         for (TaskDef task : tasks) {
+            if (task.needsServer() && !config.server().acceptEula()) {
+                log.printf("skipped %s: it runs a Paper server, and the Minecraft EULA is not accepted on this machine "
+                        + "(%s)%n", task.id(), MachineEula.file(Path.of(System.getProperty("user.home"))));
+                continue;
+            }
             for (int repeat = 1; repeat <= repeats; repeat++) {
                 for (String mode : modes) {
                     log.printf("[%s] %s #%d ...%n", mode, task.id(), repeat);
-                    RunRecord record = runWithMcpRetries(task, mode, repeat);
+                    RunRecord record;
+                    try {
+                        record = runWithMcpRetries(task, mode, repeat);
+                    } catch (UsageLimitReached e) {
+                        stoppedBy = e.getMessage();
+                        log.printf("[%s] %s #%d: stopped, the agent hit a usage limit: %s%n",
+                                mode, task.id(), repeat, stoppedBy);
+                        return records;
+                    }
                     records.add(record);
                     Files.writeString(runDir.resolve(RESULTS_FILE), GSON.toJson(record) + "\n",
                             StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.APPEND);
@@ -161,7 +192,13 @@ public final class BenchRunner {
                 throw new IOException("interrupted", e);
             }
             wallMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
-            agent = ClaudeResultParser.parse(Files.readString(attemptDir.resolve("agent-stdout.json")));
+            // Lenient UTF-8: one stray byte in the agent's output must not cost the whole attempt.
+            String stdout = new String(Files.readAllBytes(attemptDir.resolve("agent-stdout.json")), StandardCharsets.UTF_8);
+            String limit = ClaudeResultParser.usageLimit(stdout);
+            if (limit != null) {
+                throw new UsageLimitReached(limit);
+            }
+            agent = ClaudeResultParser.parse(stdout);
 
             ServerManager checkServer = server;
             CheckContext context = new CheckContext() {
@@ -186,6 +223,8 @@ public final class BenchRunner {
             for (Check check : task.checks()) {
                 results.add(check.run(context));
             }
+        } catch (UsageLimitReached e) {
+            throw e;
         } catch (IOException | RuntimeException e) {
             error = e.getMessage() == null ? e.toString() : e.getMessage();
         } finally {
@@ -207,6 +246,15 @@ public final class BenchRunner {
                 && results.stream().allMatch(CheckResult::passed);
         return new RunRecord(task.id(), task.category(), modeName, repeat, startedAt, passed, wallMs, timedOut,
                 exitCode, error, agent, tools, results);
+    }
+
+    /** The agent's run ended on an account usage limit; carries its error text. */
+    static final class UsageLimitReached extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+
+        UsageLimitReached(String message) {
+            super(message);
+        }
     }
 
     private Path paperJar;
@@ -240,6 +288,8 @@ public final class BenchRunner {
         values.put("serverPort", Integer.toString(config.server().serverPort()));
         values.put("corePort", Integer.toString(config.corePort()));
         values.put("minecraftVersion", config.minecraftVersion());
+        values.put("minestomMinecraftVersion", Templates.versions().getOrDefault("minestomMcVersion", ""));
+        values.put("scaffoldVersion", Workspaces.SCAFFOLD_VERSION);
         values.put("coreToken", newToken());
         boolean windows = System.getProperty("os.name", "").toLowerCase().startsWith("windows");
         values.put("gradlew", slashes(workspace.resolve(windows ? "gradlew.bat" : "gradlew")));
@@ -248,6 +298,7 @@ public final class BenchRunner {
 
     private String fullPrompt(TaskDef task, Map<String, String> values) {
         String body = Placeholders.fill(task.prompt(), values);
+        String preamble = preambles.getOrDefault(task.platform(), "");
         return preamble.isEmpty() ? body : Placeholders.fill(preamble, values) + "\n\n" + body;
     }
 
