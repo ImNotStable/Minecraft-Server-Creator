@@ -228,6 +228,9 @@ class TextureToolsTest {
         assertThat(Files.readString(workspace.resolve(".msc/pack/pack.mcmeta")))
                 .contains("\"min_format\":97").contains("\"max_format\":9999");
         // Same content, same hash: the client will not download it again.
-        assertThat(h.ok("pack", "apply", false)).contains("sha1: " + sha1);
+        assertThat(h.ok("pack", "apply", false)).contains("sha1: " + sha1).contains("pack_format 97");
+        assertThat(h.ok("pack", "apply", false, "file", "out/ruby-pack.zip"))
+                .contains("saved: " + workspace.resolve("out/ruby-pack.zip"));
+        assertThat(Files.readAllBytes(workspace.resolve("out/ruby-pack.zip"))).isEqualTo(response.body());
     }
 }
