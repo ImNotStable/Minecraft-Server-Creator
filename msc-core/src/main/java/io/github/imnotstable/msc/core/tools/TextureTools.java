@@ -1,6 +1,7 @@
 package io.github.imnotstable.msc.core.tools;
 
 import io.github.imnotstable.msc.core.agent.AgentHub;
+import io.github.imnotstable.msc.core.texture.PackProperties;
 import io.github.imnotstable.msc.core.texture.PaletteTexture;
 import io.github.imnotstable.msc.core.texture.ResourcePack;
 import io.github.imnotstable.msc.core.tool.Args;
@@ -26,6 +27,7 @@ import io.github.imnotstable.msc.textures.Texture;
 import io.github.imnotstable.msc.textures.TextureException;
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -37,7 +39,7 @@ public final class TextureTools {
     private TextureTools() {
     }
 
-    public static void register(ToolRegistry registry, AgentHub hub, ResourcePack pack) {
+    public static void register(ToolRegistry registry, AgentHub hub, ResourcePack pack, Path serverDir) {
         PackSource source = new PackSource(pack.root());
         registry.add("texture_create",
                 "Draw a pixel-art texture from text and add it to the project's resource pack. "
@@ -45,7 +47,7 @@ public final class TextureTools {
                 Schema.of().req("name", "string", "Texture name such as item/ruby or myplugin:block/ruby_ore")
                         .req("palette", "strings", "Entries symbol=#rrggbb or symbol=#rrggbbaa, for example \"r=#d4263a\". \".\" is transparent")
                         .req("rows", "strings", "Pixel rows, top first, each the same length")
-                        .opt("model", "string", "Also write a model and item definition: item (flat, default), block (cube) or none"),
+                        .opt("model", "string", "Also write a model and item definition: item (flat, default), handheld (tools), block (cube) or none"),
                 args -> {
                     ResourcePack.TextureId id = ResourcePack.id(args.str("name"));
                     PaletteTexture.Parsed parsed = PaletteTexture.parse(args.strings("palette"), args.strings("rows"));
@@ -96,8 +98,8 @@ public final class TextureTools {
                             + "\nnext: texture_create to touch up, pack_build";
                 }));
         registry.add("texture_recolor",
-                "Copy a pack texture onto new shades of one color, keeping its shading (diamond to ruby).",
-                Schema.of().req("from", "string", "Existing texture such as item/diamond")
+                "Copy a pack texture (not a vanilla one) onto new shades of one color, keeping its shading.",
+                Schema.of().req("from", "string", "Pack texture such as item/ruby")
                         .req("name", "string", "New texture name")
                         .req("color", "string", "Base color #rrggbb")
                         .opt("model", "string", "As in texture_create. Default item"),
@@ -168,7 +170,8 @@ public final class TextureTools {
                         .opt("apply", "boolean", "Send to the running server. Default true")
                         .opt("required", "boolean", "Kick players who decline. Default false"),
                 args -> {
-                    ResourcePack.Built built = pack.build(args.str("description", "Minecraft Server Creator dev pack"));
+                    String description = args.str("description", LifecycleTools.DEFAULT_PACK_DESCRIPTION);
+                    ResourcePack.Built built = pack.build(description);
                     StringBuilder out = new StringBuilder();
                     out.append("pack built: ").append(built.files()).append(" files, ").append(built.bytes())
                             .append(" bytes\nurl: ").append(built.url()).append("\nsha1: ").append(built.sha1());
@@ -178,8 +181,16 @@ public final class TextureTools {
                         } else {
                             Ops.PackResult r = hub.call(Ops.PACK_APPLY,
                                     new Ops.PackParams(built.url(), built.sha1(), args.bool("required", false)));
-                            out.append("\napplied: sent to ").append(r.playersSent()).append(" players");
+                            pack.applied(new ResourcePack.Applied(description, args.bool("required", false)));
+                            out.append("\napplied: sent to ").append(r.playersSent())
+                                    .append(" players; players who join later get it too, also after a restart");
                         }
+                    }
+                    // A detached session made server.properties offer the pack: keep it pointing at this build.
+                    Path properties = serverDir.resolve("server.properties");
+                    if (pack.ours(PackProperties.url(properties)) && PackProperties.write(properties, built.url(),
+                            built.sha1(), args.bool("required", false))) {
+                        out.append("\nserver.properties updated to offer this build");
                     }
                     return out.append('\n').append(check(pack, 0).lines().findFirst().orElseThrow()).toString();
                 });

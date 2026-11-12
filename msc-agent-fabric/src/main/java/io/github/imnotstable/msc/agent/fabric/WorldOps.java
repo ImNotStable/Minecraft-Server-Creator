@@ -37,6 +37,12 @@ final class WorldOps {
         return new Ops.ReadResult(grid, entities);
     }
 
+    Ops.EntitiesResult entities(Ops.EntitiesParams params) {
+        AgentLevel world = world(params.region().world());
+        String type = params.type() == null || params.type().isBlank() ? null : params.type();
+        return Ops.EntitiesResult.of(main.call(() -> world.entityInfos(params.region(), type)), params.limit());
+    }
+
     Ops.HeightmapResult heightmap(Ops.HeightmapParams params) {
         AgentLevel world = world(params.world());
         int minX = Math.min(params.min().x(), params.max().x());

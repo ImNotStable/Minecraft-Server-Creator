@@ -2,19 +2,16 @@ package io.github.imnotstable.msc.core.texture;
 
 import com.google.gson.JsonObject;
 import com.sun.net.httpserver.HttpServer;
+import io.github.imnotstable.msc.core.server.PidFile;
 import io.github.imnotstable.msc.core.tool.ToolException;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.util.HexFormat;
 import java.util.List;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
@@ -34,6 +31,21 @@ public final class ResourcePack implements AutoCloseable {
     public record Built(Path zip, String sha1, String url, int files, long bytes) {
     }
 
+    /** What pack_build last sent to the server. A restarted server has forgotten it, so the next start sends it again. */
+    public record Applied(String description, boolean required) {
+    }
+
+    private volatile Applied applied;
+
+    /** Null until pack_build has sent a pack to the server in this session. */
+    public Applied applied() {
+        return applied;
+    }
+
+    public void applied(Applied applied) {
+        this.applied = applied;
+    }
+
     /** A parsed texture id. {@code path} is below {@code textures/}, without {@code .png}. */
     public record TextureId(String namespace, String path) {
         public String name() {
@@ -50,15 +62,37 @@ public final class ResourcePack implements AutoCloseable {
     private final Path outDir;
     private final String host;
     private final int packFormat;
+    private final int preferredPort;
     private HttpServer server;
-    private volatile byte[] served = new byte[0];
-    private volatile String servedSha1 = "";
+    private volatile Built lastBuilt;
+    private volatile PackHost.Served served = PackHost.Served.NONE;
+    private Process hostProcess;
+    private int hostPort;
 
-    public ResourcePack(Path root, Path outDir, String host, int packFormat) {
+    /**
+     * @param port port to serve on; 0 reuses the port this workspace used last ({@code .msc/pack-port}), so the pack
+     *             URL, and with it what {@code server.properties} offers, stays the same from session to session
+     */
+    public ResourcePack(Path root, Path outDir, String host, int port, int packFormat) {
         this.root = root;
         this.outDir = outDir;
         this.host = host;
+        this.preferredPort = port;
         this.packFormat = packFormat;
+    }
+
+    public ResourcePack(Path root, Path outDir, String host, int packFormat) {
+        this(root, outDir, host, 0, packFormat);
+    }
+
+    /** The last pack built in this session, or null. */
+    public Built lastBuilt() {
+        return lastBuilt;
+    }
+
+    /** True when {@code url} has the shape of a URL an MSC pack host hands out on this host. */
+    public boolean ours(String url) {
+        return url != null && url.matches("http://" + Pattern.quote(host) + ":\\d+/pack-[0-9a-f]{40}\\.zip");
     }
 
     /** The pack's source folder, holding {@code assets/}. */
@@ -88,7 +122,7 @@ public final class ResourcePack implements AutoCloseable {
     public BufferedImage readTexture(TextureId id) throws IOException {
         Path file = texturePath(id);
         if (!Files.exists(file)) {
-            throw new ToolException("no texture " + id + " in the pack");
+            throw new ToolException("no texture " + id + " in the pack (vanilla textures are not in it)");
         }
         return ImageIO.read(file.toFile());
     }
@@ -97,7 +131,7 @@ public final class ResourcePack implements AutoCloseable {
      * Write a texture and, for {@code item} or {@code block}, the model and item definition that make
      * it usable through the {@code item_model} component.
      *
-     * @param model {@code item}, {@code block} or {@code none}
+     * @param model {@code item}, {@code handheld}, {@code block} or {@code none}
      * @return what to put in {@code item_model}, or null when no model was written
      */
     public String writeTexture(TextureId id, BufferedImage image, String model) throws IOException {
@@ -117,12 +151,13 @@ public final class ResourcePack implements AutoCloseable {
             modelPath = "block/" + id.name();
             modelJson.addProperty("parent", "minecraft:block/cube_all");
             textures.addProperty("all", id.toString());
-        } else if (model.equals("item")) {
+        } else if (model.equals("item") || model.equals("handheld")) {
+            // handheld is item held like a sword or tool: tilted in the hand instead of flat.
             modelPath = "item/" + id.name();
-            modelJson.addProperty("parent", "minecraft:item/generated");
+            modelJson.addProperty("parent", "minecraft:item/" + (model.equals("item") ? "generated" : "handheld"));
             textures.addProperty("layer0", id.toString());
         } else {
-            throw new ToolException("model must be item, block or none");
+            throw new ToolException("model must be item, handheld, block or none");
         }
         modelJson.add("textures", textures);
         write(assets.resolve("models").resolve(modelPath + ".json"), modelJson);
@@ -168,42 +203,178 @@ public final class ResourcePack implements AutoCloseable {
             }
         }
         byte[] data = bytes.toByteArray();
-        String sha1;
-        try {
-            sha1 = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-1").digest(data));
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException(e);
-        }
+        String sha1 = PackHost.sha1(data);
         Files.createDirectories(outDir);
-        Path zipFile = outDir.resolve("pack.zip");
+        Path zipFile = zipFile();
         Files.write(zipFile, data);
-        served = data;
-        servedSha1 = sha1;
-        if (server == null) {
-            server = HttpServer.create(new InetSocketAddress(host, 0), 0);
-            server.createContext("/", exchange -> {
-                byte[] body = served;
-                boolean match = exchange.getRequestURI().getPath().equals("/pack-" + servedSha1 + ".zip");
-                exchange.getResponseHeaders().add("Content-Type", "application/zip");
-                exchange.sendResponseHeaders(match ? 200 : 404, match ? body.length : -1);
-                if (match) {
-                    try (OutputStream out = exchange.getResponseBody()) {
-                        out.write(body);
-                    }
-                }
-                exchange.close();
-            });
-            server.start();
+        served = new PackHost.Served(data, sha1);
+        int port;
+        if (hostProcess != null && hostProcess.isAlive()) {
+            port = hostPort; // the standalone host serves the zip file itself
+        } else {
+            if (server == null) {
+                server = startHost();
+            }
+            port = server.getAddress().getPort();
         }
-        String url = "http://" + host + ":" + server.getAddress().getPort() + "/pack-" + sha1 + ".zip";
-        return new Built(zipFile, sha1, url, files.size(), data.length);
+        String url = "http://" + host + ":" + port + "/pack-" + sha1 + ".zip";
+        Built built = new Built(zipFile, sha1, url, files.size(), data.length);
+        lastBuilt = built;
+        return built;
     }
 
-    @Override
-    public synchronized void close() {
+    /** Serve on the configured or remembered port, or on a free one when that is taken. */
+    private HttpServer startHost() throws IOException {
+        int want = preferredPort > 0 ? preferredPort : rememberedPort();
+        HttpServer started;
+        try {
+            started = PackHost.start(host, want, () -> served);
+        } catch (IOException e) {
+            if (want == 0) {
+                throw e;
+            }
+            started = PackHost.start(host, 0, () -> served);
+        }
+        int port = started.getAddress().getPort();
+        if (port != want) {
+            Files.createDirectories(portFile().getParent());
+            Files.writeString(portFile(), port + "\n");
+        }
+        return started;
+    }
+
+    /** {@code .msc/pack-port}: the port this workspace's pack was last served on. */
+    private Path portFile() {
+        return outDir.resolveSibling("pack-port");
+    }
+
+    private int rememberedPort() {
+        try {
+            int port = Integer.parseInt(Files.readString(portFile()).strip());
+            return port > 0 && port < 65536 ? port : 0;
+        } catch (IOException | NumberFormatException e) {
+            return 0;
+        }
+    }
+
+    private Path zipFile() {
+        return outDir.resolve("pack.zip");
+    }
+
+    /** {@code .msc/pack-host.pid}: the standalone pack host a detached session left running. */
+    private Path hostPidFile() {
+        return outDir.resolveSibling("pack-host.pid");
+    }
+
+    /**
+     * Move serving to a standalone process on the same port, so players who were sent the pack can still fetch it
+     * after this core exits. Later builds in this session are served by it too. Returns false when nothing was
+     * built yet (there is no pack to keep up).
+     */
+    public synchronized boolean keepServing(String java, String classPath) throws IOException, InterruptedException {
+        if (hostProcess != null && hostProcess.isAlive()) {
+            return true;
+        }
+        if (server == null) {
+            return false;
+        }
+        int port = server.getAddress().getPort();
+        server.stop(0);
+        server = null;
+        Process p = new ProcessBuilder(java, "-cp", classPath, PackHost.class.getName(), host, String.valueOf(port),
+                zipFile().toString())
+                .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+                .redirectError(ProcessBuilder.Redirect.DISCARD)
+                .start();
+        p.getOutputStream().close();
+        long deadline = System.nanoTime() + 10_000_000_000L;
+        while (p.isAlive() && System.nanoTime() < deadline && !accepts(port)) {
+            Thread.sleep(100);
+        }
+        if (!p.isAlive() || !accepts(port)) {
+            p.destroyForcibly();
+            server = PackHost.start(host, port, () -> served);
+            throw new ToolException("could not start a standalone pack host; the pack is still served by this session");
+        }
+        hostProcess = p;
+        hostPort = port;
+        PidFile.write(hostPidFile(), p.toHandle());
+        return true;
+    }
+
+    private boolean accepts(int port) {
+        try (java.net.Socket s = new java.net.Socket()) {
+            s.connect(new InetSocketAddress(host, port), 500);
+            return true;
+        } catch (IOException e) {
+            return false;
+        }
+    }
+
+    /**
+     * Stop the standalone host this session started on server_detach, once the detached server was stopped after
+     * all. The next build serves in-process again, on the same port. Returns true when there was one.
+     */
+    public synchronized boolean stopOwnHost() {
+        if (hostProcess == null) {
+            return false;
+        }
+        ProcessHandle h = hostProcess.toHandle();
+        hostProcess.destroy();
+        hostProcess = null;
+        try {
+            h.onExit().get(5, java.util.concurrent.TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        } catch (java.util.concurrent.ExecutionException | java.util.concurrent.TimeoutException e) {
+            // Its port frees a moment later; a build then falls back to a free port.
+        }
+        try {
+            Files.deleteIfExists(hostPidFile());
+        } catch (IOException ignored) {
+            // A stale file is checked against the process start time anyway.
+        }
+        return true;
+    }
+
+    /** Stop a pack host an earlier, detached session left running. Returns a note, or null when there was none. */
+    public synchronized String stopLeftoverHost() {
+        if (hostProcess != null && hostProcess.isAlive()) {
+            return null;
+        }
+        return PidFile.take(hostPidFile()).map(h -> {
+            h.destroy();
+            try {
+                // Wait for its port: this session serves the pack on the same one.
+                h.onExit().get(5, java.util.concurrent.TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            } catch (java.util.concurrent.ExecutionException | java.util.concurrent.TimeoutException e) {
+                // Then the pack moves to a free port and server.properties follows it.
+            }
+            return "stopped the pack host left running by an earlier session (pid " + h.pid() + ")";
+        }).orElse(null);
+    }
+
+    /** Stop serving. {@code keepHost} leaves a standalone host running for a detached server. */
+    public synchronized void close(boolean keepHost) {
         if (server != null) {
             server.stop(0);
             server = null;
         }
+        if (!keepHost && hostProcess != null) {
+            hostProcess.destroy();
+            hostProcess = null;
+            try {
+                Files.deleteIfExists(hostPidFile());
+            } catch (IOException ignored) {
+                // A stale file is checked against the process start time anyway.
+            }
+        }
+    }
+
+    @Override
+    public void close() {
+        close(false);
     }
 }

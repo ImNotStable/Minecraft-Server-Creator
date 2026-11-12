@@ -46,6 +46,14 @@ public final class WorldRenderer {
      * reads together); "leave unchanged" cells (-1) are drawn as air.
      */
     public RenderResult render(BlockGrid grid, View view, RenderOptions options) {
+        return render(grid, view, options, List.of());
+    }
+
+    /**
+     * Renders one view with markers drawn over it, numbered in list order. Markers are not hidden by blocks in
+     * front of them; the caption says which ones fall outside the image.
+     */
+    public RenderResult render(BlockGrid grid, View view, RenderOptions options, List<Marker> markers) {
         Region region = grid.region();
         Frame frame = switch (view) {
             case View.Ortho ortho -> orthoFrame(ortho, region, options);
@@ -90,6 +98,7 @@ public final class WorldRenderer {
         if (frame.ruler != null) {
             frame.ruler.draw(pixels, frame);
         }
+        String markerText = markers.isEmpty() ? "" : "\n" + drawMarkers(pixels, frame, region, markers);
         BufferedImage image = new BufferedImage(frame.imageW, frame.imageH, BufferedImage.TYPE_INT_RGB);
         image.setRGB(0, 0, frame.imageW, frame.imageH, pixels, 0, frame.imageW);
         ByteArrayOutputStream out = new ByteArrayOutputStream();
@@ -100,8 +109,83 @@ public final class WorldRenderer {
         }
         int tokens = (int) Math.ceil(frame.imageW * frame.imageH / 750.0);
         String caption = frame.caption + " " + frame.imageW + "x" + frame.imageH + " px, about " + tokens
-                + " tokens.\n" + visible(palette, seen, (long) frame.w * frame.h);
+                + " tokens.\n" + visible(palette, seen, (long) frame.w * frame.h) + markerText;
         return new RenderResult(out.toByteArray(), frame.imageW, frame.imageH, caption, tokens);
+    }
+
+    private static final int MARKER_FILL = 0xff00ff;
+    private static final int MARKER_EDGE = 0x000000;
+    private static final int MAX_MARKERS = 40;
+
+    /** Draws a numbered dot per marker one block above its feet, on the body; returns the caption line. */
+    private static String drawMarkers(int[] pixels, Frame frame, Region region, List<Marker> markers) {
+        int font = frame.imageW >= 384 ? 2 : 1;
+        int dot = 3 * font;
+        StringBuilder sb = new StringBuilder("Markers (magenta, numbered): ");
+        List<Integer> outside = new ArrayList<>();
+        int shown = Math.min(markers.size(), MAX_MARKERS);
+        for (int i = 0; i < shown; i++) {
+            Marker m = markers.get(i);
+            int n = i + 1;
+            double[] p = {m.x() - region.min().x(), m.y() - region.min().y() + 1.0, m.z() - region.min().z()};
+            int[] at = project(frame, p);
+            sb.append(i == 0 ? "" : "; ").append(n).append(' ').append(m.label()).append(" at ")
+                    .append(coord(m.x())).append(',').append(coord(m.y())).append(',').append(coord(m.z()));
+            if (at == null || at[0] < 0 || at[1] < 0 || at[0] >= frame.imageW || at[1] >= frame.imageH) {
+                outside.add(n);
+                continue;
+            }
+            PixelFont.fill(pixels, frame.imageW, frame.imageH, at[0] - dot - font, at[1] - dot - font,
+                    2 * (dot + font) + 1, 2 * (dot + font) + 1, MARKER_EDGE);
+            PixelFont.fill(pixels, frame.imageW, frame.imageH, at[0] - dot, at[1] - dot, 2 * dot + 1, 2 * dot + 1,
+                    MARKER_FILL);
+            String label = Integer.toString(n);
+            int lx = at[0] + dot + 2 * font;
+            int ly = at[1] - PixelFont.HEIGHT * font / 2;
+            PixelFont.fill(pixels, frame.imageW, frame.imageH, lx - font, ly - font,
+                    PixelFont.width(label, font) + 2 * font, PixelFont.HEIGHT * font + 2 * font, MARGIN);
+            PixelFont.draw(pixels, frame.imageW, frame.imageH, lx, ly, label, font, INK);
+        }
+        sb.append('.');
+        if (markers.size() > shown) {
+            sb.append(' ').append(markers.size() - shown).append(" more not drawn.");
+        }
+        if (!outside.isEmpty()) {
+            sb.append(" Outside the image: ").append(outside.stream().map(String::valueOf)
+                    .collect(java.util.stream.Collectors.joining(", "))).append('.');
+        }
+        return sb.toString();
+    }
+
+    /** Image pixel of a grid-local point, or null when it is behind a perspective camera. Inverse of Frame.ray. */
+    private static int[] project(Frame frame, double[] p) {
+        double[] d = new double[3];
+        for (int i = 0; i < 3; i++) {
+            d[i] = p[i] - frame.origin[i];
+        }
+        double a = dot(d, frame.r);
+        double b = dot(d, frame.u);
+        if (frame.perspective) {
+            double depth = dot(d, frame.f);
+            if (depth <= 1e-6) {
+                return null;
+            }
+            a /= depth;
+            b /= depth;
+        }
+        int x = (int) Math.floor(frame.offX + frame.w / 2.0 + a * frame.scale);
+        int y = (int) Math.floor(frame.offY + frame.h / 2.0 - b * frame.scale);
+        return new int[] {x, y};
+    }
+
+    /** One decimal, none for whole numbers: 12.5, 65, -0.5. */
+    private static String coord(double v) {
+        double r = Math.round(v * 10) / 10.0;
+        return r == Math.rint(r) ? Long.toString((long) r) : String.format(Locale.ROOT, "%.1f", r);
+    }
+
+    private static double dot(double[] a, double[] b) {
+        return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
     }
 
     /** "Visible: stone_bricks 41%, oak_planks 22%, ..." from what the first sample of each pixel hit. */

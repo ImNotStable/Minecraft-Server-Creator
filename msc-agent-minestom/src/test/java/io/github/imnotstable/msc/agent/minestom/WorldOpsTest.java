@@ -188,6 +188,30 @@ class WorldOpsTest {
     }
 
     @Test
+    void entitiesReportHealthAndTextDisplayText(Env env) {
+        setUp(env);
+        world.loadChunk(0, 0).join();
+        var zombie = new net.minestom.server.entity.LivingEntity(net.minestom.server.entity.EntityType.ZOMBIE);
+        zombie.setInstance(world, new net.minestom.server.coordinate.Pos(2.5, 70, 2.5)).join();
+        zombie.setHealth(5);
+        var label = new net.minestom.server.entity.Entity(net.minestom.server.entity.EntityType.TEXT_DISPLAY);
+        ((net.minestom.server.entity.metadata.display.TextDisplayMeta) label.getEntityMeta())
+                .setText(net.kyori.adventure.text.Component.text("Wave 3"));
+        label.setInstance(world, new net.minestom.server.coordinate.Pos(1.5, 71, 1.5)).join();
+
+        Ops.EntitiesResult all = ops.entities(new Ops.EntitiesParams(box(0, 70, 0, 3, 71, 3), null, 0));
+        Ops.EntitiesResult zombies = ops.entities(new Ops.EntitiesParams(box(0, 70, 0, 3, 71, 3), "minecraft:zombie", 5));
+
+        assertThat(all.total()).isEqualTo(2);
+        assertThat(all.entities().getFirst().name()).isEqualTo("Wave 3");
+        assertThat(all.entities().getFirst().health()).isNull();
+        assertThat(zombies.entities()).singleElement().satisfies(e -> {
+            assertThat(e.health()).isEqualTo(5.0);
+            assertThat(e.maxHealth()).isEqualTo(20.0);
+        });
+    }
+
+    @Test
     void readsEntitiesInTheRegion(Env env) {
         setUp(env);
         world.loadChunk(0, 0).join();

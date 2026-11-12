@@ -1,8 +1,12 @@
 package io.github.imnotstable.msc.core.server;
 
+import java.time.Duration;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
+import java.util.function.BooleanSupplier;
+import java.util.function.Predicate;
 
 /** The last lines the server printed, numbered so a caller can ask for "everything since". */
 public final class LogBuffer {
@@ -38,6 +42,36 @@ public final class LogBuffer {
             }
         }
         return out;
+    }
+
+    /** A line found by {@link #await}: its text and its sequence number. */
+    public record Match(String line, long seq) {
+    }
+
+    /**
+     * Wait for the first line from {@code mark} on that {@code test} accepts. Returns null when {@code timeout}
+     * passes or {@code alive} turns false first. Lines that already scrolled out of the buffer are not seen.
+     */
+    public synchronized Match await(long mark, Predicate<String> test, Duration timeout,
+                                    BooleanSupplier alive) throws InterruptedException {
+        long deadline = System.nanoTime() + timeout.toNanos();
+        long checked = mark;
+        while (true) {
+            long first = next - lines.size();
+            long i = first;
+            for (String line : lines) {
+                if (i >= checked && test.test(line)) {
+                    return new Match(line, i);
+                }
+                i++;
+            }
+            checked = next;
+            long left = deadline - System.nanoTime();
+            if (left <= 0 || !alive.getAsBoolean()) {
+                return null;
+            }
+            wait(Math.max(1, Math.min(TimeUnit.NANOSECONDS.toMillis(left), 250)));
+        }
     }
 
     public synchronized List<String> all() {

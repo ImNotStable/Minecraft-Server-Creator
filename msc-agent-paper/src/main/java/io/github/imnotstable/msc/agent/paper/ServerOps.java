@@ -17,6 +17,7 @@ import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import org.bukkit.Server;
 import org.bukkit.World;
+import org.bukkit.command.CommandException;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 
@@ -64,9 +65,24 @@ final class ServerOps {
             List<String> output = Collections.synchronizedList(new ArrayList<>());
             Consumer<Component> feedback = c -> output.add(PlainTextComponentSerializer.plainText().serialize(c));
             CommandSender sender = senders.apply(feedback);
-            boolean success = server.dispatchCommand(sender, line);
+            boolean success;
+            try {
+                success = server.dispatchCommand(sender, line);
+            } catch (CommandException e) {
+                // Bukkit wraps what the command threw, a syntax error included; the innermost message says what is wrong.
+                output.add(rootMessage(e));
+                success = false;
+            }
             return new Ops.CommandResult(success, List.copyOf(output));
         });
+    }
+
+    static String rootMessage(Throwable e) {
+        Throwable t = e;
+        while (t.getCause() != null && t.getCause() != t) {
+            t = t.getCause();
+        }
+        return t.getMessage() != null ? t.getMessage() : t.toString();
     }
 
     Ops.PackResult applyPack(Ops.PackParams params) {

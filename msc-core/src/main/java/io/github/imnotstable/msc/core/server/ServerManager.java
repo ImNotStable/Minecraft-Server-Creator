@@ -30,6 +30,7 @@ public final class ServerManager implements AutoCloseable {
     private final LogBuffer log = new LogBuffer(20_000);
     private Process process;
     private volatile boolean sawDone;
+    private volatile boolean detached;
 
     public ServerManager(CoreConfig config, AgentHub hub) {
         this.config = config;
@@ -110,7 +111,7 @@ public final class ServerManager implements AutoCloseable {
             sawDone = false;
             started = pb.start();
             process = started;
-            rememberPid(started);
+            PidFile.write(pidFile(), started.toHandle());
             Thread.ofVirtual().name("msc-server-log").start(() -> pump(started));
         }
         long deadline = begin + timeout.toNanos();
@@ -157,16 +158,6 @@ public final class ServerManager implements AutoCloseable {
         return config.dataDir().resolve("server.pid");
     }
 
-    private void rememberPid(Process p) {
-        try {
-            long started = p.info().startInstant().map(java.time.Instant::toEpochMilli).orElse(0L);
-            Files.createDirectories(config.dataDir());
-            Files.writeString(pidFile(), p.pid() + " " + started + "\n");
-        } catch (IOException e) {
-            // Only leftover detection depends on it.
-        }
-    }
-
     /**
      * Stop a server that an earlier core started and left running (on Windows a core killed with its Claude Code
      * session cannot stop its server, which then holds the world lock). It is asked to stop over RCON so it saves
@@ -174,33 +165,14 @@ public final class ServerManager implements AutoCloseable {
      * reused pid is never touched. Returns a one-line note, or null when there was none.
      */
     public synchronized String stopLeftover() throws InterruptedException {
-        Path file = pidFile();
-        if (running() || !Files.exists(file)) {
+        if (running()) {
             return null;
         }
-        String[] parts;
-        try {
-            parts = Files.readString(file).strip().split(" ");
-            Files.deleteIfExists(file);
-        } catch (IOException e) {
+        ProcessHandle h = PidFile.take(pidFile()).orElse(null);
+        if (h == null) {
             return null;
         }
-        if (parts.length != 2) {
-            return null;
-        }
-        long pid;
-        long startedAt;
-        try {
-            pid = Long.parseLong(parts[0]);
-            startedAt = Long.parseLong(parts[1]);
-        } catch (NumberFormatException e) {
-            return null;
-        }
-        ProcessHandle h = ProcessHandle.of(pid).orElse(null);
-        if (h == null || !h.isAlive() || startedAt == 0
-                || h.info().startInstant().map(java.time.Instant::toEpochMilli).orElse(-1L) != startedAt) {
-            return null;
-        }
+        long pid = h.pid();
         // Its console belonged to the dead core, so ask over RCON first: "stop" saves the world. Then kill.
         Rcon.Target rcon = Rcon.target(config.serverDir());
         boolean asked = rcon != null && Rcon.send(rcon, "stop");
@@ -233,6 +205,7 @@ public final class ServerManager implements AutoCloseable {
                 return false;
             }
             p = process;
+            detached = false;
             try {
                 console("stop");
             } catch (IOException e) {
@@ -252,8 +225,25 @@ public final class ServerManager implements AutoCloseable {
         return true;
     }
 
+    /**
+     * Leave the running server up when this core exits, so the user can keep playing. The pid file stays, so the
+     * next core's start, dev_cycle or server_stop stops it (saved over RCON) before doing anything else.
+     */
+    public synchronized boolean detach() {
+        detached = running();
+        return detached;
+    }
+
+    /** True while a detached server is still running: {@link #close()} leaves it alone. */
+    public synchronized boolean detached() {
+        return detached && running();
+    }
+
     @Override
     public void close() {
+        if (detached()) {
+            return;
+        }
         try {
             stop(Duration.ofSeconds(20));
         } catch (InterruptedException e) {

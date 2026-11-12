@@ -1,0 +1,122 @@
+package io.github.imnotstable.msc.core;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import java.nio.file.Files;
+import java.nio.file.Path;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+class BuildToolsTest {
+    @TempDir
+    Path workspace;
+    private CoreHarness h;
+
+    @BeforeEach
+    void start() throws Exception {
+        h = new CoreHarness(workspace).withAgent();
+    }
+
+    @AfterEach
+    void stop() throws Exception {
+        h.close();
+    }
+
+    @Test
+    void batchIsOneEditWithOneUndo() {
+        String out = h.ok("build_batch", "steps", """
+                # a room, a pillar and a door
+                fill 0,64,0 4,67,4 stone_bricks hollow
+                set 2,65,0 oak_door[half=lower]
+                set 2,66,0 oak_door[half=upper]
+                cylinder 10,64,10 r=1 h=3 oak_log
+                """);
+        assertThat(out).startsWith("edit e1: ").contains("region world 0,64,0 11,67,11").contains("stone_bricks 80");
+        assertThat(h.agent.get(0, 64, 0)).isEqualTo("minecraft:stone_bricks");
+        assertThat(h.agent.get(2, 65, 2)).isEqualTo("minecraft:air");
+        assertThat(h.agent.get(2, 65, 0)).isEqualTo("minecraft:oak_door[half=lower]");
+        assertThat(h.agent.get(10, 66, 11)).isEqualTo("minecraft:oak_log");
+        assertThat(h.ok("build_undo")).startsWith("undid e1");
+        assertThat(h.agent.get(0, 64, 0)).isEqualTo("minecraft:air");
+        assertThat(h.agent.get(2, 65, 0)).isEqualTo("minecraft:air");
+    }
+
+    @Test
+    void badBlockNamesStopTheWholeBatchAndAreAllListed() {
+        String err = h.error("build_batch", "steps", """
+                fill 0,64,0 2,64,2 stone
+                set 1,65,1 no_such_lamp
+                disc 0,70,0 r=2 grass_block:5,no_such_moss:1
+                """);
+        assertThat(err).contains("nothing placed").contains("2 blocks are not valid")
+                .contains("unknown block no_such_lamp").contains("unknown block no_such_moss");
+        assertThat(h.agent.get(0, 64, 0)).isEqualTo("minecraft:air");
+    }
+
+    @Test
+    void dryRunPlacesNothing() {
+        String out = h.ok("build_batch", "steps", "disc 0,63,0 r=2 grass_block", "dryRun", true);
+        assertThat(out).isEqualTo("dry run, nothing placed: 21 blocks in world -2,63,-2 2,63,2 size 5x1x5\n"
+                + "blocks: grass_block 21\nblock names: all valid");
+        assertThat(h.agent.get(0, 63, 0)).isEqualTo("minecraft:stone");
+        assertThat(h.error("build_batch", "steps", "disc 0,63,0 r=2 no_such_grass", "dryRun", true))
+                .contains("unknown block no_such_grass");
+    }
+
+    @Test
+    void errorsNameTheLine() {
+        assertThat(h.error("build_batch", "steps", "fill 0,64,0 1,64,1 stone\ncylinder 0,64,0 h=3 stone"))
+                .isEqualTo("error: line 2 (cylinder 0,64,0 h=3 stone): cylinder needs r=N");
+        assertThat(h.error("build_batch", "steps", "spiral 0,64,0 stone")).contains("unknown step \"spiral\"");
+        assertThat(h.error("build_batch", "steps", "disc 0,64,0 r=3 stone dirt")).contains("did not understand \"dirt\"");
+        assertThat(h.error("build_batch", "steps", "line 0,64,0 9,64,0 stone colour=red")).contains("line does not take colour=");
+        assertThat(h.error("build_batch", "steps", "structure 0,64,0\nlegend: #=stone\ny=0\n#")).contains("no closing \"end\"");
+    }
+
+    @Test
+    void replaceOnlyTouchesMatchingBlocks() {
+        h.ok("build_fill", "region", "0,64,0 0,64,0", "block", "glass");
+        String out = h.ok("build_batch", "steps", "disc 0,64,0 r=1 sand replace=air");
+        assertThat(out).contains("8 blocks changed");
+        assertThat(h.agent.get(0, 64, 0)).isEqualTo("minecraft:glass");
+        assertThat(h.agent.get(1, 64, 0)).isEqualTo("minecraft:sand");
+    }
+
+    @Test
+    void stampRepeatsAndTurnsToFaceACentre() throws Exception {
+        String tower = "legend: #=stone d=oak_stairs[facing=north]\ny=0\n#d#\n###\nend";
+        String out = h.ok("build_batch", "steps",
+                "structure 0,64,-10 10,64,0 0,64,10 -10,64,0 face=0,0 anchor=center\n" + tower);
+        assertThat(out).startsWith("edit e1: 24 blocks changed");
+        // The stair row (north side) of each copy points at the centre.
+        assertThat(h.agent.get(0, 64, 9)).isEqualTo("minecraft:oak_stairs[facing=north]");
+        assertThat(h.agent.get(0, 64, 10)).isEqualTo("minecraft:stone");
+        assertThat(h.agent.get(0, 64, -10)).isEqualTo("minecraft:oak_stairs[facing=south]");
+        assertThat(h.agent.get(0, 64, -11)).isEqualTo("minecraft:stone");
+        assertThat(h.agent.get(9, 64, 0)).isEqualTo("minecraft:oak_stairs[facing=west]");
+        assertThat(h.agent.get(-10, 64, 0)).isEqualTo("minecraft:oak_stairs[facing=east]");
+
+        Files.writeString(workspace.resolve("post.txt"), "legend: #=oak_fence\ny=0\n#\ny=1\n#");
+        h.ok("build_batch", "steps", "structure 0,70,0 repeat=5 step=4,0,0 file=post.txt");
+        for (int i = 0; i < 5; i++) {
+            assertThat(h.agent.get(4 * i, 71, 0)).isEqualTo("minecraft:oak_fence");
+        }
+        assertThat(h.agent.get(2, 70, 0)).isEqualTo("minecraft:air");
+        assertThat(h.error("build_batch", "steps", "structure 0,64,0 repeat=3\n" + tower)).contains("step=");
+        assertThat(h.error("build_batch", "steps", "structure 0,64,0 file=missing.txt")).contains("no file");
+    }
+
+    @Test
+    void bigBuildsAreSplitButUndoneAsOne() {
+        // The box spans more than one protocol call; only the two parts holding blocks are written.
+        String out = h.ok("build_batch", "steps", "set 0,64,0 stone\nset 200,90,200 andesite");
+        assertThat(out).startsWith("edit e1: 2 blocks changed");
+        assertThat(h.agent.writes).hasSize(3);
+        h.ok("build_undo", "edit", "e1");
+        assertThat(h.agent.get(0, 64, 0)).isEqualTo("minecraft:air");
+        assertThat(h.agent.get(200, 90, 200)).isEqualTo("minecraft:air");
+        assertThat(h.error("build_batch", "steps", "fill 0,0,0 2000,10,2000 stone")).contains("Split it");
+    }
+}

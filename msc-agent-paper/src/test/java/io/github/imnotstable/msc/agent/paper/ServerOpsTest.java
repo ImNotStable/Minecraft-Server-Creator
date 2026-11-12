@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import io.github.imnotstable.msc.protocol.op.Ops;
 import net.kyori.adventure.text.Component;
 import org.bukkit.command.Command;
+import org.bukkit.command.CommandException;
 import org.bukkit.command.CommandSender;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -64,6 +65,22 @@ class ServerOpsTest {
         assertThat(info.worlds()).contains("world");
         assertThat(info.onlinePlayers()).isEqualTo(1);
         assertThat(info.tps()).isEqualTo(20.0);
+    }
+
+    @Test
+    void commandThatThrowsFailsWithItsCause() {
+        server.getCommandMap().register("test", new Command("broken") {
+            @Override
+            public boolean execute(CommandSender sender, String label, String[] args) {
+                // CraftServer wraps what a command throws, a syntax error included, like this.
+                throw new CommandException("Unhandled exception executing", new IllegalArgumentException("Can't find element 'x'"));
+            }
+        });
+
+        Ops.CommandResult result = ops.command(new Ops.CommandParams("broken"));
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.output()).containsExactly("Can't find element 'x'");
     }
 
     @Test

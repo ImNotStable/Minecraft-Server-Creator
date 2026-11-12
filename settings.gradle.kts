@@ -27,6 +27,17 @@ dependencyResolutionManagement {
         maven("https://maven.fabricmc.net/") {
             name = "fabric"
         }
+        // MCProtocolLib and its own libraries, for msc-bot's test player.
+        maven("https://repo.opencollab.dev/main/") {
+            name = "opencollab"
+            content {
+                includeGroupByRegex("org\\.geysermc(\\..*)?")
+                includeGroupByRegex("org\\.cloudburstmc(\\..*)?")
+                includeGroupByRegex("com\\.nukkitx(\\..*)?")
+                includeGroupByRegex("net\\.raphimc(\\..*)?")
+                includeGroupByRegex("net\\.lenni0451(\\..*)?")
+            }
+        }
     }
 }
 
@@ -44,3 +55,4 @@ include("msc-agent-fabric")
 include("msc-agent-minestom")
 include("msc-renderer")
 include("msc-textures")
+include("msc-bot")

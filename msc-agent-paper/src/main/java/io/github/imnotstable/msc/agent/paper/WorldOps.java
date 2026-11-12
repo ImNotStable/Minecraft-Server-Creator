@@ -7,14 +7,22 @@ import io.github.imnotstable.msc.protocol.transport.OpException;
 import io.github.imnotstable.msc.protocol.world.BlockGrid;
 import io.github.imnotstable.msc.protocol.world.Region;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.TreeSet;
+import org.bukkit.Material;
 import org.bukkit.Server;
 import org.bukkit.World;
+import org.bukkit.attribute.Attribute;
+import org.bukkit.attribute.AttributeInstance;
 import org.bukkit.block.data.BlockData;
 import org.bukkit.entity.Entity;
+import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
+import org.bukkit.entity.TextDisplay;
 import org.bukkit.util.BoundingBox;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
@@ -62,7 +70,42 @@ final class WorldOps {
             return p.getName();
         }
         Component custom = e.customName();
+        if (custom == null && e instanceof TextDisplay display) {
+            // A hologram's words are its text, not a name: report them so a render or summary can show them.
+            custom = display.text();
+        }
         return custom == null ? null : PlainTextComponentSerializer.plainText().serialize(custom);
+    }
+
+    /** Entities in a region with name, tags and health, sorted by type and then position. */
+    Ops.EntitiesResult entities(Ops.EntitiesParams params) {
+        Region region = params.region();
+        World world = world(region.world());
+        String type = params.type() == null || params.type().isBlank() ? null : params.type();
+        return main.call(() -> {
+            BoundingBox box = new BoundingBox(region.min().x(), region.min().y(), region.min().z(),
+                    region.max().x() + 1, region.max().y() + 1, region.max().z() + 1);
+            List<Ops.EntityInfo> all = new ArrayList<>();
+            for (Entity e : world.getNearbyEntities(box)) {
+                String key = e.getType().key().asString();
+                if (type == null || type.equals(key)) {
+                    all.add(info(e, key));
+                }
+            }
+            return Ops.EntitiesResult.of(all, params.limit());
+        });
+    }
+
+    private static Ops.EntityInfo info(Entity e, String type) {
+        Double health = null;
+        Double maxHealth = null;
+        if (e instanceof LivingEntity living) {
+            health = living.getHealth();
+            AttributeInstance max = living.getAttribute(Attribute.MAX_HEALTH);
+            maxHealth = max == null ? null : max.getValue();
+        }
+        return new Ops.EntityInfo(type, e.getUniqueId().toString(), e.getX(), e.getY(), e.getZ(), name(e),
+                List.copyOf(new TreeSet<>(e.getScoreboardTags())), health, maxHealth);
     }
 
     Ops.HeightmapResult heightmap(Ops.HeightmapParams params) {
@@ -156,7 +199,27 @@ final class WorldOps {
         try {
             return server.createBlockData(state);
         } catch (IllegalArgumentException e) {
-            throw new IllegalArgumentException("unknown block state: " + state, e);
+            throw new IllegalArgumentException(explain(state, e), e);
+        }
+    }
+
+    /** Why {@code state} failed: bad properties on a real block, or an unknown id with close names. */
+    private static String explain(String state, IllegalArgumentException cause) {
+        String id = (state.contains("[") ? state.substring(0, state.indexOf('[')) : state).trim()
+                .toLowerCase(Locale.ROOT);
+        try {
+            List<String> blocks = Arrays.stream(Material.values())
+                    .filter(m -> !m.name().startsWith("LEGACY_") && m.isBlock())
+                    .map(m -> m.getKey().getKey()).toList();
+            String bare = id.startsWith("minecraft:") ? id.substring("minecraft:".length()) : id;
+            if (blocks.contains(bare)) {
+                return "bad block properties in " + state + ": " + cause.getMessage();
+            }
+            List<String> close = BlockNames.suggest(bare, blocks);
+            return "unknown block state: " + state
+                    + (close.isEmpty() ? "" : "; did you mean " + String.join(", ", close) + "?");
+        } catch (RuntimeException e) {
+            return "unknown block state: " + state; // suggestions are a nicety; never hide the real error
         }
     }
 

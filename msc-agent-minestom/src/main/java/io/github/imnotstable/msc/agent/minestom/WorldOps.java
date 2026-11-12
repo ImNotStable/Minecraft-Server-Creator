@@ -22,6 +22,9 @@ import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import net.minestom.server.component.DataComponents;
 import net.minestom.server.coordinate.Pos;
 import net.minestom.server.entity.Entity;
+import net.minestom.server.entity.LivingEntity;
+import net.minestom.server.entity.attribute.Attribute;
+import net.minestom.server.entity.metadata.display.TextDisplayMeta;
 import net.minestom.server.entity.Player;
 import net.minestom.server.instance.Instance;
 import net.minestom.server.instance.block.Block;
@@ -78,7 +81,37 @@ final class WorldOps {
             return p.getUsername();
         }
         Component custom = e.get(DataComponents.CUSTOM_NAME);
+        if (custom == null && e.getEntityMeta() instanceof TextDisplayMeta text) {
+            custom = text.getText();
+        }
         return custom == null ? null : PlainTextComponentSerializer.plainText().serialize(custom);
+    }
+
+    /** Entities in a region with name and health. Minestom has no scoreboard tags, so tags are always empty. */
+    Ops.EntitiesResult entities(Ops.EntitiesParams params) {
+        Region region = params.region();
+        Instance instance = worlds.get(region.world());
+        String type = params.type() == null || params.type().isBlank() ? null : params.type();
+        return Ops.EntitiesResult.of(main.call(() -> {
+            List<Ops.EntityInfo> out = new ArrayList<>();
+            for (Entity e : instance.getEntities()) {
+                Pos p = e.getPosition();
+                String key = e.getEntityType().key().asString();
+                if ((type == null || type.equals(key)) && p.x() >= region.min().x() && p.x() < region.max().x() + 1
+                        && p.y() >= region.min().y() && p.y() < region.max().y() + 1
+                        && p.z() >= region.min().z() && p.z() < region.max().z() + 1) {
+                    Double health = null;
+                    Double maxHealth = null;
+                    if (e instanceof LivingEntity living) {
+                        health = (double) living.getHealth();
+                        maxHealth = living.getAttributeValue(Attribute.MAX_HEALTH);
+                    }
+                    out.add(new Ops.EntityInfo(key, e.getUuid().toString(), p.x(), p.y(), p.z(), name(e), List.of(),
+                            health, maxHealth));
+                }
+            }
+            return out;
+        }), params.limit());
     }
 
     Ops.HeightmapResult heightmap(Ops.HeightmapParams params) {

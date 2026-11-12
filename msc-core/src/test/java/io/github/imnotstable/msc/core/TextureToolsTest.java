@@ -111,7 +111,7 @@ class TextureToolsTest {
         assertThat(h.ok("texture_recolor", "from", "item/ruby", "name", "item/sapphire", "color", "#2050e0"))
                 .startsWith("wrote msc:item/sapphire: 16x16, ").contains("(blue)").endsWith("next: pack_build");
         assertThat(h.error("texture_recolor", "from", "item/nope", "name", "item/x", "color", "#fff"))
-                .isEqualTo("error: no texture msc:item/nope in the pack");
+                .isEqualTo("error: no texture msc:item/nope in the pack (vanilla textures are not in it)");
     }
 
     @Test

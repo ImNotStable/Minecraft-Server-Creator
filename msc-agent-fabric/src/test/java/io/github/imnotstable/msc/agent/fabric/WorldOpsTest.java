@@ -192,4 +192,20 @@ class WorldOpsTest {
                 .extracting(Ops.EntitySummary::type).containsExactly("minecraft:pig");
         assertThat(ops.read(new Ops.ReadParams(box(0, 70, 0, 3, 71, 3), false)).entities()).isEmpty();
     }
+
+    @Test
+    void entitiesAreSortedFilteredAndCounted() {
+        world.entityInfos.add(new Ops.EntityInfo("minecraft:zombie", "b", 2.5, 70, 2.5, "Brute", List.of("wave"), 7.0, 20.0));
+        world.entityInfos.add(new Ops.EntityInfo("minecraft:pig", "a", 1.5, 70, 1.5, null, List.of(), 10.0, 10.0));
+        world.entityInfos.add(new Ops.EntityInfo("minecraft:zombie", "c", 1.5, 70, 1.5, null, List.of(), 20.0, 20.0));
+        world.entityInfos.add(new Ops.EntityInfo("minecraft:zombie", "d", 50.5, 70, 50.5, null, List.of(), 20.0, 20.0));
+
+        Ops.EntitiesResult all = ops.entities(new Ops.EntitiesParams(box(0, 70, 0, 3, 71, 3), null, 0));
+        Ops.EntitiesResult zombies = ops.entities(new Ops.EntitiesParams(box(0, 70, 0, 3, 71, 3), "minecraft:zombie", 1));
+
+        assertThat(all.total()).isEqualTo(3);
+        assertThat(all.entities()).extracting(Ops.EntityInfo::uuid).containsExactly("a", "c", "b");
+        assertThat(zombies.total()).isEqualTo(2);
+        assertThat(zombies.entities()).extracting(Ops.EntityInfo::uuid).containsExactly("c");
+    }
 }

@@ -29,4 +29,7 @@ interface AgentLevel {
 
     /** Up to {@code max} entities inside the region. */
     List<Ops.EntitySummary> entities(Region region, int max);
+
+    /** Every entity inside the region with name, tags and health; {@code type} (a full id) narrows it, null for all. */
+    List<Ops.EntityInfo> entityInfos(Region region, String type);
 }

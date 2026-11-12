@@ -1,7 +1,7 @@
 {
   "mcpServers": {
     "msc": {
-      "command": "java",
+      "command": "{java}",
       "args": ["-cp", "{coreLib}/*", "io.github.imnotstable.msc.core.Main"],
       "env": {
         "MSC_WORKSPACE": "{workspace}",
