@@ -1,4 +1,4 @@
-# ADR 0012: One-command install and first-use fixes
+# ADR 0013: One-command install and first-use fixes
 
 Status: accepted, 2026-11-12. Decided by Claude under Jeremiah's hand-over of build decisions.
 
