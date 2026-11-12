@@ -38,9 +38,8 @@ class LogCondenserTest {
 
     @Test
     void serverLibraryFramesAreFramework() {
-        // Paper logs this on every start on some Windows machines (system report via the bundled oshi library).
         List<String> log = List.of(
-                "[02:11:45 ERROR]: [oshi.driver.windows.registry.HkeyPerformanceDataUtil] Unable to locate English counter names",
+                "[02:11:45 ERROR]: [oshi.util.Something] Failed",
                 "com.sun.jna.platform.win32.Win32Exception: The parameter is incorrect.",
                 "\tat com.sun.jna.platform.win32.Advapi32Util.registryGetStringArray(Advapi32Util.java:921) ~[jna-platform-5.17.0.jar:5.17.0 (b0)]",
                 "\tat oshi.driver.windows.registry.HkeyPerformanceDataUtil.<clinit>(HkeyPerformanceDataUtil.java:51) ~[oshi-core-6.9.0.jar:6.9.0]",
@@ -49,6 +48,54 @@ class LogCondenserTest {
         assertThat(LogCondenser.condense(log, 6000)).endsWith("""
                 \tat com.sun.jna.platform.win32.Advapi32Util.registryGetStringArray(Advapi32Util.java:921) ~[jna-platform-5.17.0.jar:5.17.0 (b0)]
                 \t... 3 framework frames""");
+    }
+
+    @Test
+    void devServerBannersAndTheWindowsOshiErrorAreDropped() {
+        List<String> log = List.of(
+                "[01:06:43 WARN]: ****************************",
+                "[01:06:43 WARN]: YOU ARE RUNNING THIS SERVER AS AN ADMINISTRATIVE OR ROOT USER. THIS IS NOT ADVISED.",
+                "[01:06:43 WARN]: YOU ARE OPENING YOURSELF UP TO POTENTIAL RISKS WHEN DOING THIS.",
+                "[01:06:43 WARN]: FOR MORE INFORMATION, SEE https://madelinemiller.dev/blog/root-minecraft-server/",
+                "[01:06:43 WARN]: ****************************",
+                "[01:06:44 WARN]: **** SERVER IS RUNNING IN OFFLINE/INSECURE MODE!",
+                "[01:06:44 WARN]: The server will make no attempt to authenticate usernames. Beware.",
+                "[01:06:44 WARN]: While this makes the game possible to play without internet access, it also opens up the ability for hackers to connect with any username they choose.",
+                "[01:06:44 WARN]: To change this, set \"online-mode\" to \"true\" in the server.properties file.",
+                // Paper logs this on every start on some Windows machines (system report via the bundled oshi library).
+                "[02:11:45 ERROR]: [oshi.driver.windows.registry.HkeyPerformanceDataUtil] Unable to locate English counter names",
+                "com.sun.jna.platform.win32.Win32Exception: The parameter is incorrect.",
+                "\tat oshi.util.Memoizer$1.get(Memoizer.java:65) ~[oshi-core-6.9.0.jar:6.9.0]",
+                "[01:06:45 INFO]: Done (3.2s)! For help, type \"help\"");
+        assertThat(LogCondenser.analyze(log, 6000).clean()).isTrue();
+    }
+
+    @Test
+    void buildOutputKeepsFailedTestsAndDropsJdkWarnings() {
+        String output = """
+                Starting a Gradle Daemon, 2 incompatible Daemons could not be reused, use --status for details
+                > Task :compileJava
+                > Task :test
+                WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+                WARNING: sun.misc.Unsafe::objectFieldOffset has been called by net.bytebuddy.Foo
+                WARNING: Please consider reporting this to the maintainers of class net.bytebuddy.Foo
+
+                LobbyPluginTest > greetsPlayersWhenTheyJoin() FAILED
+                    java.util.NoSuchElementException
+                        at java.base/java.util.ArrayList.getFirst(ArrayList.java:440)
+                        at com.example.lobby.LobbyPlugin.onEnable(LobbyPlugin.java:19)
+                        at org.bukkit.plugin.java.JavaPlugin.setEnabled(JavaPlugin.java:280)
+
+                4 tests completed, 1 failed
+
+                > Task :test FAILED
+                """;
+        assertThat(LogCondenser.condenseBuild(output, 6000)).isEqualTo("""
+                LobbyPluginTest > greetsPlayersWhenTheyJoin() FAILED
+                    java.util.NoSuchElementException
+                        at com.example.lobby.LobbyPlugin.onEnable(LobbyPlugin.java:19)
+                4 tests completed, 1 failed
+                > Task :test FAILED""");
     }
 
     @Test

@@ -6,6 +6,9 @@ import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.PrintStream;
+import java.net.URISyntaxException;
+import java.nio.file.Path;
+import java.security.CodeSource;
 import java.util.concurrent.CountDownLatch;
 
 /** Entry point: an MCP server on stdin/stdout. Configuration comes from the environment (see {@link CoreConfig}). */
@@ -38,7 +41,12 @@ public final class Main {
                 return n;
             }
         };
-        Core core = new Core(CoreConfig.fromEnvironment(System.getenv()));
+        CoreConfig config = CoreConfig.fromEnvironment(System.getenv());
+        Path installDir = installDir(Main.class.getProtectionDomain().getCodeSource());
+        if (installDir != null) {
+            config = config.withInstallDir(installDir);
+        }
+        Core core = new Core(config);
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             try {
                 core.close();
@@ -51,5 +59,26 @@ public final class Main {
         done.await();
         server.closeGracefully();
         System.exit(0);
+    }
+
+    /**
+     * The install folder of a distribution ({@code <dir>/lib/msc-core-*.jar}), or null when the core runs from
+     * classes (tests, {@code gradle run}).
+     */
+    static Path installDir(CodeSource source) {
+        if (source == null || source.getLocation() == null) {
+            return null;
+        }
+        try {
+            Path jar = Path.of(source.getLocation().toURI());
+            Path lib = jar.getParent();
+            if (!jar.getFileName().toString().endsWith(".jar") || lib == null || lib.getParent() == null
+                    || !lib.getFileName().toString().equals("lib")) {
+                return null;
+            }
+            return lib.getParent();
+        } catch (URISyntaxException | IllegalArgumentException e) {
+            return null;
+        }
     }
 }

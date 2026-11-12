@@ -11,7 +11,7 @@ class ProjectBuilderTest {
         Path project = Path.of("some project");
         assertThat(ProjectBuilder.wrapperCommand(project, true))
                 .containsExactly("cmd", "/c", project.toAbsolutePath().resolve("gradlew.bat").toString(),
-                        "build", "--console=plain", "-q");
+                        "build", "--console=plain", "-Dorg.gradle.welcome=never");
         assertThat(ProjectBuilder.wrapperCommand(project, false).get(1))
                 .isEqualTo(project.toAbsolutePath().resolve("gradlew").toString());
     }

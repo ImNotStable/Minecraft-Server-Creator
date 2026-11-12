@@ -33,6 +33,7 @@ public final class AgentHub implements AutoCloseable {
     private long connectCount;
     private long readyCount;
     private volatile Duration connectWait = CONNECT_WAIT;
+    private volatile java.util.function.BooleanSupplier agentExpected = () -> true;
 
     public AgentHub(int port, String token) throws IOException {
         this.token = token;
@@ -80,6 +81,14 @@ public final class AgentHub implements AutoCloseable {
 
     public String token() {
         return token;
+    }
+
+    /**
+     * Whether an agent can still arrive. When this says no and none is connected, {@link #require} fails at once
+     * instead of waiting: the core started no server, so nothing will connect.
+     */
+    public void agentExpected(java.util.function.BooleanSupplier expected) {
+        this.agentExpected = expected;
     }
 
     /** Shorten the wait for an agent; tests use this. */
@@ -130,6 +139,10 @@ public final class AgentHub implements AutoCloseable {
         lock.lock();
         try {
             while (session == null || !session.connection().isOpen()) {
+                if (!agentExpected.getAsBoolean()) {
+                    throw new ToolException("the server is not running. Start it with server_start, or dev_cycle to "
+                            + "build and deploy first.");
+                }
                 if (nanos <= 0) {
                     throw new ToolException("no server agent connected. Start the server with server_start "
                             + "(server_setup installs the msc agent; a Minestom project has it built in).");

@@ -22,7 +22,22 @@ public final class LogCondenser {
     private static final List<String> FRAMEWORK = List.of("java.", "javax.", "jdk.", "sun.", "com.sun.",
             "net.minecraft.", "com.mojang.", "org.bukkit.", "org.spigotmc.", "io.papermc.", "com.destroystokyo.",
             "io.netty.", "org.apache.", "com.google.", "it.unimi.", "org.slf4j.", "co.aikar.", "ca.spottedleaf.",
-            "org.gradle.", "org.junit.", "kotlin.", "worker.org.gradle.", "oshi.");
+            "org.gradle.", "org.junit.", "org.mockbukkit.", "be.seeseemelk.", "kotlin.", "worker.org.gradle.", "oshi.");
+
+    /**
+     * Entries every dev server prints and the AI can do nothing about: Paper's banners for running as root or
+     * administrator and for offline mode (the dev server is offline on purpose), and the system report's oshi
+     * error on some Windows machines. Dropped so a clean start reads {@code no errors or warnings}.
+     */
+    private static final List<Pattern> EXPECTED = List.of(
+            Pattern.compile("^\\*+$"),
+            Pattern.compile("^YOU ARE (RUNNING THIS SERVER AS AN ADMINISTRATIVE OR ROOT USER|OPENING YOURSELF UP TO).*"),
+            Pattern.compile("^FOR MORE INFORMATION, SEE https://madelinemiller\\.dev/.*"),
+            Pattern.compile("^\\*+ SERVER IS RUNNING IN OFFLINE/INSECURE MODE!.*"),
+            Pattern.compile("^(The server will make no attempt to authenticate usernames|While this makes the game "
+                    + "possible to play without internet access|To change this, set \"online-mode\" to \"true\").*"),
+            Pattern.compile("^\\[oshi\\.driver\\.windows\\.registry\\.HkeyPerformanceDataUtil\\] Unable to locate English "
+                    + "counter names.*"));
 
     private static final List<Pattern> BUILD_NOISE = List.of(
             Pattern.compile("^> Task (?!.*FAILED).*"),
@@ -31,7 +46,11 @@ public final class LogCondenser {
             Pattern.compile("^(Deprecated Gradle features|You can use '--warning-mode|For more on this, please refer|See https://docs.gradle.org).*"),
             Pattern.compile("^\\d+ actionable tasks?:.*"),
             Pattern.compile("^(Calculating task graph|Configuration cache entry|Reusing configuration cache).*"),
-            Pattern.compile("^Note: (Some input files|Recompile with).*"));
+            Pattern.compile("^Note: (Some input files|Recompile with).*"),
+            Pattern.compile("^(BUILD SUCCESSFUL|Welcome to Gradle|Starting a Gradle Daemon|> Configure project).*"),
+            // JDK warnings printed by test libraries (Mockito, ByteBuddy) on every run.
+            Pattern.compile("^WARNING: (A terminally deprecated method|sun\\.misc\\.Unsafe::|Please consider reporting|"
+                    + "A Java agent has been loaded|If a serviceability tool|Dynamic loading of agents).*"));
 
     private LogCondenser() {
     }
@@ -89,6 +108,9 @@ public final class LogCondenser {
             boolean warn = e.level.startsWith("WARN");
             boolean trace = e.extra.stream().anyMatch(x -> FRAME.matcher(x).matches());
             if (!error && !warn && !trace) {
+                continue;
+            }
+            if (EXPECTED.stream().anyMatch(p -> p.matcher(e.text).matches())) {
                 continue;
             }
             if (error || (trace && !warn)) {

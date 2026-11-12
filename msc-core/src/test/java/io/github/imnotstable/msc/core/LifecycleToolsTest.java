@@ -46,7 +46,8 @@ class LifecycleToolsTest {
     @Test
     void startConnectsTheAgentAndStopEndsTheProcess() {
         assertThat(h.ok("server_start", "timeoutSeconds", 30))
-                .startsWith("server ready in ").endsWith("s, agent connected\nno errors or warnings");
+                .startsWith("server ready in ").containsPattern("s, agent connected\nworld world: top block at 0,0 is y=-?\\d+ \\(build from y=-?\\d+\\)\n")
+                .endsWith("\nno errors or warnings");
         assertThat(h.ok("msc_status")).contains("server: running").contains("agent: paper fake, minecraft 26.3, 9 operations");
         assertThat(h.ok("world_summary", "region", "0,60,0 1,61,1")).contains("blocks: stone 8");
         assertThat(h.ok("server_command", "command", "/say hi")).isEqualTo("ran say hi");
@@ -109,9 +110,11 @@ class LifecycleToolsTest {
     }
 
     @Test
-    void scaffoldIntoTheWorkspaceIgnoresTheCoresOwnDataFolder() throws Exception {
+    void scaffoldIntoTheWorkspaceIgnoresTheCoresOwnDataAndClaudeCodeConfig() throws Exception {
         Path ws = Files.createDirectories(workspace.resolve("ws"));
         Files.createDirectories(ws.resolve(".msc"));
+        Files.createDirectories(ws.resolve(".claude"));
+        Files.writeString(ws.resolve(".mcp.json"), "{}");
         try (CoreHarness other = new CoreHarness(ws)) {
             other.ok("msc_status");
             assertThat(other.ok("project_scaffold", "name", "MyPlugin")).startsWith("created paper-plugin project in " + ws);
@@ -123,6 +126,7 @@ class LifecycleToolsTest {
             assertThat(src.filter(p -> p.toString().endsWith("Test.java"))).hasSize(2);
         }
         assertThat(ws.resolve(".msc")).isDirectory();
+        assertThat(ws.resolve(".mcp.json")).hasContent("{}");
         try (var left = Files.list(ws.resolve(".msc"))) {
             assertThat(left.filter(p -> p.getFileName().toString().startsWith("scaffold-"))).isEmpty();
         }
@@ -191,6 +195,14 @@ class LifecycleToolsTest {
             assertThat(run.resolve("eula.txt")).content().contains("eula=true").doesNotContain("eula=false");
             assertThat(s.error("server_setup", "version", "1.0")).contains("Paper has no version 1.0").doesNotContain("internal");
             assertThat(s.ok("msc_status")).contains("platform: paper\n").contains("server: stopped");
+        }
+        // An installed core ships its agents in <install>/agents; the workspace's .msc/agent still wins.
+        Path install = Files.createDirectories(workspace.resolve("install/agents")).getParent();
+        Files.writeString(install.resolve("agents/msc-agent-fabric-0.1.0.jar"), "fabric");
+        Files.writeString(install.resolve("agents/msc-agent-paper-0.1.0.jar"), "bundled");
+        try (CoreHarness s = new CoreHarness(workspace.resolve("ws4"), c -> c.withDownloadsUrl(base).withInstallDir(install))) {
+            assertThat(s.ok("server_setup")).contains("agent installed in plugins/");
+            assertThat(workspace.resolve("ws4/run/plugins/msc-agent-paper.jar")).hasContent("bundled");
         } finally {
             fill.stop(0);
         }
