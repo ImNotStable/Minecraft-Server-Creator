@@ -263,6 +263,7 @@ public final class LifecycleTools {
     }
 
     private String startAndReport(int timeoutSeconds, int maxChars) throws IOException, InterruptedException {
+        boolean agentUpdated = refreshAgent();
         ServerManager.StartResult r = server.start(Duration.ofSeconds(timeoutSeconds));
         startMark = r.logMark();
         List<String> lines = server.log().since(r.logMark());
@@ -274,6 +275,9 @@ public final class LifecycleTools {
             out.append("server ready in ").append(seconds(r.millis()));
             CoreServer.AgentSession s = hub.current();
             out.append(s != null ? ", agent connected" : ", no agent connected (world tools unavailable)");
+            if (agentUpdated) {
+                out.append(", agent jar updated");
+            }
             out.append('\n').append(clean ? "no errors or warnings" : condensed);
         } else if (r.exited()) {
             out.append("server exited during startup after ").append(seconds(r.millis())).append('\n').append(condensed);
@@ -284,6 +288,24 @@ public final class LifecycleTools {
             out.append("server not ready after ").append(timeoutSeconds).append("s (still starting)\n").append(condensed);
         }
         return out.toString();
+    }
+
+    /**
+     * Before a start, replace an installed agent jar that differs from the one on offer, so a rebuilt agent
+     * is picked up without another server_setup. Does nothing for a server that was never set up.
+     */
+    private boolean refreshAgent() throws IOException {
+        Platform platform = server.platform();
+        if (platform.addonDir() == null || server.running()) {
+            return false;
+        }
+        Path installed = config.serverDir().resolve(platform.addonDir()).resolve("msc-agent-" + platform.id() + ".jar");
+        Path agent = findAgentJar(platform);
+        if (agent == null || !Files.exists(installed) || Files.mismatch(agent, installed) == -1) {
+            return false;
+        }
+        Files.copy(agent, installed, StandardCopyOption.REPLACE_EXISTING);
+        return true;
     }
 
     private String devCycle(Args args) throws IOException, InterruptedException {

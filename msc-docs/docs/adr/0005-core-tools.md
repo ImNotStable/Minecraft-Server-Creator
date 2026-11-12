@@ -45,6 +45,12 @@ The six newer tools were run against Paper 26.3 build 248 on Windows through MCP
 
 `project_scaffold` now prints only `projectId`, `packageName` and `version` instead of every template value. Fabric and Minestom support in the lifecycle tools is recorded in [ADR 0011](0011-core-platforms.md).
 
+## Addendum 2026-11-11: checks with the connection fix
+
+With the msc-protocol fix (`ccf6db1`) the stitched render passes on Paper 26.3: three renders of 1,572,864 blocks took 1.9, 0.9 and 0.7 s, and ten 64x64x64 reads in a row 0.1 to 0.2 s each. The first attempt still hung because the server folder held an agent jar built before the fix: only `server_setup` installed the agent. `server_start` (and so `dev_cycle`) now replaces an installed agent jar that differs from the one on offer before starting, and reports `agent jar updated`.
+
+On Fabric, `project_scaffold fabric-mod`, `server_setup`, `api_search` (6,792 classes from the 26.3 server, Fabric API and loader) and a real Loom build of the scaffolded mod pass on Windows. Starting the Fabric server is still not run: it needs `eula=true` set for that server by the user.
+
 ## Consequences
 
 - Adding a tool means one `registry.add(...)` call and a row in `tools.md`; the size test keeps the list honest.

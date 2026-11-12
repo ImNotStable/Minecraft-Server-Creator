@@ -285,6 +285,18 @@ class LifecycleToolsTest {
     }
 
     @Test
+    void startPicksUpARebuiltAgentJar() throws Exception {
+        Path agents = Files.createDirectories(workspace.resolve(".msc/agent"));
+        Files.writeString(agents.resolve("msc-agent-paper-0.2.jar"), "new agent");
+        Path installed = Files.createDirectories(workspace.resolve("run/plugins")).resolve("msc-agent-paper.jar");
+        Files.writeString(installed, "old agent");
+        assertThat(h.ok("server_start", "timeoutSeconds", 30)).contains("agent connected, agent jar updated");
+        assertThat(installed).hasContent("new agent");
+        h.ok("server_stop");
+        assertThat(h.ok("server_start", "timeoutSeconds", 30)).doesNotContain("agent jar updated");
+    }
+
+    @Test
     void everyCallIsLoggedForTheBenchmark() throws Exception {
         h.ok("msc_status");
         h.error("server_logs", "mode", "bogus");
