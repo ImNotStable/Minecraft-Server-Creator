@@ -4,17 +4,18 @@ The server must be running (`server_start`) for these tools. They work the same 
 
 ## How to point at blocks
 
-- A position: `10,64,10`
-- A region (two corners, any order): `0,64,0 15,70,15`
+- A position: `10,-60,10`
+- A region (two corners, any order): `0,-60,0 15,-50,15`
 - An area (for height maps): `0,0 63,63`
 - Block names can skip `minecraft:`. States use game syntax: `oak_stairs[facing=north]`.
 - `world` is optional. It defaults to the main world.
+- The dev world is flat with the ground at y = -61, so most builds start at y = -60.
 
 ## Looking at the world
 
 Go from cheap to detailed:
 
-1. **`world_summary`**: "What is in 0,60,0 to 31,80,31?" Gives block counts and bounds in about six lines.
+1. **`world_summary`**: "What is in 0,-64,0 to 31,-40,31?" Gives block counts and bounds in about six lines.
 2. **`world_heightmap`**: the shape of the ground, one character per column.
 3. **`world_slice`**: the exact blocks, as text layers. Example:
 
@@ -30,7 +31,7 @@ Go from cheap to detailed:
 
    Rows go north to south (low Z at the top), columns west to east (low X on the left).
 
-4. **`world_render`**: a picture. Views: `iso` (default), `top`, `north`, `south`, `east`, `west`, `iso-ne`/`nw`/`sw`/`se`, or a camera such as `eye 0,80,0 look 10,64,10`. A 512 px picture costs about 330 tokens. A copy is saved in `<workspace>/.msc/renders/`.
+4. **`world_render`**: a picture. Views: `iso` (default), `top`, `north`, `south`, `east`, `west`, `iso-ne`/`nw`/`sw`/`se`, or a camera such as `eye 0,-40,0 look 10,-60,10`. A 512 px picture costs about 330 tokens. A copy is saved in `<workspace>/.msc/renders/`.
 
    Pictures use flat colours by default. Set `MSC_CLIENT_JAR` to a Minecraft client jar you own to get real textures. Your own pack's textures are always used.
 

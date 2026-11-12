@@ -48,7 +48,7 @@ You do not need to install Java yourself. The build downloads Java 25 if it is m
 
 Next: [Quick start](Quick-start).
 
-MSC works in whatever folder you start Claude Code in, so each server gets its own folder. You only do steps 1 to 3 once.
+MSC works in whatever folder you start Claude Code in, so each server gets its own folder. You only do steps 1 to 3 once: MSC is now available in all your projects. To remove it: `claude mcp remove msc -s user`.
 
 ## Updating MSC
 
@@ -60,7 +60,7 @@ MSC works in whatever folder you start Claude Code in, so each server gets its o
 ## Optional settings
 
 - Install somewhere else: `./gradlew :msc-core:installMsc -Pmsc.installDir=<folder>`, then run the new line it prints.
-- Other settings are environment variables, added to the register line as `-e NAME=value` before the `--`:
+- Other settings are environment variables, added to the register line as `-e NAME=value` before the `--`. Do not set `MSC_WORKSPACE` there: with `--scope user` it would point every project at one folder.
 
 | Setting | What it does | Default |
 | --- | --- | --- |
@@ -68,6 +68,6 @@ MSC works in whatever folder you start Claude Code in, so each server gets its o
 | `MSC_MINECRAFT` | Minecraft version | `26.3` |
 | `MSC_JAVA` | Java used to run the server | the Java running MSC |
 | `MSC_CLIENT_JAR` | A Minecraft client jar, so pictures use real textures | none (flat colours) |
-| `MSC_AGENT_JAR` | Use a different agent jar | the one installed with MSC |
+| `MSC_AGENT_JAR` | Use a different agent jar | a jar in `<your folder>/.msc/agent`, else the one in `~/.msc/core/agents` |
 
 The full list is in [tools.md](https://github.com/ImNotStable/Minecraft-Server-Creator/blob/main/msc-docs/docs/tools.md#configuration-environment-variables).

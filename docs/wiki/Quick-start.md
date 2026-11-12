@@ -20,19 +20,21 @@ Do [Installation](Installation) first. Then open Claude Code in your server fold
    The answer looks like `server ready in 8.2s, agent connected`.
 
 5. **Ask for a feature.**
-   For example: "Add a /spawn command that teleports the player to 0, 64, 0."
+   For example: "Add a /spawn command that teleports the player to 0, -60, 0."
    Claude edits the code and calls `dev_cycle`. That builds, deploys, restarts and reports only the errors. It repeats until it sees `no errors or warnings`.
 
 6. **Try it.**
    Ask: "Run /spawn on the server with server_command" or join the game at `127.0.0.1:25565` (offline mode).
 
 7. **Build something.**
-   Ask: "Build a small stone hut at 10, 64, 10 and show me a picture of it."
+   Ask: "Build a small stone hut at 10, -60, 10 and show me a picture of it."
    Claude uses `build_structure`, then `world_render`. Every build can be undone with `build_undo`.
 
 8. **Stop the server** when you are done: "Stop the server."
 
 ## Tips
+
+- The dev world is flat. The ground is at y = -61, so builds start at y = -60.
 
 - Ask Claude to look up names with `api_search` instead of guessing. It saves time and tokens.
 - `msc_stats` shows how many calls and tokens each tool used.

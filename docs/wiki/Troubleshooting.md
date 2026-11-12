@@ -6,7 +6,7 @@ Find your problem, then try the steps in order.
 
 1. Run `claude mcp list`. `msc` should be listed.
 2. If not, run the line in `~/.msc/core/claude-mcp-add.txt` again (see [Installation](Installation), step 3).
-3. Check that `~/.msc/core/lib/` exists. If not, run `./gradlew :msc-core:installMsc` again.
+3. Check that `~/.msc/core/lib/` exists, and that the `java` path shown by `claude mcp get msc` exists. If not, run `./gradlew :msc-core:installMsc` again and run its new register line.
 4. Restart Claude Code.
 
 ## "the Minecraft EULA is not accepted"
@@ -22,7 +22,7 @@ Paper and Fabric need it. Read the [Minecraft EULA](https://aka.ms/MinecraftEULA
 
 ## The server starts but "agent not connected"
 
-1. Re-run `./gradlew :msc-core:installMsc` (with Claude Code closed) so the agents in `~/.msc/core/agents` are current, then `server_setup` again.
+1. MSC uses the agent installed with it (`~/.msc/core/agents`) unless `MSC_AGENT_JAR` is set. Re-run `./gradlew :msc-core:installMsc` (with Claude Code closed) so it is current, then `server_setup` again.
 2. Ask Claude for `msc_status`. It shows the agent state.
 3. Ask for `server_logs` to see errors from the agent.
 4. Minestom: the agent is built into the template. Check the project still calls `MscAgent.start()`.
@@ -41,7 +41,7 @@ Claude Code is still running MSC. Close Claude Code, then run `installMsc` again
 
 ## Port already in use
 
-Another server is running. Stop it, or ask Claude to `server_stop`. The dev server uses 25565 (game) and 25575 (RCON) by default.
+Another server is running. Stop it, ask Claude to `server_stop`, or change `server-port` and `rcon.port` in `run/server.properties`. The dev server uses 25565 (game) and 25575 (RCON) by default.
 
 ## Pictures look flat
 
