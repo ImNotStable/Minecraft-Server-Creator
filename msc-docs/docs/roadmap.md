@@ -43,7 +43,7 @@ now and lead this round.
 
 | # | Item | Kind | Where | Waits for |
 |---|---|---|---|---|
-| R8 | **`tools.md` and the wiki tool page generated from code**, with a build check for drift. `tools.md` still carries a "Not in 0.1" section and hand-copied budgets. | shrink | cloud | R4, R5, R6 (they all change tool text) |
+| R8 | **`tools.md` and the wiki tool page generated from code**, with a build check for drift. `tools.md` still carries a "Not in 0.1" section and hand-copied budgets. (Done, ADR 0026: tables generated, `checkToolDocs` in `build`; the wiki page is checked for the same tool set.) | shrink | cloud | R4, R5, R6 (they all change tool text) |
 | R9 | **Trim tool results by measurement.** Use the bench tool log to cut the three most token-heavy results. | optimize | cloud | R7's full run |
 | R10 | **Fourth playtest as the release gate.** One game per platform from the same brief on the installed plugin; compare calls, minutes and tokens with the first three. Feeds v0.4.0 notes. | verify | Minestom in the cloud; Paper and Fabric on the PC | R3 to R6 merged |
 | R11 | **Check the plugin on Windows** (install, remove the old `claude mcp add msc`, `installMsc` while a core runs, `/mcp` reconnect). Do it inside R10's PC session, not as its own prompt. | verify | PC | R10 |
