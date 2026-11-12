@@ -17,6 +17,13 @@ public final class LogCondenser {
     private static final Pattern LINE = Pattern.compile("^\\[(\\d\\d:\\d\\d:\\d\\d)(?:\\] \\[[^\\]]*/| )(\\w+)\\]:? ?(.*)$");
     private static final Pattern FRAME = Pattern.compile("^\\s+at (?:[\\w.]+//?)?([\\w.$<>]+)\\(.*\\).*$");
     private static final Pattern MORE = Pattern.compile("^\\s+\\.\\.\\. \\d+ (more|common frames omitted).*$");
+    /**
+     * Forge and NeoForge put the logger after the level: {@code [12:34:56] [main/WARN] [ne.mi.fm.Foo/CORE]: msg}. The
+     * logger is dropped from the message (it costs tokens and says little), but kept to recognise known noise.
+     */
+    private static final Pattern LOGGER = Pattern.compile("^\\[([\\w.$]+)/[^\\]]*\\]: (.*)$");
+    /** OSHI, the system-report library, under its own name or Forge's shortened one ({@code os.ha.pl...}). */
+    private static final Pattern OSHI_LOGGER = Pattern.compile("^(oshi|os)\\..*");
 
     /** Frames from these packages are noise unless nothing else is there. */
     private static final List<String> FRAMEWORK = List.of("java.", "javax.", "jdk.", "sun.", "com.sun.",
@@ -38,7 +45,7 @@ public final class LogCondenser {
             Pattern.compile("^(The server will make no attempt to authenticate usernames|While this makes the game "
                     + "possible to play without internet access|To change this, set \"online-mode\" to \"true\").*"),
             // Paper's system report on Windows: oshi messages and "Failed to get system info for ..." with an NPE.
-            Pattern.compile("^\\[oshi\\.[\\w.]+\\] .*"),
+            Pattern.compile("^\\[(oshi|os)\\.[\\w.$]+\\] .*"),
             Pattern.compile("^Failed to get system info for .*"));
 
     private static final List<Pattern> BUILD_NOISE = List.of(
@@ -90,7 +97,13 @@ public final class LogCondenser {
             String line = stripAnsi(raw);
             Matcher m = LINE.matcher(line);
             if (m.matches()) {
-                current = new Entry(m.group(1), m.group(2).toUpperCase(), m.group(3));
+                String message = m.group(3);
+                Matcher logger = LOGGER.matcher(message);
+                if (logger.matches()) {
+                    message = OSHI_LOGGER.matcher(logger.group(1)).matches()
+                            ? "[" + logger.group(1) + "] " + logger.group(2) : logger.group(2);
+                }
+                current = new Entry(m.group(1), m.group(2).toUpperCase(), message);
                 entries.add(current);
             } else if (!line.isBlank()) {
                 if (current == null) {
@@ -149,16 +162,28 @@ public final class LogCondenser {
                 errors, warnings);
     }
 
-    /** Keep exception headers and project frames; fold runs of framework frames into one line. */
+    /**
+     * Keep exception headers and project frames; fold runs of framework frames into one line. Drop the
+     * "Transformer Audit" block Forge's ModLauncher appends to traces (which classes its transformers touched).
+     */
     public static List<String> trimTrace(List<String> extra) {
         List<String> out = new ArrayList<>();
         int folded = 0;
         boolean firstFrameOfBlock = true;
+        boolean audit = false;
         for (String line : extra) {
             if (MORE.matcher(line).matches()) {
                 continue;
             }
             Matcher f = FRAME.matcher(line);
+            if (line.strip().equals("Transformer Audit:")) {
+                audit = true;
+                continue;
+            }
+            if (audit && !f.matches() && !line.isEmpty() && Character.isWhitespace(line.charAt(0))) {
+                continue;
+            }
+            audit = false;
             if (f.matches()) {
                 String where = f.group(1);
                 boolean framework = FRAMEWORK.stream().anyMatch(where::startsWith);

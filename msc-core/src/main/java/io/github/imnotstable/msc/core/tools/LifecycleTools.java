@@ -27,10 +27,11 @@ public final class LifecycleTools {
                                 FabricDownloader fabric) {
         EulaPrompts eula = new EulaPrompts(config);
         LogMarks marks = new LogMarks();
-        Scaffold scaffold = new Scaffold(config, eula);
+        BuildWarmup warmup = new BuildWarmup(builder);
+        Scaffold scaffold = new Scaffold(config, eula, warmup);
         ServerSetup setup = new ServerSetup(config, server, downloader, fabric, eula);
         ServerRun run = new ServerRun(config, hub, server, pack, setup, eula, marks);
-        DevCycle cycle = new DevCycle(config, server, builder, run);
+        DevCycle cycle = new DevCycle(config, server, builder, run, warmup);
         ServerConsole console = new ServerConsole(hub, server, marks);
         registry.add("project_scaffold",
                 "Create a new project from a template (Gradle KTS, tests wired in). Target directory must be empty.",
