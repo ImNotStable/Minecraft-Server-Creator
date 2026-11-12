@@ -1,6 +1,6 @@
 # Tools reference
 
-All 30 tools, one line each. You rarely call them by name: ask Claude in plain words and it picks the tool. Full arguments are in [tools.md](https://github.com/ImNotStable/Minecraft-Server-Creator/blob/main/msc-docs/docs/tools.md).
+All 26 tools, one line each. You rarely call them by name: ask Claude in plain words and it picks the tool. Full arguments are in [tools.md](https://github.com/ImNotStable/Minecraft-Server-Creator/blob/main/msc-docs/docs/tools.md).
 
 Coordinates are text: a position is `x,y,z`, a region is `x1,y1,z1 x2,y2,z2`, an area is `x1,z1 x2,z2`.
 
@@ -29,13 +29,13 @@ Coordinates are text: a position is `x,y,z`, a region is `x1,y1,z1 x2,y2,z2`, an
 | Tool | What it does |
 | --- | --- |
 | `api_search` | Finds classes, methods and events in the platform's API by name. |
-| `api_class` | Lists one class's members and signatures. |
+| `api_class` | Lists one class's members and signatures, with constants it inherits. |
 
 ## Seeing the world
 
 | Tool | What it does |
 | --- | --- |
-| `world_summary` | Counts blocks and entities in a region, in about six lines. |
+| `world_summary` | Counts blocks and entities in a region, in about six lines. With `path`, says whether a player can walk and jump from one point to another and names the first wall or gap; with `diff`, lists what changed since a `structure_save` snapshot. |
 | `world_slice` | Shows a region as text, one character per block, layer by layer. |
 | `world_entities` | Lists the entities in a region with name, position, health and tags. |
 | `world_heightmap` | Shows the ground height of an area, one character per column. |
@@ -45,7 +45,7 @@ Coordinates are text: a position is `x,y,z`, a region is `x1,y1,z1 x2,y2,z2`, an
 
 | Tool | What it does |
 | --- | --- |
-| `build_batch` | The one build tool. Runs build steps as one edit: fills and rooms, single blocks, circles, rings, spheres, domes, lines, terrain bands, structures from text or `.schem` files (repeated or turned), and copies. Takes block mixes such as `grass_block:78,moss_block:10`, checks every block name before placing any, and has a `dryRun` option. |
+| `build_batch` | The one build tool. Runs build steps as one edit: fills and rooms, single blocks, circles, rings, spheres, domes, lines, helixes (spiral stairs), terrain bands, structures from text or `.schem` files (repeated or turned), and copies; any step repeats with `repeat=N step=DX,DY,DZ`. Takes block mixes such as `grass_block:78,moss_block:10`, checks every block name before placing any, and has a `dryRun` option. |
 | `build_undo` | Undoes an edit (the last one by default). |
 | `structure_save` | Saves a region as a `.schem` file. Place it again with `build_batch` step `structure X,Y,Z file=PATH`. |
 
@@ -59,11 +59,7 @@ Coordinates are text: a position is `x,y,z`, a region is `x1,y1,z1 x2,y2,z2`, an
 
 | Tool | What it does |
 | --- | --- |
-| `texture_create` | Draws a texture from a palette and rows of characters. |
-| `texture_generate` | Makes a texture from a pattern (noise, ore, planks, bricks) or shape (gem, ingot, orb). |
-| `texture_recolor` | Copies a texture in a new colour, keeping its shading. |
-| `texture_animate` | Turns a texture into a scrolling or pulsing animation. |
-| `model_create` | Makes a block or item model for textures. |
+| `texture` | Adds a texture: draws it from a palette and rows of characters, generates it from a pattern (noise, ore, planks, bricks) or shape (gem, ingot, orb, sword, pickaxe, food), or copies one in a new colour. Can also animate it (scroll or pulse). |
 | `texture_view` | Shows a texture back as text. |
-| `pack_check` | Checks the resource pack for broken links and bad sizes. |
-| `pack_build` | Zips the pack, serves it and sends it to players. |
+| `model_create` | Makes a block or item model for textures. |
+| `pack` | Zips the pack, serves it, sends it to players and lists any problems. `check` only checks it. |

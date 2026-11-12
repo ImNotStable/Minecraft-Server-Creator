@@ -32,13 +32,13 @@ public final class ResourcePack implements AutoCloseable {
     public record Built(Path zip, String sha1, String url, int files, long bytes) {
     }
 
-    /** What pack_build last sent to the server. A restarted server has forgotten it, so the next start sends it again. */
+    /** What pack last sent to the server. A restarted server has forgotten it, so the next start sends it again. */
     public record Applied(String description, boolean required) {
     }
 
     private volatile Applied applied;
 
-    /** Null until pack_build has sent a pack to the server in this session. */
+    /** Null until pack has sent a pack to the server in this session. */
     public Applied applied() {
         return applied;
     }
@@ -179,7 +179,7 @@ public final class ResourcePack implements AutoCloseable {
     /** Zip the pack. The same sources always give the same bytes, so the hash only changes with content. */
     public synchronized Built build(String description) throws IOException {
         if (!Files.isDirectory(root.resolve("assets"))) {
-            throw new ToolException("the pack is empty. Create a texture with texture_create first.");
+            throw new ToolException("the pack is empty. Add one with the texture tool first.");
         }
         JsonObject pack = new JsonObject();
         pack.addProperty("description", description);

@@ -48,10 +48,10 @@ public final class ApiTools {
 
     public void register(ToolRegistry registry) {
         registry.add("api_search",
-                "Search the platform API (Paper, Fabric or Minestom) by class, method, field or enum constant name. "
-                        + "Returns one line per match with full signatures.",
+                "Search the platform API (Paper, Fabric or Minestom) by class, method, field or constant name; "
+                        + "one line per match with full signature.",
                 Schema.of().req("query", "string", "Words that must all match, for example \"player teleport\"")
-                        .opt("kind", "string", "Only classes of this kind: class, interface, enum, record, annotation or event")
+                        .opt("kind", "string", "class, interface, enum, record, annotation or event")
                         .opt("limit", "integer", "Default 15"),
                 args -> {
                     String kind = args.str("kind", null);
@@ -62,10 +62,10 @@ public final class ApiTools {
                     return Budget.truncate(index().search(args.str("query"), kind, limit), Budget.MAX_CHARS, "Lower limit.");
                 });
         registry.add("api_class",
-                "Show one API class: supertypes, enum constants and public members with signatures.",
+                "Show one API class: supertypes, constants (with inherited) and public members with signatures.",
                 Schema.of().req("name", "string", "Simple or full class name, for example Player or org.bukkit.entity.Player")
                         .opt("filter", "string", "Only members whose name contains this")
-                        .opt("inherited", "boolean", "Include members of supertypes. Default false")
+                        .opt("inherited", "boolean", "Include members of supertypes")
                         .opt("limit", "integer", "Default 40"),
                 args -> Budget.truncate(index().describe(args.str("name"), args.str("filter", null),
                         args.bool("inherited", false), Math.max(1, Math.min(300, args.integer("limit", 40)))),

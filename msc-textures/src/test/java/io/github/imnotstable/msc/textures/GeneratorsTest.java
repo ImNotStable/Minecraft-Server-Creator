@@ -19,11 +19,17 @@ class GeneratorsTest {
     @Test
     void everyShapeUsesOnlyRampColorsAndHasATransparentBackground() {
         for (String name : Shapes.NAMES) {
-            Texture t = Shapes.draw(name, RUBY, null);
-            assertThat(RUBY.colors()).containsAll(t.colors());
+            Texture t = Shapes.draw(name, RUBY, 0xFF6B4A28, null);
+            java.util.Set<Integer> allowed = new java.util.HashSet<>(RUBY.colors());
+            allowed.addAll(Ramp.from(0xFF6B4A28, 3).colors());
+            assertThat(allowed).as(name).containsAll(t.colors());
             assertThat(Stats.of(t).opaqueFraction()).isBetween(0.2, 0.85);
             assertThat(BenchRules.rubyProblems(t)).as(name).isEmpty();
         }
+        assertThat(Shapes.draw("sword", RUBY, null).colors()).as("wooden handle by default")
+                .contains(Ramp.from(0xFF6B4A28, 3).get(1));
+        assertThat(Shapes.draw("food", RUBY, null).colors()).as("bone by default")
+                .contains(Ramp.from(0xFFE8DCC0, 3).get(2));
         Texture outlined = Shapes.draw("ingot", Ramp.from(0xFFE8B830, 4), 0xFF000000);
         assertThat(outlined.get(4, 5)).isEqualTo(0xFF000000);
     }
@@ -73,7 +79,7 @@ class GeneratorsTest {
     @Test
     void unknownNamesListTheChoices() {
         assertThatThrownBy(() -> Patterns.generate("marble", 16, STONE, null, 0)).hasMessageContaining("noise, ore");
-        assertThatThrownBy(() -> Shapes.draw("sword", RUBY, null)).hasMessageContaining("gem, ingot, orb");
+        assertThatThrownBy(() -> Shapes.draw("shield", RUBY, null)).hasMessageContaining("gem, ingot, orb, sword");
         assertThatThrownBy(() -> Patterns.noise(20, STONE, 0)).hasMessageContaining("16, 32 or 64");
     }
 }

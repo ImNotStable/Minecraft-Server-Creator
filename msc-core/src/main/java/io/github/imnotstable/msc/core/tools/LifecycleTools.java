@@ -486,7 +486,7 @@ public final class LifecycleTools {
     }
 
     /**
-     * A restarted server has forgotten the pack that pack_build sent, and a detached pack host was just stopped,
+     * A restarted server has forgotten the pack that the pack tool sent, and a detached pack host was just stopped,
      * so serve and send it again. Best effort, like the ground line.
      */
     private String packLine() {
@@ -502,7 +502,7 @@ public final class LifecycleTools {
             Thread.currentThread().interrupt();
             return "";
         } catch (IOException | RuntimeException e) {
-            return "\nresource pack not sent again (" + e.getMessage() + "): run pack_build";
+            return "\nresource pack not sent again (" + e.getMessage() + "): run the pack tool";
         }
     }
 
@@ -544,7 +544,7 @@ public final class LifecycleTools {
         }
     }
 
-    /** The description pack_build uses when none is given. */
+    /** The description pack uses when none is given. */
     public static final String DEFAULT_PACK_DESCRIPTION = "Minecraft Server Creator dev pack";
 
     private static final int GROUND_RADIUS = 32;

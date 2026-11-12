@@ -49,8 +49,7 @@ class McpBridgeTest {
                         "server_start", "server_stop", "server_detach", "dev_cycle", "server_logs", "server_command", "server_wait", "api_search",
                         "api_class", "world_slice", "world_heightmap", "world_render", "world_summary", "world_entities", "build_undo",
                         "structure_save", "build_batch",
-                        "texture_create", "texture_generate", "texture_recolor", "texture_animate", "model_create", "texture_view",
-                        "pack_check", "pack_build", "player_test", "msc_workspace");
+                        "texture", "texture_view", "model_create", "pack", "player_test", "msc_workspace");
                 // The tool list is paid for in every conversation: keep it small. ADR 0019 folded five build tools
                 // into build_batch and msc_stats into msc_status (18.5k chars to 15.5k).
                 assertThat(listed.toString().length()).isLessThan(16000);
