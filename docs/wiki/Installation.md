@@ -75,11 +75,12 @@ To update: close Claude Code, unzip the new release, and run `claude mcp remove 
 1. Close Claude Code. (On Windows the running files are locked.)
 2. In the MSC folder: `git pull`
 3. Run `./gradlew :msc-core:installMsc` again.
-4. Open Claude Code. The next `server_start` swaps in the new agent by itself.
+4. Open Claude Code. The next `server_start` swaps in the new agent by itself. `msc_status` shows when the running core was built and where it is installed, so you can tell an old install from a new one.
 
 ## Optional settings
 
 - Install somewhere else: `./gradlew :msc-core:installMsc -Pmsc.installDir=<folder>`, then run the new line it prints. The folder must be empty or hold an earlier MSC install.
+- Working from a folder that is not the server's folder (a git worktree, another repo, a desktop app thread): MSC uses the folder Claude Code started in. Register a copy for just that folder with `--scope local` and point it at the server: `claude mcp add msc --scope local -e MSC_WORKSPACE=<server folder> -- <same command as above>`, then restart Claude Code.
 - Other settings are environment variables, added to the register line as `-e NAME=value` before the `--`. Do not set `MSC_WORKSPACE` there: with `--scope user` it would point every project at one folder.
 
 | Setting | What it does | Default |
