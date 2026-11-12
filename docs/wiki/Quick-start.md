@@ -9,7 +9,7 @@ Do [Installation](Installation) first. Then open Claude Code in your server fold
    You get a Gradle project with a `/hello` command, tests, and a `CLAUDE.md` that tells the AI how to work in it.
 
 2. **Read the Minecraft EULA.**
-   Open [aka.ms/MinecraftEULA](https://aka.ms/MinecraftEULA). A Paper server will not start until you accept it. Only you can do this.
+   Open [aka.ms/MinecraftEULA](https://aka.ms/MinecraftEULA). A Paper server will not start until you accept it. Only you can do this. Claude will ask you; it must not accept it for you.
 
 3. **Set up the server.**
    If you accept the EULA, say: "I accept the Minecraft EULA. Run server_setup with acceptEula=true."
