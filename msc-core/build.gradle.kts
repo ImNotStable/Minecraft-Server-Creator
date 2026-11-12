@@ -51,6 +51,16 @@ val installMsc = tasks.register<Sync>("installMsc") {
     into(installDir)
     val target = installDir
     val java = toolchainJava
+    // Sync deletes whatever else is in the target, so refuse a folder that holds anything but an earlier install.
+    doFirst {
+        val dir = File(target.get()).absoluteFile
+        val entries = dir.listFiles().orEmpty()
+        val earlierInstall = dir.resolve("lib").listFiles().orEmpty().any { it.name.matches(Regex("msc-core-.*\\.jar")) }
+        if (entries.isNotEmpty() && !earlierInstall) {
+            throw GradleException("refusing to install into $dir: it is not empty and holds no earlier msc-core " +
+                "install (installMsc replaces the folder's contents). Pick an empty or new folder with -Pmsc.installDir=...")
+        }
+    }
     doLast {
         val dir = File(target.get()).absoluteFile
         val classPath = dir.resolve("lib").absolutePath + File.separator + "*"

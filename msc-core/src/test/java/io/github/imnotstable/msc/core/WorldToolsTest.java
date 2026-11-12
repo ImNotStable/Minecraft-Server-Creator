@@ -30,6 +30,17 @@ class WorldToolsTest {
     }
 
     @Test
+    void worldToolsFailAtOnceWhenNoServerIsRunning() throws Exception {
+        try (CoreHarness idle = new CoreHarness(workspace.resolve("idle"))) {
+            idle.core.hub().connectWait(java.time.Duration.ofSeconds(30));
+            long start = System.nanoTime();
+            assertThat(idle.error("world_summary", "region", "0,0,0 1,1,1")).contains("server is not running")
+                    .contains("server_start");
+            assertThat(java.time.Duration.ofNanos(System.nanoTime() - start)).isLessThan(java.time.Duration.ofSeconds(5));
+        }
+    }
+
+    @Test
     void renderReturnsAPngWithACaptionAndLogsItsTokens() throws Exception {
         Path ws = workspace.resolve("logged");
         try (CoreHarness r = new CoreHarness(ws, c -> c.withToolLog(ws.resolve("calls.jsonl"))).withAgent()) {
@@ -196,6 +207,7 @@ class WorldToolsTest {
     @Test
     void worldToolsExplainAMissingAgent() throws Exception {
         try (CoreHarness alone = new CoreHarness(workspace.resolve("other"))) {
+            alone.core.hub().agentExpected(() -> true); // as if a server were running without the agent
             assertThat(alone.error("world_summary", "region", "0,0,0 1,1,1"))
                     .contains("no server agent connected").contains("server_start");
         }

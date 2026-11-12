@@ -71,6 +71,34 @@ class LogCondenserTest {
     }
 
     @Test
+    void buildOutputKeepsFailedTestsAndDropsJdkWarnings() {
+        String output = """
+                Starting a Gradle Daemon, 2 incompatible Daemons could not be reused, use --status for details
+                > Task :compileJava
+                > Task :test
+                WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+                WARNING: sun.misc.Unsafe::objectFieldOffset has been called by net.bytebuddy.Foo
+                WARNING: Please consider reporting this to the maintainers of class net.bytebuddy.Foo
+
+                LobbyPluginTest > greetsPlayersWhenTheyJoin() FAILED
+                    java.util.NoSuchElementException
+                        at java.base/java.util.ArrayList.getFirst(ArrayList.java:440)
+                        at com.example.lobby.LobbyPlugin.onEnable(LobbyPlugin.java:19)
+                        at org.bukkit.plugin.java.JavaPlugin.setEnabled(JavaPlugin.java:280)
+
+                4 tests completed, 1 failed
+
+                > Task :test FAILED
+                """;
+        assertThat(LogCondenser.condenseBuild(output, 6000)).isEqualTo("""
+                LobbyPluginTest > greetsPlayersWhenTheyJoin() FAILED
+                    java.util.NoSuchElementException
+                        at com.example.lobby.LobbyPlugin.onEnable(LobbyPlugin.java:19)
+                4 tests completed, 1 failed
+                > Task :test FAILED""");
+    }
+
+    @Test
     void cleanLogIsOneLine() {
         LogCondenser.Condensed c = LogCondenser.analyze(List.of("[12:00:00 INFO]: Done (1.0s)!"), 6000);
         assertThat(c.clean()).isTrue();

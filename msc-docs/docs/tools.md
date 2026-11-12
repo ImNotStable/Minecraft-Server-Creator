@@ -11,6 +11,7 @@ The AI talks to `msc-core` over MCP (stdio). This page lists every tool, its arg
 - Block names may omit `minecraft:`. Properties use vanilla syntax: `oak_stairs[facing=north]`.
 - `world` is optional everywhere and defaults to the server's first world.
 - Every call is logged (see "Tool log").
+- World and build tools fail at once with `error: the server is not running...` when the core has no server running and none was attached with `MSC_CORE_ADDRESS`.
 - The whole tool list (30 tools) costs about 3,500 tokens per conversation. A test fails if it grows past 14,100 characters.
 - Results are text. The one exception is `world_render`, which adds one PNG image next to its text.
 
@@ -31,9 +32,9 @@ The AI talks to `msc-core` over MCP (stdio). This page lists every tool, its arg
 | --- | --- | --- | --- |
 | `project_scaffold` | `name`, `dir`?, `template`? (`paper-plugin` default, `fabric-mod`, `minestom-server`), `acceptEula`? (false) | Where the project was created, its `projectId`, `packageName` and `version`. Remembers the template's platform for the workspace | 5 lines |
 | `server_setup` | `version`? (default 26.3), `platform`? (`paper`, `fabric`, `minestom`; default the project's), `acceptEula`? (false) | Paper: build used. Fabric: launcher and Fabric API versions. Both: whether dev defaults and the agent were installed and whether `eula.txt` says `eula=true`. Minestom: one line saying nothing is needed | 5 lines |
-| `server_start` | `timeoutSeconds`? (180) | `server ready in 8.2s, agent connected` plus startup warnings and errors only. Fails at once with a one-line error if `eula.txt` lacks `eula=true`. Replaces an installed agent jar that differs from the one in `.msc/agent` (or `MSC_AGENT_JAR`) first, and says `agent jar updated` | 6,000 chars |
+| `server_start` | `timeoutSeconds`? (180) | `server ready in 8.2s, agent connected`, then `world world: top block at 0,0 is y=-61 (build from y=-60)` (dev worlds are superflat, far below y=64), plus startup warnings and errors only. Fails at once with a one-line error if `eula.txt` lacks `eula=true`. Replaces an installed agent jar that differs from the one in `.msc/agent` (or `MSC_AGENT_JAR`) first, and says `agent jar updated` | 6,000 chars |
 | `server_stop` | none | One line | 1 line |
-| `dev_cycle` | `project`? (workspace), `restart`? (true), `maxChars`? | Build, deploy, restart, report in one call. On a failed build: compiler and test errors only. Otherwise: startup warnings and errors, or `no errors or warnings` | `maxChars` |
+| `dev_cycle` | `project`? (workspace), `restart`? (true), `maxChars`? | Build, deploy, restart, report in one call. On a failed build: compiler errors and each failed test with its project frames. Otherwise: startup warnings and errors, or `no errors or warnings` | `maxChars` |
 | `server_logs` | `mode`? (`errors`, `tail`, `grep`), `pattern`?, `lines`? (30), `all`? (false), `maxChars`? | `errors`: warnings and errors, stack traces cut to project frames, repeats collapsed to `(xN)` | `maxChars` |
 | `server_command` | `command` | The command's output | 6,000 chars |
 

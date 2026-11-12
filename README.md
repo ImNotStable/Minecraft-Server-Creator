@@ -22,6 +22,8 @@ A toolset that helps an AI develop custom Minecraft servers on any platform. Thi
 
 The dev server's Minecraft EULA (https://aka.ms/MinecraftEULA) must be accepted once per server: the AI asks you, then calls `server_setup` with `acceptEula=true`.
 
+Step-by-step guide: [Wiki](https://github.com/ImNotStable/Minecraft-Server-Creator/wiki) (source in `docs/wiki/`).
+
 To update after pulling new code, close Claude Code (Windows locks the running jars) and run `installMsc` again. Tool reference: [msc-docs/docs/tools.md](msc-docs/docs/tools.md).
 
 | Module | Phase |

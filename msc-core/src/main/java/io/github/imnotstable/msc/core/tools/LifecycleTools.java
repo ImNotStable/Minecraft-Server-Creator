@@ -15,6 +15,7 @@ import io.github.imnotstable.msc.core.tool.ToolException;
 import io.github.imnotstable.msc.core.tool.ToolRegistry;
 import io.github.imnotstable.msc.protocol.op.Ops;
 import io.github.imnotstable.msc.protocol.transport.CoreServer;
+import io.github.imnotstable.msc.protocol.world.BlockPos;
 import io.github.imnotstable.msc.templates.ScaffoldResult;
 import io.github.imnotstable.msc.templates.TemplateVariables;
 import io.github.imnotstable.msc.templates.Templates;
@@ -295,6 +296,9 @@ public final class LifecycleTools {
             if (agentUpdated) {
                 out.append(", agent jar updated");
             }
+            if (s != null) {
+                out.append(groundLine());
+            }
             out.append('\n').append(clean ? "no errors or warnings" : condensed);
         } else if (r.exited()) {
             out.append("server exited during startup after ").append(seconds(r.millis())).append('\n').append(condensed);
@@ -305,6 +309,29 @@ public final class LifecycleTools {
             out.append("server not ready after ").append(timeoutSeconds).append("s (still starting)\n").append(condensed);
         }
         return out.toString();
+    }
+
+    /**
+     * Where the ground is, so the AI does not build in the air: dev worlds are superflat with the surface far below
+     * y=64. Best effort; a start never fails because of it.
+     */
+    private String groundLine() {
+        try {
+            Ops.ServerInfo info = hub.call(Ops.SERVER_INFO, new Ops.Empty());
+            if (info.worlds().isEmpty()) {
+                return "";
+            }
+            String world = info.worlds().getFirst();
+            BlockPos origin = new BlockPos(0, 0, 0);
+            Ops.HeightmapResult h = hub.call(Ops.WORLD_HEIGHTMAP, new Ops.HeightmapParams(world, origin, origin));
+            int y = h.heights()[0];
+            return "\nworld " + world + ": top block at 0,0 is y=" + y + " (build from y=" + (y + 1) + ")";
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return "";
+        } catch (RuntimeException e) {
+            return "";
+        }
     }
 
     /**
