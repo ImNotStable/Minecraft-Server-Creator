@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.util.HashMap;
 import net.kyori.adventure.text.Component;
 import org.geysermc.mcprotocollib.protocol.data.game.inventory.ContainerType;
+import org.geysermc.mcprotocollib.protocol.data.game.inventory.VillagerTrade;
 import org.geysermc.mcprotocollib.protocol.data.game.item.ItemStack;
 import org.geysermc.mcprotocollib.protocol.data.game.item.component.DataComponentTypes;
 import org.geysermc.mcprotocollib.protocol.data.game.item.component.DataComponents;
@@ -12,6 +13,7 @@ import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.entity.play
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.inventory.ClientboundContainerClosePacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.inventory.ClientboundContainerSetContentPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.inventory.ClientboundContainerSetSlotPacket;
+import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.inventory.ClientboundMerchantOffersPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.inventory.ClientboundOpenScreenPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.inventory.ClientboundSetPlayerInventoryPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.title.ClientboundSetTitleTextPacket;
@@ -67,6 +69,26 @@ class InventoryTest {
         assertThat(inv.report()).endsWith("open menu generic_9x6 \"Big\": 50 stone");
         assertThat(Inventory.menuSize("HOPPER")).isEqualTo(5);
         assertThat(Inventory.menuSize("SOMETHING_NEW")).isEqualTo(-1);
+    }
+
+    @Test
+    void listsAMerchantsTradesUnderItsTitle() {
+        // A vanilla villager's menu title is a translation key the client looks up; the bot keeps its last word.
+        inv.accept(new ClientboundOpenScreenPacket(5, ContainerType.MERCHANT,
+                Component.translatable("entity.minecraft.villager.farmer")));
+        VillagerTrade bread = new VillagerTrade(new VillagerTrade.ItemCost(2, 12, java.util.Map.of()),
+                new ItemStack(1, 6), null, false, 0, 16, 2, 0, 0.05f, 0);
+        VillagerTrade used = new VillagerTrade(new VillagerTrade.ItemCost(1, 1, java.util.Map.of()),
+                new ItemStack(3, 1), new VillagerTrade.ItemCost(4, 2, java.util.Map.of()), false, 12, 12, 2, 0, 0.05f,
+                0);
+        inv.accept(new ClientboundMerchantOffersPacket(5, java.util.List.of(bread, used), 1, 0, true, true));
+        assertThat(inv.report()).endsWith("""
+                open menu merchant "Farmer": empty
+                trades: granite x12 -> stone x6; stone + diorite x2 -> polished_granite (out of stock)""");
+        inv.accept(new ClientboundMerchantOffersPacket(9, java.util.List.of(bread), 1, 0, true, true));
+        assertThat(inv.report()).contains("trades: granite x12 -> stone x6; stone");
+        inv.closed();
+        assertThat(inv.report()).doesNotContain("trades");
     }
 
     @Test

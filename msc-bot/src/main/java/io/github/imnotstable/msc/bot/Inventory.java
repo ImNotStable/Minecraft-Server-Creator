@@ -6,11 +6,13 @@ import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.geysermc.mcprotocollib.network.packet.Packet;
+import org.geysermc.mcprotocollib.protocol.data.game.inventory.VillagerTrade;
 import org.geysermc.mcprotocollib.protocol.data.game.item.ItemStack;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.entity.player.ClientboundSetHeldSlotPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.inventory.ClientboundContainerClosePacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.inventory.ClientboundContainerSetContentPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.inventory.ClientboundContainerSetSlotPacket;
+import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.inventory.ClientboundMerchantOffersPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.inventory.ClientboundOpenScreenPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.inventory.ClientboundSetPlayerInventoryPacket;
 
@@ -33,6 +35,7 @@ final class Inventory {
     private String screen;
     private int screenSize = -1;
     private ItemStack[] screenItems = new ItemStack[0];
+    private List<String> trades = List.of();
 
     Inventory(Items items) {
         this.items = items;
@@ -59,9 +62,15 @@ final class Inventory {
             case ClientboundSetHeldSlotPacket p -> held = p.getSlot();
             case ClientboundOpenScreenPacket p -> {
                 screenId = p.getContainerId();
-                screen = p.getType().name().toLowerCase(Locale.ROOT) + " \"" + Text.plain(p.getTitle()) + "\"";
+                screen = p.getType().name().toLowerCase(Locale.ROOT) + " \"" + Text.title(p.getTitle()) + "\"";
                 screenSize = menuSize(p.getType().name());
                 screenItems = new ItemStack[0];
+                trades = List.of();
+            }
+            case ClientboundMerchantOffersPacket p -> {
+                if (p.getContainerId() == screenId) {
+                    trades = p.getOffers().stream().map(this::trade).toList();
+                }
             }
             case ClientboundContainerClosePacket p -> {
                 if (p.getContainerId() == screenId) {
@@ -89,6 +98,24 @@ final class Inventory {
         screen = null;
         screenSize = -1;
         screenItems = new ItemStack[0];
+        trades = List.of();
+    }
+
+    /** One trade as the merchant menu shows it: what it costs, what it gives, and whether it is used up. */
+    private String trade(VillagerTrade t) {
+        StringBuilder out = new StringBuilder(cost(t.getItemCostA()));
+        if (t.getItemCostB() != null) {
+            out.append(" + ").append(cost(t.getItemCostB()));
+        }
+        out.append(" -> ").append(t.getResult() == null ? "nothing" : items.describe(t.getResult()));
+        if (t.isOutOfStock() || t.getUses() >= t.getMaxUses()) {
+            out.append(" (out of stock)");
+        }
+        return out.toString();
+    }
+
+    private String cost(VillagerTrade.ItemCost c) {
+        return items.name(c.itemId()) + (c.count() != 1 ? " x" + c.count() : "");
     }
 
     /**
@@ -177,6 +204,9 @@ final class Inventory {
                 }
             }
             lines.add("open menu " + screen + ": " + (parts.isEmpty() ? "empty" : String.join("; ", parts)));
+            if (!trades.isEmpty()) {
+                lines.add("trades: " + String.join("; ", trades));
+            }
         }
         return String.join("\n", lines);
     }
