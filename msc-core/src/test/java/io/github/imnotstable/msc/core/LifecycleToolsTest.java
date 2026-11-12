@@ -145,9 +145,14 @@ class LifecycleToolsTest {
     }
 
     @Test
-    void scaffoldCreatesAProjectOnceAndRefusesToOverwrite() {
+    void scaffoldCreatesAProjectOnceAndRefusesToOverwrite() throws Exception {
         assertThat(h.ok("project_scaffold", "name", "MyPlugin", "dir", "fresh"))
-                .startsWith("created paper-plugin project in ").doesNotContain("assword").doesNotContain("eula")
+                .startsWith("created paper-plugin project in ").doesNotContain("assword").doesNotContain("eula=")
+                .endsWith("next: ask the user to accept the Minecraft EULA (https://aka.ms/MinecraftEULA), then "
+                        + "server_setup acceptEula=true, then edit the code and dev_cycle");
+        Files.createDirectories(workspace.resolve("run"));
+        Files.writeString(workspace.resolve("run/paper.jar"), "set up");
+        assertThat(h.ok("project_scaffold", "name", "Other", "dir", "second"))
                 .endsWith("next: edit the code, then dev_cycle");
         assertThat(workspace.resolve("fresh")).isNotEmptyDirectory();
         assertThat(h.error("project_scaffold", "name", "MyPlugin", "dir", "fresh")).startsWith("error: ");

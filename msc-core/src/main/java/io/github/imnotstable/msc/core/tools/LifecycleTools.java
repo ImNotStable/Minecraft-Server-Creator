@@ -128,7 +128,15 @@ public final class LifecycleTools {
                 out.append('\n').append(key).append(": ").append(result.values().get(key));
             }
         }
-        out.append("\nnext: edit the code, then dev_cycle");
+        Platform platform = platformId == null ? null : Platform.of(platformId);
+        if (platform != null && platform.needsEula()
+                && !Files.exists(config.serverDir().resolve(platform.serverJar()))) {
+            // The server is not set up yet: a first dev_cycle would build for nothing and then stop there.
+            out.append("\nnext: ask the user to accept the Minecraft EULA (https://aka.ms/MinecraftEULA), then "
+                    + "server_setup acceptEula=true, then edit the code and dev_cycle");
+        } else {
+            out.append("\nnext: edit the code, then dev_cycle");
+        }
         return out.toString();
     }
 
