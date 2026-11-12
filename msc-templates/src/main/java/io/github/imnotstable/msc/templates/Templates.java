@@ -32,6 +32,10 @@ public final class Templates {
     public static final String PAPER_GAME = "paper-game";
     /** A Fabric server mod project (Loom) with tests, conventions and a dev server in {@code run/}. */
     public static final String FABRIC_MOD = "fabric-mod";
+    /** A NeoForge server mod (ModDevGradle). See ADR 0027. */
+    public static final String NEOFORGE_MOD = "neoforge-mod";
+    /** A Minecraft Forge server mod (ForgeGradle 7). See ADR 0027. */
+    public static final String FORGE_MOD = "forge-mod";
     /** Only the dev server config ({@code server.properties}, {@code eula.txt}), for a server directory. */
     public static final String PAPER_SERVER = "paper-server";
     /** A Minestom server project with the msc agent built in, tests and conventions. No EULA step. */

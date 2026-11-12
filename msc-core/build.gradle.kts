@@ -31,6 +31,8 @@ val agentJars = configurations.resolvable("agentJars") { extendsFrom(agents.get(
 dependencies {
     agents(project(path = ":msc-agent-paper", configuration = "shadowRuntimeElements")) { isTransitive = false }
     agents(project(path = ":msc-agent-fabric", configuration = "runtimeElements")) { isTransitive = false }
+    agents(project(path = ":msc-agent-neoforge", configuration = "shadowRuntimeElements")) { isTransitive = false }
+    agents(project(path = ":msc-agent-forge", configuration = "shadowRuntimeElements")) { isTransitive = false }
 }
 
 // The test player's client for the previous Minecraft version (Minestom lags Paper by one), in bot/<version>/.

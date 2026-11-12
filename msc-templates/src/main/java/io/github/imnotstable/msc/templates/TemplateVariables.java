@@ -141,6 +141,8 @@ public record TemplateVariables(
         Map<String, String> m = new LinkedHashMap<>();
         m.put("name", name);
         m.put("projectId", projectId);
+        // NeoForge and Forge mod ids allow no hyphens.
+        m.put("modId", projectId.replace('-', '_'));
         m.put("packageName", packageName);
         m.put("packagePath", packageName.replace('.', '/'));
         m.put("mainClass", mainClass);

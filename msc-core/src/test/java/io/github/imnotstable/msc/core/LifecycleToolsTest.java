@@ -527,8 +527,15 @@ class LifecycleToolsTest {
             assertThat(run.resolve("mods/msc-agent-fabric.jar")).hasContent("fabric agent");
             assertThat(paths).hasSize(before);
             assertThat(s.error("server_setup", "version", "1.0")).contains("Fabric setup supports Minecraft " + minecraft);
-            assertThat(s.error("server_setup", "platform", "forge")).contains("unknown platform forge")
-                    .contains("paper, fabric, minestom");
+            assertThat(s.error("server_setup", "platform", "spigot")).contains("unknown platform spigot")
+                    .contains("paper, purpur, fabric, quilt, neoforge, forge, minestom");
+            // Quilt runs Fabric mods: a version Fabric API does not cover is refused before any download.
+            assertThat(s.error("server_setup", "platform", "quilt", "version", "1.0"))
+                    .contains("Fabric setup supports Minecraft " + minecraft);
+            assertThat(s.error("server_setup", "platform", "neoforge", "version", "1.0"))
+                    .contains("NeoForge setup supports Minecraft " + minecraft);
+            assertThat(s.error("server_setup", "platform", "forge", "version", "1.0"))
+                    .contains("Forge setup supports Minecraft " + minecraft);
         } finally {
             fabric.stop(0);
         }

@@ -2,6 +2,7 @@ package io.github.imnotstable.msc.core.tools;
 
 import io.github.imnotstable.msc.core.CoreConfig;
 import io.github.imnotstable.msc.core.server.FabricDownloader;
+import io.github.imnotstable.msc.core.server.LoaderInstaller;
 import io.github.imnotstable.msc.core.server.MachineEula;
 import io.github.imnotstable.msc.core.server.PaperDownloader;
 import io.github.imnotstable.msc.core.server.Platform;
@@ -18,7 +19,6 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Stream;
 
@@ -28,6 +28,7 @@ final class ServerSetup {
     private final ServerManager server;
     private final PaperDownloader paper;
     private final FabricDownloader fabric;
+    private final LoaderInstaller loaders;
     private final EulaPrompts eula;
 
     ServerSetup(CoreConfig config, ServerManager server, PaperDownloader paper, FabricDownloader fabric,
@@ -36,6 +37,8 @@ final class ServerSetup {
         this.server = server;
         this.paper = paper;
         this.fabric = fabric;
+        this.loaders = new LoaderInstaller(LoaderInstaller.Urls.DEFAULT, config.dataDir().resolve("cache"),
+                config.javaCommand());
         this.eula = eula;
     }
 
@@ -65,7 +68,7 @@ final class ServerSetup {
         }
         StringBuilder out = new StringBuilder();
         if (isEmpty(dir) && Templates.ids().contains(Templates.PAPER_SERVER)) {
-            // paper-server holds plain vanilla server config (server.properties, eula.txt), so Fabric uses it too.
+            // paper-server holds plain vanilla server config (server.properties, eula.txt), so every platform uses it.
             ScaffoldResult defaults = Templates.scaffold(Templates.PAPER_SERVER, dir,
                     TemplateVariables.of("server").withAcceptEula(acceptEula));
             out.append("wrote ").append(defaults.files().size()).append(" default config files\n");
@@ -76,10 +79,13 @@ final class ServerSetup {
                     .append(mode.settings().get("difficulty")).append(" difficulty from the next start\n");
         }
         Path addons = Files.createDirectories(dir.resolve(platform.addonDir()));
-        if (platform == Platform.FABRIC) {
-            fabric(version, dir, addons, out);
-        } else {
-            paper(version, dir, out);
+        switch (platform) {
+            case FABRIC -> fabric(version, dir, addons, out);
+            case QUILT -> quilt(version, dir, addons, out);
+            case NEOFORGE -> neoforge(version, dir, out);
+            case FORGE -> forge(version, dir, out);
+            case PURPUR -> report("purpur", loaders.purpur(version, dir), out);
+            default -> paper(version, dir, out);
         }
         installAgent(platform, addons, out);
         eulaStep(dir.resolve("eula.txt"), acceptEula, out);
@@ -105,16 +111,8 @@ final class ServerSetup {
 
     /** Fabric: the server launcher plus the Fabric API mod, at the versions the fabric-mod template pins. */
     private void fabric(String version, Path dir, Path mods, StringBuilder out) throws IOException, InterruptedException {
-        Map<String, String> pinned = Templates.versions();
-        String loader = pinned.get("fabricLoaderVersion");
-        String api = pinned.get("fabricApiVersion");
-        if (loader == null || api == null) {
-            throw new ToolException("this build of msc-core has no Fabric versions pinned");
-        }
-        if (!api.endsWith("+" + version)) {
-            throw new ToolException("Fabric setup supports Minecraft " + api.substring(api.indexOf('+') + 1)
-                    + " (the pinned Fabric API is " + api + "), not " + version);
-        }
+        String loader = pinned("fabricLoaderVersion", "Fabric Loader");
+        String api = fabricApi(version);
         FabricDownloader.Download launcher = fabric.launcher(version, loader);
         Files.copy(launcher.jar(), dir.resolve(Platform.FABRIC.serverJar()), StandardCopyOption.REPLACE_EXISTING);
         out.append("fabric launcher for ").append(version).append(", loader ").append(loader)
@@ -123,6 +121,56 @@ final class ServerSetup {
         FabricDownloader.Download apiJar = fabric.api(api);
         Files.copy(apiJar.jar(), mods.resolve("fabric-api.jar"), StandardCopyOption.REPLACE_EXISTING);
         out.append("fabric api ").append(api).append(apiJar.cached() ? " (cached)" : " (downloaded)").append('\n');
+    }
+
+    /** Quilt: its launcher, plus Fabric API, which Quilt loads like any Fabric mod. The Fabric agent runs on it. */
+    private void quilt(String version, Path dir, Path mods, StringBuilder out) throws IOException, InterruptedException {
+        String loader = pinned("quiltLoaderVersion", "Quilt");
+        String api = fabricApi(version);
+        report("quilt loader", loaders.quilt(version, loader, pinned("quiltInstallerVersion", "Quilt"), dir), out);
+        FabricDownloader.Download apiJar = fabric.api(api);
+        Files.copy(apiJar.jar(), mods.resolve("fabric-api.jar"), StandardCopyOption.REPLACE_EXISTING);
+        out.append("fabric api ").append(api).append(apiJar.cached() ? " (cached)" : " (downloaded)").append('\n');
+    }
+
+    private void neoforge(String version, Path dir, StringBuilder out) throws IOException, InterruptedException {
+        String neoforge = pinned("neoforgeVersion", "NeoForge");
+        if (!neoforge.startsWith(version + ".")) {
+            throw new ToolException("NeoForge setup supports Minecraft " + neoforge.substring(0, neoforge.lastIndexOf('.'))
+                    + " (the pinned NeoForge is " + neoforge + "), not " + version);
+        }
+        report("neoforge", loaders.neoforge(neoforge, dir), out);
+    }
+
+    private void forge(String version, Path dir, StringBuilder out) throws IOException, InterruptedException {
+        String forge = pinned("forgeVersion", "Forge");
+        if (!forge.startsWith(version + "-")) {
+            throw new ToolException("Forge setup supports Minecraft " + forge.substring(0, forge.indexOf('-'))
+                    + " (the pinned Forge is " + forge + "), not " + version);
+        }
+        report("forge", loaders.forge(forge, dir), out);
+    }
+
+    private static String pinned(String key, String what) {
+        String v = Templates.versions().get(key);
+        if (v == null) {
+            throw new ToolException("this build of msc-core has no " + what + " version pinned");
+        }
+        return v;
+    }
+
+    private static String fabricApi(String version) {
+        String api = pinned("fabricApiVersion", "Fabric API");
+        if (!api.endsWith("+" + version)) {
+            throw new ToolException("Fabric setup supports Minecraft " + api.substring(api.indexOf('+') + 1)
+                    + " (the pinned Fabric API is " + api + "), not " + version);
+        }
+        return api;
+    }
+
+    private static void report(String what, LoaderInstaller.Result r, StringBuilder out) {
+        out.append(what).append(' ').append(r.version()).append(r.cached() ? " (already there)" : " (installed)")
+                .append('\n');
     }
 
     private void installAgent(Platform platform, Path addons, StringBuilder out) throws IOException {
@@ -157,8 +205,9 @@ final class ServerSetup {
         }
     }
 
+    /** Named for the agent, not the platform: Quilt runs {@code msc-agent-fabric.jar}, Purpur {@code msc-agent-paper.jar}. */
     static String installedAgentName(Platform platform) {
-        return "msc-agent-" + platform.id() + ".jar";
+        return "msc-agent-" + platform.agent() + ".jar";
     }
 
     /**
@@ -176,6 +225,11 @@ final class ServerSetup {
         return found;
     }
 
+    /** Whole words only, so {@code msc-agent-neoforge.jar} is not taken for Forge. */
+    static boolean namesAgent(Path jar, String agent) {
+        return Arrays.asList(jar.getFileName().toString().split("[-_.]")).contains(agent);
+    }
+
     private static Path agentIn(Path dir, Platform platform) throws IOException {
         if (!Files.isDirectory(dir)) {
             return null;
@@ -183,13 +237,13 @@ final class ServerSetup {
         try (Stream<Path> list = Files.list(dir)) {
             List<Path> jars = list.filter(p -> p.getFileName().toString().endsWith(".jar")).sorted().toList();
             for (Path jar : jars) {
-                if (jar.getFileName().toString().contains(platform.id())) {
+                if (namesAgent(jar, platform.agent())) {
                     return jar;
                 }
             }
             // A jar named for another platform would not load; an unmarked one is taken on trust.
             return jars.stream().filter(jar -> Arrays.stream(Platform.values())
-                    .noneMatch(other -> jar.getFileName().toString().contains(other.id()))).findFirst().orElse(null);
+                    .noneMatch(other -> namesAgent(jar, other.agent()))).findFirst().orElse(null);
         }
     }
 }

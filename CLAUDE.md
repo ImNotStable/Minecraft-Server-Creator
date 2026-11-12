@@ -1,6 +1,6 @@
 # Minecraft Server Creator
 
-A toolset that helps an AI develop custom Minecraft servers. One Gradle monorepo; each `msc-*` folder is a module. The plan is in `msc-docs/docs/plan.md`, decisions in its Decisions table and in `msc-docs/docs/adr/`.
+A toolset that helps an AI develop custom Minecraft servers. One Gradle monorepo; each `msc-*` folder is a module, except `msc-agent-vanilla`, a source folder the Fabric, NeoForge and Forge agents compile in (ADR 0027). The plan is in `msc-docs/docs/plan.md`, decisions in its Decisions table and in `msc-docs/docs/adr/`.
 
 ## Build
 

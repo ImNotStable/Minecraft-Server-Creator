@@ -14,7 +14,7 @@ The tool tables are generated from the tool definitions in `msc-core` (`io.githu
 - `world` is optional everywhere and defaults to the server's first world.
 - Every call is logged (see "Tool log").
 - World and build tools fail at once with `error: the server is not running...` when the core has no server running and none was attached with `MSC_CORE_ADDRESS`.
-- <!-- tool-list -->The tool definitions (26 tools: names, descriptions, argument schemas) are 15,026 characters, about 3,757 tokens in every conversation before MCP framing.<!-- /tool-list --> `McpBridgeTest` fails if the tool list as the client receives it grows past 16,000 characters ([ADR 0019](adr/0019-smaller-tool-surface.md), [ADR 0023](adr/0023-texture-tools.md)).
+- <!-- tool-list -->The tool definitions (26 tools: names, descriptions, argument schemas) are 15,098 characters, about 3,775 tokens in every conversation before MCP framing.<!-- /tool-list --> `McpBridgeTest` fails if the tool list as the client receives it grows past 16,000 characters ([ADR 0019](adr/0019-smaller-tool-surface.md), [ADR 0023](adr/0023-texture-tools.md)).
 - Results are text. The one exception is `world_render`, which adds one PNG image next to its text.
 
 ## Typical loop
@@ -40,8 +40,8 @@ Results:
 <!-- tools: project_scaffold server_setup server_start server_detach server_stop dev_cycle server_logs server_command server_wait -->
 | Tool | Arguments | What it does |
 | --- | --- | --- |
-| `project_scaffold` | `name` (string): Project name, for example MyPlugin<br>`dir`? (string): Target directory, relative to the workspace. Default: the workspace itself<br>`template`? (string): paper-plugin (default), fabric-mod, minestom-server, or a minigame base (kit, stages, saved progress, /game debug commands): paper-game, fabric-game, minestom-game<br>`package`? (string): Java package. Default com.example.&lt;name&gt;<br>`acceptEula`? (boolean): Only on the user's yes to https://aka.ms/MinecraftEULA; kept for this machine | Create a new project from a template (Gradle KTS, tests wired in). Target directory must be empty. |
-| `server_setup` | `version`? (string): Minecraft version. Default 26.3<br>`platform`? (string): paper, fabric or minestom. Default: the project's<br>`mode`? (string): build (creative, peaceful) or game (survival, normal)<br>`acceptEula`? (boolean): Only on the user's yes to https://aka.ms/MinecraftEULA; kept for this machine | Prepare the dev server: download Paper or the Fabric launcher, write dev defaults, install the msc agent. |
+| `project_scaffold` | `name` (string): Project name, for example MyPlugin<br>`dir`? (string): Target directory, relative to the workspace. Default: the workspace itself<br>`template`? (string): paper-plugin (default), fabric-mod (also Quilt), neoforge-mod, forge-mod, minestom-server, or a minigame base (kit, stages, saved progress, /game debug commands): paper-game, fabric-game, minestom-game<br>`package`? (string): Java package. Default com.example.&lt;name&gt;<br>`acceptEula`? (boolean): Only on the user's yes to https://aka.ms/MinecraftEULA; kept for this machine | Create a new project from a template (Gradle KTS, tests wired in). Target directory must be empty. |
+| `server_setup` | `version`? (string): Minecraft version. Default 26.3<br>`platform`? (string): paper, purpur, fabric, quilt, neoforge, forge or minestom. Default: the project's<br>`mode`? (string): build (creative, peaceful) or game (survival, normal)<br>`acceptEula`? (boolean): Only on the user's yes to https://aka.ms/MinecraftEULA; kept for this machine | Prepare the dev server: download or install it, write dev defaults, install the msc agent. |
 | `server_start` | `timeoutSeconds`? (integer): Default 180<br>`acceptEula`? (boolean): Only on the user's yes to https://aka.ms/MinecraftEULA; kept for this machine | Start the dev server and wait until it is ready. Returns startup errors only. |
 | `server_detach` | none | Keep the dev server and the pack host running after this session ends, so the user can play. The next session's server_start, dev_cycle or server_stop stops them. |
 | `server_stop` | none | Stop the dev server. |
@@ -84,7 +84,7 @@ Built on first use from the platform's jars in the Gradle cache (or `MSC_API_JAR
 <!-- tools: api_search api_class -->
 | Tool | Arguments | What it does |
 | --- | --- | --- |
-| `api_search` | `query` (string): Words that must all match, for example "player teleport"<br>`kind`? (string): class, interface, enum, record, annotation or event<br>`limit`? (integer): Default 15 | Search the platform API (Paper, Fabric or Minestom) by class, method, field or constant name; one line per match with full signature. |
+| `api_search` | `query` (string): Words that must all match, for example "player teleport"<br>`kind`? (string): class, interface, enum, record, annotation or event<br>`limit`? (integer): Default 15 | Search the platform API (Paper, Fabric, NeoForge, Forge or Minestom) by class, method, field or constant name; one line per match with full signature. |
 | `api_class` | `name` (string): Simple or full class name, for example Player or org.bukkit.entity.Player<br>`filter`? (string): Only members whose name contains this<br>`inherited`? (boolean): Include members of supertypes<br>`limit`? (integer): Default 40 | Show one API class: supertypes, constants (with inherited) and public members with signatures. |
 <!-- /tools -->
 
