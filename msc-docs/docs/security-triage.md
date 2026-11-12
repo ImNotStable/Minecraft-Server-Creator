@@ -7,8 +7,9 @@ only compile against it; bumping it in our build would not change what runs.
 
 How to re-check: resolve every module's `compileClasspath` and `runtimeClasspath`
 (`./gradlew :<module>:dependencies`) and query the coordinates against OSV
-(`https://api.osv.dev/v1/querybatch`, ecosystem `Maven`). The `Dependency submission` workflow sends the
-resolved graph to GitHub so Dependabot alerts cover transitive libraries too.
+(`https://api.osv.dev/v1/querybatch`, ecosystem `Maven`). GitHub's automatic dependency submission for
+Gradle (repository setting, no workflow file) sends the resolved graph, so Dependabot alerts cover
+transitive libraries too.
 
 ## 2026-11-12
 
