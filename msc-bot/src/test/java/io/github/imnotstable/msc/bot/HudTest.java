@@ -61,6 +61,8 @@ class HudTest {
                 Component.text("/10"), false, false, NameTagVisibility.ALWAYS, CollisionRule.ALWAYS, TeamColor.WHITE,
                 new String[] {"§a"}));
         hud.accept(new ClientboundSetScorePacket("Gold", "side", 5).withDisplay(Component.text("Gold: 120")));
+        // An empty display (Minestom's sidebar) falls back to the team prefix.
+        hud.accept(new ClientboundSetScorePacket("\u00a7a", "side", 9).withDisplay(Component.empty()));
         assertThat(hud.report()).startsWith("sidebar \"Lumen Siege\": Wave: /10 9 | Gold: 120 5 | Kills 3\n");
         hud.accept(new ClientboundSetDisplayObjectivePacket(ScoreboardPosition.SIDEBAR, ""));
         assertThat(hud.report()).doesNotContain("sidebar");

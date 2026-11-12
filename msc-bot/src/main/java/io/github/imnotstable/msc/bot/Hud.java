@@ -199,7 +199,8 @@ final class Hud {
     private String line(String owner, Score score) {
         String text;
         // Sidebar plugins name their lines with colour codes and put the words in a team prefix.
-        if (score.display() != null) {
+        // Minestom's sidebar sends an empty display and puts the words in the team prefix.
+        if (score.display() != null && !score.display().isEmpty()) {
             text = score.display();
         } else {
             Team team = teams.get(teamOf.get(owner));

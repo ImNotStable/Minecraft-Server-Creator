@@ -3,6 +3,8 @@ package io.github.imnotstable.msc.bot;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.geysermc.mcprotocollib.network.packet.Packet;
 import org.geysermc.mcprotocollib.protocol.data.game.item.ItemStack;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.entity.player.ClientboundSetHeldSlotPacket;
@@ -21,6 +23,7 @@ final class Inventory {
     private static final int SIZE = 46;
     private static final int HOTBAR = 36;
     private static final int OFFHAND = 45;
+    private static final Pattern GENERIC = Pattern.compile("GENERIC_(\\d)X(\\d)");
     private static final String[] ARMOR = {"head", "chest", "legs", "feet"};
 
     private final Items items;
@@ -28,6 +31,7 @@ final class Inventory {
     private int held;
     private int screenId = -1;
     private String screen;
+    private int screenSize = -1;
     private ItemStack[] screenItems = new ItemStack[0];
 
     Inventory(Items items) {
@@ -56,6 +60,7 @@ final class Inventory {
             case ClientboundOpenScreenPacket p -> {
                 screenId = p.getContainerId();
                 screen = p.getType().name().toLowerCase(Locale.ROOT) + " \"" + Text.plain(p.getTitle()) + "\"";
+                screenSize = menuSize(p.getType().name());
                 screenItems = new ItemStack[0];
             }
             case ClientboundContainerClosePacket p -> {
@@ -82,7 +87,30 @@ final class Inventory {
     synchronized void closed() {
         screenId = -1;
         screen = null;
+        screenSize = -1;
         screenItems = new ItemStack[0];
+    }
+
+    /**
+     * How many slots a menu has before the player's own inventory, or -1 when unknown. Vanilla servers send the
+     * player's 36 slots after the menu's; Minestom sends only the menu's, so the count cannot come from the packet.
+     */
+    static int menuSize(String type) {
+        Matcher m = GENERIC.matcher(type);
+        if (m.matches()) {
+            return Integer.parseInt(m.group(1)) * Integer.parseInt(m.group(2));
+        }
+        return switch (type) {
+            case "HOPPER" -> 5;
+            case "SHULKER_BOX" -> 27;
+            case "CRAFTER_3x3" -> 9;
+            case "BREWING_STAND" -> 5;
+            case "FURNACE", "BLAST_FURNACE", "SMOKER", "MERCHANT", "ANVIL", "GRINDSTONE", "CARTOGRAPHY", "SMITHING" -> 3;
+            case "CRAFTING" -> 10;
+            case "BEACON", "LECTERN" -> 1;
+            case "ENCHANTMENT", "LOOM", "STONECUTTER" -> 2;
+            default -> -1;
+        };
     }
 
     /** The inventory slot numbers of {@code ClientboundSetPlayerInventoryPacket}, as menu slots. */
@@ -140,7 +168,8 @@ final class Inventory {
         }
         if (screen != null) {
             // The menu's own slots come first; the player's inventory below them is already reported.
-            int menuSlots = Math.max(0, screenItems.length - 36);
+            int menuSlots = screenSize >= 0 ? Math.min(screenSize, screenItems.length)
+                    : Math.max(0, screenItems.length - 36);
             parts.clear();
             for (int i = 0; i < menuSlots; i++) {
                 if (!empty(screenItems[i])) {

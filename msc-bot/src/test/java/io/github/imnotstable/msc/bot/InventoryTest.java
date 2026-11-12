@@ -58,6 +58,18 @@ class InventoryTest {
     }
 
     @Test
+    void readsMenusSentWithoutThePlayersSlots() {
+        // Minestom sends only the menu's own slots.
+        inv.accept(new ClientboundOpenScreenPacket(4, ContainerType.GENERIC_9X6, Component.text("Big")));
+        ItemStack[] menu = new ItemStack[54];
+        menu[50] = new ItemStack(1, 1);
+        inv.accept(new ClientboundContainerSetContentPacket(4, 1, menu, null));
+        assertThat(inv.report()).endsWith("open menu generic_9x6 \"Big\": 50 stone");
+        assertThat(Inventory.menuSize("HOPPER")).isEqualTo(5);
+        assertThat(Inventory.menuSize("SOMETHING_NEW")).isEqualTo(-1);
+    }
+
+    @Test
     void mapsInventorySlotsToMenuSlots() {
         assertThat(Inventory.menuSlot(0)).isEqualTo(36);
         assertThat(Inventory.menuSlot(8)).isEqualTo(44);
