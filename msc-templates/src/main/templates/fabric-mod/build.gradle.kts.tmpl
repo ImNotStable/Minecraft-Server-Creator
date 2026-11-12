@@ -16,7 +16,7 @@ loom {
     runs {
         named("server") {
             // Dev server lives in run/ (server.properties and eula.txt are already there).
-            runDir = "run"
+            runDirectory = layout.projectDirectory.dir("run")
         }
     }
 }
