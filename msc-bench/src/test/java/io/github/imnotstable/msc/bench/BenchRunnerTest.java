@@ -15,10 +15,14 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class BenchRunnerTest {
+
+    private static final String JAVA = ProcessHandle.current().info().command().orElse("java").replace("\\", "\\\\");
+    private static final String CLASSPATH = System.getProperty("java.class.path").replace("\\", "\\\\");
 
     @TempDir
     Path dir;
@@ -71,9 +75,8 @@ class BenchRunnerTest {
         assertThat(log.toString(StandardCharsets.UTF_8)).contains("[toolset] write-file #1 PASS");
     }
 
-    @Test
-    void usesTheCachedPaperJarAndRefusesToRunWithoutTheEula() throws IOException {
-        Path tasks = Files.createDirectories(dir.resolve("tasks/world/fixture/server"));
+    private Path worldTask() throws IOException {
+        Files.createDirectories(dir.resolve("tasks/world/fixture/server"));
         Files.writeString(dir.resolve("tasks/world/task.json"), """
                 {"category":"world","title":"needs a server","server":{"startBefore":true},
                  "checks":[{"type":"rcon","command":"list","expect":"players"}]}
@@ -82,21 +85,96 @@ class BenchRunnerTest {
         Path configFile = dir.resolve("bench.json");
         Path cache = Files.createDirectories(dir.resolve("cache"));
         Files.writeString(cache.resolve("paper-26.3-248.jar"), "not really a jar");
-        Files.writeString(configFile, "{\"server\":{\"rconPort\":1,\"paperCacheDirs\":[\"cache\"]}}");
+        Files.writeString(configFile, "{\"server\":{\"rconPort\":1,\"paperCacheDirs\":[\"cache\"],\"startTimeoutSeconds\":5,"
+                + "\"acceptEula\":true}}");
+        return configFile;
+    }
 
-        List<RunRecord> records = new BenchRunner(BenchConfig.load(configFile), dir.resolve("run"), "", 
+    @Test
+    void skipsPaperServerTasksWithoutTheMachinesEulaAcceptance() throws IOException {
+        Path configFile = worldTask();
+        ByteArrayOutputStream log = new ByteArrayOutputStream();
+
+        BenchConfig config = BenchConfig.load(configFile, Files.createDirectories(dir.resolve("home")));
+        List<RunRecord> records = new BenchRunner(config, dir.resolve("run"), "",
+                new PrintStream(log, true, StandardCharsets.UTF_8))
+                .run(TaskLoader.loadAll(dir.resolve("tasks")), List.of("baseline"), 1);
+
+        assertThat(config.server().acceptEula()).as("bench.json cannot accept the EULA").isFalse();
+        assertThat(records).isEmpty();
+        assertThat(log.toString(StandardCharsets.UTF_8)).contains("skipped world", "EULA is not accepted");
+        assertThat(dir.resolve("run/attempts")).doesNotExist();
+    }
+
+    @Test
+    void preparesThePaperServerWhenTheOwnerAcceptedTheEula() throws IOException {
+        Path configFile = worldTask();
+        Path home = Files.createDirectories(dir.resolve("home/.msc"));
+        Files.writeString(home.resolve("eula.json"), """
+                {"accepted":true,"eula":"https://aka.ms/MinecraftEULA","acceptedBy":"owner","acceptedAt":"2026-11-12T00:00:00Z"}
+                """);
+
+        List<RunRecord> records = new BenchRunner(BenchConfig.load(configFile, dir.resolve("home")), dir.resolve("run"), "",
                 new PrintStream(new ByteArrayOutputStream(), true, StandardCharsets.UTF_8))
                 .run(TaskLoader.loadAll(dir.resolve("tasks")), List.of("baseline"), 1);
 
-        assertThat(records).singleElement().satisfies(r -> {
-            assertThat(r.passed()).isFalse();
-            assertThat(r.error()).contains("EULA");
-        });
-        assertThat(tasks.resolve("server.properties")).doesNotExist();
-        assertThat(Files.readString(dir.resolve("run/attempts/world/baseline-1/workspace/server/server.properties")))
-                .contains("enable-rcon=true", "rcon.port=1");
-        assertThat(dir.resolve("run/attempts/world/baseline-1/workspace/server/paper.jar")).hasContent("not really a jar");
-        assertThat(dir.resolve("run/attempts/world/baseline-1/workspace/server/eula.txt")).doesNotExist();
+        assertThat(records).singleElement().satisfies(r -> assertThat(r.passed()).isFalse());
+        Path server = dir.resolve("run/attempts/world/baseline-1/workspace/server");
+        assertThat(Files.readString(server.resolve("server.properties"))).contains("enable-rcon=true", "rcon.port=1");
+        assertThat(server.resolve("paper.jar")).hasContent("not really a jar");
+        assertThat(server.resolve("eula.txt")).hasContent("eula=true");
+    }
+
+    @Test
+    void stopsAtTheFirstUsageLimitWithoutRecordingIt() throws IOException {
+        for (String id : List.of("first", "second")) {
+            Path task = Files.createDirectories(dir.resolve("tasks/" + id));
+            Files.writeString(task.resolve("task.json"),
+                    "{\"category\":\"code\",\"title\":\"x\",\"checks\":[{\"type\":\"file\",\"path\":\"done.txt\"}]}");
+            Files.writeString(task.resolve("prompt.md"), "Write done.txt.");
+        }
+        Path configFile = dir.resolve("bench.json");
+        Files.writeString(configFile, """
+                {"agent":{"command":["%s","-cp","%s","io.github.imnotstable.msc.bench.FakeAgent","{prompt}"]},
+                 "modes":{"baseline":{"env":{"FAKE_USAGE_LIMIT":"1"}}}}
+                """.formatted(JAVA, CLASSPATH));
+        BenchRunner runner = new BenchRunner(BenchConfig.load(configFile, dir), dir.resolve("run"), "",
+                new PrintStream(new ByteArrayOutputStream(), true, StandardCharsets.UTF_8));
+
+        List<RunRecord> records = runner.run(TaskLoader.loadAll(dir.resolve("tasks")), List.of("baseline"), 3);
+
+        assertThat(records).isEmpty();
+        assertThat(runner.stoppedBy()).contains("429").contains("out of extra usage");
+        assertThat(dir.resolve("run/attempts/first/baseline-2")).doesNotExist();
+        assertThat(dir.resolve("run/attempts/second")).doesNotExist();
+        assertThat(dir.resolve("run").resolve(BenchRunner.RESULTS_FILE)).doesNotExist();
+    }
+
+    @Test
+    void minestomTasksStartFromTheScaffoldWithTheirOwnPreamble() throws IOException {
+        Path task = Files.createDirectories(dir.resolve("tasks/game"));
+        Files.writeString(task.resolve("task.json"), """
+                {"category":"game","title":"x","platform":"minestom",
+                 "scaffold":{"template":"minestom-game","name":"Sprint","package":"bench.sprint"},
+                 "checks":[{"type":"file","path":"src/main/java/bench/sprint/SprintServer.java","contains":"25566"}]}
+                """);
+        Files.writeString(task.resolve("prompt.md"), "Build it.");
+        Path configFile = dir.resolve("bench.json");
+        Files.writeString(configFile, """
+                {"agent":{"command":["%s","-cp","%s","io.github.imnotstable.msc.bench.FakeAgent","{prompt}"]},
+                 "modes":{"baseline":{}}}
+                """.formatted(JAVA, CLASSPATH));
+
+        List<RunRecord> records = new BenchRunner(BenchConfig.load(configFile, dir), dir.resolve("run"),
+                Map.of(TaskDef.PAPER, "Paper preamble.", TaskDef.MINESTOM, "Minestom {scaffoldVersion} on {serverPort}."),
+                new PrintStream(new ByteArrayOutputStream(), true, StandardCharsets.UTF_8))
+                .run(TaskLoader.loadAll(dir.resolve("tasks")), List.of("baseline"), 1);
+
+        assertThat(records).singleElement().satisfies(r -> assertThat(r.passed()).as(r.toString()).isTrue());
+        Path workspace = dir.resolve("run/attempts/game/baseline-1/workspace");
+        assertThat(workspace.resolve("done.txt")).hasContent("Minestom 1.0.0 on 25566.\n\nBuild it.");
+        assertThat(workspace.resolve("libs/msc-agent-minestom.jar")).exists();
+        assertThat(workspace.resolve("server")).doesNotExist();
     }
 
     @Test

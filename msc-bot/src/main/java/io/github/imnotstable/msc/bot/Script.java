@@ -10,7 +10,10 @@ import java.util.concurrent.TimeoutException;
 /** The test player's actions, one per script line. Each runs on the tick thread until it reports a result. */
 final class Script {
     static final String HELP = "goto x,y,z|x,z [sprint] [jump], forward ticks [sprint] [jump], jump, look yaw pitch, "
-            + "lookat x,y,z, wait ticks, use, use x,y,z, attack, slot 1-9, say text, /command, tp x,y,z, entities";
+            + "lookat x,y,z, wait ticks, use, use x,y,z, attack [type], interact [type], slot 1-9, say text, /command, "
+            + "tp x,y,z, entities, inventory, hud, close";
+    /** How far from the eyes to an entity's middle attack and interact look, as before: hitbox reach is about 3. */
+    private static final double REACH = 4.5;
     private static final int MAX_TICKS = 20 * 60;
 
     private Script() {
@@ -132,10 +135,23 @@ final class Script {
                     return "clicked the block";
                 }, 5);
             }
-            case "attack" -> once(line, p -> {
-                String hit = p.attackNearest(4.5);
-                return hit == null ? "nothing within reach" : "hit " + hit;
-            }, 5);
+            case "attack" -> {
+                String type = entityType(w);
+                yield once(line, p -> {
+                    String hit = p.attackNearest(type, REACH);
+                    return hit == null ? "no " + (type == null ? "entity" : type) + " within reach" : "hit " + hit;
+                }, 5);
+            }
+            case "interact" -> {
+                String type = entityType(w);
+                yield once(line, p -> {
+                    String hit = p.interactNearest(type, REACH);
+                    return hit == null ? "no " + (type == null ? "entity" : type) + " within reach" : "clicked " + hit;
+                }, 5);
+            }
+            case "inventory" -> once(line, p -> "\n" + indent(p.inventoryReport()), 0);
+            case "hud" -> once(line, p -> "\n" + indent(p.hudReport()), 0);
+            case "close" -> once(line, p -> p.closeMenu() ? "closed the menu" : "no menu open", 2);
             case "slot" -> {
                 int slot = (int) numbers(arg(w, line), 1, 1, line)[0];
                 if (slot < 1 || slot > 9) {
@@ -166,6 +182,15 @@ final class Script {
             }, 0);
             default -> throw new IllegalArgumentException("unknown action \"" + w[0] + "\". Actions: " + HELP);
         };
+    }
+
+    /** The optional entity type after attack or interact, as the entities action names it. */
+    private static String entityType(String[] w) {
+        return w.length > 1 ? w[1].toLowerCase(Locale.ROOT).replace("minecraft:", "") : null;
+    }
+
+    private static String indent(String report) {
+        return "  " + report.replace("\n", "\n  ");
     }
 
     private static String arg(String[] w, String line) {

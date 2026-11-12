@@ -22,7 +22,6 @@
   "gradleWrapperFrom": "..",
   "corePort": 25590,
   "server": {
-    "acceptEula": false,
     "serverPort": 25566,
     "rconPort": 25576,
     "rconPassword": "msc-bench",

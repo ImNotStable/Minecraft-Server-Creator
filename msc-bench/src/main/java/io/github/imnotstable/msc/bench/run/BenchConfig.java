@@ -1,7 +1,6 @@
 package io.github.imnotstable.msc.bench.run;
 
 import com.google.gson.Gson;
-import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParseException;
 import com.google.gson.JsonParser;
@@ -79,7 +78,8 @@ public record BenchConfig(
      * @param paperCacheDirs      folders holding {@code paper-<version>-<build>.jar}; default msc-core's
      *                            cache in the repo ({@code ../.msc/cache}) and {@code .cache}
      * @param downloadsUrl        PaperMC downloads service
-     * @param acceptEula          writes {@code eula=true}; set it only if you accept the Minecraft EULA
+     * @param acceptEula          writes {@code eula=true}; true only when the machine's owner accepted the Minecraft
+     *                            EULA through msc ({@code ~/.msc/eula.json}), whatever the config file says
      * @param serverPort          game port, kept off 25565 so a normal server can keep running
      * @param rconPort            RCON port used by checks and setup
      * @param rconPassword        RCON password written into {@code server.properties}
@@ -97,19 +97,19 @@ public record BenchConfig(
             int startTimeoutSeconds) {
     }
 
-    /**
-     * Reads the config and, if present, the untracked {@code bench.local.json} beside it, whose fields
-     * override the config's (objects are merged key by key). Machine-specific choices, such as
-     * accepting the Minecraft EULA, go in the local file so they never reach other clones.
-     */
+    /** Reads the config; the EULA choice comes from the owner's machine-wide acceptance in {@code ~/.msc/eula.json}. */
     public static BenchConfig load(Path file) throws IOException {
+        return load(file, Path.of(System.getProperty("user.home")));
+    }
+
+    /**
+     * Reads the config, taking {@code server.acceptEula} from {@code <home>/.msc/eula.json} (see {@link MachineEula})
+     * and never from the file, so no config can accept the EULA for anyone.
+     */
+    public static BenchConfig load(Path file, Path home) throws IOException {
         BenchConfig raw;
         try {
             JsonObject json = JsonParser.parseString(Files.readString(file)).getAsJsonObject();
-            Path local = file.toAbsolutePath().resolveSibling(LOCAL_FILE);
-            if (Files.isRegularFile(local)) {
-                merge(json, JsonParser.parseString(Files.readString(local)).getAsJsonObject());
-            }
             raw = new Gson().fromJson(json, BenchConfig.class);
         } catch (JsonParseException | IllegalStateException e) {
             throw new IOException("Bad bench config " + file + ": " + e.getMessage(), e);
@@ -117,25 +117,11 @@ public record BenchConfig(
         if (raw == null) {
             throw new IOException("Empty bench config " + file);
         }
-        return raw.withDefaults(file.toAbsolutePath().getParent());
-    }
-
-    /** Untracked per-machine overrides, read from the config's folder. */
-    public static final String LOCAL_FILE = "bench.local.json";
-
-    static void merge(JsonObject base, JsonObject override) {
-        for (String key : override.keySet()) {
-            JsonElement value = override.get(key);
-            if (value.isJsonObject() && base.has(key) && base.get(key).isJsonObject()) {
-                merge(base.getAsJsonObject(key), value.getAsJsonObject());
-            } else {
-                base.add(key, value);
-            }
-        }
+        return raw.withDefaults(file.toAbsolutePath().getParent(), MachineEula.accepted(home));
     }
 
     /** Fills defaults and turns relative paths into absolute ones. */
-    BenchConfig withDefaults(Path base) {
+    BenchConfig withDefaults(Path base, boolean eulaAccepted) {
         Agent a = agent == null ? new Agent(null, 0) : agent;
         Agent fullAgent = new Agent(
                 a.command() == null || a.command().isEmpty()
@@ -166,7 +152,7 @@ public record BenchConfig(
                 (s.paperCacheDirs() == null ? List.of(".cache", "../.msc/cache") : s.paperCacheDirs())
                         .stream().map(d -> resolve(base, d)).toList(),
                 s.downloadsUrl() == null ? "https://fill.papermc.io" : s.downloadsUrl(),
-                s.acceptEula(),
+                eulaAccepted,
                 s.serverPort() > 0 ? s.serverPort() : 25566,
                 s.rconPort() > 0 ? s.rconPort() : 25576,
                 s.rconPassword() == null ? "msc-bench" : s.rconPassword(),
