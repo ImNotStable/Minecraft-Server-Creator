@@ -22,9 +22,13 @@ import java.util.Map;
 /** The only class that touches the MCP SDK: exposes the tool registry over stdio. */
 public final class McpBridge {
     private static final Gson GSON = new Gson();
-    private static final String INSTRUCTIONS = "Tools for developing a Minecraft server. Typical loop: "
-            + "project_scaffold, server_setup, then edit code and call dev_cycle. Look up API names with api_search "
-            + "before guessing. See the world with world_summary and world_slice; build with build_structure. "
+    private static final String INSTRUCTIONS = "Tools for developing a Minecraft server (Paper, Fabric or Minestom). "
+            + "New project: project_scaffold into the workspace, then read its CLAUDE.md for conventions. Paper and "
+            + "Fabric need the user's agreement to the Minecraft EULA (https://aka.ms/MinecraftEULA): ask them, then "
+            + "server_setup acceptEula=true; never accept it for them. Then edit code and call dev_cycle after each "
+            + "change; it builds, runs tests, deploys, restarts and reports errors only. Look up API names with "
+            + "api_search before guessing. Dev worlds are superflat: server_start and dev_cycle say where the ground "
+            + "is. See the world with world_summary, world_slice or world_render; build with build_structure. "
             + "Results are size-capped; narrow the request rather than raising maxChars.";
 
     private McpBridge() {

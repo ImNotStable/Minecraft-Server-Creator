@@ -36,7 +36,8 @@ class McpBridgeTest {
                         + "\"capabilities\":{},\"clientInfo\":{\"name\":\"test\",\"version\":\"1\"}}}");
                 JsonObject init = read(reader, 1).getAsJsonObject("result");
                 assertThat(init.getAsJsonObject("serverInfo").get("name").getAsString()).isEqualTo("msc-core");
-                assertThat(init.get("instructions").getAsString()).contains("dev_cycle");
+                assertThat(init.get("instructions").getAsString()).contains("dev_cycle").contains("acceptEula=true")
+                        .contains("never accept it for them");
                 send(toServer, "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}");
 
                 send(toServer, "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\",\"params\":{}}");
