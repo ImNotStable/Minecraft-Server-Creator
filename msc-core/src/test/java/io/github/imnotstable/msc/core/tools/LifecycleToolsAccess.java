@@ -8,6 +8,6 @@ public final class LifecycleToolsAccess {
     }
 
     public static String deployName(Path jar, Path project) {
-        return LifecycleTools.deployName(jar, project);
+        return DevCycle.deployName(jar, project);
     }
 }

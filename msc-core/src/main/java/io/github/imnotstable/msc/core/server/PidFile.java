@@ -27,13 +27,24 @@ public final class PidFile {
 
     /** The live process the file names, or empty. The file is deleted either way. */
     public static Optional<ProcessHandle> take(Path file) {
+        return read(file, true);
+    }
+
+    /** The live process the file names, or empty. The file stays. */
+    public static Optional<ProcessHandle> peek(Path file) {
+        return read(file, false);
+    }
+
+    private static Optional<ProcessHandle> read(Path file, boolean delete) {
         if (!Files.exists(file)) {
             return Optional.empty();
         }
         String[] parts;
         try {
             parts = Files.readString(file).strip().split(" ");
-            Files.deleteIfExists(file);
+            if (delete) {
+                Files.deleteIfExists(file);
+            }
         } catch (IOException e) {
             return Optional.empty();
         }

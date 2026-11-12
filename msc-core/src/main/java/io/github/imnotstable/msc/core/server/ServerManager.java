@@ -21,8 +21,11 @@ import java.util.regex.Pattern;
 public final class ServerManager implements AutoCloseable {
     private static final Pattern DONE = Pattern.compile(".*\\bDone \\(\\d.*\\)!.*");
 
-    /** Outcome of a start. {@code ready} false means it exited or timed out; the log says why. */
-    public record StartResult(boolean ready, boolean exited, long millis, long logMark) {
+    /**
+     * Outcome of a start. {@code ready} false means it exited or timed out; the log says why. {@code agentMillis} is
+     * when the agent connected, or -1 when the server was ready (its "Done" line) without one.
+     */
+    public record StartResult(boolean ready, boolean exited, long millis, long logMark, long agentMillis) {
     }
 
     private final CoreConfig config;
@@ -31,6 +34,8 @@ public final class ServerManager implements AutoCloseable {
     private Process process;
     private volatile boolean sawDone;
     private volatile boolean detached;
+    /** Clock time just before the running server's process was launched: files written later are not loaded. */
+    private java.time.Instant launchedAt;
 
     public ServerManager(CoreConfig config, AgentHub hub) {
         this.config = config;
@@ -117,6 +122,7 @@ public final class ServerManager implements AutoCloseable {
             mark = log.mark();
             readyBefore = hub.readyCount();
             sawDone = false;
+            launchedAt = java.time.Instant.now();
             started = pb.start();
             process = started;
             PidFile.write(pidFile(), started.toHandle());
@@ -124,9 +130,26 @@ public final class ServerManager implements AutoCloseable {
         }
         long deadline = begin + timeout.toNanos();
         boolean ready = false;
+        long agentMillis = -1;
         while (System.nanoTime() < deadline && started.isAlive()) {
-            if (hub.awaitReady(readyBefore, Duration.ofMillis(200)) || sawDone) {
+            if (hub.awaitReady(readyBefore, Duration.ofMillis(200))) {
+                agentMillis = (System.nanoTime() - begin) / 1_000_000;
                 ready = true;
+                break;
+            }
+            if (sawDone) {
+                ready = true;
+                // On Minestom the agent is part of the server and connects just after "Done": a report sent now
+                // would say "no agent connected". Wait for it a little, where an agent is expected at all.
+                if (expectsAgent()) {
+                    long agentDeadline = Math.min(deadline, System.nanoTime() + AGENT_GRACE.toNanos());
+                    while (System.nanoTime() < agentDeadline && started.isAlive()) {
+                        if (hub.awaitReady(readyBefore, Duration.ofMillis(100))) {
+                            agentMillis = (System.nanoTime() - begin) / 1_000_000;
+                            break;
+                        }
+                    }
+                }
                 break;
             }
         }
@@ -134,7 +157,17 @@ public final class ServerManager implements AutoCloseable {
             // Give the log pump a moment to drain the last lines.
             Thread.sleep(100);
         }
-        return new StartResult(ready, !started.isAlive(), (System.nanoTime() - begin) / 1_000_000, mark);
+        return new StartResult(ready, !started.isAlive(), (System.nanoTime() - begin) / 1_000_000, mark, agentMillis);
+    }
+
+    /** How long a start waits after "Done" for an agent that has not connected yet. */
+    static final Duration AGENT_GRACE = Duration.ofSeconds(10);
+
+    /** Minestom servers have the agent built in; Paper and Fabric have one when it is installed in the addon folder. */
+    private boolean expectsAgent() {
+        Platform platform = platform();
+        return platform.addonDir() == null
+                || Files.exists(config.serverDir().resolve(platform.addonDir()).resolve("msc-agent-" + platform.id() + ".jar"));
     }
 
     private void pump(Process p) {
@@ -149,6 +182,22 @@ public final class ServerManager implements AutoCloseable {
         } catch (IOException ignored) {
             // Stream closed with the process.
         }
+    }
+
+    /** Clock time just before this core launched the running server, or null when none is running. */
+    public synchronized java.time.Instant startedAt() {
+        return running() ? launchedAt : null;
+    }
+
+    /**
+     * The pid of a server an earlier core left running (detached, or orphaned by a killed core), without stopping
+     * it, or -1. {@link #stopLeftover()} stops it.
+     */
+    public synchronized long leftoverPid() {
+        if (running()) {
+            return -1;
+        }
+        return PidFile.peek(pidFile()).map(ProcessHandle::pid).orElse(-1L);
     }
 
     /** Type a line into the server console. */

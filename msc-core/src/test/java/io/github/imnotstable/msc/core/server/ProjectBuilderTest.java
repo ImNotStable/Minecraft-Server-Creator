@@ -9,10 +9,10 @@ class ProjectBuilderTest {
     @Test
     void wrapperIsCalledByAbsolutePath() {
         Path project = Path.of("some project");
-        assertThat(ProjectBuilder.wrapperCommand(project, true))
+        assertThat(ProjectBuilder.wrapperCommand(project, true, "build"))
                 .containsExactly("cmd", "/c", project.toAbsolutePath().resolve("gradlew.bat").toString(),
                         "build", "--console=plain", "-Dorg.gradle.welcome=never");
-        assertThat(ProjectBuilder.wrapperCommand(project, false).get(1))
+        assertThat(ProjectBuilder.wrapperCommand(project, false, "build").get(1))
                 .isEqualTo(project.toAbsolutePath().resolve("gradlew").toString());
     }
 }
