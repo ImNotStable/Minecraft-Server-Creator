@@ -49,7 +49,7 @@ class LifecycleToolsTest {
         assertThat(h.ok("server_start", "timeoutSeconds", 30))
                 .startsWith("server ready in ").containsPattern("s, agent connected\nworld world: ground is y=-?\\d+ \\(most common top block around 0,0; build from y=-?\\d+\\)\n")
                 .endsWith("\nno errors or warnings");
-        assertThat(h.ok("msc_status")).contains("server: running").contains("agent: paper fake, minecraft 26.3, 9 operations");
+        assertThat(h.ok("msc_status")).startsWith("msc-core ").contains("server: running").contains("agent: paper fake, minecraft 26.3, 9 operations");
         assertThat(h.ok("world_summary", "region", "0,60,0 1,61,1")).contains("blocks: stone 8");
         assertThat(h.ok("server_command", "command", "/say hi")).isEqualTo("ran say hi");
         assertThat(h.ok("server_logs", "mode", "tail", "lines", 1)).contains("Done (0.1s)!");

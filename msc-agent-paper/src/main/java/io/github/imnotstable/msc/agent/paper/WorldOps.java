@@ -7,9 +7,12 @@ import io.github.imnotstable.msc.protocol.transport.OpException;
 import io.github.imnotstable.msc.protocol.world.BlockGrid;
 import io.github.imnotstable.msc.protocol.world.Region;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import org.bukkit.Material;
 import org.bukkit.Server;
 import org.bukkit.World;
 import org.bukkit.block.data.BlockData;
@@ -156,7 +159,27 @@ final class WorldOps {
         try {
             return server.createBlockData(state);
         } catch (IllegalArgumentException e) {
-            throw new IllegalArgumentException("unknown block state: " + state, e);
+            throw new IllegalArgumentException(explain(state, e), e);
+        }
+    }
+
+    /** Why {@code state} failed: bad properties on a real block, or an unknown id with close names. */
+    private static String explain(String state, IllegalArgumentException cause) {
+        String id = (state.contains("[") ? state.substring(0, state.indexOf('[')) : state).trim()
+                .toLowerCase(Locale.ROOT);
+        try {
+            List<String> blocks = Arrays.stream(Material.values())
+                    .filter(m -> !m.name().startsWith("LEGACY_") && m.isBlock())
+                    .map(m -> m.getKey().getKey()).toList();
+            String bare = id.startsWith("minecraft:") ? id.substring("minecraft:".length()) : id;
+            if (blocks.contains(bare)) {
+                return "bad block properties in " + state + ": " + cause.getMessage();
+            }
+            List<String> close = BlockNames.suggest(bare, blocks);
+            return "unknown block state: " + state
+                    + (close.isEmpty() ? "" : "; did you mean " + String.join(", ", close) + "?");
+        } catch (RuntimeException e) {
+            return "unknown block state: " + state; // suggestions are a nicety; never hide the real error
         }
     }
 
