@@ -92,7 +92,7 @@ class WorldToolsTest {
         String slice = h.ok("world_slice", "region", "0,63,0 3,66,2");
         assertThat(slice).isEqualTo("""
                 region world 0,63,0 3,66,2 size 4x4x3 rows=z cols=x
-                legend: .=air #=stone a=oak_planks b=glass c=oak_stairs
+                legend: .=air #=stone a=oak_planks b=glass@1,65,1 c=oak_stairs@2,65,1
                 y=63 all #
                 y=64 all a
                 y=65
@@ -149,6 +149,48 @@ class WorldToolsTest {
     }
 
     @Test
+    void sliceWritesRepeatedRowsAndLayerRunsOnceAndPastesBack() {
+        h.ok("build_batch", "steps", "fill 0,64,0 6,67,6 stone_bricks walls\nfill 0,68,0 6,68,6 oak_planks\n"
+                + "set 3,64,0 oak_door[half=lower]\nset 0,66,3 glass");
+        String slice = h.ok("world_slice", "region", "0,64,0 6,70,6");
+        assertThat(slice).isEqualTo("""
+                region world 0,64,0 6,70,6 size 7x7x7 rows=z cols=x
+                legend: .=air #=stone_bricks a=oak_planks b=oak_door@3,64,0 c=glass@0,66,3
+                y=64
+                ###b###
+                #.....# (x5)
+                #######
+                y=65
+                #######
+                #.....# (x5)
+                #######
+                y=66
+                #######
+                #.....# (x2)
+                c.....#
+                #.....# (x2)
+                #######
+                y=67 same as y=65
+                y=68 all a
+                y=69..70 all .""");
+        String body = slice.substring(slice.indexOf("legend:"));
+        h.ok("build_batch", "steps", "structure 20,64,20\n" + body + "\nend");
+        String copy = h.ok("world_slice", "region", "20,64,20 26,70,26");
+        assertThat(copy.substring(copy.indexOf("legend:")))
+                .isEqualTo(body.replace("@3,64,0", "@23,64,20").replace("@0,66,3", "@20,66,23"));
+        assertThat(h.error("build_batch", "steps", "structure 0,64,0\nlegend: #=stone\ny=0..1\n##\nend"))
+                .contains("\"same as\" or \"all\"");
+    }
+
+    @Test
+    void summaryListsWhereRareBlocksAre() {
+        h.ok("build_batch", "steps", "set 5,70,5 gold_block\nset 1,71,2 gold_ore\nset 2,71,2 gold_ore\n"
+                + "fill 0,72,0 3,72,0 dirt");
+        assertThat(h.ok("world_summary", "region", "0,70,0 7,72,7"))
+                .contains("blocks: dirt 4, gold_ore 2 at 1,71,2 2,71,2, gold_block 1 at 5,70,5\n");
+    }
+
+    @Test
     void structureErrorsSayWhatToFix() {
         assertThat(h.error("build_batch", "steps", "structure 0,64,0\ny=0\n#x\nend"))
                 .contains("symbol '#'").contains("not in the legend");
@@ -199,7 +241,7 @@ class WorldToolsTest {
         h.ok("build_batch", "steps", "fill 0,64,0 3,64,3 oak_planks\nset 1,66,1 glass");
         assertThat(h.ok("world_summary", "region", "0,62,0 3,67,3")).isEqualTo("""
                 region world 0,62,0 3,67,3 size 4x6x4 = 96 blocks, 49% air
-                blocks: stone 32, oak_planks 16, glass 1
+                blocks: stone 32, oak_planks 16, glass 1 at 1,66,1
                 non-air bounds: 0,62,0 3,66,3
                 non-air per layer (y:count): 62..64:16 65:0 66:1 67:0
                 entities: 1 cow""");
@@ -249,8 +291,9 @@ class WorldToolsTest {
 
     @Test
     void resultsAreCutToTheBudgetWithAHint() {
-        h.ok("build_batch", "steps", "structure 0,64,0\nlegend: a=stone b=dirt\ny=0\n"
-                + "ab".repeat(16).concat("\n").repeat(16) + "y=1\n" + "ba".repeat(16).concat("\n").repeat(16) + "end");
+        String rows = ("ab".repeat(16) + "\n" + "ba".repeat(16) + "\n").repeat(8);
+        h.ok("build_batch", "steps", "structure 0,64,0\nlegend: a=stone b=dirt\ny=0\n" + rows + "y=1\n"
+                + rows.substring(33) + "ab".repeat(16) + "\nend");
         String slice = h.ok("world_slice", "region", "0,64,0 31,65,15", "maxChars", 400);
         assertThat(slice.length()).isLessThan(520);
         assertThat(slice).contains("[truncated:").contains("smaller area");

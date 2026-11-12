@@ -45,6 +45,18 @@ class TextureToolsTest {
     }
 
     @Test
+    void aPngPathWritesALooseFileOutsideThePack() throws Exception {
+        String gem = h.ok("texture", "name", "textures/ruby.png", "kind", "gem", "color", "#d4263a");
+        assertThat(gem).startsWith("wrote " + workspace.resolve("textures/ruby.png") + ": 16x16, ").contains("palette:");
+        assertThat(ImageIO.read(workspace.resolve("textures/ruby.png").toFile()).getWidth()).isEqualTo(16);
+        assertThat(workspace.resolve(".msc/pack/assets")).doesNotExist();
+        assertThat(h.ok("texture", "name", "out/Drawn.PNG", "palette", List.of("r=#d4263a"), "rows", List.of("r.", ".r")))
+                .startsWith("wrote " + workspace.resolve("out/Drawn.PNG") + ": 2x2");
+        assertThat(h.error("texture", "name", "a.png", "kind", "gem", "color", "#d4263a", "animate", "pulse"))
+                .contains("pack texture name");
+    }
+
+    @Test
     void createWritesPngModelAndItemDefinition() throws Exception {
         String result = h.ok("texture", "name", "item/ruby",
                 "palette", List.of("r=#d4263a d=#701", "g=#00ff0080"), "rows", ruby());
