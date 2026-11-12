@@ -79,7 +79,7 @@ val installMsc = tasks.register<Sync>("installMsc") {
         props["source"] = source
         props["installed"] = System.currentTimeMillis().toString()
         dir.resolve("install.properties").writer().use { props.store(it, "written by installMsc") }
-        // The owner's one-time EULA acceptance for this machine (ADR 0019). Printed, never run: only the owner
+        // The owner's one-time EULA acceptance for this machine (ADR 0020). Printed, never run: only the owner
         // can answer it, in an interactive terminal.
         val eula = quote(java.get()) + " -cp " + quote(classPath) + " io.github.imnotstable.msc.core.Main eula accept"
         dir.resolve("eula-accept.txt").writeText(eula + "\n")

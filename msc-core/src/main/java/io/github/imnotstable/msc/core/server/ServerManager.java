@@ -72,7 +72,7 @@ public final class ServerManager implements AutoCloseable {
         }
         if (platform.needsEula()) {
             // The EULA is the user's to accept: eula.txt in the server directory decides, or the owner's own
-            // one-time acceptance for this machine (ADR 0019), never a flag set here.
+            // one-time acceptance for this machine (ADR 0020), never a flag set here.
             Path eula = config.serverDir().resolve("eula.txt");
             try {
                 MachineEula.applyTo(config.eulaFile(), eula);

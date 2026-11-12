@@ -436,7 +436,7 @@ class LifecycleToolsTest {
         Path install = Files.createDirectories(workspace.resolve("install/agents")).getParent();
         Files.writeString(install.resolve("agents/msc-agent-fabric-0.1.0.jar"), "fabric");
         Files.writeString(install.resolve("agents/msc-agent-paper-0.1.0.jar"), "bundled");
-        // The owner's one-time acceptance for this machine (ADR 0019) stands in for acceptEula=true.
+        // The owner's one-time acceptance for this machine (ADR 0020) stands in for acceptEula=true.
         Path machineEula = MachineEulaAccess.accepted(workspace.resolve("home/.msc/eula.json"));
         try (CoreHarness s = new CoreHarness(workspace.resolve("ws4"), c -> c.withDownloadsUrl(base).withInstallDir(install)
                 .withEulaFile(machineEula))) {

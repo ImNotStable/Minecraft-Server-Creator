@@ -24,7 +24,7 @@ public final class Main {
 
     public static void main(String[] args) throws Exception {
         if (args.length > 0 && args[0].equals("eula")) {
-            // The owner's own command, never an MCP tool: see EulaCommand and ADR 0019.
+            // The owner's own command, never an MCP tool: see EulaCommand and ADR 0020.
             Path installDir = installDir(Main.class.getProtectionDomain().getCodeSource());
             System.exit(EulaCommand.run(List.of(args).subList(1, args.length),
                     CoreConfig.fromEnvironment(System.getenv()).eulaFile(), installDir, EulaCommand.console(),

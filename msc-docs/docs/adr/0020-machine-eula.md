@@ -1,4 +1,4 @@
-# ADR 0019: One Minecraft EULA acceptance per machine
+# ADR 0020: One Minecraft EULA acceptance per machine
 
 Status: accepted, 2026-11-12. Decided by Claude under Jeremiah's hand-over of build decisions. Roadmap item N1.
 

@@ -17,7 +17,7 @@ import java.util.Optional;
  *
  * <p>MSC tools only read it: with it, {@code server_setup} and {@code server_start} write {@code eula=true} into the
  * server's {@code eula.txt}. Only {@link EulaCommand} writes it, and only after the owner types {@code yes} in an
- * interactive terminal. No tool argument creates it. See ADR 0019.
+ * interactive terminal. No tool argument creates it. See ADR 0020.
  */
 public final class MachineEula {
     public static final String EULA_URL = "https://aka.ms/MinecraftEULA";

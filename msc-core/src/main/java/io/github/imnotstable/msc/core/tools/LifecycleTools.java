@@ -128,7 +128,7 @@ public final class LifecycleTools {
                         .opt("timeoutSeconds", "integer", "Default 60"), t::await);
     }
 
-    /** The one-time, per-machine alternative to asking for every server (ADR 0019). Only the owner can run it. */
+    /** The one-time, per-machine alternative to asking for every server (ADR 0020). Only the owner can run it. */
     private String oneTimeHint() {
         return " To never be asked again on this machine, they can instead run once in their own terminal: "
                 + MachineEula.acceptCommand(config.installDir());
