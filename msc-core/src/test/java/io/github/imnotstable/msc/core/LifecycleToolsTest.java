@@ -73,11 +73,28 @@ class LifecycleToolsTest {
 
             Files.writeString(pidFile, leftover.pid() + " " + started + "\n");
             assertThat(h.ok("server_stop")).isEqualTo("stopped a server left running by an earlier session (pid "
-                    + leftover.pid() + ")");
+                    + leftover.pid() + ", killed: world changes since its last autosave may be lost)");
             assertThat(leftover.waitFor(10, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
             assertThat(pidFile).doesNotExist();
         } finally {
             leftover.destroyForcibly();
+        }
+    }
+
+    @Test
+    void devCycleStopsALeftoverServerBeforeDeploying() throws Exception {
+        Process leftover = new ProcessBuilder(java(io.github.imnotstable.msc.core.fixture.SleepMain.class)).start();
+        try {
+            long started = leftover.info().startInstant().orElseThrow().toEpochMilli();
+            Files.createDirectories(workspace.resolve(".msc"));
+            Files.writeString(workspace.resolve(".msc/server.pid"), leftover.pid() + " " + started + "\n");
+            assertThat(h.ok("dev_cycle", "project", "demo"))
+                    .startsWith("stopped a server left running by an earlier session (pid " + leftover.pid())
+                    .contains("\nbuild ok in ").contains("deployed demo-1.0.jar as plugins/demo.jar");
+            assertThat(leftover.isAlive()).isFalse();
+        } finally {
+            leftover.destroyForcibly();
+            h.ok("server_stop");
         }
     }
 
@@ -128,9 +145,14 @@ class LifecycleToolsTest {
     }
 
     @Test
-    void scaffoldCreatesAProjectOnceAndRefusesToOverwrite() {
+    void scaffoldCreatesAProjectOnceAndRefusesToOverwrite() throws Exception {
         assertThat(h.ok("project_scaffold", "name", "MyPlugin", "dir", "fresh"))
-                .startsWith("created paper-plugin project in ").doesNotContain("assword").doesNotContain("eula")
+                .startsWith("created paper-plugin project in ").doesNotContain("assword").doesNotContain("eula=")
+                .endsWith("next: ask the user to accept the Minecraft EULA (https://aka.ms/MinecraftEULA), then "
+                        + "server_setup acceptEula=true, then edit the code and dev_cycle");
+        Files.createDirectories(workspace.resolve("run"));
+        Files.writeString(workspace.resolve("run/paper.jar"), "set up");
+        assertThat(h.ok("project_scaffold", "name", "Other", "dir", "second"))
                 .endsWith("next: edit the code, then dev_cycle");
         assertThat(workspace.resolve("fresh")).isNotEmptyDirectory();
         assertThat(h.error("project_scaffold", "name", "MyPlugin", "dir", "fresh")).startsWith("error: ");
