@@ -183,6 +183,17 @@ class WorldToolsTest {
     }
 
     @Test
+    void wideHeightmapsUseRunsAndRepeatedRows() {
+        h.ok("build_fill", "region", "2,100,1 3,100,2", "block", "stone");
+        assertThat(h.ok("world_heightmap", "area", "0,0 5,4")).isEqualTo("""
+                heightmap world x 0..5 z 0..4 min 63 max 100 mean 68 rows=z cols=x
+                each row: heights by column, v*n = n columns at v, (xN) = row repeated N times
+                63*6
+                63*2 100*2 63*2 (x2)
+                63*6 (x2)""");
+    }
+
+    @Test
     void resultsAreCutToTheBudgetWithAHint() {
         h.ok("build_structure", "at", "0,64,0", "structure",
                 "legend: a=stone b=dirt\ny=0\n" + "ab".repeat(16).concat("\n").repeat(16)

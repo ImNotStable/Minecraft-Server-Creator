@@ -7,6 +7,7 @@ import com.google.gson.JsonParser;
 import com.sun.net.httpserver.HttpServer;
 import io.github.imnotstable.msc.core.fixture.FakeBuildMain;
 import io.github.imnotstable.msc.core.fixture.FakeServerMain;
+import io.github.imnotstable.msc.core.tools.LifecycleToolsAccess;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -99,6 +100,15 @@ class LifecycleToolsTest {
     }
 
     @Test
+    void deployedJarIsNamedAfterTheBuiltJarWithoutItsVersion() {
+        Path folder = Path.of("my-server");
+        assertThat(LifecycleToolsAccess.deployName(Path.of("lobby-0.1.0-SNAPSHOT.jar"), folder)).isEqualTo("lobby");
+        assertThat(LifecycleToolsAccess.deployName(Path.of("demo-1.0.jar"), folder)).isEqualTo("demo");
+        assertThat(LifecycleToolsAccess.deployName(Path.of("my-mod-2.3+26.3.jar"), folder)).isEqualTo("my-mod");
+        assertThat(LifecycleToolsAccess.deployName(Path.of("plugin.jar"), folder)).isEqualTo("plugin");
+    }
+
+    @Test
     void startRemembersTheServerPidAndStopForgetsIt() {
         h.ok("server_start", "timeoutSeconds", 30);
         assertThat(workspace.resolve(".msc/server.pid")).content().matches("\\d+ \\d+\n");
@@ -131,6 +141,26 @@ class LifecycleToolsTest {
                 .contains("\tat com.example.demo.Demo.onEnable(Demo.java:17)")
                 .contains("... 1 framework frames");
         assertThat(h.ok("server_logs", "mode", "grep", "pattern", "\\[Demo\\]")).contains("Demo v2.0").doesNotContain("v1.0");
+    }
+
+    @Test
+    void aRenamedJarReplacesTheEarlierDeployInsteadOfSittingBesideIt() throws Exception {
+        Path legacy = Files.createDirectories(workspace.resolve("legacy"));
+        Files.writeString(legacy.resolve("version.txt"), "1.0");
+        Files.writeString(legacy.resolve("name.txt"), "demo");
+        Path plugins = Files.createDirectories(workspace.resolve("run/plugins"));
+        Files.writeString(plugins.resolve("legacy.jar"), "deployed by an older core under the folder name");
+        Files.writeString(plugins.resolve("msc-agent-paper.jar"), "agent");
+
+        assertThat(h.ok("dev_cycle", "project", "legacy", "restart", false)).contains("as plugins/demo.jar");
+        try (var jars = Files.list(plugins)) {
+            assertThat(jars.map(p -> p.getFileName().toString())).containsExactlyInAnyOrder("demo.jar", "msc-agent-paper.jar");
+        }
+        Files.writeString(legacy.resolve("name.txt"), "arena");
+        assertThat(h.ok("dev_cycle", "project", "legacy", "restart", false)).contains("as plugins/arena.jar");
+        try (var jars = Files.list(plugins)) {
+            assertThat(jars.map(p -> p.getFileName().toString())).containsExactlyInAnyOrder("arena.jar", "msc-agent-paper.jar");
+        }
     }
 
     @Test
