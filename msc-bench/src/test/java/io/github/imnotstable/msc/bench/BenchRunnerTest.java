@@ -178,6 +178,29 @@ class BenchRunnerTest {
     }
 
     @Test
+    void paperTasksWithoutAServerGetTheNoServerPreamble() throws IOException {
+        Path task = Files.createDirectories(dir.resolve("tasks/texture"));
+        Files.writeString(task.resolve("task.json"),
+                "{\"category\":\"texture\",\"title\":\"x\",\"checks\":[{\"type\":\"file\",\"path\":\"done.txt\"}]}");
+        Files.writeString(task.resolve("prompt.md"), "Draw it.");
+        Path configFile = dir.resolve("bench.json");
+        Files.writeString(configFile, """
+                {"agent":{"command":["%s","-cp","%s","io.github.imnotstable.msc.bench.FakeAgent","{prompt}"]},
+                 "modes":{"baseline":{}}}
+                """.formatted(JAVA, CLASSPATH));
+
+        List<RunRecord> records = new BenchRunner(BenchConfig.load(configFile, dir), dir.resolve("run"),
+                Map.of(TaskDef.PAPER, "Server in server/.", BenchRunner.PAPER_NO_SERVER, "No server."),
+                new PrintStream(new ByteArrayOutputStream(), true, StandardCharsets.UTF_8))
+                .run(TaskLoader.loadAll(dir.resolve("tasks")), List.of("baseline"), 1);
+
+        assertThat(records).singleElement().satisfies(r -> assertThat(r.passed()).as(r.toString()).isTrue());
+        Path workspace = dir.resolve("run/attempts/texture/baseline-1/workspace");
+        assertThat(workspace.resolve("done.txt")).hasContent("No server.\n\nDraw it.");
+        assertThat(workspace.resolve("server")).doesNotExist();
+    }
+
+    @Test
     void retriesWhenTheRequiredMcpServerWasNotConnectedAtStart() throws IOException {
         Path tasks = Files.createDirectories(dir.resolve("tasks/write-file"));
         Files.writeString(tasks.resolve("task.json"),

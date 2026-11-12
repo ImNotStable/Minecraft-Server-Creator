@@ -47,7 +47,16 @@ public final class BenchRunner {
         this(config, runDir, Map.of(TaskDef.PAPER, preamble == null ? "" : preamble), log);
     }
 
-    /** A runner with a preamble per platform ({@code paper}, {@code minestom}), put before each task's prompt. */
+    /**
+     * Preamble key for Paper tasks that need no server: they get no {@code server/} folder, so the Paper preamble's
+     * server lines would only send the agent looking for one. Falls back to the {@code paper} preamble when absent.
+     */
+    public static final String PAPER_NO_SERVER = "paper-no-server";
+
+    /**
+     * A runner with a preamble per platform ({@code paper}, {@code minestom}, and {@link #PAPER_NO_SERVER}), put
+     * before each task's prompt.
+     */
     public BenchRunner(BenchConfig config, Path runDir, Map<String, String> preambles, PrintStream log) {
         this.config = config;
         this.runDir = runDir;
@@ -301,8 +310,15 @@ public final class BenchRunner {
 
     private String fullPrompt(TaskDef task, Map<String, String> values) {
         String body = Placeholders.fill(task.prompt(), values);
-        String preamble = preambles.getOrDefault(task.platform(), "");
+        String preamble = preambleFor(task);
         return preamble.isEmpty() ? body : Placeholders.fill(preamble, values) + "\n\n" + body;
+    }
+
+    private String preambleFor(TaskDef task) {
+        if (task.platform().equals(TaskDef.PAPER) && !task.needsServer() && preambles.containsKey(PAPER_NO_SERVER)) {
+            return preambles.get(PAPER_NO_SERVER);
+        }
+        return preambles.getOrDefault(task.platform(), "");
     }
 
     /** Fills placeholders in a JSON template, escaping values so paths with backslashes stay valid. */
