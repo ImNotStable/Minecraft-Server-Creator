@@ -51,10 +51,10 @@ class McpBridgeTest {
                         "build_structure", "build_copy", "build_undo", "structure_save", "structure_load",
                         "build_batch",
                         "texture_create", "texture_generate", "texture_recolor", "texture_animate", "model_create", "texture_view",
-                        "pack_check", "pack_build", "player_test");
+                        "pack_check", "pack_build", "player_test", "msc_workspace");
                 // The tool list is paid for in every conversation: keep it small.
-                // build_batch adds about 1.5k (in place of the generator scripts both playtests wrote), player_test about 1k.
-                assertThat(listed.toString().length()).isLessThan(17600);
+                // build_batch adds about 1.5k (in place of the generator scripts both playtests wrote), player_test about 1k, msc_workspace 0.4k.
+                assertThat(listed.toString().length()).isLessThan(18000);
                 JsonObject fill = tools.get(names.indexOf("build_fill")).getAsJsonObject().getAsJsonObject("inputSchema");
                 assertThat(fill.getAsJsonArray("required").toString()).isEqualTo("[\"region\",\"block\"]");
 

@@ -32,7 +32,8 @@ public final class McpBridge {
             + "is. See the world with world_summary, world_slice or world_render. Build with build_structure for "
             + "irregular shapes, build_shape for circles, spheres and lines, build_stamp to repeat or turn a structure, "
             + "and build_batch to send many steps as one edit; blocks take weighted mixes such as grass_block:8,moss_block:2. "
-            + "Results are size-capped; narrow the request rather than raising maxChars.";
+            + "Results are size-capped; narrow the request rather than raising maxChars. Wrong folder: "
+            + "msc_workspace switches it without a restart.";
 
     private McpBridge() {
     }

@@ -53,27 +53,42 @@ public final class WorldService {
     // ---- views ------------------------------------------------------------------------------
 
     public BlockGrid read(Region region) throws InterruptedException {
+        return read(region, null);
+    }
+
+    /** As {@link #read(Region)}, adding the region's entities to {@code entities} when it is not null. */
+    private BlockGrid read(Region region, List<Ops.EntitySummary> entities) throws InterruptedException {
         if (region.volume() > Limits.MAX_REGION_VOLUME) {
             throw new ToolException("region has " + region.volume() + " blocks; the limit per call is "
                     + Limits.MAX_REGION_VOLUME + " (128x64x128). Use a smaller region.");
         }
-        return hub.call(Ops.WORLD_READ, new Ops.ReadParams(region, false)).grid();
+        Ops.ReadResult result = hub.call(Ops.WORLD_READ, new Ops.ReadParams(region, entities != null));
+        if (entities != null && result.entities() != null) {
+            entities.addAll(result.entities());
+        }
+        return result.grid();
     }
 
     /** Read a region of up to {@code max} blocks as one grid, stitching protocol-sized reads together. */
     public BlockGrid readAll(Region region, long max, String tool) throws InterruptedException {
+        return readAll(region, max, tool, null);
+    }
+
+    /** As {@link #readAll(Region, long, String)}, adding the region's entities to {@code entities} unless null. */
+    public BlockGrid readAll(Region region, long max, String tool, List<Ops.EntitySummary> entities)
+            throws InterruptedException {
         if (region.volume() > max) {
             throw new ToolException("region has " + region.volume() + " blocks; " + tool + " takes at most " + max);
         }
         List<Region> parts = Coords.split(region);
         if (parts.size() == 1) {
-            return read(region);
+            return read(region, entities);
         }
         int[] blocks = new int[(int) region.volume()];
         List<String> palette = new ArrayList<>();
         Map<String, Integer> index = new HashMap<>();
         for (Region part : parts) {
-            BlockGrid grid = read(part);
+            BlockGrid grid = read(part, entities);
             int[] remap = new int[grid.palette().size()];
             for (int i = 0; i < remap.length; i++) {
                 remap[i] = index.computeIfAbsent(grid.palette().get(i), s -> {
