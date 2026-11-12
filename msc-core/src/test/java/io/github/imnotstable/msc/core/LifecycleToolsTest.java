@@ -369,6 +369,30 @@ class LifecycleToolsTest {
     }
 
     @Test
+    void acceptEulaOnStartAlsoCoversLaterServersOnThisMachine() throws Exception {
+        Path machineEula = workspace.resolve("home/.msc/eula.json");
+        Path ws = Files.createDirectories(workspace.resolve("ws6/run")).getParent();
+        Files.writeString(ws.resolve("run/paper.jar"), "not a jar");
+        try (CoreHarness s = new CoreHarness(ws, c -> c.withEulaFile(machineEula))) {
+            assertThat(s.error("server_start")).contains("EULA is not accepted");
+            assertThat(machineEula).doesNotExist();
+            assertThat(s.call("server_start", "acceptEula", true, "timeoutSeconds", 20).text())
+                    .startsWith("Minecraft EULA (https://aka.ms/MinecraftEULA) accepted for this machine, saved in ")
+                    .contains("TERMS.md");
+            // The notice is shown once.
+            assertThat(s.call("server_start", "acceptEula", true, "timeoutSeconds", 20).text()).doesNotContain("TERMS.md");
+            assertThat(ws.resolve("run/eula.txt")).content().contains("eula=true");
+            assertThat(machineEula).content().contains("\"how\": \"the user's own yes, passed as acceptEula=true\"");
+        }
+        Path other = Files.createDirectories(workspace.resolve("ws7/run")).getParent();
+        Files.writeString(other.resolve("run/paper.jar"), "not a jar");
+        try (CoreHarness s = new CoreHarness(other, c -> c.withEulaFile(machineEula))) {
+            assertThat(s.call("server_start", "timeoutSeconds", 20).text()).doesNotContain("EULA");
+            assertThat(other.resolve("run/eula.txt")).content().contains("eula=true");
+        }
+    }
+
+    @Test
     void startFailsFastWithoutTheEula() throws Exception {
         Path ws = Files.createDirectories(workspace.resolve("ws3"));
         Files.createDirectories(ws.resolve("run"));

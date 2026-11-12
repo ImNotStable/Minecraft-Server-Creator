@@ -10,7 +10,7 @@ Do [Installation](Installation) first. Then open Claude Code in your server fold
 
 2. **Read the Minecraft EULA.**
    Open [aka.ms/MinecraftEULA](https://aka.ms/MinecraftEULA). A Paper server will not start until you accept it. Only you can do this. Claude will ask you; it must not accept it for you.
-   To accept once for this machine instead of for every server, run the line in `~/.msc/core/eula-accept.txt` yourself in a terminal and type `yes`. It only works in a real terminal, so Claude can't run it for you. Undo it with the same line, `revoke` instead of `accept`.
+   To accept once for this machine instead of for every server, install with `-Pmsc.acceptEula=true`, or run the line in `~/.msc/core/eula-accept.txt` yourself and type `yes`. Your first yes to Claude (`acceptEula=true`) also covers the machine. Either way you confirm you accept Mojang's EULA, as set out in [TERMS.md](https://github.com/ImNotStable/Minecraft-Server-Creator/blob/main/TERMS.md). Undo it with the same line, `revoke` instead of `accept`.
 
 3. **Set up the server.**
    If you accept the EULA, say: "I accept the Minecraft EULA. Run server_setup with acceptEula=true." If you accepted it for this machine, just say "Run server_setup."

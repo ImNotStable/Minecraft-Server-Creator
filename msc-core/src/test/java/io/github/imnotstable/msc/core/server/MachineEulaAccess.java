@@ -11,7 +11,8 @@ public final class MachineEulaAccess {
 
     /** Writes an acceptance by "owner" on "pc" to {@code file} and returns it. */
     public static Path accepted(Path file) throws IOException {
-        MachineEula.write(file, new MachineEula.Acceptance("owner", "pc", Instant.parse("2026-11-12T08:00:00Z")));
+        MachineEula.write(file, new MachineEula.Acceptance("owner", "pc", Instant.parse("2026-11-12T08:00:00Z")),
+                MachineEula.VIA_TERMINAL);
         return file;
     }
 }

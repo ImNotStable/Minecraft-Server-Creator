@@ -25,3 +25,12 @@ Paper and Fabric run Mojang's server, which starts only with `eula=true` in `eul
 - The check stops tools and scripts from accepting; it does not stop someone who deliberately forges a terminal or writes the file by hand. The same was always true of `eula.txt`, and the project rules forbid an AI from doing either.
 - `msc-bench` still reads its own untracked `bench.local.json`; it could read `eula.json` later (follow-up, not part of this change).
 - The owner's action on Jeremiah's PC: after the next `installMsc`, run the line in `~/.msc/core/eula-accept.txt` in a terminal, if he agrees.
+
+## Amendment, 2026-11-12: opt-in on the install and run commands
+
+Jeremiah asked for EULA acceptance to be built into the commands, and approved MSC terms of use for it. Treating the mere install or use of MSC as acceptance was rejected, because the EULA is an agreement between each server operator and Mojang. An explicit opt-in that the user gives was accepted instead:
+
+1. **`installMsc -Pmsc.acceptEula=true`** writes `~/.msc/eula.json` (`how`: the install flag) and prints the notice.
+2. **`acceptEula=true` on `server_setup` and the new `acceptEula` option on `server_start`** write `eula=true` for that server and also record the acceptance for the machine (`how`: the user's yes passed as acceptEula). The first time, the result carries a notice for the AI to pass on, with the EULA and [TERMS.md](../../../TERMS.md) links. This replaces decision 4's "no tool argument creates it": the argument already stood for the user's own yes, and the AI instructions still forbid passing it without one.
+3. **[TERMS.md](../../../TERMS.md)** says what turning acceptance on confirms: the user read and accepts Mojang's EULA, MSC may write `eula=true` for their servers on that machine from then on, and they are responsible for following it. The README links it. It is not legal advice, and it has not been reviewed by a lawyer.
+4. Nothing changes for the default: with no flag and no file, every server still asks.

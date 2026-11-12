@@ -81,8 +81,8 @@ public final class ServerManager implements AutoCloseable {
             }
             if (!eulaAccepted(eula)) {
                 throw new ToolException("the Minecraft EULA is not accepted (no eula=true in " + eula + "): once the "
-                        + "user agrees to https://aka.ms/MinecraftEULA, run server_setup with acceptEula=true. To "
-                        + "never be asked again on this machine, the user runs once in their own terminal: "
+                        + "user agrees to https://aka.ms/MinecraftEULA, run server_start with acceptEula=true (that "
+                        + "also covers later servers on this machine), or the user runs once in their own terminal: "
                         + MachineEula.acceptCommand(config.installDir()));
             }
         }
