@@ -29,7 +29,8 @@ public final class McpBridge {
             + "change; it builds, runs tests, deploys, restarts and reports errors only. Look up API names with "
             + "api_search before guessing. Dev worlds are superflat: server_start and dev_cycle say where the ground "
             + "is. See the world with world_summary, world_slice or world_render; build with build_structure. "
-            + "Results are size-capped; narrow the request rather than raising maxChars.";
+            + "Results are size-capped; narrow the request rather than raising maxChars. Wrong folder: "
+            + "msc_workspace switches it without a restart.";
 
     private McpBridge() {
     }

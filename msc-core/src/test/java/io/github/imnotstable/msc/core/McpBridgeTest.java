@@ -50,9 +50,9 @@ class McpBridgeTest {
                         "api_class", "world_slice", "world_heightmap", "world_render", "world_summary", "build_fill", "build_set",
                         "build_structure", "build_copy", "build_undo", "structure_save", "structure_load",
                         "texture_create", "texture_generate", "texture_recolor", "texture_animate", "model_create", "texture_view",
-                        "pack_check", "pack_build");
+                        "pack_check", "pack_build", "msc_workspace");
                 // The tool list is paid for in every conversation: keep it small.
-                assertThat(listed.toString().length()).isLessThan(14600);
+                assertThat(listed.toString().length()).isLessThan(15000);
                 JsonObject fill = tools.get(names.indexOf("build_fill")).getAsJsonObject().getAsJsonObject("inputSchema");
                 assertThat(fill.getAsJsonArray("required").toString()).isEqualTo("[\"region\",\"block\"]");
 
