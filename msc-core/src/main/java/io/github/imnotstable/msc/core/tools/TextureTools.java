@@ -104,6 +104,7 @@ public final class TextureTools {
                 Schema.of().opt("check", "boolean", "Only check the pack, do not build it. Default false")
                         .opt("limit", "integer", "Most problems to list. Default 30 with check, 5 on a build")
                         .opt("description", "string", "Pack description")
+                        .opt("file", "string", "Also save the zip here, such as ruby-pack.zip")
                         .opt("apply", "boolean", "Send to the running server. Default true")
                         .opt("required", "boolean", "Kick players who decline. Default false"),
                 args -> {
@@ -118,7 +119,14 @@ public final class TextureTools {
                     ResourcePack.Built built = pack.build(description);
                     StringBuilder out = new StringBuilder();
                     out.append("pack built: ").append(built.files()).append(" files, ").append(built.bytes())
-                            .append(" bytes\nurl: ").append(built.url()).append("\nsha1: ").append(built.sha1());
+                            .append(" bytes, pack_format ").append(pack.packFormat()).append("\nurl: ").append(built.url())
+                            .append("\nsha1: ").append(built.sha1());
+                    if (args.has("file")) {
+                        Path copy = config.resolve(args.str("file"));
+                        Files.createDirectories(copy.toAbsolutePath().getParent());
+                        Files.copy(built.zip(), copy, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                        out.append("\nsaved: ").append(copy);
+                    }
                     if (args.bool("apply", true)) {
                         if (hub.current() == null) {
                             out.append("\nnot applied: no server agent connected");

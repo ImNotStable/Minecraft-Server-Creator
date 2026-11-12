@@ -86,6 +86,11 @@ public final class ResourcePack implements AutoCloseable {
         this(root, outDir, host, 0, packFormat);
     }
 
+    /** The pack_format every build writes into pack.mcmeta. */
+    public int packFormat() {
+        return packFormat;
+    }
+
     /** The last pack built in this session, or null. */
     public Built lastBuilt() {
         return lastBuilt;
