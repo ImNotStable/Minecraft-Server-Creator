@@ -30,4 +30,4 @@ It works with **Paper**, **Fabric** and **Minestom**.
 
 ## One thing only you can do
 
-Paper and Fabric servers need you to accept the [Minecraft EULA](https://aka.ms/MinecraftEULA). MSC never accepts it for you, and the AI should not either. Read it, and if you agree, tell the AI so (see [Quick start](Quick-start), step 4).
+Paper and Fabric servers need you to accept the [Minecraft EULA](https://aka.ms/MinecraftEULA). MSC never accepts it for you, and the AI should not either. Read it, and if you agree, tell the AI so (see [Quick start](Quick-start), steps 2 and 3).

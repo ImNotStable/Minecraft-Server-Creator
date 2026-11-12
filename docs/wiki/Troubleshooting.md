@@ -4,9 +4,9 @@ Find your problem, then try the steps in order.
 
 ## Claude Code does not show the msc tools
 
-1. Run `claude mcp list` in your project folder. `msc` should be listed.
-2. Check `java -version` says 25 or newer.
-3. Check the `lib/*` path from [Installation](Installation) step 5 exists, and that it is in quotes.
+1. Run `claude mcp list`. `msc` should be listed.
+2. If not, run the line in `~/.msc/core/claude-mcp-add.txt` again (see [Installation](Installation), step 3).
+3. Check that `~/.msc/core/lib/` exists, and that the `java` path shown by `claude mcp get msc` exists. If not, run `./gradlew :msc-core:installMsc` again and run its new register line.
 4. Restart Claude Code.
 
 ## "the Minecraft EULA is not accepted"
@@ -15,21 +15,19 @@ Paper and Fabric need it. Read the [Minecraft EULA](https://aka.ms/MinecraftEULA
 
 ## "target exists and is not an empty directory"
 
-`project_scaffold` only writes into an empty folder (an `.msc` folder is fine). Either:
+`project_scaffold` only writes into an empty folder. Settings folders such as `.msc`, `.claude`, `.git`, `.idea`, `.vscode` and a `.mcp.json` file are fine. Either:
 
 1. Start again in an empty folder, or
 2. Ask Claude to scaffold into a subfolder with `dir=my-plugin`.
 
-If your folder has a `.mcp.json` or `.claude` folder in it, register MSC with `claude mcp add` instead (see [Installation](Installation)).
-
 ## The server starts but "agent not connected"
 
-1. Check `MSC_AGENT_JAR` points at a jar that exists, for the right platform (Paper agent for Paper, Fabric agent for Fabric).
+1. MSC uses the agent installed with it (`~/.msc/core/agents`) unless `MSC_AGENT_JAR` is set. Re-run `./gradlew :msc-core:installMsc` (with Claude Code closed) so it is current, then `server_setup` again.
 2. Ask Claude for `msc_status`. It shows the agent state.
 3. Ask for `server_logs` to see errors from the agent.
 4. Minestom: the agent is built into the template. Check the project still calls `MscAgent.start()`.
 
-## World tools say no server or no agent
+## World tools say "the server is not running"
 
 Start the server first with `server_start`. World, build and pack tools need a running server with the agent connected.
 
@@ -37,9 +35,17 @@ Start the server first with `server_start`. World, build and pack tools need a r
 
 `dev_cycle` shows only the compiler and test errors. Let Claude fix them and call `dev_cycle` again. For Fabric, Gradle must run on Java 25.
 
+## installMsc refuses the install folder
+
+With `-Pmsc.installDir`, the folder must be empty or hold an earlier MSC install. Pick an empty folder.
+
+## Install fails on Windows with "file in use"
+
+Claude Code is still running MSC. Close Claude Code, then run `installMsc` again.
+
 ## Port already in use
 
-Another server is running. Stop it, or ask Claude to `server_stop`. The dev server uses 25565 (game) and 25575 (RCON) by default.
+Another server is running. Stop it, ask Claude to `server_stop`, or change `server-port` and `rcon.port` in `run/server.properties`. The dev server uses 25565 (game) and 25575 (RCON) by default.
 
 ## Pictures look flat
 
