@@ -1,0 +1,75 @@
+plugins {
+    java
+    application
+    alias(libs.plugins.shadow)
+}
+
+group = "{{packageName}}"
+version = "{{version}}"
+description = "{{name}}, a Minestom server made with Minecraft Server Creator."
+
+java {
+    toolchain.languageVersion = JavaLanguageVersion.of(libs.versions.java.get().toInt())
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation(libs.minestom)
+    // Minecraft Server Creator's agent: idle unless msc-core started this server. Bundles msc-protocol.
+    implementation(files("libs/msc-agent-minestom.jar"))
+    implementation(libs.slf4j.api)
+    runtimeOnly(libs.slf4j.simple)
+
+    testImplementation(libs.minestom.testing)
+    testImplementation(platform(libs.junit.bom))
+    testImplementation(libs.junit.jupiter)
+    testImplementation(libs.assertj)
+    testRuntimeOnly(libs.junit.platform.launcher)
+}
+
+application {
+    mainClass = "{{packageName}}.{{name}}Server"
+}
+
+tasks.withType<JavaCompile>().configureEach {
+    options.encoding = "UTF-8"
+    options.release = libs.versions.java.get().toInt()
+    options.compilerArgs.addAll(listOf("-parameters", "-Xlint:all,-processing,-serial"))
+}
+
+tasks.test {
+    useJUnitPlatform()
+    // Minestom's test environment (lets test players connect from the test thread).
+    systemProperty("minestom.inside-test", "true")
+    // Short output: only failures, with the full exception.
+    testLogging {
+        events("failed")
+        exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+    }
+}
+
+// The runnable server: build/libs/{{projectId}}-{{version}}.jar, with every dependency inside.
+tasks.shadowJar {
+    archiveClassifier = ""
+    // Service files must all reach the merge step; the default EXCLUDE warns about each one on every build.
+    duplicatesStrategy = DuplicatesStrategy.INCLUDE
+    mergeServiceFiles()
+}
+
+tasks.jar {
+    archiveClassifier = "plain"
+}
+
+tasks.assemble {
+    dependsOn(tasks.shadowJar)
+}
+
+tasks.named<JavaExec>("run") {
+    // Dev server: works in run/ and reads console commands (try `stop`) from this terminal.
+    workingDir = layout.projectDirectory.dir("run").asFile
+    standardInput = System.`in`
+    doFirst { workingDir.mkdirs() }
+}

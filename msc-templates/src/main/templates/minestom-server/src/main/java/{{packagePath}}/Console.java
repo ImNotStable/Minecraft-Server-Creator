@@ -30,7 +30,9 @@ final class Console {
                     return;
                 }
                 if (!command.isEmpty()) {
-                    MinecraftServer.getCommandManager().executeServerCommand(command);
+                    // As the console sender, so replies are printed to the log.
+                    var commands = MinecraftServer.getCommandManager();
+                    commands.execute(commands.getConsoleSender(), command);
                 }
             }
         } catch (IOException e) {

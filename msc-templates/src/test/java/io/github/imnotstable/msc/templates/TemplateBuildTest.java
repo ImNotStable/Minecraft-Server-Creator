@@ -39,6 +39,16 @@ class TemplateBuildTest {
         buildsAndPassesItsTests(Templates.MINESTOM_SERVER);
     }
 
+    @Test
+    void minestomGameBuildsAndPassesItsTests() throws IOException, InterruptedException {
+        buildsAndPassesItsTests(Templates.MINESTOM_GAME);
+    }
+
+    @Test
+    void fabricGameBuildsAndPassesItsTests() throws IOException, InterruptedException {
+        buildsAndPassesItsTests(Templates.FABRIC_GAME);
+    }
+
     private static void buildsAndPassesItsTests(String id) throws IOException, InterruptedException {
         Path dir = Path.of(System.getProperty("msc.templates.verifyDir")).resolve(id);
         deleteRecursively(dir);

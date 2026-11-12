@@ -12,20 +12,19 @@ The AI talks to `msc-core` over MCP (stdio). This page lists every tool, its arg
 - `world` is optional everywhere and defaults to the server's first world.
 - Every call is logged (see "Tool log").
 - World and build tools fail at once with `error: the server is not running...` when the core has no server running and none was attached with `MSC_CORE_ADDRESS`.
-- The whole tool list (34 tools) costs about 4,300 tokens per conversation. A test fails if it grows past 17,500 characters.
+- The whole tool list (30 tools) costs about 3,900 tokens per conversation. A test fails if it grows past 16,000 characters ([ADR 0019](adr/0019-smaller-tool-surface.md)).
 - Results are text. The one exception is `world_render`, which adds one PNG image next to its text.
 
 ## Typical loop
 
-`project_scaffold` once, `server_setup` once, then edit code and call `dev_cycle` until it reports `no errors or warnings`. Look names up with `api_search` instead of guessing. Look at the world with `world_summary`, then `world_slice`; build with `build_structure`, and use `build_batch` for many steps, round shapes, block mixes and repeated pieces.
+`project_scaffold` once, `server_setup` once, then edit code and call `dev_cycle` until it reports `no errors or warnings`. Look names up with `api_search` instead of guessing. Look at the world with `world_summary`, then `world_slice`; build with `build_batch`, a whole build per call.
 
 ## Status
 
 | Tool | Arguments | Result | Budget |
 | --- | --- | --- | --- |
-| `msc_status` | none | Core version, workspace, platform, server state, agent, API index, then any setup warnings (workspace is the MSC repo; install older than its checkout). The same warnings go in front of the session's first tool result | 6 lines (+ warnings) |
+| `msc_status` | `stats`? (false) | Core version, workspace, platform, server state, agent, API index, then any setup warnings (workspace is the MSC repo; install older than its checkout). The same warnings go in front of the session's first tool result | 6 lines (+ warnings) |
 | `msc_workspace` | `path`? (absolute, or relative to the current workspace), `create`? (false) | Switches every tool to another folder without restarting the MCP server: closes the old workspace like a session end (its dev server stops unless detached) and opens the new one. The server folder and tool log move along when they were the defaults. No `path`: shows the current workspace | 3 lines |
-| `msc_stats` | none | Calls, errors, milliseconds and result tokens per tool this session | 1 line per tool used |
 
 ## Project and server lifecycle
 
@@ -53,6 +52,8 @@ The workspace has one platform: `paper` (default), `fabric` or `minestom`. `proj
 | `fabric` | `fabric-server-launch.jar` (fetches the Minecraft server on first start), `mods/fabric-api.jar`, agent in `mods/` | `java -Xmx2G -jar fabric-server-launch.jar nogui` | `mods/<jar name without version>.jar` | yes |
 | `minestom` | nothing (the agent is built into the project) | `java -Xmx1G -jar server.jar` | `server.jar` in the server directory | no |
 
+EULA step: when the owner has accepted the Minecraft EULA once for the machine (`Main eula accept` in their own terminal, `~/.msc/eula.json`, [ADR 0020](adr/0020-machine-eula.md)), `server_setup` and `server_start` write `eula=true` into the server's `eula.txt` and say so; no tool argument creates that file. Otherwise `acceptEula=true` after the owner's own yes, as before.
+
 ## API index
 
 Built on first use from the platform's jars in the Gradle cache (or `MSC_API_JARS`), by reading class files directly: Paper API and Adventure for Paper, the Minecraft server jar from Loom's cache plus Fabric API and loader for Fabric, Minestom and Adventure for Minestom. No network, no Javadoc. Parameter names appear only when the jar records them; the published paper-api jar does not, so signatures show types only.
@@ -71,7 +72,7 @@ Built on first use from the platform's jars in the Gradle cache (or `MSC_API_JAR
 | `world_entities` | `region` (up to 2,048 x 2,048 wide, any height), `type`? (`zombie`), `limit`? (50), `ids`? (false) | A count line with totals per type, then one line per entity sorted by type and position: `zombie "Brute" 2.5,-60,3 hp 7/20 tags boss,wave`. The name is a player name, custom name or (Paper, Minestom) a text display's text; `ids=true` adds the UUID for commands. Loaded chunks only: with no player online, run `forceload add x1 z1 x2 z2` first (an empty result says so, with the region's corners). Minestom has no scoreboard tags | 6,000 chars |
 | `world_heightmap` | `area` (up to 256 x 256), `maxChars`? | Min, max, mean, then one character per column (`height - min`, 0-9 then a-z); when the range is over 35, numbers per column with runs as `v*n` and repeated rows as `(xN)` | `maxChars` |
 
-| `world_render` | `region` (up to 16,000,000 blocks; read in protocol-sized pieces and stitched), `view`? (`iso`; also `top`, `north`, `south`, `east`, `west`, `iso-ne`/`nw`/`sw`/`se`, `eye x,y,z look x,y,z`, `eye x,y,z yaw N pitch N`), `size`? (512, 64 to 1568), `entities`? (true) | A PNG as MCP image content, drawn by `msc-renderer` with the pack's textures, plus a caption: view, pixels per block, image size and token estimate, visible blocks, numbered magenta markers for entities (type and name; a text display's text) with their positions, and the path of the copy saved under `<workspace>/.msc/renders/` | image about 330 tokens at 512 px, caption 2 to 3 lines |
+| `world_render` | `region` (up to 16,000,000 blocks; read in protocol-sized pieces and stitched), `view`? (`iso`; also `top`, `north`, `south`, `east`, `west`, `iso-ne`/`nw`/`sw`/`se`, `eye x,y,z look x,y,z`, `eye x,y,z yaw N pitch N`), `size`? (512, 64 to 1568), `entities`? (true) | A PNG as MCP image content, drawn by `msc-renderer` with the pack's textures, plus a caption: view, pixels per block, image size and token estimate, visible blocks, numbered markers for entities coloured by kind (player, hostile, creature, object), hologram text drawn in the image (text displays, named armor stands), markers behind blocks drawn hollow, with positions; isometric views label their corners with block coordinates, and the path of the copy saved under `<workspace>/.msc/renders/` | image about 330 tokens at 512 px, caption 2 to 3 lines |
 
 A 16 x 16 slice costs about 70 tokens per layer; identical and uniform layers cost one line each.
 
@@ -85,7 +86,7 @@ A 16 x 16 slice costs about 70 tokens per layer; identical and uniform layers co
 
 ## Text structure format
 
-Used by `world_slice` (output) and `build_structure` (input), so a slice can be edited and written back.
+Used by `world_slice` (output) and `build_batch` `structure` steps (input), so a slice can be edited and written back.
 
 ```
 legend: .=air #=stone_bricks g=glass
@@ -99,30 +100,25 @@ y=66 all #
 
 - One character per block. Rows run from the lowest Z (top row) to the highest; columns from the lowest X (left) to the highest.
 - `.` is air and `_` means "leave unchanged", unless the legend redefines them.
-- Layers are listed by Y. In `build_structure` the numbers only give the order: the lowest layer is placed at the `at` position.
+- Layers are listed by Y. In a `structure` step the numbers only give the order: the lowest layer is placed at the step's position.
 - `y=N same as y=M` repeats a layer; `y=N all #` fills a layer with one symbol or block.
 - Symbols are handed out by frequency. With `states=false` (default) blocks that differ only in properties share a symbol.
 
 ## Building
 
-Every build tool answers `edit eN: <count> blocks changed`. The id undoes the whole edit, even when the core split it into several agent calls.
+`build_batch` answers `edit eN: <count> blocks changed, region <box>`, plus a `blocks:` line when it placed more than one kind. The id undoes the whole edit, even when the core split it into several agent calls.
 
 | Tool | Arguments | Notes |
 | --- | --- | --- |
-| `build_fill` | `region`, `block`, `shape`? (`solid`, `hollow`: shell with air inside, `outline`: shell with inside kept, `walls`: four sides only), `replace`? (list); one edit id for all parts | Up to 8,388,608 blocks |
-| `build_set` | `blocks` (list of `"x,y,z block"`), `physics`? (false) | For details such as doors and torches |
-| `build_structure` | `at`, `structure`, `physics`? (false) | Text structure format, up to 1,048,576 blocks |
-| `build_copy` | `region`, `to`, `air`? (true) | Reads everything first, so source and target may overlap |
 | `build_undo` | `edit`? (default: most recent) | Edits are remembered for the life of the core process |
-| `build_batch` | `steps` (one per line), `dryRun`? (false), `physics`? (false) | Fills, rooms, `cylinder`, `ring`, `disc`, `sphere`, `dome`, `line`, `bands`, stamped `structure`s; weighted mixes such as `grass_block:78,moss_block:10`; checks every name first; one undo id. See [ADR 0015](adr/0015-build-batch.md) |
+| `build_batch` | `steps` (one per line), `dryRun`? (false), `physics`? (false) | The one build tool: `fill` (solid, `hollow`, `outline`, `walls`), `set`, `cylinder`, `ring`, `disc`, `sphere`, `dome`, `line`, `bands`, stamped `structure`s (inline text or `file=` `.schem`/text), `copy` (reads the world before the call, so source and target may overlap); weighted mixes such as `grass_block:78,moss_block:10`; checks every name first; one undo id; up to 8,388,608 blocks. See [ADR 0015](adr/0015-build-batch.md) and [ADR 0019](adr/0019-smaller-tool-surface.md) |
 | `structure_save` | `region`, `file` | Sponge schematic v2 (`.schem`), blocks only |
-| `structure_load` | `file`, `at`, `air`? (true) | Reads Sponge v2 and v3, blocks only |
 
 ## Play-testing
 
 | Tool | Arguments | Notes |
 | --- | --- | --- |
-| `player_test` | `actions` (list, one per entry: `goto x,y,z [sprint] [jump]`, `forward ticks [sprint] [jump]`, `jump`, `look yaw pitch`, `lookat x,y,z`, `wait ticks`, `use`, `use x,y,z`, `attack`, `slot 1-9`, `say text`, `/command`, `tp x,y,z`, `entities`), `name`? (MscTester), `gamemode`? (survival), `leave`? (false) | A headless client joins the running dev server (offline mode), is made op and put in the game mode, then runs the actions. Each action gets a result line; chat, titles, damage, deaths, respawns, server corrections and the pack offer are listed under it. Ends with position, health and food. Stays joined between calls. Movement copies vanilla (walk 4.3, sprint 5.6 blocks/s, jump 1.25); see [ADR 0016](adr/0016-test-player.md) for what is not simulated |
+| `player_test` | `actions` (list, one per entry: `goto x,y,z [sprint] [jump]`, `forward ticks [sprint] [jump]`, `jump`, `look yaw pitch`, `lookat x,y,z`, `wait ticks`, `use`, `use x,y,z`, `attack`, `slot 1-9`, `say text`, `/command`, `tp x,y,z`, `entities`), `name`? (MscTester), `gamemode`? (survival), `leave`? (false) | A headless client joins the running dev server (offline mode, Minecraft 26.3 or 26.2, picked from the server's own answer), is made op and put in the game mode where the server has those commands, then runs the actions. Being kicked, while joining or during the actions, makes the call fail with the reason. Each action gets a result line; chat, titles, damage, deaths, respawns, server corrections and the pack offer are listed under it. Ends with position, health and food. Stays joined between calls. Movement copies vanilla (walk 4.3, sprint 5.6 blocks/s, jump 1.25); see [ADR 0016](adr/0016-test-player.md) for what is not simulated |
 
 ## Textures and resource pack
 

@@ -58,7 +58,6 @@ import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.Serverbound
 import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.ServerboundClientCommandPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.ServerboundClientTickEndPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.ServerboundPlayerLoadedPacket;
-import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.level.ServerboundAcceptTeleportationPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.level.ServerboundChunkBatchReceivedPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.level.ServerboundPlayerInputPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.player.ServerboundAttackPacket;
@@ -72,9 +71,7 @@ import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.player.Serv
  * A headless player on the dev server: an offline-mode client that moves with its own physics against blocks read
  * through the agent, sends what a real client sends each tick, and records what the server tells it.
  */
-public final class TestPlayer implements AutoCloseable {
-    /** The Minecraft version this player speaks; it cannot join a server on another version. */
-    public static final String MINECRAFT_VERSION = MinecraftCodec.CODEC.getMinecraftVersion();
+public final class TestPlayer implements Bot {
     /** A tracked entity near the player. */
     record Tracked(String type, double x, double y, double z) {
     }
@@ -121,26 +118,43 @@ public final class TestPlayer implements AutoCloseable {
         TestPlayer p = new TestPlayer(name, host, port, blocks);
         p.session.addListener(p.new Listener());
         p.session.connect(true);
-        // A kick during login also ends the wait, so check for it too.
+        // A kick also releases the latch, so check for one: being turned away is not a join.
         if (!p.spawned.await(timeout.toMillis(), TimeUnit.MILLISECONDS) || p.disconnect != null) {
             String why = p.disconnect;
             p.close();
-            throw new IllegalStateException("could not join " + host + ":" + port + " as " + name
-                    + (why != null ? ": " + why : " within " + timeout.toSeconds() + "s"));
+            throw new IllegalStateException((why != null ? "kicked while joining " : "could not join ") + host + ":"
+                    + port + " as " + name + (why != null ? ": " + why : " within " + timeout.toSeconds() + "s"));
         }
         p.ticker.scheduleAtFixedRate(p::tick, 50, 50, TimeUnit.MILLISECONDS);
         return p;
     }
 
+    /** The protocol number of the MCProtocolLib this class was loaded with, such as 777. */
+    public static int protocolVersion() {
+        return MinecraftCodec.CODEC.getProtocolVersion();
+    }
+
+    /** The Minecraft version of the MCProtocolLib this class was loaded with, such as 26.3. */
+    public static String minecraftVersion() {
+        return MinecraftCodec.CODEC.getMinecraftVersion();
+    }
+
+    @Override
     public String name() {
         return name;
     }
 
+    @Override
+    public String disconnectReason() {
+        return disconnect;
+    }
+
+    @Override
     public boolean connected() {
         return disconnect == null && session.isConnected();
     }
 
-    /** Run script lines and report what happened, one line per step plus what the server said. */
+    @Override
     public String run(List<String> lines, String world) throws InterruptedException {
         List<Script.Step> steps = new ArrayList<>();
         for (String line : lines) {
@@ -394,8 +408,9 @@ public final class TestPlayer implements AutoCloseable {
                         p.getMoveY(), p.getMoveZ());
                 case ClientboundTeleportEntityPacket p -> placeEntity(p.getId(), p.getPosition());
                 case ClientboundEntityPositionSyncPacket p -> {
-                    if (p.getEndPosition() != null) {
-                        placeEntity(p.getId(), p.getEndPosition());
+                    Vector3d end = Compat.syncPosition(p);
+                    if (end != null) {
+                        placeEntity(p.getId(), end);
                     }
                 }
                 default -> {
@@ -408,6 +423,13 @@ public final class TestPlayer implements AutoCloseable {
             disconnect = Text.plain(event.getReason());
             event("[disconnected] " + disconnect);
             spawned.countDown();
+            synchronized (TestPlayer.this) {
+                // End the running step now rather than when it times out.
+                if (current != null) {
+                    current.finish("stopped: disconnected");
+                    current = null;
+                }
+            }
         }
     }
 
@@ -439,7 +461,7 @@ public final class TestPlayer implements AutoCloseable {
             body.vz = rel.contains(PositionElement.DELTA_Z) ? body.vz + d.getZ() : d.getZ();
             yaw = rel.contains(PositionElement.Y_ROT) ? yaw + p.getYRot() : p.getYRot();
             pitch = rel.contains(PositionElement.X_ROT) ? pitch + p.getXRot() : p.getXRot();
-            session.send(new ServerboundAcceptTeleportationPacket(p.getId(), body.x, body.y, body.z, yaw, pitch));
+            session.send(Compat.acceptTeleport(p.getId(), body.x, body.y, body.z, yaw, pitch));
             if (!positioned) {
                 positioned = true;
                 session.send(ServerboundPlayerLoadedPacket.INSTANCE);

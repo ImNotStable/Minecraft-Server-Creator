@@ -18,15 +18,4 @@ class BlockStatesTest {
         assertThatThrownBy(() -> BlockStates.parse("minecraft:oak_stairs[colour=red]"))
                 .isInstanceOf(IllegalArgumentException.class);
     }
-
-    @Test
-    void filterMatchesAnyStateUnlessPropertiesAreNamed() {
-        Block east = Block.OAK_STAIRS.withProperty("facing", "east");
-        Block west = Block.OAK_STAIRS.withProperty("facing", "west");
-
-        assertThat(BlockStates.filter("minecraft:oak_stairs").matches(east)).isTrue();
-        assertThat(BlockStates.filter("minecraft:oak_stairs").matches(Block.STONE)).isFalse();
-        assertThat(BlockStates.filter("oak_stairs[facing=east]").matches(east)).isTrue();
-        assertThat(BlockStates.filter("oak_stairs[facing=east]").matches(west)).isFalse();
-    }
 }

@@ -2,6 +2,7 @@ package io.github.imnotstable.msc.core;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -29,11 +30,14 @@ class PlayerToolsTest {
     }
 
     @Test
-    void saysSoWhenTheServerIsAnotherMinecraftVersion() throws Exception {
+    void leavesTheVersionCheckToTheServerPing() throws Exception {
+        // A 26.2 server (Minestom) is no longer refused up front: the test player pings it and picks its client.
         try (CoreHarness h = new CoreHarness(workspace).withAgent()) {
             h.agent.minecraft = "26.2";
+            Files.createDirectories(h.core.config().serverDir());
+            Files.writeString(h.core.config().serverDir().resolve("server.properties"), "server-port=1\n");
             assertThat(h.error("player_test", "actions", List.of("jump")))
-                    .contains("Minecraft 26.2", "speaks " + io.github.imnotstable.msc.bot.TestPlayer.MINECRAFT_VERSION);
+                    .contains("no Minecraft server answers at 127.0.0.1:1");
         }
     }
 }

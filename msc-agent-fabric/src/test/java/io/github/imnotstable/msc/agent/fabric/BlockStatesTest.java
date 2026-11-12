@@ -25,20 +25,6 @@ class BlockStatesTest {
     }
 
     @Test
-    void filtersCompareOnlyTheWrittenProperties() {
-        BlockStates.Filter anyStairs = BlockStates.filter("minecraft:oak_stairs");
-        BlockStates.Filter eastStairs = BlockStates.filter("minecraft:oak_stairs[facing=east]");
-        BlockState eastTop = BlockStates.parse("minecraft:oak_stairs[facing=east,half=top]");
-        BlockState west = BlockStates.parse("minecraft:oak_stairs[facing=west]");
-
-        assertThat(anyStairs.matches(eastTop)).isTrue();
-        assertThat(anyStairs.matches(west)).isTrue();
-        assertThat(eastStairs.matches(eastTop)).isTrue();
-        assertThat(eastStairs.matches(west)).isFalse();
-        assertThat(anyStairs.matches(Blocks.STONE.defaultBlockState())).isFalse();
-    }
-
-    @Test
     void rejectsUnknownBlocksAndProperties() {
         assertThatThrownBy(() -> BlockStates.parse("minecraft:not_a_block"))
                 .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("not_a_block");

@@ -137,42 +137,13 @@ public final class Ops {
 
     // ---- world: write ---------------------------------------------------------------------
 
-    /** Fill a region with one block, optionally only where the current block matches {@code onlyReplace}. */
-    public static final OpSpec<FillParams, EditResult> WORLD_FILL =
-            new OpSpec<>("world.fill", FillParams.class, EditResult.class);
-
-    /** {@code onlyReplace} may be null or empty to replace everything. */
-    public record FillParams(Region region, String state, List<String> onlyReplace) {
-        public FillParams {
-            Objects.requireNonNull(region, "region");
-            Objects.requireNonNull(state, "state");
-        }
-    }
-
-    /** Write a palette grid; cells set to -1 are left as they are. Used for paste, schematics and text structures. */
+    /** Write a palette grid; cells set to -1 are left as they are. The one block-writing op: every build is a grid. */
     public static final OpSpec<WriteParams, EditResult> WORLD_WRITE =
             new OpSpec<>("world.write", WriteParams.class, EditResult.class);
 
     public record WriteParams(BlockGrid grid, boolean updatePhysics) {
         public WriteParams {
             Objects.requireNonNull(grid, "grid");
-        }
-    }
-
-    /** Set individual blocks. */
-    public static final OpSpec<SetBlocksParams, EditResult> WORLD_SET_BLOCKS =
-            new OpSpec<>("world.setBlocks", SetBlocksParams.class, EditResult.class);
-
-    public record SetBlocksParams(String world, List<BlockChange> changes, boolean updatePhysics) {
-        public SetBlocksParams {
-            Objects.requireNonNull(world, "world");
-            Objects.requireNonNull(changes, "changes");
-        }
-    }
-
-    public record BlockChange(int x, int y, int z, String state) {
-        public BlockChange {
-            Objects.requireNonNull(state, "state");
         }
     }
 
@@ -215,7 +186,7 @@ public final class Ops {
     /** All operations, for capability lists and dispatch tables. */
     public static final List<OpSpec<?, ?>> ALL = List.of(
             SERVER_INFO, SERVER_COMMAND, WORLD_READ, WORLD_ENTITIES, WORLD_HEIGHTMAP,
-            WORLD_FILL, WORLD_WRITE, WORLD_SET_BLOCKS, WORLD_UNDO, PACK_APPLY);
+            WORLD_WRITE, WORLD_UNDO, PACK_APPLY);
 
     /** Operation names, in the same order as {@link #ALL}. */
     public static List<String> names() {

@@ -77,7 +77,7 @@ class BuildToolsTest {
 
     @Test
     void replaceOnlyTouchesMatchingBlocks() {
-        h.ok("build_fill", "region", "0,64,0 0,64,0", "block", "glass");
+        h.ok("build_batch", "steps", "set 0,64,0 glass");
         String out = h.ok("build_batch", "steps", "disc 0,64,0 r=1 sand replace=air");
         assertThat(out).contains("8 blocks changed");
         assertThat(h.agent.get(0, 64, 0)).isEqualTo("minecraft:glass");

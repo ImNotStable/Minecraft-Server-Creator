@@ -10,7 +10,8 @@ import java.util.List;
  * Reads the final result Claude Code prints. Handles {@code --output-format json} as one result
  * object or as an array of events (Claude Code 2.1+), and {@code stream-json} (one event per line).
  * The last event with {@code "type":"result"} wins; the model comes from the result's
- * {@code modelUsage} or the {@code system/init} event.
+ * {@code modelUsage} or the {@code system/init} event, which also lists the MCP servers that were
+ * connected when the session started.
  */
 public final class ClaudeResultParser {
 
@@ -21,7 +22,17 @@ public final class ClaudeResultParser {
         List<JsonObject> events = events(stdout.strip());
         JsonObject result = null;
         String model = "";
+        List<String> mcpConnected = new ArrayList<>();
         for (JsonObject o : events) {
+            if (o.has("mcp_servers") && o.get("mcp_servers").isJsonArray()) {
+                for (JsonElement e : o.getAsJsonArray("mcp_servers")) {
+                    JsonObject server = e.isJsonObject() ? e.getAsJsonObject() : new JsonObject();
+                    if (server.has("name") && server.has("status")
+                            && "connected".equals(server.get("status").getAsString())) {
+                        mcpConnected.add(server.get("name").getAsString());
+                    }
+                }
+            }
             if (isResult(o)) {
                 result = o;
             } else if (model.isEmpty() && o.has("model") && o.get("model").isJsonPrimitive()) {
@@ -47,7 +58,8 @@ public final class ClaudeResultParser {
                 result.has("modelUsage") && result.get("modelUsage").isJsonObject()
                         && !result.getAsJsonObject("modelUsage").isEmpty()
                         ? String.join(",", result.getAsJsonObject("modelUsage").keySet())
-                        : model);
+                        : model,
+                mcpConnected);
     }
 
     private static List<JsonObject> events(String text) {

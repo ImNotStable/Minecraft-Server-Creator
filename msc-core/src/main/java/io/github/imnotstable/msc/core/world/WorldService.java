@@ -7,7 +7,6 @@ import io.github.imnotstable.msc.protocol.Limits;
 import io.github.imnotstable.msc.protocol.op.Ops;
 import io.github.imnotstable.msc.protocol.transport.CoreServer;
 import io.github.imnotstable.msc.protocol.world.BlockGrid;
-import io.github.imnotstable.msc.protocol.world.BlockPos;
 import io.github.imnotstable.msc.protocol.world.Region;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -23,7 +22,7 @@ import java.util.TreeMap;
 public final class WorldService {
     /** Largest area one view may cover per layer; beyond this a text grid stops being readable. */
     public static final int MAX_VIEW_SIDE = 128;
-    /** Largest region {@code world_summary} and {@code build_copy} accept. */
+    /** Largest region {@code world_summary} and {@code build_batch} accept. */
     public static final long MAX_BULK_VOLUME = 8L * Limits.MAX_REGION_VOLUME;
 
     private final AgentHub hub;
@@ -375,144 +374,6 @@ public final class WorldService {
         String id = "e" + (++editCounter);
         edits.put(id, agentEdits);
         return id;
-    }
-
-    private static String done(String id, long changed) {
-        return "edit " + id + ": " + changed + " blocks changed";
-    }
-
-    public String fill(Region region, String block, List<String> onlyReplace) throws InterruptedException {
-        return fill(region, block, onlyReplace, "solid");
-    }
-
-    /** Shapes build_fill can make, as in vanilla /fill plus walls. */
-    public static final List<String> SHAPES = List.of("solid", "hollow", "outline", "walls");
-
-    /**
-     * Fill a region in a shape: {@code solid}; {@code hollow} (shell, air inside); {@code outline} (shell, inside
-     * kept); {@code walls} (the four sides, no floor or roof). One edit id covers every part.
-     */
-    public String fill(Region region, String block, List<String> onlyReplace, String shape) throws InterruptedException {
-        if (region.volume() > MAX_BULK_VOLUME) {
-            throw new ToolException("region has " + region.volume() + " blocks; build_fill takes at most " + MAX_BULK_VOLUME);
-        }
-        List<String> replace = onlyReplace.isEmpty() ? null : onlyReplace.stream().map(BlockNames::full).toList();
-        String state = BlockNames.full(block);
-        List<Ops.FillParams> fills = new ArrayList<>();
-        for (Region part : shapeParts(region, shape)) {
-            fills.add(new Ops.FillParams(part, state, replace));
-        }
-        if (shape.equals("hollow")) {
-            Region inside = inside(region);
-            if (inside != null) {
-                fills.add(new Ops.FillParams(inside, "minecraft:air", null));
-            }
-        }
-        List<String> ids = new ArrayList<>();
-        long changed = 0;
-        for (Ops.FillParams f : fills) {
-            for (Region part : Coords.split(f.region())) {
-                Ops.EditResult r = hub.call(Ops.WORLD_FILL, new Ops.FillParams(part, f.state(), f.onlyReplace()));
-                ids.add(r.editId());
-                changed += r.changed();
-            }
-        }
-        return done(remember(ids), changed);
-    }
-
-    /** The boxes that make up a shape, without overlaps. */
-    static List<Region> shapeParts(Region r, String shape) {
-        if (!SHAPES.contains(shape)) {
-            throw new ToolException("shape must be " + String.join(", ", SHAPES));
-        }
-        String w = r.world();
-        BlockPos a = r.min();
-        BlockPos b = r.max();
-        if (shape.equals("solid") || inside(r) == null && !shape.equals("walls")) {
-            return List.of(r); // too thin to have an inside: the shell is the whole box
-        }
-        List<Region> parts = new ArrayList<>();
-        int y1 = a.y();
-        int y2 = b.y();
-        if (!shape.equals("walls")) {
-            parts.add(Region.of(w, a.x(), a.y(), a.z(), b.x(), a.y(), b.z()));
-            if (b.y() > a.y()) {
-                parts.add(Region.of(w, a.x(), b.y(), a.z(), b.x(), b.y(), b.z()));
-            }
-            y1 = a.y() + 1;
-            y2 = b.y() - 1;
-            if (y1 > y2) {
-                return parts;
-            }
-        }
-        // Sides: full-width faces at min and max z, then the x faces between them.
-        parts.add(Region.of(w, a.x(), y1, a.z(), b.x(), y2, a.z()));
-        if (b.z() > a.z()) {
-            parts.add(Region.of(w, a.x(), y1, b.z(), b.x(), y2, b.z()));
-        }
-        if (b.z() - a.z() >= 2) {
-            parts.add(Region.of(w, a.x(), y1, a.z() + 1, a.x(), y2, b.z() - 1));
-            if (b.x() > a.x()) {
-                parts.add(Region.of(w, b.x(), y1, a.z() + 1, b.x(), y2, b.z() - 1));
-            }
-        }
-        return parts;
-    }
-
-    /** The box one block in from every face, or null when there is none. */
-    static Region inside(Region r) {
-        BlockPos a = r.min();
-        BlockPos b = r.max();
-        if (b.x() - a.x() < 2 || b.y() - a.y() < 2 || b.z() - a.z() < 2) {
-            return null;
-        }
-        return Region.of(r.world(), a.x() + 1, a.y() + 1, a.z() + 1, b.x() - 1, b.y() - 1, b.z() - 1);
-    }
-
-    public String set(String world, List<Ops.BlockChange> changes, boolean physics) throws InterruptedException {
-        Ops.EditResult r = hub.call(Ops.WORLD_SET_BLOCKS, new Ops.SetBlocksParams(world, changes, physics));
-        return done(remember(List.of(r.editId())), r.changed());
-    }
-
-    public String write(BlockGrid grid, boolean physics) throws InterruptedException {
-        Ops.EditResult r = hub.call(Ops.WORLD_WRITE, new Ops.WriteParams(grid, physics));
-        Region g = grid.region();
-        return done(remember(List.of(r.editId())), r.changed()) + ", region " + Coords.show(g);
-    }
-
-    public String copy(Region source, BlockPos to, boolean copyAir) throws InterruptedException {
-        if (source.volume() > MAX_BULK_VOLUME) {
-            throw new ToolException("region has " + source.volume() + " blocks; build_copy takes at most " + MAX_BULK_VOLUME);
-        }
-        int dx = to.x() - source.min().x();
-        int dy = to.y() - source.min().y();
-        int dz = to.z() - source.min().z();
-        // Read everything before writing so overlapping source and target work.
-        List<BlockGrid> parts = new ArrayList<>();
-        for (Region part : Coords.split(source)) {
-            parts.add(hub.call(Ops.WORLD_READ, new Ops.ReadParams(part, false)).grid());
-        }
-        List<String> ids = new ArrayList<>();
-        long changed = 0;
-        for (BlockGrid grid : parts) {
-            Region r = grid.region();
-            int[] blocks = grid.blocks();
-            if (!copyAir) {
-                blocks = blocks.clone();
-                for (int i = 0; i < blocks.length; i++) {
-                    if (blocks[i] >= 0 && BlockNames.isAir(grid.palette().get(blocks[i]))) {
-                        blocks[i] = -1;
-                    }
-                }
-            }
-            Region target = new Region(r.world(), r.min().offset(dx, dy, dz), r.max().offset(dx, dy, dz));
-            Ops.EditResult e = hub.call(Ops.WORLD_WRITE,
-                    new Ops.WriteParams(new BlockGrid(target, grid.palette(), blocks), false));
-            ids.add(e.editId());
-            changed += e.changed();
-        }
-        Region all = new Region(source.world(), source.min().offset(dx, dy, dz), source.max().offset(dx, dy, dz));
-        return done(remember(ids), changed) + ", region " + Coords.show(all);
     }
 
     /** Undo one edit, or the most recent one when {@code id} is null. */

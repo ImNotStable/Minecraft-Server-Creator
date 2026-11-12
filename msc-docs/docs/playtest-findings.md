@@ -120,7 +120,7 @@ EULA wait on Minestom. The game's own test environment replaced polling: no `ser
 **Friction, worst first.**
 1. **`player_test` cannot join Minestom.** The test player speaks 26.3 and Minestom is 26.2, so it is kicked at login,
    yet the tool said "joined as MscTester (survival, op)" first. Fixed in the PR with this doc: the tool now says the
-   versions differ before trying, and a kick at login is an error. Accepting any protocol on the server does not help
+   versions differ before trying, and a kick at login is an error. Then #30 made it join 26.2 servers: it pings the server and loads MCProtocolLib 26.2 in its own class loader (ADR 0016). Accepting any protocol on the server does not help
    (the configuration packets differ). The trials were verified instead with Minestom's `@EnvTest` players, ticking
    the real server: lighthouse flood, four raid waves, breath, boss shield. That worked well and is worth
    recommending for Minestom.
@@ -129,7 +129,8 @@ EULA wait on Minestom. The game's own test environment replaced polling: no `ser
 3. **`project_scaffold` refused the workspace** after `msc_workspace` or `server_setup` had created `.msc`. Fixed: `.msc`
    no longer counts as content.
 4. **The bridge is still needed** for a fresh install: the session's own MSC is pinned to the old install, so
-   `msc_workspace` cannot help until Claude Code restarts. Open.
+   `msc_workspace` cannot help until Claude Code restarts. Fixed by the `msc` plugin (ADR 0021): it starts the
+   newest install, so `/mcp` reconnect picks up a fresh install and no bridge is needed.
 5. **`msc_status` says "server: stopped"** for a server detached by an earlier core, while `server_stop` finds and
    stops it. Open, small.
 6. **`api_class` hides inherited interface constants**: `MinecraftServer.PROTOCOL_VERSION`, `Attribute.SCALE` and

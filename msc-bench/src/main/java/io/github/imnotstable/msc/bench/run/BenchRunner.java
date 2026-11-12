@@ -59,7 +59,7 @@ public final class BenchRunner {
             for (int repeat = 1; repeat <= repeats; repeat++) {
                 for (String mode : modes) {
                     log.printf("[%s] %s #%d ...%n", mode, task.id(), repeat);
-                    RunRecord record = runOne(task, mode, repeat);
+                    RunRecord record = runWithMcpRetries(task, mode, repeat);
                     records.add(record);
                     Files.writeString(runDir.resolve(RESULTS_FILE), GSON.toJson(record) + "\n",
                             StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.APPEND);
@@ -74,9 +74,28 @@ public final class BenchRunner {
         return records;
     }
 
-    RunRecord runOne(TaskDef task, String modeName, int repeat) throws IOException {
+    /** Tries per attempt when the mode's required MCP server was not connected at start. */
+    static final int MCP_TRIES = 3;
+
+    private RunRecord runWithMcpRetries(TaskDef task, String modeName, int repeat) throws IOException {
+        String required = config.modes().get(modeName).requireMcp();
+        RunRecord record = null;
+        for (int attempt = 1; attempt <= MCP_TRIES; attempt++) {
+            record = runOne(task, modeName, repeat, attempt);
+            if (required == null || record.error() != null || record.agent().mcpConnected().contains(required)) {
+                return record;
+            }
+            log.printf("[%s] %s #%d: MCP server %s was not connected when the agent started (try %d of %d)%n",
+                    modeName, task.id(), repeat, required, attempt, MCP_TRIES);
+        }
+        return record.failed("MCP server " + required + " was not connected when the agent started, "
+                + MCP_TRIES + " tries");
+    }
+
+    RunRecord runOne(TaskDef task, String modeName, int repeat, int attempt) throws IOException {
         BenchConfig.Mode mode = config.modes().get(modeName);
-        Path attemptDir = runDir.resolve("attempts").resolve(task.id()).resolve(modeName + "-" + repeat).toAbsolutePath();
+        String name = modeName + "-" + repeat + (attempt > 1 ? "-try" + attempt : "");
+        Path attemptDir = runDir.resolve("attempts").resolve(task.id()).resolve(name).toAbsolutePath();
         Path workspace = attemptDir.resolve("workspace");
         String startedAt = Instant.now().toString();
         Map<String, String> values = placeholders(attemptDir, workspace);

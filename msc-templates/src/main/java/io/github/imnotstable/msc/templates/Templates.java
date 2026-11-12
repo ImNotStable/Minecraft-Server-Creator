@@ -36,6 +36,16 @@ public final class Templates {
     public static final String PAPER_SERVER = "paper-server";
     /** A Minestom server project with the msc agent built in, tests and conventions. No EULA step. */
     public static final String MINESTOM_SERVER = "minestom-server";
+    /**
+     * A Minestom minigame server: {@link #MINESTOM_SERVER} plus a game base (kit, adventure mode, stage respawns,
+     * frozen time, saved progress) and a {@code /game} admin command. No EULA step.
+     */
+    public static final String MINESTOM_GAME = "minestom-game";
+    /**
+     * A Fabric minigame mod: {@link #FABRIC_MOD} plus a game base (kit, adventure mode, keep inventory, stage
+     * respawns, no natural spawns, fixed time, saved progress) and a {@code /game} admin command.
+     */
+    public static final String FABRIC_GAME = "fabric-game";
 
     private static final String ROOT = "msc/templates/";
     private static final String TEMPLATE_SUFFIX = ".tmpl";

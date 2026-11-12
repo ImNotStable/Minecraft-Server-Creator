@@ -45,7 +45,8 @@ class ResultParsingTest {
     @Test
     void readsTheJsonArrayOfEventsFromNewerClaudeCode() {
         AgentResult r = ClaudeResultParser.parse("""
-                [{"type":"system","subtype":"init","model":"claude-opus-4-7"},
+                [{"type":"system","subtype":"init","model":"claude-opus-4-7",
+                  "mcp_servers":[{"name":"msc","status":"connected"},{"name":"other","status":"failed"}]},
                  {"type":"assistant","message":{"content":[]}},
                  {"type":"result","is_error":false,"num_turns":10,"total_cost_usd":0.51,
                   "usage":{"input_tokens":12,"cache_creation_input_tokens":20000,"cache_read_input_tokens":300000,"output_tokens":5237}}]
@@ -56,6 +57,7 @@ class ResultParsingTest {
         assertThat(r.outputTokens()).isEqualTo(5237);
         assertThat(r.totalTokens()).isEqualTo(325249);
         assertThat(r.model()).isEqualTo("claude-opus-4-7");
+        assertThat(r.mcpConnected()).containsExactly("msc");
     }
 
     @Test

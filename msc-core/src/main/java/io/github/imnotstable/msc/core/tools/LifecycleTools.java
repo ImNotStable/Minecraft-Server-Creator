@@ -3,6 +3,7 @@ package io.github.imnotstable.msc.core.tools;
 import io.github.imnotstable.msc.core.CoreConfig;
 import io.github.imnotstable.msc.core.agent.AgentHub;
 import io.github.imnotstable.msc.core.server.LogBuffer;
+import io.github.imnotstable.msc.core.server.MachineEula;
 import io.github.imnotstable.msc.core.server.LogCondenser;
 import io.github.imnotstable.msc.core.server.FabricDownloader;
 import io.github.imnotstable.msc.core.server.PaperDownloader;
@@ -31,6 +32,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
@@ -126,6 +128,12 @@ public final class LifecycleTools {
                         .opt("timeoutSeconds", "integer", "Default 60"), t::await);
     }
 
+    /** The one-time, per-machine alternative to asking for every server (ADR 0020). Only the owner can run it. */
+    private String oneTimeHint() {
+        return " To never be asked again on this machine, they can instead run once in their own terminal: "
+                + MachineEula.acceptCommand(config.installDir());
+    }
+
     private String scaffold(Args args) throws IOException {
         String name = args.str("name");
         Path dir = config.resolve(args.str("dir", "."));
@@ -162,8 +170,14 @@ public final class LifecycleTools {
         if (platform != null && platform.needsEula()
                 && !Files.exists(config.serverDir().resolve(platform.serverJar()))) {
             // The server is not set up yet: a first dev_cycle would build for nothing and then stop there.
-            out.append("\nnext: ").append(EULA_QUESTION).append("\nOn yes: server_setup acceptEula=true, then edit "
-                    + "the code and dev_cycle");
+            Optional<MachineEula.Acceptance> machine = MachineEula.read(config.eulaFile());
+            if (machine.isPresent()) {
+                out.append("\nnext: server_setup (the Minecraft EULA is accepted for this machine by ")
+                        .append(machine.get().describe()).append("), then edit the code and dev_cycle");
+            } else {
+                out.append("\nnext: ").append(EULA_QUESTION).append(oneTimeHint())
+                        .append("\nOn yes: server_setup acceptEula=true, then edit the code and dev_cycle");
+            }
         } else {
             out.append("\nnext: edit the code, then dev_cycle");
         }
@@ -266,8 +280,13 @@ public final class LifecycleTools {
         if (acceptEula && Files.exists(eula) && !ServerManager.eulaAccepted(eula)) {
             Files.writeString(eula, Files.readString(eula).replaceAll("(?m)^eula=false[ \t]*$", "eula=true"));
         }
-        if (!ServerManager.eulaAccepted(eula)) {
+        Optional<MachineEula.Acceptance> machine = MachineEula.applyTo(config.eulaFile(), eula);
+        if (machine.isPresent()) {
+            out.append("eula.txt has eula=true from the owner's one-time acceptance for this machine (")
+                    .append(machine.get().describe()).append(")\n");
+        } else if (!ServerManager.eulaAccepted(eula)) {
             out.append("the Minecraft EULA is not accepted, so server_start refuses. Next: ").append(EULA_QUESTION)
+                    .append(oneTimeHint())
                     .append("\nOn yes: server_setup acceptEula=true (or set eula=true in ").append(eula).append(")\n");
         } else {
             out.append("note: eula.txt has eula=true; running the server means the user agrees to https://aka.ms/MinecraftEULA\n");
