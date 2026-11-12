@@ -17,7 +17,7 @@ The AI talks to `msc-core` over MCP (stdio). This page lists every tool, its arg
 
 ## Typical loop
 
-`project_scaffold` once, `server_setup` once, then edit code and call `dev_cycle` until it reports `no errors or warnings`. Look names up with `api_search` instead of guessing. Look at the world with `world_summary`, then `world_slice`; build with `build_structure`.
+`project_scaffold` once, `server_setup` once, then edit code and call `dev_cycle` until it reports `no errors or warnings`. Look names up with `api_search` instead of guessing. Look at the world with `world_summary`, then `world_slice`; build with `build_structure`, and use `build_batch` for many steps, round shapes, block mixes and repeated pieces.
 
 ## Status
 
@@ -103,6 +103,7 @@ Every build tool answers `edit eN: <count> blocks changed`. The id undoes the wh
 | `build_structure` | `at`, `structure`, `physics`? (false) | Text structure format, up to 1,048,576 blocks |
 | `build_copy` | `region`, `to`, `air`? (true) | Reads everything first, so source and target may overlap |
 | `build_undo` | `edit`? (default: most recent) | Edits are remembered for the life of the core process |
+| `build_batch` | `steps` (one per line), `dryRun`? (false), `physics`? (false) | Fills, rooms, `cylinder`, `ring`, `disc`, `sphere`, `dome`, `line`, `bands`, stamped `structure`s; weighted mixes such as `grass_block:78,moss_block:10`; checks every name first; one undo id. See [ADR 0015](adr/0015-build-batch.md) |
 | `structure_save` | `region`, `file` | Sponge schematic v2 (`.schem`), blocks only |
 | `structure_load` | `file`, `at`, `air`? (true) | Reads Sponge v2 and v3, blocks only |
 

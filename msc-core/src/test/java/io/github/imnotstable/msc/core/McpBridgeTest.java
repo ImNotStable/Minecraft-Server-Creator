@@ -49,10 +49,12 @@ class McpBridgeTest {
                         "server_start", "server_stop", "server_detach", "dev_cycle", "server_logs", "server_command", "api_search",
                         "api_class", "world_slice", "world_heightmap", "world_render", "world_summary", "build_fill", "build_set",
                         "build_structure", "build_copy", "build_undo", "structure_save", "structure_load",
+                        "build_batch",
                         "texture_create", "texture_generate", "texture_recolor", "texture_animate", "model_create", "texture_view",
                         "pack_check", "pack_build");
                 // The tool list is paid for in every conversation: keep it small.
-                assertThat(listed.toString().length()).isLessThan(14600);
+                // build_batch adds about 1.5k: one tool in place of the generator scripts both playtests wrote.
+                assertThat(listed.toString().length()).isLessThan(16500);
                 JsonObject fill = tools.get(names.indexOf("build_fill")).getAsJsonObject().getAsJsonObject("inputSchema");
                 assertThat(fill.getAsJsonArray("required").toString()).isEqualTo("[\"region\",\"block\"]");
 
