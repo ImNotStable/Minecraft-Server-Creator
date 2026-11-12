@@ -71,11 +71,19 @@ public final class ServerManager implements AutoCloseable {
                     : "Run server_setup first."));
         }
         if (platform.needsEula()) {
-            // The EULA is the user's to accept: eula.txt in the server directory decides, never a flag set here.
+            // The EULA is the user's to accept: eula.txt in the server directory decides, or the owner's own
+            // one-time acceptance for this machine (ADR 0019), never a flag set here.
             Path eula = config.serverDir().resolve("eula.txt");
+            try {
+                MachineEula.applyTo(config.eulaFile(), eula);
+            } catch (IOException e) {
+                throw new ToolException("could not write " + eula + ": " + e.getMessage());
+            }
             if (!eulaAccepted(eula)) {
                 throw new ToolException("the Minecraft EULA is not accepted (no eula=true in " + eula + "): once the "
-                        + "user agrees to https://aka.ms/MinecraftEULA, run server_setup with acceptEula=true");
+                        + "user agrees to https://aka.ms/MinecraftEULA, run server_setup with acceptEula=true. To "
+                        + "never be asked again on this machine, the user runs once in their own terminal: "
+                        + MachineEula.acceptCommand(config.installDir()));
             }
         }
         return platform.launchCommand(config.javaCommand());
