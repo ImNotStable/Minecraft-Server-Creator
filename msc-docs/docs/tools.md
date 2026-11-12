@@ -46,8 +46,8 @@ The workspace has one platform: `paper` (default), `fabric` or `minestom`. `proj
 
 | Platform | `server_setup` installs | Server starts as | `dev_cycle` deploys to | EULA step |
 |---|---|---|---|---|
-| `paper` | `paper.jar`, agent in `plugins/` | `java -Xmx2G -jar paper.jar --nogui` | `plugins/<project>.jar` | yes |
-| `fabric` | `fabric-server-launch.jar` (fetches the Minecraft server on first start), `mods/fabric-api.jar`, agent in `mods/` | `java -Xmx2G -jar fabric-server-launch.jar nogui` | `mods/<project>.jar` | yes |
+| `paper` | `paper.jar`, agent in `plugins/` | `java -Xmx2G -jar paper.jar --nogui` | `plugins/<jar name without version>.jar` | yes |
+| `fabric` | `fabric-server-launch.jar` (fetches the Minecraft server on first start), `mods/fabric-api.jar`, agent in `mods/` | `java -Xmx2G -jar fabric-server-launch.jar nogui` | `mods/<jar name without version>.jar` | yes |
 | `minestom` | nothing (the agent is built into the project) | `java -Xmx1G -jar server.jar` | `server.jar` in the server directory | no |
 
 ## API index
@@ -65,7 +65,7 @@ Built on first use from the platform's jars in the Gradle cache (or `MSC_API_JAR
 | --- | --- | --- | --- |
 | `world_summary` | `region` (up to 8,388,608 blocks) | Size, air share, top 15 block counts, bounds of non-air blocks, non-air count per layer, entity counts | about 6 lines |
 | `world_slice` | `region` (up to 128 wide, 1,048,576 blocks), `states`? (false), `maxChars`? | The region in the text structure format | `maxChars` |
-| `world_heightmap` | `area` (up to 256 x 256), `maxChars`? | Min, max, mean, then one character per column (`height - min`, 0-9 then a-z); plain numbers when the range is over 35 | `maxChars` |
+| `world_heightmap` | `area` (up to 256 x 256), `maxChars`? | Min, max, mean, then one character per column (`height - min`, 0-9 then a-z); when the range is over 35, numbers per column with runs as `v*n` and repeated rows as `(xN)` | `maxChars` |
 
 | `world_render` | `region` (up to 16,000,000 blocks; read in protocol-sized pieces and stitched), `view`? (`iso`; also `top`, `north`, `south`, `east`, `west`, `iso-ne`/`nw`/`sw`/`se`, `eye x,y,z look x,y,z`, `eye x,y,z yaw N pitch N`), `size`? (512, 64 to 1568) | A PNG as MCP image content, drawn by `msc-renderer` with the pack's textures, plus a caption: view, pixels per block, image size and token estimate, visible blocks, and the path of the copy saved under `<workspace>/.msc/renders/` | image about 330 tokens at 512 px, caption 2 to 3 lines |
 

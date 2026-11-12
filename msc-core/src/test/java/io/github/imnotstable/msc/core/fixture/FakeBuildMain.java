@@ -16,9 +16,16 @@ public final class FakeBuildMain {
             System.out.println("\nFAILURE: Build failed with an exception.\n\n* Try:\n> Run with --info.\n\nBUILD FAILED in 1s");
             System.exit(1);
         }
+        // name.txt, when present, renames the project's jar.
+        String name = Files.exists(Path.of("name.txt")) ? Files.readString(Path.of("name.txt")).trim() : "demo";
         Files.createDirectories(Path.of("build", "libs"));
-        Files.writeString(Path.of("build", "libs", "demo-1.0-sources.jar"), "sources");
-        Files.writeString(Path.of("build", "libs", "demo-1.0.jar"), Files.readString(Path.of("version.txt")));
+        try (var old = Files.list(Path.of("build", "libs"))) {
+            for (Path jar : old.toList()) {
+                Files.delete(jar);
+            }
+        }
+        Files.writeString(Path.of("build", "libs", name + "-1.0-sources.jar"), "sources");
+        Files.writeString(Path.of("build", "libs", name + "-1.0.jar"), Files.readString(Path.of("version.txt")));
         System.out.println("BUILD SUCCESSFUL in 1s");
     }
 }
