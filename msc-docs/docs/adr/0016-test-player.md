@@ -14,8 +14,11 @@ The Gearfall playtest built a parkour course and a combat arena through MSC, but
 4. **Blocks come from the agent, not from chunk packets.** The bot reads the 11-block cube around it through `world_read`, refreshed every 10 ticks. That avoids a chunk decoder that changes every Minecraft version, at the cost of only working while the agent is connected, which `player_test` requires anyway.
 5. **Join setup goes through the console.** The tool runs `op <name>` and `gamemode <mode> <name>` (survival by default), so `/command` and `tp` steps work. It joins the address in the server's `server.properties`, and needs `online-mode=false`, which MSC's dev servers already use.
 
+6. **One client per protocol version, chosen by a server list ping.** (Added after the Tidewright playtest, where Minestom ran 26.2 and the 26.3 bot was turned away.) MCProtocolLib supports one Minecraft version per release. The bot is compiled against the newest one. The previous version ships in the install as `bot/<version>/protocol-<version>.jar`, from the catalog's `mcprotocollib-previous`, and is not on the class path. `Bots` pings the server first. If the protocol is not the built-in one, it loads the bot classes again in a child-first class loader with that jar, so they link against the old MCProtocolLib. The core sees the bot only through the shared `Bot` interface. The two calls whose API differs between the versions go through reflection (`Compat`). A server on any other version gets an error naming the versions the bot speaks. ViaVersion-style translation was rejected: it would be a larger dependency than the whole bot. `mcprotocollib-previous` must stay one Minecraft version behind `mcprotocollib`; `BotsTest` fails if a dependency update moves it.
+7. **A kick is an error.** Being turned away while joining fails the join, and being kicked during the actions fails the call. The error leads with the reason and keeps the report up to the kick.
+
 ## Consequences
 
 - One more tool and one more module; the tool-list guard goes up to 15,600 characters.
 - MCProtocolLib must be updated with every Minecraft release, together with Paper. Dependabot sees it through the catalog.
-- Paper-only for now in practice, since only Paper dev servers were checked end to end; the client itself is platform-neutral.
+- Checked end to end on Paper 26.3 and Minestom 26.2. On Minestom there are no `op` or `gamemode` commands, so the player keeps the server's game mode, and the join line says so.
