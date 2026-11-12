@@ -61,6 +61,35 @@ class LifecycleToolsTest {
     }
 
     @Test
+    void aServerLeftRunningByAnEarlierCoreIsStoppedOnlyWhenThePidFileMatches() throws Exception {
+        Process leftover = new ProcessBuilder(java(io.github.imnotstable.msc.core.fixture.SleepMain.class)).start();
+        try {
+            long started = leftover.info().startInstant().orElseThrow().toEpochMilli();
+            Path pidFile = workspace.resolve(".msc/server.pid");
+            Files.createDirectories(pidFile.getParent());
+            Files.writeString(pidFile, leftover.pid() + " " + (started + 1) + "\n");
+            assertThat(h.ok("server_stop")).isEqualTo("server was not running");
+            assertThat(leftover.isAlive()).isTrue();
+
+            Files.writeString(pidFile, leftover.pid() + " " + started + "\n");
+            assertThat(h.ok("server_stop")).isEqualTo("stopped a server left running by an earlier session (pid "
+                    + leftover.pid() + ")");
+            assertThat(leftover.waitFor(10, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+            assertThat(pidFile).doesNotExist();
+        } finally {
+            leftover.destroyForcibly();
+        }
+    }
+
+    @Test
+    void startRemembersTheServerPidAndStopForgetsIt() {
+        h.ok("server_start", "timeoutSeconds", 30);
+        assertThat(workspace.resolve(".msc/server.pid")).content().matches("\\d+ \\d+\n");
+        h.ok("server_stop");
+        assertThat(workspace.resolve(".msc/server.pid")).doesNotExist();
+    }
+
+    @Test
     void failedStartupReturnsTheErrorNotTheWholeLog() throws Exception {
         Files.createDirectories(workspace.resolve("run"));
         Files.writeString(workspace.resolve("run/crash.flag"), "");

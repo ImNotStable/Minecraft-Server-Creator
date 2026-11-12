@@ -27,7 +27,7 @@ public final class LogCondenser {
     /**
      * Entries every dev server prints and the AI can do nothing about: Paper's banners for running as root or
      * administrator and for offline mode (the dev server is offline on purpose), and the system report's oshi
-     * error on some Windows machines. Dropped so a clean start reads {@code no errors or warnings}.
+     * errors and warnings on some Windows machines. Dropped so a clean start reads {@code no errors or warnings}.
      */
     private static final List<Pattern> EXPECTED = List.of(
             Pattern.compile("^\\*+$"),
@@ -36,8 +36,9 @@ public final class LogCondenser {
             Pattern.compile("^\\*+ SERVER IS RUNNING IN OFFLINE/INSECURE MODE!.*"),
             Pattern.compile("^(The server will make no attempt to authenticate usernames|While this makes the game "
                     + "possible to play without internet access|To change this, set \"online-mode\" to \"true\").*"),
-            Pattern.compile("^\\[oshi\\.driver\\.windows\\.registry\\.HkeyPerformanceDataUtil\\] Unable to locate English "
-                    + "counter names.*"));
+            // Paper's system report on Windows: oshi messages and "Failed to get system info for ..." with an NPE.
+            Pattern.compile("^\\[oshi\\.[\\w.]+\\] .*"),
+            Pattern.compile("^Failed to get system info for .*"));
 
     private static final List<Pattern> BUILD_NOISE = List.of(
             Pattern.compile("^> Task (?!.*FAILED).*"),
