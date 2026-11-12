@@ -4,10 +4,10 @@ Find your problem, then try the steps in order.
 
 ## Claude Code does not show the msc tools
 
-1. Run `claude mcp list`. `msc` should be listed.
-2. If not, run the line in `~/.msc/core/claude-mcp-add.txt` again (see [Installation](Installation), step 3).
-3. Check that `~/.msc/core/lib/` exists, and that the `java` path shown by `claude mcp get msc` exists. If not, run `./gradlew :msc-core:installMsc` again and run its new register line.
-4. Restart Claude Code.
+1. Run `/plugin` in Claude Code and check that `msc` is installed and enabled. If not, add it (see [Installation](Installation), step 3).
+2. Run `/mcp` and pick msc. If it failed to start, its message says why in one line: no install under `~/.msc/core` (run `./gradlew :msc-core:installMsc`), or no Java 25 (set `MSC_CORE_JAVA` to a Java 25 `java`).
+3. `java` must be on PATH (any version from 17): `java -version` in the shell you start Claude Code from.
+4. Reconnect msc in `/mcp`, or restart Claude Code.
 
 ## "the Minecraft EULA is not accepted"
 
@@ -57,7 +57,7 @@ Another server is running. Stop it, ask Claude to `server_stop`, or change `serv
 
 ## "warning: the workspace is the Minecraft Server Creator repo"
 
-Claude Code was started in the MSC folder itself, so MSC treats the repo as your server project. Start Claude Code in your server's folder instead. To work from another folder anyway, register MSC for that folder only: `claude mcp add msc --scope local -e MSC_WORKSPACE=<server folder> -- <the command from installMsc>`.
+Claude Code was started in the MSC folder itself, so MSC treats the repo as your server project. Start Claude Code in your server's folder instead. To work from another folder anyway, ask Claude to call `msc_workspace` with the server's folder.
 
 ## "warning: this msc-core ... is older than its checkout"
 

@@ -44,8 +44,33 @@ class SetupCheckTest {
         assertThat(SetupCheck.staleInstall(install(repo, 1_999_000_000_000L)))
                 .startsWith("warning: this msc-core (installed ")
                 .contains("msc-core/src/main/java/Main.java changed 2033-05-18T03:33:20Z")
-                .endsWith("then restart Claude Code.");
+                .endsWith("then reconnect msc in /mcp.");
         assertThat(SetupCheck.staleInstall(install(repo, 2_001_000_000_000L))).isNull();
         assertThat(SetupCheck.staleInstall(dir.resolve("nowhere"))).isNull();
+    }
+
+    @Test
+    void warnsWhenANewerInstallSitsNextToThisOne() throws Exception {
+        Path running = core(dir.resolve("msc-core-1-a"), 1_000L);
+        assertThat(SetupCheck.newerInstall(running)).isNull();
+
+        core(dir.resolve("msc-core-1-b"), 2_000L);
+        Files.createDirectories(dir.resolve("no-core"));
+        Files.writeString(dir.resolve("no-core/install.properties"), "installed=9000\n");
+
+        assertThat(SetupCheck.newerInstall(running))
+                .startsWith("warning: a newer msc-core was installed 1970-01-01T00:00:02Z in ")
+                .contains("msc-core-1-b")
+                .endsWith("Reconnect msc in /mcp to use it.");
+        assertThat(SetupCheck.newerInstall(dir.resolve("msc-core-1-b"))).isNull();
+        assertThat(SetupCheck.warnings(CoreConfig.forWorkspace(dir).withInstallDir(running)))
+                .singleElement().asString().contains("msc-core-1-b");
+    }
+
+    private static Path core(Path install, long installed) throws Exception {
+        Files.createDirectories(install.resolve("lib"));
+        Files.createFile(install.resolve("lib/msc-core-1.jar"));
+        Files.writeString(install.resolve("install.properties"), "installed=" + installed + "\n");
+        return install;
     }
 }

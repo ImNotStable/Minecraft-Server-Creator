@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "msc": {
+      "command": "java",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/launcher/io/github/imnotstable/msc/plugin/MscLauncher.java"]
+    }
+  }
+}
