@@ -66,6 +66,8 @@ For mods on the Forge family of loaders.
    This runs the loader's own installer in the server folder (a few minutes the first time) and puts the agent in `mods/`.
 3. "Start the server." `dev_cycle` deploys your mod into `mods/`.
 
+Right after scaffolding, MSC starts the project's first build in the background, because these loaders set up Minecraft once (several minutes for Forge). `dev_cycle` waits for it if it is still running.
+
 `neoforge-mod` builds with ModDevGradle and runs its tests inside NeoForge, so command tests use the real Minecraft classes. `forge-mod` builds with ForgeGradle 7; its tests are plain JUnit.
 
 ## Minestom

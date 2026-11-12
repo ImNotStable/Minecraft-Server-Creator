@@ -55,6 +55,15 @@ public final class ProjectBuilder {
         return r;
     }
 
+    /**
+     * Everything a first {@code dev_cycle} runs, the dev jar and {@code check}, to fill Gradle's and the loader's
+     * caches ahead of it. Failures are not reported: the next real build shows them.
+     */
+    public BuildResult warm(Path projectDir, Duration timeout) throws IOException, InterruptedException {
+        return run(projectDir, timeout, List.of(DEV_JAR_TASK, "check"),
+                List.of("--init-script", initScript().toString(), "--continue"), true);
+    }
+
     /** The tests and other checks; the jar is not looked for. */
     public BuildResult check(Path projectDir, Duration timeout) throws IOException, InterruptedException {
         return run(projectDir, timeout, List.of("check"), List.of(), true);
