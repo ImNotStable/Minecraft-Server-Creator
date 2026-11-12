@@ -66,4 +66,18 @@ class WorkspacesTest {
         assertThat(second.resolve("libraries/a/lib.jar")).hasContent("lib");
         assertThat(second.resolve("server.properties")).doesNotExist();
     }
+
+    @Test
+    void localConfigOverridesTheTrackedOne() throws IOException {
+        Files.writeString(dir.resolve("bench.json"),
+                "{\"server\":{\"acceptEula\":false,\"rconPort\":25576},\"corePort\":25590}");
+        assertThat(BenchConfig.load(dir.resolve("bench.json")).server().acceptEula()).isFalse();
+
+        Files.writeString(dir.resolve(BenchConfig.LOCAL_FILE), "{\"server\":{\"acceptEula\":true}}");
+        BenchConfig config = BenchConfig.load(dir.resolve("bench.json"));
+
+        assertThat(config.server().acceptEula()).isTrue();
+        assertThat(config.server().rconPort()).isEqualTo(25576);
+        assertThat(config.corePort()).isEqualTo(25590);
+    }
 }
