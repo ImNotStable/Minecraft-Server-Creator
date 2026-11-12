@@ -45,4 +45,25 @@ class WorkspacesTest {
         assertThat(PaperJars.newestCached(List.of(dir.resolve("missing"), a, b), "26.3")).isEqualTo(b.resolve("paper-26.3-248.jar"));
         assertThat(PaperJars.newestCached(List.of(a), "27.1")).isNull();
     }
+
+    @Test
+    void serverFilesAreSavedOnceAndRestoredIntoNewWorkspaces() throws IOException {
+        Path first = Files.createDirectories(dir.resolve("ws1/server/cache"));
+        Files.writeString(first.resolve("mojang_26.3.jar"), "jar");
+        Files.createDirectories(dir.resolve("ws1/server/libraries/a"));
+        Files.writeString(dir.resolve("ws1/server/libraries/a/lib.jar"), "lib");
+        Files.writeString(dir.resolve("ws1/server/server.properties"), "not shared");
+        Path shared = dir.resolve("shared");
+        Path second = Files.createDirectories(dir.resolve("ws2/server"));
+
+        assertThat(ServerFiles.restore(shared, second)).isFalse();
+        ServerFiles.save(dir.resolve("ws1/server"), shared);
+        Files.writeString(first.resolve("mojang_26.3.jar"), "changed later");
+        ServerFiles.save(dir.resolve("ws1/server"), shared);
+
+        assertThat(ServerFiles.restore(shared, second)).isTrue();
+        assertThat(second.resolve("cache/mojang_26.3.jar")).hasContent("jar");
+        assertThat(second.resolve("libraries/a/lib.jar")).hasContent("lib");
+        assertThat(second.resolve("server.properties")).doesNotExist();
+    }
 }

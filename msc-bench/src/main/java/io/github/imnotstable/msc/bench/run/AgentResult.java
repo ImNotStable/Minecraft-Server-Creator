@@ -13,6 +13,7 @@ package io.github.imnotstable.msc.bench.run;
  * @param cacheReadTokens     input tokens read from the prompt cache
  * @param outputTokens        output tokens
  * @param costUsd             cost as reported by the agent
+ * @param model               model id(s) the agent used, comma-separated, or empty
  */
 public record AgentResult(
         boolean parsed,
@@ -23,9 +24,14 @@ public record AgentResult(
         long cacheCreationTokens,
         long cacheReadTokens,
         long outputTokens,
-        double costUsd) {
+        double costUsd,
+        String model) {
 
-    public static final AgentResult UNKNOWN = new AgentResult(false, false, 0, 0, 0, 0, 0, 0, 0);
+    public static final AgentResult UNKNOWN = new AgentResult(false, false, 0, 0, 0, 0, 0, 0, 0, "");
+
+    public AgentResult {
+        model = model == null ? "" : model;
+    }
 
     /** Every token the model read or wrote, cached or not. */
     public long totalTokens() {

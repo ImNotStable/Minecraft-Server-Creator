@@ -47,7 +47,10 @@ public final class ReportWriter {
 
         StringBuilder md = new StringBuilder("# Benchmark report\n\n");
         md.append("Runs: ").append(records.size()).append(". Tasks: ").append(byTask.size())
-                .append(". Modes: ").append(String.join(", ", modes)).append(".\n\n");
+                .append(". Modes: ").append(String.join(", ", modes)).append(".");
+        String models = String.join(", ", records.stream().map(r -> r.agent().model()).filter(m -> !m.isEmpty())
+                .distinct().toList());
+        md.append(models.isEmpty() ? "" : " Models: " + models + ".").append("\n\n");
 
         md.append("## Summary\n\n");
         md.append("| Mode | Pass rate | Median time | Median turns | Median tokens | Median output tokens | Total cost | Tool calls/run |\n");

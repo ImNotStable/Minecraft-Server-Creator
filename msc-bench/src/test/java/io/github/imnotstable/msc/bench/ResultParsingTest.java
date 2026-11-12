@@ -42,6 +42,31 @@ class ResultParsingTest {
     }
 
     @Test
+    void readsTheJsonArrayOfEventsFromNewerClaudeCode() {
+        AgentResult r = ClaudeResultParser.parse("""
+                [{"type":"system","subtype":"init","model":"claude-opus-4-7"},
+                 {"type":"assistant","message":{"content":[]}},
+                 {"type":"result","is_error":false,"num_turns":10,"total_cost_usd":0.51,
+                  "usage":{"input_tokens":12,"cache_creation_input_tokens":20000,"cache_read_input_tokens":300000,"output_tokens":5237}}]
+                """);
+
+        assertThat(r.parsed()).isTrue();
+        assertThat(r.turns()).isEqualTo(10);
+        assertThat(r.outputTokens()).isEqualTo(5237);
+        assertThat(r.totalTokens()).isEqualTo(325249);
+        assertThat(r.model()).isEqualTo("claude-opus-4-7");
+    }
+
+    @Test
+    void prefersModelUsageForTheModel() {
+        AgentResult r = ClaudeResultParser.parse("""
+                {"type":"result","num_turns":1,"modelUsage":{"claude-opus-4-7":{},"claude-haiku-4-5":{}}}
+                """);
+
+        assertThat(r.model()).isEqualTo("claude-opus-4-7,claude-haiku-4-5");
+    }
+
+    @Test
     void unknownOutputGivesZeros() {
         assertThat(ClaudeResultParser.parse("Error: not logged in")).isEqualTo(AgentResult.UNKNOWN);
         assertThat(ClaudeResultParser.parse("")).isEqualTo(AgentResult.UNKNOWN);

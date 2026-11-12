@@ -3,10 +3,14 @@ package io.github.imnotstable.msc.bench.run;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
- * Reads the final result object Claude Code prints with {@code --output-format json} (one object)
- * or {@code stream-json} (one object per line; the last one with {@code "type":"result"} wins).
+ * Reads the final result Claude Code prints. Handles {@code --output-format json} as one result
+ * object or as an array of events (Claude Code 2.1+), and {@code stream-json} (one event per line).
+ * The last event with {@code "type":"result"} wins; the model comes from the result's
+ * {@code modelUsage} or the {@code system/init} event.
  */
 public final class ClaudeResultParser {
 
@@ -14,17 +18,14 @@ public final class ClaudeResultParser {
     }
 
     public static AgentResult parse(String stdout) {
+        List<JsonObject> events = events(stdout.strip());
         JsonObject result = null;
-        String trimmed = stdout.strip();
-        JsonObject whole = tryObject(trimmed);
-        if (whole != null && isResult(whole)) {
-            result = whole;
-        } else {
-            for (String line : trimmed.split("\\R")) {
-                JsonObject o = tryObject(line.strip());
-                if (o != null && isResult(o)) {
-                    result = o;
-                }
+        String model = "";
+        for (JsonObject o : events) {
+            if (isResult(o)) {
+                result = o;
+            } else if (model.isEmpty() && o.has("model") && o.get("model").isJsonPrimitive()) {
+                model = o.get("model").getAsString();
             }
         }
         if (result == null) {
@@ -42,20 +43,45 @@ public final class ClaudeResultParser {
                 number(usage, "cache_creation_input_tokens"),
                 number(usage, "cache_read_input_tokens"),
                 number(usage, "output_tokens"),
-                result.has("total_cost_usd") ? result.get("total_cost_usd").getAsDouble() : 0);
+                result.has("total_cost_usd") ? result.get("total_cost_usd").getAsDouble() : 0,
+                result.has("modelUsage") && result.get("modelUsage").isJsonObject()
+                        && !result.getAsJsonObject("modelUsage").isEmpty()
+                        ? String.join(",", result.getAsJsonObject("modelUsage").keySet())
+                        : model);
+    }
+
+    private static List<JsonObject> events(String text) {
+        List<JsonObject> out = new ArrayList<>();
+        JsonElement whole = tryParse(text);
+        if (whole != null && whole.isJsonObject()) {
+            out.add(whole.getAsJsonObject());
+        } else if (whole != null && whole.isJsonArray()) {
+            for (JsonElement e : whole.getAsJsonArray()) {
+                if (e.isJsonObject()) {
+                    out.add(e.getAsJsonObject());
+                }
+            }
+        } else {
+            for (String line : text.split("\\R")) {
+                JsonElement e = tryParse(line.strip());
+                if (e != null && e.isJsonObject()) {
+                    out.add(e.getAsJsonObject());
+                }
+            }
+        }
+        return out;
     }
 
     private static boolean isResult(JsonObject o) {
-        return o.has("type") && "result".equals(o.get("type").getAsString());
+        return o.has("type") && o.get("type").isJsonPrimitive() && "result".equals(o.get("type").getAsString());
     }
 
-    private static JsonObject tryObject(String text) {
-        if (!text.startsWith("{")) {
+    private static JsonElement tryParse(String text) {
+        if (!text.startsWith("{") && !text.startsWith("[")) {
             return null;
         }
         try {
-            JsonElement e = JsonParser.parseString(text);
-            return e.isJsonObject() ? e.getAsJsonObject() : null;
+            return JsonParser.parseString(text);
         } catch (RuntimeException e) {
             return null;
         }

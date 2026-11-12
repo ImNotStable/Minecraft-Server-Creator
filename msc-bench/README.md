@@ -47,10 +47,11 @@ Check types: `file` (exists, optional `contains` regex), `command` (exit code, o
 Before the first run:
 
 - Paper: nothing to set. The runner uses the newest `paper-26.3-<build>.jar` in msc-bench's `.cache/` or msc-core's cache (`../.msc/cache`), and downloads the newest stable build into `.cache/` if there is none. `server.paperJar` overrides this.
+- Server files: the first server that starts saves Paper's downloaded files to `.cache/paper-server-<version>/`, and later workspaces start from that copy.
 - EULA: the runner never accepts the Minecraft EULA for you. Tasks with a server fail with a clear message until `server.acceptEula` is `true` in `bench.json`, which you set only if you accept the [Minecraft EULA](https://aka.ms/MinecraftEULA).
 - For `toolset` mode: run `./gradlew :msc-core:installDist :msc-agent-paper:shadowJar` first. Core starts from `paths.coreLib`, and the agent from `paths.agentJar` is put in `server/plugins` as `msc-agent-paper.jar` (the name core uses). Toolset workspaces also get the Paper jar in `.msc/cache`, so core does not download it during the timed run.
 
-The agent command runs Claude Code with `--dangerously-skip-permissions`, because nobody is there to answer prompts. Each attempt works in its own folder under `runs/`, but the agent can still run any command on the machine, so run the bench on a machine (or VM) where that is acceptable. Ports used: game 25566, RCON 25576, core 25590.
+The agent command runs Claude Code with `--setting-sources project,local`, so your own plugins, skills and memory stay out of the runs, and with `--dangerously-skip-permissions`, because nobody is there to answer prompts. Each attempt works in its own folder under `runs/`, but the agent can still run any command on the machine, so run the bench on a machine (or VM) where that is acceptable. Ports used: game 25566, RCON 25576, core 25590.
 
 ## Depends on
 

@@ -22,6 +22,7 @@ public final class ServerManager implements AutoCloseable {
     private final Map<String, String> env;
     private Process process;
     private RconClient rcon;
+    private boolean reachedRcon;
 
     public ServerManager(Path serverDir, BenchConfig.Server config, Map<String, String> env) {
         this.serverDir = serverDir;
@@ -35,9 +36,23 @@ public final class ServerManager implements AutoCloseable {
             rcon = tryConnect(COMMAND_TIMEOUT);
         }
         if (rcon == null) {
-            start();
+            try {
+                start();
+            } catch (IOException first) {
+                // A launcher download cut short makes Paper exit on start; one retry fetches it again.
+                if (process == null || process.isAlive()) {
+                    throw first;
+                }
+                start();
+            }
         }
+        reachedRcon = true;
         return rcon;
+    }
+
+    /** True once the server answered on RCON, so its downloaded files are complete. */
+    public synchronized boolean reachedRcon() {
+        return reachedRcon;
     }
 
     private void start() throws IOException {

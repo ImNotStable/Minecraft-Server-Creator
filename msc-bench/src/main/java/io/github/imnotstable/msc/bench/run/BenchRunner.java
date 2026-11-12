@@ -103,6 +103,7 @@ public final class BenchRunner {
         try {
             Workspaces.prepare(task, workspace, config, mode, task.needsServer() ? paperJar() : null, values);
             if (task.needsServer()) {
+                ServerFiles.restore(sharedServerFiles(), workspace.resolve("server"));
                 server = new ServerManager(workspace.resolve("server"), config.server(), serverEnv);
             }
             if (task.server().startBefore()) {
@@ -171,6 +172,13 @@ public final class BenchRunner {
         } finally {
             if (server != null) {
                 server.close();
+                if (server.reachedRcon()) {
+                    try {
+                        ServerFiles.save(workspace.resolve("server"), sharedServerFiles());
+                    } catch (IOException e) {
+                        log.println("could not save server files for later runs: " + e.getMessage());
+                    }
+                }
             }
         }
 
@@ -183,6 +191,10 @@ public final class BenchRunner {
     }
 
     private Path paperJar;
+
+    private Path sharedServerFiles() {
+        return Path.of(config.server().paperCacheDirs().getFirst()).resolve("paper-server-" + config.minecraftVersion());
+    }
 
     /** The Paper jar for this run, found or downloaded once. */
     private Path paperJar() throws IOException {
