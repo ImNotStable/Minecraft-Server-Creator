@@ -19,6 +19,7 @@ Coordinates are text: a position is `x,y,z`, a region is `x1,y1,z1 x2,y2,z2`, an
 | `server_setup` | Downloads the server and installs the agent and dev settings. |
 | `server_start` | Starts the server and reports only startup warnings and errors. |
 | `server_stop` | Stops the server. |
+| `server_detach` | Keeps the server and the resource pack running after Claude Code closes, so you can play. The next session stops them. |
 | `dev_cycle` | Builds, deploys, restarts and reports errors, all in one call. |
 | `server_logs` | Shows errors, the last lines, or lines matching a pattern, with stack traces trimmed. |
 | `server_command` | Runs a console command and returns its output. |

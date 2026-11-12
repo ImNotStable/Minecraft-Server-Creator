@@ -47,7 +47,7 @@ class LifecycleToolsTest {
     @Test
     void startConnectsTheAgentAndStopEndsTheProcess() {
         assertThat(h.ok("server_start", "timeoutSeconds", 30))
-                .startsWith("server ready in ").containsPattern("s, agent connected\nworld world: top block at 0,0 is y=-?\\d+ \\(build from y=-?\\d+\\)\n")
+                .startsWith("server ready in ").containsPattern("s, agent connected\nworld world: ground is y=-?\\d+ \\(most common top block around 0,0; build from y=-?\\d+\\)\n")
                 .endsWith("\nno errors or warnings");
         assertThat(h.ok("msc_status")).startsWith("msc-core ").contains("server: running").contains("agent: paper fake, minecraft 26.3, 9 operations");
         assertThat(h.ok("world_summary", "region", "0,60,0 1,61,1")).contains("blocks: stone 8");
@@ -80,6 +80,48 @@ class LifecycleToolsTest {
         } finally {
             leftover.destroyForcibly();
         }
+    }
+
+    @Test
+    void aDetachedServerAndPackHostOutliveTheCoreUntilTheNextStart() throws Exception {
+        assertThat(h.error("server_detach")).contains("the server is not running");
+        h.ok("server_start", "timeoutSeconds", 30);
+        h.ok("texture_create", "name", "item/dot", "palette", List.of("a=#ff0000"), "rows", List.of("a"));
+        String url = h.ok("pack_build", "apply", false).lines().filter(l -> l.startsWith("url: ")).findFirst()
+                .orElseThrow().substring(5);
+        assertThat(h.ok("server_detach")).startsWith("server detached").contains("and so does the resource pack host");
+        assertThat(fetch(url)).isEqualTo(200);
+        ProcessHandle server = ProcessHandle.of(Long.parseLong(
+                Files.readString(workspace.resolve(".msc/server.pid")).split(" ")[0])).orElseThrow();
+        h.close();
+        assertThat(server.isAlive()).isTrue();
+        assertThat(fetch(url)).isEqualTo(200);
+
+        h = new CoreHarness(workspace, c -> c.withServerCommand(java(FakeServerMain.class)));
+        assertThat(h.ok("server_start", "timeoutSeconds", 30))
+                .contains("stopped a server left running by an earlier session (pid " + server.pid())
+                .contains("stopped the pack host left running by an earlier session");
+        assertThat(server.isAlive()).isFalse();
+        assertThat(fetch(url)).isEqualTo(-1);
+    }
+
+    private static int fetch(String url) throws InterruptedException {
+        // The host stops a moment after it is told to.
+        for (int i = 0; i < 50; i++) {
+            try {
+                var c = (java.net.HttpURLConnection) java.net.URI.create(url).toURL().openConnection();
+                c.setConnectTimeout(500);
+                int code = c.getResponseCode();
+                c.disconnect();
+                return code;
+            } catch (java.io.IOException e) {
+                Thread.sleep(100);
+                if (i >= 10) {
+                    return -1;
+                }
+            }
+        }
+        return -1;
     }
 
     @Test
@@ -188,6 +230,15 @@ class LifecycleToolsTest {
         assertThat(h.error("project_scaffold", "name", "MyPlugin", "dir", "fresh")).startsWith("error: ");
         assertThat(h.error("project_scaffold", "name", "X", "template", "nope")).contains("unknown template nope");
         assertThat(h.error("project_scaffold")).isEqualTo("error: missing argument: name");
+    }
+
+    @Test
+    void scaffoldUsesTheChosenPackage() {
+        assertThat(h.ok("project_scaffold", "name", "Lobby", "dir", "pkg", "package", "io.github.alex.lobby"))
+                .contains("\npackageName: io.github.alex.lobby\n");
+        assertThat(workspace.resolve("pkg/src/main/java/io/github/alex/lobby/LobbyPlugin.java")).exists();
+        assertThat(h.error("project_scaffold", "name", "Lobby", "dir", "bad", "package", "Io.Alex"))
+                .startsWith("error: packageName must match ");
     }
 
     @Test

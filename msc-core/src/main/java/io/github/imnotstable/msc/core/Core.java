@@ -42,7 +42,7 @@ public final class Core implements AutoCloseable {
         WorldService world = new WorldService(hub);
         ApiTools api = new ApiTools(config);
         MetaTools.register(registry, config, hub, server, log, api);
-        LifecycleTools.register(registry, config, hub, server, new ProjectBuilder(config),
+        LifecycleTools.register(registry, config, hub, server, pack, new ProjectBuilder(config),
                 new PaperDownloader(config.downloadsUrl(), config.dataDir().resolve("cache")),
                 new FabricDownloader(config.fabricMetaUrl(), config.fabricMavenUrl(), config.dataDir().resolve("cache")));
         api.register(registry);
@@ -72,7 +72,8 @@ public final class Core implements AutoCloseable {
 
     @Override
     public void close() throws IOException {
-        pack.close();
+        // A detached server keeps its pack host, so players can still fetch the pack.
+        pack.close(server.detached());
         server.close();
         hub.close();
     }

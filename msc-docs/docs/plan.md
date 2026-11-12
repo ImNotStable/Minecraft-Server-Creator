@@ -95,3 +95,4 @@ Product decisions were made by Jeremiah on 2026-11-10. Build and design decision
 | Core platforms | Core lifecycle tools cover Paper, Fabric and Minestom; the project's platform is kept in `.msc/platform` | [ADR 0011](adr/0011-core-platforms.md) |
 | CI/CD | GitHub Actions: `./gradlew build` on Java 25 for pushes and PRs (docs-only changes skipped, cache written only by `main`); weekly grouped Dependabot for Gradle and Actions; tag `vX.Y.Z` publishes a GitHub Release with the msc-core zip and the three agent jars; nothing in CI accepts the EULA | [ADR 0012](adr/0012-ci-cd.md) |
 | Install | `:msc-core:installMsc` installs core plus agents to `~/.msc/core` and prints the `claude mcp add` line; first-use fixes from dogfooding | [ADR 0013](adr/0013-install-and-first-use.md) |
+| Detach | `server_detach` leaves the dev server and a standalone pack host running after the core exits; the next session stops them | [ADR 0014](adr/0014-detach.md) |

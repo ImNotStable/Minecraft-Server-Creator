@@ -8,6 +8,7 @@ import io.github.imnotstable.msc.core.server.PaperDownloader;
 import io.github.imnotstable.msc.core.server.Platform;
 import io.github.imnotstable.msc.core.server.ProjectBuilder;
 import io.github.imnotstable.msc.core.server.ServerManager;
+import io.github.imnotstable.msc.core.texture.ResourcePack;
 import io.github.imnotstable.msc.core.tool.Args;
 import io.github.imnotstable.msc.core.tool.Budget;
 import io.github.imnotstable.msc.core.tool.Schema;
@@ -42,10 +43,12 @@ public final class LifecycleTools {
     private final ProjectBuilder builder;
     private final PaperDownloader downloader;
     private final FabricDownloader fabric;
+    private final ResourcePack pack;
     private volatile long startMark;
 
-    private LifecycleTools(CoreConfig config, AgentHub hub, ServerManager server, ProjectBuilder builder,
-                           PaperDownloader downloader, FabricDownloader fabric) {
+    private LifecycleTools(CoreConfig config, AgentHub hub, ServerManager server, ResourcePack pack,
+                           ProjectBuilder builder, PaperDownloader downloader, FabricDownloader fabric) {
+        this.pack = pack;
         this.fabric = fabric;
         this.config = config;
         this.hub = hub;
@@ -55,13 +58,15 @@ public final class LifecycleTools {
     }
 
     public static void register(ToolRegistry registry, CoreConfig config, AgentHub hub, ServerManager server,
-                                ProjectBuilder builder, PaperDownloader downloader, FabricDownloader fabric) {
-        LifecycleTools t = new LifecycleTools(config, hub, server, builder, downloader, fabric);
+                                ResourcePack pack, ProjectBuilder builder, PaperDownloader downloader,
+                                FabricDownloader fabric) {
+        LifecycleTools t = new LifecycleTools(config, hub, server, pack, builder, downloader, fabric);
         registry.add("project_scaffold",
                 "Create a new project from a template (Gradle KTS, tests wired in). Target directory must be empty.",
                 Schema.of().req("name", "string", "Project name, for example MyPlugin")
                         .opt("dir", "string", "Target directory, relative to the workspace. Default: the workspace itself")
                         .opt("template", "string", "paper-plugin (default), fabric-mod or minestom-server")
+                        .opt("package", "string", "Java package. Default com.example.<name>")
                         .opt("acceptEula", "boolean", EULA_ARG),
                 t::scaffold);
         registry.add("server_setup",
@@ -73,12 +78,17 @@ public final class LifecycleTools {
         registry.add("server_start", "Start the dev server and wait until it is ready. Returns startup errors only.",
                 Schema.of().opt("timeoutSeconds", "integer", "Default 180"), t::start);
         registry.add("server_stop", "Stop the dev server.", Schema.of(), args -> {
+            String host = pack.stopLeftoverHost();
             if (server.stop(Duration.ofSeconds(30))) {
                 return "server stopped";
             }
             String leftover = server.stopLeftover();
-            return leftover != null ? leftover : "server was not running";
+            return leftover != null ? leftover : host != null ? host : "server was not running";
         });
+        registry.add("server_detach",
+                "Keep the dev server and the pack host running after this session ends, so the user can play. "
+                        + "The next session's server_start, dev_cycle or server_stop stops them.",
+                Schema.of(), t::detach);
         registry.add("dev_cycle",
                 "Build the project, deploy its jar, restart the server and report: one call for the whole edit-test loop. "
                         + "Returns compile or test failures, or runtime errors from startup.",
@@ -109,6 +119,9 @@ public final class LifecycleTools {
         ScaffoldResult result;
         try {
             TemplateVariables vars = TemplateVariables.of(name).withAcceptEula(args.bool("acceptEula", false));
+            if (args.has("package")) {
+                vars = vars.withPackageName(args.str("package").strip());
+            }
             result = onlyToolFiles(dir) ? scaffoldBesideToolFiles(template, dir, vars)
                     : Templates.scaffold(template, dir, vars);
         } catch (IllegalArgumentException | IllegalStateException e) {
@@ -293,8 +306,25 @@ public final class LifecycleTools {
         return startAndReport(args.integer("timeoutSeconds", 180), Budget.DEFAULT_CHARS);
     }
 
+    private String detach(Args args) throws IOException, InterruptedException {
+        if (!server.detach()) {
+            throw new ToolException("the server is not running. Start it with server_start first.");
+        }
+        String java = ProcessHandle.current().info().command().orElse(config.javaCommand());
+        boolean pack;
+        try {
+            pack = this.pack.keepServing(java, System.getProperty("java.class.path"));
+        } catch (ToolException e) {
+            return "server detached: it keeps running after this session ends\n" + e.getMessage();
+        }
+        return "server detached: it keeps running after this session ends"
+                + (pack ? ", and so does the resource pack host" : " (no pack built yet, so no pack host)")
+                + ".\nWorld tools and server_command work until this session ends; the next session's "
+                + "server_start, dev_cycle or server_stop stops the server (world saved) and the pack host.";
+    }
+
     private String startAndReport(int timeoutSeconds, int maxChars) throws IOException, InterruptedException {
-        String leftover = server.stopLeftover();
+        String leftover = join(server.stopLeftover(), pack.stopLeftoverHost());
         boolean agentUpdated = refreshAgent();
         ServerManager.StartResult r = server.start(Duration.ofSeconds(timeoutSeconds));
         startMark = r.logMark();
@@ -330,7 +360,8 @@ public final class LifecycleTools {
 
     /**
      * Where the ground is, so the AI does not build in the air: dev worlds are superflat with the surface far below
-     * y=64. Best effort; a start never fails because of it.
+     * y=64. It is the most common top block within 32 blocks of 0,0, so a build at 0,0 does not count as ground.
+     * Best effort; a start never fails because of it.
      */
     private String groundLine() {
         try {
@@ -339,16 +370,37 @@ public final class LifecycleTools {
                 return "";
             }
             String world = info.worlds().getFirst();
-            BlockPos origin = new BlockPos(0, 0, 0);
-            Ops.HeightmapResult h = hub.call(Ops.WORLD_HEIGHTMAP, new Ops.HeightmapParams(world, origin, origin));
-            int y = h.heights()[0];
-            return "\nworld " + world + ": top block at 0,0 is y=" + y + " (build from y=" + (y + 1) + ")";
+            Ops.HeightmapResult h = hub.call(Ops.WORLD_HEIGHTMAP,
+                    new Ops.HeightmapParams(world, new BlockPos(-GROUND_RADIUS, 0, -GROUND_RADIUS),
+                            new BlockPos(GROUND_RADIUS - 1, 0, GROUND_RADIUS - 1)));
+            int y = groundLevel(h.heights());
+            return "\nworld " + world + ": ground is y=" + y + " (most common top block around 0,0; build from y="
+                    + (y + 1) + ")";
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return "";
         } catch (RuntimeException e) {
             return "";
         }
+    }
+
+    private static final int GROUND_RADIUS = 32;
+
+    /** The most common height; the lower one on a tie, since builds stand on the ground. */
+    static int groundLevel(int[] heights) {
+        if (heights.length == 0) {
+            throw new IllegalArgumentException("no heights");
+        }
+        Map<Integer, Integer> counts = new java.util.HashMap<>();
+        int best = heights[0];
+        for (int y : heights) {
+            int n = counts.merge(y, 1, Integer::sum);
+            int top = counts.get(best);
+            if (n > top || (n == top && y < best)) {
+                best = y;
+            }
+        }
+        return best;
     }
 
     /**
@@ -547,6 +599,10 @@ public final class LifecycleTools {
         Thread.sleep(700);
         List<String> lines = server.log().since(mark);
         return lines.isEmpty() ? "sent (no output within 0.7s)" : Budget.truncate(tail(lines, 30), Budget.DEFAULT_CHARS, "Output cut.");
+    }
+
+    private static String join(String a, String b) {
+        return a == null ? b : b == null ? a : a + "\n" + b;
     }
 
     private static String tail(List<String> lines, int count) {
