@@ -13,6 +13,7 @@ final class AgentRoutes {
                 .on(Ops.SERVER_INFO, p -> server.info())
                 .on(Ops.SERVER_COMMAND, server::command)
                 .on(Ops.WORLD_READ, world::read)
+                .on(Ops.WORLD_ENTITIES, world::entities)
                 .on(Ops.WORLD_HEIGHTMAP, world::heightmap)
                 .on(Ops.WORLD_FILL, world::fill)
                 .on(Ops.WORLD_WRITE, world::write)

@@ -98,3 +98,4 @@ Product decisions were made by Jeremiah on 2026-11-10. Build and design decision
 | Detach | `server_detach` leaves the dev server and a standalone pack host running after the core exits; the next session stops them | [ADR 0014](adr/0014-detach.md) |
 | Build language | `build_batch`: one call runs fills, rooms, round shapes, lines, terrain bands and stamped structures with weighted block mixes, checks every block name first and keeps one undo id | [ADR 0015](adr/0015-build-batch.md) |
 | Test player | `player_test`: an MCProtocolLib client in `msc-bot` joins the dev server, moves with a copy of vanilla player physics, reads blocks through the agent, and reports chat, damage, deaths and server corrections | [ADR 0016](adr/0016-test-player.md) |
+| Playtest tools | `world_entities` (new `world.entities` op), `server_wait until=<regex>` on the log, `server_setup mode=game`; chunk tickets and `tick sprint` documented | [ADR 0018](adr/0018-playtest-tools.md) |

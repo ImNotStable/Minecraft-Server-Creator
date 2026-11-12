@@ -2,12 +2,14 @@ package io.github.imnotstable.msc.core.tools;
 
 import io.github.imnotstable.msc.core.CoreConfig;
 import io.github.imnotstable.msc.core.agent.AgentHub;
+import io.github.imnotstable.msc.core.server.LogBuffer;
 import io.github.imnotstable.msc.core.server.LogCondenser;
 import io.github.imnotstable.msc.core.server.FabricDownloader;
 import io.github.imnotstable.msc.core.server.PaperDownloader;
 import io.github.imnotstable.msc.core.server.Platform;
 import io.github.imnotstable.msc.core.server.ProjectBuilder;
 import io.github.imnotstable.msc.core.server.ServerManager;
+import io.github.imnotstable.msc.core.server.ServerProperties;
 import io.github.imnotstable.msc.core.texture.PackProperties;
 import io.github.imnotstable.msc.core.texture.ResourcePack;
 import io.github.imnotstable.msc.core.tool.Args;
@@ -53,6 +55,8 @@ public final class LifecycleTools {
     private final FabricDownloader fabric;
     private final ResourcePack pack;
     private volatile long startMark;
+    /** Where server_wait starts looking: after the last start, server_command or server_wait match. */
+    private volatile long waitMark;
 
     private LifecycleTools(CoreConfig config, AgentHub hub, ServerManager server, ResourcePack pack,
                            ProjectBuilder builder, PaperDownloader downloader, FabricDownloader fabric) {
@@ -81,6 +85,7 @@ public final class LifecycleTools {
                 "Prepare the dev server: download Paper or the Fabric launcher, write dev defaults, install the msc agent.",
                 Schema.of().opt("version", "string", "Minecraft version. Default " + config.minecraft())
                         .opt("platform", "string", "paper, fabric or minestom. Default: the project's")
+                        .opt("mode", "string", "build (creative, peaceful) or game (survival, normal)")
                         .opt("acceptEula", "boolean", EULA_ARG),
                 t::setup);
         registry.add("server_start", "Start the dev server and wait until it is ready. Returns startup errors only.",
@@ -116,6 +121,9 @@ public final class LifecycleTools {
                 t::logs);
         registry.add("server_command", "Run a console command on the server and return its output.",
                 Schema.of().req("command", "string", "Command without the leading slash"), t::command);
+        registry.add("server_wait", "Wait until a log or chat line matches a regex, instead of polling.",
+                Schema.of().req("until", "string", "Regex, case-insensitive")
+                        .opt("timeoutSeconds", "integer", "Default 60"), t::await);
     }
 
     private String scaffold(Args args) throws IOException {
@@ -200,6 +208,12 @@ public final class LifecycleTools {
         }
         String version = args.str("version", config.minecraft());
         boolean acceptEula = args.bool("acceptEula", false);
+        ServerProperties.Mode mode;
+        try {
+            mode = args.has("mode") ? ServerProperties.Mode.of(args.str("mode").strip()) : null;
+        } catch (IllegalArgumentException e) {
+            throw new ToolException(e.getMessage());
+        }
         Platform platform = server.platform();
         if (args.str("platform", null) != null) {
             platform = Platform.of(args.str("platform"));
@@ -208,7 +222,8 @@ public final class LifecycleTools {
         Path dir = config.serverDir();
         if (platform == Platform.MINESTOM) {
             Files.createDirectories(dir);
-            return "minestom needs no server download and has no EULA step: the project's own jar is the server and "
+            return (mode == null ? "" : "mode ignored: a Minestom server sets game mode and difficulty in its own code\n")
+                    + "minestom needs no server download and has no EULA step: the project's own jar is the server and "
                     + "the msc agent is built into it. Server directory: " + dir + "; next: dev_cycle";
         }
         StringBuilder out = new StringBuilder();
@@ -223,6 +238,11 @@ public final class LifecycleTools {
             ScaffoldResult defaults = Templates.scaffold(Templates.PAPER_SERVER, dir,
                     TemplateVariables.of("server").withAcceptEula(acceptEula));
             out.append("wrote ").append(defaults.files().size()).append(" default config files\n");
+        }
+        if (mode != null) {
+            ServerProperties.set(dir.resolve("server.properties"), mode.settings());
+            out.append("mode ").append(mode.id()).append(": ").append(mode.settings().get("gamemode")).append(", ")
+                    .append(mode.settings().get("difficulty")).append(" difficulty from the next start\n");
         }
         Path addons = Files.createDirectories(dir.resolve(platform.addonDir()));
         if (platform == Platform.FABRIC) {
@@ -344,6 +364,7 @@ public final class LifecycleTools {
         boolean agentUpdated = refreshAgent();
         ServerManager.StartResult r = server.start(Duration.ofSeconds(timeoutSeconds));
         startMark = r.logMark();
+        waitMark = r.logMark();
         List<String> lines = server.log().since(r.logMark());
         LogCondenser.Condensed analysis = LogCondenser.analyze(lines, maxChars);
         String condensed = analysis.text();
@@ -363,7 +384,14 @@ public final class LifecycleTools {
                 out.append(", agent jar updated");
             }
             if (s != null) {
-                out.append(groundLine()).append(packLine());
+                out.append(groundLine());
+            }
+            String mode = modeLine();
+            if (mode != null) {
+                out.append('\n').append(mode);
+            }
+            if (s != null) {
+                out.append(packLine());
             }
             out.append('\n').append(clean ? "no errors or warnings" : condensed);
         } else if (r.exited()) {
@@ -421,6 +449,14 @@ public final class LifecycleTools {
             return "";
         } catch (IOException | RuntimeException e) {
             return "\nresource pack not sent again (" + e.getMessage() + "): run pack_build";
+        }
+    }
+
+    private String modeLine() {
+        try {
+            return ServerProperties.modeLine(config.serverDir().resolve("server.properties"));
+        } catch (IOException e) {
+            return null;
         }
     }
 
@@ -656,6 +692,42 @@ public final class LifecycleTools {
         }
     }
 
+    static final int MAX_WAIT_SECONDS = 600;
+
+    private String await(Args args) throws InterruptedException {
+        Pattern pattern;
+        try {
+            pattern = Pattern.compile(args.str("until"), Pattern.CASE_INSENSITIVE);
+        } catch (PatternSyntaxException e) {
+            throw new ToolException("bad regex: " + e.getDescription());
+        }
+        int timeout = args.integer("timeoutSeconds", 60);
+        if (timeout < 1 || timeout > MAX_WAIT_SECONDS) {
+            throw new ToolException("timeoutSeconds must be 1 to " + MAX_WAIT_SECONDS);
+        }
+        if (!server.running()) {
+            throw new ToolException("server_wait reads the log of a server this session started, and none is running. "
+                    + "Start it with server_start or dev_cycle.");
+        }
+        long from = Math.max(waitMark, startMark);
+        long started = System.nanoTime();
+        LogBuffer.Match m = server.log().await(from, line -> pattern.matcher(clean(line)).find(),
+                Duration.ofSeconds(timeout), server::running);
+        String waited = seconds((System.nanoTime() - started) / 1_000_000);
+        if (m != null) {
+            waitMark = m.seq() + 1;
+            return "matched after " + waited + ": " + clean(m.line());
+        }
+        waitMark = server.log().mark();
+        String last = tail(server.log().since(from), 5);
+        String why = server.running() ? "no line matched in " + timeout + "s" : "the server stopped after " + waited;
+        return why + (last.isEmpty() ? "; no new lines" : "; last lines:\n" + last);
+    }
+
+    private static String clean(String line) {
+        return line.replaceAll("\u001b\\[[0-9;?]*[A-Za-z]", "");
+    }
+
     private String command(Args args) throws IOException, InterruptedException {
         String command = args.str("command").strip();
         if (command.startsWith("/")) {
@@ -663,6 +735,7 @@ public final class LifecycleTools {
         }
         if (hub.current() != null) {
             long before = server.log().mark();
+            waitMark = before;
             Ops.CommandResult r = hub.call(Ops.SERVER_COMMAND, new Ops.CommandParams(command));
             List<String> output = r.output() == null ? List.of() : r.output();
             List<String> console = server.running() ? consoleDuring(before, output) : List.of();
@@ -676,6 +749,7 @@ public final class LifecycleTools {
             return Budget.truncate(text.toString(), Budget.DEFAULT_CHARS, "Output cut.");
         }
         long mark = server.log().mark();
+        waitMark = mark;
         server.console(command);
         Thread.sleep(700);
         List<String> lines = server.log().since(mark);
@@ -717,7 +791,7 @@ public final class LifecycleTools {
     private static String tail(List<String> lines, int count) {
         StringBuilder out = new StringBuilder();
         for (String line : lines.subList(Math.max(0, lines.size() - count), lines.size())) {
-            out.append(line.replaceAll("\u001b\\[[0-9;?]*[A-Za-z]", "")).append('\n');
+            out.append(clean(line)).append('\n');
         }
         return out.toString().stripTrailing();
     }

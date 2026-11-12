@@ -32,6 +32,9 @@ public final class McpBridge {
             + "is. See the world with world_summary, world_slice or world_render. Build with build_structure for "
             + "irregular shapes, build_shape for circles, spheres and lines, build_stamp to repeat or turn a structure, "
             + "and build_batch to send many steps as one edit; blocks take weighted mixes such as grass_block:8,moss_block:2. "
+            + "Testing a game: server_setup mode=game (survival), world_entities to check mobs and NPCs, server_wait "
+            + "until=<regex> instead of polling, server_command \"tick sprint 600\" to skip ahead; chunks with no "
+            + "player nearby do not tick, so keep game areas loaded with chunk tickets or forceload. "
             + "Results are size-capped; narrow the request rather than raising maxChars. Wrong folder: "
             + "msc_workspace switches it without a restart.";
 

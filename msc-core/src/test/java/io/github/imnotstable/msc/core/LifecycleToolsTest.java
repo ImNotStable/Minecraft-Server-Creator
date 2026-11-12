@@ -49,7 +49,7 @@ class LifecycleToolsTest {
         assertThat(h.ok("server_start", "timeoutSeconds", 30))
                 .startsWith("server ready in ").containsPattern("s, agent connected\nworld world: ground is y=-?\\d+ \\(most common top block around 0,0; build from y=-?\\d+\\)\n")
                 .endsWith("\nno errors or warnings");
-        assertThat(h.ok("msc_status")).startsWith("msc-core ").contains("server: running").contains("agent: paper fake, minecraft 26.3, 9 operations");
+        assertThat(h.ok("msc_status")).startsWith("msc-core ").contains("server: running").contains("agent: paper fake, minecraft 26.3, 10 operations");
         assertThat(h.ok("world_summary", "region", "0,60,0 1,61,1")).contains("blocks: stone 8");
         assertThat(h.ok("server_command", "command", "/say hi")).isEqualTo("ran say hi");
         assertThat(h.ok("server_logs", "mode", "tail", "lines", 1)).contains("Done (0.1s)!");
@@ -61,6 +61,52 @@ class LifecycleToolsTest {
         assertThat(h.ok("server_stop")).isEqualTo("server stopped");
         assertThat(h.ok("server_stop")).isEqualTo("server was not running");
         assertThat(h.core.server().running()).isFalse();
+    }
+
+    @Test
+    void theStartReportSaysTheGameModeFromServerProperties() throws Exception {
+        Files.createDirectories(workspace.resolve("run"));
+        Files.writeString(workspace.resolve("run/server.properties"), "gamemode=survival\ndifficulty=normal\n");
+        assertThat(h.ok("server_start", "timeoutSeconds", 30))
+                .contains("\nmode: survival, normal difficulty (server_setup mode=build for creative, peaceful)\n");
+    }
+
+    @Test
+    void waitReturnsTheFirstMatchingLineAndNeverMatchesTheSameLineTwice() throws Exception {
+        assertThat(h.error("server_wait", "until", "x")).contains("none is running");
+        h.ok("server_start", "timeoutSeconds", 30);
+        Thread later = Thread.ofVirtual().start(() -> {
+            try {
+                Thread.sleep(300);
+                h.core.server().console("Wave 2 started");
+            } catch (Exception e) {
+                throw new IllegalStateException(e);
+            }
+        });
+        assertThat(h.ok("server_wait", "until", "wave \\d started", "timeoutSeconds", 20))
+                .startsWith("matched after ").endsWith(": [12:00:05 INFO]: console: Wave 2 started");
+        later.join();
+        assertThat(h.ok("server_wait", "until", "wave \\d started", "timeoutSeconds", 1))
+                .startsWith("no line matched in 1s; no new lines");
+
+        // A line printed between two calls is still seen.
+        h.core.server().console("Boss spawned");
+        Thread.sleep(500);
+        assertThat(h.ok("server_wait", "until", "boss", "timeoutSeconds", 5)).endsWith("console: Boss spawned");
+
+        assertThat(h.error("server_wait", "until", "(")).contains("bad regex");
+        assertThat(h.error("server_wait", "until", "x", "timeoutSeconds", 601)).contains("1 to 600");
+        Thread stopper = Thread.ofVirtual().start(() -> {
+            try {
+                Thread.sleep(300);
+                h.core.server().stop(java.time.Duration.ofSeconds(10));
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        });
+        assertThat(h.ok("server_wait", "until", "never", "timeoutSeconds", 30)).startsWith("the server stopped after ")
+                .contains("Stopping server");
+        stopper.join();
     }
 
     @Test
@@ -360,6 +406,14 @@ class LifecycleToolsTest {
             assertThat(run.resolve("eula.txt")).content().contains("eula=true").doesNotContain("eula=false");
             assertThat(s.error("server_setup", "version", "1.0")).contains("Paper has no version 1.0").doesNotContain("internal");
             assertThat(s.ok("msc_status")).contains("platform: paper\n").contains("server: stopped");
+
+            assertThat(s.ok("server_setup", "mode", "game")).contains("mode game: survival, normal difficulty");
+            assertThat(run.resolve("server.properties")).content().contains("\ngamemode=survival\n")
+                    .contains("\ndifficulty=normal\n").contains("force-gamemode=true").contains("online-mode=false");
+            s.ok("server_setup", "mode", "build");
+            assertThat(run.resolve("server.properties")).content().contains("\ngamemode=creative\n")
+                    .contains("\ndifficulty=peaceful\n").doesNotContain("survival");
+            assertThat(s.error("server_setup", "mode", "hardcore")).contains("mode must be build or game");
         }
         // An installed core ships its agents in <install>/agents; the workspace's .msc/agent still wins.
         Path install = Files.createDirectories(workspace.resolve("install/agents")).getParent();

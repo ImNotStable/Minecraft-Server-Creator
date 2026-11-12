@@ -12,11 +12,15 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.TreeSet;
 import org.bukkit.Material;
 import org.bukkit.Server;
 import org.bukkit.World;
+import org.bukkit.attribute.Attribute;
+import org.bukkit.attribute.AttributeInstance;
 import org.bukkit.block.data.BlockData;
 import org.bukkit.entity.Entity;
+import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.TextDisplay;
 import org.bukkit.util.BoundingBox;
@@ -71,6 +75,37 @@ final class WorldOps {
             custom = display.text();
         }
         return custom == null ? null : PlainTextComponentSerializer.plainText().serialize(custom);
+    }
+
+    /** Entities in a region with name, tags and health, sorted by type and then position. */
+    Ops.EntitiesResult entities(Ops.EntitiesParams params) {
+        Region region = params.region();
+        World world = world(region.world());
+        String type = params.type() == null || params.type().isBlank() ? null : params.type();
+        return main.call(() -> {
+            BoundingBox box = new BoundingBox(region.min().x(), region.min().y(), region.min().z(),
+                    region.max().x() + 1, region.max().y() + 1, region.max().z() + 1);
+            List<Ops.EntityInfo> all = new ArrayList<>();
+            for (Entity e : world.getNearbyEntities(box)) {
+                String key = e.getType().key().asString();
+                if (type == null || type.equals(key)) {
+                    all.add(info(e, key));
+                }
+            }
+            return Ops.EntitiesResult.of(all, params.limit());
+        });
+    }
+
+    private static Ops.EntityInfo info(Entity e, String type) {
+        Double health = null;
+        Double maxHealth = null;
+        if (e instanceof LivingEntity living) {
+            health = living.getHealth();
+            AttributeInstance max = living.getAttribute(Attribute.MAX_HEALTH);
+            maxHealth = max == null ? null : max.getValue();
+        }
+        return new Ops.EntityInfo(type, e.getUniqueId().toString(), e.getX(), e.getY(), e.getZ(), name(e),
+                List.copyOf(new TreeSet<>(e.getScoreboardTags())), health, maxHealth);
     }
 
     Ops.HeightmapResult heightmap(Ops.HeightmapParams params) {

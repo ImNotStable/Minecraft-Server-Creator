@@ -29,16 +29,16 @@ install and workspace. `server_command` was called 81 times, mostly to poll game
    (chat, title, action bar, boss bar, inventory, health, position, resource pack accepted or not). Jump
    courses and aiming need real movement physics; if that is out of reach, say so in the tool so the AI
    reports it as untested.
-2. **See game state, not only blocks.** Open. `world_summary` counts entities but nothing lists them. Add a
+2. **See game state, not only blocks.** Done (ADR 0018). `world_summary` counts entities but nothing lists them. Add a
    `world_entities` tool: type, name, tags, health and position for a region. Wave spawns, NPCs and holograms
    could then be checked without a player.
-3. **Wait instead of poll.** Open. `server_wait until=<regex> timeout=<s>` returns when a log or chat line
+3. **Wait instead of poll.** Done (ADR 0018). `server_wait until=<regex> timeout=<s>` returns when a log or chat line
    matches. It replaces the poll loops behind most of Lumen Siege's 81 `server_command` calls.
-4. **Dev server defaults that fit games.** Open. The dev server is creative and peaceful, so a combat game
+4. **Dev server defaults that fit games.** Done (ADR 0018). The dev server is creative and peaceful, so a combat game
    silently does nothing until the plugin overrides it. Add `server_setup mode=game` (survival, normal
    difficulty) and say the mode in the `server_start` report. Also document that chunks without a player do
    not tick: spawners far from spawn need chunk tickets (both games hit this).
-5. **Fast-forward.** Open, docs only. `server_command "tick sprint 600"` already speeds up timers and waves.
+5. **Fast-forward.** Done, docs only (ADR 0018). `server_command "tick sprint 600"` already speeds up timers and waves.
    Put it in the server instructions and the project `CLAUDE.md` so AIs use it when testing.
 
 ## Priority 2: remove the build scripts

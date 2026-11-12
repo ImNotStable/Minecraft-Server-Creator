@@ -302,6 +302,72 @@ public final class WorldService {
         return Budget.truncate(out.toString(), maxChars, "Ask for a smaller region.");
     }
 
+    /** Widest X-Z extent world_entities searches: an entity lookup walks every chunk section in the box. */
+    public static final int MAX_ENTITY_SIDE = 2048;
+
+    /**
+     * One line per entity: type, name, position, health and tags, so wave spawns, NPCs and holograms can be checked
+     * without a player. {@code type} narrows to one entity type; {@code ids} adds the UUID for commands.
+     */
+    public String entities(Region region, String type, int limit, boolean ids, int maxChars) throws InterruptedException {
+        if (region.sizeX() > MAX_ENTITY_SIDE || region.sizeZ() > MAX_ENTITY_SIDE) {
+            throw new ToolException("region is " + region.sizeX() + "x" + region.sizeZ() + " wide; world_entities takes at most "
+                    + MAX_ENTITY_SIDE + "x" + MAX_ENTITY_SIDE + ". Use a smaller region.");
+        }
+        String full = type == null || type.isBlank() ? null : BlockNames.full(type.strip().toLowerCase(java.util.Locale.ROOT));
+        Ops.EntitiesResult r = hub.call(Ops.WORLD_ENTITIES, new Ops.EntitiesParams(region, full, Math.max(1, limit)));
+        return Budget.truncate(formatEntities(r, full, ids, region), maxChars, "Pass type, a smaller region or a lower limit.");
+    }
+
+    /** The listing: a count line with totals per type, then one line per entity. */
+    static String formatEntities(Ops.EntitiesResult r, String type, boolean ids, Region region) {
+        if (r.total() == 0) {
+            // With no player online the region's chunks are usually unloaded, and their entities with them.
+            return "no " + (type == null ? "entities" : BlockNames.brief(type) + " entities")
+                    + " in the region. Only loaded chunks are searched, and with no player nearby they are unloaded: "
+                    + "server_command \"forceload add " + region.min().x() + " " + region.min().z() + " "
+                    + region.max().x() + " " + region.max().z() + "\" loads them, then ask again";
+        }
+        Map<String, Integer> perType = new TreeMap<>();
+        for (Ops.EntityInfo e : r.entities()) {
+            perType.merge(BlockNames.brief(e.type()), 1, Integer::sum);
+        }
+        StringBuilder out = new StringBuilder().append(r.total()).append(r.total() == 1 ? " entity" : " entities");
+        if (r.entities().size() < r.total()) {
+            out.append(", first ").append(r.entities().size()).append(" shown");
+        }
+        if (type == null) {
+            out.append(':');
+            perType.forEach((t, n) -> out.append(' ').append(n).append(' ').append(t));
+        }
+        for (Ops.EntityInfo e : r.entities()) {
+            out.append('\n').append(BlockNames.brief(e.type()));
+            if (e.name() != null && !e.name().isBlank()) {
+                out.append(" \"").append(e.name().replace('\n', ' ')).append('"');
+            }
+            out.append(' ').append(num(e.x())).append(',').append(num(e.y())).append(',').append(num(e.z()));
+            if (e.health() != null) {
+                out.append(" hp ").append(num(e.health()));
+                if (e.maxHealth() != null) {
+                    out.append('/').append(num(e.maxHealth()));
+                }
+            }
+            if (!e.tags().isEmpty()) {
+                out.append(" tags ").append(String.join(",", e.tags()));
+            }
+            if (ids && e.uuid() != null) {
+                out.append(" id ").append(e.uuid());
+            }
+        }
+        return out.toString();
+    }
+
+    /** One decimal, without a trailing ".0". */
+    private static String num(double v) {
+        double rounded = Math.round(v * 10) / 10.0;
+        return rounded == Math.rint(rounded) ? Long.toString((long) rounded) : Double.toString(rounded);
+    }
+
     // ---- edits ------------------------------------------------------------------------------
 
     /** Keep agent edit ids under one new edit id for {@code build_undo}, and return that id. */

@@ -28,6 +28,7 @@ public final class FakeAgent {
     final List<String> commands = new ArrayList<>();
     final List<Ops.PackParams> packs = new ArrayList<>();
     final List<Region> reads = new ArrayList<>();
+    final List<Ops.EntityInfo> entities = new ArrayList<>();
     final List<Region> writes = new ArrayList<>();
     private final Map<String, Map<BlockPos, String>> undo = new HashMap<>();
     private int editCounter;
@@ -77,6 +78,7 @@ public final class FakeAgent {
                     return new Ops.CommandResult(true, List.of("ran " + p.command()));
                 })
                 .on(Ops.WORLD_READ, this::read)
+                .on(Ops.WORLD_ENTITIES, this::entities)
                 .on(Ops.WORLD_HEIGHTMAP, this::heightmap)
                 .on(Ops.WORLD_FILL, this::fill)
                 .on(Ops.WORLD_WRITE, this::write)
@@ -123,6 +125,16 @@ public final class FakeAgent {
         List<Ops.EntitySummary> entities = p.includeEntities()
                 ? List.of(new Ops.EntitySummary("minecraft:cow", 1.5, 64, 1.5, null)) : List.of();
         return new Ops.ReadResult(new BlockGrid(r, palette, out), entities);
+    }
+
+    private synchronized Ops.EntitiesResult entities(Ops.EntitiesParams p) {
+        Region r = p.region();
+        List<Ops.EntityInfo> found = entities.stream()
+                .filter(e -> p.type() == null || p.type().equals(e.type()))
+                .filter(e -> e.x() >= r.min().x() && e.x() < r.max().x() + 1 && e.y() >= r.min().y()
+                        && e.y() < r.max().y() + 1 && e.z() >= r.min().z() && e.z() < r.max().z() + 1)
+                .toList();
+        return new Ops.EntitiesResult(found.subList(0, Math.min(p.limit(), found.size())), found.size());
     }
 
     private synchronized Ops.HeightmapResult heightmap(Ops.HeightmapParams p) {
