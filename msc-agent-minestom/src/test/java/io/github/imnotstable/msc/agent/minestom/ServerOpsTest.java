@@ -3,7 +3,10 @@ package io.github.imnotstable.msc.agent.minestom;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.github.imnotstable.msc.agent.common.MainThread;
+import io.github.imnotstable.msc.agent.common.ServerOps;
 import io.github.imnotstable.msc.protocol.op.Ops;
+import java.time.Duration;
 import net.minestom.server.command.builder.Command;
 import net.minestom.server.command.builder.arguments.ArgumentType;
 import net.minestom.server.coordinate.Pos;
@@ -33,8 +36,9 @@ class ServerOpsTest {
     };
 
     private static ServerOps ops(Env env) {
-        return new ServerOps(env.process().command(), new Worlds(() -> env.process().instance().getInstances()),
-                () -> env.process().connection().getOnlinePlayers(), MainThread.inline(), FACTS);
+        return new ServerOps(new MinestomServer(env.process().command(),
+                new Worlds(() -> env.process().instance().getInstances(), Duration.ofSeconds(10)),
+                () -> env.process().connection().getOnlinePlayers(), FACTS), MainThread.inline());
     }
 
     @Test

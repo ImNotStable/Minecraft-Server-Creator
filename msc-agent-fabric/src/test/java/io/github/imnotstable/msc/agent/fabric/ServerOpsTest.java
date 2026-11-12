@@ -3,6 +3,8 @@ package io.github.imnotstable.msc.agent.fabric;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.github.imnotstable.msc.agent.common.MainThread;
+import io.github.imnotstable.msc.agent.common.ServerOps;
 import io.github.imnotstable.msc.protocol.op.Ops;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

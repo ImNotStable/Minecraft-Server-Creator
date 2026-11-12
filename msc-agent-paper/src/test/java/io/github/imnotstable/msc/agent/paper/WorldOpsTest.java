@@ -3,6 +3,10 @@ package io.github.imnotstable.msc.agent.paper;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.github.imnotstable.msc.agent.common.EditHistory;
+import io.github.imnotstable.msc.agent.common.MainThread;
+import io.github.imnotstable.msc.agent.common.ReadJob;
+import io.github.imnotstable.msc.agent.common.WorldOps;
 import io.github.imnotstable.msc.protocol.message.ErrorCodes;
 import io.github.imnotstable.msc.protocol.op.Ops;
 import io.github.imnotstable.msc.protocol.transport.OpException;
@@ -28,7 +32,7 @@ import org.mockbukkit.mockbukkit.world.WorldMock;
 class WorldOpsTest {
     private ServerMock server;
     private World world;
-    private WorldOps ops;
+    private WorldOps<?> ops;
 
     @BeforeEach
     void setUp() {
@@ -37,7 +41,7 @@ class WorldOpsTest {
         w.setName("world");
         server.addWorld(w);
         world = w;
-        ops = new WorldOps(server, MainThread.inline(), new EditHistory(1_000_000));
+        ops = new WorldOps<>(new PaperWorlds(server), MainThread.inline(), new EditHistory<>(1_000_000));
     }
 
     @AfterEach
