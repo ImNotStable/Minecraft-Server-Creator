@@ -14,6 +14,7 @@ class ScriptTest {
         assertThat(Script.parse("forward 20 sprint")).isInstanceOf(Script.Forward.class);
         assertThat(Script.parse("wait 5")).isInstanceOf(Script.Wait.class);
         assertThat(Script.parse("jump")).isInstanceOf(Script.Jump.class);
+        assertThat(Script.parse("walk 3,-60,4 sprint")).isInstanceOf(Script.Route.class);
         for (String ok : new String[] {"tp 0.5 -60 0.5", "look 90 -10", "lookat 1,2,3", "use", "use 1 2 3", "attack",
                 "slot 3", "say hi there", "/time set day", "entities", "attack zombie", "interact", "interact villager",
                 "inventory", "hud", "close"}) {
