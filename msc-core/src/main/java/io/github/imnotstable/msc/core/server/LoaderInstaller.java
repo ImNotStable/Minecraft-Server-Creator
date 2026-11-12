@@ -144,7 +144,8 @@ public final class LoaderInstaller {
                         + installerVersion + ".jar",
                 "Quilt has no installer " + installerVersion);
         install(dir, List.of(java, "-jar", installer.toString(), "install", "server", minecraft, loader,
-                "--download-server", "--install-dir=" + dir), "Quilt");
+                // Relative: the installer splits its options on spaces, so a folder like "MSC Quilt Test" broke it.
+                "--download-server", "--install-dir=."), "Quilt");
         if (!Files.exists(dir.resolve(Platform.QUILT.serverJar()))) {
             throw new ToolException("the Quilt installer finished but wrote no " + Platform.QUILT.serverJar());
         }
