@@ -1,3 +1,4 @@
+import java.net.InetAddress
 import java.time.Instant
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
@@ -73,6 +74,8 @@ val installMsc = tasks.register("installMsc") {
     val javaPath = toolchainJava
     val source = rootDir.absolutePath
     val version = project.version.toString()
+    val acceptEula = providers.gradleProperty("msc.acceptEula").map { it.toBoolean() }.orElse(false)
+    val userHome = providers.systemProperty("user.home")
     // Never up to date: every run is a new install.
     outputs.upToDateWhen { false }
     doLast {
@@ -111,14 +114,35 @@ val installMsc = tasks.register("installMsc") {
         // answer it, in an interactive terminal. It lives in the install root, so its path stays the same; each
         // install rewrites it to point at the newest install's jars.
         val classPath = dir.resolve("lib").absolutePath + File.separator + "*"
+        // -Pmsc.acceptEula=true: the owner's explicit agreement given on their own install command (ADR 0020).
+        // Never the default: installing MSC alone does not accept Mojang's EULA.
+        if (acceptEula.get()) {
+            val file = File(userHome.get()).resolve(".msc/eula.json")
+            if (!file.isFile) {
+                val user = System.getProperty("user.name").replace("\\", "\\\\").replace("\"", "\\\"")
+                val host = runCatching { InetAddress.getLocalHost().hostName }.getOrDefault("this machine")
+                    .replace("\\", "\\\\").replace("\"", "\\\"")
+                file.parentFile.mkdirs()
+                file.writeText("{\n  \"eula\": \"https://aka.ms/MinecraftEULA\",\n  \"accepted\": true,\n" +
+                    "  \"acceptedBy\": \"$user\",\n  \"host\": \"$host\",\n  \"acceptedAt\": \"${Instant.ofEpochMilli(now)}\",\n" +
+                    "  \"how\": \"ran installMsc with -Pmsc.acceptEula=true\"\n}\n")
+            }
+            println("Minecraft EULA (https://aka.ms/MinecraftEULA) accepted for this machine, saved in $file.")
+            println("By -Pmsc.acceptEula=true you confirm you read and accept Mojang's EULA; MSC now writes eula=true for")
+            println("every Paper and Fabric dev server here without asking. Terms: TERMS.md in this repo. Undo: the line in")
+            println("eula-accept.txt with revoke instead of accept.")
+        }
         val eula = "\"" + javaPath.get() + "\" -cp \"" + classPath + "\" io.github.imnotstable.msc.core.Main eula accept"
         rootDir.resolve("eula-accept.txt").writeText(eula + "\n")
         println("msc-core $version installed in $dir")
         println("With the msc plugin, Claude Code uses it at its next start, or now with /mcp > msc > Reconnect.")
         println("Plugin not added yet? In Claude Code, once: /plugin marketplace add $source")
         println("                                    then: /plugin install msc@msc")
-        println("Optional, once per machine: if you agree to the Minecraft EULA (https://aka.ms/MinecraftEULA), run")
-        println("this yourself in a terminal so Paper and Fabric dev servers stop asking (saved in ${rootDir.resolve("eula-accept.txt")}):")
-        println(eula)
+        if (!acceptEula.get()) {
+            println("Optional, once per machine: if you agree to the Minecraft EULA (https://aka.ms/MinecraftEULA), add")
+            println("-Pmsc.acceptEula=true to this command (see TERMS.md), or run this yourself in a terminal")
+            println("(saved in ${rootDir.resolve("eula-accept.txt")}):")
+            println(eula)
+        }
     }
 }

@@ -21,7 +21,7 @@ A toolset that helps an AI develop custom Minecraft servers on any platform. Thi
    The plugin's launcher starts the newest install every time, so you never re-register MSC after an update. Coming from an older install? Remove the old registration first: `claude mcp remove msc -s user`.
 3. Make an empty folder, start `claude` in it and ask for a server, for example: "Make a Paper lobby plugin with a /spawn command and build a small spawn platform." The AI scaffolds the project there (`project_scaffold`), downloads Paper and installs the agent (`server_setup`), then builds, deploys and restarts in one call (`dev_cycle`).
 
-Paper and Fabric dev servers need your agreement to the Minecraft EULA (https://aka.ms/MinecraftEULA). Either accept it once for your machine, by running the `eula accept` line that `installMsc` prints (also in `~/.msc/core/eula-accept.txt`) yourself in a terminal, or answer the AI's question for each server, after which it calls `server_setup` with `acceptEula=true`. Nothing accepts it for you ([ADR 0020](msc-docs/docs/adr/0020-machine-eula.md)).
+Paper and Fabric dev servers need your agreement to the Minecraft EULA (https://aka.ms/MinecraftEULA). Nothing accepts it by default. To turn on automatic acceptance for your machine, install with `./gradlew :msc-core:installMsc -Pmsc.acceptEula=true`, or say yes once when the AI asks (it passes `acceptEula=true`). Either one confirms that you read and accept Mojang's EULA, as set out in [TERMS.md](TERMS.md), and from then on MSC writes `eula=true` for every Paper and Fabric dev server on that machine ([ADR 0020](msc-docs/docs/adr/0020-machine-eula.md)).
 
 Step-by-step guide: [Wiki](https://github.com/ImNotStable/Minecraft-Server-Creator/wiki) (source in `docs/wiki/`).
 

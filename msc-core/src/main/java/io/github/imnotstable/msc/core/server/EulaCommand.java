@@ -109,13 +109,14 @@ public final class EulaCommand {
         t.println("Minecraft End User License Agreement: " + MachineEula.EULA_URL);
         t.println("Agreeing here records it once for user " + user + " on " + host + " (" + file + "). MSC then");
         t.println("writes eula=true into each dev server it sets up on this machine, without asking again.");
+        t.println("Terms: " + MachineEula.TERMS_URL);
         t.println("Undo it any time with 'eula revoke'.");
         String answer = t.readLine("Have you read the Minecraft EULA, and do you agree to it? Type yes to agree: ");
         if (answer == null || !answer.strip().equalsIgnoreCase("yes")) {
             t.println("Not accepted; nothing was written.");
             return 1;
         }
-        MachineEula.write(file, new MachineEula.Acceptance(user, host, clock.instant()));
+        MachineEula.write(file, new MachineEula.Acceptance(user, host, clock.instant()), MachineEula.VIA_TERMINAL);
         t.println("Accepted. Saved to " + file + ".");
         return 0;
     }

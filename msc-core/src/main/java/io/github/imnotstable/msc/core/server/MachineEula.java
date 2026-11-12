@@ -15,12 +15,15 @@ import java.util.Optional;
 /**
  * The owner's one-time agreement to the Minecraft EULA for this machine, in {@code ~/.msc/eula.json}.
  *
- * <p>MSC tools only read it: with it, {@code server_setup} and {@code server_start} write {@code eula=true} into the
- * server's {@code eula.txt}. Only {@link EulaCommand} writes it, and only after the owner types {@code yes} in an
- * interactive terminal. No tool argument creates it. See ADR 0020.
+ * <p>With it, {@code server_setup} and {@code server_start} write {@code eula=true} into the server's {@code eula.txt}.
+ * It is written only on an explicit opt-in by the owner: {@code yes} to {@link EulaCommand}, {@code installMsc
+ * -Pmsc.acceptEula=true}, or {@code acceptEula=true} on {@code server_setup} or {@code server_start}. Never by default,
+ * and never by installing or using MSC alone. See ADR 0020.
  */
 public final class MachineEula {
     public static final String EULA_URL = "https://aka.ms/MinecraftEULA";
+    /** MSC's terms for turning EULA acceptance on. */
+    public static final String TERMS_URL = "https://github.com/ImNotStable/Minecraft-Server-Creator/blob/main/TERMS.md";
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();
 
     /** Who agreed, where and when. */
@@ -59,15 +62,20 @@ public final class MachineEula {
         }
     }
 
-    /** Package-private on purpose: only {@link EulaCommand} records an acceptance. */
-    static void write(Path file, Acceptance a) throws IOException {
+    /** How the owner agreed, stored in the file. */
+    public static final String VIA_TERMINAL = "typed yes to 'msc eula accept' in an interactive terminal";
+    public static final String VIA_INSTALL = "ran installMsc with -Pmsc.acceptEula=true";
+    public static final String VIA_TOOL = "the user's own yes, passed as acceptEula=true";
+
+    /** Records the owner's explicit agreement; callers must only pass one the owner gave (ADR 0020). */
+    public static void write(Path file, Acceptance a, String how) throws IOException {
         JsonObject o = new JsonObject();
         o.addProperty("eula", EULA_URL);
         o.addProperty("accepted", true);
         o.addProperty("acceptedBy", a.user());
         o.addProperty("host", a.host());
         o.addProperty("acceptedAt", a.acceptedAt().toString());
-        o.addProperty("how", "typed yes to 'msc eula accept' in an interactive terminal");
+        o.addProperty("how", how);
         Files.createDirectories(file.toAbsolutePath().getParent());
         Files.writeString(file, GSON.toJson(o) + "\n");
     }
