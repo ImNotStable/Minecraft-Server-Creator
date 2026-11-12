@@ -90,6 +90,8 @@ public final class TestPlayer implements Bot {
     private final Inventory inventory = new Inventory(Items.forVersion(minecraftVersion()));
     private final Hud hud = new Hud();
     private final Outbox outbox = new Outbox();
+    /** A server move longer than this is a teleport, not a correction. */
+    static final double TELEPORT = 2.0;
     final Physics body = new Physics();
     private WorldView view;
     private volatile String disconnect;
@@ -534,6 +536,14 @@ public final class TestPlayer implements Bot {
             if (positioned && Math.abs(nx - body.x) + Math.abs(ny - body.y) + Math.abs(nz - body.z) > 0.01) {
                 event(String.format("[moved by server] from %.2f,%.2f,%.2f to %.2f,%.2f,%.2f", body.x, body.y, body.z,
                         nx, ny, nz));
+                // A teleport (a goal box, a respawn point, a stage change) ends a walk: its target is somewhere else
+                // now. A small correction is the server pulling the player back, so the walk goes on.
+                double moved = Math.sqrt(Math.pow(nx - body.x, 2) + Math.pow(ny - body.y, 2) + Math.pow(nz - body.z, 2));
+                Script.Step step = current;
+                if (moved > TELEPORT && step != null && step.endsOnTeleport()) {
+                    step.finish(String.format("moved by server to %.2f,%.2f,%.2f (%.1f blocks)", nx, ny, nz, moved));
+                    current = null;
+                }
             }
             body.x = nx;
             body.y = ny;

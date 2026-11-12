@@ -49,7 +49,7 @@ public final class PlayerTools implements AutoCloseable {
                                 + "look yaw pitch, lookat x,y,z, wait ticks, use [x,y,z], attack|interact [type], "
                                 + "slot 1-9, say text, /command, tp x,y,z, entities, inventory, hud, close")
                         .opt("name", "string", "Default MscTester")
-                        .opt("gamemode", "string", "survival (default), adventure, creative")
+                        .opt("gamemode", "string", "survival, adventure, creative. Default: the game's")
                         .opt("leave", "boolean", "Disconnect after. Default false"),
                 t::run);
         return t;
@@ -67,8 +67,9 @@ public final class PlayerTools implements AutoCloseable {
         if (!NAME.matcher(name).matches()) {
             throw new ToolException("name must be 3 to 16 letters, digits or _");
         }
-        String gamemode = args.str("gamemode", "survival");
-        if (!List.of("survival", "adventure", "creative").contains(gamemode)) {
+        // No game mode given: keep the one the game gives its players, which is what a play-test should see.
+        String gamemode = args.str("gamemode", null);
+        if (gamemode != null && !List.of("survival", "adventure", "creative").contains(gamemode)) {
             throw new ToolException("gamemode must be survival, adventure or creative");
         }
         Ops.ServerInfo info = hub.call(Ops.SERVER_INFO, new Ops.Empty());
@@ -95,11 +96,12 @@ public final class PlayerTools implements AutoCloseable {
             // A dev-server test player: op so commands and tp work, in the mode real players will have.
             // Minestom has only the commands the server registered, so these may not exist there.
             boolean op = console("op " + name);
-            boolean mode = console("gamemode " + gamemode + " " + name);
+            boolean mode = gamemode != null && console("gamemode " + gamemode + " " + name);
             out.append("joined as ").append(name).append(" (")
-                    .append(mode ? gamemode : "game mode left to the server")
+                    .append(mode ? gamemode : gamemode == null ? "the game's own mode"
+                            : "game mode left to the server: it has no gamemode command")
                     .append(op ? ", op" : ", not op: the server has no op command").append(")\n");
-        } else if (args.has("gamemode")) {
+        } else if (gamemode != null) {
             console("gamemode " + gamemode + " " + name);
         }
         try {
