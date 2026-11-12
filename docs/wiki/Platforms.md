@@ -16,7 +16,7 @@ Best for most servers. Plugins use the Bukkit/Paper API.
 
 1. Ask: "project_scaffold a Paper plugin called My Plugin."
 2. Accept the [EULA](https://aka.ms/MinecraftEULA) yourself, then: "server_setup with acceptEula=true."
-3. "Start the server." The agent goes into `plugins/`, your plugin is deployed as `plugins/<project>.jar`.
+3. "Start the server." The agent goes into `plugins/`, `dev_cycle` deploys your plugin as `plugins/<jar name without version>.jar` (for example `lobby-0.1.0-SNAPSHOT.jar` becomes `plugins/lobby.jar`).
 
 ## Fabric
 
@@ -25,7 +25,7 @@ For mods that change the game itself. Uses Fabric Loader and Fabric API.
 1. Ask: "project_scaffold a Fabric mod called My Mod, template fabric-mod."
 2. Accept the [EULA](https://aka.ms/MinecraftEULA) yourself, then: "server_setup with acceptEula=true."
    This installs the Fabric server launcher, Fabric API and the agent into `mods/`.
-3. "Start the server." The first start downloads the Minecraft server, so it is slower.
+3. "Start the server." The first start downloads the Minecraft server, so it is slower. `dev_cycle` deploys your mod as `mods/<jar name without version>.jar`.
 
 Note: building a Fabric project needs Java 25 for Gradle (Fabric Loom). The template sets this up.
 
