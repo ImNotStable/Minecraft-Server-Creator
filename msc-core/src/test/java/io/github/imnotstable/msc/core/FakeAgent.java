@@ -70,6 +70,11 @@ public final class FakeAgent {
                     synchronized (this) {
                         commands.add(p.command());
                     }
+                    if (p.command().startsWith("broadcast ")) {
+                        // Like /say on Paper: the text goes to the console log, the sender gets nothing back.
+                        System.out.println("[12:00:05 INFO]: [Server] " + p.command().substring(10));
+                        return new Ops.CommandResult(true, List.of());
+                    }
                     return new Ops.CommandResult(true, List.of("ran " + p.command()));
                 })
                 .on(Ops.WORLD_READ, this::read)

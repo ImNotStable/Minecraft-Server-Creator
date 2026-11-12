@@ -45,6 +45,20 @@ class WorldRendererTest {
     }
 
     @Test
+    void markersAreDrawnWhereTheEntityStandsAndListedInTheCaption() {
+        Scenes s = new Scenes(10, 64, -2, 13, 64, 1).fill(10, 64, -2, 13, 64, 1, "stone");
+        RenderResult result = renderer.render(s.grid(), View.parse("top"), PLAIN, java.util.List.of(
+                new Marker(12.5, 65, -0.5, "villager \"Shopkeeper\""),
+                new Marker(40, 65, 40, "text_display \"Welcome\"")));
+        BufferedImage image = Scenes.decode(result);
+
+        assertThat(image.getRGB(40, 24) & 0xffffff).as("centre of the block at x=12, z=-1").isEqualTo(0xff00ff);
+        assertThat(isGray(image.getRGB(8, 56))).isTrue();
+        assertThat(result.caption()).endsWith("Markers (magenta, numbered): 1 villager \"Shopkeeper\" at 12.5,65,-0.5; "
+                + "2 text_display \"Welcome\" at 40,65,40. Outside the image: 2.");
+    }
+
+    @Test
     void sideViewsMirrorEachOther() {
         // A wall along x (0..3) two high, red block at x=0 on the upper row.
         Scenes s = new Scenes(0, 64, 0, 3, 65, 0).fill(0, 64, 0, 3, 65, 0, "stone").set(0, 65, 0, "red_wool");

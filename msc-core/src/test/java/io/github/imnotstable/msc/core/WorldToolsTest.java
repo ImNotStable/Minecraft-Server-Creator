@@ -50,7 +50,10 @@ class WorldToolsTest {
             assertThat(result.ok()).isTrue();
             BufferedImage image = ImageIO.read(new ByteArrayInputStream(result.png()));
             assertThat(Math.max(image.getWidth(), image.getHeight())).isLessThanOrEqualTo(128);
-            assertThat(result.text()).startsWith("Top view").contains("oak_planks").contains("\nsaved: ");
+            assertThat(result.text()).startsWith("Top view").contains("oak_planks").contains("\nsaved: ")
+                    .contains("\nMarkers (magenta, numbered): 1 cow at 1.5,64,1.5.\n");
+            assertThat(r.ok("world_render", "region", "0,62,0 5,67,5", "view", "top", "size", 64, "entities", false))
+                    .doesNotContain("Markers");
             Path saved = Path.of(result.text().substring(result.text().indexOf("saved: ") + 7));
             assertThat(saved).hasBinaryContent(result.png()).startsWith(ws.resolve(".msc/renders"));
             assertThat(Files.readString(ws.resolve("calls.jsonl"))).containsPattern("\"tool\":\"world_render\".*\"imageTokens\":\\d+");
@@ -89,6 +92,22 @@ class WorldToolsTest {
                 y=66 all .""");
         assertThat(h.ok("world_slice", "region", "2,65,1 2,65,1", "states", true))
                 .contains("#=oak_stairs[facing=north]");
+    }
+
+    @Test
+    void hollowFillMakesARoomInOneEdit() {
+        h.ok("build_fill", "region", "0,64,0 2,66,2", "block", "glass");
+        assertThat(h.ok("build_fill", "region", "0,64,0 2,66,2", "block", "oak_planks", "shape", "hollow"))
+                .isEqualTo("edit e2: 27 blocks changed");
+        assertThat(h.ok("world_slice", "region", "0,65,0 2,65,2")).contains("""
+                y=65
+                ###
+                #.#
+                ###""");
+        assertThat(h.ok("build_undo")).contains("undid e2");
+        assertThat(h.ok("world_summary", "region", "0,64,0 2,66,2")).contains("glass 27");
+        assertThat(h.error("build_fill", "region", "0,64,0 2,66,2", "block", "stone", "shape", "cube"))
+                .isEqualTo("error: shape must be solid, hollow, outline, walls");
     }
 
     @Test

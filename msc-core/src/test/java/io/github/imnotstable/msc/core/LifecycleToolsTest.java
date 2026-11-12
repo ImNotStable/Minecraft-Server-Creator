@@ -55,6 +55,8 @@ class LifecycleToolsTest {
         assertThat(h.ok("server_logs", "mode", "tail", "lines", 1)).contains("Done (0.1s)!");
         assertThat(h.ok("server_logs", "mode", "grep", "pattern", "starting")).contains("Starting minecraft server");
         assertThat(h.ok("server_logs")).endsWith("lines, 0 errors, 0 warnings");
+        assertThat(h.ok("server_command", "command", "broadcast Wave 3 begins"))
+                .isEqualTo("console during the command:\n[Server] Wave 3 begins");
         assertThat(h.error("server_start")).contains("already running");
         assertThat(h.ok("server_stop")).isEqualTo("server stopped");
         assertThat(h.ok("server_stop")).isEqualTo("server was not running");
@@ -152,12 +154,30 @@ class LifecycleToolsTest {
     }
 
     @Test
+    void stoppingADetachedServerInTheSameSessionStopsItsPackHostToo() throws Exception {
+        h.ok("server_start", "timeoutSeconds", 30);
+        h.ok("texture_create", "name", "item/dot", "palette", List.of("a=#ff0000"), "rows", List.of("a"));
+        String url = h.ok("pack_build", "apply", false).lines().filter(l -> l.startsWith("url: ")).findFirst()
+                .orElseThrow().substring(5);
+        h.ok("server_detach");
+        assertThat(h.ok("server_stop")).isEqualTo("server stopped, and the pack host it kept running");
+        assertThat(fetch(url)).isEqualTo(-1);
+        assertThat(workspace.resolve(".msc/pack-host.pid")).doesNotExist();
+        assertThat(h.ok("pack_build", "apply", false)).contains(url);
+        assertThat(fetch(url)).isEqualTo(200);
+    }
+
+    @Test
     void aRestartSendsTheAppliedPackAgain() {
         assertThat(h.ok("server_start", "timeoutSeconds", 30)).doesNotContain("resource pack");
         h.ok("texture_create", "name", "item/dot", "palette", List.of("a=#ff0000"), "rows", List.of("a"));
         assertThat(h.ok("pack_build")).contains("applied: sent to 1 players; players who join later get it too");
         h.ok("server_stop");
         assertThat(h.ok("server_start", "timeoutSeconds", 30)).contains("\nresource pack sent again: players who join get it\n");
+    }
+
+    static int fetchCode(String url) throws InterruptedException {
+        return fetch(url);
     }
 
     private static int fetch(String url) throws InterruptedException {
@@ -275,8 +295,9 @@ class LifecycleToolsTest {
     void scaffoldCreatesAProjectOnceAndRefusesToOverwrite() throws Exception {
         assertThat(h.ok("project_scaffold", "name", "MyPlugin", "dir", "fresh"))
                 .startsWith("created paper-plugin project in ").doesNotContain("assword").doesNotContain("eula=")
-                .endsWith("next: ask the user to accept the Minecraft EULA (https://aka.ms/MinecraftEULA), then "
-                        + "server_setup acceptEula=true, then edit the code and dev_cycle");
+                .contains("next: ask the user exactly: \"To run a Minecraft server you must agree to the Minecraft "
+                        + "EULA (https://aka.ms/MinecraftEULA). Do you agree to it? (yes/no)\"")
+                .endsWith("On yes: server_setup acceptEula=true, then edit the code and dev_cycle");
         Files.createDirectories(workspace.resolve("run"));
         Files.writeString(workspace.resolve("run/paper.jar"), "set up");
         assertThat(h.ok("project_scaffold", "name", "Other", "dir", "second"))

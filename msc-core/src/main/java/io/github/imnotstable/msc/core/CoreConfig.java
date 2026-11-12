@@ -27,12 +27,13 @@ import java.util.UUID;
  * @param fabricMavenUrl base URL of Fabric's Maven repository (Fabric API download)
  * @param installDir    where this core is installed, or null when unknown; its {@code agents/} folder holds the
  *                      agent jars shipped with the core, the last place {@code server_setup} looks
+ * @param packPort      port the resource pack server binds; 0 reuses the port this workspace used last
  */
 public record CoreConfig(Path workspace, Path serverDir, int agentPort, String token, Path toolLog,
                          String javaCommand, List<String> serverCommand, List<String> buildCommand,
                          String downloadsUrl, String minecraft, List<Path> apiJars, String packHost,
                          int packFormat, Path agentJar, String fabricMetaUrl, String fabricMavenUrl,
-                         Path installDir) {
+                         Path installDir, int packPort) {
     public static final String ENV_WORKSPACE = "MSC_WORKSPACE";
     public static final String ENV_SERVER_DIR = "MSC_SERVER_DIR";
     public static final String ENV_TOOL_LOG = "MSC_TOOL_LOG";
@@ -43,6 +44,7 @@ public record CoreConfig(Path workspace, Path serverDir, int agentPort, String t
     public static final String ENV_PACK_HOST = "MSC_PACK_HOST";
     public static final String ENV_PACK_FORMAT = "MSC_PACK_FORMAT";
     public static final String ENV_AGENT_JAR = "MSC_AGENT_JAR";
+    public static final String ENV_PACK_PORT = "MSC_PACK_PORT";
 
     public static final String ENV_FABRIC_META_URL = "MSC_FABRIC_META_URL";
     public static final String ENV_FABRIC_MAVEN_URL = "MSC_FABRIC_MAVEN_URL";
@@ -65,7 +67,7 @@ public record CoreConfig(Path workspace, Path serverDir, int agentPort, String t
         String java = Path.of(System.getProperty("java.home"), "bin", "java").toString();
         return new CoreConfig(workspace, workspace.resolve("run"), 0, UUID.randomUUID().toString(), null, java,
                 null, null, DEFAULT_DOWNLOADS_URL, DEFAULT_MINECRAFT, List.of(), "127.0.0.1", DEFAULT_PACK_FORMAT, null,
-                DEFAULT_FABRIC_META_URL, DEFAULT_FABRIC_MAVEN_URL, null);
+                DEFAULT_FABRIC_META_URL, DEFAULT_FABRIC_MAVEN_URL, null, 0);
     }
 
     public static CoreConfig fromEnvironment(Map<String, String> env) {
@@ -96,7 +98,8 @@ public record CoreConfig(Path workspace, Path serverDir, int agentPort, String t
                 env.containsKey(ENV_AGENT_JAR) ? Path.of(env.get(ENV_AGENT_JAR)) : null,
                 env.getOrDefault(ENV_FABRIC_META_URL, DEFAULT_FABRIC_META_URL),
                 env.getOrDefault(ENV_FABRIC_MAVEN_URL, DEFAULT_FABRIC_MAVEN_URL),
-                null);
+                null,
+                Integer.parseInt(env.getOrDefault(ENV_PACK_PORT, "0").trim()));
     }
 
     /** {@code <workspace>/.msc}: caches, the resource pack source and logs. */
@@ -106,48 +109,69 @@ public record CoreConfig(Path workspace, Path serverDir, int agentPort, String t
 
     public CoreConfig withServerCommand(List<String> command) {
         return new CoreConfig(workspace, serverDir, agentPort, token, toolLog, javaCommand, command, buildCommand,
-                downloadsUrl, minecraft, apiJars, packHost, packFormat, agentJar, fabricMetaUrl, fabricMavenUrl, installDir);
+                downloadsUrl, minecraft, apiJars, packHost, packFormat, agentJar, fabricMetaUrl, fabricMavenUrl, installDir, packPort);
     }
 
     public CoreConfig withBuildCommand(List<String> command) {
         return new CoreConfig(workspace, serverDir, agentPort, token, toolLog, javaCommand, serverCommand, command,
-                downloadsUrl, minecraft, apiJars, packHost, packFormat, agentJar, fabricMetaUrl, fabricMavenUrl, installDir);
+                downloadsUrl, minecraft, apiJars, packHost, packFormat, agentJar, fabricMetaUrl, fabricMavenUrl, installDir, packPort);
     }
 
     public CoreConfig withToolLog(Path file) {
         return new CoreConfig(workspace, serverDir, agentPort, token, file, javaCommand, serverCommand, buildCommand,
-                downloadsUrl, minecraft, apiJars, packHost, packFormat, agentJar, fabricMetaUrl, fabricMavenUrl, installDir);
+                downloadsUrl, minecraft, apiJars, packHost, packFormat, agentJar, fabricMetaUrl, fabricMavenUrl, installDir, packPort);
     }
 
     public CoreConfig withDownloadsUrl(String url) {
         return new CoreConfig(workspace, serverDir, agentPort, token, toolLog, javaCommand, serverCommand,
-                buildCommand, url, minecraft, apiJars, packHost, packFormat, agentJar, fabricMetaUrl, fabricMavenUrl, installDir);
+                buildCommand, url, minecraft, apiJars, packHost, packFormat, agentJar, fabricMetaUrl, fabricMavenUrl, installDir, packPort);
     }
 
     public CoreConfig withFabricUrls(String metaUrl, String mavenUrl) {
         return new CoreConfig(workspace, serverDir, agentPort, token, toolLog, javaCommand, serverCommand,
-                buildCommand, downloadsUrl, minecraft, apiJars, packHost, packFormat, agentJar, metaUrl, mavenUrl, installDir);
+                buildCommand, downloadsUrl, minecraft, apiJars, packHost, packFormat, agentJar, metaUrl, mavenUrl, installDir, packPort);
     }
 
     public CoreConfig withMinecraft(String version) {
         return new CoreConfig(workspace, serverDir, agentPort, token, toolLog, javaCommand, serverCommand,
-                buildCommand, downloadsUrl, version, apiJars, packHost, packFormat, agentJar, fabricMetaUrl, fabricMavenUrl, installDir);
+                buildCommand, downloadsUrl, version, apiJars, packHost, packFormat, agentJar, fabricMetaUrl, fabricMavenUrl, installDir, packPort);
     }
 
     public CoreConfig withAgentJar(Path jar) {
         return new CoreConfig(workspace, serverDir, agentPort, token, toolLog, javaCommand, serverCommand,
-                buildCommand, downloadsUrl, minecraft, apiJars, packHost, packFormat, jar, fabricMetaUrl, fabricMavenUrl, installDir);
+                buildCommand, downloadsUrl, minecraft, apiJars, packHost, packFormat, jar, fabricMetaUrl, fabricMavenUrl, installDir, packPort);
     }
 
     public CoreConfig withApiJars(List<Path> jars) {
         return new CoreConfig(workspace, serverDir, agentPort, token, toolLog, javaCommand, serverCommand,
-                buildCommand, downloadsUrl, minecraft, jars, packHost, packFormat, agentJar, fabricMetaUrl, fabricMavenUrl, installDir);
+                buildCommand, downloadsUrl, minecraft, jars, packHost, packFormat, agentJar, fabricMetaUrl, fabricMavenUrl, installDir, packPort);
     }
 
     public CoreConfig withInstallDir(Path dir) {
         return new CoreConfig(workspace, serverDir, agentPort, token, toolLog, javaCommand, serverCommand,
                 buildCommand, downloadsUrl, minecraft, apiJars, packHost, packFormat, agentJar, fabricMetaUrl,
-                fabricMavenUrl, dir);
+                fabricMavenUrl, dir, packPort);
+    }
+
+    public CoreConfig withPackPort(int port) {
+        return new CoreConfig(workspace, serverDir, agentPort, token, toolLog, javaCommand, serverCommand,
+                buildCommand, downloadsUrl, minecraft, apiJars, packHost, packFormat, agentJar, fabricMetaUrl,
+                fabricMavenUrl, installDir, port);
+    }
+
+    /**
+     * The same settings for another workspace. The server folder and tool log move along when they were the
+     * defaults inside the old workspace; a folder set explicitly (MSC_SERVER_DIR, MSC_TOOL_LOG) stays.
+     */
+    public CoreConfig withWorkspace(Path dir) {
+        Path ws = dir.toAbsolutePath().normalize();
+        Path server = serverDir.equals(workspace.resolve("run")) ? ws.resolve("run") : serverDir;
+        Path logFile = toolLog != null && toolLog.toAbsolutePath().normalize().startsWith(dataDir())
+                ? ws.resolve(".msc").resolve(dataDir().relativize(toolLog.toAbsolutePath().normalize()))
+                : toolLog;
+        return new CoreConfig(ws, server, agentPort, token, logFile, javaCommand, serverCommand, buildCommand,
+                downloadsUrl, minecraft, apiJars, packHost, packFormat, agentJar, fabricMetaUrl, fabricMavenUrl,
+                installDir, packPort);
     }
 
     /** Resolve a path argument against the workspace. */

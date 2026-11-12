@@ -35,7 +35,8 @@ public final class McpBridge {
             + "Testing a game: server_setup mode=game (survival), world_entities to check mobs and NPCs, server_wait "
             + "until=<regex> instead of polling, server_command \"tick sprint 600\" to skip ahead; chunks with no "
             + "player nearby do not tick, so keep game areas loaded with chunk tickets or forceload. "
-            + "Results are size-capped; narrow the request rather than raising maxChars.";
+            + "Results are size-capped; narrow the request rather than raising maxChars. Wrong folder: "
+            + "msc_workspace switches it without a restart.";
 
     private McpBridge() {
     }

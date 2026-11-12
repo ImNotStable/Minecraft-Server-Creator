@@ -71,6 +71,7 @@ final class WorldOps {
         }
         Component custom = e.customName();
         if (custom == null && e instanceof TextDisplay display) {
+            // A hologram's words are its text, not a name: report them so a render or summary can show them.
             custom = display.text();
         }
         return custom == null ? null : PlainTextComponentSerializer.plainText().serialize(custom);
