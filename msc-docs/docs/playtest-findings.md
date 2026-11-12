@@ -134,7 +134,7 @@ EULA wait on Minestom. The game's own test environment replaced polling: no `ser
 5. **`msc_status` says "server: stopped"** for a server detached by an earlier core, while `server_stop` finds and
    stops it. Open, small.
 6. **`api_class` hides inherited interface constants**: `MinecraftServer.PROTOCOL_VERSION`, `Attribute.SCALE` and
-   `DimensionType.OVERWORLD` all come from interfaces and were missing. Open.
-7. **No spiral or helix shape** in `build_batch`, and no `repeat` for single `set` steps. Open, small.
+   `DimensionType.OVERWORLD` all come from interfaces and were missing. Fixed (R4): `api_class` lists inherited constants.
+7. **No spiral or helix shape** in `build_batch`, and no `repeat` for single `set` steps. Fixed (R4): `helix` step, and `repeat=N step=DX,DY,DZ` on every step.
 8. **Shadow warnings in `dev_cycle` failures** (ten lines of DuplicatesStrategy notes). Fixed in the template.
 9. **The tool log stays in the start folder** after `msc_workspace`. Open, small.

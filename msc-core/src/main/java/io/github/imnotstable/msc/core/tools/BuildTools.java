@@ -19,9 +19,9 @@ import java.util.List;
 
 /** Shapes, stamps and batches: many blocks per call, one undo id per call, every block name checked first. */
 public final class BuildTools {
-    private static final String WORLD = "World. Default: the main world";
-    private static final String DRY_RUN = "Only check names and count blocks. Default false";
-    private static final String PHYSICS = "Apply block updates. Default false";
+    private static final String WORLD = "Default: main world";
+    private static final String DRY_RUN = "Only check names and count blocks";
+    private static final String PHYSICS = "Apply block updates";
 
     private BuildTools() {
     }
@@ -39,10 +39,8 @@ public final class BuildTools {
             }
         };
         registry.add("build_batch",
-                "The one build tool: fills and rooms, single blocks, round shapes, lines, terrain bands, text or "
-                        + ".schem structures stamped, turned or repeated, and copies. All steps are one edit with one "
-                        + "undo id, and every block name is checked before any is placed. Put a whole build in one "
-                        + "call, not a generator script.\n" + BuildScript.HELP,
+                "The one build tool. All steps are one edit with one undo id; every block name is checked "
+                        + "before any is placed. Put a whole build in one call, not a generator script.\n" + BuildScript.HELP,
                 Schema.of().req("steps", "string", "The steps, one per line")
                         .opt("world", "string", WORLD).opt("physics", "boolean", PHYSICS)
                         .opt("dryRun", "boolean", DRY_RUN),

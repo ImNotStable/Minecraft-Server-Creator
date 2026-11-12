@@ -29,13 +29,13 @@ Coordinates are text: a position is `x,y,z`, a region is `x1,y1,z1 x2,y2,z2`, an
 | Tool | What it does |
 | --- | --- |
 | `api_search` | Finds classes, methods and events in the platform's API by name. |
-| `api_class` | Lists one class's members and signatures. |
+| `api_class` | Lists one class's members and signatures, with constants it inherits. |
 
 ## Seeing the world
 
 | Tool | What it does |
 | --- | --- |
-| `world_summary` | Counts blocks and entities in a region, in about six lines. |
+| `world_summary` | Counts blocks and entities in a region, in about six lines. With `path`, says whether a player can walk and jump from one point to another and names the first wall or gap; with `diff`, lists what changed since a `structure_save` snapshot. |
 | `world_slice` | Shows a region as text, one character per block, layer by layer. |
 | `world_entities` | Lists the entities in a region with name, position, health and tags. |
 | `world_heightmap` | Shows the ground height of an area, one character per column. |
@@ -45,7 +45,7 @@ Coordinates are text: a position is `x,y,z`, a region is `x1,y1,z1 x2,y2,z2`, an
 
 | Tool | What it does |
 | --- | --- |
-| `build_batch` | The one build tool. Runs build steps as one edit: fills and rooms, single blocks, circles, rings, spheres, domes, lines, terrain bands, structures from text or `.schem` files (repeated or turned), and copies. Takes block mixes such as `grass_block:78,moss_block:10`, checks every block name before placing any, and has a `dryRun` option. |
+| `build_batch` | The one build tool. Runs build steps as one edit: fills and rooms, single blocks, circles, rings, spheres, domes, lines, helixes (spiral stairs), terrain bands, structures from text or `.schem` files (repeated or turned), and copies; any step repeats with `repeat=N step=DX,DY,DZ`. Takes block mixes such as `grass_block:78,moss_block:10`, checks every block name before placing any, and has a `dryRun` option. |
 | `build_undo` | Undoes an edit (the last one by default). |
 | `structure_save` | Saves a region as a `.schem` file. Place it again with `build_batch` step `structure X,Y,Z file=PATH`. |
 

@@ -257,16 +257,19 @@ public final class ApiIndex {
         List<String> lines = new ArrayList<>();
         Set<String> seen = new HashSet<>();
         collect(c, f, lines, seen, null);
-        if (inherited) {
-            Set<String> visited = new HashSet<>();
-            List<String> todo = new ArrayList<>(c.supertypes());
-            while (!todo.isEmpty()) {
-                String s = todo.remove(0);
-                ClassInfo parent = classes.get(s);
-                if (parent != null && visited.add(s)) {
-                    collect(parent, f, lines, seen, parent.simpleName());
-                    todo.addAll(parent.supertypes());
+        // Constants are reached through the class name (MinecraftServer.PROTOCOL_VERSION), so show the ones
+        // inherited from interfaces and superclasses even without inherited=true.
+        for (ClassInfo parent : ancestors(c)) {
+            for (ClassInfo.Member m : parent.members()) {
+                if (!m.method() && m.text().startsWith("static final ")
+                        && (f == null || m.name().toLowerCase(Locale.ROOT).contains(f)) && seen.add(m.text())) {
+                    lines.add(m.text() + (m.deprecated() ? " (deprecated)" : "") + "  <- " + parent.simpleName());
                 }
+            }
+        }
+        if (inherited) {
+            for (ClassInfo parent : ancestors(c)) {
+                collect(parent, f, lines, seen, parent.simpleName());
             }
         }
         for (int i = 0; i < Math.min(limit, lines.size()); i++) {
@@ -279,6 +282,22 @@ public final class ApiIndex {
                     + (inherited ? "" : "; try inherited=true") + "]");
         }
         return out.toString().stripTrailing();
+    }
+
+    /** Every indexed supertype of {@code c}, nearest first, each once. */
+    private List<ClassInfo> ancestors(ClassInfo c) {
+        List<ClassInfo> out = new ArrayList<>();
+        Set<String> visited = new HashSet<>();
+        List<String> todo = new ArrayList<>(c.supertypes());
+        while (!todo.isEmpty()) {
+            String s = todo.remove(0);
+            ClassInfo parent = classes.get(s);
+            if (parent != null && visited.add(s)) {
+                out.add(parent);
+                todo.addAll(parent.supertypes());
+            }
+        }
+        return out;
     }
 
     private static void collect(ClassInfo c, String filter, List<String> lines, Set<String> seen, String from) {
