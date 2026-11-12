@@ -1,0 +1,34 @@
+# Copies docs/wiki/ to the GitHub wiki whenever it changes on main.
+# The wiki must exist first: create any page once in the repo's Wiki tab.
+name: Publish wiki
+
+on:
+  push:
+    branches: [main]
+    paths: ["docs/wiki/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Push docs/wiki to the wiki repo
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if ! git clone "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.wiki.git" wiki; then
+            echo "::warning::Wiki not created yet; create one page in the Wiki tab, then re-run this workflow"
+            exit 0
+          fi
+          rsync -a --delete --exclude .git --exclude README.md docs/wiki/ wiki/
+          cd wiki
+          git config user.name "github-actions[bot]"
+          git config user.email "41898900+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet && { echo "wiki already up to date"; exit 0; }
+          git commit -m "Sync wiki from ${GITHUB_SHA::7}"
+          git push
