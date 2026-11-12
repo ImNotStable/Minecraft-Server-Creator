@@ -29,6 +29,14 @@ dependencies {
     agents(project(path = ":msc-agent-fabric", configuration = "runtimeElements")) { isTransitive = false }
 }
 
+// The test player's client for the previous Minecraft version (Minestom lags Paper by one), in bot/<version>/.
+// Not on the class path: msc-bot's Bots loads it in its own class loader when a server answers with that protocol.
+val previousProtocol = configurations.dependencyScope("previousProtocol")
+val previousProtocolJars = configurations.resolvable("previousProtocolJars") { extendsFrom(previousProtocol.get()) }
+dependencies {
+    previousProtocol(libs.mcprotocollib.previous) { isTransitive = false }
+}
+
 distributions {
     main {
         contents {
@@ -36,6 +44,9 @@ distributions {
                 from(agentJars)
                 // Loom's runtimeElements may also carry the dev (named) jar; only the remapped one loads.
                 exclude("*-dev.jar", "*-sources.jar")
+            }
+            into("bot/${libs.versions.mcprotocollib.previous.get()}") {
+                from(previousProtocolJars)
             }
         }
     }

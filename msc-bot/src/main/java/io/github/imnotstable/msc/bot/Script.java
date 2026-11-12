@@ -239,6 +239,7 @@ final class Script {
     }
 
     static final class Jump extends Step {
+        private boolean pressed;
         private boolean left;
         private double startY;
         private double top;
@@ -248,24 +249,29 @@ final class Script {
         }
 
         @Override
-        void start(TestPlayer p) {
-            super.start(p);
-            startY = p.body.y;
-            top = startY;
-        }
-
-        @Override
         Physics.Input input(TestPlayer p) {
-            boolean press = !left && p.body.onGround;
+            // Wait for the ground first: right after joining or a teleport the player may still be settling.
+            boolean press = !pressed && p.body.onGround;
+            if (press) {
+                pressed = true;
+                startY = p.body.y;
+                top = startY;
+            }
             return new Physics.Input(0, 0, press, false, p.yaw);
         }
 
         @Override
         boolean check(TestPlayer p) {
-            top = Math.max(top, p.body.y);
-            left |= !p.body.onGround;
-            if (left && p.body.onGround || elapsed(p) > 60) {
-                finish(String.format("rose %.2f, landed at y=%.2f", top - startY, p.body.y));
+            if (pressed) {
+                top = Math.max(top, p.body.y);
+                left |= !p.body.onGround;
+                if (left && p.body.onGround) {
+                    finish(String.format("rose %.2f, landed at y=%.2f", top - startY, p.body.y));
+                }
+            }
+            if (elapsed(p) > 60) {
+                finish(pressed ? String.format("rose %.2f, still in the air at y=%.2f", top - startY, p.body.y)
+                        : "could not jump: not standing on anything");
             }
             return super.check(p);
         }
