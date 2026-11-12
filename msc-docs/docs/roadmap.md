@@ -66,7 +66,7 @@ now and lead this round.
 | Undo that survives a core restart | Never missed; `structure_save` covers it. |
 | Room and wall detection | Replaced by R4's `path` and `diff`. |
 | Looking at a pack in a real Minecraft client | Needs the owner's client and screen. R3 reports whether the pack loaded; `world_render` uses the pack's textures. |
-| New tools | The list is 30 tools under a 16,000-character guard. Everything in this round is a step or option on an existing tool, and R6 removes four. |
+| New tools | The list is 30 tools under a 16,000-character guard. Everything in this round is a step or option on an existing tool, and R6 removes four (done, ADR 0023). |
 
 ## Order and collisions
 

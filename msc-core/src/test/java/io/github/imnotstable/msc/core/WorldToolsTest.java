@@ -206,6 +206,24 @@ class WorldToolsTest {
     }
 
     @Test
+    void summaryChecksAPathAndADiffWithoutAPlayer() {
+        h.ok("build_batch", "steps", "fill 5,64,0 5,65,4 stone");
+        String region = "0,63,0 9,67,4";
+        assertThat(h.ok("world_summary", "region", region, "path", "0,64,2 9,64,2"))
+                .startsWith("not reachable from 0,64,2 to 9,64,2. Closest: 4,64,2\nwall to the east: stone at 5,64,2 (2 high");
+        h.ok("structure_save", "region", region, "file", "snap/before.schem");
+        h.ok("build_batch", "steps", "set 5,65,2 air");
+        assertThat(h.ok("world_summary", "region", region, "path", "0,64,2 9,64,2"))
+                .isEqualTo("reachable: 9 moves, 1 up, 1 drop\nroute: 0,64,2 > 4,64,2 > 5,65,2 > 6,64,2 > 9,64,2");
+        assertThat(h.ok("world_summary", "region", region, "diff", "snap/before.schem"))
+                .isEqualTo("1 block changed since snap/before.schem, in world 5,65,2 5,65,2\nchanges: stone -> air 1\n5,65,2 stone -> air");
+        assertThat(h.error("world_summary", "region", region, "diff", "snap/none.schem")).contains("structure_save");
+        assertThat(h.error("world_summary", "region", region, "path", "0,64,2")).contains("two positions");
+        assertThat(h.error("world_summary", "region", region, "path", "0,64,2 9,64,2", "diff", "a.schem"))
+                .contains("not both");
+    }
+
+    @Test
     void heightmapIsCompact() {
         h.ok("build_batch", "steps", "fill 1,64,1 2,66,2 stone");
         assertThat(h.ok("world_heightmap", "area", "0,0 3,3")).isEqualTo("""

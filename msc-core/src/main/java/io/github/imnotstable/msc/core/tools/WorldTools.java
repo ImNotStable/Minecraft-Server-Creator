@@ -8,7 +8,10 @@ import io.github.imnotstable.msc.core.tool.ToolException;
 import io.github.imnotstable.msc.core.tool.ToolRegistry;
 import io.github.imnotstable.msc.core.world.BlockNames;
 import io.github.imnotstable.msc.core.world.Coords;
+import io.github.imnotstable.msc.core.world.Diff;
 import io.github.imnotstable.msc.core.world.Schematic;
+import io.github.imnotstable.msc.core.world.TextGrid;
+import io.github.imnotstable.msc.core.world.Walk;
 import io.github.imnotstable.msc.core.world.WorldService;
 import io.github.imnotstable.msc.protocol.op.Ops;
 import io.github.imnotstable.msc.protocol.world.BlockGrid;
@@ -26,7 +29,7 @@ import java.util.List;
 
 /** Seeing and building in the world. Coordinates are strings: "x,y,z" and "x1,y1,z1 x2,y2,z2". */
 public final class WorldTools {
-    private static final String WORLD = "World. Default: the main world";
+    private static final String WORLD = "Default: main world";
     private static final String REGION = "Two corners, inclusive: \"x1,y1,z1 x2,y2,z2\"";
 
     /** Largest region one world_render reads, stitched from protocol-sized reads. */
@@ -40,13 +43,13 @@ public final class WorldTools {
                 "See blocks as text: one grid per Y layer with a legend, in the structure text build_batch takes. "
                         + "Best up to about 32x32 per layer.",
                 Schema.of().req("region", "string", REGION).opt("world", "string", WORLD)
-                        .opt("states", "boolean", "Show block properties such as facing. Default false")
-                        .opt("maxChars", "integer", "Result size cap. Default 6000"),
+                        .opt("states", "boolean", "Show block properties such as facing")
+                        .opt("maxChars", "integer", "Max result chars. Default 6000"),
                 args -> world.slice(Coords.region(world.world(args.str("world", null)), args.str("region")),
                         args.bool("states", false), Budget.of(args)));
         registry.add("world_heightmap", "Surface height per column over an area, as a compact grid.",
                 Schema.of().req("area", "string", "Two corners: \"x1,z1 x2,z2\"").opt("world", "string", WORLD)
-                        .opt("maxChars", "integer", "Result size cap. Default 6000"),
+                        .opt("maxChars", "integer", "Max result chars. Default 6000"),
                 args -> world.heightmap(Coords.area(world.world(args.str("world", null)), args.str("area")),
                         Budget.of(args)));
         List<Path> textureRoots = new ArrayList<>(List.of(config.dataDir().resolve("pack")));
@@ -57,7 +60,7 @@ public final class WorldTools {
         }
         WorldRenderer renderer = new WorldRenderer(new PackTextures(textureRoots));
         registry.addImage("world_render",
-                "See a region as a small PNG image to check how a build looks. Views: iso (default), top, north, "
+                "See a region as a small PNG image to check how a build looks. Views: iso, top, north, "
                         + "south, east, west, iso-ne/nw/sw/se, \"eye x,y,z look x,y,z\".",
                 Schema.of().req("region", "string", REGION).opt("view", "string", "Camera. Default iso")
                         .opt("size", "integer", "Longest side in pixels, 64 to 1568. Default 512")
@@ -84,9 +87,29 @@ public final class WorldTools {
                 });
         registry.add("world_summary",
                 "Summarize a region in a few lines: block counts, non-air bounds, fill per layer, entities. Use before world_slice on unknown areas.",
-                Schema.of().req("region", "string", REGION).opt("world", "string", WORLD),
-                args -> world.summary(Coords.region(world.world(args.str("world", null)), args.str("region")),
-                        Budget.DEFAULT_CHARS));
+                Schema.of().req("region", "string", REGION).opt("world", "string", WORLD)
+                        .opt("path", "string", "\"x,y,z x,y,z\": can a player walk/jump from A to B; else the wall or gap")
+                        .opt("diff", "string", "structure_save file of this region: what changed since"),
+                args -> {
+                    Region region = Coords.region(world.world(args.str("world", null)), args.str("region"));
+                    String path = args.str("path", null);
+                    String diff = args.str("diff", null);
+                    if (path != null && diff != null) {
+                        throw new ToolException("give path or diff, not both");
+                    }
+                    if (path != null) {
+                        String[] ends = path.trim().split("\\s+");
+                        if (ends.length != 2) {
+                            throw new ToolException("path takes two positions, \"x,y,z x,y,z\", got \"" + path + "\"");
+                        }
+                        BlockGrid grid = world.readAll(region, WorldService.MAX_BULK_VOLUME, "world_summary path");
+                        return new Walk(grid).path(Coords.pos(ends[0]), Coords.pos(ends[1]));
+                    }
+                    if (diff != null) {
+                        return diff(config, world, region, diff);
+                    }
+                    return world.summary(region, Budget.DEFAULT_CHARS);
+                });
         registry.add("world_entities", "List entities in a region: type, name, position, health, tags. Loaded chunks only.",
                 Schema.of().req("region", "string", REGION).opt("type", "string", "Only this type, such as zombie")
                         .opt("limit", "integer", "Default 50").opt("ids", "boolean", "Add UUIDs")
@@ -98,7 +121,7 @@ public final class WorldTools {
                 args -> world.undo(args.str("edit", null)));
         registry.add("structure_save", "Save a region as a Sponge schematic (.schem) file, blocks only.",
                 Schema.of().req("region", "string", REGION)
-                        .req("file", "string", "Path relative to the workspace, for example structures/house.schem")
+                        .req("file", "string", "Workspace path such as structures/house.schem")
                         .opt("world", "string", WORLD),
                 args -> {
                     Region region = Coords.region(world.world(args.str("world", null)), args.str("region"));
@@ -107,6 +130,22 @@ public final class WorldTools {
                     return "saved " + region.sizeX() + "x" + region.sizeY() + "x" + region.sizeZ() + " to " + file
                             + " (" + Files.size(file) + " bytes)";
                 });
+    }
+
+    /** Compare a region with a snapshot file (.schem, or text structure) placed at the region's lowest corner. */
+    private static String diff(CoreConfig config, WorldService world, Region region, String name)
+            throws java.io.IOException, InterruptedException {
+        Path file = config.resolve(name);
+        if (!Files.isRegularFile(file)) {
+            throw new ToolException("no file " + file + "; take a snapshot first with structure_save");
+        }
+        BlockGrid before = name.endsWith(".schem") ? Schematic.load(file, region.world(), region.min())
+                : TextGrid.parse(Files.readString(file), region.world(), region.min());
+        Region b = before.region();
+        Region overlap = Region.of(region.world(), region.min().x(), region.min().y(), region.min().z(),
+                Math.min(region.max().x(), b.max().x()), Math.min(region.max().y(), b.max().y()),
+                Math.min(region.max().z(), b.max().z()));
+        return Diff.compare(before, world.readAll(overlap, WorldService.MAX_BULK_VOLUME, "world_summary diff"), name);
     }
 
     /**

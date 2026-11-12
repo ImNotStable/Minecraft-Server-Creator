@@ -188,7 +188,7 @@ final class ServerRun {
     }
 
     /**
-     * A restarted server has forgotten the pack that pack_build sent, and a detached pack host was just stopped,
+     * A restarted server has forgotten the pack that the pack tool sent, and a detached pack host was just stopped,
      * so serve and send it again. Best effort, like the ground line. Also used when dev_cycle keeps the server
      * running: a changed pack still reaches the players.
      */
@@ -205,7 +205,7 @@ final class ServerRun {
             Thread.currentThread().interrupt();
             return "";
         } catch (IOException | RuntimeException e) {
-            return "\nresource pack not sent again (" + e.getMessage() + "): run pack_build";
+            return "\nresource pack not sent again (" + e.getMessage() + "): run the pack tool";
         }
     }
 

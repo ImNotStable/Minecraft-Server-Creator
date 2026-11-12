@@ -50,7 +50,8 @@ class ApiIndexTest {
                 String label()
                 Map<String, List<? extends T>> sortInto(List<T> items, int[] order)
                 void oldWay() (deprecated)
-                static Gadget create(String label, Gadget.Mode mode)""");
+                static Gadget create(String label, Gadget.Mode mode)
+                static final int MAX_WIDTH  <- Widget""");
     }
 
     @Test
@@ -60,8 +61,15 @@ class ApiIndexTest {
         assertThat(index.describe("Gadget", "labelled", false, 40)).contains("try inherited=true");
         assertThat(index.describe("Gadget.Mode", null, false, 40))
                 .isEqualTo("enum io.github.imnotstable.msc.core.fixture.Gadget.Mode\nconstants: FAST SAFE");
-        assertThat(index.describe("Gadget", null, false, 2)).endsWith("[5 more members; use filter or raise limit]");
+        assertThat(index.describe("Gadget", null, false, 2)).endsWith("[6 more members; use filter or raise limit]");
         assertThatThrownBy(() -> index.find("Gizmo")).isInstanceOf(ToolException.class).hasMessageContaining("api_search");
+    }
+
+    @Test
+    void showsConstantsInheritedFromInterfacesWithoutInherited() {
+        assertThat(index.describe("Gadget", "width", false, 40))
+                .isEqualTo("class io.github.imnotstable.msc.core.fixture.Gadget : Widget\nstatic final int MAX_WIDTH  <- Widget");
+        assertThat(index.describe("Gadget", "width", true, 40)).containsOnlyOnce("MAX_WIDTH");
     }
 
     @Test

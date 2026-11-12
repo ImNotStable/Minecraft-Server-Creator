@@ -16,7 +16,7 @@ import io.github.imnotstable.msc.core.tool.ToolRegistry;
  * ({@link ServerConsole}). This class only declares them.
  */
 public final class LifecycleTools {
-    /** The description pack_build uses when none is given. */
+    /** The description the pack tool uses when none is given. */
     public static final String DEFAULT_PACK_DESCRIPTION = "Minecraft Server Creator dev pack";
 
     private LifecycleTools() {

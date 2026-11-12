@@ -95,7 +95,7 @@ scaffold `package` option (#19), pack sent again after a restart and render colo
 ## What worked and should not change
 
 `dev_cycle` as one call, `api_search` and `api_class` for names that moved in 26.x, condensed logs ("no errors or warnings"), the ground-level line, text structures for
-irregular builds such as the maze, `world_render` for a quick look, `texture_create` from text, and
+irregular builds such as the maze, `world_render` for a quick look, textures drawn from text, and
 `server_detach`.
 
 ## Third playtest: Tidewright on Minestom (2026-11-12)
@@ -134,7 +134,45 @@ EULA wait on Minestom. The game's own test environment replaced polling: no `ser
 5. **`msc_status` says "server: stopped"** for a server detached by an earlier core, while `server_stop` finds and
    stops it. Open, small.
 6. **`api_class` hides inherited interface constants**: `MinecraftServer.PROTOCOL_VERSION`, `Attribute.SCALE` and
-   `DimensionType.OVERWORLD` all come from interfaces and were missing. Open.
-7. **No spiral or helix shape** in `build_batch`, and no `repeat` for single `set` steps. Open, small.
+   `DimensionType.OVERWORLD` all come from interfaces and were missing. Fixed (R4): `api_class` lists inherited constants.
+7. **No spiral or helix shape** in `build_batch`, and no `repeat` for single `set` steps. Fixed (R4): `helix` step, and `repeat=N step=DX,DY,DZ` on every step.
 8. **Shadow warnings in `dev_cycle` failures** (ten lines of DuplicatesStrategy notes). Fixed in the template.
 9. **The tool log stays in the start folder** after `msc_workspace`. Open, small.
+
+## Fourth playtest (texture round): Emberwright on Minestom (2026-11-12)
+
+A small forge game scaffolded from `minestom-game` on main `3be087a`, driven through an installed core over MCP stdio
+in the cloud. Goal: use every texture tool on a real pack, then shrink them ([ADR 0023](adr/0023-texture-tools.md)).
+
+**What it made.** Ember shard (`gem`, then pulsing), ember ingot (`ingot`), ember ore (`ore` pattern, 8 colors), a
+frost shard recolored from the ember shard, a forge hammer and smoked fish drawn as text (no tool or food shape
+existed), a scrolling 16-frame retexture of vanilla `minecraft:block/magma`, and a `cube_all` model. The kit gives
+six items with `item_model` and `item_name` set. `pack_check`: 0 problems. `player_test` saw the pack offered and
+downloaded with a matching SHA-1. 32 calls, 4,645 result tokens in total; the texture calls were under 100 ms each.
+
+**Findings, worst first.**
+1. **Too many tools for one act.** Draw, generate and recolor end in the same write; animate always followed one of
+   them. Fixed by ADR 0023: one `texture` tool, `pack` for build and check (8 tools to 4).
+2. **No tool or food shapes.** The hammer and fish took 16 hand-written rows each. Fixed: `sword`, `pickaxe` and
+   `food` shapes with a coloured handle or bone.
+3. **`texture_view` printed every frame of an animation** (2,255 characters for 8 frames). Fixed: frame 1 and
+   `frame 1 of N`.
+4. **`pack_build` printed only the check summary**, so an error needed `pack_check` as well. Fixed: a build lists
+   the first 5 problems.
+5. **Re-animating failed** with "scroll needs a square texture" because the file was already a strip. Fixed: it
+   starts from frame 1.
+6. **`texture_generate` for a block already writes a `cube_all` model**, which the result did not make clear, so
+   `model_create` was called for nothing. Open, small: the result names the `item_model` only.
+7. **Template: items with components break plain unit tests.** `GameConfig.game()` building an `ItemStack` with
+   `DataComponents.ITEM_MODEL` throws "Should have been bound" outside Minestom's test environment, so
+   `GameConfigTest` had to become an `@EnvTest`. Open, for `msc-templates`: give `Kit` a `custom(material, model,
+   name)` helper and make `GameConfigTest` an `@EnvTest` from the start.
+8. **`world_render` drew vanilla colours for retextured magma.** The pack overrides `minecraft:block/magma`, the
+   client's name for the magma block texture; the renderer probably looks up `block/magma_block`. Open, for the
+   renderer.
+9. **`dev_cycle` said "no agent connected"** once on a fast restart although the agent connected a moment later
+   (the next `pack` call reached it). Open, for R5.
+10. **The `dev_cycle` failure output printed whole `ItemStack` dumps** (3,239 characters for two failed asserts).
+    Open, for R9.
+
+Not checked: how the pack looks in a real client (needs the owner's client).
