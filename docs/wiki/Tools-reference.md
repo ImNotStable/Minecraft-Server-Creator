@@ -53,7 +53,7 @@ Coordinates are text: a position is `x,y,z`, a region is `x1,y1,z1 x2,y2,z2`, an
 
 | Tool | What it does |
 | --- | --- |
-| `player_test` | A test player joins your dev server and plays: walks to points, sprints and jumps gaps, presses buttons, attacks, runs commands. It reports what happened, such as damage, deaths, chat, titles and whether the resource pack downloaded. It speaks Minecraft 26.3 and 26.2, so it also joins Minestom servers, which are one version behind. If the server kicks it, the call fails and says why. Movement follows vanilla closely, so a jump it misses is usually hard for people too, but not always. |
+| `player_test` | A test player joins your dev server and plays: walks to points, sprints and jumps gaps, presses buttons, attacks, right-clicks NPCs, runs commands. It reports what happened, such as damage, deaths, chat, titles and whether the resource pack downloaded. Ask it for `inventory` to see what it holds and any menu the server opened, or `hud` for boss bars, the sidebar, the action bar and whether the resource pack loaded. It speaks Minecraft 26.3 and 26.2, so it also joins Minestom servers, which are one version behind. If the server kicks it, the call fails and says why. Movement follows vanilla closely, so a jump it misses is usually hard for people too, but not always. |
 
 ## Textures and resource pack
 
