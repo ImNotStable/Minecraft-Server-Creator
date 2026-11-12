@@ -105,7 +105,7 @@ public final class BenchRunner {
         return records;
     }
 
-    /** Tries per attempt when the mode's required MCP server was not connected at start. */
+    /** Tries per attempt when the mode's required MCP server was not connected at start and no tool was called. */
     static final int MCP_TRIES = 3;
 
     private RunRecord runWithMcpRetries(TaskDef task, String modeName, int repeat) throws IOException {
@@ -113,7 +113,10 @@ public final class BenchRunner {
         RunRecord record = null;
         for (int attempt = 1; attempt <= MCP_TRIES; attempt++) {
             record = runOne(task, modeName, repeat, attempt);
-            if (required == null || record.error() != null || record.agent().mcpConnected().contains(required)) {
+            // Claude Code connects MCP servers in the background, so the init event can list none even though the
+            // tools arrived a moment later: a logged tool call proves the server was there.
+            if (required == null || record.error() != null || record.agent().mcpConnected().contains(required)
+                    || record.tools().calls() > 0) {
                 return record;
             }
             log.printf("[%s] %s #%d: MCP server %s was not connected when the agent started (try %d of %d)%n",
