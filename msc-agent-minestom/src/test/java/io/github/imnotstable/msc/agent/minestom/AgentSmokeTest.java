@@ -2,6 +2,7 @@ package io.github.imnotstable.msc.agent.minestom;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.imnotstable.msc.agent.common.CoreAddress;
 import io.github.imnotstable.msc.protocol.message.Event;
 import io.github.imnotstable.msc.protocol.op.Events;
 import io.github.imnotstable.msc.protocol.op.Ops;

@@ -1,7 +1,8 @@
 /**
  * The Minestom agent: a library the server calls once at startup ({@link
  * io.github.imnotstable.msc.agent.minestom.MscAgent#start()}). It connects to msc-core over
- * msc-protocol and carries out its operations inside the server; {@code WorldOps} and
- * {@code ServerOps} hold the operations.
+ * msc-protocol and carries out its operations inside the server. The operations live in
+ * msc-agent-common; this package adapts Minestom to them ({@code Worlds}, {@code MinestomWorld},
+ * {@code MinestomServer}, {@code SchedulerMainThread}).
  */
 package io.github.imnotstable.msc.agent.minestom;

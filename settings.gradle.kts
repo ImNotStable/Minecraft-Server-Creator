@@ -46,6 +46,7 @@ rootProject.name = "minecraft-server-creator"
 // MVP modules
 include("msc-protocol")
 include("msc-core")
+include("msc-agent-common")
 include("msc-agent-paper")
 include("msc-templates")
 include("msc-bench")

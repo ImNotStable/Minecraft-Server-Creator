@@ -1,13 +1,19 @@
 package io.github.imnotstable.msc.agent.fabric;
 
+import io.github.imnotstable.msc.agent.common.AgentServer;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
 
 /** A fake server: an {@code echo} command, a fixed player count, and a record of packs sent. */
-final class TestServer implements ServerAccess {
+final class TestServer implements AgentServer {
     final List<Pack> packsSent = new ArrayList<>();
     int players;
+
+    @Override
+    public String platform() {
+        return FabricServerAccess.PLATFORM;
+    }
 
     @Override
     public String platformVersion() {

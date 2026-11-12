@@ -1,14 +1,16 @@
 package io.github.imnotstable.msc.agent.fabric;
 
+import io.github.imnotstable.msc.agent.common.AgentWorlds;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.storage.LevelResource;
 
 /** The server's levels under Paper-style names (see {@link LevelNames}). Main thread only. */
-final class FabricLevels implements Levels {
+final class FabricLevels implements AgentWorlds<BlockState> {
     private final MinecraftServer server;
 
     FabricLevels(MinecraftServer server) {
@@ -37,7 +39,7 @@ final class FabricLevels implements Levels {
     }
 
     @Override
-    public Optional<AgentLevel> byName(String name) {
+    public Optional<FabricLevel> byName(String name) {
         String levelName = levelName();
         for (ServerLevel level : server.getAllLevels()) {
             String dimension = level.dimension().identifier().toString();
@@ -46,5 +48,10 @@ final class FabricLevels implements Levels {
             }
         }
         return Optional.empty();
+    }
+
+    @Override
+    public BlockState parse(String state) {
+        return BlockStates.parse(state);
     }
 }

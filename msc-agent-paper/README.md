@@ -26,15 +26,14 @@ The plugin jar is `build/libs/msc-agent-paper-<version>.jar` (msc-protocol shade
 
 | Class | Role |
 | --- | --- |
-| `MscAgentPlugin` | Entry point: connects, routes ops, sends events |
-| `AgentRoutes` | Op name to handler table |
-| `WorldOps` | Reads, heightmaps, fill/write/setBlocks/undo |
-| `ServerOps` | Info, commands, resource packs |
-| `MainThread`, `BukkitMainThread`, `SlicedJob` | Running work on the main thread in per-tick slices |
-| `EditJob`, `ReadJob`, `HeightmapJob` | The sliced jobs |
-| `EditHistory`, `UndoRecord` | Undo |
+| `MscAgentPlugin` | Entry point: wires the shared operations and core link to Bukkit events |
+| `PaperWorlds`, `PaperWorld`, `BlockNames` | Worlds by name, block data parsing with close-name hints; one world's blocks, entities and signs |
+| `PaperServer`, `ServerFacts`, `PaperServerFacts` | Versions, TPS, commands, resource packs |
+| `BukkitMainThread` | Runs work on the main thread in per-tick slices |
+
+Operations, sliced jobs, undo and the core connection live in [msc-agent-common](../msc-agent-common/README.md); this module only adapts the server API to them.
 
 ## Depends on
 
-- `msc-protocol`
+- `msc-agent-common` (brings `msc-protocol`)
 - Paper API 26.3 (compileOnly), MockBukkit for tests.
