@@ -88,6 +88,7 @@ public final class TestPlayer implements Bot {
     private final CountDownLatch spawned = new CountDownLatch(1);
     private final Inventory inventory = new Inventory(Items.forVersion(minecraftVersion()));
     private final Hud hud = new Hud();
+    private final Outbox outbox = new Outbox();
     final Physics body = new Physics();
     private WorldView view;
     private volatile String disconnect;
@@ -247,9 +248,11 @@ public final class TestPlayer implements Bot {
                     }
                 }
                 sendInput(in);
-                session.send(new ServerboundMovePlayerPosRotPacket(body.onGround, body.horizontalCollision, body.x,
+                outbox.move(new ServerboundMovePlayerPosRotPacket(body.onGround, body.horizontalCollision, body.x,
                         body.y, body.z, yaw, pitch));
-                session.send(ServerboundClientTickEndPacket.INSTANCE);
+                for (Packet packet : outbox.drain(ServerboundClientTickEndPacket.INSTANCE)) {
+                    session.send(packet);
+                }
                 if (step != null && step.check(this)) {
                     current = null;
                 }
@@ -351,7 +354,7 @@ public final class TestPlayer implements Bot {
         if (target == null) {
             return null;
         }
-        session.send(new ServerboundAttackPacket(target.getKey()));
+        outbox.after(new ServerboundAttackPacket(target.getKey()));
         return describe(target.getValue());
     }
 
@@ -362,7 +365,7 @@ public final class TestPlayer implements Bot {
             return null;
         }
         // Where on the entity the click lands, relative to its feet: about chest height.
-        session.send(new ServerboundInteractPacket(target.getKey(), Hand.MAIN_HAND, Vector3d.from(0, 0.9, 0),
+        outbox.after(new ServerboundInteractPacket(target.getKey(), Hand.MAIN_HAND, Vector3d.from(0, 0.9, 0),
                 false));
         return describe(target.getValue());
     }
@@ -372,7 +375,7 @@ public final class TestPlayer implements Bot {
                 + Math.pow(t.y() + 0.9 - body.y - 1.62, 2) + Math.pow(t.z() - body.z, 2)));
     }
 
-    /** Turn toward the nearest matching entity within reach of the eyes, and tell the server; null when none. */
+    /** Turn toward the nearest matching entity within reach of the eyes; null when none. */
     private Map.Entry<Integer, Tracked> faceNearest(String type, double reach) {
         double ex = body.x;
         double ey = body.y + 1.62;
@@ -395,7 +398,7 @@ public final class TestPlayer implements Bot {
         double dz = t.z() - ez;
         yaw = (float) Math.toDegrees(Math.atan2(-dx, dz));
         pitch = (float) -Math.toDegrees(Math.atan2(t.y() + 0.9 - ey, Math.sqrt(dx * dx + dz * dz)));
-        session.send(new ServerboundMovePlayerPosRotPacket(body.onGround, false, body.x, body.y, body.z, yaw, pitch));
+        // No move packet here: the next tick's move carries the new facing (see Outbox).
         return best;
     }
 
