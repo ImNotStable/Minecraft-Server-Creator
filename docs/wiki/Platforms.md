@@ -42,6 +42,8 @@ For mods that change the game itself. Uses Fabric Loader and Fabric API.
 
 Note: building a Fabric project needs Java 25 for Gradle (Fabric Loom). The template sets this up.
 
+For a game, use `template fabric-game`: the same minigame base as [`paper-game`](#making-a-minigame-the-paper-game-template), set in `GameConfig.game()` in Java instead of `config.yml`.
+
 ## Minestom
 
 For fully custom servers with no vanilla game rules. There is no EULA step, because Minestom does not use Mojang's server.
@@ -50,6 +52,8 @@ For fully custom servers with no vanilla game rules. There is no EULA step, beca
    The agent is already built into the project (`libs/msc-agent-minestom.jar`), so nothing else is needed.
 2. `server_setup` is not needed. It just says so if called.
 3. "Start the server." `dev_cycle` builds the project's own jar and runs it as the server.
+
+For a game, use `template minestom-game`: the same minigame base as [`paper-game`](#making-a-minigame-the-paper-game-template), set in `GameConfig.game()`, with a `GameTest` that plays it through Minestom's `@EnvTest` players. No EULA step, so it is the quickest base for a prototype.
 
 ## Same tools everywhere
 
@@ -60,4 +64,6 @@ All world, building and texture tools work the same on every platform. The agent
 | `paper-plugin` | Paper |
 | `paper-game` | Paper (minigame base) |
 | `fabric-mod` | Fabric |
+| `fabric-game` | Fabric (minigame base) |
 | `minestom-server` | Minestom |
+| `minestom-game` | Minestom (minigame base) |
