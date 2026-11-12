@@ -98,4 +98,34 @@ class BenchRunnerTest {
         assertThat(dir.resolve("run/attempts/world/baseline-1/workspace/server/paper.jar")).hasContent("not really a jar");
         assertThat(dir.resolve("run/attempts/world/baseline-1/workspace/server/eula.txt")).doesNotExist();
     }
+
+    @Test
+    void retriesWhenTheRequiredMcpServerWasNotConnectedAtStart() throws IOException {
+        Path tasks = Files.createDirectories(dir.resolve("tasks/write-file"));
+        Files.writeString(tasks.resolve("task.json"),
+                "{\"category\":\"code\",\"title\":\"x\",\"checks\":[{\"type\":\"file\",\"path\":\"done.txt\"}]}");
+        Files.writeString(tasks.resolve("prompt.md"), "Write done.txt.");
+        String java = ProcessHandle.current().info().command().orElse("java").replace("\\", "\\\\");
+        String classpath = System.getProperty("java.class.path").replace("\\", "\\\\");
+        String counter = dir.resolve("counter.txt").toString().replace("\\", "\\\\");
+        Path configFile = dir.resolve("bench.json");
+        Files.writeString(configFile, """
+                {"agent":{"command":["%s","-cp","%s","io.github.imnotstable.msc.bench.FakeAgent","{prompt}"]},
+                 "modes":{"toolset":{"requireMcp":"msc","env":{"FAKE_MCP_COUNTER":"%s"}},
+                          "other":{"requireMcp":"missing","env":{"FAKE_MCP_COUNTER":"%s"}}}}
+                """.formatted(java, classpath, counter, counter));
+        BenchRunner runner = new BenchRunner(BenchConfig.load(configFile), dir.resolve("run"), "",
+                new PrintStream(new ByteArrayOutputStream(), true, StandardCharsets.UTF_8));
+        List<TaskDef> taskDefs = TaskLoader.loadAll(dir.resolve("tasks"));
+
+        RunRecord retried = runner.run(taskDefs, List.of("toolset"), 1).getFirst();
+        assertThat(retried.passed()).isTrue();
+        assertThat(retried.agent().mcpConnected()).containsExactly("msc");
+        assertThat(dir.resolve("run/attempts/write-file/toolset-1-try2/workspace/done.txt")).exists();
+
+        RunRecord gaveUp = runner.run(taskDefs, List.of("other"), 1).getFirst();
+        assertThat(gaveUp.passed()).isFalse();
+        assertThat(gaveUp.error()).contains("MCP server missing was not connected").contains("3 tries");
+        assertThat(dir.resolve("run/attempts/write-file/other-1-try3")).isDirectory();
+    }
 }

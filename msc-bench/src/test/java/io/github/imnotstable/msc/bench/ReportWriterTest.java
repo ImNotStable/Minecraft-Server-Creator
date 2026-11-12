@@ -15,7 +15,7 @@ class ReportWriterTest {
 
     private static RunRecord record(String mode, boolean passed, long wallMs, long output, int calls) {
         return new RunRecord("build-hut", "build", mode, 1, "2026-11-10T13:00:00Z", passed, wallMs, false, 0, null,
-                new AgentResult(true, false, 5, 1000, 1000, 0, 0, output, 0.25, "claude-opus-4-7"),
+                new AgentResult(true, false, 5, 1000, 1000, 0, 0, output, 0.25, "claude-opus-4-7", List.of()),
                 new ToolStats(calls, 0, 50, 0, 200, 10,
                         calls == 0 ? Map.of() : Map.of("world_render", new ToolStats.PerTool(calls, 0, 3000, 1200))),
                 List.of(new CheckResult("walls", passed, passed ? "196/196 blocks match" : "10/196 blocks match")));
