@@ -10,9 +10,10 @@ Do [Installation](Installation) first. Then open Claude Code in your server fold
 
 2. **Read the Minecraft EULA.**
    Open [aka.ms/MinecraftEULA](https://aka.ms/MinecraftEULA). A Paper server will not start until you accept it. Only you can do this. Claude will ask you; it must not accept it for you.
+   To accept once for this machine instead of for every server, run the line in `~/.msc/core/eula-accept.txt` yourself in a terminal and type `yes`. It only works in a real terminal, so Claude can't run it for you. Undo it with the same line, `revoke` instead of `accept`.
 
 3. **Set up the server.**
-   If you accept the EULA, say: "I accept the Minecraft EULA. Run server_setup with acceptEula=true."
+   If you accept the EULA, say: "I accept the Minecraft EULA. Run server_setup with acceptEula=true." If you accepted it for this machine, just say "Run server_setup."
    MSC downloads Paper, writes the dev server settings and installs the agent plugin.
 
 4. **Start the server.**

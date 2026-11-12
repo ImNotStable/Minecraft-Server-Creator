@@ -96,9 +96,18 @@ val installMsc = tasks.register("installMsc") {
                 doomed.deleteRecursively()
             }
         }
+        // The owner's one-time EULA acceptance for this machine (ADR 0020). Printed, never run: only the owner can
+        // answer it, in an interactive terminal. It lives in the install root, so its path stays the same; each
+        // install rewrites it to point at the newest install's jars.
+        val classPath = dir.resolve("lib").absolutePath + File.separator + "*"
+        val eula = "\"" + javaPath.get() + "\" -cp \"" + classPath + "\" io.github.imnotstable.msc.core.Main eula accept"
+        rootDir.resolve("eula-accept.txt").writeText(eula + "\n")
         println("msc-core $version installed in $dir")
         println("With the msc plugin, Claude Code uses it at its next start, or now with /mcp > msc > Reconnect.")
         println("Plugin not added yet? In Claude Code, once: /plugin marketplace add $source")
         println("                                    then: /plugin install msc@msc")
+        println("Optional, once per machine: if you agree to the Minecraft EULA (https://aka.ms/MinecraftEULA), run")
+        println("this yourself in a terminal so Paper and Fabric dev servers stop asking (saved in ${rootDir.resolve("eula-accept.txt")}):")
+        println(eula)
     }
 }

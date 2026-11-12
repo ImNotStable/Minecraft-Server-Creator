@@ -24,8 +24,8 @@ public final class McpBridge {
     private static final Gson GSON = new Gson();
     private static final String INSTRUCTIONS = "Tools for developing a Minecraft server (Paper, Fabric or Minestom). "
             + "Start: project_scaffold (template paper-game for a minigame base), then read the project's CLAUDE.md. "
-            + "Paper and Fabric need the user's agreement to the Minecraft EULA (https://aka.ms/MinecraftEULA): ask "
-            + "them, then server_setup acceptEula=true; never accept it for them. After each code change call "
+            + "Paper and Fabric need the user's agreement to the Minecraft EULA (https://aka.ms/MinecraftEULA): if "
+            + "server_setup says this machine lacks it, ask them, then server_setup acceptEula=true; never accept it for them. After each code change call "
             + "dev_cycle (build, test, deploy, restart, errors only). Look names up with api_search before guessing. "
             + "Dev worlds are superflat; server_start and dev_cycle say where the ground is. See the world with "
             + "world_summary, world_slice or world_render; build with build_batch, a whole build per call. "

@@ -7,6 +7,7 @@ import com.google.gson.JsonParser;
 import com.sun.net.httpserver.HttpServer;
 import io.github.imnotstable.msc.core.fixture.FakeBuildMain;
 import io.github.imnotstable.msc.core.fixture.FakeServerMain;
+import io.github.imnotstable.msc.core.server.MachineEulaAccess;
 import io.github.imnotstable.msc.core.tools.LifecycleToolsAccess;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
@@ -352,13 +353,29 @@ class LifecycleToolsTest {
     }
 
     @Test
+    void scaffoldAndStartUseTheMachineWideAcceptance() throws Exception {
+        Path machineEula = MachineEulaAccess.accepted(workspace.resolve("home/.msc/eula.json"));
+        Path ws = Files.createDirectories(workspace.resolve("ws5"));
+        try (CoreHarness s = new CoreHarness(ws, c -> c.withEulaFile(machineEula))) {
+            assertThat(s.ok("project_scaffold", "name", "MyPlugin")).doesNotContain("ask the user")
+                    .endsWith("next: server_setup (the Minecraft EULA is accepted for this machine by owner on pc, "
+                            + "2026-11-12), then edit the code and dev_cycle");
+            assertThat(ws.resolve("run/eula.txt")).content().contains("eula=false");
+            // A server set up before the acceptance: server_start applies it instead of refusing.
+            Files.writeString(ws.resolve("run/paper.jar"), "not a jar");
+            assertThat(s.call("server_start", "timeoutSeconds", 20).text()).doesNotContain("EULA");
+            assertThat(ws.resolve("run/eula.txt")).content().contains("eula=true").doesNotContain("eula=false");
+        }
+    }
+
+    @Test
     void startFailsFastWithoutTheEula() throws Exception {
         Path ws = Files.createDirectories(workspace.resolve("ws3"));
         Files.createDirectories(ws.resolve("run"));
         Files.writeString(ws.resolve("run/paper.jar"), "not a jar");
         try (CoreHarness s = new CoreHarness(ws)) {
             assertThat(s.error("server_start")).contains("Minecraft EULA is not accepted").contains("acceptEula=true")
-                    .doesNotContain("\n");
+                    .contains("runs once in their own terminal: ").doesNotContain("\n");
             Files.writeString(ws.resolve("run/eula.txt"), "eula=false\n");
             assertThat(s.error("server_start")).contains("EULA is not accepted");
             assertThat(s.core.server().running()).isFalse();
@@ -419,9 +436,15 @@ class LifecycleToolsTest {
         Path install = Files.createDirectories(workspace.resolve("install/agents")).getParent();
         Files.writeString(install.resolve("agents/msc-agent-fabric-0.1.0.jar"), "fabric");
         Files.writeString(install.resolve("agents/msc-agent-paper-0.1.0.jar"), "bundled");
-        try (CoreHarness s = new CoreHarness(workspace.resolve("ws4"), c -> c.withDownloadsUrl(base).withInstallDir(install))) {
-            assertThat(s.ok("server_setup")).contains("agent installed in plugins/");
+        // The owner's one-time acceptance for this machine (ADR 0020) stands in for acceptEula=true.
+        Path machineEula = MachineEulaAccess.accepted(workspace.resolve("home/.msc/eula.json"));
+        try (CoreHarness s = new CoreHarness(workspace.resolve("ws4"), c -> c.withDownloadsUrl(base).withInstallDir(install)
+                .withEulaFile(machineEula))) {
+            assertThat(s.ok("server_setup")).contains("agent installed in plugins/")
+                    .contains("eula.txt has eula=true from the owner's one-time acceptance for this machine (owner on pc, 2026-11-12)")
+                    .doesNotContain("ask the user");
             assertThat(workspace.resolve("ws4/run/plugins/msc-agent-paper.jar")).hasContent("bundled");
+            assertThat(workspace.resolve("ws4/run/eula.txt")).content().contains("eula=true").doesNotContain("eula=false");
         } finally {
             fill.stop(0);
         }
