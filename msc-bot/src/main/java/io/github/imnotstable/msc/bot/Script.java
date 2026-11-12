@@ -41,6 +41,11 @@ final class Script {
             return text;
         }
 
+        /** A movement step: a server teleport ends it, since where it was going no longer applies. */
+        boolean endsOnTeleport() {
+            return false;
+        }
+
         /** Called once before {@link #start}, without the player's lock, for work that may wait. */
         void prepare(TestPlayer p) {
         }
@@ -285,6 +290,11 @@ final class Script {
     }
 
     static final class Jump extends Step {
+        @Override
+        boolean endsOnTeleport() {
+            return true;
+        }
+
         private boolean pressed;
         private boolean left;
         private double startY;
@@ -329,6 +339,11 @@ final class Script {
      * route or stops making progress, with the route step it was trying to reach.
      */
     static final class Route extends Step {
+        @Override
+        boolean endsOnTeleport() {
+            return true;
+        }
+
         private final int tx;
         private final int ty;
         private final int tz;
@@ -482,6 +497,11 @@ final class Script {
     }
 
     static final class Forward extends Step {
+        @Override
+        boolean endsOnTeleport() {
+            return true;
+        }
+
         private final int ticks;
         private final boolean sprint;
         private final boolean jump;
@@ -521,6 +541,11 @@ final class Script {
      * one-block steps, the way a player crosses parkour.
      */
     static final class Goto extends Step {
+        @Override
+        boolean endsOnTeleport() {
+            return true;
+        }
+
         private final double tx;
         private final double ty;
         private final double tz;

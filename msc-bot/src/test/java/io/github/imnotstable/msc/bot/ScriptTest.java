@@ -23,6 +23,16 @@ class ScriptTest {
     }
 
     @Test
+    void onlyMovementEndsOnAServerTeleport() {
+        for (String move : new String[] {"walk 1,2,3", "goto 1,2,3", "forward 20", "jump"}) {
+            assertThat(Script.parse(move).endsOnTeleport()).as(move).isTrue();
+        }
+        for (String other : new String[] {"wait 20", "say hi", "inventory", "attack", "/game status"}) {
+            assertThat(Script.parse(other).endsOnTeleport()).as(other).isFalse();
+        }
+    }
+
+    @Test
     void badLinesSayWhatIsWrong() {
         assertThatThrownBy(() -> Script.parse("fly 1,2,3")).hasMessageStartingWith("unknown action \"fly\". Actions: goto");
         assertThatThrownBy(() -> Script.parse("tp 1,2")).hasMessage("expected 3 numbers in \"1,2\": tp 1,2");
