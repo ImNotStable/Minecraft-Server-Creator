@@ -17,11 +17,11 @@ Do [Installation](Installation) first. Then open Claude Code in your server fold
 
 4. **Start the server.**
    Ask: "Start the server."
-   The answer looks like `server ready in 8.2s, agent connected`.
+   The answer looks like `server ready in 8.2s, agent connected`, plus a line saying where the ground is, such as `top block at 0,0 is y=-61 (build from y=-60)`.
 
 5. **Ask for a feature.**
    For example: "Add a /spawn command that teleports the player to 0, -60, 0."
-   Claude edits the code and calls `dev_cycle`. That builds, deploys, restarts and reports only the errors. It repeats until it sees `no errors or warnings`.
+   Claude edits the code and calls `dev_cycle`. That builds, deploys, restarts and reports only the errors, including the names of failed tests. It repeats until it sees `no errors or warnings`.
 
 6. **Try it.**
    Ask: "Run /spawn on the server with server_command" or join the game at `127.0.0.1:25565` (offline mode).

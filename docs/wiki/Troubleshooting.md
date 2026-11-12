@@ -27,13 +27,17 @@ Paper and Fabric need it. Read the [Minecraft EULA](https://aka.ms/MinecraftEULA
 3. Ask for `server_logs` to see errors from the agent.
 4. Minestom: the agent is built into the template. Check the project still calls `MscAgent.start()`.
 
-## World tools say no server or no agent
+## World tools say "the server is not running"
 
 Start the server first with `server_start`. World, build and pack tools need a running server with the agent connected.
 
 ## The build fails in dev_cycle
 
 `dev_cycle` shows only the compiler and test errors. Let Claude fix them and call `dev_cycle` again. For Fabric, Gradle must run on Java 25.
+
+## installMsc refuses the install folder
+
+With `-Pmsc.installDir`, the folder must be empty or hold an earlier MSC install. Pick an empty folder.
 
 ## Install fails on Windows with "file in use"
 

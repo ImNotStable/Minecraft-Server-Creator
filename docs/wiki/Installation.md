@@ -59,7 +59,7 @@ MSC works in whatever folder you start Claude Code in, so each server gets its o
 
 ## Optional settings
 
-- Install somewhere else: `./gradlew :msc-core:installMsc -Pmsc.installDir=<folder>`, then run the new line it prints.
+- Install somewhere else: `./gradlew :msc-core:installMsc -Pmsc.installDir=<folder>`, then run the new line it prints. The folder must be empty or hold an earlier MSC install.
 - Other settings are environment variables, added to the register line as `-e NAME=value` before the `--`. Do not set `MSC_WORKSPACE` there: with `--scope user` it would point every project at one folder.
 
 | Setting | What it does | Default |
