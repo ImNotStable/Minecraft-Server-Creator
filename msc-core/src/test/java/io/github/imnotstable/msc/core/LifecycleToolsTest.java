@@ -105,6 +105,15 @@ class LifecycleToolsTest {
         assertThat(fetch(url)).isEqualTo(-1);
     }
 
+    @Test
+    void aRestartSendsTheAppliedPackAgain() {
+        assertThat(h.ok("server_start", "timeoutSeconds", 30)).doesNotContain("resource pack");
+        h.ok("texture_create", "name", "item/dot", "palette", List.of("a=#ff0000"), "rows", List.of("a"));
+        assertThat(h.ok("pack_build")).contains("applied: sent to 1 players; players who join later get it too");
+        h.ok("server_stop");
+        assertThat(h.ok("server_start", "timeoutSeconds", 30)).contains("\nresource pack sent again: players who join get it\n");
+    }
+
     private static int fetch(String url) throws InterruptedException {
         // The host stops a moment after it is told to.
         for (int i = 0; i < 50; i++) {
