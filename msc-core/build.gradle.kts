@@ -181,3 +181,31 @@ tasks.register<Test>("e2eTest") {
     })
     outputs.upToDateWhen { false }
 }
+
+// tools.md is generated from the tool definitions (ADR 0026): toolDocs rewrites its marked tables, checkToolDocs
+// (part of `check`) fails when they or the wiki's tool page are out of date.
+val toolDoc = rootProject.layout.projectDirectory.file("msc-docs/docs/tools.md")
+val wikiToolPage = rootProject.layout.projectDirectory.file("docs/wiki/Tools-reference.md")
+
+tasks.register<JavaExec>("toolDocs") {
+    description = "Regenerates the tool tables in msc-docs/docs/tools.md from the tool definitions."
+    group = "documentation"
+    classpath = sourceSets.main.get().runtimeClasspath
+    mainClass = "io.github.imnotstable.msc.core.ToolDocs"
+    args("write", toolDoc.asFile.absolutePath, wikiToolPage.asFile.absolutePath)
+}
+
+val checkToolDocs = tasks.register<JavaExec>("checkToolDocs") {
+    description = "Fails when msc-docs/docs/tools.md or the wiki tool page is out of date with the tool definitions."
+    group = "verification"
+    classpath = sourceSets.main.get().runtimeClasspath
+    mainClass = "io.github.imnotstable.msc.core.ToolDocs"
+    args("check", toolDoc.asFile.absolutePath, wikiToolPage.asFile.absolutePath)
+    inputs.files(toolDoc, wikiToolPage)
+    inputs.files(classpath)
+    val marker = layout.buildDirectory.file("tool-docs/checked")
+    outputs.file(marker)
+    doLast { marker.get().asFile.writeText("ok\n") }
+}
+
+tasks.named("check") { dependsOn(checkToolDocs) }

@@ -9,6 +9,7 @@ Coordinates are text: a position is `x,y,z`, a region is `x1,y1,z1 x2,y2,z2`, an
 | Tool | What it does |
 | --- | --- |
 | `msc_status` | Shows the MSC version, workspace, platform, server state and agent. With `stats=true`: calls, errors, time and tokens per tool this session. |
+| `msc_workspace` | Switches MSC to another project folder without restarting Claude Code. With no folder, shows the current one. |
 
 ## Project and server
 
