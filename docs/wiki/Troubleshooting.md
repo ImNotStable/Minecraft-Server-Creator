@@ -43,6 +43,10 @@ With `-Pmsc.installDir`, the folder must be empty or hold an earlier MSC install
 
 Claude Code is still running MSC. Close Claude Code, then run `installMsc` again.
 
+## "cannot replace ... .jar" or "another process has locked a portion of the file"
+
+A server from an earlier Claude Code session is still running. Ask Claude to run `server_stop` (it also stops a server left by an earlier session), then `dev_cycle`.
+
 ## Port already in use
 
 Another server is running. Stop it, ask Claude to `server_stop`, or change `server-port` and `rcon.port` in `run/server.properties`. The dev server uses 25565 (game) and 25575 (RCON) by default.
