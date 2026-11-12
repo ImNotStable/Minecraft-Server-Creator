@@ -373,7 +373,13 @@ public final class LifecycleTools {
             return "build ok in " + seconds(build.millis()) + " but no jar in " + project.resolve("build/libs")
                     + "; nothing deployed";
         }
-        StringBuilder out = new StringBuilder("build ok in " + seconds(build.millis()));
+        StringBuilder out = new StringBuilder();
+        // Before deploying: a server an earlier core left running holds the old jar open.
+        String leftover = server.stopLeftover();
+        if (leftover != null) {
+            out.append(leftover).append('\n');
+        }
+        out.append("build ok in ").append(seconds(build.millis()));
         boolean restart = args.bool("restart", true);
         boolean wasRunning = server.running();
         if (wasRunning && restart) {
@@ -402,7 +408,7 @@ public final class LifecycleTools {
             Files.copy(build.jar(), target, StandardCopyOption.REPLACE_EXISTING);
         } catch (IOException e) {
             throw new ToolException("cannot replace " + target + " (" + e.getMessage()
-                    + "). The server holds the jar open; call dev_cycle with restart=true.");
+                    + "). A running server holds the jar open: call server_stop, then dev_cycle.");
         }
         out.append(", deployed ").append(build.jar().getFileName()).append(" as ").append(shown);
         if (!restart) {

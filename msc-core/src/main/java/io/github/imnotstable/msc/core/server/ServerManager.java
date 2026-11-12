@@ -169,7 +169,8 @@ public final class ServerManager implements AutoCloseable {
 
     /**
      * Stop a server that an earlier core started and left running (on Windows a core killed with its Claude Code
-     * session cannot stop its server, which then holds the world lock). The pid file's start time must match, so a
+     * session cannot stop its server, which then holds the world lock). It is asked to stop over RCON so it saves
+     * the world, and killed only if that fails. The pid file's start time must match, so a
      * reused pid is never touched. Returns a one-line note, or null when there was none.
      */
     public synchronized String stopLeftover() throws InterruptedException {
@@ -200,13 +201,28 @@ public final class ServerManager implements AutoCloseable {
                 || h.info().startInstant().map(java.time.Instant::toEpochMilli).orElse(-1L) != startedAt) {
             return null;
         }
-        h.destroy();
-        try {
-            h.onExit().get(20, TimeUnit.SECONDS);
-        } catch (java.util.concurrent.ExecutionException | java.util.concurrent.TimeoutException e) {
-            h.destroyForcibly();
+        // Its console belonged to the dead core, so ask over RCON first: "stop" saves the world. Then kill.
+        Rcon.Target rcon = Rcon.target(config.serverDir());
+        boolean asked = rcon != null && Rcon.send(rcon, "stop");
+        boolean saved = asked && exits(h, Duration.ofSeconds(60));
+        if (!saved) {
+            h.destroy();
+            if (!exits(h, Duration.ofSeconds(20))) {
+                h.destroyForcibly();
+                exits(h, Duration.ofSeconds(10));
+            }
         }
-        return "stopped a server left running by an earlier session (pid " + pid + ")";
+        return "stopped a server left running by an earlier session (pid " + pid + ", "
+                + (saved ? "saved over RCON)" : "killed: world changes since its last autosave may be lost)");
+    }
+
+    private static boolean exits(ProcessHandle h, Duration timeout) throws InterruptedException {
+        try {
+            h.onExit().get(timeout.toMillis(), TimeUnit.MILLISECONDS);
+            return true;
+        } catch (java.util.concurrent.ExecutionException | java.util.concurrent.TimeoutException e) {
+            return !h.isAlive();
+        }
     }
 
     /** Ask the server to stop, and kill it if it does not within the timeout. Returns false if it was not running. */
