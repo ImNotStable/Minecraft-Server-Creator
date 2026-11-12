@@ -119,11 +119,12 @@ class WorldOpsTest {
     void readReportsSignTextFromBlockNbtOnlyWhenAsked(Env env) {
         setUp(env);
         CompoundBinaryTag front = CompoundBinaryTag.builder().put("messages", ListBinaryTag.builder()
-                .add(StringBinaryTag.stringBinaryTag("Shop"))
+                // NBT lists hold one tag type: these messages are all text compounds, one with an extra part.
+                .add(CompoundBinaryTag.builder().putString("text", "Shop").build())
                 .add(CompoundBinaryTag.builder().putString("text", "Op")
                         .put("extra", ListBinaryTag.builder().add(StringBinaryTag.stringBinaryTag("en")).build()).build())
-                .add(StringBinaryTag.stringBinaryTag(""))
-                .add(StringBinaryTag.stringBinaryTag("")).build()).build();
+                .add(CompoundBinaryTag.builder().putString("text", "").build())
+                .add(CompoundBinaryTag.builder().putString("text", "").build()).build()).build();
         set(1, 70, 1, Block.OAK_SIGN.withNbt(CompoundBinaryTag.builder().put("front_text", front).build()));
         set(2, 70, 1, Block.OAK_SIGN);
 
