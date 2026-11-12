@@ -15,6 +15,7 @@ import io.github.imnotstable.msc.protocol.op.Ops;
 import io.github.imnotstable.msc.protocol.world.BlockGrid;
 import io.github.imnotstable.msc.protocol.world.BlockPos;
 import io.github.imnotstable.msc.protocol.world.Region;
+import io.github.imnotstable.msc.renderer.Marker;
 import io.github.imnotstable.msc.renderer.PackTextures;
 import io.github.imnotstable.msc.renderer.RenderOptions;
 import io.github.imnotstable.msc.renderer.RenderResult;
@@ -65,6 +66,7 @@ public final class WorldTools {
                         + "south, east, west, iso-ne/nw/sw/se, \"eye x,y,z look x,y,z\".",
                 Schema.of().req("region", "string", REGION).opt("view", "string", "Camera. Default iso")
                         .opt("size", "integer", "Longest side in pixels, 64 to 1568. Default 512")
+                        .opt("entities", "boolean", "Mark entities as numbered dots. Default true")
                         .opt("world", "string", WORLD),
                 args -> {
                     View view;
@@ -76,7 +78,9 @@ public final class WorldTools {
                         throw new ToolException(e.getMessage());
                     }
                     Region region = Coords.region(world.world(args.str("world", null)), args.str("region"));
-                    RenderResult r = renderer.render(world.readAll(region, MAX_RENDER_BLOCKS, "world_render"), view, options);
+                    List<Ops.EntitySummary> entities = args.bool("entities", true) ? new ArrayList<>() : null;
+                    BlockGrid grid = world.readAll(region, MAX_RENDER_BLOCKS, "world_render", entities);
+                    RenderResult r = renderer.render(grid, view, options, markers(entities));
                     Path dir = Files.createDirectories(config.dataDir().resolve("renders"));
                     Path file = Files.write(Files.createTempFile(dir, "render-", ".png"), r.png());
                     return new Tool.Output(r.caption() + "\nsaved: " + file, r.png(), r.estimatedTokens());
@@ -163,5 +167,21 @@ public final class WorldTools {
                     }
                     return world.write(grid, false);
                 });
+    }
+
+    /** One marker per entity: brief type, then its name or text in quotes. */
+    static List<Marker> markers(List<Ops.EntitySummary> entities) {
+        if (entities == null) {
+            return List.of();
+        }
+        List<Marker> out = new ArrayList<>();
+        for (Ops.EntitySummary e : entities) {
+            String name = e.name() == null ? "" : e.name().strip().replaceAll("\\s+", " ");
+            if (name.length() > 40) {
+                name = name.substring(0, 39) + "...";
+            }
+            out.add(new Marker(e.x(), e.y(), e.z(), BlockNames.brief(e.type()) + (name.isEmpty() ? "" : " \"" + name + "\"")));
+        }
+        return out;
     }
 }

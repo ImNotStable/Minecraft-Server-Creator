@@ -18,6 +18,7 @@ import org.bukkit.World;
 import org.bukkit.block.data.BlockData;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
+import org.bukkit.entity.TextDisplay;
 import org.bukkit.util.BoundingBox;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
@@ -65,6 +66,10 @@ final class WorldOps {
             return p.getName();
         }
         Component custom = e.customName();
+        if (custom == null && e instanceof TextDisplay display) {
+            // A hologram's words are its text, not a name: report them so a render or summary can show them.
+            custom = display.text();
+        }
         return custom == null ? null : PlainTextComponentSerializer.plainText().serialize(custom);
     }
 
