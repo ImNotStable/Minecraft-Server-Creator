@@ -28,6 +28,7 @@ public final class FakeAgent {
     final List<String> commands = new ArrayList<>();
     final List<Ops.PackParams> packs = new ArrayList<>();
     final List<Region> reads = new ArrayList<>();
+    final List<Region> writes = new ArrayList<>();
     private final Map<String, Map<BlockPos, String>> undo = new HashMap<>();
     private int editCounter;
 
@@ -45,6 +46,14 @@ public final class FakeAgent {
         before.putIfAbsent(p, old);
         blocks.put(p, state);
         return 1;
+    }
+
+    /** Like a real agent, refuse unknown blocks before placing anything. Ids starting with no_such are unknown. */
+    private static String known(String state) {
+        if (state.startsWith("minecraft:no_such")) {
+            throw new IllegalArgumentException("unknown block " + state.substring(10));
+        }
+        return state;
     }
 
     private Ops.EditResult finish(Map<BlockPos, String> before, long changed) {
@@ -132,6 +141,7 @@ public final class FakeAgent {
 
     private synchronized Ops.EditResult fill(Ops.FillParams p) {
         Region r = p.region().requireWithinLimit();
+        known(p.state());
         Map<BlockPos, String> before = new HashMap<>();
         long changed = 0;
         for (int y = r.min().y(); y <= r.max().y(); y++) {
@@ -148,6 +158,8 @@ public final class FakeAgent {
 
     private synchronized Ops.EditResult write(Ops.WriteParams p) {
         Region r = p.grid().region().requireWithinLimit();
+        p.grid().palette().forEach(FakeAgent::known);
+        writes.add(r);
         Map<BlockPos, String> before = new HashMap<>();
         long changed = 0;
         for (int y = r.min().y(); y <= r.max().y(); y++) {
@@ -164,6 +176,7 @@ public final class FakeAgent {
     }
 
     private synchronized Ops.EditResult setBlocks(Ops.SetBlocksParams p) {
+        p.changes().forEach(c -> known(c.state()));
         Map<BlockPos, String> before = new HashMap<>();
         long changed = 0;
         for (Ops.BlockChange c : p.changes()) {

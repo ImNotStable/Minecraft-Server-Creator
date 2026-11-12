@@ -28,7 +28,9 @@ public final class McpBridge {
             + "server_setup acceptEula=true; never accept it for them. Then edit code and call dev_cycle after each "
             + "change; it builds, runs tests, deploys, restarts and reports errors only. Look up API names with "
             + "api_search before guessing. Dev worlds are superflat: server_start and dev_cycle say where the ground "
-            + "is. See the world with world_summary, world_slice or world_render; build with build_structure. "
+            + "is. See the world with world_summary, world_slice or world_render. Build with build_structure for "
+            + "irregular shapes, build_shape for circles, spheres and lines, build_stamp to repeat or turn a structure, "
+            + "and build_batch to send many steps as one edit; blocks take weighted mixes such as grass_block:8,moss_block:2. "
             + "Results are size-capped; narrow the request rather than raising maxChars.";
 
     private McpBridge() {
