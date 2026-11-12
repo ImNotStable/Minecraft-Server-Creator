@@ -11,6 +11,7 @@ dependencies {
     implementation(project(":msc-templates"))
     implementation(project(":msc-textures"))
     implementation(project(":msc-renderer"))
+    implementation(project(":msc-bot"))
     implementation(libs.mcp.sdk)
     // Lifts the SDK's transitive Jackson 3 past known advisories; it parses every MCP message.
     implementation(platform(libs.jackson.bom))

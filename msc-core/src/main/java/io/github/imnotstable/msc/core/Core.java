@@ -11,6 +11,7 @@ import io.github.imnotstable.msc.core.tool.ToolRegistry;
 import io.github.imnotstable.msc.core.tools.ApiTools;
 import io.github.imnotstable.msc.core.tools.LifecycleTools;
 import io.github.imnotstable.msc.core.tools.MetaTools;
+import io.github.imnotstable.msc.core.tools.PlayerTools;
 import io.github.imnotstable.msc.core.tools.TextureTools;
 import io.github.imnotstable.msc.core.tools.WorldTools;
 import io.github.imnotstable.msc.core.world.WorldService;
@@ -27,6 +28,7 @@ public final class Core implements AutoCloseable {
     private final ResourcePack pack;
     private final ToolLog log;
     private final ToolRegistry registry;
+    private final PlayerTools players;
 
     public Core(CoreConfig config) throws IOException {
         this.config = config;
@@ -49,6 +51,7 @@ public final class Core implements AutoCloseable {
         api.register(registry);
         WorldTools.register(registry, config, world);
         TextureTools.register(registry, hub, pack);
+        this.players = PlayerTools.register(registry, config, hub);
         List<String> warnings = SetupCheck.warnings(config);
         if (!warnings.isEmpty()) {
             registry.noticeOnce(String.join("\n", warnings));
@@ -78,6 +81,7 @@ public final class Core implements AutoCloseable {
     @Override
     public void close() throws IOException {
         // A detached server keeps its pack host, so players can still fetch the pack.
+        players.close();
         pack.close(server.detached());
         server.close();
         hub.close();

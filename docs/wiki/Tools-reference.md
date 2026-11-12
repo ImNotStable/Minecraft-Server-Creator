@@ -52,6 +52,12 @@ Coordinates are text: a position is `x,y,z`, a region is `x1,y1,z1 x2,y2,z2`, an
 | `structure_save` | Saves a region as a `.schem` file. |
 | `structure_load` | Pastes a `.schem` file into the world. |
 
+## Play-testing
+
+| Tool | What it does |
+| --- | --- |
+| `player_test` | A test player joins your dev server and plays: walks to points, sprints and jumps gaps, presses buttons, attacks, runs commands. It reports what happened, such as damage, deaths, chat, titles and whether the resource pack downloaded. Movement follows vanilla closely, so a jump it misses is usually hard for people too, but not always. |
+
 ## Textures and resource pack
 
 | Tool | What it does |
