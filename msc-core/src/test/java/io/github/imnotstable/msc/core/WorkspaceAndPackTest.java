@@ -63,7 +63,7 @@ class WorkspaceAndPackTest {
         assertThat(second.resolve(".msc/pack/assets/msc/textures/item/dot.png")).exists();
         assertThat(first.resolve(".msc/pack")).doesNotExist();
         assertThat(h.ok("msc_workspace", "path", second.toString())).startsWith("workspace is already ");
-        assertThat(h.ok("msc_stats")).contains("msc_workspace");
+        assertThat(h.ok("msc_status", "stats", true)).contains("msc_workspace");
     }
 
     @Test

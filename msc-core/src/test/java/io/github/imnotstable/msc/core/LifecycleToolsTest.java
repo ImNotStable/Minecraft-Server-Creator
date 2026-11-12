@@ -542,7 +542,7 @@ class LifecycleToolsTest {
         JsonObject failed = JsonParser.parseString(lines.get(2)).getAsJsonObject();
         assertThat(failed.get("ok").getAsBoolean()).isFalse();
         assertThat(failed.get("error").getAsString()).isEqualTo("error: server is not running");
-        assertThat(h.ok("msc_stats")).startsWith("tool calls errors ms resultTokens\nmsc_status 1 0 ")
+        assertThat(h.ok("msc_status", "stats", true)).startsWith("tool calls errors ms resultTokens\nmsc_status 1 0 ")
                 .contains("\nserver_command 1 1 ").contains("\ntotal 3 2 ");
     }
 }
