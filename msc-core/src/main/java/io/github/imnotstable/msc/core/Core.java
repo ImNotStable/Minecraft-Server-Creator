@@ -15,6 +15,7 @@ import io.github.imnotstable.msc.core.tools.TextureTools;
 import io.github.imnotstable.msc.core.tools.WorldTools;
 import io.github.imnotstable.msc.core.world.WorldService;
 import java.io.IOException;
+import java.util.List;
 
 /** The core without a transport: services plus the tool registry. The MCP server and tests both sit on this. */
 public final class Core implements AutoCloseable {
@@ -48,6 +49,10 @@ public final class Core implements AutoCloseable {
         api.register(registry);
         WorldTools.register(registry, config, world);
         TextureTools.register(registry, hub, pack);
+        List<String> warnings = SetupCheck.warnings(config);
+        if (!warnings.isEmpty()) {
+            registry.noticeOnce(String.join("\n", warnings));
+        }
     }
 
     public CoreConfig config() {

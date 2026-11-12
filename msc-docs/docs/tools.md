@@ -23,7 +23,7 @@ The AI talks to `msc-core` over MCP (stdio). This page lists every tool, its arg
 
 | Tool | Arguments | Result | Budget |
 | --- | --- | --- | --- |
-| `msc_status` | none | Core version, workspace, platform, server state, agent, API index | 6 lines |
+| `msc_status` | none | Core version, workspace, platform, server state, agent, API index, then any setup warnings (workspace is the MSC repo; install older than its checkout). The same warnings go in front of the session's first tool result | 6 lines (+ warnings) |
 | `msc_stats` | none | Calls, errors, milliseconds and result tokens per tool this session | 1 line per tool used |
 
 ## Project and server lifecycle
@@ -98,7 +98,7 @@ Every build tool answers `edit eN: <count> blocks changed`. The id undoes the wh
 
 | Tool | Arguments | Notes |
 | --- | --- | --- |
-| `build_fill` | `region`, `block`, `replace`? (list) | Up to 8,388,608 blocks |
+| `build_fill` | `region`, `block`, `shape`? (`solid`, `hollow`: shell with air inside, `outline`: shell with inside kept, `walls`: four sides only), `replace`? (list); one edit id for all parts | Up to 8,388,608 blocks |
 | `build_set` | `blocks` (list of `"x,y,z block"`), `physics`? (false) | For details such as doors and torches |
 | `build_structure` | `at`, `structure`, `physics`? (false) | Text structure format, up to 1,048,576 blocks |
 | `build_copy` | `region`, `to`, `air`? (true) | Reads everything first, so source and target may overlap |

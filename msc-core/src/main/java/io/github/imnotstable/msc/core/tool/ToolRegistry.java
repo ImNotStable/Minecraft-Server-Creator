@@ -23,6 +23,13 @@ public final class ToolRegistry {
         this.log = log;
     }
 
+    private volatile String notice;
+
+    /** A note put in front of the next tool result only, so setup warnings reach the AI once without a call. */
+    public void noticeOnce(String text) {
+        notice = text;
+    }
+
     public ToolRegistry add(Tool tool) {
         if (tools.putIfAbsent(tool.name(), tool) != null) {
             throw new IllegalStateException("duplicate tool " + tool.name());
@@ -66,6 +73,11 @@ public final class ToolRegistry {
             } catch (Exception e) {
                 text = "error: internal: " + e;
             }
+        }
+        String pending = notice;
+        if (pending != null) {
+            notice = null;
+            text = pending + "\n" + text;
         }
         long ms = (System.nanoTime() - start) / 1_000_000;
         log.record(name, ok, ms, args.toString().length(), text.length(), ok ? null : text,

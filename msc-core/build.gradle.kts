@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("msc.application-conventions")
 }
@@ -53,6 +55,7 @@ val installMsc = tasks.register<Sync>("installMsc") {
     into(installDir)
     val target = installDir
     val java = toolchainJava
+    val source = rootDir.absolutePath
     // Sync deletes whatever else is in the target, so refuse a folder that holds anything but an earlier install.
     doFirst {
         val dir = File(target.get()).absoluteFile
@@ -70,6 +73,11 @@ val installMsc = tasks.register<Sync>("installMsc") {
         val add = "claude mcp add msc --scope user -- " + quote(java.get()) + " -cp " + quote(classPath) +
             " io.github.imnotstable.msc.core.Main"
         dir.resolve("claude-mcp-add.txt").writeText(add + "\n")
+        // Lets the core warn when the checkout it came from has changed since (a stale install).
+        val props = Properties()
+        props["source"] = source
+        props["installed"] = System.currentTimeMillis().toString()
+        dir.resolve("install.properties").writer().use { props.store(it, "written by installMsc") }
         println("msc-core installed in $dir")
         println("Register it with Claude Code once (any shell; also saved in claude-mcp-add.txt):")
         println(add)

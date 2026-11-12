@@ -52,7 +52,7 @@ class McpBridgeTest {
                         "texture_create", "texture_generate", "texture_recolor", "texture_animate", "model_create", "texture_view",
                         "pack_check", "pack_build");
                 // The tool list is paid for in every conversation: keep it small.
-                assertThat(listed.toString().length()).isLessThan(14600);
+                assertThat(listed.toString().length()).isLessThan(14800);
                 JsonObject fill = tools.get(names.indexOf("build_fill")).getAsJsonObject().getAsJsonObject("inputSchema");
                 assertThat(fill.getAsJsonArray("required").toString()).isEqualTo("[\"region\",\"block\"]");
 

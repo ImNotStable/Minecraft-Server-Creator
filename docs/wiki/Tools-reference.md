@@ -44,7 +44,7 @@ Coordinates are text: a position is `x,y,z`, a region is `x1,y1,z1 x2,y2,z2`, an
 
 | Tool | What it does |
 | --- | --- |
-| `build_fill` | Fills a region with one block, optionally only replacing some blocks. |
+| `build_fill` | Fills a region with one block, optionally only replacing some blocks. `shape` makes a hollow room, an outline or just walls. |
 | `build_set` | Sets a list of single blocks, such as doors and torches. |
 | `build_structure` | Builds a structure written in the text format that `world_slice` shows. |
 | `build_copy` | Copies a region to another place. |
