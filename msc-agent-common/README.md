@@ -11,4 +11,4 @@ Platform-neutral code shared by the server agents (`msc-agent-paper`, `msc-agent
   per-tick slices; `UndoRecord` and `EditHistory` keep undo.
 - `AgentLink` connects to msc-core (`CoreAddress`), reconnects and sends events.
 
-Tests run the operations against an in-memory world (`MapWorld` in the tests). Design: ADR 0022.
+Tests run the operations against an in-memory world (`MapWorld` in the tests). Design: ADR 0024.

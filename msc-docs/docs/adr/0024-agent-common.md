@@ -1,6 +1,7 @@
-# ADR 0022: Shared agent code in msc-agent-common
+# ADR 0024: Shared agent code in msc-agent-common
 
 Status: accepted, 2026-11-12. Decided by Claude under Jeremiah's hand-over of build decisions. Roadmap round 2 item R2.
+(0022 and 0023 are taken by #47 and #49.)
 
 ## Context
 
