@@ -68,16 +68,23 @@ class WorkspacesTest {
     }
 
     @Test
-    void localConfigOverridesTheTrackedOne() throws IOException {
+    void theEulaChoiceComesOnlyFromTheMachinesAcceptance() throws IOException {
         Files.writeString(dir.resolve("bench.json"),
-                "{\"server\":{\"acceptEula\":false,\"rconPort\":25576},\"corePort\":25590}");
-        assertThat(BenchConfig.load(dir.resolve("bench.json")).server().acceptEula()).isFalse();
+                "{\"server\":{\"acceptEula\":true,\"rconPort\":25576},\"corePort\":25590}");
+        Path home = Files.createDirectories(dir.resolve("home"));
+        BenchConfig without = BenchConfig.load(dir.resolve("bench.json"), home);
 
-        Files.writeString(dir.resolve(BenchConfig.LOCAL_FILE), "{\"server\":{\"acceptEula\":true}}");
-        BenchConfig config = BenchConfig.load(dir.resolve("bench.json"));
+        Files.createDirectories(home.resolve(".msc"));
+        Files.writeString(MachineEula.file(home), "{\"accepted\":true,\"eula\":\"https://aka.ms/MinecraftEULA\"}");
+        boolean incomplete = MachineEula.accepted(home);
+        Files.writeString(MachineEula.file(home), "{\"accepted\":true,\"eula\":\"https://aka.ms/MinecraftEULA\","
+                + "\"acceptedBy\":\"owner\",\"acceptedAt\":\"2026-11-12T00:00:00Z\"}");
+        BenchConfig with = BenchConfig.load(dir.resolve("bench.json"), home);
 
-        assertThat(config.server().acceptEula()).isTrue();
-        assertThat(config.server().rconPort()).isEqualTo(25576);
-        assertThat(config.corePort()).isEqualTo(25590);
+        assertThat(without.server().acceptEula()).isFalse();
+        assertThat(incomplete).isFalse();
+        assertThat(with.server().acceptEula()).isTrue();
+        assertThat(with.server().rconPort()).isEqualTo(25576);
+        assertThat(with.corePort()).isEqualTo(25590);
     }
 }

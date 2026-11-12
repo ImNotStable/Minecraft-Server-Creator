@@ -3,6 +3,7 @@ package io.github.imnotstable.msc.bench.check;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Pattern;
@@ -14,6 +15,11 @@ public final class Checks {
     }
 
     public static Check parse(JsonObject json) {
+        return parse(json, null);
+    }
+
+    /** Parses a check; {@code taskDir} resolves folders a check reads from the task, such as hidden tests. */
+    public static Check parse(JsonObject json, Path taskDir) {
         String type = string(json, "type", null);
         if (type == null) {
             throw new IllegalArgumentException("check without \"type\": " + json);
@@ -29,7 +35,8 @@ public final class Checks {
                     strings(json, "run"),
                     json.has("timeoutSeconds") ? json.get("timeoutSeconds").getAsInt() : 600,
                     json.has("expectExit") ? json.get("expectExit").getAsInt() : 0,
-                    pattern(json, "outputMatches"));
+                    pattern(json, "outputMatches"),
+                    taskFolder(json, "addFiles", taskDir));
             case "png" -> new PngCheck(
                     orDefault(name, "png " + string(json, "path", "")),
                     require(json, "path"),
@@ -45,8 +52,25 @@ public final class Checks {
                     require(json, "command"),
                     Pattern.compile(require(json, "expect")));
             case "blocks" -> BlocksCheck.parse(orDefault(name, "blocks"), json);
+            case "player" -> PlayerCheck.parse(orDefault(name, "player"), json);
             default -> throw new IllegalArgumentException("unknown check type \"" + type + "\"");
         };
+    }
+
+    /** A folder of the task named by {@code key}, which must exist, or null when the key is absent. */
+    private static Path taskFolder(JsonObject json, String key, Path taskDir) {
+        String folder = string(json, key, null);
+        if (folder == null) {
+            return null;
+        }
+        if (taskDir == null) {
+            throw new IllegalArgumentException("\"" + key + "\" needs the task's folder");
+        }
+        Path dir = taskDir.resolve(folder).normalize();
+        if (!dir.startsWith(taskDir.normalize()) || !java.nio.file.Files.isDirectory(dir)) {
+            throw new IllegalArgumentException("\"" + key + "\": no folder " + folder + " in the task");
+        }
+        return dir;
     }
 
     private static List<ZipCheck.PngEntry> zipPngs(JsonObject json) {
