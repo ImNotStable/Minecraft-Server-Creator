@@ -10,7 +10,7 @@
       "run": ["{gradlew}", "test", "--tests", "bench.sprint.BenchSprintTest", "--quiet"], "timeoutSeconds": 900},
     {"type": "player", "name": "a test player races the course",
       "jar": "build/libs/sprint-{scaffoldVersion}.jar",
-      "script": ["look 0 0", "forward 180", "wait 20"],
+      "script": ["look 0 0", "forward 60", "wait 10", "look 0 0", "forward 160", "wait 20"],
       "console": ["game best Steve", "game top"],
       "expect": [
         "Coin! \\(3/3\\)",
