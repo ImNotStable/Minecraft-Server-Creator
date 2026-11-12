@@ -24,7 +24,7 @@ public final class MetaTools {
         registry.add("msc_status", "Where things stand: workspace, platform, server process, agent connection, API index.",
                 Schema.of(), args -> {
                     StringBuilder out = new StringBuilder();
-                    out.append("msc-core ").append(Core.VERSION).append('\n');
+                    out.append("msc-core ").append(Core.VERSION).append(built()).append('\n');
                     out.append("workspace: ").append(config.workspace()).append('\n');
                     out.append("platform: ").append(server.platform().id()).append('\n');
                     out.append("server: ").append(server.running() ? "running" : server.serverJar() != null
