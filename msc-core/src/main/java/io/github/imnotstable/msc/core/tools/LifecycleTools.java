@@ -8,6 +8,7 @@ import io.github.imnotstable.msc.core.server.PaperDownloader;
 import io.github.imnotstable.msc.core.server.Platform;
 import io.github.imnotstable.msc.core.server.ProjectBuilder;
 import io.github.imnotstable.msc.core.server.ServerManager;
+import io.github.imnotstable.msc.core.texture.PackProperties;
 import io.github.imnotstable.msc.core.texture.ResourcePack;
 import io.github.imnotstable.msc.core.tool.Args;
 import io.github.imnotstable.msc.core.tool.Budget;
@@ -37,6 +38,13 @@ import java.util.stream.Stream;
 public final class LifecycleTools {
     private static final String EULA_ARG =
             "Set true only if the user has agreed to the Minecraft EULA (https://aka.ms/MinecraftEULA)";
+    /**
+     * The exact question to put to the user, so their answer reads as an agreement and not as a reply to something
+     * vaguer. Shared by scaffold and setup.
+     */
+    static final String EULA_QUESTION = "ask the user exactly: \"To run a Minecraft server you must agree to the "
+            + "Minecraft EULA (https://aka.ms/MinecraftEULA). Do you agree to it? (yes/no)\" Only their own yes "
+            + "counts; never answer for them. If they are away, a minestom-server project needs no EULA.";
     private final CoreConfig config;
     private final AgentHub hub;
     private final ServerManager server;
@@ -145,8 +153,8 @@ public final class LifecycleTools {
         if (platform != null && platform.needsEula()
                 && !Files.exists(config.serverDir().resolve(platform.serverJar()))) {
             // The server is not set up yet: a first dev_cycle would build for nothing and then stop there.
-            out.append("\nnext: ask the user to accept the Minecraft EULA (https://aka.ms/MinecraftEULA), then "
-                    + "server_setup acceptEula=true, then edit the code and dev_cycle");
+            out.append("\nnext: ").append(EULA_QUESTION).append("\nOn yes: server_setup acceptEula=true, then edit "
+                    + "the code and dev_cycle");
         } else {
             out.append("\nnext: edit the code, then dev_cycle");
         }
@@ -238,9 +246,8 @@ public final class LifecycleTools {
             Files.writeString(eula, Files.readString(eula).replaceAll("(?m)^eula=false[ \t]*$", "eula=true"));
         }
         if (!ServerManager.eulaAccepted(eula)) {
-            out.append("the Minecraft EULA is not accepted: once the user agrees to https://aka.ms/MinecraftEULA, run "
-                    + "server_setup with acceptEula=true (or set eula=true in ").append(eula)
-                    .append("); server_start refuses until then\n");
+            out.append("the Minecraft EULA is not accepted, so server_start refuses. Next: ").append(EULA_QUESTION)
+                    .append("\nOn yes: server_setup acceptEula=true (or set eula=true in ").append(eula).append(")\n");
         } else {
             out.append("note: eula.txt has eula=true; running the server means the user agrees to https://aka.ms/MinecraftEULA\n");
         }
@@ -317,14 +324,22 @@ public final class LifecycleTools {
         } catch (ToolException e) {
             return "server detached: it keeps running after this session ends\n" + e.getMessage();
         }
+        String properties = "";
+        ResourcePack.Built built = this.pack.lastBuilt();
+        ResourcePack.Applied applied = this.pack.applied();
+        if (pack && built != null && PackProperties.write(serverProperties(), built.url(), built.sha1(),
+                applied != null && applied.required())) {
+            properties = "\nserver.properties now offers the pack too, so a restart outside MSC keeps it.";
+        }
         return "server detached: it keeps running after this session ends"
                 + (pack ? ", and so does the resource pack host" : " (no pack built yet, so no pack host)")
-                + ".\nWorld tools and server_command work until this session ends; the next session's "
+                + "." + properties + "\nWorld tools and server_command work until this session ends; the next session's "
                 + "server_start, dev_cycle or server_stop stops the server (world saved) and the pack host.";
     }
 
     private String startAndReport(int timeoutSeconds, int maxChars) throws IOException, InterruptedException {
         String leftover = join(server.stopLeftover(), pack.stopLeftoverHost());
+        String packNote = syncPackProperties();
         boolean agentUpdated = refreshAgent();
         ServerManager.StartResult r = server.start(Duration.ofSeconds(timeoutSeconds));
         startMark = r.logMark();
@@ -335,6 +350,9 @@ public final class LifecycleTools {
         StringBuilder out = new StringBuilder();
         if (leftover != null) {
             out.append(leftover).append('\n');
+        }
+        if (packNote != null) {
+            out.append(packNote).append('\n');
         }
         if (r.ready()) {
             out.append("server ready in ").append(seconds(r.millis()));
@@ -404,6 +422,39 @@ public final class LifecycleTools {
             return "\nresource pack not sent again (" + e.getMessage() + "): run pack_build";
         }
     }
+
+    private Path serverProperties() {
+        return config.serverDir().resolve("server.properties");
+    }
+
+    /**
+     * A detached session left server.properties offering its pack, and the next start just stopped that pack host.
+     * Serve the pack again, on the same port when it is free, and point server.properties at it before the server
+     * reads the file; if the pack can no longer be built, stop offering it. Returns a note, or null.
+     */
+    private String syncPackProperties() {
+        Path file = serverProperties();
+        if (!pack.ours(PackProperties.url(file))) {
+            return null;
+        }
+        try {
+            ResourcePack.Applied applied = pack.applied();
+            ResourcePack.Built built = pack.build(applied != null ? applied.description() : DEFAULT_PACK_DESCRIPTION);
+            PackProperties.write(file, built.url(), built.sha1(),
+                    applied != null ? applied.required() : PackProperties.required(file));
+            return null;
+        } catch (IOException | RuntimeException e) {
+            try {
+                PackProperties.clear(file);
+            } catch (IOException ignored) {
+                // Best effort: the server then shows players a failed pack download.
+            }
+            return "server.properties no longer offers the resource pack (" + e.getMessage() + ")";
+        }
+    }
+
+    /** The description pack_build uses when none is given. */
+    public static final String DEFAULT_PACK_DESCRIPTION = "Minecraft Server Creator dev pack";
 
     private static final int GROUND_RADIUS = 32;
 
@@ -610,16 +661,52 @@ public final class LifecycleTools {
             command = command.substring(1);
         }
         if (hub.current() != null) {
+            long before = server.log().mark();
             Ops.CommandResult r = hub.call(Ops.SERVER_COMMAND, new Ops.CommandParams(command));
-            String output = r.output() == null || r.output().isEmpty() ? "(no output)" : String.join("\n", r.output());
-            return Budget.truncate((r.success() ? "" : "command failed\n") + output, Budget.DEFAULT_CHARS,
-                    "Output cut.");
+            List<String> output = r.output() == null ? List.of() : r.output();
+            List<String> console = server.running() ? consoleDuring(before, output) : List.of();
+            StringBuilder text = new StringBuilder(r.success() ? "" : "command failed\n");
+            text.append(output.isEmpty() && console.isEmpty() ? "(no output)" : String.join("\n", output));
+            if (!console.isEmpty()) {
+                // Broadcasts reach the console, not the command's sender: without these a /say-style reply is lost.
+                text.append(output.isEmpty() ? "" : "\n").append("console during the command:\n")
+                        .append(String.join("\n", console));
+            }
+            return Budget.truncate(text.toString(), Budget.DEFAULT_CHARS, "Output cut.");
         }
         long mark = server.log().mark();
         server.console(command);
         Thread.sleep(700);
         List<String> lines = server.log().since(mark);
         return lines.isEmpty() ? "sent (no output within 0.7s)" : Budget.truncate(tail(lines, 30), Budget.DEFAULT_CHARS, "Output cut.");
+    }
+
+    private static final Pattern LOG_PREFIX = Pattern.compile("^\\[[^\\]]*\\]:? ?(\\[[^\\]]*(INFO|WARN|ERROR)\\]:? ?)?");
+
+    /**
+     * What the server printed while a command ran, minus the lines the command already returned. The log is read on
+     * another thread, so wait until it has been quiet for 60 ms (at most 400 ms).
+     */
+    private List<String> consoleDuring(long mark, List<String> returned) throws InterruptedException {
+        long deadline = System.nanoTime() + 400_000_000L;
+        long seen = -1;
+        while (System.nanoTime() < deadline) {
+            Thread.sleep(60);
+            long now = server.log().mark();
+            if (now == seen) {
+                break;
+            }
+            seen = now;
+        }
+        Set<String> skip = new java.util.HashSet<>(returned);
+        List<String> out = new ArrayList<>();
+        for (String line : server.log().since(mark)) {
+            String text = LOG_PREFIX.matcher(line.replaceAll("\u001b\\[[0-9;?]*[A-Za-z]", "")).replaceFirst("").strip();
+            if (!text.isEmpty() && !skip.contains(text)) {
+                out.add(text);
+            }
+        }
+        return out.size() > 30 ? out.subList(out.size() - 30, out.size()) : out;
     }
 
     private static String join(String a, String b) {
