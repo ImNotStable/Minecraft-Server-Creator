@@ -28,4 +28,10 @@ class ScriptTest {
         assertThatThrownBy(() -> Script.parse("slot 12")).hasMessage("slot is 1 to 9: slot 12");
         assertThatThrownBy(() -> Script.parse("wait")).hasMessage("missing value: wait");
     }
+
+    @Test
+    void useSaysWhenTheBlockIsBeyondReach() {
+        assertThat(Script.clicked(3.0)).isEqualTo("clicked the block");
+        assertThat(Script.clicked(12.34)).isEqualTo("clicked the block from 12.3 blocks: beyond a player's reach (4.5), goto closer");
+    }
 }

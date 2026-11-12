@@ -142,10 +142,23 @@ final class ServerConsole {
             }
             seen = now;
         }
+        return consoleLines(server.log().since(mark), returned);
+    }
+
+    /**
+     * Console lines without log prefixes and without lines the command returned, at most 30. Stack traces are trimmed
+     * like {@code server_logs} does, so an exception's header ("NullPointerException: Unloaded chunk") survives
+     * instead of being pushed out by framework frames.
+     */
+    static List<String> consoleLines(List<String> lines, List<String> returned) {
+        List<String> raw = new ArrayList<>();
+        for (String line : lines) {
+            raw.add(LOG_PREFIX.matcher(LogText.clean(line)).replaceFirst("").stripTrailing());
+        }
         Set<String> skip = new HashSet<>(returned);
         List<String> out = new ArrayList<>();
-        for (String line : server.log().since(mark)) {
-            String text = LOG_PREFIX.matcher(LogText.clean(line)).replaceFirst("").strip();
+        for (String line : LogCondenser.trimTrace(raw)) {
+            String text = line.strip();
             if (!text.isEmpty() && !skip.contains(text)) {
                 out.add(text);
             }

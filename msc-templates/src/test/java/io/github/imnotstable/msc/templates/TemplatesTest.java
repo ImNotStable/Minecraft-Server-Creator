@@ -88,7 +88,7 @@ class TemplatesTest {
         assertThat(Files.readString(r.root().resolve("settings.gradle.kts"))).contains("rootProject.name = \"spawn-lobby\"");
         assertThat(Files.readString(r.root().resolve("run/server.properties")))
                 .contains("rcon.password=secret", "rcon.port=25575", "online-mode=false", "server-ip=127.0.0.1");
-        assertThat(Files.readString(r.root().resolve(".gitignore"))).contains(".msc/");
+        assertThat(Files.readString(r.root().resolve(".gitignore"))).contains(".msc/*\n!.msc/pack/\n");
         assertThat(Files.readString(r.root().resolve("build.gradle.kts"))).doesNotContain("eula.agree");
         assertThat(Files.isExecutable(r.root().resolve("gradlew"))).isTrue();
         assertThat(Files.size(r.root().resolve("gradle/wrapper/gradle-wrapper.jar"))).isGreaterThan(10_000);

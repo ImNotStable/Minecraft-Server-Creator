@@ -156,6 +156,15 @@ class TextureToolsTest {
     }
 
     @Test
+    void retexturingAVanillaTextureKeepsVanillasModels() {
+        assertThat(h.ok("texture", "name", "minecraft:block/crimson_stem", "kind", "noise", "color", "#4a1530"))
+                .startsWith("wrote minecraft:block/crimson_stem").doesNotContain("item_model");
+        assertThat(workspace.resolve(".msc/pack/assets/minecraft/textures/block/crimson_stem.png")).exists();
+        assertThat(workspace.resolve(".msc/pack/assets/minecraft/models/block/crimson_stem.json")).doesNotExist();
+        assertThat(workspace.resolve(".msc/pack/assets/minecraft/items/crimson_stem.json")).doesNotExist();
+    }
+
+    @Test
     void modelCreateFillsTheSlotsOfAVanillaParent() {
         assertThat(h.ok("model_create", "name", "block/ruby_log", "kind", "cube_column",
                 "textures", List.of("end=block/ruby_log_top", "side=block/ruby_log")))

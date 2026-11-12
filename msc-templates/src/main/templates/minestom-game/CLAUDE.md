@@ -16,7 +16,7 @@ The base every game needs, so you only write the game itself. All of it is set i
 - Join: inventory cleared, the `kit` given, game mode set (`ADVENTURE` by default), teleported to the player's saved stage.
 - Death: Minestom drops nothing, so players keep their items; they respawn at the current stage's spawn.
 - World: time frozen at `time`, weather clear, `difficulty` set. There are no natural mob spawns in Minestom at all.
-- Stages: an ordered list, each with a `spawn` and an optional `goal` box. Stepping into the goal moves the player to the next stage. Progress is saved per player (by UUID) in `run/progress.properties` and survives restarts.
+- Stages: an ordered list, each with a `spawn` and an optional `goal` box. Stepping into the goal moves the player to the next stage. Progress is saved per player (by UUID) in `run/progress.properties` and survives restarts. Offline (the dev server) players get vanilla's offline UUID from their name, so progress also survives a reconnect.
 - `/game` admin command (console always; players named in `admins`): `status`, `stage <name|n> [player]`, `next [player]`, `reset [player]`, `kit [player]`.
 - A bad setting (duplicate stage name, no stages) fails on start with a message naming it.
 

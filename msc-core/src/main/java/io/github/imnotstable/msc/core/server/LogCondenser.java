@@ -22,7 +22,8 @@ public final class LogCondenser {
     private static final List<String> FRAMEWORK = List.of("java.", "javax.", "jdk.", "sun.", "com.sun.",
             "net.minecraft.", "com.mojang.", "org.bukkit.", "org.spigotmc.", "io.papermc.", "com.destroystokyo.",
             "io.netty.", "org.apache.", "com.google.", "it.unimi.", "org.slf4j.", "co.aikar.", "ca.spottedleaf.",
-            "org.gradle.", "org.junit.", "org.mockbukkit.", "be.seeseemelk.", "kotlin.", "worker.org.gradle.", "oshi.");
+            "org.gradle.", "org.junit.", "org.mockbukkit.", "be.seeseemelk.", "kotlin.", "worker.org.gradle.", "oshi.",
+            "net.minestom.");
 
     /**
      * Entries every dev server prints and the AI can do nothing about: Paper's banners for running as root or
@@ -149,7 +150,7 @@ public final class LogCondenser {
     }
 
     /** Keep exception headers and project frames; fold runs of framework frames into one line. */
-    static List<String> trimTrace(List<String> extra) {
+    public static List<String> trimTrace(List<String> extra) {
         List<String> out = new ArrayList<>();
         int folded = 0;
         boolean firstFrameOfBlock = true;

@@ -14,6 +14,15 @@ final class Script {
             + "tp x,y,z, entities, inventory, hud, close";
     /** How far from the eyes to an entity's middle attack and interact look, as before: hitbox reach is about 3. */
     private static final double REACH = 4.5;
+
+    /**
+     * The result of {@code use x,y,z}. The packet is sent from any distance and many servers (Minestom) accept it, so
+     * say when a real player could not have reached the block: a test that passes only from there proves nothing.
+     */
+    static String clicked(double eyeDistance) {
+        return eyeDistance <= REACH + 0.5 ? "clicked the block"
+                : String.format(Locale.ROOT, "clicked the block from %.1f blocks: beyond a player's reach (%.1f), goto closer", eyeDistance, REACH);
+    }
     private static final int MAX_TICKS = 20 * 60;
 
     private Script() {
@@ -131,8 +140,12 @@ final class Script {
                 }
                 double[] v = numbers(w[1], 3, 3, line);
                 yield once(line, p -> {
-                    p.useOn((int) Math.floor(v[0]), (int) Math.floor(v[1]), (int) Math.floor(v[2]));
-                    return "clicked the block";
+                    int bx = (int) Math.floor(v[0]);
+                    int by = (int) Math.floor(v[1]);
+                    int bz = (int) Math.floor(v[2]);
+                    p.useOn(bx, by, bz);
+                    return clicked(Math.sqrt(Math.pow(bx + 0.5 - p.body.x, 2) + Math.pow(by + 0.5 - (p.body.y + 1.62), 2)
+                            + Math.pow(bz + 0.5 - p.body.z, 2)));
                 }, 5);
             }
             case "attack" -> {
