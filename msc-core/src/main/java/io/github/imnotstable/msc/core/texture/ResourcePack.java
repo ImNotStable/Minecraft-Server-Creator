@@ -31,6 +31,21 @@ public final class ResourcePack implements AutoCloseable {
     public record Built(Path zip, String sha1, String url, int files, long bytes) {
     }
 
+    /** What pack_build last sent to the server. A restarted server has forgotten it, so the next start sends it again. */
+    public record Applied(String description, boolean required) {
+    }
+
+    private volatile Applied applied;
+
+    /** Null until pack_build has sent a pack to the server in this session. */
+    public Applied applied() {
+        return applied;
+    }
+
+    public void applied(Applied applied) {
+        this.applied = applied;
+    }
+
     /** A parsed texture id. {@code path} is below {@code textures/}, without {@code .png}. */
     public record TextureId(String namespace, String path) {
         public String name() {

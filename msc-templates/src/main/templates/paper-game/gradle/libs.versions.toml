@@ -1,0 +1,20 @@
+# Every version this project uses. Change versions here only.
+[versions]
+java = "{{javaVersion}}"
+minecraft = "{{mcVersion}}"
+paper = "{{paperVersion}}"
+mockbukkit = "{{mockbukkitVersion}}"
+junit = "{{junitVersion}}"
+assertj = "{{assertjVersion}}"
+run-paper = "{{runPaperVersion}}"
+
+[libraries]
+paper-api = { module = "io.papermc.paper:paper-api", version.ref = "paper" }
+mockbukkit = { module = "org.mockbukkit.mockbukkit:mockbukkit-v{{mcVersion}}", version.ref = "mockbukkit" }
+junit-bom = { module = "org.junit:junit-bom", version.ref = "junit" }
+junit-jupiter = { module = "org.junit.jupiter:junit-jupiter" }
+junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher" }
+assertj = { module = "org.assertj:assertj-core", version.ref = "assertj" }
+
+[plugins]
+run-paper = { id = "xyz.jpenilla.run-paper", version.ref = "run-paper" }

@@ -168,7 +168,8 @@ public final class TextureTools {
                         .opt("apply", "boolean", "Send to the running server. Default true")
                         .opt("required", "boolean", "Kick players who decline. Default false"),
                 args -> {
-                    ResourcePack.Built built = pack.build(args.str("description", "Minecraft Server Creator dev pack"));
+                    String description = args.str("description", "Minecraft Server Creator dev pack");
+                    ResourcePack.Built built = pack.build(description);
                     StringBuilder out = new StringBuilder();
                     out.append("pack built: ").append(built.files()).append(" files, ").append(built.bytes())
                             .append(" bytes\nurl: ").append(built.url()).append("\nsha1: ").append(built.sha1());
@@ -178,7 +179,9 @@ public final class TextureTools {
                         } else {
                             Ops.PackResult r = hub.call(Ops.PACK_APPLY,
                                     new Ops.PackParams(built.url(), built.sha1(), args.bool("required", false)));
-                            out.append("\napplied: sent to ").append(r.playersSent()).append(" players");
+                            pack.applied(new ResourcePack.Applied(description, args.bool("required", false)));
+                            out.append("\napplied: sent to ").append(r.playersSent())
+                                    .append(" players; players who join later get it too, also after a restart");
                         }
                     }
                     return out.append('\n').append(check(pack, 0).lines().findFirst().orElseThrow()).toString();

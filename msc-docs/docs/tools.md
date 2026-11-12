@@ -17,7 +17,7 @@ The AI talks to `msc-core` over MCP (stdio). This page lists every tool, its arg
 
 ## Typical loop
 
-`project_scaffold` once, `server_setup` once, then edit code and call `dev_cycle` until it reports `no errors or warnings`. Look names up with `api_search` instead of guessing. Look at the world with `world_summary`, then `world_slice`; build with `build_structure`.
+`project_scaffold` once, `server_setup` once, then edit code and call `dev_cycle` until it reports `no errors or warnings`. Look names up with `api_search` instead of guessing. Look at the world with `world_summary`, then `world_slice`; build with `build_structure`, and use `build_batch` for many steps, round shapes, block mixes and repeated pieces.
 
 ## Status
 
@@ -30,7 +30,7 @@ The AI talks to `msc-core` over MCP (stdio). This page lists every tool, its arg
 
 | Tool | Arguments | Result | Budget |
 | --- | --- | --- | --- |
-| `project_scaffold` | `name`, `dir`?, `template`? (`paper-plugin` default, `fabric-mod`, `minestom-server`), `package`? (`com.example.<name>`), `acceptEula`? (false) | Where the project was created, its `projectId`, `packageName` and `version`, and the next step (EULA and `server_setup` first when the Paper or Fabric server is not set up). Remembers the template's platform for the workspace | 5 lines |
+| `project_scaffold` | `name`, `dir`?, `template`? (`paper-plugin` default, `paper-game`, `fabric-mod`, `minestom-server`), `package`? (`com.example.<name>`), `acceptEula`? (false) | Where the project was created, its `projectId`, `packageName` and `version`, and the next step (EULA and `server_setup` first when the Paper or Fabric server is not set up). Remembers the template's platform for the workspace | 5 lines |
 | `server_setup` | `version`? (default 26.3), `platform`? (`paper`, `fabric`, `minestom`; default the project's), `acceptEula`? (false) | Paper: build used. Fabric: launcher and Fabric API versions. Both: whether dev defaults and the agent were installed and whether `eula.txt` says `eula=true`. Minestom: one line saying nothing is needed | 5 lines |
 | `server_start` | `timeoutSeconds`? (180) | `server ready in 8.2s, agent connected`, then `world world: ground is y=-61 (most common top block around 0,0; build from y=-60)` (dev worlds are superflat, far below y=64), plus startup warnings and errors only. Fails at once with a one-line error if `eula.txt` lacks `eula=true`. Replaces an installed agent jar that differs from the one in `.msc/agent` (or `MSC_AGENT_JAR`) first, and says `agent jar updated` | 6,000 chars |
 | `server_detach` | none | One line: the running server, and the pack host if a pack was built, keep running after this core exits (the pack host moves to a standalone process on the same port, pid in `.msc/pack-host.pid`). The next `server_start`, `dev_cycle` or `server_stop` stops both, the server over RCON | 2 lines |
@@ -103,6 +103,7 @@ Every build tool answers `edit eN: <count> blocks changed`. The id undoes the wh
 | `build_structure` | `at`, `structure`, `physics`? (false) | Text structure format, up to 1,048,576 blocks |
 | `build_copy` | `region`, `to`, `air`? (true) | Reads everything first, so source and target may overlap |
 | `build_undo` | `edit`? (default: most recent) | Edits are remembered for the life of the core process |
+| `build_batch` | `steps` (one per line), `dryRun`? (false), `physics`? (false) | Fills, rooms, `cylinder`, `ring`, `disc`, `sphere`, `dome`, `line`, `bands`, stamped `structure`s; weighted mixes such as `grass_block:78,moss_block:10`; checks every name first; one undo id. See [ADR 0015](adr/0015-build-batch.md) |
 | `structure_save` | `region`, `file` | Sponge schematic v2 (`.schem`), blocks only |
 | `structure_load` | `file`, `at`, `air`? (true) | Reads Sponge v2 and v3, blocks only |
 
@@ -125,7 +126,7 @@ Pixel art is drawn as text; no image model is involved. The pack source lives in
 | `model_create` | `name` (model, such as `block/ruby_log`), `kind` (`cube_all`, `cube_column`, `cube_bottom_top`, `orientable`, `cross`, `item`, `handheld`), `textures` (list of `slot=texture`; one bare name fills every slot), `item`? (true) | Writes the model and, unless `item=false`, an item definition named after it |
 | `texture_view` | `name` | The texture as a palette line and pixel rows (about 80 tokens for 16 x 16) |
 | `pack_check` | `limit`? (30) | `msc-textures` `PackLint` on the pack sources: a summary line (files, errors, warnings, notes), then findings such as a model pointing at a missing texture. A missing `pack.mcmeta` is not reported before the first `pack_build`, which writes it |
-| `pack_build` | `description`?, `apply`? (true), `required`? (false) | Zips the pack (same content gives the same SHA-1), serves it over HTTP and sends it through the agent. Ends with the `pack_check` summary line |
+| `pack_build` | `description`?, `apply`? (true), `required`? (false) | Zips the pack (same content gives the same SHA-1), serves it over HTTP and sends it through the agent. The agent also sends it to players who join later, and the next `server_start` or `dev_cycle` in the same session serves and sends it again (`resource pack sent again`), because a restarted server has forgotten it. Ends with the `pack_check` summary line |
 
 ## Tool log
 

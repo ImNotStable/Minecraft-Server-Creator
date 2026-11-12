@@ -15,7 +15,7 @@ Coordinates are text: a position is `x,y,z`, a region is `x1,y1,z1 x2,y2,z2`, an
 
 | Tool | What it does |
 | --- | --- |
-| `project_scaffold` | Creates a new project from a template (`paper-plugin`, `fabric-mod`, `minestom-server`). |
+| `project_scaffold` | Creates a new project from a template (`paper-plugin`, `paper-game` for minigames, `fabric-mod`, `minestom-server`). |
 | `server_setup` | Downloads the server and installs the agent and dev settings. |
 | `server_start` | Starts the server and reports only startup warnings and errors. |
 | `server_stop` | Stops the server. |
@@ -49,6 +49,7 @@ Coordinates are text: a position is `x,y,z`, a region is `x1,y1,z1 x2,y2,z2`, an
 | `build_structure` | Builds a structure written in the text format that `world_slice` shows. |
 | `build_copy` | Copies a region to another place. |
 | `build_undo` | Undoes an edit (the last one by default). |
+| `build_batch` | Runs many build steps as one edit: fills and rooms, circles, rings, spheres, domes, lines, terrain bands, and structures repeated or turned. Takes block mixes such as `grass_block:78,moss_block:10`, checks every block name before placing any, and has a `dryRun` option. |
 | `structure_save` | Saves a region as a `.schem` file. |
 | `structure_load` | Pastes a `.schem` file into the world. |
 

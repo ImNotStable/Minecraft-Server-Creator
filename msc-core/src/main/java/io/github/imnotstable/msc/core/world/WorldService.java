@@ -289,7 +289,8 @@ public final class WorldService {
 
     // ---- edits ------------------------------------------------------------------------------
 
-    private synchronized String remember(List<String> agentEdits) {
+    /** Keep agent edit ids under one new edit id for {@code build_undo}, and return that id. */
+    public synchronized String remember(List<String> agentEdits) {
         String id = "e" + (++editCounter);
         edits.put(id, agentEdits);
         return id;

@@ -1,6 +1,7 @@
 package io.github.imnotstable.msc.core;
 
 import io.github.imnotstable.msc.core.agent.AgentHub;
+import io.github.imnotstable.msc.core.building.Builder;
 import io.github.imnotstable.msc.core.metrics.ToolLog;
 import io.github.imnotstable.msc.core.server.FabricDownloader;
 import io.github.imnotstable.msc.core.server.PaperDownloader;
@@ -9,6 +10,7 @@ import io.github.imnotstable.msc.core.server.ServerManager;
 import io.github.imnotstable.msc.core.texture.ResourcePack;
 import io.github.imnotstable.msc.core.tool.ToolRegistry;
 import io.github.imnotstable.msc.core.tools.ApiTools;
+import io.github.imnotstable.msc.core.tools.BuildTools;
 import io.github.imnotstable.msc.core.tools.LifecycleTools;
 import io.github.imnotstable.msc.core.tools.MetaTools;
 import io.github.imnotstable.msc.core.tools.PlayerTools;
@@ -50,6 +52,7 @@ public final class Core implements AutoCloseable {
                 new FabricDownloader(config.fabricMetaUrl(), config.fabricMavenUrl(), config.dataDir().resolve("cache")));
         api.register(registry);
         WorldTools.register(registry, config, world);
+        BuildTools.register(registry, config, world, new Builder(hub, world));
         TextureTools.register(registry, hub, pack);
         this.players = PlayerTools.register(registry, config, hub);
         List<String> warnings = SetupCheck.warnings(config);

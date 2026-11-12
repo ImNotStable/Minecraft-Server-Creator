@@ -16,6 +16,13 @@ class BlockLookTest {
     }
 
     @Test
+    void smallRedstoneAndMetalBlocksHaveAColour() {
+        for (String name : new String[] {"heavy_weighted_pressure_plate", "light_weighted_pressure_plate", "lever", "lightning_rod"}) {
+            assertThat(BlockColors.find(name, BlockColors.TOP).known()).as(name).isTrue();
+        }
+    }
+
+    @Test
     void shapedBlocksTakeTheColourOfWhatTheyAreMadeOf() {
         int planks = BlockColors.find("oak_planks", BlockColors.SIDE).argb();
         assertThat(BlockColors.find("oak_slab", BlockColors.SIDE).argb()).isEqualTo(planks);

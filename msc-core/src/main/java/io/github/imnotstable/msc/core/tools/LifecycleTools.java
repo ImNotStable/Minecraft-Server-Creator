@@ -65,7 +65,7 @@ public final class LifecycleTools {
                 "Create a new project from a template (Gradle KTS, tests wired in). Target directory must be empty.",
                 Schema.of().req("name", "string", "Project name, for example MyPlugin")
                         .opt("dir", "string", "Target directory, relative to the workspace. Default: the workspace itself")
-                        .opt("template", "string", "paper-plugin (default), fabric-mod or minestom-server")
+                        .opt("template", "string", "paper-plugin (default), paper-game (minigame base: kit, stages, saved progress, /game debug commands), fabric-mod or minestom-server")
                         .opt("package", "string", "Java package. Default com.example.<name>")
                         .opt("acceptEula", "boolean", EULA_ARG),
                 t::scaffold);
@@ -344,7 +344,7 @@ public final class LifecycleTools {
                 out.append(", agent jar updated");
             }
             if (s != null) {
-                out.append(groundLine());
+                out.append(groundLine()).append(packLine());
             }
             out.append('\n').append(clean ? "no errors or warnings" : condensed);
         } else if (r.exited()) {
@@ -381,6 +381,27 @@ public final class LifecycleTools {
             return "";
         } catch (RuntimeException e) {
             return "";
+        }
+    }
+
+    /**
+     * A restarted server has forgotten the pack that pack_build sent, and a detached pack host was just stopped,
+     * so serve and send it again. Best effort, like the ground line.
+     */
+    private String packLine() {
+        ResourcePack.Applied applied = pack.applied();
+        if (applied == null) {
+            return "";
+        }
+        try {
+            ResourcePack.Built built = pack.build(applied.description());
+            hub.call(Ops.PACK_APPLY, new Ops.PackParams(built.url(), built.sha1(), applied.required()));
+            return "\nresource pack sent again: players who join get it";
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return "";
+        } catch (IOException | RuntimeException e) {
+            return "\nresource pack not sent again (" + e.getMessage() + "): run pack_build";
         }
     }
 
