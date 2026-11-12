@@ -25,5 +25,4 @@ GitHub reported 22 alerts on main (1 critical, 8 high, 12 moderate, 1 low); all 
 | `org.apache.commons:commons-lang3` 3.12.0 | `paper-api` compile classpath, **provided** | GHSA-j288-q9x7-2f5v (moderate) | Not reachable: compile-only. |
 | `org.apache.logging.log4j:log4j-api` 2.26.0 | `paper-api` compile classpath, **provided** | GHSA-qv9r-c865-cp47 (moderate, MapMessage JSON) | Not reachable: the agent does not log MapMessages. Provided by Paper. |
 
-Not scanned yet: Gradle plugin classpaths (Shadow, run-paper, Loom, foojay). They run only at build
-time on the developer's machine and CI.
+Gradle plugin classpaths (`buildEnvironment`: Shadow, run-paper, Loom, foojay, build-logic) were scanned too and have no known advisories.
