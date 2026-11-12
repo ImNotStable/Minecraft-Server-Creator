@@ -16,7 +16,8 @@ import java.util.stream.Stream;
 
 /**
  * Loads tasks from a folder laid out as {@code <tasksDir>/<id>/task.json} plus {@code prompt.md}
- * and an optional {@code fixture/} folder. Folders starting with {@code _} hold shared fixtures and
+ * and an optional {@code fixture/} folder (copied into the workspace). Other folders, such as hidden tests a
+ * check adds after the agent is done, stay out of the workspace. Folders starting with {@code _} hold shared fixtures and
  * are not tasks.
  */
 public final class TaskLoader {
@@ -72,6 +73,16 @@ public final class TaskLoader {
                 fixtures.add(taskDir.resolve("fixture"));
             }
 
+            String platform = json.has("platform") ? json.get("platform").getAsString() : TaskDef.PAPER;
+            if (!platform.equals(TaskDef.PAPER) && !platform.equals(TaskDef.MINESTOM)) {
+                throw new IllegalArgumentException("platform must be paper or minestom, not " + platform);
+            }
+            Scaffold scaffold = null;
+            if (json.has("scaffold")) {
+                JsonObject s = json.getAsJsonObject("scaffold");
+                scaffold = new Scaffold(requireString(s, "template"), requireString(s, "name"), requireString(s, "package"));
+            }
+
             ServerSpec server = ServerSpec.NONE;
             if (json.has("server")) {
                 JsonObject s = json.getAsJsonObject("server");
@@ -82,7 +93,7 @@ public final class TaskLoader {
             List<Check> checks = new ArrayList<>();
             JsonArray checkArray = json.has("checks") ? json.getAsJsonArray("checks") : new JsonArray();
             for (JsonElement element : checkArray) {
-                checks.add(Checks.parse(element.getAsJsonObject()));
+                checks.add(Checks.parse(element.getAsJsonObject(), taskDir));
             }
             if (checks.isEmpty()) {
                 throw new IllegalArgumentException("a task needs at least one check");
@@ -92,7 +103,9 @@ public final class TaskLoader {
                     id,
                     requireString(json, "category"),
                     requireString(json, "title"),
+                    platform,
                     prompt,
+                    scaffold,
                     fixtures,
                     server,
                     checks,
