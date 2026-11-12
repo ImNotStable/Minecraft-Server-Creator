@@ -1,5 +1,7 @@
 package io.github.imnotstable.msc.bench.run;
 
+import java.util.List;
+
 /**
  * What the agent reported about its own run, taken from Claude Code's {@code --output-format json}
  * result. All counts are 0 when the output could not be parsed.
@@ -14,6 +16,7 @@ package io.github.imnotstable.msc.bench.run;
  * @param outputTokens        output tokens
  * @param costUsd             cost as reported by the agent
  * @param model               model id(s) the agent used, comma-separated, or empty
+ * @param mcpConnected        MCP servers the agent's init event reported as connected
  */
 public record AgentResult(
         boolean parsed,
@@ -25,12 +28,14 @@ public record AgentResult(
         long cacheReadTokens,
         long outputTokens,
         double costUsd,
-        String model) {
+        String model,
+        List<String> mcpConnected) {
 
-    public static final AgentResult UNKNOWN = new AgentResult(false, false, 0, 0, 0, 0, 0, 0, 0, "");
+    public static final AgentResult UNKNOWN = new AgentResult(false, false, 0, 0, 0, 0, 0, 0, 0, "", List.of());
 
     public AgentResult {
         model = model == null ? "" : model;
+        mcpConnected = mcpConnected == null ? List.of() : List.copyOf(mcpConnected);
     }
 
     /** Every token the model read or wrote, cached or not. */
