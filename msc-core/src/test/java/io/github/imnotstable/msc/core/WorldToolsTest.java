@@ -51,7 +51,7 @@ class WorldToolsTest {
             BufferedImage image = ImageIO.read(new ByteArrayInputStream(result.png()));
             assertThat(Math.max(image.getWidth(), image.getHeight())).isLessThanOrEqualTo(128);
             assertThat(result.text()).startsWith("Top view").contains("oak_planks").contains("\nsaved: ")
-                    .contains("\nMarkers (magenta, numbered): 1 cow at 1.5,64,1.5.\n");
+                    .contains("\nMarkers, numbered (green dot = creature): 1 cow at 1.5,64,1.5. Behind blocks (hollow or faded): 1.\n");
             assertThat(r.ok("world_render", "region", "0,62,0 5,67,5", "view", "top", "size", 64, "entities", false))
                     .doesNotContain("Markers");
             Path saved = Path.of(result.text().substring(result.text().indexOf("saved: ") + 7));

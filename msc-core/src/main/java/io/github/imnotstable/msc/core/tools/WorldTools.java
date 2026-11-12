@@ -66,7 +66,7 @@ public final class WorldTools {
                         + "south, east, west, iso-ne/nw/sw/se, \"eye x,y,z look x,y,z\".",
                 Schema.of().req("region", "string", REGION).opt("view", "string", "Camera. Default iso")
                         .opt("size", "integer", "Longest side in pixels, 64 to 1568. Default 512")
-                        .opt("entities", "boolean", "Mark entities as numbered dots. Default true")
+                        .opt("entities", "boolean", "Mark entities as numbered dots and show hologram text. Default true")
                         .opt("world", "string", WORLD),
                 args -> {
                     View view;
@@ -178,19 +178,11 @@ public final class WorldTools {
                 });
     }
 
-    /** One marker per entity: brief type, then its name or text in quotes. */
+    /** One marker per entity, coloured by kind; holograms (text displays, named armor stands) show their text. */
     static List<Marker> markers(List<Ops.EntitySummary> entities) {
         if (entities == null) {
             return List.of();
         }
-        List<Marker> out = new ArrayList<>();
-        for (Ops.EntitySummary e : entities) {
-            String name = e.name() == null ? "" : e.name().strip().replaceAll("\\s+", " ");
-            if (name.length() > 40) {
-                name = name.substring(0, 39) + "...";
-            }
-            out.add(new Marker(e.x(), e.y(), e.z(), BlockNames.brief(e.type()) + (name.isEmpty() ? "" : " \"" + name + "\"")));
-        }
-        return out;
+        return entities.stream().map(e -> Marker.entity(e.type(), e.name(), e.x(), e.y(), e.z())).toList();
     }
 }
