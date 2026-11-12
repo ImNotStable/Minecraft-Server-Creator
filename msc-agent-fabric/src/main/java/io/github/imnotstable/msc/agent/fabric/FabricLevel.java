@@ -63,8 +63,9 @@ final class FabricLevel implements AgentLevel {
 
     @Override
     public int surfaceY(int x, int z) {
-        // The heightmap holds the first free Y above the top block.
-        return level.getHeight(Heightmap.Types.WORLD_SURFACE, x, z) - 1;
+        // Level.getHeight answers minY for a chunk that is not loaded (26.x keeps no spawn chunks loaded), so load
+        // the chunk; on a chunk the answer is already the top block's Y.
+        return level.getChunk(x >> 4, z >> 4).getHeight(Heightmap.Types.WORLD_SURFACE, x & 15, z & 15);
     }
 
     @Override

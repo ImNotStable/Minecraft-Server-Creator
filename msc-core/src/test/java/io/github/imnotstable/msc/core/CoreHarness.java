@@ -25,6 +25,8 @@ final class CoreHarness implements AutoCloseable {
     }
 
     CoreHarness withAgent() throws Exception {
+        // The fake agent stands in for a running server, so let the hub wait for it to finish connecting.
+        core.hub().agentExpected(() -> true);
         session = agent.connect(core.hub().address(), core.hub().token());
         core.hub().require();
         return this;

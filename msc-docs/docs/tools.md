@@ -11,6 +11,7 @@ The AI talks to `msc-core` over MCP (stdio). This page lists every tool, its arg
 - Block names may omit `minecraft:`. Properties use vanilla syntax: `oak_stairs[facing=north]`.
 - `world` is optional everywhere and defaults to the server's first world.
 - Every call is logged (see "Tool log").
+- World and build tools fail at once with `error: the server is not running...` when the core has no server running and none was attached with `MSC_CORE_ADDRESS`.
 - The whole tool list (30 tools) costs about 3,500 tokens per conversation. A test fails if it grows past 14,100 characters.
 - Results are text. The one exception is `world_render`, which adds one PNG image next to its text.
 
@@ -29,15 +30,15 @@ The AI talks to `msc-core` over MCP (stdio). This page lists every tool, its arg
 
 | Tool | Arguments | Result | Budget |
 | --- | --- | --- | --- |
-| `project_scaffold` | `name`, `dir`?, `template`? (`paper-plugin` default, `fabric-mod`, `minestom-server`), `acceptEula`? (false) | Where the project was created, its `projectId`, `packageName` and `version`. Remembers the template's platform for the workspace | 5 lines |
+| `project_scaffold` | `name`, `dir`?, `template`? (`paper-plugin` default, `fabric-mod`, `minestom-server`), `acceptEula`? (false) | Where the project was created, its `projectId`, `packageName` and `version`, and the next step (EULA and `server_setup` first when the Paper or Fabric server is not set up). Remembers the template's platform for the workspace | 5 lines |
 | `server_setup` | `version`? (default 26.3), `platform`? (`paper`, `fabric`, `minestom`; default the project's), `acceptEula`? (false) | Paper: build used. Fabric: launcher and Fabric API versions. Both: whether dev defaults and the agent were installed and whether `eula.txt` says `eula=true`. Minestom: one line saying nothing is needed | 5 lines |
-| `server_start` | `timeoutSeconds`? (180) | `server ready in 8.2s, agent connected` plus startup warnings and errors only. Fails at once with a one-line error if `eula.txt` lacks `eula=true`. Replaces an installed agent jar that differs from the one in `.msc/agent` (or `MSC_AGENT_JAR`) first, and says `agent jar updated` | 6,000 chars |
-| `server_stop` | none | One line | 1 line |
-| `dev_cycle` | `project`? (workspace), `restart`? (true), `maxChars`? | Build, deploy, restart, report in one call. On a failed build: compiler and test errors only. Otherwise: startup warnings and errors, or `no errors or warnings` | `maxChars` |
+| `server_start` | `timeoutSeconds`? (180) | `server ready in 8.2s, agent connected`, then `world world: top block at 0,0 is y=-61 (build from y=-60)` (dev worlds are superflat, far below y=64), plus startup warnings and errors only. Fails at once with a one-line error if `eula.txt` lacks `eula=true`. Replaces an installed agent jar that differs from the one in `.msc/agent` (or `MSC_AGENT_JAR`) first, and says `agent jar updated` | 6,000 chars |
+| `server_stop` | none | One line. Also stops a server an earlier core left running (pid and start time in `.msc/server.pid`), as `server_start` and `dev_cycle` do first: over RCON so it saves, killed only if that fails | 1 line |
+| `dev_cycle` | `project`? (workspace), `restart`? (true), `maxChars`? | Build, deploy, restart, report in one call. On a failed build: compiler errors and each failed test with its project frames. Otherwise: startup warnings and errors, or `no errors or warnings` | `maxChars` |
 | `server_logs` | `mode`? (`errors`, `tail`, `grep`), `pattern`?, `lines`? (30), `all`? (false), `maxChars`? | `errors`: warnings and errors, stack traces cut to project frames, repeats collapsed to `(xN)` | `maxChars` |
 | `server_command` | `command` | The command's output | 6,000 chars |
 
-How logs are condensed: only WARN and ERROR entries and anything with a stack trace are kept. In a trace, the exception lines, the first frame and all frames outside framework packages (`java.`, `net.minecraft.`, `org.bukkit.`, `io.papermc.` and similar) are kept; runs of framework frames become `... N framework frames`. Identical entries are shown once with a count. By default `server_logs` looks only at lines since the last start.
+How logs are condensed: the dev server's fixed banners (running as root or administrator, offline mode) and the Windows system-report noise (`[oshi.*]` messages, `Failed to get system info for ...`) are dropped. Otherwise only WARN and ERROR entries and anything with a stack trace are kept. In a trace, the exception lines, the first frame and all frames outside framework packages (`java.`, `net.minecraft.`, `org.bukkit.`, `io.papermc.` and similar) are kept; runs of framework frames become `... N framework frames`. Identical entries are shown once with a count. By default `server_logs` looks only at lines since the last start.
 
 ### Platforms
 
@@ -45,8 +46,8 @@ The workspace has one platform: `paper` (default), `fabric` or `minestom`. `proj
 
 | Platform | `server_setup` installs | Server starts as | `dev_cycle` deploys to | EULA step |
 |---|---|---|---|---|
-| `paper` | `paper.jar`, agent in `plugins/` | `java -Xmx2G -jar paper.jar --nogui` | `plugins/<project>.jar` | yes |
-| `fabric` | `fabric-server-launch.jar` (fetches the Minecraft server on first start), `mods/fabric-api.jar`, agent in `mods/` | `java -Xmx2G -jar fabric-server-launch.jar nogui` | `mods/<project>.jar` | yes |
+| `paper` | `paper.jar`, agent in `plugins/` | `java -Xmx2G -jar paper.jar --nogui` | `plugins/<jar name without version>.jar` | yes |
+| `fabric` | `fabric-server-launch.jar` (fetches the Minecraft server on first start), `mods/fabric-api.jar`, agent in `mods/` | `java -Xmx2G -jar fabric-server-launch.jar nogui` | `mods/<jar name without version>.jar` | yes |
 | `minestom` | nothing (the agent is built into the project) | `java -Xmx1G -jar server.jar` | `server.jar` in the server directory | no |
 
 ## API index
@@ -64,7 +65,7 @@ Built on first use from the platform's jars in the Gradle cache (or `MSC_API_JAR
 | --- | --- | --- | --- |
 | `world_summary` | `region` (up to 8,388,608 blocks) | Size, air share, top 15 block counts, bounds of non-air blocks, non-air count per layer, entity counts | about 6 lines |
 | `world_slice` | `region` (up to 128 wide, 1,048,576 blocks), `states`? (false), `maxChars`? | The region in the text structure format | `maxChars` |
-| `world_heightmap` | `area` (up to 256 x 256), `maxChars`? | Min, max, mean, then one character per column (`height - min`, 0-9 then a-z); plain numbers when the range is over 35 | `maxChars` |
+| `world_heightmap` | `area` (up to 256 x 256), `maxChars`? | Min, max, mean, then one character per column (`height - min`, 0-9 then a-z); when the range is over 35, numbers per column with runs as `v*n` and repeated rows as `(xN)` | `maxChars` |
 
 | `world_render` | `region` (up to 16,000,000 blocks; read in protocol-sized pieces and stitched), `view`? (`iso`; also `top`, `north`, `south`, `east`, `west`, `iso-ne`/`nw`/`sw`/`se`, `eye x,y,z look x,y,z`, `eye x,y,z yaw N pitch N`), `size`? (512, 64 to 1568) | A PNG as MCP image content, drawn by `msc-renderer` with the pack's textures, plus a caption: view, pixels per block, image size and token estimate, visible blocks, and the path of the copy saved under `<workspace>/.msc/renders/` | image about 330 tokens at 512 px, caption 2 to 3 lines |
 
@@ -131,7 +132,7 @@ One JSON line per call, appended to `MSC_TOOL_LOG` (default `<workspace>/.msc/to
 | `MSC_SERVER_DIR` | Dev server directory | `<workspace>/run` |
 | `MSC_CORE_ADDRESS`, `MSC_TOKEN` | Where agents connect and the shared token. Set both to attach a server that is already running | free port, random token |
 | `MSC_TOOL_LOG` | Tool log file | `<workspace>/.msc/tool-calls.jsonl` |
-| `MSC_AGENT_JAR` | Agent plugin or mod to install into the server | the jar in `<workspace>/.msc/agent` named for the platform (`...paper...`, `...fabric...`), else one with no platform in its name |
+| `MSC_AGENT_JAR` | Agent plugin or mod to install into the server | the jar in `<workspace>/.msc/agent` named for the platform (`...paper...`, `...fabric...`), else one with no platform in its name; then the same search in `agents/` of the core's install folder (`installMsc` ships them there) |
 | `MSC_API_JARS` | Jars to index, separated by the path separator | the platform's jars from `~/.gradle` |
 | `MSC_MINECRAFT` | Default Minecraft version | 26.3 |
 | `MSC_CLIENT_JAR` | A Minecraft client jar whose textures `world_render` uses after the project's pack | none (colour table) |

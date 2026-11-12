@@ -30,6 +30,17 @@ class WorldToolsTest {
     }
 
     @Test
+    void worldToolsFailAtOnceWhenNoServerIsRunning() throws Exception {
+        try (CoreHarness idle = new CoreHarness(workspace.resolve("idle"))) {
+            idle.core.hub().connectWait(java.time.Duration.ofSeconds(30));
+            long start = System.nanoTime();
+            assertThat(idle.error("world_summary", "region", "0,0,0 1,1,1")).contains("server is not running")
+                    .contains("server_start");
+            assertThat(java.time.Duration.ofNanos(System.nanoTime() - start)).isLessThan(java.time.Duration.ofSeconds(5));
+        }
+    }
+
+    @Test
     void renderReturnsAPngWithACaptionAndLogsItsTokens() throws Exception {
         Path ws = workspace.resolve("logged");
         try (CoreHarness r = new CoreHarness(ws, c -> c.withToolLog(ws.resolve("calls.jsonl"))).withAgent()) {
@@ -172,6 +183,17 @@ class WorldToolsTest {
     }
 
     @Test
+    void wideHeightmapsUseRunsAndRepeatedRows() {
+        h.ok("build_fill", "region", "2,100,1 3,100,2", "block", "stone");
+        assertThat(h.ok("world_heightmap", "area", "0,0 5,4")).isEqualTo("""
+                heightmap world x 0..5 z 0..4 min 63 max 100 mean 68 rows=z cols=x
+                each row: heights by column, v*n = n columns at v, (xN) = row repeated N times
+                63*6
+                63*2 100*2 63*2 (x2)
+                63*6 (x2)""");
+    }
+
+    @Test
     void resultsAreCutToTheBudgetWithAHint() {
         h.ok("build_structure", "at", "0,64,0", "structure",
                 "legend: a=stone b=dirt\ny=0\n" + "ab".repeat(16).concat("\n").repeat(16)
@@ -196,6 +218,7 @@ class WorldToolsTest {
     @Test
     void worldToolsExplainAMissingAgent() throws Exception {
         try (CoreHarness alone = new CoreHarness(workspace.resolve("other"))) {
+            alone.core.hub().agentExpected(() -> true); // as if a server were running without the agent
             assertThat(alone.error("world_summary", "region", "0,0,0 1,1,1"))
                     .contains("no server agent connected").contains("server_start");
         }

@@ -15,6 +15,7 @@ import io.github.imnotstable.msc.core.tool.ToolException;
 import io.github.imnotstable.msc.core.tool.ToolRegistry;
 import io.github.imnotstable.msc.protocol.op.Ops;
 import io.github.imnotstable.msc.protocol.transport.CoreServer;
+import io.github.imnotstable.msc.protocol.world.BlockPos;
 import io.github.imnotstable.msc.templates.ScaffoldResult;
 import io.github.imnotstable.msc.templates.TemplateVariables;
 import io.github.imnotstable.msc.templates.Templates;
@@ -26,6 +27,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 import java.util.stream.Stream;
@@ -70,8 +72,13 @@ public final class LifecycleTools {
                 t::setup);
         registry.add("server_start", "Start the dev server and wait until it is ready. Returns startup errors only.",
                 Schema.of().opt("timeoutSeconds", "integer", "Default 180"), t::start);
-        registry.add("server_stop", "Stop the dev server.", Schema.of(), args ->
-                server.stop(Duration.ofSeconds(30)) ? "server stopped" : "server was not running");
+        registry.add("server_stop", "Stop the dev server.", Schema.of(), args -> {
+            if (server.stop(Duration.ofSeconds(30))) {
+                return "server stopped";
+            }
+            String leftover = server.stopLeftover();
+            return leftover != null ? leftover : "server was not running";
+        });
         registry.add("dev_cycle",
                 "Build the project, deploy its jar, restart the server and report: one call for the whole edit-test loop. "
                         + "Returns compile or test failures, or runtime errors from startup.",
@@ -102,7 +109,7 @@ public final class LifecycleTools {
         ScaffoldResult result;
         try {
             TemplateVariables vars = TemplateVariables.of(name).withAcceptEula(args.bool("acceptEula", false));
-            result = onlyCoreData(dir) ? scaffoldBesideCoreData(template, dir, vars)
+            result = onlyToolFiles(dir) ? scaffoldBesideToolFiles(template, dir, vars)
                     : Templates.scaffold(template, dir, vars);
         } catch (IllegalArgumentException | IllegalStateException e) {
             throw new ToolException(String.valueOf(e.getMessage()));
@@ -121,24 +128,38 @@ public final class LifecycleTools {
                 out.append('\n').append(key).append(": ").append(result.values().get(key));
             }
         }
-        out.append("\nnext: edit the code, then dev_cycle");
+        Platform platform = platformId == null ? null : Platform.of(platformId);
+        if (platform != null && platform.needsEula()
+                && !Files.exists(config.serverDir().resolve(platform.serverJar()))) {
+            // The server is not set up yet: a first dev_cycle would build for nothing and then stop there.
+            out.append("\nnext: ask the user to accept the Minecraft EULA (https://aka.ms/MinecraftEULA), then "
+                    + "server_setup acceptEula=true, then edit the code and dev_cycle");
+        } else {
+            out.append("\nnext: edit the code, then dev_cycle");
+        }
         return out.toString();
     }
 
-    /** True when {@code dir} holds nothing but the core's own {@code .msc} folder, as the workspace does after any call. */
-    private boolean onlyCoreData(Path dir) throws IOException {
+    /**
+     * Entries a folder may already hold and still count as empty for a scaffold: the core's own {@code .msc},
+     * Claude Code's project config, git and editor folders. None of them collide with template files.
+     */
+    private static final Set<String> TOOL_FILES = Set.of(".msc", ".mcp.json", ".claude", ".git", ".idea", ".vscode");
+
+    /** True when {@code dir} exists and holds nothing but {@link #TOOL_FILES}, as a fresh workspace does. */
+    private static boolean onlyToolFiles(Path dir) throws IOException {
         if (!Files.isDirectory(dir)) {
             return false;
         }
         try (Stream<Path> list = Files.list(dir)) {
             List<Path> entries = list.toList();
-            return entries.size() == 1 && entries.getFirst().equals(config.dataDir());
+            return !entries.isEmpty() && entries.stream().allMatch(e -> TOOL_FILES.contains(e.getFileName().toString()));
         }
     }
 
     /** Templates only write into empty directories, so render into a staging folder and move the files in. */
-    private ScaffoldResult scaffoldBesideCoreData(String template, Path dir, TemplateVariables vars) throws IOException {
-        Path staging = Files.createTempDirectory(config.dataDir(), "scaffold-");
+    private ScaffoldResult scaffoldBesideToolFiles(String template, Path dir, TemplateVariables vars) throws IOException {
+        Path staging = Files.createTempDirectory(Files.createDirectories(config.dataDir()), "scaffold-");
         Path staged = staging.resolve("project");
         ScaffoldResult result = Templates.scaffold(template, staged, vars);
         try (Stream<Path> list = Files.list(staged)) {
@@ -236,12 +257,22 @@ public final class LifecycleTools {
         out.append("fabric api ").append(api).append(apiJar.cached() ? " (cached)" : " (downloaded)").append('\n');
     }
 
-    /** The agent jar for a platform: the configured one, else the best match in {@code .msc/agent}. */
+    /**
+     * The agent jar for a platform: the configured one, else the best match in {@code .msc/agent}, else the one
+     * shipped in the core's install folder ({@code agents/}).
+     */
     private Path findAgentJar(Platform platform) throws IOException {
         if (config.agentJar() != null) {
             return Files.exists(config.agentJar()) ? config.agentJar() : null;
         }
-        Path dir = config.dataDir().resolve("agent");
+        Path found = agentIn(config.dataDir().resolve("agent"), platform);
+        if (found == null && config.installDir() != null) {
+            found = agentIn(config.installDir().resolve("agents"), platform);
+        }
+        return found;
+    }
+
+    private static Path agentIn(Path dir, Platform platform) throws IOException {
         if (!Files.isDirectory(dir)) {
             return null;
         }
@@ -263,6 +294,7 @@ public final class LifecycleTools {
     }
 
     private String startAndReport(int timeoutSeconds, int maxChars) throws IOException, InterruptedException {
+        String leftover = server.stopLeftover();
         boolean agentUpdated = refreshAgent();
         ServerManager.StartResult r = server.start(Duration.ofSeconds(timeoutSeconds));
         startMark = r.logMark();
@@ -271,12 +303,18 @@ public final class LifecycleTools {
         String condensed = analysis.text();
         boolean clean = analysis.clean();
         StringBuilder out = new StringBuilder();
+        if (leftover != null) {
+            out.append(leftover).append('\n');
+        }
         if (r.ready()) {
             out.append("server ready in ").append(seconds(r.millis()));
             CoreServer.AgentSession s = hub.current();
             out.append(s != null ? ", agent connected" : ", no agent connected (world tools unavailable)");
             if (agentUpdated) {
                 out.append(", agent jar updated");
+            }
+            if (s != null) {
+                out.append(groundLine());
             }
             out.append('\n').append(clean ? "no errors or warnings" : condensed);
         } else if (r.exited()) {
@@ -288,6 +326,29 @@ public final class LifecycleTools {
             out.append("server not ready after ").append(timeoutSeconds).append("s (still starting)\n").append(condensed);
         }
         return out.toString();
+    }
+
+    /**
+     * Where the ground is, so the AI does not build in the air: dev worlds are superflat with the surface far below
+     * y=64. Best effort; a start never fails because of it.
+     */
+    private String groundLine() {
+        try {
+            Ops.ServerInfo info = hub.call(Ops.SERVER_INFO, new Ops.Empty());
+            if (info.worlds().isEmpty()) {
+                return "";
+            }
+            String world = info.worlds().getFirst();
+            BlockPos origin = new BlockPos(0, 0, 0);
+            Ops.HeightmapResult h = hub.call(Ops.WORLD_HEIGHTMAP, new Ops.HeightmapParams(world, origin, origin));
+            int y = h.heights()[0];
+            return "\nworld " + world + ": top block at 0,0 is y=" + y + " (build from y=" + (y + 1) + ")";
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return "";
+        } catch (RuntimeException e) {
+            return "";
+        }
     }
 
     /**
@@ -308,6 +369,67 @@ public final class LifecycleTools {
         return true;
     }
 
+    /** {@code .msc/deployed.properties}: project folder to the jar dev_cycle last deployed for it. */
+    private Path deployedFile() {
+        return config.dataDir().resolve("deployed.properties");
+    }
+
+    private java.util.Properties deployed() throws IOException {
+        java.util.Properties p = new java.util.Properties();
+        if (Files.exists(deployedFile())) {
+            try (var in = Files.newInputStream(deployedFile())) {
+                p.load(in);
+            }
+        }
+        return p;
+    }
+
+    /**
+     * Delete the jar an earlier dev_cycle deployed for this project under another name, so the server never loads
+     * two copies (Paper: ambiguous plugin name; Fabric: duplicate mod id). Without a record, the folder-named jar
+     * that earlier cores deployed is the earlier one.
+     */
+    private void removeEarlierDeploy(Path project, Path addons, Path target) throws IOException {
+        String recorded = deployed().getProperty(project.toAbsolutePath().normalize().toString());
+        Path earlier;
+        if (recorded != null) {
+            earlier = config.serverDir().resolve(recorded).normalize();
+        } else {
+            Path folder = project.toAbsolutePath().normalize().getFileName();
+            earlier = folder == null ? null : addons.resolve(folder + ".jar");
+        }
+        if (earlier != null && !earlier.equals(target) && earlier.startsWith(addons) && Files.isRegularFile(earlier)) {
+            try {
+                Files.delete(earlier);
+            } catch (IOException e) {
+                throw new ToolException("cannot remove the earlier deploy " + earlier + " (" + e.getMessage()
+                        + "). A running server holds the jar open: call server_stop, then dev_cycle.");
+            }
+        }
+    }
+
+    private void rememberDeploy(Path project, Path target) throws IOException {
+        java.util.Properties p = deployed();
+        p.setProperty(project.toAbsolutePath().normalize().toString(),
+                config.serverDir().relativize(target).toString().replace('\\', '/'));
+        Files.createDirectories(config.dataDir());
+        try (var out = Files.newOutputStream(deployedFile())) {
+            p.store(out, "jar dev_cycle last deployed per project");
+        }
+    }
+
+    /**
+     * The deployed jar's name: the built jar's name without its version ({@code lobby-0.1.0-SNAPSHOT.jar} becomes
+     * {@code lobby}), so it stays the same across versions and does not depend on the folder name.
+     */
+    static String deployName(Path jar, Path project) {
+        String base = jar.getFileName().toString().replaceFirst("\\.jar$", "").replaceFirst("-\\d[\\w.+-]*$", "");
+        if (!base.isEmpty()) {
+            return base;
+        }
+        return project.getFileName() == null ? "project" : project.getFileName().toString();
+    }
+
     private String devCycle(Args args) throws IOException, InterruptedException {
         int maxChars = Budget.of(args);
         Path project = config.resolve(args.str("project", "."));
@@ -320,7 +442,13 @@ public final class LifecycleTools {
             return "build ok in " + seconds(build.millis()) + " but no jar in " + project.resolve("build/libs")
                     + "; nothing deployed";
         }
-        StringBuilder out = new StringBuilder("build ok in " + seconds(build.millis()));
+        StringBuilder out = new StringBuilder();
+        // Before deploying: a server an earlier core left running holds the old jar open.
+        String leftover = server.stopLeftover();
+        if (leftover != null) {
+            out.append(leftover).append('\n');
+        }
+        out.append("build ok in ").append(seconds(build.millis()));
         boolean restart = args.bool("restart", true);
         boolean wasRunning = server.running();
         if (wasRunning && restart) {
@@ -341,16 +469,17 @@ public final class LifecycleTools {
             shown = platform.serverJar();
         } else {
             Path addons = Files.createDirectories(config.serverDir().resolve(platform.addonDir()));
-            String name = project.getFileName() == null ? "project" : project.getFileName().toString();
-            target = addons.resolve(name + ".jar");
+            target = addons.resolve(deployName(build.jar(), project) + ".jar");
             shown = platform.addonDir() + "/" + target.getFileName();
+            removeEarlierDeploy(project, addons, target);
         }
         try {
             Files.copy(build.jar(), target, StandardCopyOption.REPLACE_EXISTING);
         } catch (IOException e) {
             throw new ToolException("cannot replace " + target + " (" + e.getMessage()
-                    + "). The server holds the jar open; call dev_cycle with restart=true.");
+                    + "). A running server holds the jar open: call server_stop, then dev_cycle.");
         }
+        rememberDeploy(project, target);
         out.append(", deployed ").append(build.jar().getFileName()).append(" as ").append(shown);
         if (!restart) {
             return out.append(wasRunning ? "; server still running the old jar until restarted" : "").toString();

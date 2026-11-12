@@ -1,0 +1,65 @@
+# Tools reference
+
+All 30 tools, one line each. You rarely call them by name: ask Claude in plain words and it picks the tool. Full arguments are in [tools.md](https://github.com/ImNotStable/Minecraft-Server-Creator/blob/main/msc-docs/docs/tools.md).
+
+Coordinates are text: a position is `x,y,z`, a region is `x1,y1,z1 x2,y2,z2`, an area is `x1,z1 x2,z2`.
+
+## Status
+
+| Tool | What it does |
+| --- | --- |
+| `msc_status` | Shows the MSC version, workspace, platform, server state and agent. |
+| `msc_stats` | Shows calls, errors, time and tokens per tool this session. |
+
+## Project and server
+
+| Tool | What it does |
+| --- | --- |
+| `project_scaffold` | Creates a new project from a template (`paper-plugin`, `fabric-mod`, `minestom-server`). |
+| `server_setup` | Downloads the server and installs the agent and dev settings. |
+| `server_start` | Starts the server and reports only startup warnings and errors. |
+| `server_stop` | Stops the server. |
+| `dev_cycle` | Builds, deploys, restarts and reports errors, all in one call. |
+| `server_logs` | Shows errors, the last lines, or lines matching a pattern, with stack traces trimmed. |
+| `server_command` | Runs a console command and returns its output. |
+
+## API lookup
+
+| Tool | What it does |
+| --- | --- |
+| `api_search` | Finds classes, methods and events in the platform's API by name. |
+| `api_class` | Lists one class's members and signatures. |
+
+## Seeing the world
+
+| Tool | What it does |
+| --- | --- |
+| `world_summary` | Counts blocks and entities in a region, in about six lines. |
+| `world_slice` | Shows a region as text, one character per block, layer by layer. |
+| `world_heightmap` | Shows the ground height of an area, one character per column. |
+| `world_render` | Draws a region as a PNG picture from any angle. |
+
+## Building
+
+| Tool | What it does |
+| --- | --- |
+| `build_fill` | Fills a region with one block, optionally only replacing some blocks. |
+| `build_set` | Sets a list of single blocks, such as doors and torches. |
+| `build_structure` | Builds a structure written in the text format that `world_slice` shows. |
+| `build_copy` | Copies a region to another place. |
+| `build_undo` | Undoes an edit (the last one by default). |
+| `structure_save` | Saves a region as a `.schem` file. |
+| `structure_load` | Pastes a `.schem` file into the world. |
+
+## Textures and resource pack
+
+| Tool | What it does |
+| --- | --- |
+| `texture_create` | Draws a texture from a palette and rows of characters. |
+| `texture_generate` | Makes a texture from a pattern (noise, ore, planks, bricks) or shape (gem, ingot, orb). |
+| `texture_recolor` | Copies a texture in a new colour, keeping its shading. |
+| `texture_animate` | Turns a texture into a scrolling or pulsing animation. |
+| `model_create` | Makes a block or item model for textures. |
+| `texture_view` | Shows a texture back as text. |
+| `pack_check` | Checks the resource pack for broken links and bad sizes. |
+| `pack_build` | Zips the pack, serves it and sends it to players. |
