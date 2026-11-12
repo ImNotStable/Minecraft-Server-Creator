@@ -72,8 +72,13 @@ public final class LifecycleTools {
                 t::setup);
         registry.add("server_start", "Start the dev server and wait until it is ready. Returns startup errors only.",
                 Schema.of().opt("timeoutSeconds", "integer", "Default 180"), t::start);
-        registry.add("server_stop", "Stop the dev server.", Schema.of(), args ->
-                server.stop(Duration.ofSeconds(30)) ? "server stopped" : "server was not running");
+        registry.add("server_stop", "Stop the dev server.", Schema.of(), args -> {
+            if (server.stop(Duration.ofSeconds(30))) {
+                return "server stopped";
+            }
+            String leftover = server.stopLeftover();
+            return leftover != null ? leftover : "server was not running";
+        });
         registry.add("dev_cycle",
                 "Build the project, deploy its jar, restart the server and report: one call for the whole edit-test loop. "
                         + "Returns compile or test failures, or runtime errors from startup.",
@@ -281,6 +286,7 @@ public final class LifecycleTools {
     }
 
     private String startAndReport(int timeoutSeconds, int maxChars) throws IOException, InterruptedException {
+        String leftover = server.stopLeftover();
         boolean agentUpdated = refreshAgent();
         ServerManager.StartResult r = server.start(Duration.ofSeconds(timeoutSeconds));
         startMark = r.logMark();
@@ -289,6 +295,9 @@ public final class LifecycleTools {
         String condensed = analysis.text();
         boolean clean = analysis.clean();
         StringBuilder out = new StringBuilder();
+        if (leftover != null) {
+            out.append(leftover).append('\n');
+        }
         if (r.ready()) {
             out.append("server ready in ").append(seconds(r.millis()));
             CoreServer.AgentSession s = hub.current();

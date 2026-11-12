@@ -39,7 +39,7 @@ class LogCondenserTest {
     @Test
     void serverLibraryFramesAreFramework() {
         List<String> log = List.of(
-                "[02:11:45 ERROR]: [oshi.util.Something] Failed",
+                "[02:11:45 ERROR]: Could not read the registry",
                 "com.sun.jna.platform.win32.Win32Exception: The parameter is incorrect.",
                 "\tat com.sun.jna.platform.win32.Advapi32Util.registryGetStringArray(Advapi32Util.java:921) ~[jna-platform-5.17.0.jar:5.17.0 (b0)]",
                 "\tat oshi.driver.windows.registry.HkeyPerformanceDataUtil.<clinit>(HkeyPerformanceDataUtil.java:51) ~[oshi-core-6.9.0.jar:6.9.0]",
@@ -66,6 +66,12 @@ class LogCondenserTest {
                 "[02:11:45 ERROR]: [oshi.driver.windows.registry.HkeyPerformanceDataUtil] Unable to locate English counter names",
                 "com.sun.jna.platform.win32.Win32Exception: The parameter is incorrect.",
                 "\tat oshi.util.Memoizer$1.get(Memoizer.java:65) ~[oshi-core-6.9.0.jar:6.9.0]",
+                "[02:11:45 WARN]: [oshi.util.platform.windows.PerfCounterQuery] Unable to locate English counter names in registry Perflib 009. Assuming English counters.",
+                "[02:11:46 WARN]: Failed to get system info for Process Loads",
+                "java.lang.NullPointerException: Cannot invoke \"java.util.List.stream()\" because \"loads\" is null",
+                "\tat net.minecraft.SystemReport.lambda$putProcessDetails$0(SystemReport.java:190) ~[paper-26.3.jar:26.3-249]",
+                "[02:11:46 WARN]: Failed to get system info for Virtual Size",
+                "[02:11:46 WARN]: Failed to get system info for Resident Size",
                 "[01:06:45 INFO]: Done (3.2s)! For help, type \"help\"");
         assertThat(LogCondenser.analyze(log, 6000).clean()).isTrue();
     }
