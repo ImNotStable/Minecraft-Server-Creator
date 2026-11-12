@@ -13,10 +13,12 @@ import io.github.imnotstable.msc.core.tools.ApiTools;
 import io.github.imnotstable.msc.core.tools.BuildTools;
 import io.github.imnotstable.msc.core.tools.LifecycleTools;
 import io.github.imnotstable.msc.core.tools.MetaTools;
+import io.github.imnotstable.msc.core.tools.PlayerTools;
 import io.github.imnotstable.msc.core.tools.TextureTools;
 import io.github.imnotstable.msc.core.tools.WorldTools;
 import io.github.imnotstable.msc.core.world.WorldService;
 import java.io.IOException;
+import java.util.List;
 
 /** The core without a transport: services plus the tool registry. The MCP server and tests both sit on this. */
 public final class Core implements AutoCloseable {
@@ -28,6 +30,7 @@ public final class Core implements AutoCloseable {
     private final ResourcePack pack;
     private final ToolLog log;
     private final ToolRegistry registry;
+    private final PlayerTools players;
 
     public Core(CoreConfig config) throws IOException {
         this.config = config;
@@ -51,6 +54,11 @@ public final class Core implements AutoCloseable {
         WorldTools.register(registry, config, world);
         BuildTools.register(registry, config, world, new Builder(hub, world));
         TextureTools.register(registry, hub, pack);
+        this.players = PlayerTools.register(registry, config, hub);
+        List<String> warnings = SetupCheck.warnings(config);
+        if (!warnings.isEmpty()) {
+            registry.noticeOnce(String.join("\n", warnings));
+        }
     }
 
     public CoreConfig config() {
@@ -76,6 +84,7 @@ public final class Core implements AutoCloseable {
     @Override
     public void close() throws IOException {
         // A detached server keeps its pack host, so players can still fetch the pack.
+        players.close();
         pack.close(server.detached());
         server.close();
         hub.close();

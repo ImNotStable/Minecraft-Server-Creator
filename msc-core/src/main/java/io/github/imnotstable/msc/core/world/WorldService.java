@@ -301,18 +301,91 @@ public final class WorldService {
     }
 
     public String fill(Region region, String block, List<String> onlyReplace) throws InterruptedException {
+        return fill(region, block, onlyReplace, "solid");
+    }
+
+    /** Shapes build_fill can make, as in vanilla /fill plus walls. */
+    public static final List<String> SHAPES = List.of("solid", "hollow", "outline", "walls");
+
+    /**
+     * Fill a region in a shape: {@code solid}; {@code hollow} (shell, air inside); {@code outline} (shell, inside
+     * kept); {@code walls} (the four sides, no floor or roof). One edit id covers every part.
+     */
+    public String fill(Region region, String block, List<String> onlyReplace, String shape) throws InterruptedException {
         if (region.volume() > MAX_BULK_VOLUME) {
             throw new ToolException("region has " + region.volume() + " blocks; build_fill takes at most " + MAX_BULK_VOLUME);
         }
         List<String> replace = onlyReplace.isEmpty() ? null : onlyReplace.stream().map(BlockNames::full).toList();
+        String state = BlockNames.full(block);
+        List<Ops.FillParams> fills = new ArrayList<>();
+        for (Region part : shapeParts(region, shape)) {
+            fills.add(new Ops.FillParams(part, state, replace));
+        }
+        if (shape.equals("hollow")) {
+            Region inside = inside(region);
+            if (inside != null) {
+                fills.add(new Ops.FillParams(inside, "minecraft:air", null));
+            }
+        }
         List<String> ids = new ArrayList<>();
         long changed = 0;
-        for (Region part : Coords.split(region)) {
-            Ops.EditResult r = hub.call(Ops.WORLD_FILL, new Ops.FillParams(part, BlockNames.full(block), replace));
-            ids.add(r.editId());
-            changed += r.changed();
+        for (Ops.FillParams f : fills) {
+            for (Region part : Coords.split(f.region())) {
+                Ops.EditResult r = hub.call(Ops.WORLD_FILL, new Ops.FillParams(part, f.state(), f.onlyReplace()));
+                ids.add(r.editId());
+                changed += r.changed();
+            }
         }
         return done(remember(ids), changed);
+    }
+
+    /** The boxes that make up a shape, without overlaps. */
+    static List<Region> shapeParts(Region r, String shape) {
+        if (!SHAPES.contains(shape)) {
+            throw new ToolException("shape must be " + String.join(", ", SHAPES));
+        }
+        String w = r.world();
+        BlockPos a = r.min();
+        BlockPos b = r.max();
+        if (shape.equals("solid") || inside(r) == null && !shape.equals("walls")) {
+            return List.of(r); // too thin to have an inside: the shell is the whole box
+        }
+        List<Region> parts = new ArrayList<>();
+        int y1 = a.y();
+        int y2 = b.y();
+        if (!shape.equals("walls")) {
+            parts.add(Region.of(w, a.x(), a.y(), a.z(), b.x(), a.y(), b.z()));
+            if (b.y() > a.y()) {
+                parts.add(Region.of(w, a.x(), b.y(), a.z(), b.x(), b.y(), b.z()));
+            }
+            y1 = a.y() + 1;
+            y2 = b.y() - 1;
+            if (y1 > y2) {
+                return parts;
+            }
+        }
+        // Sides: full-width faces at min and max z, then the x faces between them.
+        parts.add(Region.of(w, a.x(), y1, a.z(), b.x(), y2, a.z()));
+        if (b.z() > a.z()) {
+            parts.add(Region.of(w, a.x(), y1, b.z(), b.x(), y2, b.z()));
+        }
+        if (b.z() - a.z() >= 2) {
+            parts.add(Region.of(w, a.x(), y1, a.z() + 1, a.x(), y2, b.z() - 1));
+            if (b.x() > a.x()) {
+                parts.add(Region.of(w, b.x(), y1, a.z() + 1, b.x(), y2, b.z() - 1));
+            }
+        }
+        return parts;
+    }
+
+    /** The box one block in from every face, or null when there is none. */
+    static Region inside(Region r) {
+        BlockPos a = r.min();
+        BlockPos b = r.max();
+        if (b.x() - a.x() < 2 || b.y() - a.y() < 2 || b.z() - a.z() < 2) {
+            return null;
+        }
+        return Region.of(r.world(), a.x() + 1, a.y() + 1, a.z() + 1, b.x() - 1, b.y() - 1, b.z() - 1);
     }
 
     public String set(String world, List<Ops.BlockChange> changes, boolean physics) throws InterruptedException {

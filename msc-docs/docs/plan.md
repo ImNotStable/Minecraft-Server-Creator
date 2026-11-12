@@ -97,3 +97,4 @@ Product decisions were made by Jeremiah on 2026-11-10. Build and design decision
 | Install | `:msc-core:installMsc` installs core plus agents to `~/.msc/core` and prints the `claude mcp add` line; first-use fixes from dogfooding | [ADR 0013](adr/0013-install-and-first-use.md) |
 | Detach | `server_detach` leaves the dev server and a standalone pack host running after the core exits; the next session stops them | [ADR 0014](adr/0014-detach.md) |
 | Build language | `build_batch`: one call runs fills, rooms, round shapes, lines, terrain bands and stamped structures with weighted block mixes, checks every block name first and keeps one undo id | [ADR 0015](adr/0015-build-batch.md) |
+| Test player | `player_test`: an MCProtocolLib client in `msc-bot` joins the dev server, moves with a copy of vanilla player physics, reads blocks through the agent, and reports chat, damage, deaths and server corrections | [ADR 0016](adr/0016-test-player.md) |

@@ -23,7 +23,7 @@ The AI talks to `msc-core` over MCP (stdio). This page lists every tool, its arg
 
 | Tool | Arguments | Result | Budget |
 | --- | --- | --- | --- |
-| `msc_status` | none | Core version, workspace, platform, server state, agent, API index | 6 lines |
+| `msc_status` | none | Core version, workspace, platform, server state, agent, API index, then any setup warnings (workspace is the MSC repo; install older than its checkout). The same warnings go in front of the session's first tool result | 6 lines (+ warnings) |
 | `msc_stats` | none | Calls, errors, milliseconds and result tokens per tool this session | 1 line per tool used |
 
 ## Project and server lifecycle
@@ -98,7 +98,7 @@ Every build tool answers `edit eN: <count> blocks changed`. The id undoes the wh
 
 | Tool | Arguments | Notes |
 | --- | --- | --- |
-| `build_fill` | `region`, `block`, `replace`? (list) | Up to 8,388,608 blocks |
+| `build_fill` | `region`, `block`, `shape`? (`solid`, `hollow`: shell with air inside, `outline`: shell with inside kept, `walls`: four sides only), `replace`? (list); one edit id for all parts | Up to 8,388,608 blocks |
 | `build_set` | `blocks` (list of `"x,y,z block"`), `physics`? (false) | For details such as doors and torches |
 | `build_structure` | `at`, `structure`, `physics`? (false) | Text structure format, up to 1,048,576 blocks |
 | `build_copy` | `region`, `to`, `air`? (true) | Reads everything first, so source and target may overlap |
@@ -106,6 +106,12 @@ Every build tool answers `edit eN: <count> blocks changed`. The id undoes the wh
 | `build_batch` | `steps` (one per line), `dryRun`? (false), `physics`? (false) | Fills, rooms, `cylinder`, `ring`, `disc`, `sphere`, `dome`, `line`, `bands`, stamped `structure`s; weighted mixes such as `grass_block:78,moss_block:10`; checks every name first; one undo id. See [ADR 0015](adr/0015-build-batch.md) |
 | `structure_save` | `region`, `file` | Sponge schematic v2 (`.schem`), blocks only |
 | `structure_load` | `file`, `at`, `air`? (true) | Reads Sponge v2 and v3, blocks only |
+
+## Play-testing
+
+| Tool | Arguments | Notes |
+| --- | --- | --- |
+| `player_test` | `actions` (list, one per entry: `goto x,y,z [sprint] [jump]`, `forward ticks [sprint] [jump]`, `jump`, `look yaw pitch`, `lookat x,y,z`, `wait ticks`, `use`, `use x,y,z`, `attack`, `slot 1-9`, `say text`, `/command`, `tp x,y,z`, `entities`), `name`? (MscTester), `gamemode`? (survival), `leave`? (false) | A headless client joins the running dev server (offline mode), is made op and put in the game mode, then runs the actions. Each action gets a result line; chat, titles, damage, deaths, respawns, server corrections and the pack offer are listed under it. Ends with position, health and food. Stays joined between calls. Movement copies vanilla (walk 4.3, sprint 5.6 blocks/s, jump 1.25); see [ADR 0016](adr/0016-test-player.md) for what is not simulated |
 
 ## Textures and resource pack
 

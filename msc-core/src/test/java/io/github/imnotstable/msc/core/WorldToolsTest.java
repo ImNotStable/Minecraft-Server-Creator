@@ -91,6 +91,22 @@ class WorldToolsTest {
     }
 
     @Test
+    void hollowFillMakesARoomInOneEdit() {
+        h.ok("build_fill", "region", "0,64,0 2,66,2", "block", "glass");
+        assertThat(h.ok("build_fill", "region", "0,64,0 2,66,2", "block", "oak_planks", "shape", "hollow"))
+                .isEqualTo("edit e2: 27 blocks changed");
+        assertThat(h.ok("world_slice", "region", "0,65,0 2,65,2")).contains("""
+                y=65
+                ###
+                #.#
+                ###""");
+        assertThat(h.ok("build_undo")).contains("undid e2");
+        assertThat(h.ok("world_summary", "region", "0,64,0 2,66,2")).contains("glass 27");
+        assertThat(h.error("build_fill", "region", "0,64,0 2,66,2", "block", "stone", "shape", "cube"))
+                .isEqualTo("error: shape must be solid, hollow, outline, walls");
+    }
+
+    @Test
     void sliceCanBePastedBackWithBuildStructure() {
         h.ok("build_structure", "at", "10,64,10", "structure", """
                 legend: #=stone_bricks g=glass
