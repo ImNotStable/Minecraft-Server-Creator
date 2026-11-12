@@ -3,11 +3,13 @@ package io.github.imnotstable.msc.core.texture;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.net.BindException;
 import java.net.InetSocketAddress;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.Duration;
 import java.util.HexFormat;
 import java.util.function.Supplier;
 
@@ -20,6 +22,9 @@ public final class PackHost {
     public record Served(byte[] data, String sha1) {
         static final Served NONE = new Served(new byte[0], "");
     }
+
+    /** How long a host waits for a port that was just let go. */
+    static final Duration PORT_PATIENCE = Duration.ofSeconds(5);
 
     private PackHost() {
     }
@@ -42,6 +47,26 @@ public final class PackHost {
         });
         server.start();
         return server;
+    }
+
+    /**
+     * Like {@link #start}, but waits up to {@code patience} for {@code port} to come free. The port is often one
+     * that was just let go (by this core when it hands serving to a standalone host, or by a host that was just
+     * stopped), and Windows can refuse it for a moment after it was closed.
+     */
+    public static HttpServer startWithin(String host, int port, Supplier<Served> source, Duration patience)
+            throws IOException, InterruptedException {
+        long deadline = System.nanoTime() + patience.toNanos();
+        while (true) {
+            try {
+                return start(host, port, source);
+            } catch (BindException e) {
+                if (port == 0 || System.nanoTime() >= deadline) {
+                    throw e;
+                }
+                Thread.sleep(100);
+            }
+        }
     }
 
     public static String sha1(byte[] data) {
@@ -77,11 +102,12 @@ public final class PackHost {
     }
 
     /** {@code PackHost <host> <port> <zip>}: the standalone host a detached session leaves running. */
-    public static void main(String[] args) throws IOException {
+    public static void main(String[] args) throws IOException, InterruptedException {
         if (args.length != 3) {
             System.err.println("usage: PackHost <host> <port> <zip>");
             System.exit(2);
         }
-        start(args[0], Integer.parseInt(args[1]), file(Path.of(args[2])));
+        // The core closed this port just before starting this process.
+        startWithin(args[0], Integer.parseInt(args[1]), file(Path.of(args[2])), PORT_PATIENCE);
     }
 }

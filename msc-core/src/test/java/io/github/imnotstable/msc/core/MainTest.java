@@ -6,6 +6,7 @@ import java.net.URI;
 import java.nio.file.Path;
 import java.security.CodeSource;
 import java.security.cert.Certificate;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -23,6 +24,14 @@ class MainTest {
         assertThat(Main.installDir(source(dir.resolve("build/classes/java/main/").toUri()))).isNull();
         assertThat(Main.installDir(source(dir.resolve("libs/msc-core.jar").toUri()))).isNull();
         assertThat(Main.installDir(null)).isNull();
+    }
+
+    @Test
+    void theMachineEulaFileIsInTheUsersHomeAndNeverInATestConfig() {
+        Path expected = Path.of(System.getProperty("user.home"), ".msc", "eula.json");
+        assertThat(CoreConfig.fromEnvironment(Map.of()).eulaFile()).isEqualTo(expected);
+        assertThat(CoreConfig.fromEnvironment(Map.of()).withWorkspace(dir).eulaFile()).isEqualTo(expected);
+        assertThat(CoreConfig.forWorkspace(dir).eulaFile()).isNull();
     }
 
     private static CodeSource source(URI uri) throws Exception {

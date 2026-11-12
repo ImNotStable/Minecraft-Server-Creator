@@ -1,6 +1,7 @@
 package io.github.imnotstable.msc.core.tools;
 
-import io.github.imnotstable.msc.bot.TestPlayer;
+import io.github.imnotstable.msc.bot.Bot;
+import io.github.imnotstable.msc.bot.Bots;
 import io.github.imnotstable.msc.core.CoreConfig;
 import io.github.imnotstable.msc.core.agent.AgentHub;
 import io.github.imnotstable.msc.core.tool.Budget;
@@ -22,7 +23,7 @@ public final class PlayerTools implements AutoCloseable {
     private static final Pattern NAME = Pattern.compile("[A-Za-z0-9_]{3,16}");
     private final CoreConfig config;
     private final AgentHub hub;
-    private TestPlayer player;
+    private Bot player;
 
     private PlayerTools(CoreConfig config, AgentHub hub) {
         this.config = config;
@@ -69,25 +70,41 @@ public final class PlayerTools implements AutoCloseable {
             player = null;
         }
         if (player == null) {
+            // Bots pings the server and picks the client for its version, or says which versions it speaks.
             String[] address = address();
             try {
-                player = TestPlayer.join(name, address[0], Integer.parseInt(address[1]),
+                player = Bots.join(name, address[0], Integer.parseInt(address[1]),
                         region -> hub.call(Ops.WORLD_READ, new Ops.ReadParams(region, false)).grid(),
-                        Duration.ofSeconds(20));
+                        Duration.ofSeconds(20), config.installDir() == null ? null : config.installDir().resolve("bot"));
             } catch (IllegalStateException e) {
-                throw new ToolException(e.getMessage());
+                throw new ToolException(e.getMessage() + (e.getMessage().contains("not_whitelisted")
+                        // whitelist add can't help: offline mode stores the lowercased name's UUID.
+                        ? ". The whitelist is on: server_command \"whitelist off\", and set white-list=false"
+                                + " in server.properties so it stays off"
+                        : ""));
             }
             // A dev-server test player: op so commands and tp work, in the mode real players will have.
-            hub.call(Ops.SERVER_COMMAND, new Ops.CommandParams("op " + name));
-            hub.call(Ops.SERVER_COMMAND, new Ops.CommandParams("gamemode " + gamemode + " " + name));
-            out.append("joined as ").append(name).append(" (").append(gamemode).append(", op)\n");
+            // Minestom has only the commands the server registered, so these may not exist there.
+            boolean op = console("op " + name);
+            boolean mode = console("gamemode " + gamemode + " " + name);
+            out.append("joined as ").append(name).append(" (")
+                    .append(mode ? gamemode : "game mode left to the server")
+                    .append(op ? ", op" : ", not op: the server has no op command").append(")\n");
         } else if (args.has("gamemode")) {
-            hub.call(Ops.SERVER_COMMAND, new Ops.CommandParams("gamemode " + gamemode + " " + name));
+            console("gamemode " + gamemode + " " + name);
         }
         try {
             out.append(player.run(actions, world));
         } catch (IllegalArgumentException e) {
             throw new ToolException(e.getMessage());
+        }
+        if (!player.connected()) {
+            // A kick is a failed play-test, not a result: say so first and keep what happened before it.
+            String why = player.disconnectReason();
+            player.close();
+            player = null;
+            throw new ToolException("the test player was kicked" + (why != null ? ": " + why : "") + "\n"
+                    + Budget.truncate(out.toString(), Budget.DEFAULT_CHARS, "Use fewer actions per call."));
         }
         if (args.bool("leave", false)) {
             player.close();
@@ -95,6 +112,13 @@ public final class PlayerTools implements AutoCloseable {
             out.append("\nleft the server");
         }
         return Budget.truncate(out.toString(), Budget.DEFAULT_CHARS, "Use fewer actions per call.");
+    }
+
+    /** Runs a console command; false only when the server has no such command (a repeated op also fails). */
+    private boolean console(String command) throws Exception {
+        Ops.CommandResult result = hub.call(Ops.SERVER_COMMAND, new Ops.CommandParams(command));
+        String text = String.join(" ", result.output()).toLowerCase(java.util.Locale.ROOT);
+        return result.success() || !(text.contains("unknown") && text.contains("command"));
     }
 
     /** server-ip and server-port from the dev server's server.properties. */

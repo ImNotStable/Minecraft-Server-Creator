@@ -3,6 +3,8 @@ package io.github.imnotstable.msc.core.tools;
 import io.github.imnotstable.msc.core.CoreConfig;
 import io.github.imnotstable.msc.core.agent.AgentHub;
 import io.github.imnotstable.msc.core.server.LogBuffer;
+import io.github.imnotstable.msc.core.server.EulaCommand;
+import io.github.imnotstable.msc.core.server.MachineEula;
 import io.github.imnotstable.msc.core.server.LogCondenser;
 import io.github.imnotstable.msc.core.server.FabricDownloader;
 import io.github.imnotstable.msc.core.server.PaperDownloader;
@@ -28,9 +30,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
@@ -38,8 +42,7 @@ import java.util.stream.Stream;
 
 /** Project and server lifecycle: scaffold, set up, start, stop, build-deploy-restart, logs, commands. */
 public final class LifecycleTools {
-    private static final String EULA_ARG =
-            "Set true only if the user has agreed to the Minecraft EULA (https://aka.ms/MinecraftEULA)";
+    private static final String EULA_ARG = "Only on the user's yes to https://aka.ms/MinecraftEULA; kept for this machine";
     /**
      * The exact question to put to the user, so their answer reads as an agreement and not as a reply to something
      * vaguer. Shared by scaffold and setup.
@@ -77,7 +80,8 @@ public final class LifecycleTools {
                 "Create a new project from a template (Gradle KTS, tests wired in). Target directory must be empty.",
                 Schema.of().req("name", "string", "Project name, for example MyPlugin")
                         .opt("dir", "string", "Target directory, relative to the workspace. Default: the workspace itself")
-                        .opt("template", "string", "paper-plugin (default), paper-game (minigame base: kit, stages, saved progress, /game debug commands), fabric-mod or minestom-server")
+                        .opt("template", "string", "paper-plugin (default), fabric-mod, minestom-server, or a minigame base (kit, stages, saved progress, /game debug "
+                                + "commands): paper-game, fabric-game, minestom-game")
                         .opt("package", "string", "Java package. Default com.example.<name>")
                         .opt("acceptEula", "boolean", EULA_ARG),
                 t::scaffold);
@@ -89,7 +93,8 @@ public final class LifecycleTools {
                         .opt("acceptEula", "boolean", EULA_ARG),
                 t::setup);
         registry.add("server_start", "Start the dev server and wait until it is ready. Returns startup errors only.",
-                Schema.of().opt("timeoutSeconds", "integer", "Default 180"), t::start);
+                Schema.of().opt("timeoutSeconds", "integer", "Default 180").opt("acceptEula", "boolean", EULA_ARG),
+                t::start);
         registry.add("server_stop", "Stop the dev server.", Schema.of(), args -> {
             String host = pack.stopLeftoverHost();
             if (server.stop(Duration.ofSeconds(30))) {
@@ -124,6 +129,12 @@ public final class LifecycleTools {
         registry.add("server_wait", "Wait until a log or chat line matches a regex, instead of polling.",
                 Schema.of().req("until", "string", "Regex, case-insensitive")
                         .opt("timeoutSeconds", "integer", "Default 60"), t::await);
+    }
+
+    /** The one-time, per-machine alternative to asking for every server (ADR 0020). Only the owner can run it. */
+    private String oneTimeHint() {
+        return " To never be asked again on this machine, they can instead run once in their own terminal: "
+                + MachineEula.acceptCommand(config.installDir());
     }
 
     private String scaffold(Args args) throws IOException {
@@ -162,8 +173,14 @@ public final class LifecycleTools {
         if (platform != null && platform.needsEula()
                 && !Files.exists(config.serverDir().resolve(platform.serverJar()))) {
             // The server is not set up yet: a first dev_cycle would build for nothing and then stop there.
-            out.append("\nnext: ").append(EULA_QUESTION).append("\nOn yes: server_setup acceptEula=true, then edit "
-                    + "the code and dev_cycle");
+            Optional<MachineEula.Acceptance> machine = MachineEula.read(config.eulaFile());
+            if (machine.isPresent()) {
+                out.append("\nnext: server_setup (the Minecraft EULA is accepted for this machine by ")
+                        .append(machine.get().describe()).append("), then edit the code and dev_cycle");
+            } else {
+                out.append("\nnext: ").append(EULA_QUESTION).append(oneTimeHint())
+                        .append("\nOn yes: server_setup acceptEula=true, then edit the code and dev_cycle");
+            }
         } else {
             out.append("\nnext: edit the code, then dev_cycle");
         }
@@ -266,8 +283,16 @@ public final class LifecycleTools {
         if (acceptEula && Files.exists(eula) && !ServerManager.eulaAccepted(eula)) {
             Files.writeString(eula, Files.readString(eula).replaceAll("(?m)^eula=false[ \t]*$", "eula=true"));
         }
-        if (!ServerManager.eulaAccepted(eula)) {
+        if (acceptEula) {
+            out.append(recordForMachine());
+        }
+        Optional<MachineEula.Acceptance> machine = MachineEula.applyTo(config.eulaFile(), eula);
+        if (machine.isPresent()) {
+            out.append("eula.txt has eula=true from the owner's one-time acceptance for this machine (")
+                    .append(machine.get().describe()).append(")\n");
+        } else if (!ServerManager.eulaAccepted(eula)) {
             out.append("the Minecraft EULA is not accepted, so server_start refuses. Next: ").append(EULA_QUESTION)
+                    .append(oneTimeHint())
                     .append("\nOn yes: server_setup acceptEula=true (or set eula=true in ").append(eula).append(")\n");
         } else {
             out.append("note: eula.txt has eula=true; running the server means the user agrees to https://aka.ms/MinecraftEULA\n");
@@ -331,7 +356,36 @@ public final class LifecycleTools {
     }
 
     private String start(Args args) throws IOException, InterruptedException {
-        return startAndReport(args.integer("timeoutSeconds", 180), Budget.DEFAULT_CHARS);
+        String accepted = "";
+        if (args.bool("acceptEula", false) && server.platform().needsEula()) {
+            Path eula = config.serverDir().resolve("eula.txt");
+            if (!ServerManager.eulaAccepted(eula)) {
+                Files.createDirectories(config.serverDir());
+                Files.writeString(eula, "# Minecraft EULA (" + MachineEula.EULA_URL + ") accepted by the user\neula=true\n");
+            }
+            accepted = recordForMachine();
+        }
+        return accepted + startAndReport(args.integer("timeoutSeconds", 180), Budget.DEFAULT_CHARS);
+    }
+
+    /**
+     * acceptEula=true is the user's own yes: keep it for this machine too, so later servers here need no question.
+     * Returns a line for the result (with the EULA link), or "" when there is no machine file to write.
+     */
+    private String recordForMachine() throws IOException {
+        if (config.eulaFile() == null) {
+            return "";
+        }
+        if (MachineEula.read(config.eulaFile()).isPresent()) {
+            return "";
+        }
+        MachineEula.write(config.eulaFile(), new MachineEula.Acceptance(System.getProperty("user.name"),
+                EulaCommand.hostName(), Instant.now()), MachineEula.VIA_TOOL);
+        // Shown once, the first time: what the user's yes now covers. Tell them.
+        return "Minecraft EULA (" + MachineEula.EULA_URL + ") accepted for this machine, saved in "
+                + config.eulaFile() + ". Tell the user: by this they confirm they read and accept Mojang's EULA, and "
+                + "MSC will now write eula=true for every Paper and Fabric server on this machine without asking. "
+                + "Terms: " + MachineEula.TERMS_URL + "\n";
     }
 
     private String detach(Args args) throws IOException, InterruptedException {

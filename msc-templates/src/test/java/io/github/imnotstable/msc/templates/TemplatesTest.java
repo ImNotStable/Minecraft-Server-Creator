@@ -23,7 +23,10 @@ class TemplatesTest {
     @Test
     void listsTemplates() {
         assertThat(Templates.ids()).containsExactly(
-                Templates.FABRIC_MOD, Templates.MINESTOM_SERVER, Templates.PAPER_GAME, Templates.PAPER_PLUGIN, Templates.PAPER_SERVER);
+                Templates.FABRIC_GAME, Templates.FABRIC_MOD, Templates.MINESTOM_GAME, Templates.MINESTOM_SERVER,
+                Templates.PAPER_GAME, Templates.PAPER_PLUGIN, Templates.PAPER_SERVER);
+        assertThat(Templates.info(Templates.FABRIC_GAME)).containsEntry("platform", "fabric");
+        assertThat(Templates.info(Templates.MINESTOM_GAME)).containsEntry("platform", "minestom");
         assertThat(Templates.info(Templates.PAPER_GAME)).containsEntry("platform", "paper");
         assertThat(Templates.info(Templates.FABRIC_MOD)).containsEntry("platform", "fabric");
         assertThat(Templates.info(Templates.MINESTOM_SERVER)).containsEntry("platform", "minestom");
@@ -56,7 +59,7 @@ class TemplatesTest {
                         "\"version\": \"${version}\"");
         assertThat(Files.readString(r.root().resolve("gradle/libs.versions.toml")))
                 .contains("fabric-api = \"" + Templates.versions().get("fabricApiVersion") + "\"");
-        assertThat(Files.readString(r.root().resolve("run/server.properties"))).contains("rcon.password=secret");
+        assertThat(Files.readString(r.root().resolve("run/server.properties"))).contains("rcon.password=secret").contains("white-list=false");
         assertThat(Files.isExecutable(r.root().resolve("gradlew"))).isTrue();
     }
 
@@ -116,6 +119,55 @@ class TemplatesTest {
     }
 
     @Test
+    void scaffoldsAMinestomGame() throws IOException {
+        ScaffoldResult r = Templates.scaffold(Templates.MINESTOM_GAME, dir.resolve("mg"), vars);
+
+        String pkg = "src/main/java/com/example/spawnlobby/";
+        assertThat(relative(r)).contains(
+                "build.gradle.kts", "settings.gradle.kts", ".gitignore", "CLAUDE.md", "gradlew",
+                "gradle/wrapper/gradle-wrapper.jar", "libs/msc-agent-minestom.jar",
+                pkg + "SpawnLobbyServer.java", pkg + "Game.java", pkg + "GameCommand.java", pkg + "GameConfig.java",
+                pkg + "GameEvents.java", pkg + "Progress.java", pkg + "Console.java",
+                "src/test/java/com/example/spawnlobby/GameTest.java");
+        assertThat(relative(r)).noneMatch(p -> p.endsWith(".tmpl") || p.contains("eula") || p.startsWith("run/"));
+        assertNoPlaceholdersLeft(r);
+        assertThat(Files.readString(r.root().resolve(pkg + "SpawnLobbyServer.java")))
+                .contains("MscAgent.start();", "GameConfig.game()", "server.start(\"127.0.0.1\", 25565);");
+        assertThat(Files.readString(r.root().resolve("build.gradle.kts")))
+                .contains("mainClass = \"com.example.spawnlobby.SpawnLobbyServer\"", "libs/msc-agent-minestom.jar");
+        assertThat(Files.isExecutable(r.root().resolve("gradlew"))).isTrue();
+    }
+
+    @Test
+    void scaffoldsAFabricGame() throws IOException {
+        ScaffoldResult r = Templates.scaffold(Templates.FABRIC_GAME, dir.resolve("fg"), vars);
+
+        String pkg = "src/main/java/com/example/spawnlobby/";
+        assertThat(relative(r)).contains(
+                "build.gradle.kts", "settings.gradle.kts", ".gitignore", "CLAUDE.md", "gradlew",
+                "gradle/wrapper/gradle-wrapper.jar", "run/server.properties", "run/eula.txt",
+                pkg + "SpawnLobbyPlugin.java", pkg + "Game.java", pkg + "GameCommand.java", pkg + "GameConfig.java",
+                pkg + "GameEvents.java", pkg + "WorldRules.java", "src/main/resources/fabric.mod.json",
+                "src/test/java/com/example/spawnlobby/GameCommandTest.java");
+        assertThat(relative(r)).noneMatch(p -> p.endsWith(".tmpl") || p.contains("template.properties"));
+        assertNoPlaceholdersLeft(r);
+        assertThat(Files.readString(r.root().resolve("src/main/resources/fabric.mod.json")))
+                .contains("\"server\": [\"com.example.spawnlobby.SpawnLobbyPlugin\"]", "\"fabric-api\": \"*\"");
+        assertThat(Files.readString(r.root().resolve(pkg + "SpawnLobbyPlugin.java")))
+                .contains("spawn-lobby-progress.properties");
+        assertThat(Files.readString(r.root().resolve("run/eula.txt"))).contains("eula=false");
+        assertThat(Files.isExecutable(r.root().resolve("gradlew"))).isTrue();
+    }
+
+    private static void assertNoPlaceholdersLeft(ScaffoldResult r) throws IOException {
+        for (Path f : r.files()) {
+            if (!f.toString().endsWith(".jar")) {
+                assertThat(Files.readString(f)).as(f.toString()).doesNotContain("{{");
+            }
+        }
+    }
+
+    @Test
     void scaffoldsAMinestomServer() throws IOException {
         ScaffoldResult r = Templates.scaffold(Templates.MINESTOM_SERVER, dir.resolve("m"), vars);
 
@@ -132,7 +184,7 @@ class TemplatesTest {
             }
         }
         assertThat(Files.readString(r.root().resolve("src/main/java/com/example/spawnlobby/SpawnLobbyServer.java")))
-                .contains("package com.example.spawnlobby;", "MscAgent.start();", "server.start(\"127.0.0.1\", 25565);");
+                .contains("package com.example.spawnlobby;", "MscAgent.start();", "new AnvilLoader(", "server.start(\"127.0.0.1\", 25565);");
         assertThat(Files.readString(r.root().resolve("build.gradle.kts")))
                 .contains("mainClass = \"com.example.spawnlobby.SpawnLobbyServer\"", "libs/msc-agent-minestom.jar");
         assertThat(Files.readString(r.root().resolve("gradle/libs.versions.toml")))
@@ -164,5 +216,16 @@ class TemplatesTest {
         assertThatThrownBy(() -> Templates.scaffold(Templates.PAPER_SERVER, dir, vars))
                 .isInstanceOf(IllegalStateException.class);
         assertThat(Files.readString(dir.resolve("existing.txt"))).isEqualTo("x");
+    }
+
+    @Test
+    void scaffoldsIntoAWorkspaceThatOnlyHasMscData() throws IOException {
+        Files.createDirectories(dir.resolve(".msc"));
+        Files.writeString(dir.resolve(".msc/tool-calls.jsonl"), "{}");
+
+        Templates.scaffold(Templates.MINESTOM_SERVER, dir, vars);
+
+        assertThat(dir.resolve("build.gradle.kts")).exists();
+        assertThat(dir.resolve(".msc/tool-calls.jsonl")).hasContent("{}");
     }
 }

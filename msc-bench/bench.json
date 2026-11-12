@@ -1,7 +1,7 @@
 {
   "minecraftVersion": "26.3",
   "agent": {
-    "command": ["claude", "-p", "{prompt}", "--output-format", "json", "--dangerously-skip-permissions", "--strict-mcp-config", "--setting-sources", "project,local"],
+    "command": ["claude", "-p", "{prompt}", "--output-format", "json", "--dangerously-skip-permissions", "--strict-mcp-config", "--setting-sources", "project,local", "--model", "claude-sonnet-4-6"],
     "timeoutSeconds": 1800
   },
   "modes": {
@@ -11,7 +11,8 @@
       "mcpConfigTemplate": "mcp-toolset.template.json",
       "serverEnv": {"MSC_CORE_ADDRESS": "127.0.0.1:{corePort}", "MSC_TOKEN": "{coreToken}"},
       "serverPlugins": ["{agentJar}"],
-      "paperCacheSeed": ".msc/cache"
+      "paperCacheSeed": ".msc/cache",
+      "requireMcp": "msc"
     }
   },
   "paths": {

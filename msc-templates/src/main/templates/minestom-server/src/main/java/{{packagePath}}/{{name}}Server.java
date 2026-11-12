@@ -1,7 +1,9 @@
 package {{packageName}};
 
 import io.github.imnotstable.msc.agent.minestom.MscAgent;
+import java.nio.file.Path;
 import java.util.Locale;
+import net.kyori.adventure.key.Key;
 import net.minestom.server.MinecraftServer;
 import net.minestom.server.command.CommandManager;
 import net.minestom.server.coordinate.Pos;
@@ -13,6 +15,7 @@ import net.minestom.server.instance.Instance;
 import net.minestom.server.instance.InstanceContainer;
 import net.minestom.server.instance.InstanceManager;
 import net.minestom.server.instance.LightingChunk;
+import net.minestom.server.instance.anvil.AnvilLoader;
 import net.minestom.server.instance.block.Block;
 
 /**
@@ -31,6 +34,9 @@ public final class {{name}}Server {
         MinecraftServer server = MinecraftServer.init();
 
         InstanceContainer world = createWorld(MinecraftServer.getInstanceManager());
+        // Keep the world in run/world, so what the AI builds survives dev_cycle restarts. Saved on stop.
+        world.setChunkLoader(new AnvilLoader(Path.of("world"), Key.key("minecraft:overworld")));
+        MinecraftServer.getSchedulerManager().buildShutdownTask(() -> world.saveChunksToStorage().join());
         registerEvents(MinecraftServer.getGlobalEventHandler(), world);
         registerCommands(MinecraftServer.getCommandManager(), new Greeter());
 

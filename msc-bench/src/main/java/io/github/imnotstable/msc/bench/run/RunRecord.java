@@ -41,6 +41,12 @@ public record RunRecord(
         tools = tools == null ? ToolStats.NONE : tools;
     }
 
+    /** This record marked failed with a bench-side error. */
+    public RunRecord failed(String reason) {
+        return new RunRecord(task, category, mode, repeat, startedAt, false, wallMs, timedOut, exitCode, reason,
+                agent, tools, checks);
+    }
+
     public long checksPassed() {
         return checks.stream().filter(CheckResult::passed).count();
     }

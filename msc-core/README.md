@@ -18,7 +18,7 @@ The MCP server the AI talks to. It runs servers, condenses their output, answers
 
 ## Run
 
-`./gradlew :msc-core:installMsc` installs the distribution (core plus the Paper and Fabric agent jars in `agents/`) to `~/.msc/core` (`-Pmsc.installDir=...` to change) and prints the `claude mcp add` line; see the root README. The server speaks MCP on stdin/stdout and works in its current directory unless `MSC_WORKSPACE` is set. Other settings are environment variables; see the tool catalogue in `msc-docs/docs/tools.md`. Do not register `gradlew :msc-core:run` as an MCP server: Gradle's own output would corrupt the protocol stream.
+`./gradlew :msc-core:installMsc` installs the distribution (core plus the Paper and Fabric agent jars in `agents/`) into a new folder under `~/.msc/core` (`-Pmsc.installDir=...` to change), which the `msc` Claude Code plugin ([msc-plugin](../msc-plugin/README.md)) starts; see the root README. The server speaks MCP on stdin/stdout and works in its current directory unless `MSC_WORKSPACE` is set. Other settings are environment variables; see the tool catalogue in `msc-docs/docs/tools.md`. Do not register `gradlew :msc-core:run` as an MCP server: Gradle's own output would corrupt the protocol stream.
 
 ## Layout
 

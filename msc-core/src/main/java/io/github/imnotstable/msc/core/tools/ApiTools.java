@@ -37,8 +37,13 @@ public final class ApiTools {
     }
 
     public synchronized String status() {
-        return index == null ? "not loaded yet (loads on first api_search)"
-                : index.size() + " classes from " + index.jars().stream().map(p -> p.getFileName().toString()).toList();
+        if (index == null) {
+            return "not loaded yet (loads on first api_search)";
+        }
+        // Fabric indexes ~50 module jars; name the first few so msc_status stays short.
+        List<String> jars = index.jars().stream().map(p -> p.getFileName().toString()).toList();
+        return index.size() + " classes from " + (jars.size() <= 3 ? jars
+                : jars.subList(0, 3) + " and " + (jars.size() - 3) + " more jars");
     }
 
     public void register(ToolRegistry registry) {

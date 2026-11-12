@@ -17,7 +17,7 @@ import java.util.regex.Pattern;
 
 /**
  * The text structure format: one character per block, one grid per Y layer, and a legend. The same
- * format is used to show the world ({@code world_slice}) and to build ({@code build_structure}), so a
+ * format is used to show the world ({@code world_slice}) and to build ({@code build_batch} structure steps), so a
  * model can read a slice, edit it and write it back.
  *
  * <pre>

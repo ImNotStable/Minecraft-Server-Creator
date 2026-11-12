@@ -38,23 +38,25 @@ Go from cheap to detailed:
 ## Building
 
 1. **Plan** with `world_slice` of the spot, so the AI knows what is there.
-2. **Build** with one of:
-   - `build_fill`: floors, clearing space (`air`), and with `shape` a whole room in one call: `hollow` (walls, floor and roof, empty inside), `outline` (the same, keeping what is inside) or `walls` (four walls only).
-   - `build_structure`: anything with detail. Same text format as `world_slice`, so the AI can copy a slice, edit it and write it back. `_` means "leave this block alone".
-   - `build_set`: a few single blocks, such as doors or torches.
-   - `build_copy`: repeat or move a build.
-   - `build_batch`: many steps in one call with one undo: rooms, circles and towers, spheres and domes, paths, an island's land, beach and water, and a structure placed at several spots, turned or repeated. Blocks can be mixes such as `grass_block:78,moss_block:10`. It checks every block name before building and can do a dry run.
+2. **Build** with `build_batch`, the one build tool. It takes one step per line and runs them all as one edit with one undo:
+   - `fill`: floors, clearing space (`air`), and a whole room in one line: `hollow` (walls, floor and roof, empty inside), `outline` (the same, keeping what is inside) or `walls` (four walls only).
+   - `set`: single blocks, such as doors or torches.
+   - `cylinder`, `ring`, `disc`, `sphere`, `dome`, `line` and `bands` (an island's land, beach and water).
+   - `structure`: anything with detail, in the same text format as `world_slice`, so the AI can copy a slice, edit it and write it back. `_` means "leave this block alone". With `file=` it places a `.schem` (WorldEdit schematics work) or text file. A structure can be placed at several spots, turned or repeated.
+   - `copy`: repeat or move a part of the world, with the same turn and repeat options.
+
+   Blocks can be mixes such as `grass_block:78,moss_block:10`. It checks every block name before building and can do a dry run.
 3. **Check** with `world_render` or `world_slice`.
 4. **Undo** if needed: every build answers `edit eN: <count> blocks changed`. `build_undo` undoes the last edit, or pass `edit=eN`. Undo history lasts until MSC restarts.
 
 ## Saving builds
 
 - `structure_save` writes a region to a `.schem` file (Sponge schematic, blocks only).
-- `structure_load` pastes a `.schem` file. WorldEdit schematics work.
+- `build_batch` with `structure X,Y,Z file=PATH` pastes a `.schem` file.
 
 ## Limits
 
-- `world_slice` and `build_structure`: up to about 1 million blocks, 128 wide.
-- `build_fill` and `world_summary`: up to about 8 million blocks.
+- `world_slice`: up to about 1 million blocks, 128 wide.
+- `build_batch` and `world_summary`: up to about 8 million blocks.
 - `world_render`: up to 16 million blocks.
 - Pictures are close, not perfect: no stair corners, no entities, signs have no text.

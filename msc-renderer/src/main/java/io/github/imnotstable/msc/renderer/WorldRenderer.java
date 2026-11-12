@@ -50,8 +50,9 @@ public final class WorldRenderer {
     }
 
     /**
-     * Renders one view with markers drawn over it, numbered in list order. Markers are not hidden by blocks in
-     * front of them; the caption says which ones fall outside the image.
+     * Renders one view with markers drawn over it, numbered in list order (see {@link Marker}). Markers stay drawn
+     * when blocks are in front of them, but hollow or faded; the caption says which are behind blocks and which
+     * fall outside the image.
      */
     public RenderResult render(BlockGrid grid, View view, RenderOptions options, List<Marker> markers) {
         Region region = grid.region();
@@ -98,7 +99,15 @@ public final class WorldRenderer {
         if (frame.ruler != null) {
             frame.ruler.draw(pixels, frame);
         }
-        String markerText = markers.isEmpty() ? "" : "\n" + drawMarkers(pixels, frame, region, markers);
+        if (!frame.corners.isEmpty()) {
+            drawCorners(pixels, frame);
+        }
+        String markerText = "";
+        if (!markers.isEmpty()) {
+            Tracer tracer = new Tracer(region.sizeX(), region.sizeY(), region.sizeZ(), grid.blocks(), palette, false,
+                    false, false);
+            markerText = "\n" + drawMarkers(pixels, frame, region, markers, tracer);
+        }
         BufferedImage image = new BufferedImage(frame.imageW, frame.imageH, BufferedImage.TYPE_INT_RGB);
         image.setRGB(0, 0, frame.imageW, frame.imageH, pixels, 0, frame.imageW);
         ByteArrayOutputStream out = new ByteArrayOutputStream();
@@ -113,48 +122,219 @@ public final class WorldRenderer {
         return new RenderResult(out.toByteArray(), frame.imageW, frame.imageH, caption, tokens);
     }
 
-    private static final int MARKER_FILL = 0xff00ff;
-    private static final int MARKER_EDGE = 0x000000;
     private static final int MAX_MARKERS = 40;
+    private static final int MAX_TEXT_CHARS = 20;
+    private static final int MAX_TEXT_LINES = 4;
+    private static final int HOLOGRAM_BOX = 0x262626;
+    private static final int HOLOGRAM_INK = 0xffffff;
+    private static final int SIGN_BOX = 0xeedcb0;
+    private static final int SIGN_EDGE = 0x6b4f2a;
 
-    /** Draws a numbered dot per marker one block above its feet, on the body; returns the caption line. */
-    private static String drawMarkers(int[] pixels, Frame frame, Region region, List<Marker> markers) {
+    private static int colour(Marker.Kind kind) {
+        return switch (kind) {
+            case PLAYER -> 0x3070ff;
+            case HOSTILE -> 0xe02828;
+            case CREATURE -> 0x30c048;
+            case OBJECT -> 0xf0c020;
+            case OTHER -> 0xff00ff;
+            case TEXT -> 0x808080;
+            case SIGN -> 0xc8a060;
+        };
+    }
+
+    private static String legend(Marker.Kind kind) {
+        return switch (kind) {
+            case PLAYER -> "blue dot = player";
+            case HOSTILE -> "red dot = hostile";
+            case CREATURE -> "green dot = creature";
+            case OBJECT -> "yellow dot = object";
+            case OTHER -> "magenta dot = other";
+            case TEXT -> "dark box = floating text";
+            case SIGN -> "light box = sign text";
+        };
+    }
+
+    /**
+     * Draws the markers and returns their caption line. Entities are numbered dots one block above their feet, on
+     * the body; holograms and signs are text boxes, moved up or down when they would cover another marker, or a
+     * numbered dot when there is no room. Markers behind solid blocks are drawn hollow or faded.
+     */
+    private static String drawMarkers(int[] pixels, Frame frame, Region region, List<Marker> markers, Tracer tracer) {
         int font = frame.imageW >= 384 ? 2 : 1;
-        int dot = 3 * font;
-        StringBuilder sb = new StringBuilder("Markers (magenta, numbered): ");
-        List<Integer> outside = new ArrayList<>();
+        List<int[]> taken = new ArrayList<>();
+        java.util.Set<Integer> outside = new java.util.TreeSet<>();
+        java.util.Set<Integer> hidden = new java.util.TreeSet<>();
+        java.util.EnumSet<Marker.Kind> kinds = java.util.EnumSet.noneOf(Marker.Kind.class);
         int shown = Math.min(markers.size(), MAX_MARKERS);
-        for (int i = 0; i < shown; i++) {
-            Marker m = markers.get(i);
-            int n = i + 1;
-            double[] p = {m.x() - region.min().x(), m.y() - region.min().y() + 1.0, m.z() - region.min().z()};
-            int[] at = project(frame, p);
-            sb.append(i == 0 ? "" : "; ").append(n).append(' ').append(m.label()).append(" at ")
-                    .append(coord(m.x())).append(',').append(coord(m.y())).append(',').append(coord(m.z()));
-            if (at == null || at[0] < 0 || at[1] < 0 || at[0] >= frame.imageW || at[1] >= frame.imageH) {
-                outside.add(n);
-                continue;
+        // Dots first, so text boxes can move out of their way and stay on top.
+        for (int pass = 0; pass < 2; pass++) {
+            for (int i = 0; i < shown; i++) {
+                Marker m = markers.get(i);
+                boolean textual = (m.kind() == Marker.Kind.TEXT || m.kind() == Marker.Kind.SIGN) && !m.text().isEmpty();
+                if (textual != (pass == 1)) {
+                    continue;
+                }
+                kinds.add(m.kind());
+                int n = i + 1;
+                double[] p = {m.x() - region.min().x(), m.y() - region.min().y() + (textual ? 0 : 1.0),
+                        m.z() - region.min().z()};
+                int[] at = project(frame, p);
+                if (at == null || at[0] < 0 || at[1] < 0 || at[0] >= frame.imageW || at[1] >= frame.imageH) {
+                    outside.add(n);
+                    continue;
+                }
+                boolean behind = behind(frame, tracer, p);
+                if (behind) {
+                    hidden.add(n);
+                }
+                if (!textual || !drawText(pixels, frame, at, font, m, behind, taken)) {
+                    drawDot(pixels, frame, at, font, colour(m.kind()), behind, Integer.toString(n), taken);
+                }
             }
-            PixelFont.fill(pixels, frame.imageW, frame.imageH, at[0] - dot - font, at[1] - dot - font,
-                    2 * (dot + font) + 1, 2 * (dot + font) + 1, MARKER_EDGE);
-            PixelFont.fill(pixels, frame.imageW, frame.imageH, at[0] - dot, at[1] - dot, 2 * dot + 1, 2 * dot + 1,
-                    MARKER_FILL);
-            String label = Integer.toString(n);
-            int lx = at[0] + dot + 2 * font;
-            int ly = at[1] - PixelFont.HEIGHT * font / 2;
-            PixelFont.fill(pixels, frame.imageW, frame.imageH, lx - font, ly - font,
-                    PixelFont.width(label, font) + 2 * font, PixelFont.HEIGHT * font + 2 * font, MARGIN);
-            PixelFont.draw(pixels, frame.imageW, frame.imageH, lx, ly, label, font, INK);
+        }
+        for (int i = shown; i < markers.size(); i++) {
+            kinds.add(markers.get(i).kind());
+        }
+        StringBuilder sb = new StringBuilder("Markers, numbered (");
+        sb.append(kinds.stream().map(WorldRenderer::legend).collect(java.util.stream.Collectors.joining(", ")))
+                .append("): ");
+        for (int i = 0; i < markers.size(); i++) {
+            Marker m = markers.get(i);
+            sb.append(i == 0 ? "" : "; ").append(i + 1).append(' ').append(m.label()).append(" at ")
+                    .append(coord(m.x())).append(',').append(coord(m.y())).append(',').append(coord(m.z()));
         }
         sb.append('.');
         if (markers.size() > shown) {
             sb.append(' ').append(markers.size() - shown).append(" more not drawn.");
         }
         if (!outside.isEmpty()) {
-            sb.append(" Outside the image: ").append(outside.stream().map(String::valueOf)
-                    .collect(java.util.stream.Collectors.joining(", "))).append('.');
+            sb.append(" Outside the image: ").append(numbers(outside)).append('.');
+        }
+        if (!hidden.isEmpty()) {
+            sb.append(" Behind blocks (hollow or faded): ").append(numbers(hidden)).append('.');
         }
         return sb.toString();
+    }
+
+    private static String numbers(java.util.Set<Integer> numbers) {
+        return numbers.stream().map(String::valueOf).collect(java.util.stream.Collectors.joining(", "));
+    }
+
+    /** True when a solid block lies between a grid-local point and the camera. */
+    private static boolean behind(Frame frame, Tracer tracer, double[] p) {
+        if (frame.perspective) {
+            double[] d = {frame.origin[0] - p[0], frame.origin[1] - p[1], frame.origin[2] - p[2]};
+            double distance = Math.sqrt(dot(d, d));
+            if (distance < 1e-6) {
+                return false;
+            }
+            return tracer.blocked(p[0], p[1], p[2], d[0] / distance, d[1] / distance, d[2] / distance, distance);
+        }
+        return tracer.blocked(p[0], p[1], p[2], -frame.f[0], -frame.f[1], -frame.f[2], Double.POSITIVE_INFINITY);
+    }
+
+    private static void drawDot(int[] pixels, Frame frame, int[] at, int font, int rgb, boolean hollow, String number,
+            List<int[]> taken) {
+        int dot = 3 * font;
+        int outer = dot + font;
+        PixelFont.fill(pixels, frame.imageW, frame.imageH, at[0] - outer, at[1] - outer, 2 * outer + 1, 2 * outer + 1,
+                0x000000);
+        PixelFont.fill(pixels, frame.imageW, frame.imageH, at[0] - dot, at[1] - dot, 2 * dot + 1, 2 * dot + 1, rgb);
+        if (hollow) {
+            int inner = dot - font;
+            PixelFont.fill(pixels, frame.imageW, frame.imageH, at[0] - inner, at[1] - inner, 2 * inner + 1,
+                    2 * inner + 1, MARGIN);
+        }
+        int lx = at[0] + dot + 2 * font;
+        int ly = at[1] - PixelFont.HEIGHT * font / 2;
+        int lw = PixelFont.width(number, font) + 2 * font;
+        int lh = PixelFont.HEIGHT * font + 2 * font;
+        PixelFont.fill(pixels, frame.imageW, frame.imageH, lx - font, ly - font, lw, lh, MARGIN);
+        PixelFont.draw(pixels, frame.imageW, frame.imageH, lx, ly, number, font, INK);
+        taken.add(new int[] {at[0] - outer, at[1] - outer, lx - font + lw - (at[0] - outer), 2 * outer + 1});
+    }
+
+    /**
+     * Draws a marker's lines in a box: a hologram's above its anchor, a sign's centred on the block. Returns false,
+     * drawing nothing, when the text is empty or no nearby spot is free.
+     */
+    private static boolean drawText(int[] pixels, Frame frame, int[] at, int font, Marker m, boolean faded,
+            List<int[]> taken) {
+        List<String> lines = textLines(m.text());
+        if (lines.isEmpty()) {
+            return false;
+        }
+        boolean sign = m.kind() == Marker.Kind.SIGN;
+        int pad = 2 * font;
+        int lineH = (PixelFont.HEIGHT + 1) * font;
+        int boxW = lines.stream().mapToInt(line -> PixelFont.width(line, font)).max().orElse(0) + 2 * pad;
+        int boxH = lines.size() * lineH - font + 2 * pad;
+        if (boxW > frame.imageW || boxH > frame.imageH) {
+            return false;
+        }
+        int x = Math.clamp(at[0] - boxW / 2, 0, frame.imageW - boxW);
+        int y0 = sign ? at[1] - boxH / 2 : at[1] - boxH - font;
+        int step = boxH + font;
+        for (int offset : new int[] {0, -step, step, -2 * step, 2 * step}) {
+            int y = Math.clamp(y0 + offset, 0, frame.imageH - boxH);
+            int[] box = {x, y, boxW, boxH};
+            if (taken.stream().anyMatch(other -> overlaps(box, other))) {
+                continue;
+            }
+            int fill = sign ? SIGN_BOX : HOLOGRAM_BOX;
+            int ink = sign ? INK : HOLOGRAM_INK;
+            if (faded) {
+                fill = mix(fill, MARGIN);
+                ink = mix(ink, fill);
+            }
+            PixelFont.fill(pixels, frame.imageW, frame.imageH, x, y, boxW, boxH, sign ? SIGN_EDGE : 0x000000);
+            PixelFont.fill(pixels, frame.imageW, frame.imageH, x + font, y + font, boxW - 2 * font, boxH - 2 * font,
+                    fill);
+            for (int i = 0; i < lines.size(); i++) {
+                String line = lines.get(i);
+                PixelFont.draw(pixels, frame.imageW, frame.imageH, x + (boxW - PixelFont.width(line, font)) / 2,
+                        y + pad + i * lineH, line, font, ink);
+            }
+            if (offset != 0) {
+                // Moved off its spot: a small square shows where it belongs.
+                PixelFont.fill(pixels, frame.imageW, frame.imageH, at[0] - font, at[1] - font, 2 * font + 1,
+                        2 * font + 1, sign ? SIGN_EDGE : 0x000000);
+            }
+            taken.add(box);
+            return true;
+        }
+        return false;
+    }
+
+    /** Lines as the image shows them: formatting codes gone, blank lines dropped, each line and the count capped. */
+    static List<String> textLines(List<String> text) {
+        List<String> out = new ArrayList<>();
+        for (String raw : text) {
+            String line = raw.replaceAll("\u00a7.", "").strip().replaceAll("\\s+", " ");
+            if (line.isEmpty()) {
+                continue;
+            }
+            if (out.size() == MAX_TEXT_LINES) {
+                out.set(MAX_TEXT_LINES - 1, cut(out.get(MAX_TEXT_LINES - 1) + " ..."));
+                break;
+            }
+            out.add(cut(line));
+        }
+        return out;
+    }
+
+    private static String cut(String line) {
+        return line.length() > MAX_TEXT_CHARS ? line.substring(0, MAX_TEXT_CHARS - 2) + ".." : line;
+    }
+
+    private static boolean overlaps(int[] a, int[] b) {
+        return a[0] < b[0] + b[2] && b[0] < a[0] + a[2] && a[1] < b[1] + b[3] && b[1] < a[1] + a[3];
+    }
+
+    /** Halfway between two colours. */
+    private static int mix(int a, int b) {
+        return (((a >> 16 & 0xff) + (b >> 16 & 0xff)) / 2) << 16 | (((a >> 8 & 0xff) + (b >> 8 & 0xff)) / 2) << 8
+                | ((a & 0xff) + (b & 0xff)) / 2;
     }
 
     /** Image pixel of a grid-local point, or null when it is behind a perspective camera. Inverse of Frame.ray. */
@@ -253,6 +433,9 @@ public final class WorldRenderer {
         double footprintPerT;
         Ruler ruler;
         String caption;
+        /** Isometric views: labelled corners of the region's box. */
+        List<IsoCorner> corners = List.of();
+        int cornerFont = 1;
 
         void ray(double px, double py, double[] out) {
             double a = (px - w / 2.0) / scale;
@@ -358,6 +541,14 @@ public final class WorldRenderer {
         return flip ? max + ".." + min : min + ".." + max;
     }
 
+    /** A corner of the region's box, grid-local, with its block coordinates and where its label goes. */
+    private record IsoCorner(double[] point, String text, int side) {
+        static final int LEFT = 0;
+        static final int RIGHT = 1;
+        static final int BELOW = 2;
+        static final int ABOVE = 3;
+    }
+
     private static Frame isoFrame(View.Isometric view, Region region, RenderOptions options) {
         double yaw = switch (view.from()) {
             case SOUTH_EAST -> 135;
@@ -377,15 +568,38 @@ public final class WorldRenderer {
             width += Math.abs(frame.r[i]) * size;
             height += Math.abs(frame.u[i]) * size;
         }
-        double scale = Math.min(Math.min(options.maxSize() / width, options.maxSize() / height), MAX_PIXELS_PER_BLOCK);
+        int marginX = 0;
+        int marginY = 0;
+        if (options.rulers()) {
+            int font = options.maxSize() >= 384 ? 2 : 1;
+            List<IsoCorner> corners = isoCorners(frame, region);
+            for (IsoCorner corner : corners) {
+                if (corner.side() == IsoCorner.LEFT || corner.side() == IsoCorner.RIGHT) {
+                    marginX = Math.max(marginX, PixelFont.width(corner.text(), font) + 3 * font);
+                }
+            }
+            marginY = PixelFont.HEIGHT * font + 3 * font;
+            // Labels may take at most half the image; small images go without.
+            if (2 * marginX <= options.maxSize() / 2) {
+                frame.corners = corners;
+                frame.cornerFont = font;
+            } else {
+                marginX = 0;
+                marginY = 0;
+            }
+        }
+        double scale = Math.min(Math.min((options.maxSize() - 2 * marginX) / width,
+                (options.maxSize() - 2 * marginY) / height), MAX_PIXELS_PER_BLOCK);
         frame.scale = scale;
         frame.w = Math.max(1, (int) Math.ceil(width * scale));
         frame.h = Math.max(1, (int) Math.ceil(height * scale));
         frame.origin = new double[] {sx / 2.0, sy / 2.0, sz / 2.0};
         frame.back = sx + sy + sz + 1;
         frame.footprint = 1 / scale;
-        frame.imageW = frame.w;
-        frame.imageH = frame.h;
+        frame.offX = marginX;
+        frame.offY = marginY;
+        frame.imageW = frame.w + 2 * marginX;
+        frame.imageH = frame.h + 2 * marginY;
         String corner = view.from().name().toLowerCase(Locale.ROOT).replace('_', '-');
         String towards = switch (view.from()) {
             case SOUTH_EAST -> "north-west";
@@ -394,8 +608,84 @@ public final class WorldRenderer {
             case SOUTH_WEST -> "north-east";
         };
         frame.caption = "Isometric view from the " + corner + " corner, looking " + towards + " and 30 degrees down, of "
-                + box(region) + ", " + number(scale) + " px per block.";
+                + box(region) + ", " + number(scale) + " px per block"
+                + (frame.corners.isEmpty() ? "." : ", corners labelled with block coordinates x,y,z.");
         return frame;
+    }
+
+    /**
+     * The four corners that frame an isometric image: the left, right and nearest corners of the floor, and the top
+     * of the farthest edge.
+     */
+    private static List<IsoCorner> isoCorners(Frame frame, Region region) {
+        int[] size = {region.sizeX(), region.sizeY(), region.sizeZ()};
+        double[] left = null;
+        double[] right = null;
+        double[] near = null;
+        double[] top = null;
+        for (int cx = 0; cx <= 1; cx++) {
+            for (int cz = 0; cz <= 1; cz++) {
+                double[] floor = {cx * size[0], 0, cz * size[2]};
+                double[] roof = {cx * size[0], size[1], cz * size[2]};
+                if (left == null || dot(floor, frame.r) < dot(left, frame.r)) {
+                    left = floor;
+                }
+                if (right == null || dot(floor, frame.r) > dot(right, frame.r)) {
+                    right = floor;
+                }
+                if (near == null || dot(floor, frame.u) < dot(near, frame.u)) {
+                    near = floor;
+                }
+                if (top == null || dot(roof, frame.u) > dot(top, frame.u)) {
+                    top = roof;
+                }
+            }
+        }
+        return List.of(new IsoCorner(left, cornerText(left, region), IsoCorner.LEFT),
+                new IsoCorner(right, cornerText(right, region), IsoCorner.RIGHT),
+                new IsoCorner(near, cornerText(near, region), IsoCorner.BELOW),
+                new IsoCorner(top, cornerText(top, region), IsoCorner.ABOVE));
+    }
+
+    /** Coordinates of the block that sits in a box corner. */
+    private static String cornerText(double[] point, Region region) {
+        int x = point[0] == 0 ? region.min().x() : region.max().x();
+        int y = point[1] == 0 ? region.min().y() : region.max().y();
+        int z = point[2] == 0 ? region.min().z() : region.max().z();
+        return x + "," + y + "," + z;
+    }
+
+    private static void drawCorners(int[] pixels, Frame frame) {
+        int font = frame.cornerFont;
+        int textH = PixelFont.HEIGHT * font;
+        for (IsoCorner corner : frame.corners) {
+            int[] at = project(frame, corner.point());
+            int w = PixelFont.width(corner.text(), font);
+            int x;
+            int y;
+            switch (corner.side()) {
+                case IsoCorner.LEFT -> {
+                    x = at[0] - 2 * font - w;
+                    y = at[1] - textH / 2;
+                }
+                case IsoCorner.RIGHT -> {
+                    x = at[0] + 2 * font;
+                    y = at[1] - textH / 2;
+                }
+                case IsoCorner.BELOW -> {
+                    x = at[0] - w / 2;
+                    y = at[1] + 2 * font;
+                }
+                default -> {
+                    x = at[0] - w / 2;
+                    y = at[1] - 2 * font - textH;
+                }
+            }
+            x = Math.clamp(x, 0, Math.max(0, frame.imageW - w));
+            y = Math.clamp(y, 0, Math.max(0, frame.imageH - textH));
+            PixelFont.fill(pixels, frame.imageW, frame.imageH, at[0] - font, at[1] - font, 2 * font, 2 * font, INK);
+            PixelFont.draw(pixels, frame.imageW, frame.imageH, x, y, corner.text(), font, INK);
+        }
     }
 
     private static Frame cameraFrame(View.Camera view, Region region, RenderOptions options) {

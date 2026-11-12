@@ -6,6 +6,7 @@ import io.github.imnotstable.msc.core.world.Coords;
 import io.github.imnotstable.msc.core.world.TextGrid;
 import io.github.imnotstable.msc.protocol.world.BlockGrid;
 import io.github.imnotstable.msc.protocol.world.BlockPos;
+import io.github.imnotstable.msc.protocol.world.Region;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -17,7 +18,6 @@ import java.util.regex.Pattern;
 
 /**
  * The build language of {@code build_batch}: one step per line, run in order, later steps winning.
- * The same factories back {@code build_shape} and {@code build_stamp}, so the three tools agree.
  *
  * <pre>
  * fill 0,64,0 10,68,10 stone_bricks hollow
@@ -33,8 +33,8 @@ import java.util.regex.Pattern;
 public final class BuildScript {
     /** What every step verb takes, for the tool descriptions. */
     public static final String HELP = """
-            One step per line, run in order; later steps win. B is a block or a weighted mix such as \
-            grass_block:78,moss_block:10. Every step takes replace=a,b (only change those; air = empty) and seed=N.
+            One step per line, in order; later steps win. B is a block or a weighted mix such as \
+            grass_block:78,moss_block:10. Every step takes replace=a,b (change only those; air = empty) and seed=N.
             fill X,Y,Z X,Y,Z B [hollow|outline|walls]
             set X,Y,Z B
             cylinder X,Y,Z r=R h=H B [hollow] [thick=T] [inner=R]   (X,Y,Z = bottom centre)
@@ -44,19 +44,24 @@ public final class BuildScript {
             line X,Y,Z X,Y,Z B [w=W]
             bands X,Y,Z [h=H] R1=B R2=B ... [jitter=J]   (rings out to each radius: land, beach, water)
             structure X,Y,Z [X,Y,Z ...] [rotate=90] [face=X,Z] [anchor=center] [repeat=N step=DX,DY,DZ] [air=false] [file=PATH]
-              then build_structure text and a line "end", unless file= is given. rotate turns clockwise seen from \
-            above; face=X,Z turns each copy's north side (first text row) toward X,Z.""";
-
+              then the text and a line "end", unless file= (.schem or text) is given. Text: "legend: #=stone g=glass", \
+            then per layer "y=N" and rows of symbols (rows = z, columns = x); "." is air, "_" unchanged; \
+            "y=N same as y=M", "y=N all #". rotate turns clockwise seen from above; face=X,Z turns each copy's north \
+            side (first row) toward X,Z.
+            copy X,Y,Z X,Y,Z to=X,Y,Z [structure options]   (copies the world as it was before this call)""";
 
     private static final Pattern POS = Pattern.compile("-?\\d+,-?\\d+,-?\\d+");
     private static final Pattern OPTION = Pattern.compile("[a-z]+=.*");
     private static final Pattern BAND = Pattern.compile("\\d+=.+");
     private static final Set<String> FLAGS = Set.of("solid", "hollow", "outline", "walls");
 
-    /** Loads a structure file (.schem or text) relative to the workspace, starting at 0,0,0. */
-    @FunctionalInterface
+    /** Where structures come from: files in the workspace and the world itself. */
     public interface StructureFiles {
+        /** A structure file (.schem or text) relative to the workspace, starting at 0,0,0. */
         BlockGrid load(String path, String world) throws java.io.IOException;
+
+        /** The blocks in a region of the world as they are now, at their own coordinates. */
+        BlockGrid read(Region region) throws InterruptedException;
     }
 
     private final String world;
@@ -72,7 +77,7 @@ public final class BuildScript {
                         List<String> bands, String block) {
     }
 
-    public List<Step> parse(String text) throws java.io.IOException {
+    public List<Step> parse(String text) throws java.io.IOException, InterruptedException {
         List<Step> steps = new ArrayList<>();
         String[] lines = text.split("\\R");
         for (int i = 0; i < lines.length; i++) {
@@ -143,14 +148,14 @@ public final class BuildScript {
         return new Parts(verb, points, options, flags, bands, block);
     }
 
-    /** Build a step from its parts. Used by build_batch lines and by build_shape. */
-    public Step step(Parts p) throws java.io.IOException {
+    /** Build a step from its parts. */
+    public Step step(Parts p) throws java.io.IOException, InterruptedException {
         Options o = new Options(p);
         Step step = switch (p.verb()) {
             case "fill" -> {
                 o.points(2);
                 String shape = p.flags().isEmpty() ? "solid" : o.oneFlag();
-                yield new Step.Fill(new io.github.imnotstable.msc.protocol.world.Region(world, p.points().get(0),
+                yield new Step.Fill(new Region(world, p.points().get(0),
                         p.points().get(1)), o.block(), shape, o.replace());
             }
             case "set" -> {
@@ -224,13 +229,39 @@ public final class BuildScript {
                 }
                 yield stamp(p, files.load(file, world));
             }
+            case "copy" -> copy(p);
             default -> throw new ToolException("unknown step \"" + p.verb()
-                    + "\"; use fill, set, cylinder, ring, disc, sphere, dome, line, bands or structure");
+                    + "\"; use fill, set, cylinder, ring, disc, sphere, dome, line, bands, structure or copy");
         };
-        if (!p.verb().equals("structure")) {
+        if (!p.verb().equals("structure") && !p.verb().equals("copy")) {
             o.done();
         }
         return step;
+    }
+
+    /** Read a region of the world now and stamp it at {@code to=}, with every structure option. */
+    private Step copy(Parts p) throws InterruptedException {
+        if (p.points().size() != 2) {
+            throw new ToolException("copy takes 2 positions X,Y,Z (the source corners) and to=X,Y,Z, got "
+                    + p.points().size() + " positions");
+        }
+        if (p.options().containsKey("file")) {
+            throw new ToolException("copy does not take file=");
+        }
+        String to = p.options().get("to");
+        if (to == null) {
+            throw new ToolException("copy needs to=X,Y,Z, where the copy's lowest corner goes");
+        }
+        BlockPos target = Coords.pos(to);
+        Region source =
+                new Region(world, p.points().get(0), p.points().get(1));
+        BlockGrid read = files.read(source);
+        Region origin = Region.of(
+                world, 0, 0, 0, source.sizeX() - 1, source.sizeY() - 1, source.sizeZ() - 1);
+        Map<String, String> options = new LinkedHashMap<>(p.options());
+        options.remove("to");
+        return stamp(new Parts(p.verb(), List.of(target), options, p.flags(), p.bands(), p.block()),
+                new BlockGrid(origin, read.palette(), read.blocks()));
     }
 
     /** Place {@code structure} (starting at 0,0,0) at every position, turned and repeated as the options say. */

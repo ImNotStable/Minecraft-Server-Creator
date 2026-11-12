@@ -13,5 +13,6 @@ Phase: Post-MVP. Steps are in order; each ends with passing tests.
 Later, if renders turn out to mislead:
 
 - [ ] Blockstate and model JSON, for exact shapes and texture names.
-- [ ] Entity markers and sign text.
-- [ ] Coordinate labels on isometric views.
+- [x] Entity markers coloured by kind, hologram text, sign text (`Marker.sign`), markers behind blocks shown hollow.
+- [x] Coordinate labels on isometric views.
+- [ ] Sign text in `world_render`: needs the agents to report sign text (a protocol change, foundation thread).

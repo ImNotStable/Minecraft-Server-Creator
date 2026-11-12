@@ -13,6 +13,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
@@ -228,7 +229,11 @@ public final class ResourcePack implements AutoCloseable {
         int want = preferredPort > 0 ? preferredPort : rememberedPort();
         HttpServer started;
         try {
-            started = PackHost.start(host, want, () -> served);
+            // The port may have been let go a moment ago, by the leftover host or this session's own.
+            started = PackHost.startWithin(host, want, () -> served, PackHost.PORT_PATIENCE);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new java.io.InterruptedIOException("interrupted while waiting for port " + want);
         } catch (IOException e) {
             if (want == 0) {
                 throw e;
@@ -284,22 +289,39 @@ public final class ResourcePack implements AutoCloseable {
         Process p = new ProcessBuilder(java, "-cp", classPath, PackHost.class.getName(), host, String.valueOf(port),
                 zipFile().toString())
                 .redirectOutput(ProcessBuilder.Redirect.DISCARD)
-                .redirectError(ProcessBuilder.Redirect.DISCARD)
+                .redirectError(hostLog().toFile())
                 .start();
         p.getOutputStream().close();
-        long deadline = System.nanoTime() + 10_000_000_000L;
+        long deadline = System.nanoTime() + 15_000_000_000L;
         while (p.isAlive() && System.nanoTime() < deadline && !accepts(port)) {
             Thread.sleep(100);
         }
         if (!p.isAlive() || !accepts(port)) {
             p.destroyForcibly();
-            server = PackHost.start(host, port, () -> served);
-            throw new ToolException("could not start a standalone pack host; the pack is still served by this session");
+            p.waitFor(5, TimeUnit.SECONDS);
+            server = PackHost.startWithin(host, port, () -> served, PackHost.PORT_PATIENCE);
+            String why = lastLine(hostLog());
+            throw new ToolException("could not start a standalone pack host" + (why.isEmpty() ? "" : " (" + why + ")")
+                    + "; the pack is still served by this session");
         }
         hostProcess = p;
         hostPort = port;
         PidFile.write(hostPidFile(), p.toHandle());
         return true;
+    }
+
+    /** {@code .msc/pack-host.log}: what the standalone host printed, so a failed start can say why. */
+    private Path hostLog() {
+        return outDir.resolveSibling("pack-host.log");
+    }
+
+    private static String lastLine(Path log) {
+        try {
+            List<String> lines = Files.readAllLines(log).stream().map(String::strip).filter(l -> !l.isEmpty()).toList();
+            return lines.isEmpty() ? "" : lines.getLast();
+        } catch (IOException e) {
+            return "";
+        }
     }
 
     private boolean accepts(int port) {

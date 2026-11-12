@@ -23,11 +23,11 @@ public final class SetupCheck {
         List<String> out = new ArrayList<>();
         if (isMscRepo(config.workspace())) {
             out.add("warning: the workspace is the Minecraft Server Creator repo (" + config.workspace() + "), not a "
-                    + "server project. Start Claude Code in the server's folder, or register MSC for this folder with "
-                    + "`claude mcp add msc --scope local -e MSC_WORKSPACE=<server folder> -- <install command>`.");
+                    + "server project. Call msc_workspace with the server's folder, or start Claude Code there.");
         }
         if (config.installDir() != null) {
-            String stale = staleInstall(config.installDir());
+            String newer = newerInstall(config.installDir());
+            String stale = newer != null ? newer : staleInstall(config.installDir());
             if (stale != null) {
                 out.add(stale);
             }
@@ -94,8 +94,63 @@ public final class SetupCheck {
         }
         return "warning: this msc-core (installed " + seconds(installed) + " in " + installDir + ") is older than its "
                 + "checkout: " + Path.of(source).relativize(newest).toString().replace('\\', '/') + " changed "
-                + seconds(newestTime) + ". Tools may be missing or behave differently. Run `./gradlew "
-                + ":msc-core:installMsc` in " + source + ", then restart Claude Code.";
+                + seconds(newestTime) + ". Tools may be missing or behave differently. Run `"
+                + LegacyInstall.installCommand(installDir, Path.of(source), home()) + "`, then reconnect msc in /mcp.";
+    }
+
+    /**
+     * A warning when another install next to this one was installed later, or null. The msc plugin's launcher starts
+     * the newest install (ADR 0021), so a reconnect picks it up.
+     */
+    static String newerInstall(Path installDir) {
+        long own = installed(installDir);
+        Path parent = installDir.toAbsolutePath().normalize().getParent();
+        if (own < 0 || parent == null) {
+            return null;
+        }
+        List<Path> candidates = new ArrayList<>();
+        candidates.add(parent);
+        try (Stream<Path> children = Files.list(parent)) {
+            children.filter(Files::isDirectory).filter(d -> !d.getFileName().toString().startsWith("."))
+                    .sorted().forEach(candidates::add);
+        } catch (IOException e) {
+            return null;
+        }
+        Path newest = null;
+        long newestTime = own;
+        for (Path d : candidates) {
+            long t = installed(d);
+            if (t > newestTime && !d.equals(installDir.toAbsolutePath().normalize()) && holdsCore(d)) {
+                newest = d;
+                newestTime = t;
+            }
+        }
+        return newest == null ? null : "warning: a newer msc-core was installed " + seconds(newestTime) + " in "
+                + newest + ". Reconnect msc in /mcp to use it.";
+    }
+
+    /** {@code installed} from an install's properties, or -1. */
+    private static long installed(Path dir) {
+        Properties p = new Properties();
+        try (Reader in = Files.newBufferedReader(dir.resolve("install.properties"))) {
+            p.load(in);
+            return Long.parseLong(p.getProperty("installed", "").trim());
+        } catch (IOException | NumberFormatException e) {
+            return -1;
+        }
+    }
+
+    private static boolean holdsCore(Path dir) {
+        try (Stream<Path> jars = Files.list(dir.resolve("lib"))) {
+            return jars.anyMatch(j -> j.getFileName().toString().matches("msc-core-.*\\.jar"));
+        } catch (IOException e) {
+            return false;
+        }
+    }
+
+    private static Path home() {
+        String home = System.getProperty("user.home");
+        return home == null ? null : Path.of(home);
     }
 
     private static Instant seconds(long millis) {

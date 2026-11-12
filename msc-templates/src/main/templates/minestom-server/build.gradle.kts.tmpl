@@ -53,6 +53,8 @@ tasks.test {
 // The runnable server: build/libs/{{projectId}}-{{version}}.jar, with every dependency inside.
 tasks.shadowJar {
     archiveClassifier = ""
+    // Service files must all reach the merge step; the default EXCLUDE warns about each one on every build.
+    duplicatesStrategy = DuplicatesStrategy.INCLUDE
     mergeServiceFiles()
 }
 

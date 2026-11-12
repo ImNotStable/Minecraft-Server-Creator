@@ -10,9 +10,10 @@ Do [Installation](Installation) first. Then open Claude Code in your server fold
 
 2. **Read the Minecraft EULA.**
    Open [aka.ms/MinecraftEULA](https://aka.ms/MinecraftEULA). A Paper server will not start until you accept it. Only you can do this. Claude will ask you; it must not accept it for you.
+   To accept once for this machine instead of for every server, install with `-Pmsc.acceptEula=true`, or run the line in `~/.msc/core/eula-accept.txt` yourself and type `yes`. Your first yes to Claude (`acceptEula=true`) also covers the machine. Either way you confirm you accept Mojang's EULA, as set out in [TERMS.md](https://github.com/ImNotStable/Minecraft-Server-Creator/blob/main/TERMS.md). Undo it with the same line, `revoke` instead of `accept`.
 
 3. **Set up the server.**
-   If you accept the EULA, say: "I accept the Minecraft EULA. Run server_setup with acceptEula=true."
+   If you accept the EULA, say: "I accept the Minecraft EULA. Run server_setup with acceptEula=true." If you accepted it for this machine, just say "Run server_setup."
    MSC downloads Paper, writes the dev server settings and installs the agent plugin.
 
 4. **Start the server.**
@@ -28,7 +29,7 @@ Do [Installation](Installation) first. Then open Claude Code in your server fold
 
 7. **Build something.**
    Ask: "Build a small stone hut at 10, -60, 10 and show me a picture of it."
-   Claude uses `build_structure`, then `world_render`. Every build can be undone with `build_undo`.
+   Claude uses `build_batch`, then `world_render`. Every build can be undone with `build_undo`.
 
 8. **Stop the server** when you are done: "Stop the server."
 
@@ -37,7 +38,7 @@ Do [Installation](Installation) first. Then open Claude Code in your server fold
 - The dev world is flat. The ground is at y = -61, so builds start at y = -60.
 - To play on the server after you close Claude Code, ask Claude to "detach the server" first (`server_detach`). The server and the resource pack stay up. The next session stops them, saving the world, when it starts the server again.
 - Ask Claude to look up names with `api_search` instead of guessing. It saves time and tokens.
-- `msc_stats` shows how many calls and tokens each tool used.
-- Making a minigame? Scaffold with `template paper-game`: it comes with a kit, stages, saved progress and `/game` test commands. See [Platforms](Platforms#making-a-minigame-the-paper-game-template).
+- `msc_status stats=true` shows how many calls and tokens each tool used.
+- Making a minigame? Scaffold with `template paper-game` (or `fabric-game`, `minestom-game`): it comes with a kit, stages, saved progress and `/game` test commands. See [Platforms](Platforms#making-a-minigame-the-paper-game-template).
 - Want Fabric or Minestom instead? See [Platforms](Platforms).
 - Something went wrong? See [Troubleshooting](Troubleshooting).

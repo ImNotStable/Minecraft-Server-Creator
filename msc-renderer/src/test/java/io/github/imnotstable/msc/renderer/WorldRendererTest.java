@@ -54,7 +54,7 @@ class WorldRendererTest {
 
         assertThat(image.getRGB(40, 24) & 0xffffff).as("centre of the block at x=12, z=-1").isEqualTo(0xff00ff);
         assertThat(isGray(image.getRGB(8, 56))).isTrue();
-        assertThat(result.caption()).endsWith("Markers (magenta, numbered): 1 villager \"Shopkeeper\" at 12.5,65,-0.5; "
+        assertThat(result.caption()).endsWith("Markers, numbered (magenta dot = other): 1 villager \"Shopkeeper\" at 12.5,65,-0.5; "
                 + "2 text_display \"Welcome\" at 40,65,40. Outside the image: 2.");
     }
 
