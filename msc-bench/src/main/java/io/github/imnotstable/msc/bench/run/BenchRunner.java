@@ -192,7 +192,8 @@ public final class BenchRunner {
                 throw new IOException("interrupted", e);
             }
             wallMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
-            String stdout = Files.readString(attemptDir.resolve("agent-stdout.json"));
+            // Lenient UTF-8: one stray byte in the agent's output must not cost the whole attempt.
+            String stdout = new String(Files.readAllBytes(attemptDir.resolve("agent-stdout.json")), StandardCharsets.UTF_8);
             String limit = ClaudeResultParser.usageLimit(stdout);
             if (limit != null) {
                 throw new UsageLimitReached(limit);

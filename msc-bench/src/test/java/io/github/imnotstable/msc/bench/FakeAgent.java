@@ -1,6 +1,8 @@
 package io.github.imnotstable.msc.bench;
 
 import java.io.IOException;
+import java.io.PrintStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
@@ -31,7 +33,8 @@ public final class FakeAgent {
             servers = runs >= 2 ? "[{\"name\":\"msc\",\"status\":\"connected\"}]" : "[]";
         }
         if (System.getenv("FAKE_USAGE_LIMIT") != null) {
-            System.out.println("[{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":true,\"num_turns\":1,"
+            // UTF-8 like Claude Code, whatever the platform's console charset is.
+            new PrintStream(System.out, true, StandardCharsets.UTF_8).println("[{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":true,\"num_turns\":1,"
                     + "\"result\":\"API Error: 429 You're out of extra usage · resets 2:50am\"}]");
             return;
         }
