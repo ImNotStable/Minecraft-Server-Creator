@@ -16,7 +16,7 @@ The server must be running (`server_start`) for these tools. They work the same 
 Go from cheap to detailed:
 
 1. **`world_summary`**: "What is in 0,-64,0 to 31,-40,31?" Gives block counts and bounds in about six lines.
-2. **`world_heightmap`**: the shape of the ground, one character per column.
+2. **`world_heightmap`**: the shape of the ground, one character per column. When heights span more than 35 blocks it prints runs instead, such as `-61*16 100*7` (16 columns at -61, then 7 at 100), and `(x16)` for a row repeated 16 times.
 3. **`world_slice`**: the exact blocks, as text layers. Example:
 
    ```
