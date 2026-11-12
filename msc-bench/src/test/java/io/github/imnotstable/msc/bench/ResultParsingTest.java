@@ -9,6 +9,7 @@ import io.github.imnotstable.msc.bench.run.ToolStats;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -83,7 +84,11 @@ class ResultParsingTest {
                 {"v":2,"tool":"future","resultTokens":999}
                 """);
 
-        assertThat(ToolLogReader.read(log)).isEqualTo(new ToolStats(3, 1, 111, 1500, 441, 3012));
+        ToolStats stats = ToolLogReader.read(log);
+        assertThat(stats).isEqualTo(new ToolStats(3, 1, 111, 1500, 441, 3012, Map.of(
+                "server.start", new ToolStats.PerTool(1, 1, 11, 3000),
+                "world.slice", new ToolStats.PerTool(1, 0, 100, 12),
+                "world_render", new ToolStats.PerTool(1, 0, 1500, 0))));
         assertThat(ToolLogReader.read(dir.resolve("missing.jsonl"))).isEqualTo(ToolStats.NONE);
     }
 }

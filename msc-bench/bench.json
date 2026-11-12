@@ -1,7 +1,7 @@
 {
   "minecraftVersion": "26.3",
   "agent": {
-    "command": ["claude", "-p", "{prompt}", "--output-format", "json", "--dangerously-skip-permissions", "--strict-mcp-config"],
+    "command": ["claude", "-p", "{prompt}", "--output-format", "json", "--dangerously-skip-permissions", "--strict-mcp-config", "--setting-sources", "project,local"],
     "timeoutSeconds": 1800
   },
   "modes": {
