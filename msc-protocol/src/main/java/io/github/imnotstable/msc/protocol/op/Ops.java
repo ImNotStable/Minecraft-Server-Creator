@@ -55,13 +55,106 @@ public final class Ops {
     public static final OpSpec<ReadParams, ReadResult> WORLD_READ =
             new OpSpec<>("world.read", ReadParams.class, ReadResult.class);
 
-    public record ReadParams(Region region, boolean includeEntities) {
+    /**
+     * @param includeSigns also report the text of signs in the region (see {@link SignText}); off by default
+     */
+    public record ReadParams(Region region, boolean includeEntities, boolean includeSigns) {
         public ReadParams {
             Objects.requireNonNull(region, "region");
         }
+
+        public ReadParams(Region region, boolean includeEntities) {
+            this(region, includeEntities, false);
+        }
     }
 
-    public record ReadResult(BlockGrid grid, List<EntitySummary> entities) {
+    /** @param signs signs with text, only when asked for with {@code includeSigns}; never null */
+    public record ReadResult(BlockGrid grid, List<EntitySummary> entities, List<SignText> signs) {
+        public ReadResult {
+            entities = entities == null ? List.of() : entities;
+            signs = signs == null ? List.of() : List.copyOf(signs);
+        }
+
+        public ReadResult(BlockGrid grid, List<EntitySummary> entities) {
+            this(grid, entities, List.of());
+        }
+    }
+
+    /**
+     * The text on one sign. Only signs with some text are reported.
+     *
+     * @param front the four front lines as plain text, blank lines as {@code ""}
+     * @param back  the four back lines, or null when the back is blank
+     */
+    public record SignText(int x, int y, int z, List<String> front, List<String> back) {
+        /** Most signs one read returns. */
+        public static final int MAX_SIGNS = 1000;
+
+        public SignText {
+            front = lines(front);
+            back = back == null || isBlank(back) ? null : lines(back);
+        }
+
+        /** A sign's text, or null when both sides are blank, so agents can drop it. */
+        public static SignText of(int x, int y, int z, List<String> front, List<String> back) {
+            boolean frontBlank = front == null || isBlank(front);
+            boolean backBlank = back == null || isBlank(back);
+            return frontBlank && backBlank ? null : new SignText(x, y, z, front, back);
+        }
+
+        /** Whether a block state such as {@code minecraft:oak_wall_hanging_sign[facing=north]} is a sign. */
+        public static boolean isSign(String state) {
+            if (state == null) {
+                return false;
+            }
+            int end = state.indexOf('[');
+            return (end < 0 ? state : state.substring(0, end)).endsWith("_sign");
+        }
+
+        /**
+         * Positions of the sign blocks in a grid, so an agent looks up block entities only where a sign is,
+         * at most {@link #MAX_SIGNS}.
+         */
+        public static List<BlockPos> positions(BlockGrid grid) {
+            boolean[] sign = new boolean[grid.palette().size()];
+            boolean any = false;
+            for (int i = 0; i < sign.length; i++) {
+                sign[i] = isSign(grid.palette().get(i));
+                any |= sign[i];
+            }
+            List<BlockPos> out = new java.util.ArrayList<>();
+            if (!any) {
+                return out;
+            }
+            Region r = grid.region();
+            int[] blocks = grid.blocks();
+            for (int i = 0; i < blocks.length && out.size() < MAX_SIGNS; i++) {
+                if (blocks[i] >= 0 && sign[blocks[i]]) {
+                    int x = i % r.sizeX();
+                    int z = (i / r.sizeX()) % r.sizeZ();
+                    int y = i / (r.sizeX() * r.sizeZ());
+                    out.add(r.min().offset(x, y, z));
+                }
+            }
+            return out;
+        }
+
+        private static List<String> lines(List<String> lines) {
+            List<String> out = new java.util.ArrayList<>(4);
+            if (lines != null) {
+                for (int i = 0; i < Math.min(4, lines.size()); i++) {
+                    out.add(lines.get(i) == null ? "" : lines.get(i));
+                }
+            }
+            while (out.size() < 4) {
+                out.add("");
+            }
+            return List.copyOf(out);
+        }
+
+        private static boolean isBlank(List<String> lines) {
+            return lines.stream().allMatch(l -> l == null || l.isBlank());
+        }
     }
 
     public record EntitySummary(String type, double x, double y, double z, String name) {

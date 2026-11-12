@@ -32,4 +32,7 @@ interface AgentLevel {
 
     /** Every entity inside the region with name, tags and health; {@code type} (a full id) narrows it, null for all. */
     List<Ops.EntityInfo> entityInfos(Region region, String type);
+
+    /** The text of the sign at a position, or null when there is no sign or it is blank. */
+    Ops.SignText sign(int x, int y, int z);
 }

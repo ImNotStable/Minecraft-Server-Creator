@@ -13,6 +13,9 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.entity.SignBlockEntity;
+import net.minecraft.world.level.block.entity.SignText;
+import net.minecraft.world.level.block.entity.SignTextSlot;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.phys.AABB;
@@ -103,6 +106,22 @@ final class FabricLevel implements AgentLevel {
             }
             out.add(new Ops.EntityInfo(key, e.getUUID().toString(), e.getX(), e.getY(), e.getZ(), name(e),
                     List.copyOf(new TreeSet<>(e.entityTags())), health, maxHealth));
+        }
+        return out;
+    }
+
+    @Override
+    public Ops.SignText sign(int x, int y, int z) {
+        if (!(level.getBlockEntity(pos.set(x, y, z)) instanceof SignBlockEntity sign)) {
+            return null;
+        }
+        return Ops.SignText.of(x, y, z, lines(sign.getText(SignTextSlot.FRONT)), lines(sign.getText(SignTextSlot.BACK)));
+    }
+
+    private static List<String> lines(SignText text) {
+        List<String> out = new ArrayList<>(SignText.LINES);
+        for (Component line : text.getMessages(false)) {
+            out.add(line.getString());
         }
         return out;
     }
