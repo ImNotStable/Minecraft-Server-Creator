@@ -7,6 +7,7 @@ import com.google.gson.JsonParser;
 import com.sun.net.httpserver.HttpServer;
 import io.github.imnotstable.msc.core.fixture.FakeBuildMain;
 import io.github.imnotstable.msc.core.fixture.FakeServerMain;
+import io.github.imnotstable.msc.core.tools.LifecycleToolsAccess;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -96,6 +97,15 @@ class LifecycleToolsTest {
             leftover.destroyForcibly();
             h.ok("server_stop");
         }
+    }
+
+    @Test
+    void deployedJarIsNamedAfterTheBuiltJarWithoutItsVersion() {
+        Path folder = Path.of("my-server");
+        assertThat(LifecycleToolsAccess.deployName(Path.of("lobby-0.1.0-SNAPSHOT.jar"), folder)).isEqualTo("lobby");
+        assertThat(LifecycleToolsAccess.deployName(Path.of("demo-1.0.jar"), folder)).isEqualTo("demo");
+        assertThat(LifecycleToolsAccess.deployName(Path.of("my-mod-2.3+26.3.jar"), folder)).isEqualTo("my-mod");
+        assertThat(LifecycleToolsAccess.deployName(Path.of("plugin.jar"), folder)).isEqualTo("plugin");
     }
 
     @Test

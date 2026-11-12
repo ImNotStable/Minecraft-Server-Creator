@@ -131,23 +131,64 @@ public final class WorldService {
         }
         boolean compact = max - min < 36;
         if (compact) {
-            out.append("each char = height - ").append(min).append(" (0-9 then a-z)\n");
-        }
-        for (int z = 0; z < h.sizeZ(); z++) {
-            for (int x = 0; x < h.sizeX(); x++) {
-                int v = heights[z * h.sizeX() + x];
-                if (compact) {
-                    out.append(Character.forDigit(v - min, 36));
-                } else {
-                    if (x > 0) {
-                        out.append(' ');
-                    }
-                    out.append(v);
+            out.append("each char = height ").append(min < 0 ? "+ " + -(long) min : "- " + min)
+                    .append(" (0-9 then a-z)\n");
+            for (int z = 0; z < h.sizeZ(); z++) {
+                for (int x = 0; x < h.sizeX(); x++) {
+                    out.append(Character.forDigit(heights[z * h.sizeX() + x] - min, 36));
                 }
+                out.append('\n');
             }
-            out.append('\n');
+        } else {
+            // Range too wide for one char per column: heights as numbers, runs as v*n, repeated rows as (xN).
+            out.append("each row: heights by column, v*n = n columns at v, (xN) = row repeated N times\n");
+            String previous = null;
+            int repeats = 0;
+            for (int z = 0; z < h.sizeZ(); z++) {
+                String row = numberRow(heights, z * h.sizeX(), h.sizeX());
+                if (row.equals(previous)) {
+                    repeats++;
+                    continue;
+                }
+                appendRow(out, previous, repeats);
+                previous = row;
+                repeats = 1;
+            }
+            appendRow(out, previous, repeats);
         }
         return Budget.truncate(out.toString().stripTrailing(), maxChars, "Ask for a smaller area.");
+    }
+
+    private static String numberRow(int[] heights, int start, int length) {
+        StringBuilder row = new StringBuilder();
+        int x = 0;
+        while (x < length) {
+            int v = heights[start + x];
+            int run = 1;
+            while (x + run < length && heights[start + x + run] == v) {
+                run++;
+            }
+            if (!row.isEmpty()) {
+                row.append(' ');
+            }
+            row.append(v);
+            if (run > 1) {
+                row.append('*').append(run);
+            }
+            x += run;
+        }
+        return row.toString();
+    }
+
+    private static void appendRow(StringBuilder out, String row, int repeats) {
+        if (row == null) {
+            return;
+        }
+        out.append(row);
+        if (repeats > 1) {
+            out.append(" (x").append(repeats).append(')');
+        }
+        out.append('\n');
     }
 
     public String summary(Region region, int maxChars) throws InterruptedException {

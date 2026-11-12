@@ -369,6 +369,18 @@ public final class LifecycleTools {
         return true;
     }
 
+    /**
+     * The deployed jar's name: the built jar's name without its version ({@code lobby-0.1.0-SNAPSHOT.jar} becomes
+     * {@code lobby}), so it stays the same across versions and does not depend on the folder name.
+     */
+    static String deployName(Path jar, Path project) {
+        String base = jar.getFileName().toString().replaceFirst("\\.jar$", "").replaceFirst("-\\d[\\w.+-]*$", "");
+        if (!base.isEmpty()) {
+            return base;
+        }
+        return project.getFileName() == null ? "project" : project.getFileName().toString();
+    }
+
     private String devCycle(Args args) throws IOException, InterruptedException {
         int maxChars = Budget.of(args);
         Path project = config.resolve(args.str("project", "."));
@@ -408,8 +420,7 @@ public final class LifecycleTools {
             shown = platform.serverJar();
         } else {
             Path addons = Files.createDirectories(config.serverDir().resolve(platform.addonDir()));
-            String name = project.getFileName() == null ? "project" : project.getFileName().toString();
-            target = addons.resolve(name + ".jar");
+            target = addons.resolve(deployName(build.jar(), project) + ".jar");
             shown = platform.addonDir() + "/" + target.getFileName();
         }
         try {
