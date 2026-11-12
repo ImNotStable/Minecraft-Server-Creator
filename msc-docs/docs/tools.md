@@ -12,20 +12,19 @@ The AI talks to `msc-core` over MCP (stdio). This page lists every tool, its arg
 - `world` is optional everywhere and defaults to the server's first world.
 - Every call is logged (see "Tool log").
 - World and build tools fail at once with `error: the server is not running...` when the core has no server running and none was attached with `MSC_CORE_ADDRESS`.
-- The whole tool list (34 tools) costs about 4,300 tokens per conversation. A test fails if it grows past 17,500 characters.
+- The whole tool list (30 tools) costs about 3,900 tokens per conversation. A test fails if it grows past 16,000 characters ([ADR 0019](adr/0019-smaller-tool-surface.md)).
 - Results are text. The one exception is `world_render`, which adds one PNG image next to its text.
 
 ## Typical loop
 
-`project_scaffold` once, `server_setup` once, then edit code and call `dev_cycle` until it reports `no errors or warnings`. Look names up with `api_search` instead of guessing. Look at the world with `world_summary`, then `world_slice`; build with `build_structure`, and use `build_batch` for many steps, round shapes, block mixes and repeated pieces.
+`project_scaffold` once, `server_setup` once, then edit code and call `dev_cycle` until it reports `no errors or warnings`. Look names up with `api_search` instead of guessing. Look at the world with `world_summary`, then `world_slice`; build with `build_batch`, a whole build per call.
 
 ## Status
 
 | Tool | Arguments | Result | Budget |
 | --- | --- | --- | --- |
-| `msc_status` | none | Core version, workspace, platform, server state, agent, API index, then any setup warnings (workspace is the MSC repo; install older than its checkout). The same warnings go in front of the session's first tool result | 6 lines (+ warnings) |
+| `msc_status` | `stats`? (false) | Core version, workspace, platform, server state, agent, API index, then any setup warnings (workspace is the MSC repo; install older than its checkout). The same warnings go in front of the session's first tool result | 6 lines (+ warnings) |
 | `msc_workspace` | `path`? (absolute, or relative to the current workspace), `create`? (false) | Switches every tool to another folder without restarting the MCP server: closes the old workspace like a session end (its dev server stops unless detached) and opens the new one. The server folder and tool log move along when they were the defaults. No `path`: shows the current workspace | 3 lines |
-| `msc_stats` | none | Calls, errors, milliseconds and result tokens per tool this session | 1 line per tool used |
 
 ## Project and server lifecycle
 
@@ -85,7 +84,7 @@ A 16 x 16 slice costs about 70 tokens per layer; identical and uniform layers co
 
 ## Text structure format
 
-Used by `world_slice` (output) and `build_structure` (input), so a slice can be edited and written back.
+Used by `world_slice` (output) and `build_batch` `structure` steps (input), so a slice can be edited and written back.
 
 ```
 legend: .=air #=stone_bricks g=glass
@@ -99,24 +98,19 @@ y=66 all #
 
 - One character per block. Rows run from the lowest Z (top row) to the highest; columns from the lowest X (left) to the highest.
 - `.` is air and `_` means "leave unchanged", unless the legend redefines them.
-- Layers are listed by Y. In `build_structure` the numbers only give the order: the lowest layer is placed at the `at` position.
+- Layers are listed by Y. In a `structure` step the numbers only give the order: the lowest layer is placed at the step's position.
 - `y=N same as y=M` repeats a layer; `y=N all #` fills a layer with one symbol or block.
 - Symbols are handed out by frequency. With `states=false` (default) blocks that differ only in properties share a symbol.
 
 ## Building
 
-Every build tool answers `edit eN: <count> blocks changed`. The id undoes the whole edit, even when the core split it into several agent calls.
+`build_batch` answers `edit eN: <count> blocks changed, region <box>`, plus a `blocks:` line when it placed more than one kind. The id undoes the whole edit, even when the core split it into several agent calls.
 
 | Tool | Arguments | Notes |
 | --- | --- | --- |
-| `build_fill` | `region`, `block`, `shape`? (`solid`, `hollow`: shell with air inside, `outline`: shell with inside kept, `walls`: four sides only), `replace`? (list); one edit id for all parts | Up to 8,388,608 blocks |
-| `build_set` | `blocks` (list of `"x,y,z block"`), `physics`? (false) | For details such as doors and torches |
-| `build_structure` | `at`, `structure`, `physics`? (false) | Text structure format, up to 1,048,576 blocks |
-| `build_copy` | `region`, `to`, `air`? (true) | Reads everything first, so source and target may overlap |
 | `build_undo` | `edit`? (default: most recent) | Edits are remembered for the life of the core process |
-| `build_batch` | `steps` (one per line), `dryRun`? (false), `physics`? (false) | Fills, rooms, `cylinder`, `ring`, `disc`, `sphere`, `dome`, `line`, `bands`, stamped `structure`s; weighted mixes such as `grass_block:78,moss_block:10`; checks every name first; one undo id. See [ADR 0015](adr/0015-build-batch.md) |
+| `build_batch` | `steps` (one per line), `dryRun`? (false), `physics`? (false) | The one build tool: `fill` (solid, `hollow`, `outline`, `walls`), `set`, `cylinder`, `ring`, `disc`, `sphere`, `dome`, `line`, `bands`, stamped `structure`s (inline text or `file=` `.schem`/text), `copy` (reads the world before the call, so source and target may overlap); weighted mixes such as `grass_block:78,moss_block:10`; checks every name first; one undo id; up to 8,388,608 blocks. See [ADR 0015](adr/0015-build-batch.md) and [ADR 0019](adr/0019-smaller-tool-surface.md) |
 | `structure_save` | `region`, `file` | Sponge schematic v2 (`.schem`), blocks only |
-| `structure_load` | `file`, `at`, `air`? (true) | Reads Sponge v2 and v3, blocks only |
 
 ## Play-testing
 

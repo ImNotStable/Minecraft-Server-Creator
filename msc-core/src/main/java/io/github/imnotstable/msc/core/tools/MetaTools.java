@@ -22,8 +22,12 @@ public final class MetaTools {
 
     public static void register(ToolRegistry registry, CoreConfig config, AgentHub hub, ServerManager server,
                                 ToolLog log, ApiTools api) {
-        registry.add("msc_status", "Where things stand: workspace, platform, server process, agent connection, API index.",
-                Schema.of(), args -> {
+        registry.add("msc_status", "Where things stand: workspace, platform, server, agent, API index. stats=true: this "
+                        + "session's calls, errors, time and result tokens per tool instead.",
+                Schema.of().opt("stats", "boolean", "Show call stats. Default false"), args -> {
+                    if (args.bool("stats", false)) {
+                        return log.summary();
+                    }
                     StringBuilder out = new StringBuilder();
                     out.append("msc-core ").append(Core.VERSION).append(built()).append('\n');
                     out.append("workspace: ").append(config.workspace()).append('\n');
@@ -45,8 +49,6 @@ public final class MetaTools {
                     }
                     return out.toString();
                 });
-        registry.add("msc_stats", "This session's tool calls: count, errors, time and result tokens per tool.",
-                Schema.of(), args -> log.summary());
     }
 
     /**
