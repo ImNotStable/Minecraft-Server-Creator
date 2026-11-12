@@ -83,6 +83,48 @@ class LifecycleToolsTest {
     }
 
     @Test
+    void aDetachedServerAndPackHostOutliveTheCoreUntilTheNextStart() throws Exception {
+        assertThat(h.error("server_detach")).contains("the server is not running");
+        h.ok("server_start", "timeoutSeconds", 30);
+        h.ok("texture_create", "name", "item/dot", "palette", List.of("a=#ff0000"), "rows", List.of("a"));
+        String url = h.ok("pack_build", "apply", false).lines().filter(l -> l.startsWith("url: ")).findFirst()
+                .orElseThrow().substring(5);
+        assertThat(h.ok("server_detach")).startsWith("server detached").contains("and so does the resource pack host");
+        assertThat(fetch(url)).isEqualTo(200);
+        ProcessHandle server = ProcessHandle.of(Long.parseLong(
+                Files.readString(workspace.resolve(".msc/server.pid")).split(" ")[0])).orElseThrow();
+        h.close();
+        assertThat(server.isAlive()).isTrue();
+        assertThat(fetch(url)).isEqualTo(200);
+
+        h = new CoreHarness(workspace, c -> c.withServerCommand(java(FakeServerMain.class)));
+        assertThat(h.ok("server_start", "timeoutSeconds", 30))
+                .contains("stopped a server left running by an earlier session (pid " + server.pid())
+                .contains("stopped the pack host left running by an earlier session");
+        assertThat(server.isAlive()).isFalse();
+        assertThat(fetch(url)).isEqualTo(-1);
+    }
+
+    private static int fetch(String url) throws InterruptedException {
+        // The host stops a moment after it is told to.
+        for (int i = 0; i < 50; i++) {
+            try {
+                var c = (java.net.HttpURLConnection) java.net.URI.create(url).toURL().openConnection();
+                c.setConnectTimeout(500);
+                int code = c.getResponseCode();
+                c.disconnect();
+                return code;
+            } catch (java.io.IOException e) {
+                Thread.sleep(100);
+                if (i >= 10) {
+                    return -1;
+                }
+            }
+        }
+        return -1;
+    }
+
+    @Test
     void devCycleStopsALeftoverServerBeforeDeploying() throws Exception {
         Process leftover = new ProcessBuilder(java(io.github.imnotstable.msc.core.fixture.SleepMain.class)).start();
         try {

@@ -35,6 +35,7 @@ Do [Installation](Installation) first. Then open Claude Code in your server fold
 ## Tips
 
 - The dev world is flat. The ground is at y = -61, so builds start at y = -60.
+- To play on the server after you close Claude Code, ask Claude to "detach the server" first (`server_detach`). The server and the resource pack stay up. The next session stops them, saving the world, when it starts the server again.
 - Ask Claude to look up names with `api_search` instead of guessing. It saves time and tokens.
 - `msc_stats` shows how many calls and tokens each tool used.
 - Want Fabric or Minestom instead? See [Platforms](Platforms).

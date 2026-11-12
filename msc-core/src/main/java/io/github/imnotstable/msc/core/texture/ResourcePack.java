@@ -2,19 +2,16 @@ package io.github.imnotstable.msc.core.texture;
 
 import com.google.gson.JsonObject;
 import com.sun.net.httpserver.HttpServer;
+import io.github.imnotstable.msc.core.server.PidFile;
 import io.github.imnotstable.msc.core.tool.ToolException;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.util.HexFormat;
 import java.util.List;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
@@ -51,8 +48,9 @@ public final class ResourcePack implements AutoCloseable {
     private final String host;
     private final int packFormat;
     private HttpServer server;
-    private volatile byte[] served = new byte[0];
-    private volatile String servedSha1 = "";
+    private volatile PackHost.Served served = PackHost.Served.NONE;
+    private Process hostProcess;
+    private int hostPort;
 
     public ResourcePack(Path root, Path outDir, String host, int packFormat) {
         this.root = root;
@@ -168,42 +166,108 @@ public final class ResourcePack implements AutoCloseable {
             }
         }
         byte[] data = bytes.toByteArray();
-        String sha1;
-        try {
-            sha1 = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-1").digest(data));
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException(e);
-        }
+        String sha1 = PackHost.sha1(data);
         Files.createDirectories(outDir);
-        Path zipFile = outDir.resolve("pack.zip");
+        Path zipFile = zipFile();
         Files.write(zipFile, data);
-        served = data;
-        servedSha1 = sha1;
-        if (server == null) {
-            server = HttpServer.create(new InetSocketAddress(host, 0), 0);
-            server.createContext("/", exchange -> {
-                byte[] body = served;
-                boolean match = exchange.getRequestURI().getPath().equals("/pack-" + servedSha1 + ".zip");
-                exchange.getResponseHeaders().add("Content-Type", "application/zip");
-                exchange.sendResponseHeaders(match ? 200 : 404, match ? body.length : -1);
-                if (match) {
-                    try (OutputStream out = exchange.getResponseBody()) {
-                        out.write(body);
-                    }
-                }
-                exchange.close();
-            });
-            server.start();
+        served = new PackHost.Served(data, sha1);
+        int port;
+        if (hostProcess != null && hostProcess.isAlive()) {
+            port = hostPort; // the standalone host serves the zip file itself
+        } else {
+            if (server == null) {
+                server = PackHost.start(host, 0, () -> served);
+            }
+            port = server.getAddress().getPort();
         }
-        String url = "http://" + host + ":" + server.getAddress().getPort() + "/pack-" + sha1 + ".zip";
+        String url = "http://" + host + ":" + port + "/pack-" + sha1 + ".zip";
         return new Built(zipFile, sha1, url, files.size(), data.length);
     }
 
-    @Override
-    public synchronized void close() {
+    private Path zipFile() {
+        return outDir.resolve("pack.zip");
+    }
+
+    /** {@code .msc/pack-host.pid}: the standalone pack host a detached session left running. */
+    private Path hostPidFile() {
+        return outDir.resolveSibling("pack-host.pid");
+    }
+
+    /**
+     * Move serving to a standalone process on the same port, so players who were sent the pack can still fetch it
+     * after this core exits. Later builds in this session are served by it too. Returns false when nothing was
+     * built yet (there is no pack to keep up).
+     */
+    public synchronized boolean keepServing(String java, String classPath) throws IOException, InterruptedException {
+        if (hostProcess != null && hostProcess.isAlive()) {
+            return true;
+        }
+        if (server == null) {
+            return false;
+        }
+        int port = server.getAddress().getPort();
+        server.stop(0);
+        server = null;
+        Process p = new ProcessBuilder(java, "-cp", classPath, PackHost.class.getName(), host, String.valueOf(port),
+                zipFile().toString())
+                .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+                .redirectError(ProcessBuilder.Redirect.DISCARD)
+                .start();
+        p.getOutputStream().close();
+        long deadline = System.nanoTime() + 10_000_000_000L;
+        while (p.isAlive() && System.nanoTime() < deadline && !accepts(port)) {
+            Thread.sleep(100);
+        }
+        if (!p.isAlive() || !accepts(port)) {
+            p.destroyForcibly();
+            server = PackHost.start(host, port, () -> served);
+            throw new ToolException("could not start a standalone pack host; the pack is still served by this session");
+        }
+        hostProcess = p;
+        hostPort = port;
+        PidFile.write(hostPidFile(), p.toHandle());
+        return true;
+    }
+
+    private boolean accepts(int port) {
+        try (java.net.Socket s = new java.net.Socket()) {
+            s.connect(new InetSocketAddress(host, port), 500);
+            return true;
+        } catch (IOException e) {
+            return false;
+        }
+    }
+
+    /** Stop a pack host an earlier, detached session left running. Returns a note, or null when there was none. */
+    public synchronized String stopLeftoverHost() {
+        if (hostProcess != null && hostProcess.isAlive()) {
+            return null;
+        }
+        return PidFile.take(hostPidFile()).map(h -> {
+            h.destroy();
+            return "stopped the pack host left running by an earlier session (pid " + h.pid() + ")";
+        }).orElse(null);
+    }
+
+    /** Stop serving. {@code keepHost} leaves a standalone host running for a detached server. */
+    public synchronized void close(boolean keepHost) {
         if (server != null) {
             server.stop(0);
             server = null;
         }
+        if (!keepHost && hostProcess != null) {
+            hostProcess.destroy();
+            hostProcess = null;
+            try {
+                Files.deleteIfExists(hostPidFile());
+            } catch (IOException ignored) {
+                // A stale file is checked against the process start time anyway.
+            }
+        }
+    }
+
+    @Override
+    public void close() {
+        close(false);
     }
 }
