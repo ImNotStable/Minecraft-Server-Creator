@@ -62,6 +62,7 @@ public final class LifecycleTools {
                 Schema.of().req("name", "string", "Project name, for example MyPlugin")
                         .opt("dir", "string", "Target directory, relative to the workspace. Default: the workspace itself")
                         .opt("template", "string", "paper-plugin (default), fabric-mod or minestom-server")
+                        .opt("package", "string", "Java package. Default com.example.<name>")
                         .opt("acceptEula", "boolean", EULA_ARG),
                 t::scaffold);
         registry.add("server_setup",
@@ -109,6 +110,9 @@ public final class LifecycleTools {
         ScaffoldResult result;
         try {
             TemplateVariables vars = TemplateVariables.of(name).withAcceptEula(args.bool("acceptEula", false));
+            if (args.has("package")) {
+                vars = vars.withPackageName(args.str("package").strip());
+            }
             result = onlyToolFiles(dir) ? scaffoldBesideToolFiles(template, dir, vars)
                     : Templates.scaffold(template, dir, vars);
         } catch (IllegalArgumentException | IllegalStateException e) {
@@ -330,7 +334,8 @@ public final class LifecycleTools {
 
     /**
      * Where the ground is, so the AI does not build in the air: dev worlds are superflat with the surface far below
-     * y=64. Best effort; a start never fails because of it.
+     * y=64. It is the most common top block within 32 blocks of 0,0, so a build at 0,0 does not count as ground.
+     * Best effort; a start never fails because of it.
      */
     private String groundLine() {
         try {
@@ -339,16 +344,37 @@ public final class LifecycleTools {
                 return "";
             }
             String world = info.worlds().getFirst();
-            BlockPos origin = new BlockPos(0, 0, 0);
-            Ops.HeightmapResult h = hub.call(Ops.WORLD_HEIGHTMAP, new Ops.HeightmapParams(world, origin, origin));
-            int y = h.heights()[0];
-            return "\nworld " + world + ": top block at 0,0 is y=" + y + " (build from y=" + (y + 1) + ")";
+            Ops.HeightmapResult h = hub.call(Ops.WORLD_HEIGHTMAP,
+                    new Ops.HeightmapParams(world, new BlockPos(-GROUND_RADIUS, 0, -GROUND_RADIUS),
+                            new BlockPos(GROUND_RADIUS - 1, 0, GROUND_RADIUS - 1)));
+            int y = groundLevel(h.heights());
+            return "\nworld " + world + ": ground is y=" + y + " (most common top block around 0,0; build from y="
+                    + (y + 1) + ")";
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return "";
         } catch (RuntimeException e) {
             return "";
         }
+    }
+
+    private static final int GROUND_RADIUS = 32;
+
+    /** The most common height; the lower one on a tie, since builds stand on the ground. */
+    static int groundLevel(int[] heights) {
+        if (heights.length == 0) {
+            throw new IllegalArgumentException("no heights");
+        }
+        Map<Integer, Integer> counts = new java.util.HashMap<>();
+        int best = heights[0];
+        for (int y : heights) {
+            int n = counts.merge(y, 1, Integer::sum);
+            int top = counts.get(best);
+            if (n > top || (n == top && y < best)) {
+                best = y;
+            }
+        }
+        return best;
     }
 
     /**

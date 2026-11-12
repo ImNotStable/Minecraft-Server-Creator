@@ -47,7 +47,7 @@ class LifecycleToolsTest {
     @Test
     void startConnectsTheAgentAndStopEndsTheProcess() {
         assertThat(h.ok("server_start", "timeoutSeconds", 30))
-                .startsWith("server ready in ").containsPattern("s, agent connected\nworld world: top block at 0,0 is y=-?\\d+ \\(build from y=-?\\d+\\)\n")
+                .startsWith("server ready in ").containsPattern("s, agent connected\nworld world: ground is y=-?\\d+ \\(most common top block around 0,0; build from y=-?\\d+\\)\n")
                 .endsWith("\nno errors or warnings");
         assertThat(h.ok("msc_status")).contains("server: running").contains("agent: paper fake, minecraft 26.3, 9 operations");
         assertThat(h.ok("world_summary", "region", "0,60,0 1,61,1")).contains("blocks: stone 8");
@@ -188,6 +188,15 @@ class LifecycleToolsTest {
         assertThat(h.error("project_scaffold", "name", "MyPlugin", "dir", "fresh")).startsWith("error: ");
         assertThat(h.error("project_scaffold", "name", "X", "template", "nope")).contains("unknown template nope");
         assertThat(h.error("project_scaffold")).isEqualTo("error: missing argument: name");
+    }
+
+    @Test
+    void scaffoldUsesTheChosenPackage() {
+        assertThat(h.ok("project_scaffold", "name", "Lobby", "dir", "pkg", "package", "io.github.alex.lobby"))
+                .contains("\npackageName: io.github.alex.lobby\n");
+        assertThat(workspace.resolve("pkg/src/main/java/io/github/alex/lobby/LobbyPlugin.java")).exists();
+        assertThat(h.error("project_scaffold", "name", "Lobby", "dir", "bad", "package", "Io.Alex"))
+                .startsWith("error: packageName must match ");
     }
 
     @Test

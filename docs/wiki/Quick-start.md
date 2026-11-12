@@ -17,7 +17,7 @@ Do [Installation](Installation) first. Then open Claude Code in your server fold
 
 4. **Start the server.**
    Ask: "Start the server."
-   The answer looks like `server ready in 8.2s, agent connected`, plus a line saying where the ground is, such as `top block at 0,0 is y=-61 (build from y=-60)`.
+   The answer looks like `server ready in 8.2s, agent connected`, plus a line saying where the ground is, such as `ground is y=-61 (most common top block around 0,0; build from y=-60)`.
 
 5. **Ask for a feature.**
    For example: "Add a /spawn command that teleports the player to 0, -60, 0."
