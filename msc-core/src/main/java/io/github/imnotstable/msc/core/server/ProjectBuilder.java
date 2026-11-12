@@ -111,14 +111,15 @@ public final class ProjectBuilder {
     private static final List<String> FLAGS = List.of("--console=plain", "-Dorg.gradle.welcome=never");
 
     /**
-     * The wrapper by absolute path: with {@code NoDefaultCurrentDirectoryInExePath} set (Claude Code sets it),
-     * cmd does not run a bare {@code gradlew.bat} from the working directory.
+     * The wrapper by path, run from the project folder. On Windows {@code .\gradlew.bat}: with
+     * {@code NoDefaultCurrentDirectoryInExePath} set (Claude Code sets it) cmd does not run a bare {@code gradlew.bat},
+     * and a quoted first word (an absolute path with spaces) makes {@code cmd /c} strip the quotes as soon as another
+     * argument, such as the init script, is quoted too.
      */
     static List<String> wrapperCommand(Path projectDir, boolean windows, String... tasks) {
-        Path dir = projectDir.toAbsolutePath();
         List<String> command = new ArrayList<>(windows
-                ? List.of("cmd", "/c", dir.resolve("gradlew.bat").toString())
-                : List.of("sh", dir.resolve("gradlew").toString()));
+                ? List.of("cmd", "/c", ".\\gradlew.bat")
+                : List.of("sh", projectDir.toAbsolutePath().resolve("gradlew").toString()));
         command.addAll(List.of(tasks));
         command.addAll(FLAGS);
         return List.copyOf(command);
