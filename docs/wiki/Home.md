@@ -22,7 +22,7 @@ It works with **Paper**, **Fabric** and **Minestom**.
 
 ## More pages
 
-- [Tools reference](Tools-reference): all 30 tools, one line each.
+- [Tools reference](Tools-reference): all 26 tools, one line each.
 - [Building and viewing the world](Building-and-viewing-the-world)
 - [Textures](Textures)
 - [Benchmark](Benchmark)

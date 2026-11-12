@@ -1,6 +1,6 @@
 # Tools reference
 
-All 30 tools, one line each. You rarely call them by name: ask Claude in plain words and it picks the tool. Full arguments are in [tools.md](https://github.com/ImNotStable/Minecraft-Server-Creator/blob/main/msc-docs/docs/tools.md).
+All 26 tools, one line each. You rarely call them by name: ask Claude in plain words and it picks the tool. Full arguments are in [tools.md](https://github.com/ImNotStable/Minecraft-Server-Creator/blob/main/msc-docs/docs/tools.md).
 
 Coordinates are text: a position is `x,y,z`, a region is `x1,y1,z1 x2,y2,z2`, an area is `x1,z1 x2,z2`.
 
@@ -59,11 +59,7 @@ Coordinates are text: a position is `x,y,z`, a region is `x1,y1,z1 x2,y2,z2`, an
 
 | Tool | What it does |
 | --- | --- |
-| `texture_create` | Draws a texture from a palette and rows of characters. |
-| `texture_generate` | Makes a texture from a pattern (noise, ore, planks, bricks) or shape (gem, ingot, orb). |
-| `texture_recolor` | Copies a texture in a new colour, keeping its shading. |
-| `texture_animate` | Turns a texture into a scrolling or pulsing animation. |
-| `model_create` | Makes a block or item model for textures. |
+| `texture` | Adds a texture: draws it from a palette and rows of characters, generates it from a pattern (noise, ore, planks, bricks) or shape (gem, ingot, orb, sword, pickaxe, food), or copies one in a new colour. Can also animate it (scroll or pulse). |
 | `texture_view` | Shows a texture back as text. |
-| `pack_check` | Checks the resource pack for broken links and bad sizes. |
-| `pack_build` | Zips the pack, serves it and sends it to players. |
+| `model_create` | Makes a block or item model for textures. |
+| `pack` | Zips the pack, serves it, sends it to players and lists any problems. `check` only checks it. |

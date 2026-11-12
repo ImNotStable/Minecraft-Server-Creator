@@ -77,7 +77,7 @@ public final class PackHost {
         }
     }
 
-    /** Serves whatever {@code zip} holds now, so a later pack_build is picked up without a restart. */
+    /** Serves whatever {@code zip} holds now, so a later pack is picked up without a restart. */
     static Supplier<Served> file(Path zip) {
         return new Supplier<>() {
             private long stamp = Long.MIN_VALUE;
