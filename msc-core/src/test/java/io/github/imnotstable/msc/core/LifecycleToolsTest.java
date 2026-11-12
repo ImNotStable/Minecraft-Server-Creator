@@ -144,6 +144,26 @@ class LifecycleToolsTest {
     }
 
     @Test
+    void aRenamedJarReplacesTheEarlierDeployInsteadOfSittingBesideIt() throws Exception {
+        Path legacy = Files.createDirectories(workspace.resolve("legacy"));
+        Files.writeString(legacy.resolve("version.txt"), "1.0");
+        Files.writeString(legacy.resolve("name.txt"), "demo");
+        Path plugins = Files.createDirectories(workspace.resolve("run/plugins"));
+        Files.writeString(plugins.resolve("legacy.jar"), "deployed by an older core under the folder name");
+        Files.writeString(plugins.resolve("msc-agent-paper.jar"), "agent");
+
+        assertThat(h.ok("dev_cycle", "project", "legacy", "restart", false)).contains("as plugins/demo.jar");
+        try (var jars = Files.list(plugins)) {
+            assertThat(jars.map(p -> p.getFileName().toString())).containsExactlyInAnyOrder("demo.jar", "msc-agent-paper.jar");
+        }
+        Files.writeString(legacy.resolve("name.txt"), "arena");
+        assertThat(h.ok("dev_cycle", "project", "legacy", "restart", false)).contains("as plugins/arena.jar");
+        try (var jars = Files.list(plugins)) {
+            assertThat(jars.map(p -> p.getFileName().toString())).containsExactlyInAnyOrder("arena.jar", "msc-agent-paper.jar");
+        }
+    }
+
+    @Test
     void devCycleStopsAtABrokenBuildAndLeavesTheServerAlone() throws Exception {
         h.ok("server_start", "timeoutSeconds", 30);
         Files.writeString(project.resolve("broken.flag"), "");

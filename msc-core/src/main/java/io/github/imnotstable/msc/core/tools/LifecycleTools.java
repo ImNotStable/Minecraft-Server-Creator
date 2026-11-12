@@ -369,6 +369,55 @@ public final class LifecycleTools {
         return true;
     }
 
+    /** {@code .msc/deployed.properties}: project folder to the jar dev_cycle last deployed for it. */
+    private Path deployedFile() {
+        return config.dataDir().resolve("deployed.properties");
+    }
+
+    private java.util.Properties deployed() throws IOException {
+        java.util.Properties p = new java.util.Properties();
+        if (Files.exists(deployedFile())) {
+            try (var in = Files.newInputStream(deployedFile())) {
+                p.load(in);
+            }
+        }
+        return p;
+    }
+
+    /**
+     * Delete the jar an earlier dev_cycle deployed for this project under another name, so the server never loads
+     * two copies (Paper: ambiguous plugin name; Fabric: duplicate mod id). Without a record, the folder-named jar
+     * that earlier cores deployed is the earlier one.
+     */
+    private void removeEarlierDeploy(Path project, Path addons, Path target) throws IOException {
+        String recorded = deployed().getProperty(project.toAbsolutePath().normalize().toString());
+        Path earlier;
+        if (recorded != null) {
+            earlier = config.serverDir().resolve(recorded).normalize();
+        } else {
+            Path folder = project.toAbsolutePath().normalize().getFileName();
+            earlier = folder == null ? null : addons.resolve(folder + ".jar");
+        }
+        if (earlier != null && !earlier.equals(target) && earlier.startsWith(addons) && Files.isRegularFile(earlier)) {
+            try {
+                Files.delete(earlier);
+            } catch (IOException e) {
+                throw new ToolException("cannot remove the earlier deploy " + earlier + " (" + e.getMessage()
+                        + "). A running server holds the jar open: call server_stop, then dev_cycle.");
+            }
+        }
+    }
+
+    private void rememberDeploy(Path project, Path target) throws IOException {
+        java.util.Properties p = deployed();
+        p.setProperty(project.toAbsolutePath().normalize().toString(),
+                config.serverDir().relativize(target).toString().replace('\\', '/'));
+        Files.createDirectories(config.dataDir());
+        try (var out = Files.newOutputStream(deployedFile())) {
+            p.store(out, "jar dev_cycle last deployed per project");
+        }
+    }
+
     /**
      * The deployed jar's name: the built jar's name without its version ({@code lobby-0.1.0-SNAPSHOT.jar} becomes
      * {@code lobby}), so it stays the same across versions and does not depend on the folder name.
@@ -422,6 +471,7 @@ public final class LifecycleTools {
             Path addons = Files.createDirectories(config.serverDir().resolve(platform.addonDir()));
             target = addons.resolve(deployName(build.jar(), project) + ".jar");
             shown = platform.addonDir() + "/" + target.getFileName();
+            removeEarlierDeploy(project, addons, target);
         }
         try {
             Files.copy(build.jar(), target, StandardCopyOption.REPLACE_EXISTING);
@@ -429,6 +479,7 @@ public final class LifecycleTools {
             throw new ToolException("cannot replace " + target + " (" + e.getMessage()
                     + "). A running server holds the jar open: call server_stop, then dev_cycle.");
         }
+        rememberDeploy(project, target);
         out.append(", deployed ").append(build.jar().getFileName()).append(" as ").append(shown);
         if (!restart) {
             return out.append(wasRunning ? "; server still running the old jar until restarted" : "").toString();
