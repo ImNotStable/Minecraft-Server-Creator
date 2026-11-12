@@ -212,6 +212,7 @@ public final class BenchRunner {
     private Map<String, String> placeholders(Path attemptDir, Path workspace) {
         Map<String, String> values = new LinkedHashMap<>(config.paths().size() + 12);
         config.paths().forEach((k, v) -> values.put(k, slashes(Path.of(v))));
+        values.put("java", ProcessHandle.current().info().command().map(c -> c.replace('\\', '/')).orElse("java"));
         values.put("workspace", slashes(workspace));
         values.put("attemptDir", slashes(attemptDir));
         values.put("toolLog", slashes(attemptDir.resolve("tool-calls.jsonl")));

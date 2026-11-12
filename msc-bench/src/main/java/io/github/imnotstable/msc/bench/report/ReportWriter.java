@@ -3,6 +3,7 @@ package io.github.imnotstable.msc.bench.report;
 import com.google.gson.Gson;
 import com.google.gson.JsonParseException;
 import io.github.imnotstable.msc.bench.run.RunRecord;
+import io.github.imnotstable.msc.bench.run.ToolStats;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -105,6 +106,22 @@ public final class ReportWriter {
                         .append(" | ").append(change(base, with, r -> r.agent().totalTokens())).append(" |");
             }
             md.append('\n');
+        }
+
+        Map<String, ToolStats.PerTool> tools = ToolStats.sumPerTool(records.stream().map(RunRecord::tools).toList());
+        if (!tools.isEmpty()) {
+            md.append("\n## Tool cost\n\nAll runs together, most tokens first. Tokens are what the tool returned to the model.\n\n");
+            md.append("| Tool | Calls | Errors | Tokens | Tokens/call | Time | Time/call |\n| --- | --- | --- | --- | --- | --- | --- |\n");
+            tools.entrySet().stream()
+                    .sorted((a, b) -> Long.compare(b.getValue().tokens(), a.getValue().tokens()))
+                    .forEach(e -> {
+                        ToolStats.PerTool t = e.getValue();
+                        md.append("| ").append(e.getKey()).append(" | ").append(t.calls()).append(" | ").append(t.errors())
+                                .append(" | ").append(thousands(t.tokens())).append(" | ").append(t.tokens() / t.calls())
+                                .append(" | ").append(seconds(t.durationMs()))
+                                .append(" | ").append(String.format(Locale.ROOT, "%.1fs", t.durationMs() / 1000.0 / t.calls()))
+                                .append(" |\n");
+                    });
         }
 
         List<RunRecord> failures = records.stream().filter(r -> !r.passed()).toList();

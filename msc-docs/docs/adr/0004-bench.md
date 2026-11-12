@@ -16,7 +16,7 @@ The plan measures quality, speed and tokens with and without the toolset, and se
 - **Server files:** the files Paper's launcher downloads on first start (`cache/`, `libraries/`, `versions/`) are saved once from a server that reached RCON and copied into later workspaces, so no task depends on a fresh Mojang download (the first baseline lost a task to a truncated one). A server that exits during start is retried once.
 - **Metrics:** wall time of the agent process, pass (all checks), turns, total tokens, output tokens, cost, tool calls. Reports use medians per task.
 - **Tool log (format v1):** msc-core appends one JSON object per finished MCP tool call to the file named by `MSC_TOOL_LOG` (default `<workspace>/.msc/tool-calls.jsonl`), flushed per line. Fields: `v` (1), `ts` (ISO-8601 finish time), `tool`, `ok`, `durationMs`, `argsChars`, `resultChars`, `resultTokens` (ceil(resultChars/4) in v1), optional `imageTokens` (estimated tokens of images a tool returned, such as `world_render`), optional `error`. Readers ignore unknown fields and skip lines with another `v`, so core can add fields freely; incompatible changes bump `v`.
-- **Safety:** the agent runs with `--dangerously-skip-permissions` because runs are unattended; each attempt has its own folder, and the README says to run the bench only where that is acceptable. The Minecraft EULA is never accepted by default (`server.acceptEula`).
+- **Safety:** the agent runs with `--dangerously-skip-permissions` because runs are unattended; each attempt has its own folder, and the README says to run the bench only where that is acceptable. The Minecraft EULA is never accepted by default (`server.acceptEula`, set only in the untracked `msc-bench/bench.local.json`).
 
 ## Consequences
 

@@ -1,7 +1,10 @@
 package io.github.imnotstable.msc.bench.run;
 
 import com.google.gson.Gson;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
 import com.google.gson.JsonParseException;
+import com.google.gson.JsonParser;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -90,17 +93,41 @@ public record BenchConfig(
             int startTimeoutSeconds) {
     }
 
+    /**
+     * Reads the config and, if present, the untracked {@code bench.local.json} beside it, whose fields
+     * override the config's (objects are merged key by key). Machine-specific choices, such as
+     * accepting the Minecraft EULA, go in the local file so they never reach other clones.
+     */
     public static BenchConfig load(Path file) throws IOException {
         BenchConfig raw;
         try {
-            raw = new Gson().fromJson(Files.readString(file), BenchConfig.class);
-        } catch (JsonParseException e) {
+            JsonObject json = JsonParser.parseString(Files.readString(file)).getAsJsonObject();
+            Path local = file.toAbsolutePath().resolveSibling(LOCAL_FILE);
+            if (Files.isRegularFile(local)) {
+                merge(json, JsonParser.parseString(Files.readString(local)).getAsJsonObject());
+            }
+            raw = new Gson().fromJson(json, BenchConfig.class);
+        } catch (JsonParseException | IllegalStateException e) {
             throw new IOException("Bad bench config " + file + ": " + e.getMessage(), e);
         }
         if (raw == null) {
             throw new IOException("Empty bench config " + file);
         }
         return raw.withDefaults(file.toAbsolutePath().getParent());
+    }
+
+    /** Untracked per-machine overrides, read from the config's folder. */
+    public static final String LOCAL_FILE = "bench.local.json";
+
+    static void merge(JsonObject base, JsonObject override) {
+        for (String key : override.keySet()) {
+            JsonElement value = override.get(key);
+            if (value.isJsonObject() && base.has(key) && base.get(key).isJsonObject()) {
+                merge(base.getAsJsonObject(key), value.getAsJsonObject());
+            } else {
+                base.add(key, value);
+            }
+        }
     }
 
     /** Fills defaults and turns relative paths into absolute ones. */
