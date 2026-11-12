@@ -96,8 +96,8 @@ public final class TextureTools {
                             + "\nnext: texture_create to touch up, pack_build";
                 }));
         registry.add("texture_recolor",
-                "Copy a pack texture onto new shades of one color, keeping its shading (diamond to ruby).",
-                Schema.of().req("from", "string", "Existing texture such as item/diamond")
+                "Copy a pack texture (not a vanilla one) onto new shades of one color, keeping its shading.",
+                Schema.of().req("from", "string", "Pack texture such as item/ruby")
                         .req("name", "string", "New texture name")
                         .req("color", "string", "Base color #rrggbb")
                         .opt("model", "string", "As in texture_create. Default item"),

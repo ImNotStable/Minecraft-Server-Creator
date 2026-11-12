@@ -88,7 +88,7 @@ public final class ResourcePack implements AutoCloseable {
     public BufferedImage readTexture(TextureId id) throws IOException {
         Path file = texturePath(id);
         if (!Files.exists(file)) {
-            throw new ToolException("no texture " + id + " in the pack");
+            throw new ToolException("no texture " + id + " in the pack (vanilla textures are not in it)");
         }
         return ImageIO.read(file.toFile());
     }

@@ -60,7 +60,7 @@ public final class PackSource {
     public Texture readTexture(ResourceId id) throws IOException {
         Path file = texturePath(id);
         if (!Files.isRegularFile(file)) {
-            throw new TextureException("no texture " + id + " in the pack");
+            throw new TextureException("no texture " + id + " in the pack (vanilla textures are not in it)");
         }
         return Texture.readPng(Files.readAllBytes(file));
     }

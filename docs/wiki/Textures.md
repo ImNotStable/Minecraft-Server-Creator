@@ -11,7 +11,7 @@ The AI draws pixel art as text, so no image model is needed. Everything goes int
 2. **Look at it.** `texture_view` shows it back as text, about 80 tokens.
 3. **Check the pack.** `pack_check` finds missing textures, bad sizes and broken models.
 4. **Build and send the pack.** `pack_build` zips it, serves it from your machine and sends it to players on the server.
-5. **Use it in your plugin.** Set the item's `item_model` component to the texture's name, for example `msc:item/ruby`.
+5. **Use it in your plugin.** Set the item's `item_model` component to the id the tool printed: the texture's namespace and file name without the folder, so `item/ruby` becomes `msc:ruby` (in Paper: `meta.setItemModel(new NamespacedKey("msc", "ruby"))`).
 
 ## Other things you can do
 
@@ -22,6 +22,9 @@ The AI draws pixel art as text, so no image model is needed. Everything goes int
 ## Names
 
 - `item/ruby` means `msc:item/ruby`. Use `yourname:block/ruby_ore` for your own namespace.
+- The `item_model` id drops the folder: texture `yourname:item/ruby` is item model `yourname:ruby`. Every texture tool prints it.
+- `texture_recolor` works on textures already in your pack, not on vanilla ones such as `item/diamond`.
+- Swords, tools and staffs look right in hand with `model_create kind=handheld` over the same texture.
 - Writing a still texture over an animated one removes the animation.
 
 ## Not tested yet
