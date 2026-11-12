@@ -18,6 +18,19 @@ Best for most servers. Plugins use the Bukkit/Paper API.
 2. Accept the [EULA](https://aka.ms/MinecraftEULA) yourself, then: "server_setup with acceptEula=true."
 3. "Start the server." The agent goes into `plugins/`, `dev_cycle` deploys your plugin as `plugins/<jar name without version>.jar` (for example `lobby-0.1.0-SNAPSHOT.jar` becomes `plugins/lobby.jar`).
 
+### Making a minigame: the `paper-game` template
+
+For a game (a parkour course, wave defense, a set of trials), start from `paper-game` instead:
+"project_scaffold a Paper game called Lumen Siege, template paper-game."
+
+It is the Paper plugin template plus the base every game ends up writing. All of it is set in the project's `config.yml`:
+
+- On join: inventory cleared, the kit given, adventure mode, teleported to the player's saved stage.
+- On death: items and levels kept, respawn at the current stage.
+- World: time and weather frozen, difficulty set (the dev server is peaceful otherwise), no natural mob spawns. Mobs your plugin spawns still appear.
+- Stages: an ordered list, each with a spawn point and an optional goal box. Walking into the goal moves the player on. Progress is saved and survives restarts.
+- A `/game` admin command, also usable from the console: `game status`, `game stage <name or number> [player]`, `game next`, `game reset`, `game kit`. Claude uses these with `server_command` to check the game and skip to any stage while testing. Every stage change is also logged, for example `Steve -> stage 2/3 arena (goal)`.
+
 ## Fabric
 
 For mods that change the game itself. Uses Fabric Loader and Fabric API.
@@ -45,5 +58,6 @@ All world, building and texture tools work the same on every platform. The agent
 | Template id | Platform |
 | --- | --- |
 | `paper-plugin` | Paper |
+| `paper-game` | Paper (minigame base) |
 | `fabric-mod` | Fabric |
 | `minestom-server` | Minestom |

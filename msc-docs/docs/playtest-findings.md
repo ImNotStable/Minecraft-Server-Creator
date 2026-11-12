@@ -71,7 +71,7 @@ install and workspace. `server_command` was called 81 times, mostly to poll game
 
 ## Priority 4: fewer steps in every game
 
-16. **A game template.** Open. Both plugins rewrote the same base: join kit, adventure mode, keep inventory,
+16. **A game template.** Done: `project_scaffold template=paper-game`. Both plugins rewrote the same base: join kit, adventure mode, keep inventory,
     respawn point, no natural spawns, fixed time and weather, admin commands to jump to any stage, progress
     saved to config. A `paper-game` template with those and a stage/zone skeleton saves about 150 lines and
     gives every game the test hooks the bot will need. At the least, document the admin debug-command pattern.

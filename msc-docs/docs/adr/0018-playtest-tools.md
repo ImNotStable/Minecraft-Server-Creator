@@ -16,6 +16,6 @@ Two AI playtests (Lumen Siege and Gearfall, see [playtest findings](../playtest-
 
 ## Consequences
 
-- Two more tools (about 900 characters of schema after trimming their descriptions) and a longer server instructions string; the tool-list guard goes up to 15,500 characters.
+- Two more tools (about 900 characters of schema after trimming their descriptions) and a longer server instructions string; the tool-list guard goes up by 1,000 characters (to 17,500 after build_batch, ADR 0015).
 - Every agent must implement `world.entities`. Agents built before this change still connect.
 - `server_wait` cannot see what is not logged (titles, action bars, boss bars). The project `CLAUDE.md` asks the game to log its stage changes; the test player bot reports what a player sees.
