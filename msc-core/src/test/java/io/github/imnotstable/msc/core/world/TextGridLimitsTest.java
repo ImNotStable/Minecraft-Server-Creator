@@ -23,6 +23,15 @@ class TextGridLimitsTest {
     }
 
     @Test
+    @Timeout(5)
+    void layersEndingAtTheLargestIntDoNotWrapAround() {
+        assertThat(TextGrid.parse("legend: #=stone\ny=2147483647\n#", "world", ORIGIN).region().sizeY())
+                .isEqualTo(1);
+        assertThat(TextGrid.parse("legend: #=stone\ny=2147483645\n#\ny=2147483646..2147483647 same as y=2147483645",
+                "world", ORIGIN).region().sizeY()).isEqualTo(3);
+    }
+
+    @Test
     void overlongLayerNumbersAreToolErrors() {
         assertThatThrownBy(() -> TextGrid.parse("legend: #=stone\ny=99999999999\n#", "world", ORIGIN))
                 .isInstanceOf(ToolException.class).hasMessageContaining("layer number 99999999999 is too large");
