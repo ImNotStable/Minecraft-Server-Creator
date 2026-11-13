@@ -53,8 +53,8 @@ Results:
 
 Results:
 
-- `project_scaffold`: 5 lines: where the project was created, its `projectId`, `packageName` and `version`, and the next step (EULA and `server_setup` first when the Paper or Fabric server is not set up). Remembers the template's platform for the workspace.
-- `server_setup`: 5 lines. `mode=game` sets `gamemode=survival`, `difficulty=normal` and `force-gamemode=true` in `server.properties` (`mode=build`: creative, peaceful); without `mode` a new server gets build defaults and an existing one keeps its settings. Paper: the build used. Fabric: launcher and Fabric API versions. Both: whether dev defaults and the agent were installed and whether `eula.txt` says `eula=true`. Minestom: one line saying nothing is needed.
+- `project_scaffold`: 5 lines: where the project was created, its `projectId`, `packageName` and `version`, and the next step (EULA and `server_setup` first when the server is not set up; Minestom: `dev_cycle`). Remembers the template's platform for the workspace.
+- `server_setup`: 5 lines. `mode=game` sets `gamemode=survival`, `difficulty=normal` and `force-gamemode=true` in `server.properties` (`mode=build`: creative, peaceful); without `mode` a new server gets build defaults and an existing one keeps its settings. Paper: the build used. Purpur: its version. Fabric: launcher and Fabric API versions. Quilt: loader and Fabric API versions. NeoForge, Forge: the loader version (installed by its installer, or already there). All of these: whether dev defaults and the agent were installed and whether `eula.txt` says `eula=true`. Minestom: one line saying nothing is needed.
 - `server_start`: up to 6,000 chars: `server ready in 8.2s, agent connected`, then `world world: ground is y=-61 (most common top block around 0,0; build from y=-60)` (dev worlds are superflat, far below y=64), then `mode: creative, peaceful difficulty (server_setup mode=game for survival, normal: ...)` from `server.properties`, plus startup warnings and errors only. Fails at once with a one-line error if `eula.txt` lacks `eula=true`. Replaces an installed agent jar that differs from the one in `.msc/agent` (or `MSC_AGENT_JAR`) first, and says `agent jar updated`.
 - `server_detach`: 3 lines. The pack host, if a pack was built, moves to a standalone process on the same port (pid in `.msc/pack-host.pid`), and `resource-pack`, `resource-pack-sha1`, `resource-pack-id` and `require-resource-pack` go into `server.properties`, so a restart outside MSC still sends the pack. The next `server_start`, `dev_cycle` or `server_stop` stops both, the server over RCON; the next start serves the pack again on the same port and updates `server.properties` (or clears it if the pack is gone).
 - `server_stop`: 1 line. Also stops a server an earlier core left running (pid and start time in `.msc/server.pid`), as `server_start` and `dev_cycle` do first: over RCON so it saves, killed only if that fails.
@@ -67,12 +67,16 @@ How logs are condensed: the dev server's fixed banners (running as root or admin
 
 ### Platforms
 
-The workspace has one platform: `paper` (default), `fabric` or `minestom`. `project_scaffold` remembers the template's platform in `<workspace>/.msc/platform`, `server_setup platform=...` sets it, and without either the core looks at the project files (`fabric.mod.json`, a Minestom dependency in the build files).
+The workspace has one platform: `paper` (default), `purpur`, `fabric`, `quilt`, `neoforge`, `forge` or `minestom` ([ADR 0011](adr/0011-core-platforms.md), [ADR 0027](adr/0027-more-platforms.md)). Purpur runs Paper plugins and the Paper agent; Quilt runs Fabric mods, Fabric API and the Fabric agent. `project_scaffold` remembers the template's platform in `<workspace>/.msc/platform`, `server_setup platform=...` sets it, and without either the core looks at the project files under `src/main/resources` (`quilt.mod.json`, `fabric.mod.json`, `META-INF/neoforge.mods.toml`, `META-INF/mods.toml`, `paper-plugin.yml` or `plugin.yml`), then for a Minestom dependency in the build files.
 
 | Platform | `server_setup` installs | Server starts as | `dev_cycle` deploys to | EULA step |
 |---|---|---|---|---|
 | `paper` | `paper.jar`, agent in `plugins/` | `java -Xmx2G -jar paper.jar --nogui` | `plugins/<jar name without version>.jar` | yes |
+| `purpur` | `purpur.jar`, Paper agent in `plugins/` | `java -Xmx2G -jar purpur.jar --nogui` | `plugins/<jar name without version>.jar` | yes |
 | `fabric` | `fabric-server-launch.jar` (fetches the Minecraft server on first start), `mods/fabric-api.jar`, agent in `mods/` | `java -Xmx2G -jar fabric-server-launch.jar nogui` | `mods/<jar name without version>.jar` | yes |
+| `quilt` | `quilt-server-launch.jar` (from the Quilt installer), `mods/fabric-api.jar`, Fabric agent in `mods/` | `java -Xmx2G -jar quilt-server-launch.jar nogui` | `mods/<jar name without version>.jar` | yes |
+| `neoforge` | the NeoForge installer's server (`server.jar` starter plus `libraries/`), agent in `mods/` | `java -Xmx2G -jar server.jar nogui` | `mods/<jar name without version>.jar` | yes |
+| `forge` | the Forge installer's server, its shim jar copied to `forge-server.jar`, agent in `mods/` | `java -Xmx2G -jar forge-server.jar nogui` | `mods/<jar name without version>.jar` | yes |
 | `minestom` | nothing (the agent is built into the project) | `java -Xmx1G -jar server.jar` | `server.jar` (thin: its manifest points at `libs/`, which `dev_cycle` keeps in step) in the server directory | no |
 
 EULA step: when the owner has accepted the Minecraft EULA once for the machine (`Main eula accept` in their own terminal, `~/.msc/eula.json`, [ADR 0020](adr/0020-machine-eula.md)), `server_setup` and `server_start` write `eula=true` into the server's `eula.txt` and say so; no tool argument creates that file. Otherwise `acceptEula=true` after the owner's own yes, as before.
@@ -80,7 +84,7 @@ EULA step: when the owner has accepted the Minecraft EULA once for the machine (
 
 ## API index
 
-Built on first use from the platform's jars in the Gradle cache (or `MSC_API_JARS`), by reading class files directly: Paper API and Adventure for Paper, the Minecraft server jar from Loom's cache plus Fabric API and loader for Fabric, Minestom and Adventure for Minestom. No network, no Javadoc. Parameter names appear only when the jar records them; the published paper-api jar does not, so signatures show types only.
+Built on first use from the platform's jars in the Gradle cache (or `MSC_API_JARS`), by reading class files directly: Paper API and Adventure for Paper and Purpur, the Minecraft server jar from Loom's cache plus Fabric API and loader for Fabric and Quilt, NeoForge and its event bus for NeoForge, Forge, its event bus and FML core for Forge, Minestom and Adventure for Minestom. No network, no Javadoc. Parameter names appear only when the jar records them; the published paper-api jar does not, so signatures show types only.
 <!-- tools: api_search api_class -->
 | Tool | Arguments | What it does |
 | --- | --- | --- |

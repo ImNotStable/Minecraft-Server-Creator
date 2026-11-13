@@ -1,7 +1,8 @@
 # msc-agent-common
 
 Platform-neutral code shared by the server agents (`msc-agent-paper`, `msc-agent-fabric`,
-`msc-agent-minestom`). Depends only on `msc-protocol`; no server API.
+`msc-agent-neoforge`, `msc-agent-forge` and `msc-agent-minestom`; the three mod-loader agents share
+the `msc-agent-vanilla` source folder too). Depends only on `msc-protocol`; no server API.
 
 - `WorldOps` and `ServerOps` carry out every operation in `Ops`; `AgentRoutes` wires them.
 - A platform supplies three adapters: `AgentWorlds<S>` (worlds by name, block state parsing),
