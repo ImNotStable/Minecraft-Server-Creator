@@ -199,26 +199,42 @@ final class MinestomWorld implements AgentWorld<Block> {
     /**
      * Loads the area for a read. Minestom never unloads chunks by itself, so the release unloads,
      * on the instance's next tick, the chunks of the area a read loaded that no other read or edit
-     * is using, no player sees, no entity is in and no edit loaded since.
+     * is using, no player sees, no entity is in and no edit loaded since. A read whose chunks fail or
+     * time out unloads them the same way, then again once the late ones have arrived.
      */
     @Override
     public Runnable loadAreaToRead(int minX, int minZ, int maxX, int maxZ) {
         Set<Long> chunks = area(minX, minZ, maxX, maxZ);
         ChunkReaders readers = readers();
         readers.acquire(chunks);
+        Runnable unloadUnused = () -> instance.scheduleNextTick(i -> readers.unloadUnused(chunks, this::unloadIfUnused));
+        List<CompletableFuture<Chunk>> loads;
         try {
             Set<Long> fresh = chunks.stream().filter(k -> instance.getChunk(chunkX(k), chunkZ(k)) == null)
                     .collect(Collectors.toSet());
-            List<Chunk> loaded = load(chunks);
-            loaded.stream().filter(c -> fresh.contains(chunkKey(c.getChunkX(), c.getChunkZ())))
-                    .forEach(c -> c.setTag(READ_LOADED, true));
+            // Tagged as each chunk arrives, so a read that fails or times out can still unload them.
+            loads = startLoads(chunks).stream().map(load -> load.thenApply(c -> {
+                if (fresh.contains(chunkKey(c.getChunkX(), c.getChunkZ()))) {
+                    c.setTag(READ_LOADED, true);
+                }
+                return c;
+            })).toList();
         } catch (RuntimeException e) {
             readers.release(chunks);
             throw e;
         }
+        try {
+            await(loads);
+        } catch (RuntimeException e) {
+            readers.release(chunks);
+            unloadUnused.run();
+            // Chunks that arrive after the timeout are unloaded once they are all in.
+            CompletableFuture.allOf(loads.toArray(CompletableFuture[]::new)).whenComplete((v, t) -> unloadUnused.run());
+            throw e;
+        }
         return () -> {
             readers.release(chunks);
-            instance.scheduleNextTick(i -> readers.unloadUnused(chunks, this::unloadIfUnused));
+            unloadUnused.run();
         };
     }
 
@@ -266,10 +282,18 @@ final class MinestomWorld implements AgentWorld<Block> {
 
     /** Loads (or generates) chunks and waits for them. Must not run on a tick thread. */
     private List<Chunk> load(Set<Long> chunks) {
+        return await(startLoads(chunks));
+    }
+
+    private List<CompletableFuture<Chunk>> startLoads(Set<Long> chunks) {
         List<CompletableFuture<Chunk>> loads = new ArrayList<>(chunks.size());
         for (long key : chunks) {
             loads.add(instance.loadChunk(chunkX(key), chunkZ(key)));
         }
+        return loads;
+    }
+
+    private List<Chunk> await(List<CompletableFuture<Chunk>> loads) {
         try {
             CompletableFuture.allOf(loads.toArray(CompletableFuture[]::new))
                     .get(chunkTimeout.toMillis(), TimeUnit.MILLISECONDS);
