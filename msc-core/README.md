@@ -3,7 +3,7 @@
 The MCP server the AI talks to. It runs servers, condenses their output, answers API questions, and drives building, world views and textures through the agents.
 
 **Phase:** MVP  
-**Status:** MVP implemented (0.1): 30 MCP tools, tested against a fake agent and run end to end against Paper 26.3 with msc-agent-paper and against a Minestom server (2026-11-11). Lifecycle tools cover Paper, Fabric and Minestom (ADR 0011); a Fabric server start is not yet run.
+**Status:** MVP implemented (0.1): 30 MCP tools, tested against a fake agent and run end to end against Paper 26.3 with msc-agent-paper and against a Minestom server (2026-11-11). Lifecycle tools cover Paper, Purpur, Fabric, Quilt, NeoForge, Forge and Minestom (ADR 0011, ADR 0027). The Fabric agent loads on a real Fabric 26.3 server; `server_setup` for Purpur, Quilt, NeoForge and Forge is checked up to the EULA step, and the agents' operations on a running Fabric, Quilt, NeoForge or Forge world are not yet checked.
 
 ## Scope
 
