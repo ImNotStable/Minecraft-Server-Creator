@@ -50,4 +50,18 @@ class TextGridLimitsTest {
         assertThatThrownBy(() -> TextGrid.parse(text, "world", ORIGIN))
                 .isInstanceOf(ToolException.class).hasMessageContaining("rows; split it");
     }
+
+    @Test
+    @Timeout(10)
+    void oneLongRowRepeatedIsRejectedBeforeItIsCopied() {
+        String text = "legend: #=stone\ny=0\n" + "#".repeat(300_000) + " (x9999)\n";
+        assertThatThrownBy(() -> TextGrid.parse(text, "world", ORIGIN))
+                .isInstanceOf(ToolException.class).hasMessageContaining("blocks in its rows; split it");
+    }
+
+    @Test
+    void rowsFillingTheVolumeLimitExactlyStillParse() {
+        String text = "legend: #=stone\ny=0\n" + "#".repeat(1024) + " (x1024)\n";
+        assertThat(TextGrid.parse(text, "world", ORIGIN).region().volume()).isEqualTo(1024L * 1024);
+    }
 }
