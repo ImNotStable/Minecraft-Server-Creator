@@ -60,6 +60,22 @@ class InventoryTest {
     }
 
     @Test
+    void appliesThePlayersSlotsSentThroughAnOpenMenu() {
+        inv.accept(new ClientboundOpenScreenPacket(3, ContainerType.GENERIC_9X3, Component.text("Shop")));
+        ItemStack[] menu = new ItemStack[27 + 36];
+        menu[30] = new ItemStack(2, 1); // the 4th backpack slot
+        inv.accept(new ClientboundContainerSetContentPacket(3, 1, menu, null));
+        inv.accept(new ClientboundContainerSetSlotPacket(3, 2, 27 + 27, new ItemStack(1, 3))); // hotbar 1
+        assertThat(inv.report()).startsWith("""
+                holding slot 1: stone x3
+                hotbar: 1 stone x3
+                backpack: granite
+                open menu generic_9x3 "Shop": empty""");
+        inv.accept(new ClientboundContainerClosePacket(3));
+        assertThat(inv.report()).isEqualTo("holding slot 1: stone x3\nhotbar: 1 stone x3\nbackpack: granite");
+    }
+
+    @Test
     void readsMenusSentWithoutThePlayersSlots() {
         // Minestom sends only the menu's own slots.
         inv.accept(new ClientboundOpenScreenPacket(4, ContainerType.GENERIC_9X6, Component.text("Big")));

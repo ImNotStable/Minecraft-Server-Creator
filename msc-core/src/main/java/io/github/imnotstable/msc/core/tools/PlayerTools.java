@@ -31,7 +31,6 @@ public final class PlayerTools implements AutoCloseable {
     private final AgentHub hub;
     private final WorldService worlds;
     private Bot player;
-    private volatile String world = "world";
 
     private PlayerTools(CoreConfig config, AgentHub hub, WorldService worlds) {
         this.config = config;
@@ -73,7 +72,8 @@ public final class PlayerTools implements AutoCloseable {
             throw new ToolException("gamemode must be survival, adventure or creative");
         }
         Ops.ServerInfo info = hub.call(Ops.SERVER_INFO, new Ops.Empty());
-        world = info.worlds().isEmpty() ? "world" : info.worlds().getFirst();
+        // The overworld; the test player follows the server into other worlds by their dimension.
+        String world = info.worlds().isEmpty() ? "world" : info.worlds().getFirst();
         StringBuilder out = new StringBuilder();
         if (player != null && (!player.connected() || !player.name().equals(name))) {
             player.close();
@@ -125,8 +125,8 @@ public final class PlayerTools implements AutoCloseable {
         return Budget.truncate(out.toString(), Budget.DEFAULT_CHARS, "Use fewer actions per call.");
     }
 
-    /** The walk action's route: world_summary path's search over the blocks around both ends. */
-    private List<int[]> route(BlockPos from, BlockPos to) throws Exception {
+    /** The walk action's route: world_summary path's search over the blocks around both ends, in the player's world. */
+    private List<int[]> route(String world, BlockPos from, BlockPos to) throws Exception {
         int margin = ROUTE_MARGIN;
         Region region;
         do {

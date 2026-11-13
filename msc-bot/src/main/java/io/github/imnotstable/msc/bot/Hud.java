@@ -23,6 +23,7 @@ import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.scoreboard.
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.scoreboard.ClientboundSetObjectivePacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.scoreboard.ClientboundSetPlayerTeamPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.scoreboard.ClientboundSetScorePacket;
+import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.title.ClientboundClearTitlesPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.title.ClientboundSetActionBarTextPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.title.ClientboundSetSubtitleTextPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.title.ClientboundSetTitleTextPacket;
@@ -90,11 +91,11 @@ final class Hud {
                 }
                 actionBar = Text.plain(p.getContent());
             }
-            case ClientboundSetTitleTextPacket p -> {
-                title = Text.plain(p.getText());
-                subtitle = null;
-            }
+            // Like the client, a title keeps the subtitle: servers send the subtitle first (Adventure, /title).
+            case ClientboundSetTitleTextPacket p -> title = Text.plain(p.getText());
             case ClientboundSetSubtitleTextPacket p -> subtitle = Text.plain(p.getText());
+            // The last title stays reported; its subtitle is gone, so the next title shows without it.
+            case ClientboundClearTitlesPacket p -> subtitle = null;
             case ClientboundTabListPacket p -> {
                 String header = Text.plain(p.getHeader());
                 String footer = Text.plain(p.getFooter());
