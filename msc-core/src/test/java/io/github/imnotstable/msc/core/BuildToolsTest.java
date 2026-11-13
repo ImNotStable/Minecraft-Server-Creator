@@ -85,6 +85,35 @@ class BuildToolsTest {
     }
 
     @Test
+    void undoSkipsPartsTheAgentNoLongerKeeps() {
+        // Over 1,048,576 blocks: two agent parts, x 0..127 and x 128.
+        h.ok("build_batch", "steps", "fill 0,64,0 128,127,127 glass");
+        h.agent.forgetOldestEdit();
+        assertThat(h.ok("build_undo", "edit", "e1"))
+                .isEqualTo("undid e1 partly: 8192 blocks restored, 1 of 2 parts no longer kept by the server"
+                        + " (it keeps the last 8,388,608 changed blocks)");
+        assertThat(h.agent.get(128, 64, 0)).isEqualTo("minecraft:air");
+        assertThat(h.agent.get(0, 64, 0)).isEqualTo("minecraft:glass");
+        assertThat(h.error("build_undo", "edit", "e1")).contains("unknown edit e1");
+    }
+
+    @Test
+    void undoKeepsTheRestAfterAFailedPart() {
+        h.ok("build_batch", "steps", "fill 0,64,0 128,127,127 glass");
+        h.ok("build_batch", "steps", "set 0,200,0 stone");
+        h.agent.failUndo(0);
+        assertThat(h.error("build_undo", "edit", "e1")).contains("timed out");
+        h.agent.failUndo(1);
+        assertThat(h.error("build_undo", "edit", "e1")).isEqualTo("error: undo of e1 stopped after 8192 blocks restored:"
+                + " timed out; build_undo edit=e1 again undoes the rest");
+        assertThat(h.agent.get(128, 64, 0)).isEqualTo("minecraft:air");
+        assertThat(h.agent.get(0, 64, 0)).isEqualTo("minecraft:glass");
+        assertThat(h.ok("build_undo", "edit", "e1")).isEqualTo("undid e1: 1048576 blocks restored");
+        assertThat(h.agent.get(0, 64, 0)).isEqualTo("minecraft:air");
+        assertThat(h.agent.get(128, 64, 0)).isEqualTo("minecraft:air");
+    }
+
+    @Test
     void replaceAlsoLimitsSetStructureAndCopy() {
         h.ok("build_batch", "steps", "set 0,64,0 glass\nset 1,64,0 glass");
         h.ok("build_batch", "steps", "set 0,64,0 torch replace=air\nset 0,65,0 torch replace=air");
