@@ -221,6 +221,18 @@ class WorldRendererTest {
     }
 
     @Test
+    void anEyeOnTheRegionsOuterBoundaryLookingOutSeesNothing() {
+        Scenes floor = new Scenes(0, 60, 0, 20, 63, 20).fill(0, 60, 0, 20, 62, 20, "dirt")
+                .fill(0, 63, 0, 20, 63, 20, "grass_block");
+        assertThat(renderer.render(floor.grid(), View.parse("eye 10.5,64,10.5 yaw 0 pitch -45"), PLAIN).caption())
+                .as("on the top plane, looking up").contains("Visible: nothing");
+        assertThat(renderer.render(floor.grid(), View.parse("eye 0,61.5,10.5 yaw 90 pitch 0"), PLAIN).caption())
+                .as("on the west plane, looking west").contains("Visible: nothing");
+        String level = renderer.render(floor.grid(), View.parse("eye 10.5,64,10.5 yaw 0 pitch 0"), PLAIN).caption();
+        assertThat(level).as("on the top plane, looking level").contains("grass_block", "empty");
+    }
+
+    @Test
     void emptyAndUnchangedCellsRenderAsBackground() {
         Scenes s = new Scenes(0, 0, 0, 3, 3, 3);
         io.github.imnotstable.msc.protocol.world.BlockGrid grid = s.grid();

@@ -116,6 +116,17 @@ class OverlayTest {
     }
 
     @Test
+    void aMarkerOnTheRegionsTopPlaneIsNotHiddenByTheBlockUnderIt() {
+        // The region stops at the stone floor, so text standing on it sits exactly on the grid's top plane.
+        Scenes s = new Scenes(0, 64, 0, 15, 64, 15).fill(0, 64, 0, 15, 64, 15, "stone");
+        RenderResult top = renderer.render(s.grid(), View.parse("top"), PLAIN, List.of(Marker.text(8, 65, 8, "Hi")));
+        assertThat(top.caption()).doesNotContain("Behind blocks");
+        RenderResult camera = renderer.render(s.grid(), View.parse("eye 8,70,2 look 8,65,8"), PLAIN,
+                List.of(Marker.text(8, 65, 8, "Hi")));
+        assertThat(camera.caption()).doesNotContain("Behind blocks");
+    }
+
+    @Test
     void glassDoesNotHideAMarker() {
         Scenes s = floor().fill(0, 67, 0, 15, 67, 15, "glass");
         RenderResult result = renderer.render(s.grid(), View.parse("top"), PLAIN,

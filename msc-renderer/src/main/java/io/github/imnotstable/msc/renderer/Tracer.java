@@ -110,7 +110,8 @@ final class Tracer {
             }
             tLeave = Math.min(tLeave, t2);
         }
-        if (tEnter > tLeave) {
+        if (tEnter > tLeave || tLeave <= 0) {
+            // tLeave <= 0: the origin is on the grid's outer boundary (or a corner of it) and the ray moves out.
             return false;
         }
         double t = tEnter;
@@ -119,9 +120,19 @@ final class Tracer {
         double[] tNext = new double[3];
         double[] tDelta = new double[3];
         for (int axis = 0; axis < 3; axis++) {
-            double p = o[axis] + d[axis] * (t + 1e-9);
-            cell[axis] = Math.clamp((int) Math.floor(p), 0, size[axis] - 1);
             boolean moves = Math.abs(d[axis]) >= 1e-12;
+            int start;
+            if (t == 0) {
+                // The origin is in the grid: on a cell boundary it starts in the cell it moves into. Decided by the
+                // sign of d, not by nudging along it, which a small d cannot move off the boundary.
+                start = (int) Math.floor(o[axis]);
+                if (moves && d[axis] < 0 && o[axis] == start) {
+                    start--;
+                }
+            } else {
+                start = (int) Math.floor(o[axis] + d[axis] * (t + 1e-9));
+            }
+            cell[axis] = Math.clamp(start, 0, size[axis] - 1);
             if (face < 0 && moves && o[axis] == Math.floor(o[axis])) {
                 // An origin exactly on a cell boundary enters the start cell through a face: it is not inside it.
                 face = axis * 2 + (d[axis] > 0 ? 0 : 1);
@@ -153,7 +164,8 @@ final class Tracer {
                         hit(index, look, Box.FULL, face, t, cell, o, d, footprint + footprintPerT * t);
                     }
                 } else {
-                    double after = shadowMode ? 1e-4 : 1e-9;
+                    // A ray that starts on a box's surface (t = 0) hits it, as it does a full block.
+                    double after = shadowMode ? 1e-4 : -1e-12;
                     while (true) {
                         Box nearest = null;
                         double nearestT = Double.POSITIVE_INFINITY;
@@ -197,7 +209,10 @@ final class Tracer {
         }
     }
 
-    /** Distance at which the ray enters a box of a cell, or -1 if it misses; sets {@link #hitFace}. */
+    /**
+     * Distance at which the ray enters a box of a cell (negative when it starts inside the box), or -1 if it misses;
+     * sets {@link #hitFace}.
+     */
     private double hitBox(Box box, int[] cell, double[] o, double[] d) {
         double[] lo = {cell[0] + box.x0(), cell[1] + box.y0(), cell[2] + box.z0()};
         double[] hi = {cell[0] + box.x1(), cell[1] + box.y1(), cell[2] + box.z1()};
@@ -224,7 +239,8 @@ final class Tracer {
             }
             far = Math.min(far, t2);
         }
-        if (near > far) {
+        if (near > far || far <= 0) {
+            // far <= 0: the box is behind the ray, or the ray starts on its surface and moves away from it.
             return -1;
         }
         hitFace = face;
