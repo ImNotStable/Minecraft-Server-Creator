@@ -30,4 +30,9 @@ tasks.test {
     val eulaFixtures = rootProject.layout.projectDirectory.dir("msc-core/src/test/resources/eula-fixtures")
     inputs.dir(eulaFixtures).withPropertyName("eulaFixtures")
     systemProperty("msc.eulaFixtures", eulaFixtures.asFile.absolutePath)
+    // Docs that name the default run folder, checked against RunIsolation so they cannot drift.
+    val root = rootProject.layout.projectDirectory
+    inputs.files(file("README.md"), root.file("docs/wiki/Benchmark.md"), root.file("msc-docs/docs/adr/0004-bench.md"))
+        .withPropertyName("runFolderDocs")
+    systemProperty("msc.repoRoot", root.asFile.absolutePath)
 }
