@@ -146,6 +146,10 @@ final class BlockColors {
                 }
             }
         }
+        // Bamboo's log form is bamboo_block; stripped, it shows the planks colour like stripped logs do.
+        if (name.startsWith("stripped_") && name.endsWith("_block")) {
+            out.add(name.substring("stripped_".length(), name.length() - "_block".length()) + "_planks");
+        }
         for (String suffix : SUFFIXES) {
             if (name.endsWith(suffix) && name.length() > suffix.length()) {
                 String base = name.substring(0, name.length() - suffix.length());

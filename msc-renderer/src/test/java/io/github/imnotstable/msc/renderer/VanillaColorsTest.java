@@ -55,7 +55,7 @@ class VanillaColorsTest {
             "trapped_chest, chest", "creeper_wall_head, creeper_head", "tube_coral_wall_fan, tube_coral",
             "dead_horn_coral_fan, dead_horn_coral", "red_candle_cake, cake",
             "waxed_weathered_copper_bars, weathered_copper", "oxidized_lightning_rod, oxidized_copper",
-            "potted_poplar_sapling, poplar_sapling"})
+            "potted_poplar_sapling, poplar_sapling", "stripped_bamboo_block, bamboo_planks"})
     void formsShareTheColourOfTheirBlock(String block, String base) {
         assertThat(BlockColors.find(block, BlockColors.SIDE).argb())
                 .isEqualTo(BlockColors.find(base, BlockColors.SIDE).argb());
@@ -68,7 +68,7 @@ class VanillaColorsTest {
             "red_poplar_leaves, oak_leaves", "yellow_poplar_leaves, oak_leaves", "sulfur_bricks, stone_bricks",
             "cinnabar_bricks, stone_bricks", "redstone_wall_torch, stone", "bamboo_slab, bamboo",
             "fire_coral, brain_coral", "dead_tube_coral, tube_coral", "verdant_froglight, ochre_froglight",
-            "white_tulip, red_tulip", "white_bed, red_bed"})
+            "white_tulip, red_tulip", "white_bed, red_bed", "stripped_bamboo_block, bamboo_block"})
     void differentBlocksAreNotDrawnAlike(String block, String other) {
         assertThat(BlockColors.find(block, BlockColors.SIDE).argb())
                 .isNotEqualTo(BlockColors.find(other, BlockColors.SIDE).argb());
