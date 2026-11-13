@@ -1,9 +1,11 @@
 package io.github.imnotstable.msc.textures;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Pixel art as text, the same format {@code msc-core}'s {@code texture} and {@code texture_view}
@@ -62,8 +64,9 @@ public final class PaletteText {
 
     /**
      * {@link #render} for any texture: one with more opaque colours than there are symbols is shown with
-     * its closest colours merged, after a line that says so. When merging colours is not enough because
-     * the pixels differ in partial alpha, the alpha is also snapped to a few levels.
+     * its closest colours merged, after a line that says so. When the pixels also differ in partial alpha,
+     * the alpha is snapped to a few levels if that at least doubles the RGB colours that can be shown, or
+     * if merging alone cannot fit.
      */
     public static String view(Texture t) {
         int colors = t.colors().size();
@@ -71,19 +74,39 @@ public final class PaletteText {
             return render(t);
         }
         Texture shown = fit(t);
-        if (shown.colors().size() > SYMBOLS.length()) {
-            shown = fit(snapAlpha(t));
+        Texture snapped = snapAlpha(t);
+        if (!snapped.equals(t)) {
+            Texture alt = fit(snapped);
+            if (shown == null || rgbCount(alt) > 2 * rgbCount(shown)) {
+                shown = alt;
+            }
         }
         return colors + " colors merged to " + shown.colors().size() + " to show them; the file is unchanged\n"
                 + render(shown);
     }
 
+    /** The texture merged to as many colours as the symbols allow, or null when even one RGB colour is too many. */
     private static Texture fit(Texture t) {
-        Texture shown = t;
-        for (int max = SYMBOLS.length(); shown.colors().size() > SYMBOLS.length() && max >= 1; max /= 2) {
-            shown = Edits.quantize(t, max);
+        Texture best = null;
+        int lo = 1;
+        int hi = SYMBOLS.length();
+        while (lo <= hi) {
+            int mid = (lo + hi) >>> 1;
+            Texture q = Edits.quantize(t, mid);
+            if (q.colors().size() <= SYMBOLS.length()) {
+                best = q;
+                lo = mid + 1;
+            } else {
+                hi = mid - 1;
+            }
         }
-        return shown;
+        return best;
+    }
+
+    private static int rgbCount(Texture t) {
+        Set<Integer> rgb = new HashSet<>();
+        t.colors().forEach(c -> rgb.add(c & 0xFFFFFF));
+        return rgb.size();
     }
 
     /** Partial alpha snapped to 64, 128, 192 or 255; transparent stays transparent. */
