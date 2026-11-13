@@ -92,10 +92,16 @@ public final class Canvas {
 
     /**
      * Read all of {@code region} at once when a later step inside it first needs the world, so the copies
-     * of a repeated step share one read. The world does not change while the canvas is drawn.
+     * of a repeated step share one read. The world does not change while the canvas is drawn. Lasts until
+     * {@link #endReadAhead}, so steps after the group read only their own bounds.
      */
     void readAhead(Region region) {
         readAhead.add(region);
+    }
+
+    /** End the latest {@link #readAhead} of {@code region}. */
+    void endReadAhead(Region region) {
+        readAhead.remove(readAhead.lastIndexOf(region));
     }
 
     private BlockGrid world(Region stepBounds) throws InterruptedException {
