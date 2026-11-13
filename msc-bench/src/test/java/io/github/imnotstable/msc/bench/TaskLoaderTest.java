@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.imnotstable.msc.bench.task.TaskDef;
 import io.github.imnotstable.msc.bench.task.TaskLoader;
+import io.github.imnotstable.msc.buildlogic.RepoFiles;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -14,8 +15,8 @@ import org.junit.jupiter.api.io.TempDir;
 
 class TaskLoaderTest {
 
-    /** The bundled tasks, found from the repository root and not the working folder. */
-    private static final Path BUNDLED = Path.of(System.getProperty("msc.repoRoot"), "msc-bench", "tasks");
+    /** The bundled tasks: the build's bundledTasks set, so editing a task reruns these tests. */
+    private static final Path BUNDLED = RepoFiles.dir("bundledTasks", "msc-bench/tasks");
 
     @Test
     void bundledTasksLoadAndCoverEveryArea() throws IOException {

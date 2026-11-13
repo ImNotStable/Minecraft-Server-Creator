@@ -1,6 +1,7 @@
 plugins {
     id("msc.application-conventions")
     id("msc.previous-protocol")
+    id("msc.repo-inputs")
 }
 
 description = "Benchmark tasks and runner comparing AI work with and without the toolset."
@@ -26,16 +27,6 @@ tasks.named<JavaExec>("run") {
 
 tasks.test {
     previousProtocolClient.passTo(this)
-    // eula.json cases shared with msc-core's MachineEulaTest, so the bench copy of the rule cannot drift (ADR 0004).
-    val eulaFixtures = rootProject.layout.projectDirectory.dir("msc-core/src/test/resources/eula-fixtures")
-    inputs.dir(eulaFixtures).withPropertyName("eulaFixtures")
-    systemProperty("msc.eulaFixtures", eulaFixtures.asFile.absolutePath)
-    // Docs that name the default run folder, checked against RunIsolation so they cannot drift.
-    val root = rootProject.layout.projectDirectory
-    inputs.files(file("README.md"), root.file("docs/wiki/Benchmark.md"), root.file("msc-docs/docs/adr/0004-bench.md"))
-        .withPropertyName("runFolderDocs")
-    systemProperty("msc.repoRoot", root.asFile.absolutePath)
-
     // The tests run on a stand-in machine, so no result depends on the real one (#335): user.home is a fresh fake
     // home that is a project in every way Claude Code knows (.claude/CLAUDE.md, CLAUDE.md, .git, as a Windows home
     // with Claude Code and dotfiles is), java.io.tmpdir and the working folder lie inside it (as
@@ -57,3 +48,16 @@ tasks.test {
         home.resolve(".git/HEAD").writeText("ref: refs/heads/main\n")
     }
 }
+
+// Files outside msc-bench's sources the tests read (msc.repo-inputs): each set is both what the test reads and a test
+// input, so a change to one reruns the tests.
+val root = rootProject.layout.projectDirectory
+// eula.json cases shared with msc-core's MachineEulaTest, so the bench copy of the rule cannot drift (ADR 0004).
+repoInputs.set("eulaFixtures", root.dir("msc-core/src/test/resources/eula-fixtures").asFileTree)
+// Docs that name the default run folder, checked against RunIsolation so they cannot drift.
+repoInputs.set("runFolderDocs", file("README.md"), root.file("docs/wiki/Benchmark.md"),
+    root.file("msc-docs/docs/adr/0004-bench.md"))
+// The bundled tasks TaskLoaderTest loads.
+repoInputs.set("bundledTasks", fileTree("tasks"))
+// The repository's CLAUDE.md, which a run folder inside the repository would sit under (RunIsolationTest).
+repoInputs.set("repoClaudeMd", root.file("CLAUDE.md"))
