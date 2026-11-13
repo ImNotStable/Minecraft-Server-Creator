@@ -119,6 +119,18 @@ class ConnectionTest {
     }
 
     @Test
+    void handlerErrorIsAnsweredAsInternal() throws Exception {
+        OpRouter broken = new OpRouter().on(Ops.SERVER_INFO, p -> {
+            throw new NoSuchMethodError("gone");
+        });
+        connect(TOKEN, broken);
+        Connection core = sessions.poll(5, TimeUnit.SECONDS).connection();
+        CompletableFuture<Ops.ServerInfo> call = core.call(Ops.SERVER_INFO, new Ops.Empty(), TIMEOUT);
+        assertCode(call, ErrorCodes.INTERNAL);
+        assertThat(call.exceptionNow()).hasMessageContaining("NoSuchMethodError");
+    }
+
+    @Test
     void eventsReachTheCore() throws Exception {
         AgentClient.Session agent = connect(TOKEN, fakeAgent());
         agent.connection().sendEvent(Events.SERVER_READY, new JsonObject());

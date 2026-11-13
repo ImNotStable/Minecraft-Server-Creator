@@ -204,7 +204,8 @@ public final class Connection implements AutoCloseable {
             response = Response.ok(request.id(), result);
         } catch (OpException e) {
             response = Response.fail(request.id(), e.code(), e.detail());
-        } catch (Exception e) {
+        } catch (Throwable e) {
+            // Errors too (NoSuchMethodError from API drift, StackOverflowError): the caller must not wait out its timeout.
             response = Response.fail(request.id(), ErrorCodes.INTERNAL, e.getClass().getSimpleName() + ": " + e.getMessage());
         }
         trySend(response);
