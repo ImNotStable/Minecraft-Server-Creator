@@ -48,6 +48,20 @@ class PackLintTest {
     }
 
     @Test
+    void nonStringValuesAreFindingsNotCrashes() {
+        Map<String, byte[]> files = new HashMap<>();
+        files.put("pack.mcmeta", text(META));
+        files.put("assets/msc/models/item/a.json", text("{\"parent\":null}"));
+        files.put("assets/msc/models/item/b.json",
+                text("{\"parent\":\"minecraft:item/generated\",\"textures\":{\"layer0\":{\"a\":1}}}"));
+        files.put("assets/msc/items/c.json", text("{\"model\":{\"type\":[\"a\",\"b\"]}}"));
+        assertThat(lint(files)).containsExactly(
+                "ERROR assets/msc/items/c.json: type must be a string",
+                "ERROR assets/msc/models/item/a.json: parent must be a string",
+                "ERROR assets/msc/models/item/b.json: texture layer0 must be a string");
+    }
+
+    @Test
     void findsTextureProblems() {
         Map<String, byte[]> files = new HashMap<>();
         files.put("pack.mcmeta", text(META));
