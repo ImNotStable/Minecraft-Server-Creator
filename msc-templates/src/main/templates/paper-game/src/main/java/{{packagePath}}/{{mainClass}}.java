@@ -35,7 +35,7 @@ public class {{mainClass}} extends JavaPlugin {
         try {
             progress = new Progress(getDataFolder().toPath().resolve("progress.yml")).load();
         } catch (IOException e) {
-            fail("could not read progress.yml", e);
+            fail("could not read progress.yml: " + e.getMessage(), e);
             return;
         }
         WorldRules.apply(world, config);

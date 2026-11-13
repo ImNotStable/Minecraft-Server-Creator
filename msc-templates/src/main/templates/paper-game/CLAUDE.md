@@ -42,7 +42,7 @@ The base every game needs, so you only write the game itself. All of it is set i
 
 - Text is Adventure `Component`s, written as MiniMessage (`<green>Hi <player>`) or `Component.text(..., NamedTextColor.X)`. Never use `ChatColor` or `§` codes. Insert player input with `Placeholder.unparsed`.
 - Commands use Paper's Brigadier API, registered in `onEnable` via `getLifecycleManager().registerEventHandler(LifecycleEvents.COMMANDS, ...)`. Do not add commands to `plugin.yml`.
-- Never block the main thread (no I/O, sleeps or network in event handlers or commands). `Progress` shows the pattern: change in memory, then `flush()` on an async task.
+- Never block the main thread (no I/O, sleeps or network in event handlers or commands). `Progress` shows the pattern: a change only updates memory and marks it dirty; `flush()` builds the file text and writes it on an async task.
 - World, entity and inventory access only on the main thread.
 - Gamerules are `org.bukkit.GameRules` constants (`GameRules.KEEP_INVENTORY`, `GameRules.ADVANCE_TIME`, `GameRules.SPAWN_MOBS`); the old camelCase names are gone in 26.x.
 - Prefer small final classes and records, except the main plugin class: MockBukkit must subclass it, so never make it final. Pass dependencies through constructors; avoid static state so MockBukkit tests stay isolated.
