@@ -81,6 +81,7 @@ class AgentSmokeTest {
         assertThat(session.agent().platform()).isEqualTo("minestom");
         assertThat(session.agent().minecraftVersion()).isEqualTo("26.2");
         assertThat(session.agent().operations()).containsExactlyInAnyOrderElementsOf(Ops.names());
+        assertThat(events.poll(200, TimeUnit.MILLISECONDS)).as("ready before the first tick").isNull();
 
         env.tick();
         Event ready = events.poll(TIMEOUT.toSeconds(), TimeUnit.SECONDS);

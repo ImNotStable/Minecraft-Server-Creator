@@ -19,7 +19,6 @@ import net.minestom.server.event.player.PlayerDisconnectEvent;
 import net.minestom.server.event.player.PlayerSpawnEvent;
 import net.minestom.server.event.trait.PlayerEvent;
 import net.minestom.server.instance.Instance;
-import net.minestom.server.timer.ExecutionType;
 import net.minestom.server.timer.TaskSchedule;
 
 /**
@@ -71,14 +70,14 @@ public final class MscAgent {
         MinecraftServer.getGlobalEventHandler().addChild(events);
 
         // Ticks only run once the server has started, so the first one marks it ready.
-        MinecraftServer.getSchedulerManager().submitTask(() -> {
+        SchedulerMainThread.fromNextTick(MinecraftServer.getSchedulerManager(), () -> {
             ticks.tick(System.nanoTime());
             if (!loaded) {
                 loaded = true;
                 Thread.ofVirtual().name("msc-agent-ready").start(link::serverLoaded);
             }
             return link.stopping() ? TaskSchedule.stop() : TaskSchedule.nextTick();
-        }, ExecutionType.TICK_START);
+        });
         MinecraftServer.getSchedulerManager().buildShutdownTask(this::stop);
     }
 
