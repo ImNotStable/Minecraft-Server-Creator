@@ -10,7 +10,11 @@ import io.github.imnotstable.msc.protocol.message.Event;
 import io.github.imnotstable.msc.protocol.message.Goodbye;
 import io.github.imnotstable.msc.protocol.message.Hello;
 import io.github.imnotstable.msc.protocol.message.MessageCodec;
+import io.github.imnotstable.msc.protocol.message.Ping;
+import io.github.imnotstable.msc.protocol.message.Pong;
 import io.github.imnotstable.msc.protocol.message.RawJson;
+import io.github.imnotstable.msc.protocol.message.Request;
+import io.github.imnotstable.msc.protocol.message.Response;
 import io.github.imnotstable.msc.protocol.message.Welcome;
 import io.github.imnotstable.msc.protocol.op.Events;
 import io.github.imnotstable.msc.protocol.op.Ops;
@@ -26,6 +30,7 @@ import io.github.imnotstable.msc.protocol.transport.OpException;
 import io.github.imnotstable.msc.protocol.transport.OpRouter;
 import io.github.imnotstable.msc.protocol.transport.RequestHandler;
 import java.net.Socket;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.BlockingQueue;
@@ -209,6 +214,32 @@ class ConnectionTest {
         assertThatThrownBy(() -> call.get(5, TimeUnit.SECONDS))
                 .isInstanceOf(ExecutionException.class)
                 .hasCauseInstanceOf(ConnectionClosedException.class);
+    }
+
+    @Test
+    void answersJustBeforeAGoodbyeStillArrive() throws Exception {
+        AgentInfo info = new AgentInfo("paper", "test", "26.3", List.of("server.info"));
+        for (int i = 0; i < 300; i++) {
+            try (Socket socket = new Socket("127.0.0.1", server.port())) {
+                socket.setSoTimeout(5_000);
+                FrameWriter writer = new FrameWriter(socket.getOutputStream(), Limits.MAX_FRAME_BYTES);
+                FrameReader reader = new FrameReader(socket.getInputStream(), Limits.MAX_FRAME_BYTES);
+                writer.write(MessageCodec.encode(new Hello(ProtocolVersion.CURRENT, TOKEN, info)));
+                assertThat(MessageCodec.decode(reader.read())).isInstanceOf(Welcome.class);
+                Connection core = sessions.poll(5, TimeUnit.SECONDS).connection();
+                CompletableFuture<Response> call = core.request("server.info", new JsonObject(), TIMEOUT);
+                CompletableFuture<Duration> ping = core.ping(TIMEOUT);
+                Request request = (Request) MessageCodec.decode(reader.read());
+                Ping sent = (Ping) MessageCodec.decode(reader.read());
+                // Response, pong and goodbye in one write, so the core reads them in one go.
+                String burst = MessageCodec.encode(Response.ok(request.id(), new JsonObject())) + "\n"
+                        + MessageCodec.encode(new Pong(sent.nonce())) + "\n"
+                        + MessageCodec.encode(new Goodbye(ErrorCodes.SHUTDOWN, "bye")) + "\n";
+                socket.getOutputStream().write(burst.getBytes(StandardCharsets.UTF_8));
+                assertThat(call.get(5, TimeUnit.SECONDS).isOk()).as("response %d", i).isTrue();
+                assertThat(ping.get(5, TimeUnit.SECONDS)).as("pong %d", i).isNotNull();
+            }
+        }
     }
 
     private static void assertCode(CompletableFuture<?> future, String code) {

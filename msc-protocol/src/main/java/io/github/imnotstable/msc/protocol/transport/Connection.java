@@ -181,7 +181,9 @@ public final class Connection implements AutoCloseable {
         switch (message) {
             case Request request -> Thread.ofVirtual().name("msc-req-" + request.op()).start(() -> answer(request));
             case Response response -> {
-                CompletableFuture<Response> future = pending.get(response.id());
+                // Removed here, on the read thread, so the close sweep in shutdown() (which this thread
+                // runs after dispatching) cannot fail a future whose response has already arrived.
+                CompletableFuture<Response> future = pending.remove(response.id());
                 if (future != null) {
                     // Completing runs the caller's dependent stages; keep them off the read thread.
                     Thread.ofVirtual().name("msc-resp").start(() -> future.complete(response));
@@ -190,7 +192,7 @@ public final class Connection implements AutoCloseable {
             case Event event -> runEvent(() -> listener.onEvent(event));
             case Ping ping -> sendLater(new Pong(ping.nonce()));
             case Pong pong -> {
-                CompletableFuture<Long> future = pings.get(pong.nonce());
+                CompletableFuture<Long> future = pings.remove(pong.nonce());
                 if (future != null) {
                     Thread.ofVirtual().name("msc-pong").start(() -> future.complete(pong.nonce()));
                 }
