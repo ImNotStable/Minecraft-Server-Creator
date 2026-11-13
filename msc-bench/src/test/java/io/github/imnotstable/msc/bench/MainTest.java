@@ -1,6 +1,7 @@
 package io.github.imnotstable.msc.bench;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.catchThrowable;
 
 import io.github.imnotstable.msc.bench.run.BenchConfig;
 import io.github.imnotstable.msc.bench.task.TaskDef;
@@ -54,6 +55,18 @@ class MainTest {
         assertThat(exit).isZero();
         assertThat(ProcessHandle.current().descendants().filter(ProcessHandle::isAlive)
                 .filter(p -> p.info().commandLine().orElse("").contains("FakeRconMain"))).isEmpty();
+    }
+
+    @Test
+    void runRefusesARunFolderInsideAProject() throws IOException {
+        Files.writeString(dir.resolve("CLAUDE.md"), "project instructions");
+        Path runs = dir.resolve("msc-bench/runs");
+
+        Throwable refused = catchThrowable(() -> Main.run(new String[] {"run", "--out", runs.toString()},
+                new PrintStream(new ByteArrayOutputStream(), true, StandardCharsets.UTF_8)));
+
+        assertThat(refused).isInstanceOf(IOException.class).hasMessageContaining("CLAUDE.md");
+        assertThat(runs).doesNotExist();
     }
 
     private static int freePort() throws IOException {

@@ -7,6 +7,8 @@ import io.github.imnotstable.msc.bench.rcon.RconClient;
 import io.github.imnotstable.msc.bench.report.ReportWriter;
 import io.github.imnotstable.msc.bench.run.BenchConfig;
 import io.github.imnotstable.msc.bench.run.BenchRunner;
+import io.github.imnotstable.msc.bench.run.ChildProcesses;
+import io.github.imnotstable.msc.bench.run.RunIsolation;
 import io.github.imnotstable.msc.bench.run.RunRecord;
 import io.github.imnotstable.msc.bench.run.ServerManager;
 import io.github.imnotstable.msc.bench.run.Workspaces;
@@ -34,7 +36,8 @@ import java.util.Set;
  * run [--tasks a,b] [--modes baseline,toolset] [--repeat N]
  * check &lt;task&gt; &lt;workspace&gt;                 run one task's checks on a folder (starts its server for RCON checks)
  * report &lt;runDir&gt;                         rewrite report.md from results.jsonl
- * common: --tasks-dir DIR (default tasks), --config FILE (default bench.json), --out DIR (default runs)
+ * common: --tasks-dir DIR (default tasks), --config FILE (default bench.json),
+ *         --out DIR (default ~/.msc/bench-runs; must be outside any repository or CLAUDE.md folder)
  * </pre>
  */
 public final class Main {
@@ -101,14 +104,17 @@ public final class Main {
     }
 
     private static int runBench(Path tasksDir, Map<String, String> flags, PrintStream out) throws IOException {
+        // Attempts run in the run folder: inside this repository both modes would load its CLAUDE.md and sources.
+        Path home = Path.of(System.getProperty("user.home"));
+        Path runsDir = flags.containsKey("--out") ? Path.of(flags.get("--out")) : RunIsolation.defaultRunsDir(home);
+        RunIsolation.requireIsolated(runsDir, home);
         BenchConfig config = BenchConfig.load(Path.of(flags.getOrDefault("--config", "bench.json")));
         List<TaskDef> tasks = select(TaskLoader.loadAll(tasksDir), flags.get("--tasks"));
         List<String> modes = flags.containsKey("--modes")
                 ? Arrays.asList(flags.get("--modes").split(","))
                 : List.copyOf(config.modes().keySet()).stream().sorted().toList();
         int repeat = Integer.parseInt(flags.getOrDefault("--repeat", "1"));
-        Path runDir = Path.of(flags.getOrDefault("--out", "runs"))
-                .resolve(LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss")));
+        Path runDir = runsDir.resolve(LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss")));
         Map<String, String> preambles = new HashMap<>();
         preambles.put(TaskDef.PAPER, readIfPresent(tasksDir.resolve("_preamble.md")));
         preambles.put(TaskDef.MINESTOM, readIfPresent(tasksDir.resolve("_preamble-minestom.md")));
@@ -155,15 +161,25 @@ public final class Main {
                 "java", ProcessHandle.current().info().command().orElse("java"),
                 "serverPort", Integer.toString(config == null ? 25566 : config.server().serverPort()),
                 "scaffoldVersion", Workspaces.SCAFFOLD_VERSION);
+        // Ctrl-C skips the finally blocks: the hook kills the server and command processes this check started.
+        ChildProcesses children = new ChildProcesses();
+        Thread hook = Thread.ofPlatform().name("msc-bench-check-abort").unstarted(children::killAll);
+        Runtime.getRuntime().addShutdownHook(hook);
         try (ServerManager server = config != null && task.needsServer() && config.server().acceptEula()
-                ? new ServerManager(workspace.resolve("server"), config.server(), Map.of())
+                ? new ServerManager(workspace.resolve("server"), config.server(), Map.of(), children)
                 : null) {
-            return check(task, workspace, values, config, server, out);
+            return check(task, workspace, values, config, server, children, out);
+        } finally {
+            try {
+                Runtime.getRuntime().removeShutdownHook(hook);
+            } catch (IllegalStateException shuttingDown) {
+                // the hook is running or has run
+            }
         }
     }
 
     private static int check(TaskDef task, Path workspace, Map<String, String> values, BenchConfig config,
-            ServerManager server, PrintStream out) throws IOException {
+            ServerManager server, ChildProcesses children, PrintStream out) throws IOException {
         RconClient[] running = new RconClient[1];
         CheckContext context = new CheckContext() {
             private RconClient rcon;
@@ -196,6 +212,11 @@ public final class Main {
                     }
                 }
                 return rcon;
+            }
+
+            @Override
+            public Process start(ProcessBuilder builder) throws IOException {
+                return children.start(builder);
             }
         };
         try {
