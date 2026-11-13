@@ -2,6 +2,7 @@ package io.github.imnotstable.msc.core.agent;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.imnotstable.msc.protocol.Limits;
 import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
@@ -9,6 +10,12 @@ import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 
 class AgentHubTest {
+    @Test
+    void theCallTimeoutOutlastsEveryWaitOfOneAgentOperation() {
+        // Else the core gives up on a write the agent still finishes, and its undo id is lost (#275).
+        assertThat(AgentHub.CALL_TIMEOUT).isGreaterThan(Limits.AGENT_WAIT.multipliedBy(Limits.AGENT_WAITS_PER_OP));
+    }
+
     @Test
     void requireDoesNotHoldTheHubLockWhileAskingWhetherAnAgentIsExpected() throws Exception {
         try (AgentHub hub = new AgentHub(0, "t")) {

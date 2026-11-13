@@ -51,6 +51,8 @@ Defined with their Java types in `Ops`. Block states are vanilla strings such as
 | `world.undo` | `editId` | `editId, changed` |
 | `pack.apply` | `url, sha1, required` | `playersSent` |
 
+A `world.write` that fails after changing blocks (its main-thread wait timed out, the server stopped, a block failed) keeps those blocks undoable: its error message ends with the undo id of what it changed (`PartialEdit.note`, read back with `PartialEdit.editId`), and the core undoes it with the rest of the build. Each agent wait lasts at most `Limits.AGENT_WAIT` (2 min), an operation makes at most `Limits.AGENT_WAITS_PER_OP` of them (Minestom waits for chunks, then for the edit), and the core waits `Limits.CORE_CALL_TIMEOUT` (250 s), longer than all of them, so the agent's answer always arrives first.
+
 ### Regions and grids
 
 - `region` = `{"world":"world","min":{"x":0,"y":64,"z":0},"max":{"x":15,"y":70,"z":15}}`, inclusive, corners sorted on decode.

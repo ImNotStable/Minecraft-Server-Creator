@@ -6,6 +6,7 @@ import io.github.imnotstable.msc.core.world.Coords;
 import io.github.imnotstable.msc.core.world.WorldService;
 import io.github.imnotstable.msc.protocol.message.ErrorCodes;
 import io.github.imnotstable.msc.protocol.op.Ops;
+import io.github.imnotstable.msc.protocol.op.PartialEdit;
 import io.github.imnotstable.msc.protocol.transport.OpException;
 import io.github.imnotstable.msc.protocol.world.BlockGrid;
 import io.github.imnotstable.msc.protocol.world.Region;
@@ -17,7 +18,8 @@ import java.util.Map;
 /**
  * Runs steps as one edit: draw them all on a {@link Canvas}, check every block name with the agent,
  * then write the canvas in protocol-sized parts under a single undo id. If a part fails, the parts
- * already written are undone, so a build is placed whole or not at all.
+ * already written are undone, and so are the blocks the failed part changed before it failed when the agent names
+ * their undo id ({@link PartialEdit}), so a build is placed whole or not at all.
  */
 public final class Builder {
     /** Largest box one build may cover. */
@@ -76,6 +78,9 @@ public final class Builder {
                 }
             }
         } catch (RuntimeException | InterruptedException e) {
+            if (e instanceof OpException op) {
+                PartialEdit.editId(op.detail()).ifPresent(ids::add);
+            }
             for (int i = ids.size() - 1; i >= 0; i--) {
                 try {
                     hub.call(Ops.WORLD_UNDO, new Ops.UndoParams(ids.get(i)));

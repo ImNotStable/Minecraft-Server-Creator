@@ -169,6 +169,18 @@ class BuildToolsTest {
     }
 
     @Test
+    void aPartThatTimesOutMidWayIsUndoneWithTheRest() {
+        // Writes: the name check, the first part, then the second part, which times out after one block (#275).
+        h.agent.timeOutWrite(2);
+        String err = h.error("build_batch", "steps", "set 0,64,0 stone\nfill 200,90,200 201,90,201 andesite");
+        assertThat(err).contains("main thread did not finish");
+        assertThat(h.agent.writes).hasSize(3);
+        assertThat(h.agent.get(0, 64, 0)).isEqualTo("minecraft:air");
+        assertThat(h.agent.get(200, 90, 200)).isEqualTo("minecraft:air");
+        assertThat(h.agent.blocks.values()).allMatch("minecraft:air"::equals);
+    }
+
+    @Test
     @Timeout(10)
     void coordinatesAtTheIntLimitAreRefusedInsteadOfLoopingForever() {
         assertThat(h.error("build_batch", "steps", "fill 2147483647,64,0 2147483647,64,0 stone"))

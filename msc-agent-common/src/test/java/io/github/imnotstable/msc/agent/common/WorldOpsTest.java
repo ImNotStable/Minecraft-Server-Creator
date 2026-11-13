@@ -3,8 +3,10 @@ package io.github.imnotstable.msc.agent.common;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.github.imnotstable.msc.protocol.Limits;
 import io.github.imnotstable.msc.protocol.message.ErrorCodes;
 import io.github.imnotstable.msc.protocol.op.Ops;
+import io.github.imnotstable.msc.protocol.op.PartialEdit;
 import io.github.imnotstable.msc.protocol.transport.OpException;
 import io.github.imnotstable.msc.protocol.world.BlockGrid;
 import io.github.imnotstable.msc.protocol.world.BlockPos;
@@ -99,6 +101,63 @@ class WorldOpsTest {
         Ops.EditResult retry = ops.undo(new Ops.UndoParams(fill.editId()));
         assertThat(retry.changed()).isEqualTo(2);
         assertThat(world.get(0, 70, 0)).isEqualTo(MapWorld.AIR);
+    }
+
+    @Test
+    void aWriteThatTimesOutMidWayKeepsItsChangedBlocksUndoable() {
+        // The real timeout path: a JobQueue the "main thread" steps once, then MainThread.await gives up and cancels.
+        JobQueue queue = new JobQueue();
+        MainThread inline = MainThread.inline();
+        EditHistory<String> history = new EditHistory<>(1_000_000);
+        ops = new WorldOps<>(world, new MainThread() {
+            @Override
+            public <T> T call(java.util.function.Supplier<T> task) {
+                return inline.call(task);
+            }
+
+            @Override
+            public <T> T run(SlicedJob<T> job) {
+                java.util.concurrent.CompletableFuture<T> future = queue.add(job);
+                queue.step(java.time.Duration.ZERO);
+                return MainThread.await(future, java.time.Duration.ofMillis(1));
+            }
+        }, history);
+
+        Throwable thrown = org.assertj.core.api.Assertions.catchThrowable(() -> fill(box(0, 70, 0, 19, 70, 19), STONE));
+
+        assertThat(thrown).isInstanceOfSatisfying(OpException.class, e -> assertThat(e.code()).isEqualTo(ErrorCodes.TIMEOUT));
+        String id = PartialEdit.editId(((OpException) thrown).detail()).orElseThrow();
+        long placed = world.blocks.values().stream().filter(STONE::equals).count();
+        assertThat(placed).isEqualTo(256);
+        queue.step(java.time.Duration.ofSeconds(1));
+        assertThat(world.blocks.values().stream().filter(STONE::equals).count()).isEqualTo(placed);
+
+        WorldOps<String> patient = new WorldOps<>(world, inline, history);
+        assertThat(patient.undo(new Ops.UndoParams(id)).changed()).isEqualTo(256);
+        assertThat(world.blocks.values()).doesNotContain(STONE);
+    }
+
+    @Test
+    void aWriteThatFailsBeforeChangingAnythingHasNoPartialEdit() {
+        ops = new WorldOps<>(world, new MainThread() {
+            @Override
+            public <T> T call(java.util.function.Supplier<T> task) {
+                return task.get();
+            }
+
+            @Override
+            public <T> T run(SlicedJob<T> job) {
+                throw new OpException(ErrorCodes.SHUTDOWN, "server is shutting down");
+            }
+        }, new EditHistory<>(1_000_000));
+
+        assertThatThrownBy(() -> fill(box(0, 70, 0, 1, 70, 0), STONE))
+                .isInstanceOfSatisfying(OpException.class, e -> assertThat(e.detail()).isEqualTo("server is shutting down"));
+    }
+
+    @Test
+    void oneAgentWaitIsTheTimeoutEveryAgentUses() {
+        assertThat(AgentDefaults.OP_TIMEOUT).isEqualTo(Limits.AGENT_WAIT);
     }
 
     @Test
