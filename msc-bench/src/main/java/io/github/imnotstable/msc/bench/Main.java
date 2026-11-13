@@ -37,7 +37,8 @@ import java.util.Set;
  * check &lt;task&gt; &lt;workspace&gt;                 run one task's checks on a folder (starts its server for RCON checks)
  * report &lt;runDir&gt;                         rewrite report.md from results.jsonl
  * common: --tasks-dir DIR (default tasks), --config FILE (default bench.json),
- *         --out DIR (default ~/.msc/bench-runs; must be outside any repository or CLAUDE.md folder)
+ *         --out DIR (default ~/.msc/bench-runs, or &lt;temp&gt;/msc-bench-runs when the home folder is inside a
+ *         repository; must be outside any repository or CLAUDE.md folder)
  * </pre>
  */
 public final class Main {
@@ -105,9 +106,17 @@ public final class Main {
 
     private static int runBench(Path tasksDir, Map<String, String> flags, PrintStream out) throws IOException {
         // Attempts run in the run folder: inside this repository both modes would load its CLAUDE.md and sources.
+        // The checked folder is the resolved one, and the run writes to that same folder (links, .. and all).
         Path home = Path.of(System.getProperty("user.home"));
-        Path runsDir = flags.containsKey("--out") ? Path.of(flags.get("--out")) : RunIsolation.defaultRunsDir(home);
-        RunIsolation.requireIsolated(runsDir, home);
+        Path temp = Path.of(System.getProperty("java.io.tmpdir"));
+        Path runsDir = flags.containsKey("--out")
+                ? RunIsolation.requireIsolated(Path.of(flags.get("--out")), home, temp)
+                : RunIsolation.defaultRunsDir(home, temp);
+        if (!flags.containsKey("--out") && !runsDir.equals(RunIsolation.resolve(RunIsolation.homeRunsDir(home)))) {
+            out.println(RunIsolation.DEFAULT_RUNS_SHOWN + " is inside a project (your home folder is a repository or "
+                    + "has a CLAUDE.md), so runs go to " + runsDir + "; the system may clear it, so pass --out to keep "
+                    + "them elsewhere");
+        }
         BenchConfig config = BenchConfig.load(Path.of(flags.getOrDefault("--config", "bench.json")));
         List<TaskDef> tasks = select(TaskLoader.loadAll(tasksDir), flags.get("--tasks"));
         List<String> modes = flags.containsKey("--modes")
