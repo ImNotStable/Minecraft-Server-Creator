@@ -237,6 +237,20 @@ class TemplatesTest {
     }
 
     @Test
+    void claudeMdBulletsAreWhole() throws IOException {
+        for (String id : Templates.ids()) {
+            if (id.equals(Templates.PAPER_SERVER)) {
+                continue;
+            }
+            Path root = Templates.scaffold(id, dir.resolve(id), vars).root();
+            // A bullet starting with punctuation or a sentence glued after a closing `...`) means two bullets got spliced.
+            assertThat(Files.readString(root.resolve("CLAUDE.md"))).as(id)
+                    .doesNotContainPattern("(?m)^- +[^\\w`*\\[(\"]")
+                    .doesNotContainPattern("`\\)[A-Z]");
+        }
+    }
+
+    @Test
     void scaffoldsServerDefaultsOnly() throws IOException {
         ScaffoldResult r = Templates.scaffold(Templates.PAPER_SERVER, dir, vars);
         assertThat(relative(r)).containsExactlyInAnyOrder("eula.txt", "server.properties");
