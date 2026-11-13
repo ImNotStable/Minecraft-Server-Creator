@@ -38,6 +38,15 @@ public final class FakeServerMain {
             System.out.println("\tat com.example.demo.Demo.onEnable(Demo.java:17) ~[demo.jar:?]");
             System.out.println("\tat org.bukkit.plugin.java.JavaPlugin.setEnabled(JavaPlugin.java:288) ~[paper-api.jar:?]");
         }
+        // done-crash.flag: ready, then dead in its first tick before the agent connects (#337).
+        if (Files.exists(Path.of("done-crash.flag"))) {
+            System.out.println("[12:00:02 INFO]: Done (0.1s)! For help, type \"help\"");
+            System.out.println("[12:00:03 ERROR]: Encountered an unexpected exception");
+            System.out.println("java.lang.IllegalStateException: tick failed");
+            System.out.println("\tat com.example.demo.Demo.tick(Demo.java:30) ~[demo.jar:?]");
+            System.out.flush();
+            System.exit(1);
+        }
         // late-agent.flag: the agent connects only after "Done", as Minestom's built-in one can.
         boolean late = Files.exists(Path.of("late-agent.flag"));
         if (late) {
