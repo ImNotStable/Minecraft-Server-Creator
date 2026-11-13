@@ -122,7 +122,6 @@ class LogCondenserTest {
                 // Forge's first start writes its config files.
                 "[14:03:31] [main/WARN] [ne.mi.fm.co.ConfigFileTypeHandler/CONFIG]: Configuration file C:\\srv\\config\\fml.toml is not correct. Correcting",
                 "[14:03:31] [main/WARN] [ne.mi.fm.co.ConfigSpec/CORE]: Incorrect key earlyWindowControl was corrected from null to its default, true. ",
-                "[14:03:33] [Worker-Main-2/WARN] [ne.mi.re.pa.ResourcePackLoader/]: Missing metadata in pack mod:mymod",
                 // Fabric and Quilt print oshi's message without its logger.
                 "[14:03:34] [Server thread/ERROR]: Unable to locate English counter names in registry Perflib 009",
                 "com.sun.jna.platform.win32.Win32Exception: The parameter is incorrect.",
@@ -131,9 +130,51 @@ class LogCondenserTest {
                 "[14:03:35] [Server thread/WARN] [ne.mi.co.ConfigSpec/CORE]: Incorrect key arena.size was corrected from 500 to its default, 64.",
                 "[14:03:40] [Server thread/INFO] [minecraft/DedicatedServer]: Done (3.1s)! For help, type \"help\"");
         LogCondenser.Condensed c = LogCondenser.analyze(log, 6000);
-        assertThat(c.text()).isEqualTo("18 lines, 0 errors, 1 warnings, 7 known-harmless hidden\n"
+        assertThat(c.text()).isEqualTo("17 lines, 0 errors, 1 warnings, 6 known-harmless hidden\n"
                 + "14:03:35 WARN Incorrect key arena.size was corrected from 500 to its default, 64.");
-        assertThat(c.hidden()).isEqualTo(7);
+        assertThat(c.hidden()).isEqualTo(6);
+    }
+
+    /** The forge-mod template and the agent ship a pack.mcmeta, so a mod jar without one is the user's (#254). */
+    @Test
+    void aForgeModWithoutPackMetadataIsKept() {
+        List<String> log = List.of(
+                "[14:03:33] [Worker-Main-2/WARN] [minecraft/Pack]: Missing metadata in pack mod:mymod",
+                "[14:03:33] [Worker-Main-2/WARN] [ne.mi.re.ResourcePackLoader/CORE]: Could not find resource pack for mod file mymod.jar",
+                "[14:03:34] [Server thread/WARN] [minecraft/MinecraftServer]: Missing data pack mod:mymod");
+        assertThat(LogCondenser.analyze(log, 6000).warnings()).isEqualTo(3);
+    }
+
+    @Test
+    void quiltsMissingIntermediaryOn26IsDroppedWithItsTimings() {
+        List<String> log = List.of(
+                "[10:01:02] [main/WARN]: Not remapping mods because intermediary is missing!",
+                "transform-cache took 2460ms",
+                "zip sub copy took 9ms",
+                "[10:01:03] [main/WARN]: Not remapping mods because mappings are empty");
+        assertThat(LogCondenser.condense(log, 6000)).isEqualTo("4 lines, 0 errors, 1 warnings, 1 known-harmless hidden\n"
+                + "10:01:03 WARN Not remapping mods because mappings are empty");
+    }
+
+    @Test
+    void quiltsTimingLinesAreNotShownAsAnotherWarningsContext() {
+        List<String> log = List.of(
+                "[10:01:02] [main/WARN]: Mod mymod uses a deprecated entrypoint",
+                "mod adding took 12ms",
+                "tmp jar copy took 3ms",
+                "transform-cache took 2460ms",
+                "zip sub copy took 9ms");
+        assertThat(LogCondenser.condense(log, 6000))
+                .isEqualTo("5 lines, 0 errors, 1 warnings\n10:01:02 WARN Mod mymod uses a deprecated entrypoint");
+    }
+
+    @Test
+    void quiltsInMemoryAssetsUrlIsDroppedButAnotherSchemaIsKept() {
+        List<String> log = List.of(
+                "[10:01:04] [main/WARN]: Assets URL 'quilt.zfs://minecraft-26.3.jar/assets/.mcassetsroot' uses unexpected schema",
+                "[10:01:04] [main/WARN]: Assets URL 'http://example.com/assets/.mcassetsroot' uses unexpected schema");
+        assertThat(LogCondenser.condense(log, 6000)).isEqualTo("2 lines, 0 errors, 1 warnings, 1 known-harmless hidden\n"
+                + "10:01:04 WARN Assets URL 'http://example.com/assets/.mcassetsroot' uses unexpected schema");
     }
 
     @Test

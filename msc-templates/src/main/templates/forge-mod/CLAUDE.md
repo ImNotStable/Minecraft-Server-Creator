@@ -13,6 +13,7 @@ Minecraft Forge server mod for Minecraft {{mcVersion}}, Java {{javaVersion}}, Gr
 
 - `src/main/java/{{packagePath}}/{{mainClass}}.java`: entry point (`@Mod`). Only wiring here (commands, event listeners); put logic in its own classes.
 - `src/main/resources/META-INF/mods.toml`: mod metadata and dependencies. The mod id is `{{modId}}`.
+- `src/main/resources/pack.mcmeta`: marks the jar as a resource and data pack. Forge needs it to load anything under `assets/` or `data/`; without it the server warns `Missing metadata in pack mod:{{modId}}`.
 - `src/test/java/`: plain unit tests (`GreeterTest`). They run on plain JUnit without Forge loaded: keep logic that tests need free of registries, and check commands and events on the dev server.
 - `gradle/libs.versions.toml`: every dependency version. Add versions there, never inline in `build.gradle.kts`.
 - `run/`: dev server. `server.properties` and `eula.txt` are committed; the world, logs and jars are not.
