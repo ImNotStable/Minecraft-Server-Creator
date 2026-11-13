@@ -3,6 +3,7 @@ package io.github.imnotstable.msc.bench.run;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
 
+import io.github.imnotstable.msc.bench.FakeRconServer;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.ServerSocket;
@@ -10,6 +11,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -51,6 +53,35 @@ class ServerManagerTest {
 
             assertThat(catchThrowable(server::rcon)).hasMessageContaining("did not open RCON within 1s");
             assertThat(liveServers()).as("a later check starts no second server").isZero();
+        }
+    }
+
+    @Test
+    void closeWaitsUntilAServerItDidNotStartHasStopped() throws IOException {
+        AtomicBoolean stopped = new AtomicBoolean();
+        FakeRconServer[] holder = new FakeRconServer[1];
+        holder[0] = new FakeRconServer("pw", command -> {
+            if (command.equals("stop")) {
+                Thread.ofVirtual().start(() -> {
+                    try {
+                        Thread.sleep(1000);
+                        stopped.set(true);
+                        holder[0].close();
+                    } catch (InterruptedException | IOException e) {
+                        // test ends either way
+                    }
+                });
+            }
+            return "";
+        });
+        try (FakeRconServer rconServer = holder[0]) {
+            ServerManager server = new ServerManager(serverDir, config(List.of("unused"), rconServer.port()), Map.of());
+            server.rcon();
+
+            server.close();
+
+            assertThat(rconServer.commands()).containsExactly("stop");
+            assertThat(stopped).as("close() returned only after the server let go of its ports").isTrue();
         }
     }
 }
