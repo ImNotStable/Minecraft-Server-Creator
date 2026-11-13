@@ -4,16 +4,20 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.imnotstable.msc.core.fixture.FakeBuildMain;
 import io.github.imnotstable.msc.core.fixture.FakeServerMain;
+import io.github.imnotstable.msc.core.fixture.TreeMain;
+import io.github.imnotstable.msc.core.server.ProcessRunner;
 import io.github.imnotstable.msc.core.tool.Schema;
 import io.github.imnotstable.msc.core.tool.Tool;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -128,6 +132,7 @@ class SessionEndTest {
         h.ok("server_start", "timeoutSeconds", 30);
         CountDownLatch release = new CountDownLatch(1);
         blockingTool("stubborn", release, true);
+        h.core.cleanupWait(Duration.ofMillis(300));
         CompletableFuture<String> call = callAsync("stubborn");
         long started = System.nanoTime();
         h.close();
@@ -137,6 +142,58 @@ class SessionEndTest {
         release.countDown();
         assertThat(call.get(5, TimeUnit.SECONDS)).isEqualTo("stubborn done");
         assertThat(h.error("msc_status")).isEqualTo("error: the session has ended; msc_status did not run");
+    }
+
+    @Test
+    void closeReturnsOnlyOnceAnInterruptedCallHasCleanedUp() throws Exception {
+        // The JVM exits right after close: a call still cleaning up then would leave its processes behind.
+        AtomicBoolean cleanedUp = new AtomicBoolean();
+        h.core.addBenchTool(new Tool("slow-cleanup", "test", Schema.of().build(), args -> {
+            try {
+                new CountDownLatch(1).await();
+                return "never";
+            } catch (InterruptedException e) {
+                // Cleaning up takes a moment, like ProcessRunner killing a process tree.
+                Thread.sleep(150);
+                cleanedUp.set(true);
+                throw e;
+            }
+        }));
+        callAsync("slow-cleanup");
+        h.close();
+        assertThat(cleanedUp).isTrue();
+    }
+
+    @Test
+    void closingDuringABuildOnTheCallThreadKillsItsProcessTreeBeforeReturning() throws Exception {
+        // dev_cycle's jar build and server_setup's installer run ProcessRunner on the call thread itself (#296).
+        AtomicBoolean treeKilled = new AtomicBoolean();
+        h.core.addBenchTool(new Tool("call-build", "test", Schema.of().build(), args -> {
+            try {
+                return ProcessRunner.run(java(TreeMain.class), workspace, Duration.ofSeconds(60)).output();
+            } catch (InterruptedException e) {
+                // ProcessRunner throws only after it sent the forced kill to the whole tree.
+                treeKilled.set(true);
+                throw e;
+            }
+        }));
+        CompletableFuture<String> call = callAsync("call-build");
+        Path pids = workspace.resolve("tree-pids");
+        long deadline = System.nanoTime() + Duration.ofSeconds(30).toNanos();
+        while (!Files.exists(pids)) {
+            assertThat(System.nanoTime()).as("the build started").isLessThan(deadline);
+            Thread.sleep(20);
+        }
+        List<ProcessHandle> tree = Arrays.stream(Files.readString(pids).strip().split(" "))
+                .map(pid -> ProcessHandle.of(Long.parseLong(pid)).orElseThrow()).toList();
+        h.close();
+        // No race: the call sets this before it ends, and close returns only after the call ended.
+        assertThat(treeKilled).isTrue();
+        // Killed, but an orphaned child is listed until init reaps it, which in a container can take seconds.
+        for (ProcessHandle p : tree) {
+            p.onExit().get(30, TimeUnit.SECONDS);
+        }
+        assertThat(call.get(5, TimeUnit.SECONDS)).isEqualTo("error: call-build was stopped: the session ended while it ran");
     }
 
     @Test
