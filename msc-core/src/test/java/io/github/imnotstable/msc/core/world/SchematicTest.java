@@ -20,6 +20,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 
 class SchematicTest {
@@ -161,5 +162,39 @@ class SchematicTest {
         Path file = Files.write(dir.resolve("deep.schem"), bytes.toByteArray());
         assertThatThrownBy(() -> Schematic.load(file, "world", new BlockPos(0, 0, 0)))
                 .isInstanceOf(ToolException.class).hasMessageContaining("nested deeper than 512");
+    }
+
+    @Test
+    @Timeout(30)
+    void listsOfMillionsOfEmptyTagsAreToolErrorsNotOutOfMemory() throws Exception {
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        try (DataOutputStream out = new DataOutputStream(new GZIPOutputStream(bytes))) {
+            out.writeByte(10);
+            out.writeUTF("Schematic");
+            out.writeByte(9);
+            out.writeUTF("x");
+            out.writeByte(10);
+            out.writeInt(64 * 1024 * 1024);
+            byte[] zeros = new byte[1 << 20];
+            for (int i = 0; i < 64; i++) {
+                out.write(zeros);
+            }
+            out.writeByte(0);
+        }
+        assertThat(bytes.size()).isLessThan(100_000);
+        Path file = Files.write(dir.resolve("bomb.schem"), bytes.toByteArray());
+        assertThatThrownBy(() -> Schematic.load(file, "world", new BlockPos(0, 0, 0)))
+                .isInstanceOf(ToolException.class).hasMessageContaining("MB of memory");
+    }
+
+    @Test
+    void theHeapBudgetCountsTagsAndArrayData() throws Exception {
+        Map<String, Object> root = new LinkedHashMap<>();
+        root.put("Data", new byte[10_000]);
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        Nbt.write(bytes, "", root);
+        assertThat(Nbt.read(new java.io.ByteArrayInputStream(bytes.toByteArray()), 20_000)).containsKey("Data");
+        assertThatThrownBy(() -> Nbt.read(new java.io.ByteArrayInputStream(bytes.toByteArray()), 9_000))
+                .isInstanceOf(java.io.IOException.class).hasMessageContaining("MB of memory");
     }
 }
