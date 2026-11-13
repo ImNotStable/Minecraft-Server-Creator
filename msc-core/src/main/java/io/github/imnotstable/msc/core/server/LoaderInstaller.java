@@ -23,6 +23,8 @@ import java.util.stream.Stream;
 public final class LoaderInstaller {
     private static final String USER_AGENT = "msc-core/0.1 (Minecraft Server Creator dev tooling)";
     private static final Duration INSTALL_TIMEOUT = Duration.ofMinutes(10);
+    /** Says which loader and versions the server directory holds, so another version is installed again. */
+    static final String MARKER = ".msc-loader";
 
     /** Where each project publishes. Tests point these at a local server. */
     public record Urls(String neoforgeMaven, String forgeMaven, String quiltMaven, String purpurApi) {
@@ -99,7 +101,8 @@ public final class LoaderInstaller {
 
     /** NeoForge's server, with its server starter jar as {@code server.jar}. */
     public Result neoforge(String version, Path dir) throws IOException, InterruptedException {
-        if (Files.isDirectory(dir.resolve("libraries/net/neoforged/neoforge/" + version))
+        String id = "neoforge " + version;
+        if (marked(dir, id) && Files.isDirectory(dir.resolve("libraries/net/neoforged/neoforge/" + version))
                 && Files.exists(dir.resolve(Platform.NEOFORGE.serverJar()))) {
             return new Result(version, true);
         }
@@ -111,6 +114,7 @@ public final class LoaderInstaller {
         if (!Files.exists(dir.resolve(Platform.NEOFORGE.serverJar()))) {
             throw new ToolException("the NeoForge installer finished but wrote no " + Platform.NEOFORGE.serverJar());
         }
+        mark(dir, id);
         return new Result(version, false);
     }
 
@@ -125,8 +129,12 @@ public final class LoaderInstaller {
             if (!Files.exists(shim)) {
                 throw new ToolException("the Forge installer finished but wrote no " + shim.getFileName());
             }
-        } else if (Files.exists(dir.resolve(Platform.FORGE.serverJar()))) {
-            return new Result(version, true);
+        } else {
+            // The fixed-name jar may be another version's shim: it is this one only when the bytes match.
+            Path fixed = dir.resolve(Platform.FORGE.serverJar());
+            if (Files.exists(fixed) && Files.mismatch(shim, fixed) == -1) {
+                return new Result(version, true);
+            }
         }
         Files.copy(shim, dir.resolve(Platform.FORGE.serverJar()), StandardCopyOption.REPLACE_EXISTING);
         return new Result(version, false);
@@ -135,7 +143,8 @@ public final class LoaderInstaller {
     /** Quilt's server launcher plus the vanilla server jar it starts. */
     public Result quilt(String minecraft, String loader, String installerVersion, Path dir)
             throws IOException, InterruptedException {
-        if (Files.isDirectory(dir.resolve("libraries/org/quiltmc/quilt-loader/" + loader))
+        String id = "quilt " + minecraft + " " + loader;
+        if (marked(dir, id) && Files.isDirectory(dir.resolve("libraries/org/quiltmc/quilt-loader/" + loader))
                 && Files.exists(dir.resolve(Platform.QUILT.serverJar()))) {
             return new Result(loader, true);
         }
@@ -149,7 +158,17 @@ public final class LoaderInstaller {
         if (!Files.exists(dir.resolve(Platform.QUILT.serverJar()))) {
             throw new ToolException("the Quilt installer finished but wrote no " + Platform.QUILT.serverJar());
         }
+        mark(dir, id);
         return new Result(loader, false);
+    }
+
+    private static boolean marked(Path dir, String id) throws IOException {
+        Path marker = dir.resolve(MARKER);
+        return Files.exists(marker) && Files.readString(marker).strip().equals(id);
+    }
+
+    private static void mark(Path dir, String id) throws IOException {
+        Files.writeString(dir.resolve(MARKER), id + "\n");
     }
 
     private Path installer(String name, String url, String notFound) throws IOException, InterruptedException {
@@ -162,6 +181,8 @@ public final class LoaderInstaller {
 
     private void install(Path dir, List<String> command, String what) throws IOException, InterruptedException {
         Files.createDirectories(dir);
+        // An install that fails half way must not leave the old marker saying the old version is complete.
+        Files.deleteIfExists(dir.resolve(MARKER));
         ProcessRunner.Result r = ProcessRunner.run(command, dir, INSTALL_TIMEOUT);
         if (!r.ok()) {
             throw new ToolException("the " + what + " installer " + (r.timedOut() ? "timed out" : "failed (exit "
