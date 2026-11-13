@@ -14,9 +14,11 @@ dependencies {
 }
 
 val protocolsRoot = layout.buildDirectory.dir("protocols")
+// Syncs the whole root, so the folder of a version that was bumped away is removed instead of being loaded as an
+// extra speaker by Bots.
 val stagePreviousProtocol = tasks.register<Sync>("stagePreviousProtocol") {
-    from(previousProtocolJars)
-    into(protocolsRoot.zip(clientVersion) { root, version -> root.dir(version) })
+    into(protocolsRoot)
+    into(clientVersion) { from(previousProtocolJars) }
 }
 
 extensions.add(PreviousProtocolClient::class.java, "previousProtocolClient",
