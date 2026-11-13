@@ -1,7 +1,7 @@
 package io.github.imnotstable.msc.protocol.transport;
 
-import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import io.github.imnotstable.msc.protocol.message.RawJson;
 
 /**
  * Runs incoming requests. Each request runs on its own virtual thread, so a handler may block, for
@@ -10,7 +10,7 @@ import com.google.gson.JsonObject;
 @FunctionalInterface
 public interface RequestHandler {
     /** Result JSON for the operation. Throw {@link OpException} to answer with a specific error code. */
-    JsonElement handle(String op, JsonObject params) throws Exception;
+    RawJson handle(String op, JsonObject params) throws Exception;
 
     /** Answers every request with {@code unknown_op}. */
     static RequestHandler none() {

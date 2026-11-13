@@ -10,6 +10,7 @@ import io.github.imnotstable.msc.protocol.message.Event;
 import io.github.imnotstable.msc.protocol.message.Goodbye;
 import io.github.imnotstable.msc.protocol.message.Hello;
 import io.github.imnotstable.msc.protocol.message.MessageCodec;
+import io.github.imnotstable.msc.protocol.message.RawJson;
 import io.github.imnotstable.msc.protocol.message.Welcome;
 import io.github.imnotstable.msc.protocol.op.Events;
 import io.github.imnotstable.msc.protocol.op.Ops;
@@ -135,6 +136,20 @@ class ConnectionTest {
         CompletableFuture<Ops.ServerInfo> call = core.call(Ops.SERVER_INFO, new Ops.Empty(), TIMEOUT);
         assertCode(call, ErrorCodes.INTERNAL);
         assertThat(call.exceptionNow()).hasMessageContaining("NoSuchMethodError");
+    }
+
+    @Test
+    void malformedResultFailsOnlyThatCall() throws Exception {
+        RequestHandler handler = (op, params) -> op.equals("server.info")
+                ? Ops.SERVER_INFO.encodeResult(new Ops.ServerInfo("paper", "1", "26.3", List.of(), 0, 20))
+                : new RawJson("{\"grid\":}");
+        AgentInfo info = new AgentInfo("paper", "test", "26.3", List.of("server.info", "world.read"));
+        AgentClient.connect("127.0.0.1", server.port(), TOKEN, info, handler, new Connection.Listener() {
+        }, TIMEOUT);
+        Connection core = sessions.poll(5, TimeUnit.SECONDS).connection();
+        Region small = Region.of("world", 0, 0, 0, 0, 0, 0);
+        assertCode(core.call(Ops.WORLD_READ, new Ops.ReadParams(small, false), TIMEOUT), ErrorCodes.BAD_FRAME);
+        assertThat(core.call(Ops.SERVER_INFO, new Ops.Empty(), TIMEOUT).get().platform()).isEqualTo("paper");
     }
 
     @Test
