@@ -42,7 +42,7 @@ final class EulaPrompts {
         // Shown once, the first time: what the user's yes now covers. Tell them.
         return "Minecraft EULA (" + MachineEula.EULA_URL + ") accepted for this machine, saved in "
                 + config.eulaFile() + ". Tell the user: by this they confirm they read and accept Mojang's EULA, and "
-                + "MSC will now write eula=true for every Paper and Fabric server on this machine without asking. "
+                + "MSC will now write eula=true for every " + MachineEula.SERVERS + " server on this machine without asking. "
                 + "Terms: " + MachineEula.TERMS_URL + "\n";
     }
 }

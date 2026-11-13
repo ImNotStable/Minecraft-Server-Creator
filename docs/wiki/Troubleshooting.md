@@ -11,7 +11,7 @@ Find your problem, then try the steps in order.
 
 ## "the Minecraft EULA is not accepted"
 
-Paper and Fabric need it. Read the [Minecraft EULA](https://aka.ms/MinecraftEULA). If you agree, tell Claude: "I accept the EULA, run server_setup with acceptEula=true." Or set `eula=true` in `run/eula.txt` yourself. Or accept it once for this machine: run the line in `~/.msc/core/eula-accept.txt` in a terminal and type `yes`; every later Paper and Fabric dev server then starts without asking. Minestom does not need it.
+Every platform but Minestom needs it: Paper, Purpur, Fabric, Quilt, NeoForge and Forge run Mojang's server. Read the [Minecraft EULA](https://aka.ms/MinecraftEULA). If you agree, tell Claude: "I accept the EULA, run server_setup with acceptEula=true." Or set `eula=true` in `run/eula.txt` yourself. Or accept it once for this machine: run the line in `~/.msc/core/eula-accept.txt` in a terminal and type `yes`; every later dev server on those platforms then starts without asking. Minestom does not need it.
 
 ## "target exists and is not an empty directory"
 
@@ -22,7 +22,7 @@ Paper and Fabric need it. Read the [Minecraft EULA](https://aka.ms/MinecraftEULA
 
 ## The server starts but "agent not connected"
 
-1. MSC uses the agent installed with it (`~/.msc/core/agents`) unless `MSC_AGENT_JAR` is set. Re-run `./gradlew :msc-core:installMsc` (with Claude Code closed) so it is current, then `server_setup` again.
+1. MSC uses the agent installed with it (`~/.msc/core/agents`) unless `MSC_AGENT_JAR` is set. Re-run `./gradlew :msc-core:installMsc` so it is current (Claude Code can stay open; reconnect msc in `/mcp` afterwards), then `server_setup` again.
 2. Ask Claude for `msc_status`. It shows the agent state.
 3. Ask for `server_logs` to see errors from the agent.
 4. Minestom: the agent is built into the template. Check the project still calls `MscAgent.start()`.
@@ -35,13 +35,9 @@ Start the server first with `server_start`. World, build and pack tools need a r
 
 `dev_cycle` shows only the compiler and test errors. Let Claude fix them and call `dev_cycle` again. For Fabric, Gradle must run on Java 25.
 
-## installMsc refuses the install folder
+## installMsc says "Could not refresh the older install"
 
-With `-Pmsc.installDir`, the folder must be empty or hold an earlier MSC install. Pick an empty folder.
-
-## Install fails on Windows with "file in use"
-
-Claude Code is still running MSC. Close Claude Code, then run `installMsc` again.
+Each `installMsc` run makes a new folder, so it never touches files a running session uses. The one exception is an install from before the plugin (one flat folder registered with `claude mcp add`), which it refreshes in place. If a session is still running that old install, close it and run `installMsc` again, or remove the old registration (`claude mcp remove msc -s user`).
 
 ## "cannot replace ... .jar" or "another process has locked a portion of the file"
 
@@ -61,7 +57,7 @@ Claude Code was started in the MSC folder itself, so MSC treats the repo as your
 
 ## "warning: this msc-core ... is older than its checkout"
 
-The MSC source changed after you installed it (for example after `git pull`), so the running tools are out of date. Close Claude Code, run `./gradlew :msc-core:installMsc` in the MSC folder, and open Claude Code again.
+The MSC source changed after you installed it (for example after `git pull`), so the running tools are out of date. Run `./gradlew :msc-core:installMsc` in the MSC folder (Claude Code can stay open), then reconnect msc in `/mcp`.
 
 ## Still stuck
 

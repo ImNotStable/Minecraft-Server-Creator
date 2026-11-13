@@ -3,6 +3,7 @@ package io.github.imnotstable.msc.core;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.github.imnotstable.msc.core.server.Platform;
 import io.github.imnotstable.msc.core.tool.Schema;
 import io.github.imnotstable.msc.core.tool.Tool;
 import java.util.List;
@@ -41,5 +42,12 @@ class ToolDocsTest {
         assertThat(ToolDocs.checkWiki(page, List.of(A, B))).containsExactly("the wiki tool page misses b_tool",
                 "the wiki tool page lists old_tool, which is not a tool",
                 "the wiki tool page says \"All 3 tools\"; there are 2");
+    }
+
+    @Test
+    void platformsTableMustHaveARowPerPlatform() {
+        String doc = "### Platforms\n| `paper` | x |\n| `fabric` | y |\n## Next\n| `minestom` | z |\n";
+        assertThat(ToolDocs.checkPlatforms(doc)).contains("tools.md's Platforms table has no row for minestom")
+                .doesNotContain("tools.md's Platforms table has no row for paper").hasSize(Platform.values().length - 2);
     }
 }

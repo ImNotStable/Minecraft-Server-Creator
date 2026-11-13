@@ -10,26 +10,26 @@ updates:
     commit-message:
       prefix: "deps"
     groups:
-      # Server platforms move together with the Minecraft version; one PR so they stay in step.
+      # Server platforms move together with the Minecraft version; one PR so they stay in step. Dependabot puts a
+      # dependency in the first group it matches, so the catch-all below needs no exclude list.
+      # mcprotocollib-previous in libs.versions.toml stays one Minecraft version behind on purpose (Minestom's
+      # client). It is the same module as mcprotocollib, so an ignore rule would block both: when this group's PR
+      # raises it, set it back to the previous Minecraft version in that PR.
       minecraft-platforms:
         patterns:
           - "io.papermc*"
           - "net.fabricmc*"
           - "fabric-loom*"
+          - "net.neoforged*"
+          - "net.minecraftforge*"
           - "net.minestom*"
+          - "org.geysermc*"
           - "org.mockbukkit*"
           - "com.mojang*"
       # Everything else (Gson, MCP SDK, JUnit, AssertJ, Shadow, run-paper, foojay...).
       libraries-and-plugins:
         patterns:
           - "*"
-        exclude-patterns:
-          - "io.papermc*"
-          - "net.fabricmc*"
-          - "fabric-loom*"
-          - "net.minestom*"
-          - "org.mockbukkit*"
-          - "com.mojang*"
 
   - package-ecosystem: github-actions
     directory: "/"
