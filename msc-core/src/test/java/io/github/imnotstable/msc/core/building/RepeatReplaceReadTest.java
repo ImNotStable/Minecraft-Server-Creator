@@ -59,4 +59,30 @@ class RepeatReplaceReadTest {
         assertThat(reads).containsExactly(Region.of("world", 4, 65, 0, 4, 65, 0));
         assertThat(c.placed()).isZero();
     }
+
+    @Test
+    void aStepAfterARepeatReadsOnlyItsOwnBounds() throws Exception {
+        BuildScript script = new BuildScript("world", new BuildScript.StructureFiles() {
+            @Override
+            public BlockGrid load(String path, String world) {
+                throw new AssertionError();
+            }
+
+            @Override
+            public BlockGrid read(Region region) {
+                throw new AssertionError();
+            }
+        });
+        List<Step> steps = script.parse("fill 0,64,0 9,64,9 stone_bricks repeat=6 step=0,1,0\n"
+                + "set 5,68,5 torch replace=air");
+        List<Region> reads = new ArrayList<>();
+        Canvas c = new Canvas(new Step.Group(steps).bounds(), r -> {
+            reads.add(r);
+            return world(r);
+        });
+        for (Step s : steps) {
+            s.draw(c);
+        }
+        assertThat(reads).containsExactly(Region.of("world", 5, 68, 5, 5, 68, 5));
+    }
 }
