@@ -7,6 +7,7 @@ import java.nio.file.Path;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicReference;
 import org.bukkit.configuration.InvalidConfigurationException;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.jspecify.annotations.Nullable;
@@ -19,7 +20,7 @@ public final class Progress {
     private final Map<UUID, String> stages = new ConcurrentHashMap<>();
     private final Path file;
     private final Object writeLock = new Object();
-    private volatile @Nullable String pending;
+    private final AtomicReference<@Nullable String> pending = new AtomicReference<>();
 
     public Progress(Path file) {
         this.file = file;
@@ -50,12 +51,12 @@ public final class Progress {
 
     public void setStage(UUID player, String stage) {
         stages.put(player, stage);
-        pending = toYaml();
+        pending.set(toYaml());
     }
 
     public void clear(UUID player) {
         stages.remove(player);
-        pending = toYaml();
+        pending.set(toYaml());
     }
 
     public int size() {
@@ -75,11 +76,11 @@ public final class Progress {
      */
     public void flush() throws IOException {
         synchronized (writeLock) {
-            String yaml = pending;
+            // Take and clear in one step: a snapshot set between a separate read and clear would be lost.
+            String yaml = pending.getAndSet(null);
             if (yaml == null) {
                 return;
             }
-            pending = null;
             Files.createDirectories(file.toAbsolutePath().getParent());
             Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
             Files.writeString(tmp, yaml, StandardCharsets.UTF_8);
