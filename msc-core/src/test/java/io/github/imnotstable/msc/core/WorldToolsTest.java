@@ -353,4 +353,11 @@ class WorldToolsTest {
         assertThat(h.error("world_summary", "region", "2147483520,0,0 2147483647,100,100"))
                 .contains("x=2147483520 is outside the world");
     }
+
+    @Test
+    void structureSaveRefusesSidesASchematicCannotHold() {
+        assertThat(h.error("structure_save", "region", "0,64,0 65536,64,0", "file", "wall.schem"))
+                .contains("65537x1x1").contains("at most 65535");
+        assertThat(workspace.resolve("wall.schem")).doesNotExist();
+    }
 }
