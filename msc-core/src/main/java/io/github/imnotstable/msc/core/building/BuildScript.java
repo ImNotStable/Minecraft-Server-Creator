@@ -225,10 +225,17 @@ public final class BuildScript {
                 for (int i = 0; i < radii.length; i++) {
                     String band = p.bands().get(i);
                     int eq = band.indexOf('=');
-                    radii[i] = Integer.parseInt(band.substring(0, eq));
-                    if (radii[i] > 1024) {
-                        throw new ToolException("band radius " + radii[i] + " is above 1024");
+                    String digits = band.substring(0, eq);
+                    long radius;
+                    try {
+                        radius = Long.parseLong(digits);
+                    } catch (NumberFormatException e) {
+                        radius = Long.MAX_VALUE; // more digits than a long holds: certainly above the limit
                     }
+                    if (radius > 1024) {
+                        throw new ToolException("band radius " + digits + " is above 1024");
+                    }
+                    radii[i] = (int) radius;
                     if (i > 0 && radii[i] <= radii[i - 1]) {
                         throw new ToolException("band radii must grow: " + radii[i - 1] + " then " + radii[i]);
                     }

@@ -74,6 +74,10 @@ class BuildToolsTest {
         assertThat(h.error("build_batch", "steps", "disc 0,64,0 r=3 stone dirt")).contains("did not understand \"dirt\"");
         assertThat(h.error("build_batch", "steps", "line 0,64,0 9,64,0 stone colour=red")).contains("line does not take colour=");
         assertThat(h.error("build_batch", "steps", "structure 0,64,0\nlegend: #=stone\ny=0\n#")).contains("no closing \"end\"");
+        assertThat(h.error("build_batch", "steps", "bands 0,63,0 99999999999=sand"))
+                .isEqualTo("error: line 1 (bands 0,63,0 99999999999=sand): band radius 99999999999 is above 1024");
+        assertThat(h.error("build_batch", "steps", "bands 0,63,0 5=sand 999999999999999999999999=water"))
+                .contains("line 1 (").contains("is above 1024");
     }
 
     @Test
