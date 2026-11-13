@@ -5,8 +5,6 @@ import com.google.gson.JsonParser;
 import io.github.imnotstable.msc.core.tool.ToolException;
 import java.io.IOException;
 import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -21,7 +19,6 @@ import java.util.stream.Stream;
  * does not have that loader version yet. See ADR 0027.
  */
 public final class LoaderInstaller {
-    private static final String USER_AGENT = "msc-core/0.1 (Minecraft Server Creator dev tooling)";
     private static final Duration INSTALL_TIMEOUT = Duration.ofMinutes(10);
     /** Says which loader and versions the server directory holds, so another version is installed again. */
     static final String MARKER = ".msc-loader";
@@ -33,10 +30,10 @@ public final class LoaderInstaller {
                 "https://api.purpurmc.org");
 
         public Urls {
-            neoforgeMaven = trim(neoforgeMaven);
-            forgeMaven = trim(forgeMaven);
-            quiltMaven = trim(quiltMaven);
-            purpurApi = trim(purpurApi);
+            neoforgeMaven = Downloads.trim(neoforgeMaven);
+            forgeMaven = Downloads.trim(forgeMaven);
+            quiltMaven = Downloads.trim(quiltMaven);
+            purpurApi = Downloads.trim(purpurApi);
         }
     }
 
@@ -47,8 +44,7 @@ public final class LoaderInstaller {
     private final Urls urls;
     private final Path cacheDir;
     private final String java;
-    private final HttpClient http = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NORMAL)
-            .connectTimeout(Duration.ofSeconds(15)).build();
+    private final Downloads downloads = new Downloads();
 
     public LoaderInstaller(Urls urls, Path cacheDir, String java) {
         this.urls = urls;
@@ -56,16 +52,12 @@ public final class LoaderInstaller {
         this.java = java;
     }
 
-    private static String trim(String url) {
-        return url.endsWith("/") ? url.substring(0, url.length() - 1) : url;
-    }
-
     /** The newest Purpur build for a Minecraft version, as {@code purpur.jar}. */
     public Result purpur(String minecraft, Path dir) throws IOException, InterruptedException {
         URI latest = URI.create(urls.purpurApi() + "/v2/purpur/" + minecraft + "/latest");
         String build;
         try {
-            HttpResponse<String> response = http.send(request(latest), HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = downloads.text(latest);
             if (response.statusCode() == 404) {
                 throw new ToolException("Purpur has no version " + minecraft);
             }
@@ -211,24 +203,6 @@ public final class LoaderInstaller {
     }
 
     private void fetch(URI uri, Path jar, String notFound) throws IOException, InterruptedException {
-        Files.createDirectories(cacheDir);
-        Path tmp = cacheDir.resolve(jar.getFileName() + ".part");
-        HttpResponse<Path> got;
-        try {
-            got = http.send(request(uri), HttpResponse.BodyHandlers.ofFile(tmp));
-        } catch (IOException e) {
-            Files.deleteIfExists(tmp);
-            throw new ToolException("cannot reach " + uri + ": " + e.getMessage());
-        }
-        if (got.statusCode() != 200) {
-            Files.deleteIfExists(tmp);
-            throw new ToolException(got.statusCode() == 404 ? notFound
-                    : "download of " + uri + " answered " + got.statusCode());
-        }
-        Files.move(tmp, jar, StandardCopyOption.REPLACE_EXISTING);
-    }
-
-    private static HttpRequest request(URI uri) {
-        return HttpRequest.newBuilder(uri).header("User-Agent", USER_AGENT).timeout(Duration.ofMinutes(5)).build();
+        downloads.fetch(uri, jar, notFound, null);
     }
 }
