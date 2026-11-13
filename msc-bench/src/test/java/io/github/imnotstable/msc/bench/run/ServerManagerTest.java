@@ -9,6 +9,7 @@ import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -94,11 +95,25 @@ class ServerManagerTest {
         server.disconnect();
         before.close();
 
-        try (FakeRconServer after = new FakeRconServer(port, "pw", command -> "ok")) {
+        FakeRconServer[] holder = new FakeRconServer[1];
+        holder[0] = new FakeRconServer(port, "pw", command -> {
+            if (command.equals("stop")) {
+                try {
+                    holder[0].close(); // a real server lets go of its port on stop
+                } catch (IOException e) {
+                    // test ends either way
+                }
+            }
+            return "ok";
+        });
+        try (FakeRconServer after = holder[0]) {
             assertThat(server.rcon().command("check")).isEqualTo("ok");
+            long start = System.nanoTime();
             server.close();
 
             assertThat(after.commands()).containsExactly("check", "stop");
+            assertThat(Duration.ofNanos(System.nanoTime() - start)).as("close() returns once the port is free")
+                    .isLessThan(Duration.ofSeconds(10));
         }
     }
 }
