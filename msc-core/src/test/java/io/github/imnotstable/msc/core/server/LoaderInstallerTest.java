@@ -14,6 +14,10 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.jar.Attributes;
+import java.util.jar.JarEntry;
+import java.util.jar.JarOutputStream;
+import java.util.jar.Manifest;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -130,6 +134,45 @@ class LoaderInstallerTest {
                 .hasMessage("Forge has no version 26.3-0.0.0");
         assertThatThrownBy(() -> installer.neoforge("26.3.0.1", server)).isInstanceOf(ToolException.class)
                 .hasMessageStartingWith("the NeoForge installer failed (exit 1)");
+    }
+
+    @Test
+    void anInstallerThatWritesNoJarShowsItsOutput() throws Exception {
+        Path server = Files.createDirectories(dir.resolve("server"));
+        quietInstaller(dir.resolve("cache/quilt-installer-0.15.1.jar"));
+        quietInstaller(dir.resolve("cache/neoforge-26.3.0.9-installer.jar"));
+        quietInstaller(dir.resolve("cache/forge-26.3-66.1.9-installer.jar"));
+
+        assertThatThrownBy(() -> installer.quilt("26.3", "0.30.2", "0.15.1", server))
+                .hasMessageStartingWith("the Quilt installer finished but wrote no quilt-server-launch.jar:\n")
+                .hasMessageEndingWith(QuietInstaller.SAYS);
+        assertThatThrownBy(() -> installer.neoforge("26.3.0.9", server))
+                .hasMessageContaining("wrote no server.jar:\n").hasMessageEndingWith(QuietInstaller.SAYS);
+        assertThatThrownBy(() -> installer.forge("26.3-66.1.9", server))
+                .hasMessageContaining("wrote no forge-26.3-66.1.9-shim.jar:\n")
+                .hasMessageEndingWith(QuietInstaller.SAYS);
+    }
+
+    /** An installer that exits 0 and says why it wrote nothing. */
+    public static final class QuietInstaller {
+        static final String SAYS = "download failed: connection reset";
+
+        public static void main(String[] args) {
+            System.out.println(SAYS);
+        }
+    }
+
+    private static void quietInstaller(Path jar) throws IOException {
+        Files.createDirectories(jar.getParent());
+        Manifest manifest = new Manifest();
+        manifest.getMainAttributes().put(Attributes.Name.MANIFEST_VERSION, "1.0");
+        manifest.getMainAttributes().put(Attributes.Name.MAIN_CLASS, QuietInstaller.class.getName());
+        String entry = QuietInstaller.class.getName().replace('.', '/') + ".class";
+        try (JarOutputStream out = new JarOutputStream(Files.newOutputStream(jar), manifest);
+                var in = QuietInstaller.class.getResourceAsStream("/" + entry)) {
+            out.putNextEntry(new JarEntry(entry));
+            in.transferTo(out);
+        }
     }
 
     @Test

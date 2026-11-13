@@ -46,7 +46,20 @@ public final class LogCondenser {
                     + "possible to play without internet access|To change this, set \"online-mode\" to \"true\").*"),
             // Paper's system report on Windows: oshi messages and "Failed to get system info for ..." with an NPE.
             Pattern.compile("^\\[(oshi|os)\\.[\\w.$]+\\] .*"),
-            Pattern.compile("^Failed to get system info for .*"));
+            Pattern.compile("^Failed to get system info for .*"),
+            // The same oshi message on Fabric and Quilt, whose log lines carry no logger.
+            Pattern.compile("^Unable to locate English counter names in registry Perflib.*"),
+            // Forge's first start: writing default config files and mods without a pack.mcmeta. A key corrected from
+            // a value someone set is kept.
+            Pattern.compile("^Configuration file .* is not correct\\. Correcting.*"),
+            Pattern.compile("^Incorrect key .* was corrected from null to its default.*"),
+            Pattern.compile("^Missing metadata in pack mod:.*"));
+    /**
+     * Netty probing the macOS and Linux native transports on another OS (NeoForge and Forge log the failed probe
+     * with its trace). Matched anywhere in an entry together with {@link #NETTY_UNSUPPORTED}.
+     */
+    private static final Pattern NETTY_NATIVE = Pattern.compile("io\\.netty\\.channel\\.(kqueue|epoll|uring)\\.Native");
+    private static final Pattern NETTY_UNSUPPORTED = Pattern.compile("Only supported on (OSX/BSD|Linux)");
 
     private static final List<Pattern> BUILD_NOISE = List.of(
             Pattern.compile("^> Task (?!.*FAILED).*"),
@@ -77,8 +90,11 @@ public final class LogCondenser {
         }
     }
 
-    /** @param text the condensed log, starting with a one-line count */
-    public record Condensed(String text, int errors, int warnings) {
+    /**
+     * @param text the condensed log, starting with a one-line count
+     * @param hidden warnings and errors dropped as known-harmless
+     */
+    public record Condensed(String text, int errors, int warnings, int hidden) {
         public boolean clean() {
             return errors == 0 && warnings == 0;
         }
@@ -116,6 +132,7 @@ public final class LogCondenser {
         }
         int errors = 0;
         int warnings = 0;
+        int hidden = 0;
         Map<String, int[]> counts = new LinkedHashMap<>();
         Map<String, String> firstTime = new LinkedHashMap<>();
         for (Entry e : entries) {
@@ -125,7 +142,8 @@ public final class LogCondenser {
             if (!error && !warn && !trace) {
                 continue;
             }
-            if (EXPECTED.stream().anyMatch(p -> p.matcher(e.text).matches())) {
+            if (expected(e)) {
+                hidden++;
                 continue;
             }
             if (error || (trace && !warn)) {
@@ -144,6 +162,9 @@ public final class LogCondenser {
         StringBuilder out = new StringBuilder();
         out.append(lines.size()).append(" lines, ").append(errors).append(" errors, ").append(warnings)
                 .append(" warnings");
+        if (hidden > 0) {
+            out.append(", ").append(hidden).append(" known-harmless hidden");
+        }
         for (Map.Entry<String, int[]> c : counts.entrySet()) {
             out.append('\n');
             String time = firstTime.get(c.getKey());
@@ -159,7 +180,15 @@ public final class LogCondenser {
             out.append(body);
         }
         return new Condensed(Budget.truncate(out.toString(), maxChars, "Use server_logs with grep to narrow."),
-                errors, warnings);
+                errors, warnings, hidden);
+    }
+
+    private static boolean expected(Entry e) {
+        if (EXPECTED.stream().anyMatch(p -> p.matcher(e.text).matches())) {
+            return true;
+        }
+        String all = e.text + "\n" + String.join("\n", e.extra);
+        return NETTY_NATIVE.matcher(all).find() && NETTY_UNSUPPORTED.matcher(all).find();
     }
 
     /**
