@@ -49,6 +49,9 @@ final class Inventory {
                     System.arraycopy(p.getItems(), 0, own, 0, Math.min(SIZE, p.getItems().length));
                 } else if (p.getContainerId() == screenId) {
                     screenItems = p.getItems().clone();
+                    for (int i = 0; i < screenItems.length; i++) {
+                        putOwn(i, screenItems[i]);
+                    }
                 }
             }
             case ClientboundContainerSetSlotPacket p -> {
@@ -56,6 +59,7 @@ final class Inventory {
                     put(own, p.getSlot(), p.getItem());
                 } else if (p.getContainerId() == screenId) {
                     put(screenItems, p.getSlot(), p.getItem());
+                    putOwn(p.getSlot(), p.getItem());
                 }
             }
             case ClientboundSetPlayerInventoryPacket p -> put(own, menuSlot(p.getSlot()), p.getContents());
@@ -149,6 +153,18 @@ final class Inventory {
             return 8 - (slot - 36); // feet, legs, chest, head
         }
         return slot == 40 ? OFFHAND : slot;
+    }
+
+    /**
+     * The open menu's slot {@code slot} into the player's own inventory when it is one of the player's 36 slots,
+     * which vanilla-family servers send under the menu's id after the menu's own slots: backpack, then hotbar.
+     */
+    private void putOwn(int slot, ItemStack item) {
+        int menuSlots = screenSize >= 0 ? screenSize : screenItems.length > 36 ? screenItems.length - 36 : -1;
+        int k = slot - menuSlots;
+        if (menuSlots >= 0 && k >= 0 && k < 36) {
+            own[9 + k] = item;
+        }
     }
 
     private static void put(ItemStack[] slots, int slot, ItemStack item) {
