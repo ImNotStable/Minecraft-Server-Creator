@@ -41,3 +41,12 @@ was tracked in the roadmap and playtest findings. GitHub Actions is still billin
 - Many small PRs land in two days; main must stay green between them, so the integrator merges one at a time.
 - The eight-round cap and the cut order mean "perfection" may end with open `sev:3` issues; they are listed in the
   campaign file, not hidden.
+
+## Amendment, 2026-11-13: no round cap
+
+The cap of eight rounds per piece (decision 5, and the matching consequence above) is lifted. A piece that is not
+clean twice in a row gets confirm rounds until it is, or until the campaign ends on 2026-11-14 23:00Z. Reason: the
+round 8 sweep still found 15 confirmed, real defects in eight pieces, so the cap would have stopped audits that were
+still finding bugs, and the owner's stop rule is two clean audits in a row, not a round count. A piece still not
+clean when the campaign ends is listed in [campaign-2026-11.md](../campaign-2026-11.md) with its open issues. The
+original text above is kept as decided.
