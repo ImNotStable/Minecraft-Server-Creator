@@ -111,6 +111,11 @@ public final class Connection implements AutoCloseable {
      * at once with {@link FrameTooLargeException} or another {@link ProtocolException} when the request cannot be sent.
      */
     public CompletableFuture<Response> request(String op, JsonObject params, Duration timeout) {
+        return request(op, params == null ? null : RawJson.of(params), timeout);
+    }
+
+    /** Untyped request with params already as JSON text; see {@link #request(String, JsonObject, Duration)}. */
+    public CompletableFuture<Response> request(String op, RawJson params, Duration timeout) {
         long id = nextId.getAndIncrement();
         CompletableFuture<Response> future = new CompletableFuture<>();
         pending.put(id, future);
