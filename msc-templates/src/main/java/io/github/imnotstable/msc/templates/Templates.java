@@ -9,6 +9,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
@@ -57,19 +58,26 @@ public final class Templates {
     private static final String TEMPLATE_SUFFIX = ".tmpl";
     private static final Set<String> BINARY_EXTENSIONS = Set.of("jar", "png", "zip", "nbt", "schem", "dat");
     /**
-     * Mod ids each loader owns, by template platform: a mod with one of them is refused at startup. Fabric
-     * templates also run on Quilt, whose loader is {@code quilt_loader} and provides the Fabric ids.
+     * Ids each loader owns, by template platform: a mod or plugin with one of them is refused at startup or
+     * shadows the other. Fabric templates also run on Quilt, whose loader is {@code quilt_loader} and provides the
+     * Fabric ids. Each entry also names the id of MSC's own agent, which server_setup installs next to the project:
+     * {@code msc-agent} (Fabric, Quilt), {@code msc_agent} (NeoForge, Forge) and plugin {@code MscAgent} (Paper,
+     * Purpur). Paper refuses plugins named Bukkit, Minecraft or Mojang and compares plugin names ignoring case.
      */
     private static final Map<String, LoaderIds> LOADER_IDS = Map.of(
-            "fabric", new LoaderIds("projectId", Set.of(
-                    "minecraft", "java", "fabricloader", "mixinextras", "fabric-api", "fabric", "quilt_loader")),
-            "neoforge", new LoaderIds("modId", Set.of("minecraft", "neoforge")),
-            "forge", new LoaderIds("modId", Set.of("minecraft", "forge")));
+            "fabric", new LoaderIds("projectId", "mod id", Set.of(
+                    "minecraft", "java", "fabricloader", "mixinextras", "fabric-api", "fabric", "quilt_loader"), "msc-agent"),
+            "neoforge", new LoaderIds("modId", "mod id", Set.of("minecraft", "neoforge"), "msc_agent"),
+            "forge", new LoaderIds("modId", "mod id", Set.of("minecraft", "forge"), "msc_agent"),
+            "paper", new LoaderIds("name", "plugin name", Set.of("bukkit", "minecraft", "mojang"), "mscagent"));
     /** Paper refuses a plugin whose main class is in this package or below it. */
     private static final String BUKKIT_PACKAGE = "org.bukkit";
 
-    /** The placeholder holding a template's mod id, and the ids its loader keeps for itself. */
-    private record LoaderIds(String placeholder, Set<String> reserved) {}
+    /**
+     * The placeholder holding a template's mod id or plugin name, the lower-case ids its loader keeps, and the
+     * lower-case id of MSC's agent on that platform.
+     */
+    private record LoaderIds(String placeholder, String kind, Set<String> reserved, String agent) {}
 
     private Templates() {}
 
@@ -162,15 +170,24 @@ public final class Templates {
     }
 
     /**
-     * Refuses variables the template's loader would refuse at startup: a mod id the loader owns (project name
-     * {@code Minecraft} gives mod id {@code minecraft}), or on Paper a main class inside {@code org.bukkit}.
+     * Refuses variables the template's loader would refuse at startup: a mod id or plugin name the loader or MSC's
+     * agent owns (project name {@code Minecraft} gives mod id {@code minecraft}, {@code Msc Agent} the agent's
+     * {@code msc-agent}), or on Paper a main class inside {@code org.bukkit}.
      */
     private static void requireLoaderAccepts(String id, Map<String, String> values) {
+        if (id.equals(PAPER_SERVER)) {
+            return; // server config only: no plugin, so no plugin name or main class
+        }
         String platform = info(id).get("platform");
         LoaderIds ids = LOADER_IDS.get(platform);
-        if (ids != null && ids.reserved().contains(values.get(ids.placeholder()))) {
-            throw new IllegalArgumentException("Template '" + id + "' would give mod id '" + values.get(ids.placeholder())
-                    + "', which the " + platform + " loader keeps for itself; choose another project name");
+        if (ids != null) {
+            String value = values.get(ids.placeholder());
+            String key = value.toLowerCase(Locale.ROOT);
+            if (ids.reserved().contains(key) || ids.agent().equals(key)) {
+                throw new IllegalArgumentException("Template '" + id + "' would give " + ids.kind() + " '" + value
+                        + "', which the " + (ids.agent().equals(key) ? "MSC agent on the dev server" : platform + " loader")
+                        + " keeps for itself; choose another project name");
+            }
         }
         String pkg = values.get("packageName");
         if (platform.equals("paper") && (pkg.equals(BUKKIT_PACKAGE) || pkg.startsWith(BUKKIT_PACKAGE + "."))) {

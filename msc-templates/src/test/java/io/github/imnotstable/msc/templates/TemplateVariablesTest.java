@@ -29,6 +29,19 @@ class TemplateVariablesTest {
     }
 
     @Test
+    void takesAccentsOffAndRefusesLettersWithNoAsciiForm() {
+        assertThat(TemplateVariables.of("Café Lobby").projectId()).isEqualTo("cafe-lobby");
+        assertThat(TemplateVariables.of("Über Spiel").name()).isEqualTo("UberSpiel");
+        assertThat(TemplateVariables.of("Ñandú").packageName()).isEqualTo("com.example.nandu");
+        for (String name : new String[] {"Ølstue", "日本", "Straße"}) {
+            assertThatThrownBy(() -> TemplateVariables.of(name)).as(name)
+                    .isInstanceOf(IllegalArgumentException.class).hasMessageContaining(name).hasMessageContaining("ASCII");
+        }
+        assertThatThrownBy(() -> TemplateVariables.of("3d Parkour"))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("'3d Parkour'").hasMessageContaining("letter");
+    }
+
+    @Test
     void defaultsAreDevFriendly() {
         TemplateVariables v = TemplateVariables.of("xy");
         assertThat(v.serverIp()).isEqualTo("127.0.0.1");
@@ -77,6 +90,8 @@ class TemplateVariablesTest {
         assertThatThrownBy(() -> TemplateVariables.of("xy").withProjectId("a" + "-b".repeat(32)))
                 .isInstanceOf(IllegalArgumentException.class);
         assertThat(TemplateVariables.of("Void Run").packageName()).isEqualTo("com.example.voidrun");
+        assertThatThrownBy(() -> TemplateVariables.of("xy").withPackageName("java.lobby"))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("java.lobby");
         assertThat(TemplateVariables.of("xy").withProjectId("a" + "b".repeat(63)).projectId()).hasSize(64);
     }
 }
