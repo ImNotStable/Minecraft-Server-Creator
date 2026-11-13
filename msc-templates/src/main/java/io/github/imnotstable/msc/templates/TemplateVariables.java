@@ -8,14 +8,16 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.regex.Pattern;
+import javax.lang.model.SourceVersion;
 
 /**
  * The values a template is rendered with. Build with {@link #of(String)}, which derives every
  * other value from the project name, then override with the {@code withX} methods.
  *
  * @param name         plugin name, PascalCase letters and digits, for example {@code SpawnLobby}
- * @param projectId    Gradle project and jar name, kebab-case, for example {@code spawn-lobby}
- * @param packageName  Java package, for example {@code com.example.spawnlobby}
+ * @param projectId    Gradle project and jar name, kebab-case, 2-64 characters (it is also the mod id, and
+ *                     Fabric allows no other length), for example {@code spawn-lobby}
+ * @param packageName  Java package with no keyword segments, for example {@code com.example.spawnlobby}
  * @param mainClass    plugin main class simple name, for example {@code SpawnLobbyPlugin}
  * @param version      project version
  * @param description  one-line description
@@ -57,7 +59,16 @@ public record TemplateVariables(
     public TemplateVariables {
         check(name, NAME, "name");
         check(projectId, PROJECT_ID, "projectId");
+        if (projectId.length() < 2 || projectId.length() > 64) {
+            throw new IllegalArgumentException("projectId must be 2-64 characters (the mod id rule): " + projectId);
+        }
         check(packageName, PACKAGE, "packageName");
+        for (String segment : packageName.split("\\.")) {
+            if (SourceVersion.isKeyword(segment)) {
+                throw new IllegalArgumentException(
+                        "packageName segment '" + segment + "' is a Java keyword or literal: " + packageName);
+            }
+        }
         check(mainClass, CLASS, "mainClass");
         check(version, VERSION, "version");
         requireQuotable(description, "description");
@@ -90,6 +101,14 @@ public record TemplateVariables(
         }
         String name = pascal.toString();
         String lower = String.join("", words);
+        try {
+            return derived(name, words, lower);
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("Project name '" + projectName + "' cannot be used: " + e.getMessage(), e);
+        }
+    }
+
+    private static TemplateVariables derived(String name, List<String> words, String lower) {
         return new TemplateVariables(
                 name,
                 String.join("-", words),

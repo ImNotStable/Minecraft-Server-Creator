@@ -55,7 +55,7 @@ result.values().get("rconPassword");  // plus rconPort, serverPort, serverIp, mc
 | `levelType` | `minecraft:flat` (also sets `generator-settings` layers) | `withLevelType` |
 | `acceptEula` | `false`: writes `eula=false`. Set it only when the user has accepted the [Minecraft EULA](https://aka.ms/MinecraftEULA) | `withAcceptEula(boolean)` |
 
-Invalid values throw `IllegalArgumentException` when the variables are built. Pinned versions (`javaVersion`, `mcVersion`, `paperVersion`, `mockbukkitVersion`, `junitVersion`, `assertjVersion`, `runPaperVersion`, `foojayVersion`, `fabricLoaderVersion`, `fabricApiVersion`, `fabricLoomVersion`, `minestomVersion`, `minestomMcVersion`, `slf4jVersion`, `shadowVersion`) come from the repo's version catalog at build time and are also available as placeholders.
+Invalid values throw `IllegalArgumentException` when the variables are built, including a package segment that is a Java keyword or literal (name `Void` gives `com.example.void`) and a `projectId` outside 2-64 characters (it is also the mod id). `scaffold` also refuses variables that would name a class like one of its imports (`Minecraft` with a Minestom template gives `MinecraftServer`) or write two files to one path, before writing anything. Pinned versions (`javaVersion`, `mcVersion`, `paperVersion`, `mockbukkitVersion`, `junitVersion`, `assertjVersion`, `runPaperVersion`, `foojayVersion`, `fabricLoaderVersion`, `fabricApiVersion`, `fabricLoomVersion`, `minestomVersion`, `minestomMcVersion`, `slf4jVersion`, `shadowVersion`) come from the repo's version catalog at build time and are also available as placeholders.
 
 ## Writing a template
 
