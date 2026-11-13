@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.within;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class PhysicsTest {
     private static Physics at(double x, double y, double z) {
@@ -50,6 +52,23 @@ class PhysicsTest {
         }
         assertThat(p.y).isEqualTo(1.0);
         assertThat(flat.reads).as("reads in %s ticks", ticks).isLessThanOrEqualTo(ticks / 2);
+    }
+
+    /** Plants without collision and low blocks do not stop a walk: through the first, onto the second. */
+    @ParameterizedTest
+    @ValueSource(strings = {"minecraft:melon_stem[age=7]", "minecraft:attached_pumpkin_stem[facing=east]",
+            "minecraft:golden_dandelion", "minecraft:tube_coral_wall_fan[facing=north,waterlogged=false]",
+            "minecraft:torchflower_crop[age=1]", "minecraft:frogspawn",
+            "minecraft:repeater[delay=1,facing=north,locked=false,powered=false]",
+            "minecraft:comparator[facing=east,mode=compare,powered=false]", "minecraft:lily_pad",
+            "minecraft:potted_oak_sapling", "minecraft:flower_pot", "minecraft:campfire[lit=true]",
+            "minecraft:cake[bites=0]", "minecraft:creeper_head[rotation=0]", "minecraft:sea_pickle[pickles=4]"})
+    void walksThroughOrOntoLowBlocks(String block) throws Exception {
+        WorldView w = new WorldView(new FlatWorld().set(3, 1, 0, block), "w");
+        Physics p = at(0.5, 1, 0.5);
+        run(p, w, 40, 1, false, false);
+        assertThat(p.x).as(block).isGreaterThan(5);
+        assertThat(p.horizontalCollision).as(block).isFalse();
     }
 
     @Test
