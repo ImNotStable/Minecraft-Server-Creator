@@ -1,5 +1,6 @@
 package io.github.imnotstable.msc.bot;
 
+import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -598,6 +599,27 @@ public final class TestPlayer implements Bot {
         }
     }
 
+    /** What a pack download came to: whether a client would load it, and what the hud and events say. */
+    record PackCheck(boolean ok, String result) {
+    }
+
+    /** Download a pack like the client: follow redirects, need HTTP 200, the hash (when given) and pack.mcmeta. */
+    static PackCheck checkPack(String url, String hash) throws IOException, InterruptedException,
+            java.security.NoSuchAlgorithmException {
+        try (HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5))
+                .followRedirects(HttpClient.Redirect.NORMAL).build()) {
+            HttpResponse<byte[]> r = http.send(HttpRequest.newBuilder(URI.create(url))
+                    .timeout(Duration.ofSeconds(10)).build(), HttpResponse.BodyHandlers.ofByteArray());
+            String sha1 = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-1").digest(r.body()));
+            boolean ok = r.statusCode() == 200 && (hash == null || hash.isEmpty() || hash.equalsIgnoreCase(sha1));
+            boolean pack = ok && hasPackMeta(r.body());
+            String result = "HTTP " + r.statusCode() + ", " + r.body().length + " bytes"
+                    + (r.statusCode() == 200 ? (ok ? ", sha1 matches" : ", sha1 DIFFERS from " + hash) : "")
+                    + (ok && !pack ? ", but no pack.mcmeta at the zip root" : "");
+            return new PackCheck(pack, result);
+        }
+    }
+
     /** Accept the pack, and check that it downloads and matches its hash, which a real client would need. */
     private void pack(Session s, ClientboundResourcePackPushPacket p) {
         event("[pack] offered " + p.getUrl() + (p.isRequired() ? " (required)" : ""));
@@ -605,20 +627,12 @@ public final class TestPlayer implements Bot {
         s.send(new ServerboundResourcePackPacket(p.getId(), ResourcePackStatus.ACCEPTED));
         Thread.ofVirtual().start(() -> {
             ResourcePackStatus status;
-            try (HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build()) {
-                HttpResponse<byte[]> r = http.send(HttpRequest.newBuilder(URI.create(p.getUrl()))
-                        .timeout(Duration.ofSeconds(10)).build(), HttpResponse.BodyHandlers.ofByteArray());
-                String sha1 = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-1").digest(r.body()));
-                boolean ok = r.statusCode() == 200 && (p.getHash() == null || p.getHash().isEmpty()
-                        || p.getHash().equalsIgnoreCase(sha1));
-                boolean pack = ok && hasPackMeta(r.body());
-                String result = "HTTP " + r.statusCode() + ", " + r.body().length + " bytes"
-                        + (r.statusCode() == 200 ? (ok ? ", sha1 matches" : ", sha1 DIFFERS from " + p.getHash()) : "")
-                        + (ok && !pack ? ", but no pack.mcmeta at the zip root" : "");
-                ok = pack;
-                event("[pack] download: " + result);
-                hud.pack((ok ? "loaded (" : "FAILED (") + result + ")" + (p.isRequired() ? ", required" : ""));
-                status = ok ? ResourcePackStatus.SUCCESSFULLY_LOADED : ResourcePackStatus.FAILED_DOWNLOAD;
+            try {
+                PackCheck check = checkPack(p.getUrl(), p.getHash());
+                event("[pack] download: " + check.result());
+                hud.pack((check.ok() ? "loaded (" : "FAILED (") + check.result() + ")"
+                        + (p.isRequired() ? ", required" : ""));
+                status = check.ok() ? ResourcePackStatus.SUCCESSFULLY_LOADED : ResourcePackStatus.FAILED_DOWNLOAD;
             } catch (Exception e) {
                 event("[pack] download failed: " + e.getMessage());
                 hud.pack("FAILED (download: " + e.getMessage() + ")" + (p.isRequired() ? ", required" : ""));
