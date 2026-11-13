@@ -8,16 +8,14 @@ final class LogText {
     private LogText() {
     }
 
-    /** The line without ANSI colour codes. */
-    static String clean(String line) {
-        return line.replaceAll("\u001b\\[[0-9;?]*[A-Za-z]", "");
-    }
-
-    /** The last {@code count} lines, cleaned, one per line. */
+    /**
+     * The last {@code count} lines, one per line. Lines come from {@code ServerManager.log()}, whose reader already
+     * removed every terminal escape, so they are shown as they are.
+     */
     static String tail(List<String> lines, int count) {
         StringBuilder out = new StringBuilder();
         for (String line : lines.subList(Math.max(0, lines.size() - count), lines.size())) {
-            out.append(clean(line)).append('\n');
+            out.append(line).append('\n');
         }
         return out.toString().stripTrailing();
     }
