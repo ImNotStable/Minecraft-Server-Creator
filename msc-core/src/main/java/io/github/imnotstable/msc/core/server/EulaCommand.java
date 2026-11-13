@@ -10,7 +10,7 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * {@code msc eula accept|status|revoke}: the owner's own command for {@link MachineEula}. It is a command line mode
+ * {@code Main eula accept|status|revoke}: the owner's own command for {@link MachineEula}. It is a command line mode
  * of {@code Main}, not an MCP tool, and {@code accept} reads the answer from an interactive terminal only, so neither
  * a tool call nor a piped script can agree for the owner.
  */
