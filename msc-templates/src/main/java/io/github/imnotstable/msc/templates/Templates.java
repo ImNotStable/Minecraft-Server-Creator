@@ -56,6 +56,20 @@ public final class Templates {
     private static final String ROOT = "msc/templates/";
     private static final String TEMPLATE_SUFFIX = ".tmpl";
     private static final Set<String> BINARY_EXTENSIONS = Set.of("jar", "png", "zip", "nbt", "schem", "dat");
+    /**
+     * Mod ids each loader owns, by template platform: a mod with one of them is refused at startup. Fabric
+     * templates also run on Quilt, whose loader is {@code quilt_loader} and provides the Fabric ids.
+     */
+    private static final Map<String, LoaderIds> LOADER_IDS = Map.of(
+            "fabric", new LoaderIds("projectId", Set.of(
+                    "minecraft", "java", "fabricloader", "mixinextras", "fabric-api", "fabric", "quilt_loader")),
+            "neoforge", new LoaderIds("modId", Set.of("minecraft", "neoforge")),
+            "forge", new LoaderIds("modId", Set.of("minecraft", "forge")));
+    /** Paper refuses a plugin whose main class is in this package or below it. */
+    private static final String BUKKIT_PACKAGE = "org.bukkit";
+
+    /** The placeholder holding a template's mod id, and the ids its loader keeps for itself. */
+    private record LoaderIds(String placeholder, Set<String> reserved) {}
 
     private Templates() {}
 
@@ -106,6 +120,7 @@ public final class Templates {
         requireEmpty(target);
         Map<String, String> values = new LinkedHashMap<>(versions());
         values.putAll(vars.asMap());
+        requireLoaderAccepts(id, values);
 
         Path root = target.toAbsolutePath().normalize();
         Map<Path, byte[]> files = new LinkedHashMap<>();
@@ -144,6 +159,24 @@ public final class Templates {
             written.add(out);
         }
         return new ScaffoldResult(root, written, values);
+    }
+
+    /**
+     * Refuses variables the template's loader would refuse at startup: a mod id the loader owns (project name
+     * {@code Minecraft} gives mod id {@code minecraft}), or on Paper a main class inside {@code org.bukkit}.
+     */
+    private static void requireLoaderAccepts(String id, Map<String, String> values) {
+        String platform = info(id).get("platform");
+        LoaderIds ids = LOADER_IDS.get(platform);
+        if (ids != null && ids.reserved().contains(values.get(ids.placeholder()))) {
+            throw new IllegalArgumentException("Template '" + id + "' would give mod id '" + values.get(ids.placeholder())
+                    + "', which the " + platform + " loader keeps for itself; choose another project name");
+        }
+        String pkg = values.get("packageName");
+        if (platform.equals("paper") && (pkg.equals(BUKKIT_PACKAGE) || pkg.startsWith(BUKKIT_PACKAGE + "."))) {
+            throw new IllegalArgumentException("Template '" + id + "' would put the main class in " + pkg
+                    + ", and Paper refuses a main class within org.bukkit; choose another package");
+        }
     }
 
     /**

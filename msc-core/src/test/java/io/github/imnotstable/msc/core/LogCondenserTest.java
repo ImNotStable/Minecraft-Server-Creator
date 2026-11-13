@@ -279,4 +279,86 @@ class LogCondenserTest {
                 Execution failed for task ':compileJava'.
                 BUILD FAILED in 2s""");
     }
+
+    /** Minestom logs with slf4j-simple: {@code [thread] LEVEL logger - msg}, no timestamp (#272). */
+    @Test
+    void minestomWarningsAndErrorsAreCounted() {
+        List<String> log = List.of(
+                "[main] INFO net.minestom.server.MinecraftServer - Starting",
+                "[main] WARN com.example.lobby.LobbyConfig - lobby.json missing, using defaults",
+                "[main] ERROR com.example.lobby.Arena - Could not load arena",
+                "Done (0.512s)! Listening on 0.0.0.0:25565. Type stop to stop.");
+        LogCondenser.Condensed c = LogCondenser.analyze(log, 6000);
+        assertThat(c.text()).isEqualTo("""
+                4 lines, 1 errors, 1 warnings
+                WARN lobby.json missing, using defaults
+                ERROR Could not load arena""");
+    }
+
+    @Test
+    void minestomErrorsWithTracesStaySeparate() {
+        List<String> log = List.of(
+                "[main] INFO net.minestom.server.MinecraftServer - Starting",
+                "[main] ERROR com.example.lobby.Arena - Could not load arena a",
+                "java.lang.IllegalStateException: a",
+                "\tat com.example.lobby.Arena.load(Arena.java:10)",
+                "[main] INFO com.example.lobby.Lobby - Loaded",
+                "[main] ERROR com.example.lobby.Arena - Could not load arena b",
+                "java.lang.IllegalStateException: b",
+                "\tat com.example.lobby.Arena.load(Arena.java:10)");
+        assertThat(LogCondenser.condense(log, 6000)).isEqualTo("""
+                8 lines, 2 errors, 0 warnings
+                ERROR Could not load arena a
+                java.lang.IllegalStateException: a
+                \tat com.example.lobby.Arena.load(Arena.java:10)
+                ERROR Could not load arena b
+                java.lang.IllegalStateException: b
+                \tat com.example.lobby.Arena.load(Arena.java:10)""");
+    }
+
+    @Test
+    void aBareReadyLineIsNotPartOfTheWarningBefore() {
+        List<String> log = List.of(
+                "[main] WARN com.example.lobby.LobbyConfig - lobby.json missing",
+                "Done (0.512s)! Listening on 0.0.0.0:25565. Type stop to stop.",
+                "[12:00:00] [Server thread/WARN]: Something odd",
+                "Done (0.5s)! For help, type \"help\"");
+        assertThat(LogCondenser.condense(log, 6000))
+                .isEqualTo("4 lines, 0 errors, 2 warnings\nWARN lobby.json missing\n12:00:00 WARN Something odd");
+    }
+
+    @Test
+    void anUncaughtExceptionIsNotShownUnderTheInfoLineBefore() {
+        List<String> log = List.of(
+                "[main] INFO com.example.lobby.Lobby - Loading arenas",
+                "Exception in thread \"main\" java.lang.IllegalStateException: boom",
+                "\tat com.example.lobby.Lobby.main(Lobby.java:5)");
+        assertThat(LogCondenser.condense(log, 6000)).isEqualTo("""
+                3 lines, 1 errors, 0 warnings
+                Exception in thread "main" java.lang.IllegalStateException: boom
+                \tat com.example.lobby.Lobby.main(Lobby.java:5)""");
+    }
+
+    @Test
+    void colouredLinesAreClassified() {
+        List<String> log = List.of(
+                "\u001b[33;1m[12:00:00 WARN]: Paper warning\u001b[m",
+                "\u001b[31m[main] ERROR com.example.Foo - Minestom error\u001b[0m");
+        LogCondenser.Condensed c = LogCondenser.analyze(log, 6000);
+        assertThat(c.errors()).isEqualTo(1);
+        assertThat(c.warnings()).isEqualTo(1);
+    }
+
+    @Test
+    void everyPlatformsReadyLineIsRecognised() {
+        assertThat(List.of(
+                "[12:00:04 INFO]: Done (3.204s)! For help, type \"help\"", // Paper, Purpur
+                "[12:00:04] [Server thread/INFO]: Done (3.204s)! For help, type \"help\"", // Fabric, Quilt
+                "[12:00:04] [Server thread/INFO] [minecraft/DedicatedServer]: Done (3.2s)! For help, type \"help\"", // NeoForge, Forge
+                "Done (0.512s)! Listening on 0.0.0.0:25565. Type stop to stop.", // Minestom template
+                "\u001b[0m[12:00:04 INFO]: Done (3.204s)! For help, type \"help\"\u001b[m"))
+                .allMatch(LogCondenser::readyLine);
+        assertThat(List.of("[12:00:04 INFO]: Steve issued server command: /say Done",
+                "[main] INFO com.example.Lobby - Loading done")).noneMatch(LogCondenser::readyLine);
+    }
 }

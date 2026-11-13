@@ -15,11 +15,9 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
-import java.util.regex.Pattern;
 
 /** Owns the dev server process: start it with the agent's connection details, watch its log, stop it. */
 public final class ServerManager implements AutoCloseable {
-    private static final Pattern DONE = Pattern.compile(".*\\bDone \\(\\d.*\\)!.*");
 
     /**
      * Outcome of a start. {@code ready} false means it exited or timed out; the log says why. {@code agentMillis} is
@@ -180,7 +178,7 @@ public final class ServerManager implements AutoCloseable {
             String line;
             while ((line = reader.readLine()) != null) {
                 log.add(line);
-                if (DONE.matcher(line).matches()) {
+                if (LogCondenser.readyLine(line)) {
                     sawDone = true;
                 }
             }
