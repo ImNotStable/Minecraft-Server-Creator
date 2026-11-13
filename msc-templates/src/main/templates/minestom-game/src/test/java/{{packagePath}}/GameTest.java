@@ -100,6 +100,20 @@ class GameTest {
     }
 
     @Test
+    void gameCommandNeedsTheExactPlayerName(Env env) {
+        Game game = game(env);
+        Player steve = join(env, game, "Steve");
+        GameCommand command = new GameCommand(game, {{name}}Server.playerLookup(env.process().connection()));
+
+        List<GameCommand.Reply> typo = command.handle(null, new String[] {"stage", "arena", "Stev"});
+        List<GameCommand.Reply> exact = command.handle(null, new String[] {"stage", "arena", "steve"});
+
+        assertThat(typo).containsExactly(new GameCommand.Reply(false, "no online player Stev"));
+        assertThat(exact).containsExactly(new GameCommand.Reply(true, "Steve is on stage 2 arena"));
+        assertThat(game.stage(steve).name()).isEqualTo("arena");
+    }
+
+    @Test
     void gameCommandRunsFromTheConsole(Env env) {
         Game game = game(env);
         env.process().command().register(new GameCommand(game, name -> null));
