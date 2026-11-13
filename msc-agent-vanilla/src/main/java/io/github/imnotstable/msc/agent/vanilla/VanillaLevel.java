@@ -9,7 +9,10 @@ import java.util.TreeSet;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.syncher.EntityDataSerializers;
+import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.entity.Display;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
@@ -143,6 +146,27 @@ final class VanillaLevel implements AgentWorld<BlockState> {
             return p.getPlainTextName();
         }
         Component custom = e.getCustomName();
+        if (custom == null && e instanceof Display.TextDisplay) {
+            // A hologram's words are its text, not a name: report them so a render or summary can show them.
+            return displayText(e.getEntityData().getNonDefaultValues());
+        }
         return custom == null ? null : custom.getString();
+    }
+
+    /**
+     * The text of a text display from its synched data ({@code getText()} is private). Its text is the only
+     * {@code COMPONENT} value a text display has; the custom name is an optional component.
+     *
+     * @param data the entity's non-default values, null when all are default (empty text)
+     */
+    static String displayText(List<SynchedEntityData.DataValue<?>> data) {
+        if (data != null) {
+            for (SynchedEntityData.DataValue<?> value : data) {
+                if (value.serializer() == EntityDataSerializers.COMPONENT && value.value() instanceof Component text) {
+                    return text.getString();
+                }
+            }
+        }
+        return null;
     }
 }
