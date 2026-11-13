@@ -1,6 +1,7 @@
 package io.github.imnotstable.msc.agent.paper;
 
 import io.github.imnotstable.msc.agent.common.AgentWorlds;
+import io.github.imnotstable.msc.agent.common.BlockNames;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
