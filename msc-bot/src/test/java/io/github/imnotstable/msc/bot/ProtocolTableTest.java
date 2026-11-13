@@ -77,18 +77,18 @@ class ProtocolTableTest {
             | play, killed | Respawn | - |
             | play, killed | StartConfiguration | ConfigurationAcknowledged |
             | play, killed | (21 ticks) | ClientCommand(PERFORM_RESPAWN) |
-            | play, left the End | CookieRequest | CookieResponse |
-            | play, left the End | KeepAlive | KeepAlive |
-            | play, left the End | Ping | Pong |
-            | play, left the End | ResourcePackPush | ResourcePack(ACCEPTED), ResourcePack(FAILED_DOWNLOAD) |
-            | play, left the End | PlayerPosition | AcceptTeleportation |
-            | play, left the End | ChunkBatchFinished | ChunkBatchReceived |
-            | play, left the End | SetHealth 0 | - |
-            | play, left the End | PlayerCombatKill | - |
-            | play, left the End | GameEvent WIN_GAME | ClientCommand(PERFORM_RESPAWN) |
-            | play, left the End | Respawn | - |
-            | play, left the End | StartConfiguration | ConfigurationAcknowledged |
-            | play, left the End | (21 ticks) | - |
+            | play, sent the credits | CookieRequest | CookieResponse |
+            | play, sent the credits | KeepAlive | KeepAlive |
+            | play, sent the credits | Ping | Pong |
+            | play, sent the credits | ResourcePackPush | ResourcePack(ACCEPTED), ResourcePack(FAILED_DOWNLOAD) |
+            | play, sent the credits | PlayerPosition | AcceptTeleportation |
+            | play, sent the credits | ChunkBatchFinished | ChunkBatchReceived |
+            | play, sent the credits | SetHealth 0 | - |
+            | play, sent the credits | PlayerCombatKill | - |
+            | play, sent the credits | GameEvent WIN_GAME | ClientCommand(PERFORM_RESPAWN) |
+            | play, sent the credits | Respawn | - |
+            | play, sent the credits | StartConfiguration | ConfigurationAcknowledged |
+            | play, sent the credits | (21 ticks) | - |
             | play, respawned, before its position | CookieRequest | CookieResponse |
             | play, respawned, before its position | KeepAlive | KeepAlive |
             | play, respawned, before its position | Ping | Pong |
@@ -162,6 +162,11 @@ class ProtocolTableTest {
 
     @Test
     void answersInEveryStateOnThePreviousProtocol() throws Exception {
+        assertThat(onThePreviousProtocol("table")).isEqualTo(EXPECTED);
+    }
+
+    /** Run the static Wire method {@code method} with the previous MCProtocolLib, in its own class loader. */
+    static Object onThePreviousProtocol(String method) throws Exception {
         Path protocols = Path.of(System.getProperty("msc.bot.protocols"));
         List<URL> urls = new ArrayList<>();
         urls.add(TestPlayer.class.getProtectionDomain().getCodeSource().getLocation());
@@ -174,9 +179,9 @@ class ProtocolTableTest {
         try (Bots.ChildFirst loader = new Bots.ChildFirst(urls.toArray(URL[]::new), Wire.class.getClassLoader())) {
             assertThat(loader.loadClass(TestPlayer.class.getName()).getMethod("minecraftVersion").invoke(null))
                     .isNotEqualTo(TestPlayer.minecraftVersion());
-            var table = loader.loadClass(Wire.class.getName()).getDeclaredMethod("table");
+            var table = loader.loadClass(Wire.class.getName()).getDeclaredMethod(method);
             table.setAccessible(true);
-            assertThat(table.invoke(null)).isEqualTo(EXPECTED);
+            return table.invoke(null);
         }
     }
 }
