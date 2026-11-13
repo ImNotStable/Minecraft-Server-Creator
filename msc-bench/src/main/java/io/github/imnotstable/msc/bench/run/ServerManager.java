@@ -37,6 +37,11 @@ public final class ServerManager implements AutoCloseable {
 
     /** The console connection, starting the server first if nothing answers on the RCON port. */
     public synchronized RconClient rcon() throws IOException {
+        if (process != null && !process.isAlive()) {
+            // The agent stopped the server this class started; its connection died with it.
+            disconnect();
+            process = null;
+        }
         if (rcon == null) {
             rcon = tryConnect(COMMAND_TIMEOUT);
         }
@@ -64,6 +69,21 @@ public final class ServerManager implements AutoCloseable {
         }
         reachedRcon = true;
         return rcon;
+    }
+
+    /**
+     * Closes the console connection but leaves the server running, so the next {@link #rcon()} connects afresh,
+     * or starts the server, should the agent have stopped or restarted it meanwhile.
+     */
+    public synchronized void disconnect() {
+        if (rcon != null) {
+            try {
+                rcon.close();
+            } catch (IOException ignored) {
+                // nothing left to release
+            }
+            rcon = null;
+        }
     }
 
     /** True once the server answered on RCON, so its downloaded files are complete. */
@@ -138,12 +158,11 @@ public final class ServerManager implements AutoCloseable {
             } catch (IOException ignored) {
                 // the server may close the connection before replying
             }
-            try {
-                rcon.close();
-            } catch (IOException ignored) {
-                // nothing left to release
-            }
-            rcon = null;
+            disconnect();
+        }
+        if (process != null && !process.isAlive()) {
+            // Stopped during the run; whatever answered the stop above is another server, waited for below.
+            process = null;
         }
         if (process != null) {
             try {

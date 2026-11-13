@@ -84,4 +84,21 @@ class ServerManagerTest {
             assertThat(stopped).as("close() returned only after the server let go of its ports").isTrue();
         }
     }
+
+    @Test
+    void aDisconnectLetsTheChecksReachAServerTheAgentRestarted() throws IOException {
+        FakeRconServer before = new FakeRconServer("pw", command -> "");
+        int port = before.port();
+        ServerManager server = new ServerManager(serverDir, config(List.of("unused"), port), Map.of());
+        server.rcon().command("setup");
+        server.disconnect();
+        before.close();
+
+        try (FakeRconServer after = new FakeRconServer(port, "pw", command -> "ok")) {
+            assertThat(server.rcon().command("check")).isEqualTo("ok");
+            server.close();
+
+            assertThat(after.commands()).containsExactly("check", "stop");
+        }
+    }
 }
