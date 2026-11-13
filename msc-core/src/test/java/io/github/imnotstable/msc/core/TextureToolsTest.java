@@ -87,6 +87,18 @@ class TextureToolsTest {
     }
 
     @Test
+    void sameNamesInOtherFoldersGetTheirOwnModels() {
+        List<String> palette = List.of("r=#d4263a");
+        assertThat(h.ok("texture", "name", "item/red/gem", "palette", palette, "rows", List.of("r")))
+                .contains("item_model msc:red/gem");
+        assertThat(h.ok("texture", "name", "item/blue/gem", "palette", palette, "rows", List.of("r")))
+                .contains("item_model msc:blue/gem");
+        h.ok("texture", "name", "item/ruby", "palette", palette, "rows", List.of("r"));
+        assertThat(h.error("texture", "name", "block/ruby", "kind", "noise", "color", "#d4263a"))
+                .isEqualTo("error: item msc:ruby already shows model msc:item/ruby; give this one another name");
+    }
+
+    @Test
     void viewOutputDrawsTheSameTextureAgainAndBadFilesAreReported() throws Exception {
         h.ok("texture", "name", "item/dot", "palette", List.of("r=#d4263a"), "rows", List.of("r.", ".r"));
         List<String> view = h.ok("texture_view", "name", "item/dot").lines().toList();
