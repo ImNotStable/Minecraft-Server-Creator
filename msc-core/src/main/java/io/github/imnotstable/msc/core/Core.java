@@ -24,9 +24,15 @@ import io.github.imnotstable.msc.core.world.WorldService;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.stream.Collectors;
 
 /**
  * The core without a transport: services plus the tool registry. The MCP server and tests both sit on this.
@@ -77,6 +83,13 @@ public final class Core implements AutoCloseable {
     private final ToolRegistry registry;
     /** Tool calls hold the read lock, a workspace switch the write lock, so no call sees half a switch. */
     private final ReadWriteLock lock = new ReentrantReadWriteLock();
+    /** The threads inside a forwarded call and the tool each runs, so a switch can name them and close stop them. */
+    private final Map<Thread, String> running = new ConcurrentHashMap<>();
+    /**
+     * How long a switch or close waits for running calls. Bounded: a long call (server_wait, dev_cycle) must not hold
+     * up the switch, every call queued behind it, or the exit when the session ends.
+     */
+    private volatile Duration lockWait = Duration.ofSeconds(5);
     private volatile Bench bench;
 
     public Core(CoreConfig config) throws IOException {
@@ -109,14 +122,36 @@ public final class Core implements AutoCloseable {
             @Override
             public Tool.Output output(Args args) throws Exception {
                 lock.readLock().lock();
+                running.put(Thread.currentThread(), name);
                 try {
                     return bench.tools().tools().stream().filter(t -> t.name().equals(name)).findFirst()
                             .orElseThrow().handler().output(args);
                 } finally {
+                    running.remove(Thread.currentThread());
                     lock.readLock().unlock();
                 }
             }
         };
+    }
+
+    /** For tests: how long a switch or close waits for running calls. */
+    void lockWait(Duration wait) {
+        this.lockWait = wait;
+    }
+
+    /** The write lock within {@link #lockWait}, or null when calls still run (also when interrupted). */
+    private Lock writeLock() {
+        Lock write = lock.writeLock();
+        try {
+            return write.tryLock(lockWait.toMillis(), TimeUnit.MILLISECONDS) ? write : null;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return null;
+        }
+    }
+
+    private String runningCalls() {
+        return running.values().stream().sorted().collect(Collectors.joining(", "));
     }
 
     private String switchWorkspace(Args args) throws IOException {
@@ -138,7 +173,13 @@ public final class Core implements AutoCloseable {
         if (target.equals(realOrSelf(current.workspace()))) {
             return "workspace is already " + target;
         }
-        lock.writeLock().lock();
+        Lock write = writeLock();
+        if (write == null) {
+            String calls = runningCalls();
+            throw new ToolException("did not switch: " + (calls.isEmpty() ? "another call" : calls)
+                    + " is still running and a switch waits for it. Try again when it ends; still in "
+                    + current.workspace());
+        }
         try {
             Bench old = bench;
             boolean detached = old.server().detached();
@@ -165,7 +206,7 @@ public final class Core implements AutoCloseable {
                     .append("; platform: ").append(next.server().platform().id());
             return out.toString();
         } finally {
-            lock.writeLock().unlock();
+            write.unlock();
         }
     }
 
@@ -193,13 +234,22 @@ public final class Core implements AutoCloseable {
         return registry;
     }
 
+    /**
+     * Ends the session. Waits at most {@link #lockWait} for running calls, then interrupts them and closes anyway:
+     * stopping the server also ends a server_wait or a dev_cycle start, so nothing outlives the session.
+     */
     @Override
     public void close() throws IOException {
-        lock.writeLock().lock();
+        Lock write = writeLock();
+        if (write == null) {
+            running.keySet().forEach(Thread::interrupt);
+        }
         try {
             bench.close();
         } finally {
-            lock.writeLock().unlock();
+            if (write != null) {
+                write.unlock();
+            }
         }
     }
 }
