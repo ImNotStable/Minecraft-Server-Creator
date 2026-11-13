@@ -604,7 +604,9 @@ public final class TestPlayer implements Bot {
 
     // ---- one-shot actions, called on the tick thread or under the lock -----------------------------------
 
+    /** Sends a chat line or, with a slash, a command; throws for what a client could not type (see {@link ChatLine}). */
     void chat(String text) {
+        ChatLine.check(text);
         if (text.startsWith("/")) {
             send(new ServerboundChatCommandPacket(text.substring(1)));
         } else {
