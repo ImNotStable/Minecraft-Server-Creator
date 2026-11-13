@@ -14,6 +14,7 @@ import io.github.imnotstable.msc.core.tool.Tool;
 import io.github.imnotstable.msc.core.tool.ToolException;
 import io.github.imnotstable.msc.core.tool.ToolRegistry;
 import io.github.imnotstable.msc.core.tools.ApiTools;
+import io.github.imnotstable.msc.core.tools.BackgroundWork;
 import io.github.imnotstable.msc.core.tools.BuildTools;
 import io.github.imnotstable.msc.core.tools.LifecycleTools;
 import io.github.imnotstable.msc.core.tools.MetaTools;
@@ -31,6 +32,7 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
@@ -60,8 +62,9 @@ public final class Core implements AutoCloseable {
 
     /** The services of one workspace and the tools bound to them. */
     private record Bench(CoreConfig config, AgentHub hub, ServerManager server, ResourcePack pack,
-                         PlayerTools players, ToolRegistry tools) {
+                         PlayerTools players, ToolRegistry tools, BackgroundWork background, AtomicBoolean closed) {
         static Bench open(CoreConfig config, ToolLog log) throws IOException {
+            BackgroundWork background = new BackgroundWork();
             AgentHub hub = new AgentHub(config.agentPort(), config.token());
             ServerManager server = new ServerManager(config, hub);
             if (config.agentPort() == 0) {
@@ -77,17 +80,24 @@ public final class Core implements AutoCloseable {
             LifecycleTools.register(tools, config, hub, server, pack, new ProjectBuilder(config),
                     new PaperDownloader(config.downloadsUrl(), config.dataDir().resolve("cache")),
                     new FabricDownloader(config.fabricMetaUrl(), config.fabricMavenUrl(),
-                            config.dataDir().resolve("cache")));
+                            config.dataDir().resolve("cache")), background);
             api.register(tools);
             WorldTools.register(tools, config, world);
             BuildTools.register(tools, config, world, new Builder(hub, world));
             TextureTools.register(tools, hub, pack, config);
             PlayerTools players = PlayerTools.register(tools, config, hub, world);
-            return new Bench(config, hub, server, pack, players, tools);
+            return new Bench(config, hub, server, pack, players, tools, background, new AtomicBoolean());
         }
 
-        /** Same as a session ending: a detached server and its pack host keep running, anything else stops. */
-        void close() throws IOException {
+        /**
+         * Same as a session ending: a detached server and its pack host keep running, anything else stops. Builds
+         * first, so none outlives the core. Once only: a second caller (a close during a switch) waits for the first.
+         */
+        synchronized void close() throws IOException {
+            if (closed.getAndSet(true)) {
+                return;
+            }
+            background.close();
             players.close();
             pack.close(server.detached());
             server.close();

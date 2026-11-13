@@ -36,13 +36,16 @@ final class DevCycle {
     private final ProjectBuilder builder;
     private final ServerRun run;
     private final BuildWarmup warmup;
+    private final BackgroundWork background;
 
-    DevCycle(CoreConfig config, ServerManager server, ProjectBuilder builder, ServerRun run, BuildWarmup warmup) {
+    DevCycle(CoreConfig config, ServerManager server, ProjectBuilder builder, ServerRun run, BuildWarmup warmup,
+             BackgroundWork background) {
         this.config = config;
         this.server = server;
         this.builder = builder;
         this.run = run;
         this.warmup = warmup;
+        this.background = background;
     }
 
     /** Phase timings, shown on one line at the end so a slow phase is easy to spot. */
@@ -79,14 +82,17 @@ final class DevCycle {
         Check tests = check(project);
         StringBuilder out = new StringBuilder();
         String rest;
+        ProjectBuilder.BuildResult checked;
         try {
             rest = deployAndRestart(project, platform, jar, restart, maxChars, time);
-        } catch (IOException | InterruptedException | RuntimeException e) {
-            // Stop the tests for real: the next dev_cycle would otherwise start a second Gradle build beside them.
-            tests.thread().interrupt();
-            throw e;
+            checked = await(tests.result());
+        } finally {
+            // On any early end (a failed deploy, an interrupt while waiting for the tests) stop the tests for real:
+            // the next dev_cycle would otherwise start a second Gradle build beside them.
+            if (!tests.result().isDone()) {
+                tests.thread().interrupt();
+            }
         }
-        ProjectBuilder.BuildResult checked = await(tests.result());
         time.add("tests", checked.millis());
         if (!checked.ok()) {
             out.append("TESTS FAILED in ").append(LogText.seconds(checked.millis()))
@@ -103,7 +109,7 @@ final class DevCycle {
     /** Run the tests on another thread: the jar is already built, so they only race the server start. */
     private Check check(Path project) {
         CompletableFuture<ProjectBuilder.BuildResult> f = new CompletableFuture<>();
-        Thread thread = Thread.ofVirtual().name("msc-dev-cycle-check").start(() -> {
+        Thread thread = background.start("msc-dev-cycle-check", () -> {
             try {
                 f.complete(builder.check(project, BUILD_TIMEOUT));
             } catch (IOException | RuntimeException e) {
