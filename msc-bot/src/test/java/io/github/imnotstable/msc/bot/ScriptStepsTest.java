@@ -72,4 +72,33 @@ class ScriptStepsTest {
         assertThat(drive(p, Script.parse("walk 7,1,0"), 200)).startsWith("fell: landed at ")
                 .contains(",-8.0,0.5, off the route before step");
     }
+
+    @Test
+    void aLongGotoTimesOutWhileStillMakingProgress() {
+        TestPlayer p = at(new FlatWorld(), null, 0.5, 1, 0.5);
+        assertThat(drive(p, Script.parse("goto 1000.5,0.5"), 20 * 61)).startsWith("timed out after 60s, ");
+    }
+
+    @Test
+    void aLongWalkTimesOutWhileStillMakingProgress() {
+        List<int[]> route = new ArrayList<>();
+        for (int x = 0; x <= 1000; x++) {
+            route.add(new int[] {x, 1, 0, 'w'});
+        }
+        TestPlayer p = at(new FlatWorld(), Players.route(route), 0.5, 1, 0.5);
+        assertThat(drive(p, Script.parse("walk 1000,1,0"), 20 * 61)).startsWith("timed out after 60s before step ");
+    }
+
+    @Test
+    void aStepThatGivesNoResultStopsRunning() throws InterruptedException {
+        TestPlayer p = at(new FlatWorld(), null, 0.5, 1, 0.5);
+        Script.Step walk = Script.parse("goto 1000.5,0.5");
+        p.begin(walk);
+        assertThat(p.await(walk, java.time.Duration.ofMillis(10))).isEqualTo("stopped: no result (the server may have stopped)");
+        assertThat(p.current()).isNull();
+        double x = p.body.x;
+        p.tick();
+        p.tick();
+        assertThat(p.body.x).isCloseTo(x, org.assertj.core.api.Assertions.within(0.2)); // only sliding to a stop
+    }
 }

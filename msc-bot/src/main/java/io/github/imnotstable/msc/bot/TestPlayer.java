@@ -199,7 +199,7 @@ public final class TestPlayer implements Bot {
                 break;
             }
             begin(step);
-            String result = step.await();
+            String result = await(step, Script.Step.WAIT);
             out.append(step.text()).append(": ").append(result).append('\n');
             drainEvents(out);
         }
@@ -223,6 +223,25 @@ public final class TestPlayer implements Bot {
             step.start(this);
             current = step;
         }
+    }
+
+    /**
+     * The step's result, waiting at most {@code wait}. A step that gives none in time is finished and dropped, so the
+     * tick thread does not keep steering the player after the call has returned.
+     */
+    String await(Script.Step step, Duration wait) throws InterruptedException {
+        String result = step.await(wait);
+        synchronized (this) {
+            step.finish(result);
+            if (current == step) {
+                current = null;
+            }
+        }
+        return result;
+    }
+
+    synchronized Script.Step current() {
+        return current;
     }
 
     String status() {
