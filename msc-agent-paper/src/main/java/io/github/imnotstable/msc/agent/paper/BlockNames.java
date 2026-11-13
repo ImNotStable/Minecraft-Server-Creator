@@ -1,7 +1,9 @@
 package io.github.imnotstable.msc.agent.paper;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
@@ -13,7 +15,7 @@ final class BlockNames {
     /** Up to three known ids sharing the most words with {@code wanted}; fewer extra words and closer length win ties. */
     static List<String> suggest(String wanted, Iterable<String> known) {
         String bare = wanted.contains(":") ? wanted.substring(wanted.indexOf(':') + 1) : wanted;
-        Set<String> words = Set.of(bare.split("_"));
+        Set<String> words = new HashSet<>(Arrays.asList(bare.split("_")));
         record Match(String id, int shared, int extra) {
         }
         List<Match> matches = new ArrayList<>();
