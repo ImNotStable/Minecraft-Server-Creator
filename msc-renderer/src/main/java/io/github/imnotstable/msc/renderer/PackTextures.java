@@ -6,7 +6,9 @@ import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
@@ -16,10 +18,17 @@ import javax.imageio.ImageIO;
 /**
  * Textures from resource packs: folders or zip/jar files that contain {@code assets/<namespace>/textures/}.
  * Earlier roots win, so put the project's generated pack before a vanilla client jar. Files that are
- * missing or unreadable count as "no texture".
+ * missing or unreadable count as "no texture". Zip roots stay open between lookups (reopened when the file
+ * changes) until {@link #close()}.
  */
-public final class PackTextures implements TextureSource {
+public final class PackTextures implements TextureSource, AutoCloseable {
     private final List<Path> roots;
+    /** Open zip roots, guarded by {@code this}. */
+    private final Map<Path, OpenZip> zips = new HashMap<>();
+    private int zipOpens;
+
+    private record OpenZip(ZipFile file, long modified, long size) {
+    }
 
     public PackTextures(List<Path> roots) {
         this.roots = List.copyOf(roots);
@@ -87,18 +96,62 @@ public final class PackTextures implements TextureSource {
         }
     }
 
-    private static BufferedImage fromZip(Path zip, String entry) throws IOException {
-        if (!Files.isRegularFile(zip)) {
+    private BufferedImage fromZip(Path zip, String entry) throws IOException {
+        ZipFile file = open(zip);
+        if (file == null) {
             return null;
         }
-        try (ZipFile file = new ZipFile(zip.toFile())) {
-            ZipEntry e = file.getEntry(entry);
-            if (e == null) {
-                return null;
+        ZipEntry e = file.getEntry(entry);
+        if (e == null) {
+            return null;
+        }
+        try (InputStream in = file.getInputStream(e)) {
+            return ImageIO.read(in);
+        }
+    }
+
+    /** The zip, opened once and kept; reopened when its time or size changes. {@code null} when it is missing. */
+    private synchronized ZipFile open(Path zip) throws IOException {
+        OpenZip open = zips.get(zip);
+        if (!Files.isRegularFile(zip)) {
+            if (open != null) {
+                zips.remove(zip).file().close();
             }
-            try (InputStream in = file.getInputStream(e)) {
-                return ImageIO.read(in);
+            return null;
+        }
+        long modified = Files.getLastModifiedTime(zip).toMillis();
+        long size = Files.size(zip);
+        if (open != null) {
+            if (open.modified() == modified && open.size() == size) {
+                return open.file();
             }
+            zips.remove(zip).file().close();
+        }
+        ZipFile file = new ZipFile(zip.toFile());
+        zipOpens++;
+        zips.put(zip, new OpenZip(file, modified, size));
+        return file;
+    }
+
+    /** How many times a zip root was opened; for tests. */
+    synchronized int zipOpens() {
+        return zipOpens;
+    }
+
+    /** Closes the zip roots kept open. Later lookups open them again. */
+    @Override
+    public synchronized void close() throws IOException {
+        IOException failure = null;
+        for (OpenZip open : zips.values()) {
+            try {
+                open.file().close();
+            } catch (IOException e) {
+                failure = e;
+            }
+        }
+        zips.clear();
+        if (failure != null) {
+            throw failure;
         }
     }
 }
