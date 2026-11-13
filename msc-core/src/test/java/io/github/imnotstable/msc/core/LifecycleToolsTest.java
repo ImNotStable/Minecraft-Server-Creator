@@ -288,6 +288,31 @@ class LifecycleToolsTest {
     }
 
     @Test
+    void aFailedDeployStopsTheTestsRunningBesideIt() throws Exception {
+        Path ws = Files.createDirectories(workspace.resolve("ws9"));
+        Path slow = Files.createDirectories(ws.resolve("slow"));
+        Files.writeString(slow.resolve("version.txt"), "1.0");
+        Files.writeString(slow.resolve("slow-check.flag"), "");
+        Files.createDirectories(ws.resolve("run"));
+        Files.writeString(ws.resolve("run/paper.jar"), "not a jar");
+        try (CoreHarness s = new CoreHarness(ws, c -> c.withBuildCommand(java(FakeBuildMain.class)))) {
+            assertThat(s.error("dev_cycle", "project", "slow")).contains("EULA");
+            Path started = slow.resolve("check-started");
+            for (int i = 0; i < 50 && !Files.exists(started); i++) {
+                Thread.sleep(100);
+            }
+            // The check may be stopped before its process starts; once started, it must not outlive the failure.
+            if (Files.exists(started)) {
+                ProcessHandle check = ProcessHandle.of(Long.parseLong(Files.readString(started).strip())).orElse(null);
+                for (int i = 0; i < 100 && check != null && check.isAlive(); i++) {
+                    Thread.sleep(100);
+                }
+                assertThat(check == null || !check.isAlive()).isTrue();
+            }
+        }
+    }
+
+    @Test
     void devCycleStopsAtABrokenBuildAndLeavesTheServerAlone() throws Exception {
         h.ok("server_start", "timeoutSeconds", 30);
         Files.writeString(project.resolve("broken.flag"), "");

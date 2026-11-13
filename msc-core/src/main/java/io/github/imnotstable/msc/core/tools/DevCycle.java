@@ -76,16 +76,17 @@ final class DevCycle {
             return "BUILD FAILED in " + LogText.seconds(jar.millis()) + "\n"
                     + LogCondenser.condenseBuild(jar.output(), maxChars);
         }
-        CompletableFuture<ProjectBuilder.BuildResult> tests = check(project);
+        Check tests = check(project);
         StringBuilder out = new StringBuilder();
         String rest;
         try {
             rest = deployAndRestart(project, platform, jar, restart, maxChars, time);
         } catch (IOException | InterruptedException | RuntimeException e) {
-            tests.cancel(true);
+            // Stop the tests for real: the next dev_cycle would otherwise start a second Gradle build beside them.
+            tests.thread().interrupt();
             throw e;
         }
-        ProjectBuilder.BuildResult checked = await(tests);
+        ProjectBuilder.BuildResult checked = await(tests.result());
         time.add("tests", checked.millis());
         if (!checked.ok()) {
             out.append("TESTS FAILED in ").append(LogText.seconds(checked.millis()))
@@ -95,10 +96,14 @@ final class DevCycle {
         return out.append(rest).append('\n').append(time.line()).toString();
     }
 
+    /** The tests running beside the deploy, and the thread to interrupt to stop them. */
+    private record Check(Thread thread, CompletableFuture<ProjectBuilder.BuildResult> result) {
+    }
+
     /** Run the tests on another thread: the jar is already built, so they only race the server start. */
-    private CompletableFuture<ProjectBuilder.BuildResult> check(Path project) {
+    private Check check(Path project) {
         CompletableFuture<ProjectBuilder.BuildResult> f = new CompletableFuture<>();
-        Thread.ofVirtual().name("msc-dev-cycle-check").start(() -> {
+        Thread thread = Thread.ofVirtual().name("msc-dev-cycle-check").start(() -> {
             try {
                 f.complete(builder.check(project, BUILD_TIMEOUT));
             } catch (IOException | RuntimeException e) {
@@ -108,7 +113,7 @@ final class DevCycle {
                 f.completeExceptionally(e);
             }
         });
-        return f;
+        return new Check(thread, f);
     }
 
     private static ProjectBuilder.BuildResult await(CompletableFuture<ProjectBuilder.BuildResult> f)
