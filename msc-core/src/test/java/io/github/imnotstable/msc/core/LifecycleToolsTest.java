@@ -308,23 +308,51 @@ class LifecycleToolsTest {
         Path slow = Files.createDirectories(ws.resolve("slow"));
         Files.writeString(slow.resolve("version.txt"), "1.0");
         Files.writeString(slow.resolve("slow-check.flag"), "");
+        Path started = slow.resolve("check-started");
         Files.createDirectories(ws.resolve("run"));
         Files.writeString(ws.resolve("run/paper.jar"), "not a jar");
-        try (CoreHarness s = new CoreHarness(ws, c -> c.withBuildCommand(java(FakeBuildMain.class)))) {
-            assertThat(s.error("dev_cycle", "project", "slow")).contains("EULA");
-            Path started = slow.resolve("check-started");
-            for (int i = 0; i < 50 && !Files.exists(started); i++) {
+        // The deploy first stops a server an earlier core left running, over RCON. Its fake RCON lets that server
+        // exit only once the check has started, so the deploy fails (no EULA) while the check is surely running.
+        Process leftover = new ProcessBuilder(java(io.github.imnotstable.msc.core.fixture.SleepMain.class)).start();
+        try (java.net.ServerSocket rcon = new java.net.ServerSocket(0)) {
+            Files.writeString(ws.resolve("run/server.properties"),
+                    "enable-rcon=true\nrcon.port=" + rcon.getLocalPort() + "\nrcon.password=pw\n");
+            Files.createDirectories(ws.resolve(".msc"));
+            Files.writeString(ws.resolve(".msc/server.pid"),
+                    leftover.pid() + " " + leftover.info().startInstant().orElseThrow().toEpochMilli() + "\n");
+            Thread.ofVirtual().start(() -> stopWhenStarted(rcon, leftover, started));
+            try (CoreHarness s = new CoreHarness(ws, c -> c.withBuildCommand(java(FakeBuildMain.class)))) {
+                assertThat(s.error("dev_cycle", "project", "slow")).contains("EULA");
+            }
+            ProcessHandle check = ProcessHandle.of(Long.parseLong(Files.readString(started).strip())).orElse(null);
+            if (check != null) {
+                check.onExit().get(10, java.util.concurrent.TimeUnit.SECONDS);
+            }
+        } finally {
+            leftover.destroyForcibly();
+        }
+    }
+
+    /** A fake RCON server: accepts the login and "stop", then ends the server once the check has started. */
+    private static void stopWhenStarted(java.net.ServerSocket rcon, Process server, Path started) {
+        try (java.net.Socket s = rcon.accept()) {
+            java.io.DataInputStream in = new java.io.DataInputStream(s.getInputStream());
+            for (int packet = 0; packet < 2; packet++) {
+                byte[] head = new byte[4];
+                in.readFully(head);
+                byte[] rest = new byte[java.nio.ByteBuffer.wrap(head).order(java.nio.ByteOrder.LITTLE_ENDIAN).getInt()];
+                in.readFully(rest);
+                // Answer with the request's id: 1 for the login, which is all the client waits for.
+                s.getOutputStream().write(java.nio.ByteBuffer.allocate(14).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+                        .putInt(10).put(rest, 0, 4).putInt(2).putShort((short) 0).array());
+            }
+            for (int i = 0; i < 300 && !Files.exists(started); i++) {
                 Thread.sleep(100);
             }
-            // The check may be stopped before its process starts; once started, it must not outlive the failure.
-            if (Files.exists(started)) {
-                ProcessHandle check = ProcessHandle.of(Long.parseLong(Files.readString(started).strip())).orElse(null);
-                for (int i = 0; i < 100 && check != null && check.isAlive(); i++) {
-                    Thread.sleep(100);
-                }
-                assertThat(check == null || !check.isAlive()).isTrue();
-            }
+        } catch (Exception e) {
+            // The client closed early; end the server anyway.
         }
+        server.destroyForcibly();
     }
 
     @Test

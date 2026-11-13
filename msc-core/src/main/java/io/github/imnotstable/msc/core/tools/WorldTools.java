@@ -117,7 +117,7 @@ public final class WorldTools {
                     }
                     return world.summary(region, Budget.DEFAULT_CHARS);
                 });
-        registry.add("world_entities", "List entities in a region: type, name, position, health, tags. Loaded chunks only.",
+        registry.add("world_entities", "List entities in a region: type, name, position, health, tags. Loaded chunks only, except on Minestom.",
                 Schema.of().req("region", "string", REGION).opt("type", "string", "Only this type, such as zombie")
                         .opt("limit", "integer", "Default 50").opt("ids", "boolean", "Add UUIDs")
                         .opt("world", "string", WORLD),
