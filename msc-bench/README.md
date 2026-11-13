@@ -45,6 +45,8 @@ Check types: `file` (exists, optional `contains` regex), `command` (exit code, o
 ./gradlew :msc-bench:run --args="report ~/.msc/bench-runs/<ts>"
 ```
 
+A leading `~` in a path argument (`check`'s workspace, `report`'s run folder, `--out`, `--config`, `--tasks-dir`) is your home folder: the bench expands it itself, because neither Gradle's `--args` nor a quoted shell argument does. The path `run` prints after `Report:` works too.
+
 `check` runs one task's checks on a workspace. Its RCON checks use a server already answering on the RCON port and leave it running; when none does and the EULA is accepted on the machine, it starts the workspace's own `server/` for the checks and stops it after them.
 
 Before the first run:

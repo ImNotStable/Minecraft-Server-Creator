@@ -39,11 +39,14 @@ import java.util.Set;
  * common: --tasks-dir DIR (default tasks), --config FILE (default bench.json),
  *         --out DIR (default ~/.msc/bench-runs, or &lt;temp&gt;/msc-bench-runs when the home folder is inside a
  *         repository; must be outside any repository or CLAUDE.md folder)
+ * A leading {@code ~} in a path argument is the home folder: Gradle's {@code --args="..."} and quoted shell
+ * arguments pass it unexpanded.
  * </pre>
  */
 public final class Main {
 
     private static final Set<String> FLAGS = Set.of("--tasks", "--modes", "--repeat", "--tasks-dir", "--config", "--out");
+    private static final Set<String> PATH_FLAGS = Set.of("--tasks-dir", "--config", "--out");
 
     private Main() {
     }
@@ -73,9 +76,11 @@ public final class Main {
             }
         }
         if (positional.isEmpty()) {
-            out.println("usage: msc-bench list | run [--tasks a,b] [--modes m1,m2] [--repeat N] | check <task> <workspace> | report <runDir>");
+            out.println(usage());
             return 1;
         }
+        Path home = Path.of(System.getProperty("user.home"));
+        flags.replaceAll((flag, value) -> PATH_FLAGS.contains(flag) ? expandHome(value, home).toString() : value);
         Path tasksDir = Path.of(flags.getOrDefault("--tasks-dir", "tasks"));
         return switch (positional.getFirst()) {
             case "list" -> list(tasksDir, out);
@@ -84,16 +89,37 @@ public final class Main {
                 if (positional.size() != 3) {
                     throw new IllegalArgumentException("usage: check <task> <workspace>");
                 }
-                yield check(tasksDir, positional.get(1), Path.of(positional.get(2)), flags, out);
+                yield check(tasksDir, positional.get(1), expandHome(positional.get(2), home), flags, out);
             }
             case "report" -> {
                 if (positional.size() != 2) {
                     throw new IllegalArgumentException("usage: report <runDir>");
                 }
-                yield report(Path.of(positional.get(1)), out);
+                yield report(expandHome(positional.get(1), home), out);
             }
             default -> throw new IllegalArgumentException("unknown command " + positional.getFirst());
         };
+    }
+
+    static String usage() {
+        return "usage: msc-bench list | run [--tasks a,b] [--modes m1,m2] [--repeat N] [--out DIR, default "
+                + RunIsolation.DEFAULT_RUNS_SHOWN + "] | check <task> <workspace> | report <runDir>";
+    }
+
+    /**
+     * The argument as a path, with a leading {@code ~} (alone or before a separator) as the home folder. Neither
+     * Gradle's {@code --args} nor a quoted shell argument expands it, and {@code Path.of} would read it as a folder
+     * named {@code ~} in msc-bench/.
+     */
+    static Path expandHome(String arg, Path home) {
+        if (arg.equals("~")) {
+            return home;
+        }
+        if (arg.startsWith("~/") || arg.startsWith("~\\")) {
+            String rest = arg.substring(2);
+            return rest.isEmpty() ? home : home.resolve(rest);
+        }
+        return Path.of(arg);
     }
 
     private static int list(Path tasksDir, PrintStream out) throws IOException {

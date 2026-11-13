@@ -16,6 +16,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 class MainTest {
 
@@ -73,5 +75,22 @@ class MainTest {
         try (ServerSocket socket = new ServerSocket(0, 1, InetAddress.getLoopbackAddress())) {
             return socket.getLocalPort();
         }
+    }
+
+    @ParameterizedTest
+    @CsvSource({"~, ''", "~/.msc/bench-runs/x, .msc/bench-runs/x", "~\\.msc\\x, .msc/x", "~/, ''"})
+    void aLeadingTildeIsTheHomeFolder(String arg, String underHome) {
+        // Gradle's --args="report ~/.msc/..." passes the tilde unexpanded; Path.of read it as msc-bench/~/.msc/...
+        Path home = dir.resolve("home");
+        Path expected = underHome.isEmpty() ? home : home.resolve(underHome);
+
+        assertThat(Main.expandHome(arg, home).toString().replace('\\', '/'))
+                .isEqualTo(expected.toString().replace('\\', '/'));
+    }
+
+    @ParameterizedTest
+    @CsvSource({"~user/x", "runs/~/x", "x~"})
+    void otherTildesAreLeftAlone(String arg) {
+        assertThat(Main.expandHome(arg, dir.resolve("home"))).isEqualTo(Path.of(arg));
     }
 }
