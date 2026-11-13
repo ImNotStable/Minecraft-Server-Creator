@@ -5,8 +5,17 @@ import net.kyori.adventure.text.TextComponent;
 import net.kyori.adventure.text.TranslatableComponent;
 import net.kyori.adventure.text.TranslationArgument;
 
-/** Chat components as plain text: literal text as is, translatable text as its key and arguments. */
+/**
+ * Chat components as plain text: literal text as is, the chat translations as the client shows them, other
+ * translatable text as its key and arguments.
+ */
 final class Text {
+    /** The client's English text of the chat translations, which every platform's chat should read alike. */
+    private static final java.util.Map<String, String> CHAT = java.util.Map.of(
+            "chat.type.text", "<%s> %s",
+            "chat.type.announcement", "[%s] %s",
+            "chat.type.emote", "* %s %s");
+
     private Text() {
     }
 
@@ -40,6 +49,15 @@ final class Text {
     private static void append(Component c, StringBuilder out) {
         if (c instanceof TextComponent t) {
             out.append(t.content());
+        } else if (c instanceof TranslatableComponent t && CHAT.containsKey(t.key()) && t.fallback() == null) {
+            // Chat lines some servers (Minestom) send as translations: render them as the client does.
+            String[] parts = CHAT.get(t.key()).split("%s", -1);
+            for (int i = 0; i < parts.length; i++) {
+                out.append(parts[i]);
+                if (i < parts.length - 1 && i < t.arguments().size()) {
+                    append(t.arguments().get(i).asComponent(), out);
+                }
+            }
         } else if (c instanceof TranslatableComponent t) {
             String fallback = t.fallback();
             out.append(fallback != null ? fallback : t.key());
