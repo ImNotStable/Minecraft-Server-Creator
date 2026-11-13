@@ -45,6 +45,8 @@ Check types: `file` (exists, optional `contains` regex), `command` (exit code, o
 ./gradlew :msc-bench:run --args="report runs/<ts>"
 ```
 
+`check` runs one task's checks on a workspace. Its RCON checks use a server already answering on the RCON port and leave it running; when none does and the EULA is accepted on the machine, it starts the workspace's own `server/` for the checks and stops it after them.
+
 Before the first run:
 
 - Paper: nothing to set. The runner uses the newest `paper-26.3-<build>.jar` in msc-bench's `.cache/` or msc-core's cache (`../.msc/cache`), and downloads the newest stable build into `.cache/` if there is none. `server.paperJar` overrides this.
