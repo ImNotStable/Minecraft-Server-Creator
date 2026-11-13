@@ -122,6 +122,8 @@ public final class TextGrid {
                 .append(sz).append(" rows=z cols=x\n").append(legend).append('\n');
         // Each layer is "all c", "same as y=N" or rows; runs of equal "all"/"same as" layers share one line.
         Map<String, Integer> seenLayers = new HashMap<>();
+        // A structure needs one layer of rows to give its size, so when every layer is uniform the lowest gets rows.
+        boolean rowsNeeded = allLayersUniform(grid, symbol, toName);
         String pending = null;
         int runStart = 0;
         int runEnd = 0;
@@ -132,7 +134,7 @@ public final class TextGrid {
             for (int z = 0; z < sz; z++) {
                 for (int x = 0; x < sx; x++) {
                     int b = grid.blocks()[(y * sz + z) * sx + x];
-                    char c = b < 0 ? '_' : symbol[toName[b]];
+                    char c = cell(b, symbol, toName);
                     if (first == 0) {
                         first = c;
                     } else if (c != first) {
@@ -145,7 +147,8 @@ public final class TextGrid {
             int worldY = r.min().y() + y;
             String text = layer.toString();
             Integer same = seenLayers.putIfAbsent(text, worldY);
-            String shortForm = uniform && sx * sz > 1 ? " all " + first : same != null ? " same as y=" + same : null;
+            String shortForm = uniform && sx * sz > 1 && !(rowsNeeded && y == 0) ? " all " + first
+                    : same != null ? " same as y=" + same : null;
             if (pending != null && pending.equals(shortForm) && runEnd == worldY - 1) {
                 runEnd = worldY;
                 continue;
@@ -161,6 +164,22 @@ public final class TextGrid {
         appendRun(out, pending, runStart, runEnd);
         return Budget.truncate(out.toString().stripTrailing(), maxChars,
                 "Ask for fewer layers or a smaller area, or raise maxChars.");
+    }
+
+    /** Whether every layer shows one symbol only. */
+    private static boolean allLayersUniform(BlockGrid grid, char[] symbol, int[] toName) {
+        int layer = grid.region().sizeX() * grid.region().sizeZ();
+        int[] blocks = grid.blocks();
+        for (int i = 0; i < blocks.length; i++) {
+            if (i % layer != 0 && cell(blocks[i], symbol, toName) != cell(blocks[i - 1], symbol, toName)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static char cell(int block, char[] symbol, int[] toName) {
+        return block < 0 ? '_' : symbol[toName[block]];
     }
 
     private static void appendRun(StringBuilder out, String shortForm, int from, int to) {
