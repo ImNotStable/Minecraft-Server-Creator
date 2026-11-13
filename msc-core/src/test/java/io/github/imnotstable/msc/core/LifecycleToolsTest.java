@@ -743,6 +743,16 @@ class LifecycleToolsTest {
     }
 
     @Test
+    void aServerThatDiesRightAfterDoneIsReportedAsExitedWithItsTrace() throws Exception {
+        Files.createDirectories(workspace.resolve("run/plugins"));
+        Files.writeString(workspace.resolve("run/plugins/msc-agent-paper.jar"), "agent");
+        Files.writeString(workspace.resolve("run/done-crash.flag"), "");
+        assertThat(h.ok("server_start", "timeoutSeconds", 30)).startsWith("server exited right after it was ready, after ")
+                .contains("12:00:03 ERROR Encountered an unexpected exception\njava.lang.IllegalStateException: tick failed")
+                .doesNotContain("server ready");
+    }
+
+    @Test
     void devCycleDeploysAFabricModIntoMods() throws Exception {
         Files.createDirectories(project.resolve("src/main/resources"));
         Files.writeString(project.resolve("src/main/resources/fabric.mod.json"), "{}");

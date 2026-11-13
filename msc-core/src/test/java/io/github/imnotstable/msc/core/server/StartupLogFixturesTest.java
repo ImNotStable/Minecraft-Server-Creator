@@ -50,6 +50,52 @@ class StartupLogFixturesTest {
     private static final List<String> BARE_LISTENER_ERROR = List.of(
             "java.lang.Exception: join failed",
             "\tat com.example.lobby.Lobby.onJoin(Lobby.java:30)");
+    /**
+     * {@code e.printStackTrace()} in a plugin on Paper and Purpur: System.err is logged at WARN, one line per line,
+     * tagged with the plugin (#336). Paper nags once about the plugin's use of System.err.
+     */
+    private static final List<String> PLUGIN_PRINTED = printed("[12:00:05 WARN]: [MyPlugin] [STDERR] ", List.of(
+            "java.lang.IllegalStateException: Arena 'spawn' has no world",
+            "\tat MyPlugin-1.0.jar//com.example.myplugin.Arena.load(Arena.java:42)",
+            "\tat MyPlugin-1.0.jar//com.example.myplugin.MyPlugin.onEnable(MyPlugin.java:17)",
+            "\tat org.bukkit.plugin.java.JavaPlugin.setEnabled(JavaPlugin.java:288)",
+            "\tat io.papermc.paper.plugin.manager.PaperPluginInstanceManager.enablePlugin(PaperPluginInstanceManager.java:202)",
+            "\tat io.papermc.paper.plugin.manager.PaperPluginManagerImpl.enablePlugin(PaperPluginManagerImpl.java:109)",
+            "\tat org.bukkit.plugin.SimplePluginManager.enablePlugin(SimplePluginManager.java:520)",
+            "\tat org.bukkit.craftbukkit.CraftServer.enablePlugin(CraftServer.java:654)",
+            "\tat org.bukkit.craftbukkit.CraftServer.enablePlugins(CraftServer.java:565)",
+            "\tat net.minecraft.server.MinecraftServer.loadWorld0(MinecraftServer.java:676)",
+            "\tat net.minecraft.server.MinecraftServer.loadLevel(MinecraftServer.java:434)",
+            "\tat net.minecraft.server.dedicated.DedicatedServer.initServer(DedicatedServer.java:308)",
+            "\tat net.minecraft.server.MinecraftServer.runServer(MinecraftServer.java:1101)",
+            "\tat net.minecraft.server.MinecraftServer.lambda$spin$2(MinecraftServer.java:310)",
+            "\tat java.base/java.lang.Thread.run(Thread.java:1583)",
+            "Caused by: java.io.FileNotFoundException: plugins/MyPlugin/arenas/spawn.yml (No such file or directory)",
+            "\tat java.base/java.io.FileInputStream.open0(Native Method)",
+            "\tat java.base/java.io.FileInputStream.open(FileInputStream.java:213)",
+            "\tat java.base/java.io.FileInputStream.<init>(FileInputStream.java:152)",
+            "\tat MyPlugin-1.0.jar//com.example.myplugin.ArenaFile.read(ArenaFile.java:20)",
+            "\tat MyPlugin-1.0.jar//com.example.myplugin.Arena.load(Arena.java:40)",
+            "\t... 13 more"));
+    private static final String NAG_WARNING = "[12:00:05 WARN]: Nag author(s): '[Someone]' of 'MyPlugin v1.0' about"
+            + " their usage of System.out/err.print. Please use your plugin's logger instead (JavaPlugin#getLogger).";
+    /** The same printed by server code or a library: Paper logs it at WARN without a tag. */
+    private static final List<String> SERVER_PRINTED = printed("[12:00:05 WARN]: ",
+            PLUGIN_PRINTED.stream().map(l -> l.substring(l.indexOf("[STDERR] ") + 9)).toList());
+    /** Vanilla's logged System.err, which Fabric and Quilt keep: INFO, tagged {@code [STDERR]:}. */
+    private static final List<String> MOD_PRINTED = printed("[12:00:05] [Server thread/INFO]: [STDERR]: ", List.of(
+            "java.lang.IllegalStateException: boom",
+            "\tat com.example.mymod.Arena.load(Arena.java:12)",
+            "\tat net.minecraft.server.MinecraftServer.runServer(MinecraftServer.java:1)",
+            "\tat java.base/java.lang.Thread.run(Thread.java:1583)"));
+    /** Forge and NeoForge log System.err under the logger STDERR, with the printing call in front. */
+    private static final List<String> LOADER_PRINTED = List.of(
+            "[12:00:05] [Server thread/INFO] [STDERR/]: [java.lang.Throwable:printStackTrace:662]: java.lang.IllegalStateException: boom",
+            "[12:00:05] [Server thread/INFO] [STDERR/]: [java.lang.Throwable:printStackTrace:662]: \tat TRANSFORMER/mymod@1.0/com.example.mymod.Arena.load(Arena.java:12)",
+            "[12:00:05] [Server thread/INFO] [STDERR/]: [java.lang.Throwable:printStackTrace:662]: \tat TRANSFORMER/minecraft@26.3/net.minecraft.server.MinecraftServer.runServer(MinecraftServer.java:1)",
+            "[12:00:05] [Server thread/INFO] [STDERR/]: [java.lang.Throwable:printEnclosedStackTrace:688]: Caused by: java.io.IOException: disk",
+            "[12:00:05] [Server thread/INFO] [STDERR/]: [java.lang.Throwable:printEnclosedStackTrace:697]: \tat TRANSFORMER/mymod@1.0/com.example.mymod.Arena.read(Arena.java:30)",
+            "[12:00:05] [Server thread/INFO] [STDERR/]: [java.lang.Throwable:printEnclosedStackTrace:711]: \t... 2 more");
     private static final String SIMPLE_WARNING = "[main] WARN com.example.lobby.LobbyConfig - lobby.json missing, using defaults";
 
     private static final List<Fixture> FIXTURES = List.of(
@@ -59,8 +105,21 @@ class StartupLogFixturesTest {
             new Fixture("quilt", 7, MOD_ERROR, MOD_WARNING),
             new Fixture("neoforge", 8, LOADER_ERROR, LOADER_WARNING),
             new Fixture("forge", 9, LOADER_ERROR, LOADER_WARNING),
+            new Fixture("paper", 13, PLUGIN_PRINTED, NAG_WARNING),
+            new Fixture("purpur", 13, PLUGIN_PRINTED, NAG_WARNING),
+            new Fixture("paper", 13, SERVER_PRINTED, PLUGIN_WARNING),
+            new Fixture("purpur", 13, SERVER_PRINTED, PLUGIN_WARNING),
+            new Fixture("fabric", 6, MOD_PRINTED, MOD_WARNING),
+            new Fixture("quilt", 7, MOD_PRINTED, MOD_WARNING),
+            new Fixture("neoforge", 8, LOADER_PRINTED, LOADER_WARNING),
+            new Fixture("forge", 9, LOADER_PRINTED, LOADER_WARNING),
             new Fixture("minestom", 0, LISTENER_ERROR, SIMPLE_WARNING),
             new Fixture("minestom", 0, BARE_LISTENER_ERROR, SIMPLE_WARNING));
+
+    /** Each line of a printed trace with the prefix a platform's logged System.err puts in front. */
+    private static List<String> printed(String prefix, List<String> lines) {
+        return lines.stream().map(l -> prefix + l).toList();
+    }
 
     @TestFactory
     Stream<DynamicTest> everyPlatformsStartUpIsClassified() {
@@ -135,6 +194,19 @@ class StartupLogFixturesTest {
         cases.add(new Case("a trace of 5000 frames", "java.lang.StackOverflowError\n"
                 + "\tat com.example.Loop.again(Loop.java:1)\n".repeat(5000) + PAPER_READY, true, 1, 0,
                 (5000 - LogReader.MAX_ENTRY_LINES) + " more lines cut"));
+        String printed = String.join("\n", PLUGIN_PRINTED) + "\n";
+        cases.add(new Case("a plugin's printed trace is one error with its framework frames folded (#336)",
+                NAG_WARNING + "\n" + printed + PAPER_READY, true, 1, 1, "\t... 12 framework frames\nCaused by: "));
+        cases.add(new Case("an untagged printed trace is one error too (#336)", String.join("\n", SERVER_PRINTED) + "\n"
+                + PAPER_READY, true, 1, 0, "WARN java.lang.IllegalStateException: Arena 'spawn' has no world\n\tat"));
+        cases.add(new Case("two plugins printing at once stay apart", "[12:00:05 WARN]: [A] [STDERR] java.lang.Exception: a\n"
+                + "[12:00:05 WARN]: [B] [STDERR] java.lang.Exception: b\n[12:00:05 WARN]: [A] [STDERR] \tat a.A.run(A.java:1)\n"
+                + "[12:00:05 WARN]: [B] [STDERR] \tat b.B.run(B.java:1)\n" + PAPER_READY, true, 2, 0, "[B] java.lang.Exception: b"));
+        cases.add(new Case("a plugin's ordinary System.err line stays a warning",
+                "[12:00:05 WARN]: [MyPlugin] [STDERR] could not reach the stats server\n" + PAPER_READY, true, 0, 1,
+                "could not reach the stats server"));
+        cases.add(new Case("an untagged header without frames is not an error",
+                "[12:00:05 WARN]: java.io.IOException: timeout\n" + PAPER_READY, true, 0, 1, "timeout"));
         return cases;
     }
 

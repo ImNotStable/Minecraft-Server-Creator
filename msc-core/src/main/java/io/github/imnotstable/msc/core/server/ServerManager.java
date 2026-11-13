@@ -18,10 +18,13 @@ import java.util.concurrent.TimeUnit;
 public final class ServerManager implements AutoCloseable {
 
     /**
-     * Outcome of a start. {@code ready} false means it exited or timed out; the log says why. {@code agentMillis} is
-     * when the agent connected, or -1 when the server was ready (its "Done" line) without one.
+     * Outcome of a start. {@code ready} false means it exited or timed out; the log says why. A server that has exited
+     * is never ready, also when it printed its "Done" line or its agent connected first (#337): {@code sawDone} tells
+     * that case apart. {@code agentMillis} is when the agent connected, or -1 when the server was ready (its "Done"
+     * line) without one.
      */
-    public record StartResult(boolean ready, boolean exited, long millis, long logMark, long agentMillis) {
+    public record StartResult(boolean ready, boolean exited, long millis, long logMark, long agentMillis,
+            boolean sawDone) {
     }
 
     private final CoreConfig config;
@@ -162,12 +165,15 @@ public final class ServerManager implements AutoCloseable {
                 break;
             }
         }
-        if (!ready && !started.isAlive()) {
-            // The report reads the log next: let the pump reach the end of the output, which comes as soon as the
-            // pipe closes. Bounded, since a child the server left running may hold the pipe open (#324).
+        boolean exited = !started.isAlive();
+        if (exited) {
+            // A dead server is not ready, whatever it printed first (#337). The report reads the log next: let the
+            // pump reach the end of the output, which comes as soon as the pipe closes. Bounded, since a child the
+            // server left running may hold the pipe open (#324).
+            ready = false;
             pump.join(PUMP_DRAIN);
         }
-        return new StartResult(ready, !started.isAlive(), (System.nanoTime() - begin) / 1_000_000, mark, agentMillis);
+        return new StartResult(ready, exited, (System.nanoTime() - begin) / 1_000_000, mark, agentMillis, sawDone);
     }
 
     /** How long a start waits for the log pump to reach the end of an exited server's output. */
@@ -244,7 +250,7 @@ public final class ServerManager implements AutoCloseable {
         if (!saved) {
             h.destroy();
             if (!exits(h, Duration.ofSeconds(20))) {
-                h.destroyForcibly();
+                ProcessRunner.destroyTree(h);
                 exits(h, Duration.ofSeconds(10));
             }
         }
@@ -277,8 +283,7 @@ public final class ServerManager implements AutoCloseable {
             }
         }
         if (!p.waitFor(timeout.toMillis(), TimeUnit.MILLISECONDS)) {
-            p.descendants().forEach(ProcessHandle::destroyForcibly);
-            p.destroyForcibly();
+            ProcessRunner.destroyTree(p.toHandle());
             p.waitFor(10, TimeUnit.SECONDS);
         }
         released(p);

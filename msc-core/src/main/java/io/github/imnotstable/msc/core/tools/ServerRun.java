@@ -134,7 +134,8 @@ final class ServerRun {
                     + (analysis.hidden() > 0 ? " (" + analysis.hidden() + " known-harmless hidden)" : "")
                     : analysis.text());
         } else if (r.exited()) {
-            out.append("server exited during startup after ").append(LogText.seconds(r.millis())).append('\n')
+            out.append(r.sawDone() ? "server exited right after it was ready, " : "server exited during startup ")
+                    .append("after ").append(LogText.seconds(r.millis())).append('\n')
                     .append(analysis.text());
             if (analysis.clean()) {
                 out.append("\nlast lines:\n").append(LogText.tail(lines, 15));

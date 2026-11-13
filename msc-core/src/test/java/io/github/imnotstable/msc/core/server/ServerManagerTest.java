@@ -7,6 +7,7 @@ import io.github.imnotstable.msc.core.agent.AgentHub;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
@@ -52,6 +53,21 @@ class ServerManagerTest {
     }
 
     @Test
+    void aServerThatDiesWhileTheAgentIsAwaitedIsNotReady() throws Exception {
+        ServerManager m = manager(DoneThenCrashServer.class);
+        // Paper with the agent installed: start waits for it after "Done", and the server dies meanwhile (#337).
+        assertThat(m.platform()).isEqualTo(Platform.PAPER);
+        Path agent = m.serverDir().resolve(Platform.PAPER.addonDir()).resolve(Platform.PAPER.agentJar());
+        Files.createDirectories(agent.getParent());
+        Files.writeString(agent, "agent");
+        ServerManager.StartResult r = m.start(Duration.ofSeconds(60));
+        assertThat(r.ready()).isFalse();
+        assertThat(r.exited()).isTrue();
+        assertThat(r.sawDone()).isTrue();
+        assertThat(m.log().since(r.logMark())).endsWith(DoneThenCrashServer.LAST);
+    }
+
+    @Test
     void aStopLeavesThePidFileOfAServerStartedWhileItWaited() throws Exception {
         ServerManager m = manager(QuietServer.class);
         assertThat(m.start(Duration.ofSeconds(60)).ready()).isTrue();
@@ -78,6 +94,23 @@ class ServerManagerTest {
             }
             System.err.println(LAST);
             System.err.flush();
+            System.exit(1);
+        }
+    }
+
+    /** Ready, then a crash with a trace long enough to still be in the pipe when the process is gone. */
+    public static final class DoneThenCrashServer {
+        static final String LAST = "\tat com.example.Mod.tick(Mod.java:500)";
+
+        public static void main(String[] args) {
+            System.out.println("[12:00:02 INFO]: Done (0.1s)! For help, type \"help\"");
+            System.out.flush();
+            System.out.println("[12:00:03 ERROR]: Encountered an unexpected exception");
+            System.out.println("java.lang.IllegalStateException: tick failed");
+            for (int i = 1; i <= 500; i++) {
+                System.out.println("\tat com.example.Mod.tick(Mod.java:" + i + ")");
+            }
+            System.out.flush();
             System.exit(1);
         }
     }
