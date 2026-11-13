@@ -63,7 +63,7 @@ public final class MachineEula {
     }
 
     /** How the owner agreed, stored in the file. */
-    public static final String VIA_TERMINAL = "typed yes to 'msc eula accept' in an interactive terminal";
+    public static final String VIA_TERMINAL = "typed yes to 'Main eula accept' in an interactive terminal";
     public static final String VIA_INSTALL = "ran installMsc with -Pmsc.acceptEula=true";
     public static final String VIA_TOOL = "the user's own yes, passed as acceptEula=true";
 
@@ -93,7 +93,7 @@ public final class MachineEula {
         if (a.isPresent()) {
             Files.createDirectories(eulaTxt.toAbsolutePath().getParent());
             Files.writeString(eulaTxt, "# Minecraft EULA (" + EULA_URL + ") accepted by " + a.get().describe()
-                    + " for this machine with 'msc eula accept' (" + file + ")\neula=true\n");
+                    + " for this machine (" + file + ")\neula=true\n");
         }
         return a;
     }

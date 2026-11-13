@@ -27,7 +27,7 @@ class MachineEulaTest {
         MachineEulaAccess.accepted(file);
         assertThat(MachineEula.read(file)).contains(
                 new MachineEula.Acceptance("owner", "pc", Instant.parse("2026-11-12T08:00:00Z")));
-        assertThat(file).content().contains("\"how\": \"typed yes to 'msc eula accept' in an interactive terminal\"");
+        assertThat(file).content().contains("\"how\": \"typed yes to 'Main eula accept' in an interactive terminal\"");
     }
 
     /** The fixtures msc-bench's MachineEulaTest reads too, so the two readers keep one rule (ADR 0004 forbids sharing code). */

@@ -6,7 +6,7 @@ done only when a new auditor finds nothing **twice**; then each piece is fixed. 
 resume point: a restarted thread reads the *State* section and the tracking issue first. Rules are in
 [ADR 0029](adr/0029-perfection-campaign.md).
 
-Base: main `650cb4d` (v0.5.0 plus #70 to #72). Ends 2026-11-14 23:00Z. State as of main `df5a5ea`.
+Base: main `650cb4d` (v0.5.0 plus #70 to #72). Ends 2026-11-14 23:00Z. State as of main `dd5724d`.
 
 ## What "perfect" means here
 
@@ -30,7 +30,7 @@ A word needs a test, so the campaign ends when all of these hold:
 |---|---|---|
 | Search the codebase in pieces | 14 fixed pieces (table below), about 1,000 to 4,000 lines each, plus one cross-cutting piece for duplication between modules and platform parity | An auditor that reads everything reads nothing well; duplication between modules is invisible from inside one module |
 | Create GitHub issues | The auditor only reports. A second agent re-checks each finding against the code, drops what it cannot confirm, dedupes against all campaign issues (open and closed), then files | A fresh auditor always finds *something*; unverified findings cost a fix agent more than they are worth |
-| Stop when a new sub-agent finds nothing twice | Two **consecutive** rounds with zero *confirmed, new* findings that meet the bar. Hard cap of 8 rounds per piece; a piece that hits the cap is listed here with the reason | Without a bar the loop never ends on style opinions |
+| Stop when a new sub-agent finds nothing twice | Two **consecutive** rounds with zero *confirmed, new* findings that meet the bar. The first plan capped this at 8 rounds per piece; the cap was lifted on 2026-11-13 (ADR 0029 amendment): a piece that is not clean twice in a row gets confirm rounds until it is, or until the campaign ends | Without a bar the loop never ends on style opinions |
 | Then a sub-agent resolves each piece | Fixing starts per piece as soon as that piece closes, not after all audits. One branch and PR per piece batch (at most about 6 issues, split by theme when larger). Every fix has a test. Full `./gradlew build` before the PR | Nothing waits on the slowest piece; small PRs merge cleanly |
 | (not in the brief) | After a piece's fixes merge, one more audit of that piece on the new main. It must be clean, or the loop reopens | Fixes add bugs |
 | (not in the brief) | Real-server platform matrix on the PC, once at the start (baseline, files issues) and once after the fixes | Reading code does not prove a Forge server starts |
@@ -108,30 +108,50 @@ If time runs short, cut from the bottom: `sev:3` fixes, then `kind:docs`, then r
 
 ## State
 
-Updated at each milestone. The tracking issue has the per-round log.
+Updated at each milestone. The tracking issue (#74) has the per-round log. Rounds run is the highest round number
+logged for the piece; agent-paper, agent-mods and agent-minestom also had one combined re-confirm round (round 8,
+clean) after the shared agent code changed.
 
-| Piece | Rounds run | Clean in a row | Issues filed | Fixed | Status |
+| Piece | Rounds run | Clean in a row | Issues filed | Closed | Status |
 |---|---|---|---|---|---|
-| core-tools | 6 | 0 | 15 | 13 | round 6 found #282, #283 (open) |
-| core-server | 6 | 0 | 13 | 13 | round 6 found #272 (fixed in #276) |
-| core-world | 6 | 0 | 13 | 11 | round 6 found #280, #281 (open) |
+| core-tools | 8 | 0 | 20 | 17 | round 8 found #338, #339, #340 (open) |
+| core-server | 9 | 0 | 19 | 17 | round 9 found #336, #337 (open) |
+| core-world | 10 | 2 | 16 | 16 | done (rounds 9 and 10 clean) |
 | textures | 6 | 2 | 13 | 13 | done (two clean rounds) |
-| protocol | 6 | 2 | 9 | 9 | done (two clean rounds) |
-| agent-paper | 4 | 3 | 4 | 4 | done (two clean rounds; round 4 re-confirmed) |
-| agent-mods | 5 | 3 | 5 | 5 | done (two clean rounds; round 5 re-confirmed) |
-| agent-minestom | 6 | 2 | 10 | 10 | done (two clean rounds) |
-| bot | 6 | 0 | 16 | 15 | round 6 found #274 (open) |
-| renderer | 6 | 1 | 9 | 9 | round 6 clean, one more clean round to go |
-| templates | 4 | 0 | 6 | 6 | round 4 found #273 (fixed in #277) |
-| bench | 6 | 1 | 10 | 10 | round 6 clean, one more clean round to go |
-| build | 6 | 0 | 14 | 12 | round 6 found #278, #279 (fix in review) |
-| cross | 5 | 0 | 15 | 14 | round 5 found #275 (open) |
+| protocol | 10 | 0 | 12 | 11 | round 9 clean, round 10 found #341 (open) |
+| agent-paper | 4 + combined | 4 | 4 | 4 | done (two clean rounds; re-confirmed in rounds 4 and combined 8) |
+| agent-mods | 5 + combined | 4 | 5 | 5 | done (two clean rounds; re-confirmed in rounds 5 and combined 8) |
+| agent-minestom | 6 + combined | 3 | 10 | 10 | done (two clean rounds; re-confirmed in combined 8) |
+| bot | 9 | 1 | 18 | 18 | round 9 clean, one more clean round to go |
+| renderer | 9 | 0 | 15 | 12 | round 9 found #342, #343, #344 (open) |
+| templates | 9 | 1 | 8 | 8 | round 9 clean, one more clean round to go |
+| bench | 9 | 0 | 18 | 17 | round 9 found #335 (open) |
+| build | 8 | 2 | 14 | 14 | done (rounds 7 and 8 clean) |
+| cross | 9 | 0 | 19 | 17 | round 9 found #333, #334 (fix in review) |
 
-Totals: 152 campaign issues filed, 144 closed, 8 open (#274, #275, #278 to #283); 52 fix PRs merged. Round 5 is
-fully merged. Updated 2026-11-13 15:10 UTC, on main 4bd044a.
+Done (two clean rounds in a row): agent-paper, agent-mods, agent-minestom, textures, build, and core-world (its round
+10 came back clean at 20:08 UTC, after protocol and core-world had each been clean once in round 9). Clean once:
+bot, templates. The round 8 sweep still found 15 confirmed defects in eight pieces (core-tools' round 8, logged
+later, found three more), so the 8-round cap was lifted
+(ADR 0029 amendment): the remaining pieces get confirm rounds until they are clean twice in a row or the campaign
+ends.
+
+Totals: 191 campaign issues filed, 179 closed, 12 open (#333 to #344); 74 campaign fix PRs merged (plus the two
+platform matrix reports, #170 and #255). Updated 2026-11-13 20:12 UTC, on main dd5724d.
 
 Platform matrix (PC): baseline run merged in #170 (all 7 platforms, 14 cells pass). Second run at 113058b merged in
 #255: every cell passes the baseline steps and the earlier fixes hold; it filed #253 (Paper and Purpur: a `/kill`
 in the nether reports no death or respawn) and #254 (Forge and Quilt still warn on a clean start), both since fixed (#264, #269). `gradlew build`
 and `:msc-core:e2eTest` pass on Windows.
 Bench: rerun pending.
+
+## Lessons
+
+- **The root `.gitignore` hides directories named `build/` and `*.log` files**, including a Java package called
+  `build` (#267). A fix that compiled in its agent's worktree failed on a fresh clone. Fix agents now check
+  `git status --short --ignored` and run the final build from a clean detached worktree of their pushed commit.
+- **Agents share one machine**: killing Gradle or Java processes by name stops other agents' builds and tests too.
+  Agents kill only the process ids or process groups they started themselves; no `pkill` or `killall`.
+- **Timing tests flake under load**: a test that passes alone can fail while other agents build. New tests
+  use no fixed sleeps, tight deadlines or fixed ports, assert on state rather than timing, and are run 50 times in a
+  loop with a CPU-burning process before the fix is called done.

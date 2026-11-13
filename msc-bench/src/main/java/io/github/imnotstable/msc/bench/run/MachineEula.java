@@ -11,8 +11,9 @@ import java.time.format.DateTimeParseException;
 
 /**
  * Reads the owner's one-time Minecraft EULA acceptance that msc-core keeps in {@code ~/.msc/eula.json} (written only
- * by the owner: {@code msc eula accept}, {@code installMsc -Pmsc.acceptEula=true}, or their own yes to a tool). The
- * bench reads it and never writes it: without it, tasks that run a Paper server are skipped.
+ * by the owner: the {@code Main eula accept} line in {@code ~/.msc/core/eula-accept.txt}, installMsc with
+ * {@code -Pmsc.acceptEula=true}, or their own yes to a tool). The bench reads it and never writes it: without it,
+ * tasks that run a Paper server are skipped.
  */
 public final class MachineEula {
 
