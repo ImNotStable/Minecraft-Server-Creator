@@ -16,14 +16,19 @@ public record Animation(List<Texture> frames, int frametime, boolean interpolate
 
     public Animation {
         frames = List.copyOf(frames);
-        if (frames.isEmpty() || frames.size() > MAX_FRAMES) {
-            throw new TextureException("an animation needs 1 to " + MAX_FRAMES + " frames, not " + frames.size());
-        }
+        checkCounts(frames.size(), frametime);
         int w = frames.getFirst().width();
         for (Texture f : frames) {
             if (f.width() != w || f.height() != w) {
                 throw new TextureException("every frame must be square and " + w + "x" + w);
             }
+        }
+    }
+
+    /** Checked before any frame is built, so a huge count fails fast instead of filling the heap. */
+    private static void checkCounts(int frames, int frametime) {
+        if (frames < 1 || frames > MAX_FRAMES) {
+            throw new TextureException("an animation needs 1 to " + MAX_FRAMES + " frames, not " + frames);
         }
         if (frametime < 1) {
             throw new TextureException("frametime must be at least 1 tick");
@@ -36,6 +41,7 @@ public record Animation(List<Texture> frames, int frametime, boolean interpolate
         if (strip.height() % w != 0) {
             throw new TextureException("strip height " + strip.height() + " is not a multiple of width " + w);
         }
+        checkCounts(strip.height() / w, frametime);
         List<Texture> frames = new ArrayList<>();
         for (int f = 0; f < strip.height() / w; f++) {
             Texture t = Texture.square(w);
@@ -76,6 +82,7 @@ public record Animation(List<Texture> frames, int frametime, boolean interpolate
         if (base.width() != base.height()) {
             throw new TextureException("scroll needs a square texture");
         }
+        checkCounts(frames, frametime);
         List<Texture> out = new ArrayList<>();
         for (int f = 0; f < frames; f++) {
             Texture t = Texture.square(base.width());
@@ -97,6 +104,7 @@ public record Animation(List<Texture> frames, int frametime, boolean interpolate
         if (base.width() != base.height()) {
             throw new TextureException("pulse needs a square texture");
         }
+        checkCounts(frames, frametime);
         List<Texture> out = new ArrayList<>();
         for (int f = 0; f < frames; f++) {
             Texture t = base.copy();

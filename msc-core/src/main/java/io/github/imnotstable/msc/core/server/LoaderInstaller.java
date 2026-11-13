@@ -5,8 +5,6 @@ import com.google.gson.JsonParser;
 import io.github.imnotstable.msc.core.tool.ToolException;
 import java.io.IOException;
 import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -21,8 +19,9 @@ import java.util.stream.Stream;
  * does not have that loader version yet. See ADR 0027.
  */
 public final class LoaderInstaller {
-    private static final String USER_AGENT = "msc-core/0.1 (Minecraft Server Creator dev tooling)";
     private static final Duration INSTALL_TIMEOUT = Duration.ofMinutes(10);
+    /** Says which loader and versions the server directory holds, so another version is installed again. */
+    static final String MARKER = ".msc-loader";
 
     /** Where each project publishes. Tests point these at a local server. */
     public record Urls(String neoforgeMaven, String forgeMaven, String quiltMaven, String purpurApi) {
@@ -31,10 +30,10 @@ public final class LoaderInstaller {
                 "https://api.purpurmc.org");
 
         public Urls {
-            neoforgeMaven = trim(neoforgeMaven);
-            forgeMaven = trim(forgeMaven);
-            quiltMaven = trim(quiltMaven);
-            purpurApi = trim(purpurApi);
+            neoforgeMaven = Downloads.trim(neoforgeMaven);
+            forgeMaven = Downloads.trim(forgeMaven);
+            quiltMaven = Downloads.trim(quiltMaven);
+            purpurApi = Downloads.trim(purpurApi);
         }
     }
 
@@ -45,8 +44,7 @@ public final class LoaderInstaller {
     private final Urls urls;
     private final Path cacheDir;
     private final String java;
-    private final HttpClient http = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NORMAL)
-            .connectTimeout(Duration.ofSeconds(15)).build();
+    private final Downloads downloads = new Downloads();
 
     public LoaderInstaller(Urls urls, Path cacheDir, String java) {
         this.urls = urls;
@@ -54,16 +52,12 @@ public final class LoaderInstaller {
         this.java = java;
     }
 
-    private static String trim(String url) {
-        return url.endsWith("/") ? url.substring(0, url.length() - 1) : url;
-    }
-
     /** The newest Purpur build for a Minecraft version, as {@code purpur.jar}. */
     public Result purpur(String minecraft, Path dir) throws IOException, InterruptedException {
         URI latest = URI.create(urls.purpurApi() + "/v2/purpur/" + minecraft + "/latest");
         String build;
         try {
-            HttpResponse<String> response = http.send(request(latest), HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = downloads.text(latest);
             if (response.statusCode() == 404) {
                 throw new ToolException("Purpur has no version " + minecraft);
             }
@@ -99,7 +93,8 @@ public final class LoaderInstaller {
 
     /** NeoForge's server, with its server starter jar as {@code server.jar}. */
     public Result neoforge(String version, Path dir) throws IOException, InterruptedException {
-        if (Files.isDirectory(dir.resolve("libraries/net/neoforged/neoforge/" + version))
+        String id = "neoforge " + version;
+        if (marked(dir, id) && Files.isDirectory(dir.resolve("libraries/net/neoforged/neoforge/" + version))
                 && Files.exists(dir.resolve(Platform.NEOFORGE.serverJar()))) {
             return new Result(version, true);
         }
@@ -111,6 +106,7 @@ public final class LoaderInstaller {
         if (!Files.exists(dir.resolve(Platform.NEOFORGE.serverJar()))) {
             throw new ToolException("the NeoForge installer finished but wrote no " + Platform.NEOFORGE.serverJar());
         }
+        mark(dir, id);
         return new Result(version, false);
     }
 
@@ -125,8 +121,12 @@ public final class LoaderInstaller {
             if (!Files.exists(shim)) {
                 throw new ToolException("the Forge installer finished but wrote no " + shim.getFileName());
             }
-        } else if (Files.exists(dir.resolve(Platform.FORGE.serverJar()))) {
-            return new Result(version, true);
+        } else {
+            // The fixed-name jar may be another version's shim: it is this one only when the bytes match.
+            Path fixed = dir.resolve(Platform.FORGE.serverJar());
+            if (Files.exists(fixed) && Files.mismatch(shim, fixed) == -1) {
+                return new Result(version, true);
+            }
         }
         Files.copy(shim, dir.resolve(Platform.FORGE.serverJar()), StandardCopyOption.REPLACE_EXISTING);
         return new Result(version, false);
@@ -135,7 +135,8 @@ public final class LoaderInstaller {
     /** Quilt's server launcher plus the vanilla server jar it starts. */
     public Result quilt(String minecraft, String loader, String installerVersion, Path dir)
             throws IOException, InterruptedException {
-        if (Files.isDirectory(dir.resolve("libraries/org/quiltmc/quilt-loader/" + loader))
+        String id = "quilt " + minecraft + " " + loader;
+        if (marked(dir, id) && Files.isDirectory(dir.resolve("libraries/org/quiltmc/quilt-loader/" + loader))
                 && Files.exists(dir.resolve(Platform.QUILT.serverJar()))) {
             return new Result(loader, true);
         }
@@ -149,7 +150,17 @@ public final class LoaderInstaller {
         if (!Files.exists(dir.resolve(Platform.QUILT.serverJar()))) {
             throw new ToolException("the Quilt installer finished but wrote no " + Platform.QUILT.serverJar());
         }
+        mark(dir, id);
         return new Result(loader, false);
+    }
+
+    private static boolean marked(Path dir, String id) throws IOException {
+        Path marker = dir.resolve(MARKER);
+        return Files.exists(marker) && Files.readString(marker).strip().equals(id);
+    }
+
+    private static void mark(Path dir, String id) throws IOException {
+        Files.writeString(dir.resolve(MARKER), id + "\n");
     }
 
     private Path installer(String name, String url, String notFound) throws IOException, InterruptedException {
@@ -162,6 +173,8 @@ public final class LoaderInstaller {
 
     private void install(Path dir, List<String> command, String what) throws IOException, InterruptedException {
         Files.createDirectories(dir);
+        // An install that fails half way must not leave the old marker saying the old version is complete.
+        Files.deleteIfExists(dir.resolve(MARKER));
         ProcessRunner.Result r = ProcessRunner.run(command, dir, INSTALL_TIMEOUT);
         if (!r.ok()) {
             throw new ToolException("the " + what + " installer " + (r.timedOut() ? "timed out" : "failed (exit "
@@ -190,24 +203,6 @@ public final class LoaderInstaller {
     }
 
     private void fetch(URI uri, Path jar, String notFound) throws IOException, InterruptedException {
-        Files.createDirectories(cacheDir);
-        Path tmp = cacheDir.resolve(jar.getFileName() + ".part");
-        HttpResponse<Path> got;
-        try {
-            got = http.send(request(uri), HttpResponse.BodyHandlers.ofFile(tmp));
-        } catch (IOException e) {
-            Files.deleteIfExists(tmp);
-            throw new ToolException("cannot reach " + uri + ": " + e.getMessage());
-        }
-        if (got.statusCode() != 200) {
-            Files.deleteIfExists(tmp);
-            throw new ToolException(got.statusCode() == 404 ? notFound
-                    : "download of " + uri + " answered " + got.statusCode());
-        }
-        Files.move(tmp, jar, StandardCopyOption.REPLACE_EXISTING);
-    }
-
-    private static HttpRequest request(URI uri) {
-        return HttpRequest.newBuilder(uri).header("User-Agent", USER_AGENT).timeout(Duration.ofMinutes(5)).build();
+        downloads.fetch(uri, jar, notFound, null);
     }
 }

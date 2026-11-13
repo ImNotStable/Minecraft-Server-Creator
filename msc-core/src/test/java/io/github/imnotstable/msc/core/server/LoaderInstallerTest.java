@@ -74,9 +74,42 @@ class LoaderInstallerTest {
         Files.createDirectories(server.resolve("libraries/org/quiltmc/quilt-loader/0.30.2"));
         Files.writeString(server.resolve("quilt-server-launch.jar"), "launcher");
 
+        Files.writeString(server.resolve(LoaderInstaller.MARKER), "neoforge 26.3.0.1");
         assertThat(installer.neoforge("26.3.0.1", server).cached()).isTrue();
+        Files.writeString(server.resolve(LoaderInstaller.MARKER), "quilt 26.3 0.30.2");
         assertThat(installer.quilt("26.3", "0.30.2", "0.15.1", server).cached()).isTrue();
         assertThat(requests).isEmpty();
+    }
+
+    @Test
+    void aDirectoryInstalledAtAnotherVersionIsInstalledAgain() throws Exception {
+        Path server = Files.createDirectories(dir.resolve("server"));
+        Files.createDirectories(server.resolve("libraries/org/quiltmc/quilt-loader/0.30.2"));
+        Files.writeString(server.resolve("quilt-server-launch.jar"), "launcher");
+        Files.writeString(server.resolve(LoaderInstaller.MARKER), "quilt 26.2 0.30.2");
+        assertThatThrownBy(() -> installer.quilt("26.3", "0.30.2", "0.15.1", server))
+                .hasMessage("Quilt has no installer 0.15.1");
+
+        Files.createDirectories(server.resolve("libraries/net/neoforged/neoforge/26.3.0.1"));
+        Files.writeString(server.resolve("server.jar"), "starter");
+        Files.writeString(server.resolve(LoaderInstaller.MARKER), "neoforge 26.3.0.2");
+        assertThatThrownBy(() -> installer.neoforge("26.3.0.1", server))
+                .hasMessageStartingWith("the NeoForge installer failed (exit 1)");
+
+        Files.writeString(server.resolve("forge-26.3-66.1.5-shim.jar"), "shim A");
+        Files.writeString(server.resolve("forge-26.3-66.1.6-shim.jar"), "shim B");
+        Files.writeString(server.resolve("forge-server.jar"), "shim B");
+        assertThat(installer.forge("26.3-66.1.5", server).cached()).isFalse();
+        assertThat(server.resolve("forge-server.jar")).hasContent("shim A");
+    }
+
+    @Test
+    void anUnmarkedDirectoryIsInstalledAgain() throws Exception {
+        Path server = Files.createDirectories(dir.resolve("server"));
+        Files.createDirectories(server.resolve("libraries/net/neoforged/neoforge/26.3.0.1"));
+        Files.writeString(server.resolve("server.jar"), "starter");
+        assertThatThrownBy(() -> installer.neoforge("26.3.0.1", server))
+                .hasMessageStartingWith("the NeoForge installer failed (exit 1)");
     }
 
     @Test

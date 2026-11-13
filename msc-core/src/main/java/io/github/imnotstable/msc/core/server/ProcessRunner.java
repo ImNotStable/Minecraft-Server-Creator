@@ -1,7 +1,8 @@
 package io.github.imnotstable.msc.core.server;
 
 import java.io.IOException;
-import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.Reader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -26,13 +27,14 @@ public final class ProcessRunner {
         process.getOutputStream().close();
         StringBuilder out = new StringBuilder();
         Thread reader = Thread.ofVirtual().start(() -> {
-            try (InputStream in = process.getInputStream()) {
-                byte[] buf = new byte[8192];
+            // A Reader keeps the bytes of a character that a read cut in two until the rest arrives.
+            try (Reader in = new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8)) {
+                char[] buf = new char[8192];
                 int n;
                 while ((n = in.read(buf)) > 0) {
                     synchronized (out) {
                         if (out.length() < 4_000_000) {
-                            out.append(new String(buf, 0, n, StandardCharsets.UTF_8));
+                            out.append(buf, 0, n);
                         }
                     }
                 }

@@ -3,7 +3,7 @@
 A headless renderer that turns a region of blocks into a small PNG so the AI can check how a build looks.
 
 **Phase:** Post-MVP  
-**Status:** Library done and tested. Not yet exposed as an `msc-core` tool (see PLAN.md).
+**Status:** Library done and tested. `msc-core` exposes it as the `world_render` tool, with entity, hologram and sign-text markers (see `msc-docs/docs/tools.md`).
 
 ## What it does
 
@@ -46,7 +46,7 @@ Visible: oak_slab 48%, oak_planks 24%, grass_block 24%, water 3%, oak_fence 1%, 
 
 ## Depends on
 
-- `msc-protocol` for `BlockGrid` and `Region`. `msc-core` will depend on this module, not the other way round.
+- `msc-protocol` for `BlockGrid` and `Region`. `msc-core` depends on this module, not the other way round.
 
 ## Stack
 

@@ -169,7 +169,7 @@ public final class BuildScript {
                 if (BlockPattern.isMix(state)) {
                     throw new ToolException("set takes one block, not a mix");
                 }
-                yield new Step.Set(world, p.points(), List.of(state));
+                yield new Step.Set(world, p.points(), List.of(state), o.replace());
             }
             case "cylinder", "ring", "disc" -> {
                 o.points(1);
@@ -346,6 +346,7 @@ public final class BuildScript {
         }
         String airText = o.string("air");
         boolean air = airText == null || Boolean.parseBoolean(airText);
+        List<String> replace = o.replace();
         o.done();
         Region0 size = new Region0(structure.region().sizeX(), structure.region().sizeZ());
         Map<Integer, BlockGrid> turned = new HashMap<>();
@@ -364,7 +365,7 @@ public final class BuildScript {
                 placements.add(new Step.Stamp.Placement(g, at));
             }
         }
-        return new Step.Stamp(world, placements, air);
+        return new Step.Stamp(world, placements, air, replace);
     }
 
     private record Region0(int x, int z) {

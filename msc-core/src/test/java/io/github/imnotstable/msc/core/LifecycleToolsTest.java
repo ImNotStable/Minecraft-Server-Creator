@@ -157,6 +157,21 @@ class LifecycleToolsTest {
     }
 
     @Test
+    void aServerStartedAfterADetachedOneExitedIsNotDetached() throws Exception {
+        h.ok("server_start", "timeoutSeconds", 30);
+        h.ok("server_detach");
+        h.core.server().console("stop");
+        for (int i = 0; i < 100 && h.core.server().running(); i++) {
+            Thread.sleep(100);
+        }
+        assertThat(h.core.server().running()).isFalse();
+        h.ok("server_start", "timeoutSeconds", 30);
+        assertThat(h.ok("msc_status")).contains("server: running").doesNotContain("detached");
+        h.core.server().close();
+        assertThat(h.core.server().running()).isFalse();
+    }
+
+    @Test
     void stoppingADetachedServerInTheSameSessionStopsItsPackHostToo() throws Exception {
         h.ok("server_start", "timeoutSeconds", 30);
         h.ok("texture", "name", "item/dot", "palette", List.of("a=#ff0000"), "rows", List.of("a"));

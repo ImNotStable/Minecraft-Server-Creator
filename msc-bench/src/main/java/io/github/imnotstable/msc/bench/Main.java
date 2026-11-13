@@ -8,6 +8,7 @@ import io.github.imnotstable.msc.bench.report.ReportWriter;
 import io.github.imnotstable.msc.bench.run.BenchConfig;
 import io.github.imnotstable.msc.bench.run.BenchRunner;
 import io.github.imnotstable.msc.bench.run.RunRecord;
+import io.github.imnotstable.msc.bench.run.ServerManager;
 import io.github.imnotstable.msc.bench.run.Workspaces;
 import io.github.imnotstable.msc.bench.task.TaskDef;
 import io.github.imnotstable.msc.bench.task.TaskLoader;
@@ -31,7 +32,7 @@ import java.util.Set;
  * <pre>
  * list                                   list tasks
  * run [--tasks a,b] [--modes baseline,toolset] [--repeat N]
- * check &lt;task&gt; &lt;workspace&gt;                 run one task's checks on a folder
+ * check &lt;task&gt; &lt;workspace&gt;                 run one task's checks on a folder (starts its server for RCON checks)
  * report &lt;runDir&gt;                         rewrite report.md from results.jsonl
  * common: --tasks-dir DIR (default tasks), --config FILE (default bench.json), --out DIR (default runs)
  * </pre>
@@ -138,6 +139,15 @@ public final class Main {
         TaskDef task = select(TaskLoader.loadAll(tasksDir), taskId).getFirst();
         Path configFile = Path.of(flags.getOrDefault("--config", "bench.json"));
         BenchConfig config = Files.isRegularFile(configFile) ? BenchConfig.load(configFile) : null;
+        return check(task, workspace, config, out);
+    }
+
+    /**
+     * Runs one task's checks on a workspace. RCON checks use a server already running on the RCON port and leave it
+     * running; when none answers and the machine's owner accepted the EULA, the workspace's own {@code server/} is
+     * started for the checks and stopped after them, as in a run.
+     */
+    static int check(TaskDef task, Path workspace, BenchConfig config, PrintStream out) throws IOException {
         boolean windows = System.getProperty("os.name", "").toLowerCase().startsWith("windows");
         Map<String, String> values = Map.of(
                 "workspace", workspace.toAbsolutePath().toString(),
@@ -145,6 +155,16 @@ public final class Main {
                 "java", ProcessHandle.current().info().command().orElse("java"),
                 "serverPort", Integer.toString(config == null ? 25566 : config.server().serverPort()),
                 "scaffoldVersion", Workspaces.SCAFFOLD_VERSION);
+        try (ServerManager server = config != null && task.needsServer() && config.server().acceptEula()
+                ? new ServerManager(workspace.resolve("server"), config.server(), Map.of())
+                : null) {
+            return check(task, workspace, values, config, server, out);
+        }
+    }
+
+    private static int check(TaskDef task, Path workspace, Map<String, String> values, BenchConfig config,
+            ServerManager server, PrintStream out) throws IOException {
+        RconClient[] running = new RconClient[1];
         CheckContext context = new CheckContext() {
             private RconClient rcon;
 
@@ -164,19 +184,33 @@ public final class Main {
                     throw new IOException("RCON checks need bench.json for the port and password");
                 }
                 if (rcon == null) {
-                    rcon = RconClient.connect("127.0.0.1", config.server().rconPort(), config.server().rconPassword(),
-                            Duration.ofSeconds(30));
+                    try {
+                        rcon = RconClient.connect("127.0.0.1", config.server().rconPort(),
+                                config.server().rconPassword(), Duration.ofSeconds(30));
+                        running[0] = rcon;
+                    } catch (IOException e) {
+                        if (server == null) {
+                            throw e;
+                        }
+                        rcon = server.rcon();
+                    }
                 }
                 return rcon;
             }
         };
-        boolean allPassed = true;
-        for (Check check : task.checks()) {
-            CheckResult result = check.run(context);
-            allPassed &= result.passed();
-            out.printf("%s %s: %s%n", result.passed() ? "PASS" : "FAIL", result.name(), result.detail());
+        try {
+            boolean allPassed = true;
+            for (Check check : task.checks()) {
+                CheckResult result = check.run(context);
+                allPassed &= result.passed();
+                out.printf("%s %s: %s%n", result.passed() ? "PASS" : "FAIL", result.name(), result.detail());
+            }
+            return allPassed ? 0 : 3;
+        } finally {
+            if (running[0] != null) {
+                running[0].close();
+            }
         }
-        return allPassed ? 0 : 3;
     }
 
     private static int report(Path runDir, PrintStream out) throws IOException {

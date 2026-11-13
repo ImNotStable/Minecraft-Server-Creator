@@ -107,7 +107,10 @@ public final class ServerManager implements AutoCloseable {
     public StartResult start(Duration timeout) throws IOException, InterruptedException {
         long begin = System.nanoTime();
         long mark;
-        long readyBefore;
+        // Read from the hub before taking this monitor: the hub's lock holder may be waiting for it (running()).
+        String address = hub.address();
+        String token = hub.token();
+        long readyBefore = hub.readyCount();
         Process started;
         synchronized (this) {
             if (running()) {
@@ -117,11 +120,13 @@ public final class ServerManager implements AutoCloseable {
             Files.createDirectories(config.serverDir());
             ProcessBuilder pb = new ProcessBuilder(command).directory(config.serverDir().toFile())
                     .redirectErrorStream(true);
-            pb.environment().put(Limits.ENV_CORE_ADDRESS, hub.address());
-            pb.environment().put(Limits.ENV_TOKEN, hub.token());
+            pb.environment().put(Limits.ENV_CORE_ADDRESS, address);
+            pb.environment().put(Limits.ENV_TOKEN, token);
             mark = log.mark();
-            readyBefore = hub.readyCount();
             sawDone = false;
+            // Surviving the session is asked for per server (ADR 0014): a detached server that exited on its own
+            // must not pass that on to the next one.
+            detached = false;
             launchedAt = java.time.Instant.now();
             started = pb.start();
             process = started;
