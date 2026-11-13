@@ -128,6 +128,12 @@ public final class TestPlayer implements Bot {
     private volatile String disconnect;
     private volatile int entityId;
     private volatile boolean positioned;
+    /**
+     * Set by a login or a respawn (a death's or a world change's) until the next position: then the player tells the
+     * server it has loaded, like the vanilla client. Until that, or a 60-tick timeout, the server ignores the player's
+     * moves and keeps the player invulnerable, even to /kill; Paper restarts that wait on every world change.
+     */
+    private boolean loadPending = true;
     private volatile boolean dead;
     private int deadTicks;
     float yaw;
@@ -723,6 +729,7 @@ public final class TestPlayer implements Bot {
                     wasDead = dead;
                     dead = false;
                     deadTicks = 0;
+                    loadPending = true;
                 }
                 String key = p.getCommonPlayerSpawnInfo().getWorldName().asString();
                 spawnedIn(key);
@@ -815,9 +822,12 @@ public final class TestPlayer implements Bot {
             yaw = rel.contains(PositionElement.Y_ROT) ? yaw + p.getYRot() : p.getYRot();
             pitch = rel.contains(PositionElement.X_ROT) ? pitch + p.getXRot() : p.getXRot();
             send(Compat.acceptTeleport(p.getId(), body.x, body.y, body.z, yaw, pitch));
+            if (loadPending) {
+                loadPending = false;
+                send(ServerboundPlayerLoadedPacket.INSTANCE);
+            }
             if (!positioned) {
                 positioned = true;
-                send(ServerboundPlayerLoadedPacket.INSTANCE);
                 spawned.countDown();
             }
             if (teleported) {
