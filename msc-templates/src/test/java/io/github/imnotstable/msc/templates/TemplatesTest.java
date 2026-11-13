@@ -89,10 +89,15 @@ class TemplatesTest {
         ScaffoldResult r = Templates.scaffold(Templates.FORGE_MOD, dir.resolve("g"), vars);
 
         assertThat(relative(r)).contains("build.gradle.kts", "settings.gradle.kts", "CLAUDE.md", "gradlew",
-                "src/main/resources/META-INF/mods.toml", "src/test/java/com/example/spawnlobby/GreeterTest.java");
+                "src/main/resources/META-INF/mods.toml", "src/main/resources/pack.mcmeta",
+                "src/test/java/com/example/spawnlobby/GreeterTest.java");
         assertNoPlaceholders(r);
         assertThat(Files.readString(r.root().resolve("src/main/resources/META-INF/mods.toml")))
                 .contains("modId = \"spawn_lobby\"", "loaderVersion = \"[${forgeMajor},)\"");
+        // Forge reads no pack from a mod jar without pack.mcmeta and warns on every start (#254).
+        assertThat(Files.readString(r.root().resolve("src/main/resources/pack.mcmeta")))
+                .contains("\"description\": \"spawn_lobby resources\"", "\"min_format\": 82",
+                        "\"max_format\": 2147483647");
         assertThat(Files.readString(r.root().resolve("gradle/libs.versions.toml")))
                 .contains("forge = \"" + Templates.versions().get("forgeVersion") + "\"");
     }

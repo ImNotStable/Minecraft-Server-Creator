@@ -86,6 +86,20 @@ class SchedulerMainThreadTest {
         assertThat(job.stepped).hasValue(3);
     }
 
+    @Test
+    void aJobAfterTheTaskStoppedStartsItAgain(Env env) throws Exception {
+        SchedulerMainThread main = main(env, TIMEOUT);
+        for (int round = 1; round <= 2; round++) {
+            CountingJob job = new CountingJob(2);
+            CompletableFuture<String> result = onVirtualThread(() -> main.run(job));
+            env.tickWhile(() -> !result.isDone(), TIMEOUT);
+            env.tick();
+
+            assertThat(result.get(0, TimeUnit.SECONDS)).as("round %d", round).isEqualTo("done after 2");
+            assertThat(main.queued()).isZero();
+        }
+    }
+
     /** Finishes on its second step and records the deadline of each step. */
     private static final class DeadlineJob implements SlicedJob<Integer> {
         final List<Long> deadlines = new CopyOnWriteArrayList<>();

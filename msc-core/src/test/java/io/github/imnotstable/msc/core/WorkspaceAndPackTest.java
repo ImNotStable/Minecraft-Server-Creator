@@ -91,7 +91,7 @@ class WorkspaceAndPackTest {
         assertThat(h.ok("msc_status")).contains("workspace: " + first);
         h.close();
         // Closing interrupts the call (or stops the server under it) instead of waiting out its 600 s.
-        assertThat(wait.get(10, TimeUnit.SECONDS)).containsAnyOf("interrupted", "the server stopped");
+        assertThat(wait.get(10, TimeUnit.SECONDS)).containsAnyOf("server_wait was stopped: the session ended", "the server stopped");
         assertThat(h.core.server().running()).isFalse();
         assertThat(Duration.ofNanos(System.nanoTime() - started)).isLessThan(Duration.ofSeconds(15));
     }

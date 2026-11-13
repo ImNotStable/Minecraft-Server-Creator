@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.List;
 import org.geysermc.mcprotocollib.network.packet.Packet;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.ServerboundChatCommandPacket;
+import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.ServerboundPlayerLoadedPacket;
 import net.kyori.adventure.key.Key;
 import org.geysermc.mcprotocollib.protocol.data.game.entity.player.GameMode;
 import org.geysermc.mcprotocollib.protocol.data.game.entity.player.PlayerSpawnInfo;
@@ -84,7 +85,27 @@ class TestPlayerTest {
     }
 
     @Test
-    void eventsBetweenCallsKeepOnlyTheNewest() throws InterruptedException {
+    void tellsTheServerItLoadedAfterEveryRespawn() {
+        // Until the client says it loaded, a server ignores its moves and the player cannot die, even by /kill;
+        // Paper restarts that wait on a world change too (#253).
+        List<Packet> sent = new ArrayList<>();
+        TestPlayer p = Players.at(new FlatWorld(), null, 0.5, 1, 0.5, sent);
+        assertThat(sent).containsOnlyOnce(ServerboundPlayerLoadedPacket.INSTANCE);
+        sent.clear();
+        p.receive(teleport(5.5, 1, 0.5));
+        assertThat(sent).doesNotContain(ServerboundPlayerLoadedPacket.INSTANCE);
+        p.receive(new ClientboundRespawnPacket(spawn("minecraft:the_nether"), false, false));
+        p.receive(teleport(0.5, 100, 0.5));
+        assertThat(sent).containsOnlyOnce(ServerboundPlayerLoadedPacket.INSTANCE);
+        sent.clear();
+        p.receive(new ClientboundSetHealthPacket(0, 20, 5));
+        p.receive(new ClientboundRespawnPacket(spawn("minecraft:overworld"), false, false));
+        p.receive(teleport(9.5, -60, -9.5));
+        assertThat(sent).containsOnlyOnce(ServerboundPlayerLoadedPacket.INSTANCE);
+    }
+
+    @Test
+    void eventsBetweenCallsKeepOnlyTheNewest()throws InterruptedException {
         TestPlayer p = Players.at(new FlatWorld(), null, 0.5, 1, 0.5);
         for (int i = 0; i < 100_000; i++) {
             p.event("[actionbar] tick " + i);
