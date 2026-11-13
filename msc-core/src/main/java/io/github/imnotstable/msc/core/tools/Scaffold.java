@@ -11,6 +11,7 @@ import io.github.imnotstable.msc.templates.Templates;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -102,15 +103,26 @@ final class Scaffold {
     /** Templates only write into empty directories, so render into a staging folder and move the files in. */
     private ScaffoldResult besideToolFiles(String template, Path dir, TemplateVariables vars) throws IOException {
         Path staging = Files.createTempDirectory(Files.createDirectories(config.dataDir()), "scaffold-");
-        Path staged = staging.resolve("project");
-        ScaffoldResult result = Templates.scaffold(template, staged, vars);
-        try (Stream<Path> list = Files.list(staged)) {
-            for (Path entry : list.toList()) {
-                Files.move(entry, dir.resolve(entry.getFileName().toString()));
+        try {
+            Path staged = staging.resolve("project");
+            ScaffoldResult result = Templates.scaffold(template, staged, vars);
+            try (Stream<Path> list = Files.list(staged)) {
+                for (Path entry : list.toList()) {
+                    Files.move(entry, dir.resolve(entry.getFileName().toString()));
+                }
+            }
+            return result;
+        } finally {
+            // The call owns its staging folder: gone also when the template refuses the arguments.
+            deleteTree(staging);
+        }
+    }
+
+    static void deleteTree(Path root) throws IOException {
+        try (Stream<Path> tree = Files.walk(root)) {
+            for (Path p : tree.sorted(Comparator.reverseOrder()).toList()) {
+                Files.delete(p);
             }
         }
-        Files.delete(staged);
-        Files.delete(staging);
-        return result;
     }
 }

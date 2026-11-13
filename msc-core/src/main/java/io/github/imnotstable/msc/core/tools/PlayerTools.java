@@ -33,7 +33,13 @@ public final class PlayerTools implements AutoCloseable {
     private final CoreConfig config;
     private final AgentHub hub;
     private final WorldService worlds;
+    /**
+     * Guards {@link #player} and {@link #closed}, never held across network I/O: {@link #close()} takes only this, so
+     * it does not wait for a running player_test (which holds this object's monitor for its whole run).
+     */
+    private final Object slot = new Object();
     private Bot player;
+    private boolean closed;
 
     private PlayerTools(CoreConfig config, AgentHub hub, WorldService worlds) {
         this.config = config;
@@ -58,6 +64,11 @@ public final class PlayerTools implements AutoCloseable {
     }
 
     private synchronized String run(io.github.imnotstable.msc.core.tool.Args args) throws Exception {
+        synchronized (slot) {
+            if (closed) {
+                throw ToolException.workspaceClosed("player_test did not run");
+            }
+        }
         if (hub.current() == null) {
             throw new ToolException("the server is not running with the agent. Start it with server_start first.");
         }
@@ -78,20 +89,21 @@ public final class PlayerTools implements AutoCloseable {
         // The overworld; the test player asks worldOf which world the server put it in, else goes by the dimension.
         String world = info.worlds().isEmpty() ? "world" : info.worlds().getFirst();
         StringBuilder out = new StringBuilder();
-        if (player != null && (!player.connected() || !player.name().equals(name))) {
-            player.close();
-            player = null;
+        Bot bot = current();
+        if (bot != null && (!bot.connected() || !bot.name().equals(name))) {
+            drop(bot);
+            bot = null;
         }
-        if (player == null) {
+        if (bot == null) {
             // Bots pings the server and picks the client for its version, or says which versions it speaks.
             String[] address = address();
             try {
-                player = Bots.join(name, address[0], Integer.parseInt(address[1]),
+                bot = adopt(Bots.join(name, address[0], Integer.parseInt(address[1]),
                         region -> hub.call(Ops.WORLD_READ, new Ops.ReadParams(region, false)).grid(), this::route,
                         (who, at) -> worldOf(hub.call(Ops.SERVER_INFO, new Ops.Empty()).worlds(), who, at,
                                 region -> hub.call(Ops.WORLD_ENTITIES, new Ops.EntitiesParams(region, PLAYER, 0))
                                         .entities()),
-                        Duration.ofSeconds(20), config.installDir() == null ? null : config.installDir().resolve("bot"));
+                        Duration.ofSeconds(20), config.installDir() == null ? null : config.installDir().resolve("bot")));
             } catch (IllegalStateException e) {
                 throw new ToolException(e.getMessage() + (e.getMessage().contains("not_whitelisted")
                         // whitelist add can't help: offline mode stores the lowercased name's UUID.
@@ -111,21 +123,24 @@ public final class PlayerTools implements AutoCloseable {
             console("gamemode " + gamemode + " " + name);
         }
         try {
-            out.append(player.run(actions, world));
+            out.append(bot.run(actions, world));
         } catch (IllegalArgumentException e) {
             throw new ToolException(e.getMessage());
         }
-        if (!player.connected()) {
+        if (!bot.connected()) {
             // A kick is a failed play-test, not a result: say so first and keep what happened before it.
-            String why = player.disconnectReason();
-            player.close();
-            player = null;
+            String why = bot.disconnectReason();
+            drop(bot);
+            synchronized (slot) {
+                if (closed) {
+                    throw ToolException.workspaceClosed("the test player was disconnected");
+                }
+            }
             throw new ToolException("the test player was kicked" + (why != null ? ": " + why : "") + "\n"
                     + Budget.truncate(out.toString(), Budget.DEFAULT_CHARS, "Use fewer actions per call."));
         }
         if (args.bool("leave", false)) {
-            player.close();
-            player = null;
+            drop(bot);
             out.append("\nleft the server");
         }
         return Budget.truncate(out.toString(), Budget.DEFAULT_CHARS, "Use fewer actions per call.");
@@ -193,11 +208,57 @@ public final class PlayerTools implements AutoCloseable {
         return new String[] {ip, p.getProperty("server-port", "25565").strip()};
     }
 
+    /** The joined test player, or null. */
+    private Bot current() {
+        synchronized (slot) {
+            return player;
+        }
+    }
+
+    /**
+     * Keep a player that just joined, unless the workspace closed while it joined: then it leaves at once, since
+     * nothing would disconnect it later.
+     */
+    Bot adopt(Bot joined) {
+        synchronized (slot) {
+            if (!closed) {
+                player = joined;
+                return joined;
+            }
+        }
+        joined.close();
+        throw ToolException.workspaceClosed("the test player left again");
+    }
+
+    /** Disconnect {@code bot} and forget it if it is still the current one. */
+    private void drop(Bot bot) {
+        synchronized (slot) {
+            if (player == bot) {
+                player = null;
+            }
+        }
+        bot.close();
+    }
+
+    /** True while a test player is joined; tests use this. */
+    boolean joined() {
+        return current() != null;
+    }
+
+    /**
+     * Disconnect the test player and refuse later play-tests. Does not wait for a running player_test: closing the
+     * bot ends what it was doing.
+     */
     @Override
-    public synchronized void close() {
-        if (player != null) {
-            player.close();
+    public void close() {
+        Bot left;
+        synchronized (slot) {
+            closed = true;
+            left = player;
             player = null;
+        }
+        if (left != null) {
+            left.close();
         }
     }
 }

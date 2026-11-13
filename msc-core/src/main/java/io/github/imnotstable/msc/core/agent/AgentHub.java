@@ -32,6 +32,8 @@ public final class AgentHub implements AutoCloseable {
     private CoreServer.AgentSession session;
     private long connectCount;
     private long readyCount;
+    /** Set by {@link #close()} under {@link #lock}: no agent can arrive after it, so nobody waits for one. */
+    private boolean closed;
     private volatile Duration connectWait = CONNECT_WAIT;
     private volatile java.util.function.BooleanSupplier agentExpected = () -> true;
 
@@ -40,10 +42,22 @@ public final class AgentHub implements AutoCloseable {
         this.server = CoreServer.start(port, token, RequestHandler.none(), new CoreServer.AgentListener() {
             @Override
             public void connected(CoreServer.AgentSession s) {
-                update(() -> {
-                    session = s;
-                    connectCount++;
-                });
+                boolean late;
+                lock.lock();
+                try {
+                    // A handshake that raced close(): CoreServer may finish one after its socket closed.
+                    late = closed;
+                    if (!late) {
+                        session = s;
+                        connectCount++;
+                        changed.signalAll();
+                    }
+                } finally {
+                    lock.unlock();
+                }
+                if (late) {
+                    s.connection().close();
+                }
             }
 
             @Override
@@ -141,6 +155,9 @@ public final class AgentHub implements AutoCloseable {
             if (s != null) {
                 return s;
             }
+            if (closed()) {
+                throw ToolException.workspaceClosed("no server agent can connect any more");
+            }
             // Asked without the hub lock: the answer may need another lock (ServerManager's monitor), whose holder
             // may be waiting for this one.
             if (!agentExpected.getAsBoolean()) {
@@ -151,6 +168,9 @@ public final class AgentHub implements AutoCloseable {
             try {
                 if (session != null && session.connection().isOpen()) {
                     return session;
+                }
+                if (closed) {
+                    continue;
                 }
                 long nanos = deadline - System.nanoTime();
                 if (nanos <= 0) {
@@ -190,8 +210,19 @@ public final class AgentHub implements AutoCloseable {
                 + "s. Try a smaller region, or check server_logs: the server may be overloaded or stopped.");
     }
 
+    private boolean closed() {
+        lock.lock();
+        try {
+            return closed;
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /** Close the agent session and stop listening. Wakes a caller waiting for an agent, which then fails at once. */
     @Override
     public void close() throws IOException {
+        update(() -> closed = true);
         CoreServer.AgentSession s = current();
         if (s != null) {
             s.connection().close();

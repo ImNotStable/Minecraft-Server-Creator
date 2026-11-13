@@ -34,6 +34,11 @@ final class CoreHarness implements AutoCloseable {
 
     /** Call a tool with alternating name, value arguments. Values may be String, Number, Boolean or List of String. */
     ToolRegistry.Result call(String tool, Object... pairs) {
+        return core.registry().call(tool, args(pairs));
+    }
+
+    /** Tool arguments from alternating name, value pairs, as {@link #call} takes them. */
+    static JsonObject args(Object... pairs) {
         JsonObject args = new JsonObject();
         for (int i = 0; i < pairs.length; i += 2) {
             Object v = pairs[i + 1];
@@ -50,7 +55,7 @@ final class CoreHarness implements AutoCloseable {
                 args.addProperty(name, String.valueOf(v));
             }
         }
-        return core.registry().call(tool, args);
+        return args;
     }
 
     /** Text of a call that must succeed. */

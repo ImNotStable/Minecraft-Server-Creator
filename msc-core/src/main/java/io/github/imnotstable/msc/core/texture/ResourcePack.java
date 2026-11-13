@@ -49,6 +49,8 @@ public final class ResourcePack implements AutoCloseable {
     private volatile PackHost.Served served = PackHost.Served.NONE;
     private Process hostProcess;
     private int hostPort;
+    /** Set by {@link #close(boolean)} under this monitor; whatever starts a host checks it under the same one. */
+    private boolean closed;
 
     /**
      * @param port port to serve on; 0 reuses the port this workspace used last ({@code .msc/pack-port}), so the pack
@@ -115,6 +117,9 @@ public final class ResourcePack implements AutoCloseable {
 
     /** Zip the pack. The same sources always give the same bytes, so the hash only changes with content. */
     public synchronized Built build(String description) throws IOException {
+        if (closed) {
+            throw ToolException.workspaceClosed("the pack was not built or served");
+        }
         if (!Files.isDirectory(root().resolve("assets"))) {
             throw new ToolException("the pack is empty. Add one with the texture tool first.");
         }
@@ -191,6 +196,9 @@ public final class ResourcePack implements AutoCloseable {
      * built yet (there is no pack to keep up).
      */
     public synchronized boolean keepServing(String java, String classPath) throws IOException, InterruptedException {
+        if (closed) {
+            throw ToolException.workspaceClosed("no standalone pack host was started");
+        }
         if (hostProcess != null && hostProcess.isAlive()) {
             return true;
         }
@@ -294,6 +302,7 @@ public final class ResourcePack implements AutoCloseable {
 
     /** Stop serving. {@code keepHost} leaves a standalone host running for a detached server. */
     public synchronized void close(boolean keepHost) {
+        closed = true;
         if (server != null) {
             server.stop(0);
             server = null;

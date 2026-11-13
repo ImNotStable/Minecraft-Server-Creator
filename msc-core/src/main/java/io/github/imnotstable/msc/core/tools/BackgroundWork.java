@@ -22,8 +22,7 @@ public final class BackgroundWork implements AutoCloseable {
     /** Run {@code task} on a new virtual thread that {@link #close} stops. */
     synchronized Thread start(String name, Runnable task) {
         if (closed) {
-            throw new ToolException("the workspace was closed (session ended or msc_workspace), so " + name
-                    + " did not start");
+            throw ToolException.workspaceClosed(name + " did not start");
         }
         Thread thread = Thread.ofVirtual().name(name).unstarted(() -> {
             try {

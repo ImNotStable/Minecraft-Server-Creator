@@ -32,6 +32,8 @@ public final class ServerManager implements AutoCloseable {
     private Process process;
     private volatile boolean sawDone;
     private volatile boolean detached;
+    /** Set by {@link #close()} under this monitor; {@link #start} checks it under the same monitor (#282). */
+    private boolean closed;
     /** Clock time just before the running server's process was launched: files written later are not loaded. */
     private java.time.Instant launchedAt;
 
@@ -111,6 +113,10 @@ public final class ServerManager implements AutoCloseable {
         long readyBefore = hub.readyCount();
         Process started;
         synchronized (this) {
+            if (closed) {
+                // A call that was already running when the workspace closed: nothing would stop this server.
+                throw ToolException.workspaceClosed("the server did not start");
+            }
             if (running()) {
                 throw new ToolException("server is already running. Use server_stop or dev_cycle.");
             }
@@ -290,6 +296,9 @@ public final class ServerManager implements AutoCloseable {
      * next core's start, dev_cycle or server_stop stops it (saved over RCON) before doing anything else.
      */
     public synchronized boolean detach() {
+        if (closed) {
+            throw ToolException.workspaceClosed("the server was not detached");
+        }
         detached = running();
         return detached;
     }
@@ -299,9 +308,19 @@ public final class ServerManager implements AutoCloseable {
         return detached && running();
     }
 
+    /**
+     * The first half of {@link #close()}: from now on nothing starts or detaches a server, so whether the server
+     * stays up after the session (detached) is settled. Returns that answer; the pack host's close goes by it.
+     */
+    public synchronized boolean seal() {
+        closed = true;
+        return detached();
+    }
+
+    /** Stop the server unless detached. Nothing starts after this, even from a call already running. */
     @Override
     public void close() {
-        if (detached()) {
+        if (seal()) {
             return;
         }
         try {
