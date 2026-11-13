@@ -275,7 +275,8 @@ public final class BuildScript {
         List<Step> copies = new ArrayList<>(repeat);
         for (int i = 0; i < repeat; i++) {
             int k = i;
-            List<BlockPos> moved = p.points().stream().map(q -> q.offset(d.x() * k, d.y() * k, d.z() * k)).toList();
+            List<BlockPos> moved = p.points().stream().map(q -> Coords.inWorld(q.x() + (long) d.x() * k,
+                    q.y() + (long) d.y() * k, q.z() + (long) d.z() * k)).toList();
             copies.add(step(new Parts(p.verb(), moved, options, p.flags(), p.bands(), p.block())));
         }
         return new Step.Group(copies);
@@ -353,7 +354,8 @@ public final class BuildScript {
         List<Step.Stamp.Placement> placements = new ArrayList<>();
         for (BlockPos point : p.points()) {
             for (int i = 0; i < repeat; i++) {
-                BlockPos base = point.offset(step.x() * i, step.y() * i, step.z() * i);
+                BlockPos base = Coords.inWorld(point.x() + (long) step.x() * i, point.y() + (long) step.y() * i,
+                        point.z() + (long) step.z() * i);
                 int q = fixed;
                 if (face != null) {
                     double cx = center ? base.x() : base.x() + (size.x() - 1) / 2.0;

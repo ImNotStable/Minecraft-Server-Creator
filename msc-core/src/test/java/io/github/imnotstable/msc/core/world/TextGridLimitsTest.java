@@ -42,4 +42,12 @@ class TextGridLimitsTest {
         assertThat(TextGrid.parse("legend: #=stone\ny=0\n#\ny=1..4095 same as y=0", "world", ORIGIN).region().sizeY())
                 .isEqualTo(4096);
     }
+
+    @Test
+    @Timeout(10)
+    void repeatedRowsBeyondTheVolumeLimitAreRejectedEarly() {
+        String text = "legend: #=stone\ny=0\n" + "# (x9999)\n".repeat(200_000);
+        assertThatThrownBy(() -> TextGrid.parse(text, "world", ORIGIN))
+                .isInstanceOf(ToolException.class).hasMessageContaining("rows; split it");
+    }
 }

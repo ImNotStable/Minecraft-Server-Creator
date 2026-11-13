@@ -1,5 +1,6 @@
 package io.github.imnotstable.msc.core;
 
+import org.junit.jupiter.api.Timeout;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.nio.file.Files;
@@ -165,5 +166,16 @@ class BuildToolsTest {
         assertThat(h.agent.get(0, 64, 0)).isEqualTo("minecraft:air");
         assertThat(h.agent.get(200, 90, 200)).isEqualTo("minecraft:air");
         assertThat(h.error("build_batch", "steps", "fill 0,0,0 2000,10,2000 stone")).contains("Split it");
+    }
+
+    @Test
+    @Timeout(10)
+    void coordinatesAtTheIntLimitAreRefusedInsteadOfLoopingForever() {
+        assertThat(h.error("build_batch", "steps", "fill 2147483647,64,0 2147483647,64,0 stone"))
+                .contains("x=2147483647 is outside the world");
+        assertThat(h.error("build_batch", "steps", "set 29999999,64,0 stone repeat=2 step=2,0,0"))
+                .contains("x=30000001 is outside the world");
+        assertThat(h.error("build_batch", "steps", "structure 29999999,64,0 repeat=2 step=2,0,0\nlegend: #=stone\n#\nend"))
+                .contains("x=30000001 is outside the world");
     }
 }
