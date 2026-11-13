@@ -1,0 +1,19 @@
+[12:00:00] [main/INFO]: Loading Minecraft 26.3 with Fabric Loader 0.17.2
+[12:00:00] [main/INFO]: Loading 4 mods:
+	- fabricloader 0.17.2
+	- java 25
+	- minecraft 26.3
+	- msc_agent 1.0.0
+[12:00:02] [Server thread/INFO]: Starting minecraft server version 26.3
+[12:00:02] [Server thread/INFO]: Loading properties
+[12:00:02] [Server thread/WARN]: **** SERVER IS RUNNING IN OFFLINE/INSECURE MODE!
+[12:00:02] [Server thread/WARN]: The server will make no attempt to authenticate usernames. Beware.
+[12:00:02] [Server thread/WARN]: While this makes the game possible to play without internet access, it also opens up the ability for hackers to connect with any username they choose.
+[12:00:02] [Server thread/WARN]: To change this, set "online-mode" to "true" in the server.properties file.
+[12:00:03] [Server thread/ERROR]: Unable to locate English counter names in registry Perflib 009
+com.sun.jna.platform.win32.Win32Exception: The parameter is incorrect.
+	at com.sun.jna.platform.win32.Advapi32Util.registryGetValue(Advapi32Util.java:1104) ~[jna-platform.jar:?]
+[12:00:03] [Server thread/WARN]: Unable to locate English counter names in registry Perflib 009. Assuming English counters.
+[12:00:03] [Server thread/INFO]: Preparing level "world"
+[12:00:04] [Server thread/INFO]: Preparing spawn area: 0%
+[12:00:04] [Server thread/INFO]: Done (3.204s)! For help, type "help"

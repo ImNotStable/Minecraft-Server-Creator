@@ -6,6 +6,7 @@ import io.github.imnotstable.msc.core.tool.ToolException;
 import io.github.imnotstable.msc.protocol.Limits;
 import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
@@ -180,16 +181,23 @@ public final class ServerManager implements AutoCloseable {
     }
 
     private void pump(Process p) {
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(p.getInputStream(), StandardCharsets.UTF_8))) {
+        try {
+            pump(p.getInputStream(), log, () -> sawDone = true);
+        } catch (IOException ignored) {
+            // Stream closed with the process.
+        }
+    }
+
+    /** Reads a server's output into {@code log} line by line, calling {@code onReady} at each ready line. */
+    static void pump(InputStream in, LogBuffer log, Runnable onReady) throws IOException {
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8))) {
             String line;
             while ((line = reader.readLine()) != null) {
                 log.add(line);
                 if (LogCondenser.readyLine(line)) {
-                    sawDone = true;
+                    onReady.run();
                 }
             }
-        } catch (IOException ignored) {
-            // Stream closed with the process.
         }
     }
 

@@ -1,0 +1,3 @@
+[main] INFO net.minestom.server.MinecraftServer - Starting Minestom
+[main] INFO com.example.lobby.Lobby - Loaded
+Done (0.512s)! Listening on 0.0.0.0:25565. Type stop to stop.
