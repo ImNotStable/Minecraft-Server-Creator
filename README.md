@@ -44,7 +44,7 @@ To update after pulling new code, run `installMsc` again, then reconnect msc in 
 | [msc-textures](msc-textures/README.md) | Texture and resource pack generation |
 | [msc-bot](msc-bot/) | Headless test player behind `player_test` |
 | [msc-bench](msc-bench/README.md) | Benchmark tasks and runner |
-| [msc-process](msc-process/) | Process tree kill shared by msc-core and msc-bench |
+| [msc-process](msc-process/README.md) | Process tree kill shared by msc-core and msc-bench |
 | [msc-plugin](msc-plugin/README.md) | The Claude Code plugin and its launcher |
 
 ## Build (developing this repo)
