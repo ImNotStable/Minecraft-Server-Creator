@@ -1,5 +1,6 @@
 package io.github.imnotstable.msc.agent.vanilla;
 
+import com.mojang.brigadier.StringReader;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import io.github.imnotstable.msc.agent.common.BlockNames;
 import java.util.List;
@@ -15,7 +16,7 @@ final class BlockStates {
 
     /**
      * @throws IllegalArgumentException for an unknown block (with close ids), or a bad property or value on a
-     *     real block (with Brigadier's reason)
+     *     real block (with Brigadier's reason), or text after the state such as NBT or a second {@code [..]}
      */
     static BlockState parse(String state) {
         return parseResult(state).blockState();
@@ -27,11 +28,18 @@ final class BlockStates {
     }
 
     private static BlockStateParser.BlockResult parseResult(String state) {
+        StringReader reader = new StringReader(state);
+        BlockStateParser.BlockResult result;
         try {
-            return BlockStateParser.parseForBlock(BuiltInRegistries.BLOCK, state, false);
+            result = BlockStateParser.parseForBlock(BuiltInRegistries.BLOCK, reader, false);
         } catch (CommandSyntaxException e) {
             throw new IllegalArgumentException(explain(state, e), e);
         }
+        if (reader.canRead()) { // Paper and Minestom reject trailing NBT or a second [..]; never drop it silently
+            throw new IllegalArgumentException(
+                    "unexpected text after block state " + state + ": " + reader.getRemaining());
+        }
+        return result;
     }
 
     /** Why {@code state} failed: bad properties on a real block, or an unknown id with close names. */
