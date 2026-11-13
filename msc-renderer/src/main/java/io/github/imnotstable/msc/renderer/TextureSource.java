@@ -14,6 +14,14 @@ public interface TextureSource {
      */
     Optional<BufferedImage> texture(String namespace, String path);
 
+    /**
+     * A value that changes when the textures may have changed. The renderer keeps what it looked up until this
+     * changes. The default never changes, for sources whose textures are fixed.
+     */
+    default long stamp() {
+        return 0;
+    }
+
     /** No textures: every block is drawn with its table colour. */
     static TextureSource none() {
         return (namespace, path) -> Optional.empty();
