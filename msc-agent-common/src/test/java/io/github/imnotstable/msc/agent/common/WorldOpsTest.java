@@ -387,13 +387,30 @@ class WorldOpsTest {
     }
 
     @Test
-    void aReadLeavesEntitiesAndSignsToTheNextTickWhenTheGridUsedThisOne() {
+    void aReadLeavesEntitiesAndSignsToTheNextStepEvenWhenThatStepIsPastItsDeadline() {
         world.entities.add(new Ops.EntitySummary("minecraft:pig", 1.5, 70, 1.5, null));
         WorldReadJob<String> job = new WorldReadJob<>(world, new Ops.ReadParams(box(0, 70, 0, 1, 70, 1), true, true));
 
         assertThat(job.step(System.nanoTime() - 1)).isFalse();
-        assertThat(job.step(Long.MAX_VALUE)).isTrue();
+        assertThat(job.step(System.nanoTime() - 1)).isTrue();
         assertThat(job.result().entities()).hasSize(1);
         assertThat(job.result().grid().blocks()).hasSize(4);
+    }
+
+    @Test
+    void aReadFinishesWithinTwoStepsPastTheirDeadlineAndAtOnceWithoutExtras() {
+        world.entities.add(new Ops.EntitySummary("minecraft:pig", 1.5, 70, 1.5, null));
+        for (boolean entities : new boolean[] {false, true}) {
+            for (boolean signs : new boolean[] {false, true}) {
+                WorldReadJob<String> job = new WorldReadJob<>(world,
+                        new Ops.ReadParams(box(0, 70, 0, 1, 70, 1), entities, signs));
+                int steps = 1;
+                while (steps < 10 && !job.step(System.nanoTime() - 1)) {
+                    steps++;
+                }
+                assertThat(steps).as("entities=%s signs=%s", entities, signs).isEqualTo(entities || signs ? 2 : 1);
+                assertThat(job.result().entities()).hasSize(entities ? 1 : 0);
+            }
+        }
     }
 }
