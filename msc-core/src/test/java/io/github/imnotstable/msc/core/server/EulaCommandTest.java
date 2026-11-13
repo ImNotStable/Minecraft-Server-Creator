@@ -87,6 +87,21 @@ class EulaCommandTest {
         assertThat(again.text()).startsWith("Already accepted for this machine by owner on pc, 2026-11-12");
     }
 
+    /** The status line and the accept prompt name exactly the platforms that need the EULA. */
+    @Test
+    void theNoticesNameEveryPlatformThatNeedsTheEula() throws Exception {
+        FakeTerminal status = new FakeTerminal(false);
+        assertThat(run(status, "status")).isEqualTo(1);
+        FakeTerminal prompt = new FakeTerminal(true, "no");
+        assertThat(run(prompt, "accept")).isEqualTo(1);
+        for (FakeTerminal t : List.of(status, prompt)) {
+            for (Platform p : Platform.values()) {
+                assertThat(t.text().contains(p.displayName())).as(p.id() + " in " + t.text())
+                        .isEqualTo(p.needsEula());
+            }
+        }
+    }
+
     @Test
     void statusRevokeAndUsage() throws Exception {
         FakeTerminal t = new FakeTerminal(false);
