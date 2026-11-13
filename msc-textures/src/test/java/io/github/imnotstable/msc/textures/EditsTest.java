@@ -56,6 +56,11 @@ class EditsTest {
         long start = System.nanoTime();
         assertThat(PaletteText.view(small)).startsWith("4096 colors merged to ");
         assertThat(Edits.quantize(large, 16).colors()).hasSize(16);
+        Texture glass = large.copy();
+        for (int i = 0; i < 256 * 256; i++) {
+            glass.set(i % 256, i / 256, (1 + i % 254) << 24 | large.get(i % 256, i / 256) & 0xFFFFFF);
+        }
+        assertThat(PaletteText.view(glass)).startsWith("65536 colors merged to ");
         assertThat((System.nanoTime() - start) / 1_000_000).isLessThan(5_000);
     }
 
