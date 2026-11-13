@@ -54,11 +54,17 @@ public final class LogCondenser {
             Pattern.compile("^Failed to get system info for .*"),
             // The same oshi message on Fabric and Quilt, whose log lines carry no logger.
             Pattern.compile("^Unable to locate English counter names in registry Perflib.*"),
-            // Forge's first start: writing default config files and mods without a pack.mcmeta. A key corrected from
-            // a value someone set is kept.
+            // Forge's first start writes its default config files. A key corrected from a value someone set is kept.
+            // A mod jar without pack.mcmeta is kept too: the template and the agent ship one, so it is a real mistake.
             Pattern.compile("^Configuration file .* is not correct\\. Correcting.*"),
             Pattern.compile("^Incorrect key .* was corrected from null to its default.*"),
-            Pattern.compile("^Missing metadata in pack mod:.*"));
+            // Quilt on Minecraft 26.x, which ships unobfuscated: there is no intermediary to remap to, and vanilla's
+            // asset lookup does not know Quilt's in-memory file system.
+            Pattern.compile("^Not remapping mods because intermediary is missing!$"),
+            Pattern.compile("^Assets URL 'quilt\\.zfs://[^']*' uses unexpected schema$"));
+    /** Quilt Loader's start-up timings, printed to stdout without a timestamp, so they read as another entry's lines. */
+    private static final Pattern QUILT_TIMING =
+            Pattern.compile("^(mod adding|tmp jar copy|transform-cache|zip sub copy) took \\d+ms$");
     /**
      * Netty probing the macOS and Linux native transports on another OS (NeoForge and Forge log the failed probe
      * with its trace). Matched anywhere in an entry together with {@link #NETTY_UNSUPPORTED}.
@@ -126,7 +132,7 @@ public final class LogCondenser {
                 }
                 current = new Entry(m.group(1), m.group(2).toUpperCase(), message);
                 entries.add(current);
-            } else if (!line.isBlank()) {
+            } else if (!line.isBlank() && !QUILT_TIMING.matcher(line).matches()) {
                 if (current == null) {
                     current = new Entry("", "", line);
                     entries.add(current);

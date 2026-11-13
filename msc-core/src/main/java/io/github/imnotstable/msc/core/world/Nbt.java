@@ -5,7 +5,6 @@ import java.io.DataOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -18,6 +17,9 @@ import java.util.zip.GZIPOutputStream;
  * byte[], String, List, Map (compound), int[], long[].
  */
 final class Nbt {
+    /** Deepest nesting of lists and compounds read, as in Minecraft: a deeper file would overflow the stack. */
+    static final int MAX_DEPTH = 512;
+
     private Nbt() {
     }
 
@@ -30,11 +32,14 @@ final class Nbt {
                 throw new IOException("NBT root is not a compound");
             }
             in.readUTF();
-            return (Map<String, Object>) payload(in, type);
+            return (Map<String, Object>) payload(in, type, 0);
         }
     }
 
-    private static Object payload(DataInputStream in, int type) throws IOException {
+    private static Object payload(DataInputStream in, int type, int depth) throws IOException {
+        if (depth > MAX_DEPTH) {
+            throw new IOException("NBT nested deeper than " + MAX_DEPTH);
+        }
         switch (type) {
             case 1: return in.readByte();
             case 2: return in.readShort();
@@ -53,7 +58,7 @@ final class Nbt {
                 int n = checked(in.readInt());
                 List<Object> list = new ArrayList<>();
                 for (int i = 0; i < n; i++) {
-                    list.add(payload(in, itemType));
+                    list.add(payload(in, itemType, depth + 1));
                 }
                 return list;
             }
@@ -65,7 +70,7 @@ final class Nbt {
                         return map;
                     }
                     String name = in.readUTF();
-                    map.put(name, payload(in, t));
+                    map.put(name, payload(in, t, depth + 1));
                 }
             }
             case 11: {
@@ -140,10 +145,9 @@ final class Nbt {
         out.writeByte(0);
     }
 
+    /** Names are modified UTF-8 like every NBT string, so {@link DataInputStream#readUTF} reads them back. */
     private static void tag(DataOutputStream out, int type, String name) throws IOException {
         out.writeByte(type);
-        byte[] bytes = name.getBytes(StandardCharsets.UTF_8);
-        out.writeShort(bytes.length);
-        out.write(bytes);
+        out.writeUTF(name);
     }
 }

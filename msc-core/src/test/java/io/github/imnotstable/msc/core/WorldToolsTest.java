@@ -1,5 +1,6 @@
 package io.github.imnotstable.msc.core;
 
+import org.junit.jupiter.api.Timeout;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.imnotstable.msc.core.tool.ToolRegistry;
@@ -344,5 +345,19 @@ class WorldToolsTest {
         assertThat(h.ok("world_entities", "region", "0,60,0 1,61,1", "type", "pig"))
                 .startsWith("no pig entities in the region").endsWith("\"forceload add 0 0 1 1\" loads them, then ask again");
         assertThat(h.error("world_entities", "region", "0,0,0 5000,1,1")).contains("2048");
+    }
+
+    @Test
+    @Timeout(10)
+    void summaryOfARegionAtTheIntLimitIsRefused() {
+        assertThat(h.error("world_summary", "region", "2147483520,0,0 2147483647,100,100"))
+                .contains("x=2147483520 is outside the world");
+    }
+
+    @Test
+    void structureSaveRefusesSidesASchematicCannotHold() {
+        assertThat(h.error("structure_save", "region", "0,64,0 65536,64,0", "file", "wall.schem"))
+                .contains("65537x1x1").contains("at most 65535");
+        assertThat(workspace.resolve("wall.schem")).doesNotExist();
     }
 }

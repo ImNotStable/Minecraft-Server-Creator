@@ -2,6 +2,7 @@ package io.github.imnotstable.msc.core.world;
 
 import io.github.imnotstable.msc.core.tool.Budget;
 import io.github.imnotstable.msc.core.tool.ToolException;
+import io.github.imnotstable.msc.protocol.Limits;
 import io.github.imnotstable.msc.protocol.world.BlockGrid;
 import io.github.imnotstable.msc.protocol.world.BlockPos;
 import io.github.imnotstable.msc.protocol.world.Region;
@@ -213,6 +214,7 @@ public final class TextGrid {
         Map<Character, String> legend = new LinkedHashMap<>();
         TreeMap<Integer, Layer> layers = new TreeMap<>();
         Layer current = null;
+        long rows = 0;
         for (String raw : text.split("\\R")) {
             String line = raw.stripTrailing();
             if (line.isBlank() || line.startsWith("region ") || line.startsWith("[")) {
@@ -264,6 +266,13 @@ public final class TextGrid {
             }
             Matcher repeat = REPEAT.matcher(line);
             int times = repeat.matches() ? Integer.parseInt(repeat.group(2)) : 1;
+            // Every row holds at least one block, so more rows than the volume limit cannot fit; "(x9999)" on many
+            // lines would otherwise fill memory before the size check below.
+            rows += times;
+            if (rows > Limits.MAX_REGION_VOLUME) {
+                throw new ToolException("structure has more than " + Limits.MAX_REGION_VOLUME
+                        + " rows; split it");
+            }
             for (int i = 0; i < times; i++) {
                 current.rows.add(repeat.matches() ? repeat.group(1) : line);
             }
@@ -280,7 +289,7 @@ public final class TextGrid {
         int sz = shaped.rows.size();
         int sx = shaped.rows.get(0).length();
         Region region = new Region(world, origin, origin.offset(sx - 1, sy - 1, sz - 1));
-        if (region.volume() > io.github.imnotstable.msc.protocol.Limits.MAX_REGION_VOLUME) {
+        if (region.volume() > Limits.MAX_REGION_VOLUME) {
             throw new ToolException("structure is larger than 1,048,576 blocks; split it");
         }
         List<String> palette = new ArrayList<>();

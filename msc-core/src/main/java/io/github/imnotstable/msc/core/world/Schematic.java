@@ -27,23 +27,32 @@ public final class Schematic {
     private Schematic() {
     }
 
+    /** Longest side a Sponge schematic can hold: Width, Height and Length are unsigned shorts. */
+    public static final int MAX_SIDE = 0xFFFF;
+
     public static void save(BlockGrid grid, Path file) throws IOException {
         Region r = grid.region();
-        Map<String, Object> palette = new LinkedHashMap<>();
-        for (int i = 0; i < grid.palette().size(); i++) {
-            palette.put(grid.palette().get(i), i);
+        if (r.sizeX() > MAX_SIDE || r.sizeY() > MAX_SIDE || r.sizeZ() > MAX_SIDE) {
+            throw new ToolException("region is " + r.sizeX() + "x" + r.sizeY() + "x" + r.sizeZ() + "; a .schem side is at most "
+                    + MAX_SIDE + " blocks. Save it in parts.");
+        }
+        // Equal states share one file index: a map keyed by state would otherwise drop the earlier index.
+        Map<String, Integer> palette = new LinkedHashMap<>();
+        int[] remap = new int[grid.palette().size()];
+        for (int i = 0; i < remap.length; i++) {
+            remap[i] = palette.computeIfAbsent(grid.palette().get(i), k -> palette.size());
         }
         int airIndex = -1;
         ByteArrayOutputStream data = new ByteArrayOutputStream(grid.blocks().length);
         for (int b : grid.blocks()) {
-            int v = b;
-            if (v < 0) {
+            int v;
+            if (b < 0) {
                 if (airIndex < 0) {
-                    Object existing = palette.get("minecraft:air");
-                    airIndex = existing != null ? (Integer) existing : palette.size();
-                    palette.putIfAbsent("minecraft:air", airIndex);
+                    airIndex = palette.computeIfAbsent("minecraft:air", k -> palette.size());
                 }
                 v = airIndex;
+            } else {
+                v = remap[b];
             }
             while ((v & ~0x7F) != 0) {
                 data.write((v & 0x7F) | 0x80);
@@ -101,7 +110,12 @@ public final class Schematic {
             }
             int max = 0;
             for (Object v : paletteTag.values()) {
-                max = Math.max(max, ((Number) v).intValue());
+                int index = ((Number) v).intValue();
+                // Indices are dense in practice; a huge one would size the lookup array past memory.
+                if (index < 0 || index >= Limits.MAX_REGION_VOLUME) {
+                    throw new IllegalArgumentException("palette index " + index);
+                }
+                max = Math.max(max, index);
             }
             String[] byIndex = new String[max + 1];
             paletteTag.forEach((state, index) -> byIndex[((Number) index).intValue()] = state);
