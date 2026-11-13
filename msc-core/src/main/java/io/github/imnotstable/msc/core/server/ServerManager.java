@@ -276,12 +276,28 @@ public final class ServerManager implements AutoCloseable {
             p.destroyForcibly();
             p.waitFor(10, TimeUnit.SECONDS);
         }
+        released(p);
+        return true;
+    }
+
+    /**
+     * Delete the pid file of {@code p}, which has exited, unless a newer server already replaced it: a start that ran
+     * while a stop waited for the old process writes its own pid file, which must stay (#323).
+     */
+    synchronized void released(Process p) {
+        if (process != p) {
+            return;
+        }
         try {
             Files.deleteIfExists(pidFile());
         } catch (IOException ignored) {
             // A stale file is checked against the process start time anyway.
         }
-        return true;
+    }
+
+    /** The current or last server process, for tests. */
+    synchronized Process process() {
+        return process;
     }
 
     /**
