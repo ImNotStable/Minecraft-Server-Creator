@@ -153,6 +153,73 @@ class TestPlayerTest {
     }
 
     @Test
+    void aTeleportKeepsThePlayerFallingWhileTheLocatorAnswers() throws InterruptedException {
+        // A plugin teleports the player into the air during a wait: it falls at once, and the locator's answer (here
+        // another Minestom instance) arrives without a new step.
+        FlatWorld blocks = new FlatWorld();
+        java.util.concurrent.CountDownLatch answer = new java.util.concurrent.CountDownLatch(1);
+        List<String> asked = java.util.Collections.synchronizedList(new ArrayList<>());
+        TestPlayer p = TestPlayer.offline("MscTester", blocks, null, (player, pos) -> {
+            asked.add(pos.y() + "");
+            if (asked.size() == 1) {
+                return "lobby";
+            }
+            answer.await();
+            return "arena";
+        }, new ArrayList<>());
+        p.receive(login("minecraft:overworld"));
+        p.receive(teleport(0.5, 1, 0.5));
+        p.useWorld("world");
+        Script.Step wait = Script.parse("wait 100");
+        p.begin(wait);
+        p.tick();
+        p.receive(teleport(0.5, 20, 0.5));
+        for (int i = 0; i < 40; i++) {
+            p.tick();
+        }
+        assertThat(p.body.y).isEqualTo(1);
+        assertThat(p.body.onGround).isTrue();
+        assertThat(p.view().world()).isEqualTo("lobby");
+        answer.countDown();
+        until(() -> p.view().world().equals("arena"));
+        assertThat(wait.resultNow()).isNull();
+        assertThat(asked).containsExactly("1", "20");
+    }
+
+    @Test
+    void aRespawnWaitsForTheLocatorAloneThenFalls() throws InterruptedException {
+        // A dimension change stops the simulation, as the old world is surely wrong, only until the locator answers.
+        FlatWorld blocks = new FlatWorld();
+        TestPlayer p = TestPlayer.offline("MscTester", blocks, null,
+                (player, pos) -> pos.y() > 5 ? "nether_arena" : "world", new ArrayList<>());
+        p.receive(login("minecraft:overworld"));
+        p.receive(teleport(0.5, 1, 0.5));
+        p.useWorld("world");
+        Script.Step wait = Script.parse("wait 100");
+        p.begin(wait);
+        p.receive(new ClientboundRespawnPacket(spawn("minecraft:the_nether"), false, false));
+        assertThat(p.view()).isNull();
+        p.receive(teleport(0.5, 10, 0.5));
+        until(() -> p.view() != null);
+        assertThat(p.view().world()).isEqualTo("nether_arena");
+        for (int i = 0; i < 40; i++) {
+            p.tick();
+        }
+        assertThat(p.body.y).isEqualTo(1);
+        assertThat(blocks.regions.getLast().world()).isEqualTo("nether_arena");
+        assertThat(wait.resultNow()).isNull();
+    }
+
+    /** Wait up to five seconds for an answer from the locator's thread. */
+    private static void until(java.util.function.BooleanSupplier done) throws InterruptedException {
+        long end = System.nanoTime() + 5_000_000_000L;
+        while (!done.getAsBoolean() && System.nanoTime() < end) {
+            Thread.sleep(1);
+        }
+        assertThat(done.getAsBoolean()).isTrue();
+    }
+
+    @Test
     void aWorldBorderAloneIsNoWorldChange() {
         // Paper sends one for a per-player border, with the player staying where it is.
         FlatWorld blocks = new FlatWorld();
