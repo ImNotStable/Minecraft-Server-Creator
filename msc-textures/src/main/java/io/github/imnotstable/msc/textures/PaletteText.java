@@ -62,19 +62,43 @@ public final class PaletteText {
 
     /**
      * {@link #render} for any texture: one with more opaque colours than there are symbols is shown with
-     * its closest colours merged, after a line that says so.
+     * its closest colours merged, after a line that says so. When merging colours is not enough because
+     * the pixels differ in partial alpha, the alpha is also snapped to a few levels.
      */
     public static String view(Texture t) {
         int colors = t.colors().size();
+        if (colors <= SYMBOLS.length()) {
+            return render(t);
+        }
+        Texture shown = fit(t);
+        if (shown.colors().size() > SYMBOLS.length()) {
+            shown = fit(snapAlpha(t));
+        }
+        return colors + " colors merged to " + shown.colors().size() + " to show them; the file is unchanged\n"
+                + render(shown);
+    }
+
+    private static Texture fit(Texture t) {
         Texture shown = t;
         for (int max = SYMBOLS.length(); shown.colors().size() > SYMBOLS.length() && max >= 1; max /= 2) {
             shown = Edits.quantize(t, max);
         }
-        if (shown == t) {
-            return render(t);
+        return shown;
+    }
+
+    /** Partial alpha snapped to 64, 128, 192 or 255; transparent stays transparent. */
+    private static Texture snapAlpha(Texture t) {
+        Texture out = t.copy();
+        for (int y = 0; y < t.height(); y++) {
+            for (int x = 0; x < t.width(); x++) {
+                int c = t.get(x, y);
+                if (Colors.opaque(c)) {
+                    int level = Math.max(1, Math.round(Colors.alpha(c) / 64f));
+                    out.set(x, y, Math.min(255, level * 64) << 24 | c & 0xFFFFFF);
+                }
+            }
         }
-        return colors + " colors merged to " + shown.colors().size() + " to show them; the file is unchanged\n"
-                + render(shown);
+        return out;
     }
 
     /** The texture as a size line, a palette line and pixel rows. */

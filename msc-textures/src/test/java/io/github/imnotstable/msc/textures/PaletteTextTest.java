@@ -32,6 +32,19 @@ class PaletteTextTest {
     }
 
     @Test
+    void viewShowsATextureWithManyPartialAlphaValues() {
+        Texture t = new Texture(16, 16);
+        for (int i = 0; i < 256; i++) {
+            t.set(i % 16, i / 16, i << 24 | 0xFF0000);
+        }
+        String text = PaletteText.view(t);
+        assertThat(text).startsWith("255 colors merged to ");
+        String palette = text.split("\n")[2];
+        assertThat(palette.split(" ").length - 2).isBetween(2, 72);
+        assertThat(text.split("\n")[3]).startsWith(".a");
+    }
+
+    @Test
     void reportsBadInputInOneLine() {
         assertThatThrownBy(() -> PaletteText.parse(List.of("a=#000"), List.of("aa", "a")))
                 .hasMessage("row 2 has 1 pixels, expected 2");
