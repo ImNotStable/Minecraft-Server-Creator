@@ -51,6 +51,7 @@ import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.entity.play
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.entity.player.ClientboundSetHealthPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.entity.ClientboundAddEntityPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.level.ClientboundChunkBatchFinishedPacket;
+import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.level.border.ClientboundInitializeBorderPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.title.ClientboundSetActionBarTextPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.title.ClientboundSetSubtitleTextPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.title.ClientboundSetTitleTextPacket;
@@ -86,6 +87,8 @@ public final class TestPlayer implements Bot {
     private ScheduledExecutorService ticker;
     private final BlockSource blocks;
     private final RoutePlanner planner;
+    /** Says which world the player is in; null to go by the dimension. */
+    private final WorldLocator locator;
     /** Most events kept between two calls. */
     static final int MAX_EVENTS = 300;
     private final java.util.ArrayDeque<String> events = new java.util.ArrayDeque<>();
@@ -104,8 +107,16 @@ public final class TestPlayer implements Bot {
     private String baseWorld;
     /** The dimension the server says the player is in, such as minecraft:the_nether; null before the login. */
     private String dimension;
-    /** Set when the player went to a world the bot cannot name: why movement is not simulated. */
-    private String lostWorld;
+    /**
+     * Set when the server put the player in a world (a login, a respawn, or a world border reset, which every server
+     * sends then, Minestom also between two instances of one dimension) until the locator says which world it is.
+     */
+    private boolean relocate;
+    /** Counts {@link #relocate} settings, so a locator answer that a newer world change overtook is dropped. */
+    private long worldChanges;
+    /** The world the locator found; null to go by the dimension. */
+    private String located;
+    static final String RELOCATING = "the server put the player in another world; the next action finds out which";
     private volatile String disconnect;
     private volatile int entityId;
     private volatile boolean positioned;
@@ -121,11 +132,12 @@ public final class TestPlayer implements Bot {
     private long ticks;
     private long serverMoves;
 
-    private TestPlayer(String name, BlockSource blocks, RoutePlanner planner, ClientSession session,
-                       java.util.function.Consumer<Packet> sender) {
+    private TestPlayer(String name, BlockSource blocks, RoutePlanner planner, WorldLocator locator,
+                       ClientSession session, java.util.function.Consumer<Packet> sender) {
         this.name = name;
         this.blocks = blocks;
         this.planner = planner;
+        this.locator = locator;
         this.session = session;
         this.sender = sender;
     }
@@ -135,7 +147,13 @@ public final class TestPlayer implements Bot {
      * {@code sent}, and the test drives {@link #tick} itself.
      */
     static TestPlayer offline(String name, BlockSource blocks, RoutePlanner planner, List<Packet> sent) {
-        return new TestPlayer(name, blocks, planner, null, sent::add);
+        return offline(name, blocks, planner, null, sent);
+    }
+
+    /** As {@link #offline(String, BlockSource, RoutePlanner, List)}, with a locator. */
+    static TestPlayer offline(String name, BlockSource blocks, RoutePlanner planner, WorldLocator locator,
+                              List<Packet> sent) {
+        return new TestPlayer(name, blocks, planner, locator, null, sent::add);
     }
 
     /** Join the server and wait until the player is in the world. */
@@ -147,9 +165,15 @@ public final class TestPlayer implements Bot {
     /** As {@link #join(String, String, int, BlockSource, Duration)}, with a planner for the walk action. */
     public static TestPlayer join(String name, String host, int port, BlockSource blocks, RoutePlanner planner,
                                   Duration timeout) throws InterruptedException {
+        return join(name, host, port, blocks, planner, null, timeout);
+    }
+
+    /** As {@link #join(String, String, int, BlockSource, RoutePlanner, Duration)}, with a locator (see {@link Bots}). */
+    public static TestPlayer join(String name, String host, int port, BlockSource blocks, RoutePlanner planner,
+                                  WorldLocator locator, Duration timeout) throws InterruptedException {
         ClientSession session = ClientNetworkSessionFactory.factory().setAddress(host, port)
                 .setProtocol(new MinecraftProtocol(name)).create();
-        TestPlayer p = new TestPlayer(name, blocks, planner, session, session::send);
+        TestPlayer p = new TestPlayer(name, blocks, planner, locator, session, session::send);
         p.session.addListener(p.new Listener());
         p.session.connect(true);
         // A kick also releases the latch, so check for one: being turned away is not a join.
@@ -222,7 +246,13 @@ public final class TestPlayer implements Bot {
     /** Simulate movement in the world the player is in; {@code base} is the server's first world. */
     synchronized void useWorld(String base) {
         baseWorld = base;
-        String name = lostWorld == null ? worldName(base, dimension) : null;
+        refreshView();
+    }
+
+    /** Point the simulation at the player's world: the located one, else the dimension's; none while unknown. */
+    private void refreshView() {
+        String name = relocate ? null : located != null ? located : baseWorld != null ? worldName(baseWorld, dimension)
+                : null;
         if (name == null) {
             view = null;
         } else if (view == null || !view.world().equals(name)) {
@@ -230,9 +260,57 @@ public final class TestPlayer implements Bot {
         }
     }
 
+    /** The server put the player in a world, maybe another one: stop simulating until the locator says which. */
+    private synchronized void enteredWorld() {
+        if (locator != null) {
+            relocate = true;
+            located = null;
+            worldChanges++;
+            refreshView();
+        }
+    }
+
     /**
-     * The agent's name for a dimension, as every agent names worlds (Paper's style): the overworld is the base
-     * world, the vanilla nether and end add {@code _nether} and {@code _the_end}, any other is its id.
+     * Ask the locator which world the player is in, after the server put it in one. Runs outside the lock, where the
+     * call through the agent may wait. When the locator finds none the bot goes by the dimension.
+     */
+    void locate() {
+        long change;
+        io.github.imnotstable.msc.protocol.world.BlockPos at;
+        synchronized (this) {
+            if (!relocate) {
+                return;
+            }
+            change = worldChanges;
+            at = feet();
+        }
+        String found;
+        try {
+            found = locator.locate(name, at);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return;
+        } catch (Exception e) {
+            found = null;
+        }
+        synchronized (this) {
+            if (change == worldChanges) {
+                relocate = false;
+                located = found;
+                refreshView();
+            }
+        }
+    }
+
+    private io.github.imnotstable.msc.protocol.world.BlockPos feet() {
+        return new io.github.imnotstable.msc.protocol.world.BlockPos((int) Math.floor(body.x),
+                (int) Math.floor(body.y + 0.01), (int) Math.floor(body.z));
+    }
+
+    /**
+     * The agent's name for a dimension, as the vanilla-family agents name worlds (Paper's style): the overworld is
+     * the base world, the vanilla nether and end add {@code _nether} and {@code _the_end}, any other is its id. Only
+     * used without a locator, or when it finds the player nowhere: Minestom names instances its own way.
      */
     static String worldName(String base, String dimension) {
         if (dimension == null) {
@@ -247,23 +325,15 @@ public final class TestPlayer implements Bot {
     }
 
     /** The server sent the player to {@code key}'s world: by dying and respawning, or by a world change. */
-    private synchronized void spawnedIn(String key, boolean respawned) {
-        if (!respawned && key.equals(dimension)) {
-            // Another world of the same dimension (a second Minestom instance): nothing says which it is.
-            String from = view != null ? view.world() : worldName(baseWorld, dimension);
-            lostWorld = "the server moved the player to another " + key + " world, which the test player cannot tell"
-                    + " from " + from + "; movement is only simulated in a world it knows";
-        } else {
-            lostWorld = null;
-        }
+    private synchronized void spawnedIn(String key) {
         dimension = key;
-        if (baseWorld != null) {
-            useWorld(baseWorld);
-        }
+        enteredWorld();
+        refreshView();
     }
 
     /** Make {@code step} the running step; the tick thread runs it from the next tick. */
     void begin(Script.Step step) {
+        locate();
         step.prepare(this); // outside the lock: it may read the world through the agent
         synchronized (this) {
             step.start(this);
@@ -351,8 +421,8 @@ public final class TestPlayer implements Bot {
                     return;
                 }
                 Script.Step step = current;
-                if (view == null && step != null && step.endsOnTeleport() && lostWorld != null) {
-                    step.finish("stopped: " + lostWorld);
+                if (view == null && step != null && step.endsOnTeleport() && relocate) {
+                    step.finish("stopped: " + RELOCATING);
                     current = null;
                     step = null;
                 }
@@ -406,11 +476,10 @@ public final class TestPlayer implements Bot {
         String world;
         synchronized (this) {
             if (view == null) {
-                throw new IllegalStateException(lostWorld != null ? lostWorld : "the player is in no known world");
+                throw new IllegalStateException(relocate ? RELOCATING : "the player is in no known world");
             }
             world = view.world();
-            from = new io.github.imnotstable.msc.protocol.world.BlockPos((int) Math.floor(body.x),
-                    (int) Math.floor(body.y + 0.01), (int) Math.floor(body.z));
+            from = feet();
         }
         return planner.route(world, from, to);
     }
@@ -589,7 +658,7 @@ public final class TestPlayer implements Bot {
         switch (packet) {
             case ClientboundLoginPacket p -> {
                 entityId = p.getEntityId();
-                spawnedIn(p.getCommonPlayerSpawnInfo().getWorldName().asString(), true);
+                spawnedIn(p.getCommonPlayerSpawnInfo().getWorldName().asString());
             }
             case ClientboundPlayerPositionPacket p -> position(p);
             case ClientboundSetHealthPacket p -> health(p.getHealth(), p.getFood());
@@ -606,7 +675,7 @@ public final class TestPlayer implements Bot {
                     deadTicks = 0;
                 }
                 String key = p.getCommonPlayerSpawnInfo().getWorldName().asString();
-                spawnedIn(key, wasDead);
+                spawnedIn(key);
                 event(wasDead ? "[respawned]" : "[changed world] " + key);
             }
             case ClientboundSystemChatPacket p -> event((p.isOverlay() ? "[actionbar] " : "[chat] ")
@@ -620,6 +689,7 @@ public final class TestPlayer implements Bot {
             // Like the vanilla client; Fabric API's configuration waits for this pong.
             case ClientboundPingPacket p -> send(new ServerboundPongPacket(p.getId()));
             case ClientboundChunkBatchFinishedPacket p -> send(new ServerboundChunkBatchReceivedPacket(64f));
+            case ClientboundInitializeBorderPacket p -> enteredWorld();
             case ClientboundAddEntityPacket p -> entities.put(p.getEntityId(), new Tracked(
                     p.getType().name().toLowerCase(java.util.Locale.ROOT), p.getX(), p.getY(), p.getZ()));
             case ClientboundRemoveEntitiesPacket p -> {

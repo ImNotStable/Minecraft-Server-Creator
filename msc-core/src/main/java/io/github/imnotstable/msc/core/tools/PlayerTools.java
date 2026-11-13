@@ -26,6 +26,9 @@ import java.util.regex.Pattern;
 public final class PlayerTools implements AutoCloseable {
     /** Blocks around the two ends a walk route may wander through. */
     private static final int ROUTE_MARGIN = 16;
+    /** How far from where the bot thinks it stands the agent looks for it: the server's position may lag a little. */
+    static final int LOCATE_REACH = 4;
+    private static final String PLAYER = "minecraft:player";
     private static final Pattern NAME = Pattern.compile("[A-Za-z0-9_]{3,16}");
     private final CoreConfig config;
     private final AgentHub hub;
@@ -72,7 +75,7 @@ public final class PlayerTools implements AutoCloseable {
             throw new ToolException("gamemode must be survival, adventure or creative");
         }
         Ops.ServerInfo info = hub.call(Ops.SERVER_INFO, new Ops.Empty());
-        // The overworld; the test player follows the server into other worlds by their dimension.
+        // The overworld; the test player asks worldOf which world the server put it in, else goes by the dimension.
         String world = info.worlds().isEmpty() ? "world" : info.worlds().getFirst();
         StringBuilder out = new StringBuilder();
         if (player != null && (!player.connected() || !player.name().equals(name))) {
@@ -85,6 +88,9 @@ public final class PlayerTools implements AutoCloseable {
             try {
                 player = Bots.join(name, address[0], Integer.parseInt(address[1]),
                         region -> hub.call(Ops.WORLD_READ, new Ops.ReadParams(region, false)).grid(), this::route,
+                        (who, at) -> worldOf(hub.call(Ops.SERVER_INFO, new Ops.Empty()).worlds(), who, at,
+                                region -> hub.call(Ops.WORLD_ENTITIES, new Ops.EntitiesParams(region, PLAYER, 0))
+                                        .entities()),
                         Duration.ofSeconds(20), config.installDir() == null ? null : config.installDir().resolve("bot"));
             } catch (IllegalStateException e) {
                 throw new ToolException(e.getMessage() + (e.getMessage().contains("not_whitelisted")
@@ -123,6 +129,30 @@ public final class PlayerTools implements AutoCloseable {
             out.append("\nleft the server");
         }
         return Budget.truncate(out.toString(), Budget.DEFAULT_CHARS, "Use fewer actions per call.");
+    }
+
+    /** Lists the entities of one type in a region; the agent's {@code world.entities}. */
+    @FunctionalInterface
+    interface EntityLookup {
+        List<Ops.EntityInfo> find(Region region) throws Exception;
+    }
+
+    /**
+     * The world in which the agent lists player {@code who} near {@code at}, or null. The bot cannot tell this from
+     * its packets: Minestom moves a player between instances of one dimension without a Respawn and names its
+     * instances its own way.
+     */
+    static String worldOf(List<String> worlds, String who, BlockPos at, EntityLookup players) throws Exception {
+        for (String world : worlds) {
+            Region near = Region.of(world, at.x() - LOCATE_REACH, at.y() - LOCATE_REACH, at.z() - LOCATE_REACH,
+                    at.x() + LOCATE_REACH, at.y() + LOCATE_REACH, at.z() + LOCATE_REACH);
+            for (Ops.EntityInfo e : players.find(near)) {
+                if (who.equals(e.name())) {
+                    return world;
+                }
+            }
+        }
+        return null;
     }
 
     /** The walk action's route: world_summary path's search over the blocks around both ends, in the player's world. */
