@@ -27,7 +27,7 @@ public final class LifecycleTools {
                                 FabricDownloader fabric, BackgroundWork background) {
         EulaPrompts eula = new EulaPrompts(config);
         LogMarks marks = new LogMarks();
-        BuildWarmup warmup = new BuildWarmup(builder);
+        BuildWarmup warmup = new BuildWarmup(builder, background);
         Scaffold scaffold = new Scaffold(config, eula, warmup);
         ServerSetup setup = new ServerSetup(config, server, downloader, fabric, eula);
         ServerRun run = new ServerRun(config, hub, server, pack, setup, eula, marks);

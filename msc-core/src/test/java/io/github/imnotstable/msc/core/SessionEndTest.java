@@ -76,4 +76,24 @@ class SessionEndTest {
         assertEnded(check);
         assertThat(cycle.get(10, TimeUnit.SECONDS)).startsWith("error: ");
     }
+
+    private ProcessHandle scaffoldWithWarmup() throws Exception {
+        assertThat(h.ok("project_scaffold", "name", "Mod", "dir", "mod", "template", "forge-mod"))
+                .contains("first build started in the background");
+        return buildStarted(workspace.resolve("mod"));
+    }
+
+    @Test
+    void closingDuringAWarmupStopsIt() throws Exception {
+        ProcessHandle warmup = scaffoldWithWarmup();
+        h.close();
+        assertEnded(warmup);
+    }
+
+    @Test
+    void switchingAwayDuringAWarmupStopsIt() throws Exception {
+        ProcessHandle warmup = scaffoldWithWarmup();
+        h.ok("msc_workspace", "path", "other", "create", true);
+        assertEnded(warmup);
+    }
 }
