@@ -1,6 +1,6 @@
 {
   "name": "msc",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Minecraft Server Creator: MCP tools to build, run, view and test custom Minecraft servers (Paper, Fabric, Minestom). Runs the newest msc-core installed under ~/.msc/core.",
   "author": {
     "name": "ImNotStable"

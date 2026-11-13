@@ -231,9 +231,14 @@ public final class MscLauncher {
 
     private static void runHere(Install install, String[] args) throws Exception {
         List<URL> urls = new ArrayList<>();
+        List<String> paths = new ArrayList<>();
         for (Path jar : classPath(install)) {
             urls.add(jar.toUri().toURL());
+            paths.add(jar.toString());
         }
+        // The core starts child JVMs on its own class path (the standalone pack host of server_detach); a source
+        // launch leaves java.class.path at ".", so name the core's jars as a -cp launch would.
+        System.setProperty("java.class.path", String.join(File.pathSeparator, paths));
         // Not closed: the core runs until it calls System.exit.
         ClassLoader loader = new URLClassLoader("msc-core", urls.toArray(URL[]::new),
                 ClassLoader.getPlatformClassLoader());
