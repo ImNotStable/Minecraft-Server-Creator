@@ -6,6 +6,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import io.github.imnotstable.msc.core.api.ApiIndex;
 import io.github.imnotstable.msc.core.tool.ToolException;
 import java.io.InputStream;
+import java.lang.classfile.ClassFile;
+import java.lang.constant.ClassDesc;
 import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -80,6 +82,39 @@ class ApiIndexTest {
         assertThat(index.search("safe", null, 5)).isEqualTo("Gadget.Mode.SAFE");
         assertThat(index.search("label", "interface", 5)).isEqualTo("Widget#String label()\nWidget#default boolean isLabelled()");
         assertThat(index.search("nothing here", null, 5)).isEqualTo("no matches for \"nothing here\"");
+    }
+
+    @Test
+    void eventKindFindsTheEventsOfEveryPlatform() throws Exception {
+        Path events = dir.resolve("events.jar");
+        try (OutputStream out = Files.newOutputStream(events); JarOutputStream zip = new JarOutputStream(out)) {
+            synthetic(zip, "a.BukkitJoinEvent", "org.bukkit.event.Event", null);
+            synthetic(zip, "b.NeoJoinEvent", "net.neoforged.bus.api.Event", null);
+            synthetic(zip, "c.ForgeJoinEvent", "java.lang.Record", "net.minecraftforge.eventbus.api.event.RecordEvent");
+            synthetic(zip, "c.ForgeJoinMutable", "net.minecraftforge.eventbus.api.event.MutableEvent", null);
+            synthetic(zip, "c.ForgeJoinInheritable", "java.lang.Object", "net.minecraftforge.eventbus.api.event.InheritableEvent");
+            synthetic(zip, "d.MinestomJoinEvent", "java.lang.Object", "net.minestom.server.event.Event");
+            synthetic(zip, "net.fabricmc.fabric.api.networking.v1.JoinEvents", "java.lang.Object", null);
+            synthetic(zip, "net.fabricmc.fabric.api.event.player.JoinCallback", "java.lang.Object", null);
+            synthetic(zip, "x.JoinHelper", "java.lang.Object", null);
+        }
+        String found = ApiIndex.load(List.of(events)).search("join", "event", 20);
+        assertThat(found.lines().map(l -> l.substring(l.lastIndexOf(' ') + 1))).containsExactlyInAnyOrder(
+                "a.BukkitJoinEvent", "b.NeoJoinEvent", "c.ForgeJoinEvent", "c.ForgeJoinMutable",
+                "c.ForgeJoinInheritable", "d.MinestomJoinEvent", "net.fabricmc.fabric.api.networking.v1.JoinEvents",
+                "net.fabricmc.fabric.api.event.player.JoinCallback");
+    }
+
+    private static void synthetic(JarOutputStream zip, String name, String superclass, String iface) throws Exception {
+        byte[] bytes = ClassFile.of().build(ClassDesc.of(name), cb -> {
+            cb.withFlags(ClassFile.ACC_PUBLIC).withSuperclass(ClassDesc.of(superclass));
+            if (iface != null) {
+                cb.withInterfaceSymbols(ClassDesc.of(iface));
+            }
+        });
+        zip.putNextEntry(new JarEntry(name.replace('.', '/') + ".class"));
+        zip.write(bytes);
+        zip.closeEntry();
     }
 
     @Test

@@ -23,11 +23,16 @@ public final class ToolLog {
         }
     }
 
-    private final Path file;
+    private Path file;
     private final Map<String, Totals> totals = new TreeMap<>();
 
     /** @param file where to append, or null to keep totals only */
     public ToolLog(Path file) {
+        this.file = file;
+    }
+
+    /** Appends to {@code file} from now on (a workspace switch); the session's totals are kept. */
+    public synchronized void moveTo(Path file) {
         this.file = file;
     }
 
@@ -62,10 +67,6 @@ public final class ToolLog {
         } catch (IOException e) {
             // Logging must never fail a tool call.
         }
-    }
-
-    public synchronized Map<String, Totals> totals() {
-        return new TreeMap<>(totals);
     }
 
     /** A short table of this session's tool use. */

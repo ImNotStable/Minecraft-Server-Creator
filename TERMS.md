@@ -13,7 +13,7 @@ You turn it on with any of these:
 By turning it on, you confirm that:
 
 1. You have read the [Minecraft EULA](https://aka.ms/MinecraftEULA) and accept it, for yourself, as the operator of the servers MSC runs on this machine.
-2. You let MSC write `eula=true` into the `eula.txt` of every dev server that runs Mojang's server software (Paper, Purpur, Fabric, Quilt, NeoForge and Forge) it sets up or starts on this machine, from now on, without asking again.
+2. You let MSC write `eula=true` into the `eula.txt` of every Paper, Purpur, Fabric, Quilt, NeoForge and Forge dev server it sets up or starts on this machine, from now on, without asking again.
 3. You are responsible for following the EULA and Mojang's [usage guidelines](https://www.minecraft.net/usage-guidelines) on those servers.
 
 MSC records your acceptance, with your user name, host name and the time, in `~/.msc/eula.json`. That file stays in your home folder and is never put in a project or a git repository.

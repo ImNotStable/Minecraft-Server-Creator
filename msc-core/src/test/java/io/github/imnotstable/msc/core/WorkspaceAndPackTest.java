@@ -49,6 +49,9 @@ class WorkspaceAndPackTest {
 
     @Test
     void switchingMovesEveryToolToTheNewFolderAndStopsTheOldServer() throws Exception {
+        h.close();
+        h = new CoreHarness(first, c -> c.withServerCommand(java(FakeServerMain.class))
+                .withToolLog(first.resolve(".msc/tool-calls.jsonl")));
         assertThat(h.ok("msc_workspace")).isEqualTo("workspace: " + first);
         Path second = root.resolve("second project");
         assertThat(h.error("msc_workspace", "path", "../second project")).contains("no folder").contains("create=true");
@@ -63,7 +66,13 @@ class WorkspaceAndPackTest {
         assertThat(second.resolve(".msc/pack/assets/msc/textures/item/dot.png")).exists();
         assertThat(first.resolve(".msc/pack")).doesNotExist();
         assertThat(h.ok("msc_workspace", "path", second.toString())).startsWith("workspace is already ");
-        assertThat(h.ok("msc_status", "stats", true)).contains("msc_workspace");
+        assertThat(h.ok("msc_status", "stats", true)).contains("msc_workspace")
+                .contains("log: " + second.toRealPath().resolve(".msc/tool-calls.jsonl"));
+        // The tool log moved along: later calls land in the new workspace's log, not the first one's.
+        long firstLines = Files.readAllLines(first.resolve(".msc/tool-calls.jsonl")).size();
+        h.ok("msc_status");
+        assertThat(Files.readAllLines(first.resolve(".msc/tool-calls.jsonl"))).hasSize((int) firstLines);
+        assertThat(second.resolve(".msc/tool-calls.jsonl")).content().contains("\"tool\":\"msc_status\"");
     }
 
     @Test
