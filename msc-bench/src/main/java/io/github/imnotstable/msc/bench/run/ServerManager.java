@@ -23,6 +23,7 @@ public final class ServerManager implements AutoCloseable {
     private Process process;
     private RconClient rcon;
     private boolean reachedRcon;
+    private IOException startFailure;
 
     public ServerManager(Path serverDir, BenchConfig.Server config, Map<String, String> env) {
         this.serverDir = serverDir;
@@ -36,14 +37,25 @@ public final class ServerManager implements AutoCloseable {
             rcon = tryConnect(COMMAND_TIMEOUT);
         }
         if (rcon == null) {
+            // A server that failed to start would fail the same way for every later check, and a second start
+            // would only meet the ports and world lock of the first.
+            if (startFailure != null) {
+                throw new IOException(startFailure.getMessage(), startFailure);
+            }
             try {
-                start();
-            } catch (IOException first) {
-                // A launcher download cut short makes Paper exit on start; one retry fetches it again.
-                if (process == null || process.isAlive()) {
-                    throw first;
+                try {
+                    start();
+                } catch (IOException first) {
+                    // A launcher download cut short makes Paper exit on start; one retry fetches it again.
+                    if (process == null || process.isAlive()) {
+                        throw first;
+                    }
+                    start();
                 }
-                start();
+            } catch (IOException e) {
+                kill();
+                startFailure = e;
+                throw e;
             }
         }
         reachedRcon = true;
@@ -70,6 +82,7 @@ public final class ServerManager implements AutoCloseable {
                 .redirectOutput(serverDir.resolve("bench-console.log").toFile())
                 .redirectInput(ProcessBuilder.Redirect.PIPE);
         builder.environment().putAll(env);
+        kill();
         process = builder.start();
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(config.startTimeoutSeconds());
         while (System.nanoTime() < deadline) {
@@ -83,6 +96,21 @@ public final class ServerManager implements AutoCloseable {
             sleep(Duration.ofSeconds(2));
         }
         throw new IOException("server did not open RCON within " + config.startTimeoutSeconds() + "s");
+    }
+
+    /** Kills the server this class started, if any, with its child processes. */
+    private void kill() {
+        if (process == null) {
+            return;
+        }
+        process.descendants().forEach(ProcessHandle::destroyForcibly);
+        process.destroyForcibly();
+        try {
+            process.waitFor(10, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+        process = null;
     }
 
     private RconClient tryConnect(Duration commandTimeout) {
