@@ -77,6 +77,7 @@ One monorepo; each module is a folder, later a Gradle subproject.
 | msc-renderer | Post-MVP (library done; `world_render` tool in msc-core) | A headless renderer that turns a region into images so the AI can check how a build looks. |
 | msc-textures | Post-MVP | Advanced texture and model generation beyond the MVP's palette-grid textures. |
 | msc-bot | Post-MVP | A headless test player that joins the dev server as a real client, for `player_test`. |
+| msc-process | Post-MVP | The process tree kill msc-core and msc-bench share: it kills a command with every process it can prove descends from it, and never one that only records its pid as a parent. Its own module because the bench must not depend on core ([ADR 0004](adr/0004-bench.md)). |
 | msc-plugin | Post-MVP | The Claude Code plugin: MCP config plus a launcher that runs the newest installed msc-core ([ADR 0021](adr/0021-plugin-install.md)). |
 
 ## Decisions

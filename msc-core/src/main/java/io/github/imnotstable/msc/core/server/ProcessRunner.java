@@ -1,15 +1,13 @@
 package io.github.imnotstable.msc.core.server;
 
+import io.github.imnotstable.msc.process.ProcessTree;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.Reader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.time.Duration;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 /** Runs a command to completion and captures what it printed. An interrupt stops the command and its children. */
@@ -69,73 +67,8 @@ public final class ProcessRunner {
         destroyTree(process.toHandle());
     }
 
-    /** Rounds of freezing new descendants, and of the snapshot sweep: far more than any real tree is deep. */
-    private static final int ROUNDS = 64;
-    private static final boolean WINDOWS = System.getProperty("os.name", "").startsWith("Windows");
-
-    /**
-     * Sends a forced kill to {@code root} and every process below it, including a child the tree forks while this
-     * runs (#339). A single snapshot of the descendants misses a child forked between the snapshot and its parent's
-     * kill, and on Unix that child is then reparented to init and runs on.
-     *
-     * <p>On Unix the tree is frozen top-down first: SIGSTOP to the root, then to each descendant not yet stopped,
-     * until a snapshot finds none. On Linux a fork that has not finished when SIGSTOP is queued is restarted after
-     * the stop, so once {@code kill} returns that process makes no new child; elsewhere the repeated snapshot covers
-     * the delivery delay. Only then is everything killed (SIGKILL ends a stopped process), and the frozen pids are sent
-     * SIGCONT, so a pid reused by another process meanwhile is not left stopped.
-     *
-     * <p>Windows has no stop signal. There, and wherever the freeze could not run, it is the documented best effort:
-     * kill the descendants of a snapshot and the root, and sweep again until a snapshot is empty. A Windows process
-     * keeps its parent's id after the parent dies, so a child forked in the gap is found by the next sweep.
-     */
+    /** Kills {@code root} and every process proven to descend from it (#339, #357); see {@link ProcessTree}. */
     static void destroyTree(ProcessHandle root) {
-        List<ProcessHandle> frozen = WINDOWS ? List.of() : freeze(root);
-        frozen.forEach(ProcessHandle::destroyForcibly);
-        if (!frozen.isEmpty()) {
-            signal("CONT", frozen);
-        }
-        for (int round = 0; round < ROUNDS; round++) {
-            List<ProcessHandle> left = root.descendants().toList();
-            left.forEach(ProcessHandle::destroyForcibly);
-            root.destroyForcibly();
-            if (left.isEmpty()) {
-                break;
-            }
-        }
-    }
-
-    /** Stops {@code root} and its descendants top-down; returns the processes it stopped, root first. */
-    private static List<ProcessHandle> freeze(ProcessHandle root) {
-        Map<Long, ProcessHandle> frozen = new LinkedHashMap<>();
-        List<ProcessHandle> next = List.of(root);
-        for (int round = 0; round < ROUNDS && !next.isEmpty(); round++) {
-            if (!signal("STOP", next)) {
-                break;
-            }
-            next.forEach(h -> frozen.put(h.pid(), h));
-            next = root.descendants().filter(h -> !frozen.containsKey(h.pid())).toList();
-        }
-        return List.copyOf(frozen.values());
-    }
-
-    /** Sends {@code SIG<name>} to the processes with the shell's {@code kill}; false when that could not run. */
-    private static boolean signal(String name, List<ProcessHandle> processes) {
-        List<String> command = new ArrayList<>(List.of("/bin/sh", "-c", "kill -" + name + " \"$@\"", "sh"));
-        processes.forEach(h -> command.add(Long.toString(h.pid())));
-        try {
-            Process kill = new ProcessBuilder(command).redirectOutput(ProcessBuilder.Redirect.DISCARD)
-                    .redirectError(ProcessBuilder.Redirect.DISCARD).start();
-            kill.getOutputStream().close();
-            if (kill.waitFor(10, TimeUnit.SECONDS)) {
-                return true;
-            }
-            kill.destroyForcibly();
-            return false;
-        } catch (IOException e) {
-            return false;
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            return false;
-        }
+        ProcessTree.destroy(root);
     }
 }
