@@ -68,7 +68,7 @@ final class PaperWorld implements AgentWorld<BlockData> {
     @Override
     public List<Ops.EntitySummary> entities(Region region, int max) {
         List<Ops.EntitySummary> out = new ArrayList<>();
-        for (Entity e : world.getNearbyEntities(box(region))) {
+        for (Entity e : world.getNearbyEntities(box(region), e -> inside(region, e))) {
             if (out.size() == max) {
                 break;
             }
@@ -80,7 +80,7 @@ final class PaperWorld implements AgentWorld<BlockData> {
     @Override
     public List<Ops.EntityInfo> entityInfos(Region region, String type) {
         List<Ops.EntityInfo> out = new ArrayList<>();
-        for (Entity e : world.getNearbyEntities(box(region))) {
+        for (Entity e : world.getNearbyEntities(box(region), e -> inside(region, e))) {
             String key = e.getType().key().asString();
             if (type == null || type.equals(key)) {
                 out.add(info(e, key));
@@ -97,6 +97,12 @@ final class PaperWorld implements AgentWorld<BlockData> {
         return Ops.SignText.of(x, y, z, lines(sign.getSide(Side.FRONT)), lines(sign.getSide(Side.BACK)));
     }
 
+    /** An entity is in a region by its position, as on every platform, so split reads count it once. */
+    private static boolean inside(Region region, Entity e) {
+        return region.containsPoint(e.getX(), e.getY(), e.getZ());
+    }
+
+    /** Candidates whose hitbox meets the region; {@link #inside} then keeps those whose position is in it. */
     private static BoundingBox box(Region region) {
         return new BoundingBox(region.min().x(), region.min().y(), region.min().z(),
                 region.max().x() + 1, region.max().y() + 1, region.max().z() + 1);

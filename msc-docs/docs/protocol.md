@@ -52,6 +52,7 @@ Defined with their Java types in `Ops`. Block states are vanilla strings such as
 - `grid` = `{"region":..., "palette":["minecraft:air","minecraft:stone"], "blocks":[0,1,1,...]}`.
 - `blocks` is ordered Y, then Z, then X (X fastest): index = `((y - minY) * sizeZ + (z - minZ)) * sizeX + (x - minX)`.
 - In writes, `-1` leaves a block unchanged.
+- An entity is in a region when its position is (`Region.containsPoint`), not when its hitbox touches it, on every platform; so the pieces of a split read hold each entity once.
 - `world.fill` and `world.setBlocks` were removed in [ADR 0019](adr/0019-smaller-tool-surface.md): a core and its agents come from one install, so the protocol version stays 1.
 - One call covers at most 1,048,576 blocks (`Limits.MAX_REGION_VOLUME`). The core splits larger jobs.
 

@@ -182,6 +182,20 @@ class WorldOpsTest {
     }
 
     @Test
+    void anEntityBelongsToTheRegionHoldingItsPositionNotItsHitbox() {
+        // The zombie's hitbox (0.6 wide) spans x = 9.9 to 10.5, across the edge between the two halves.
+        world.spawnEntity(new Location(world, 10.2, 70, 2.5), EntityType.ZOMBIE);
+
+        Ops.EntitiesResult left = ops.entities(new Ops.EntitiesParams(box(0, 60, 0, 9, 80, 10), null, 0));
+        Ops.EntitiesResult right = ops.entities(new Ops.EntitiesParams(box(10, 60, 0, 19, 80, 10), null, 0));
+        List<Ops.EntitySummary> read = ops.read(new Ops.ReadParams(box(0, 69, 0, 9, 71, 9), true)).entities();
+
+        assertThat(left.total()).isZero();
+        assertThat(read).isEmpty();
+        assertThat(right.total()).isEqualTo(1);
+    }
+
+    @Test
     void readOutsideTheBuildHeightGivesVoidAir() {
         int top = world.getMaxHeight();
         BlockGrid grid = ops.read(new Ops.ReadParams(box(0, top - 1, 0, 0, top, 0), false)).grid();

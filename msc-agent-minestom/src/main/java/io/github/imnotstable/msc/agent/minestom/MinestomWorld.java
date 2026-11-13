@@ -169,9 +169,7 @@ final class MinestomWorld implements AgentWorld<Block> {
     }
 
     private static boolean inside(Region region, Pos p) {
-        return p.x() >= region.min().x() && p.x() < region.max().x() + 1
-                && p.y() >= region.min().y() && p.y() < region.max().y() + 1
-                && p.z() >= region.min().z() && p.z() < region.max().z() + 1;
+        return region.containsPoint(p.x(), p.y(), p.z());
     }
 
     private static String name(Entity e) {

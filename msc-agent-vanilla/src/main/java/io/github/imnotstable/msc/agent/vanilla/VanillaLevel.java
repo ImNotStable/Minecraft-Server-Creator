@@ -90,10 +90,8 @@ final class VanillaLevel implements AgentWorld<BlockState> {
 
     @Override
     public List<Ops.EntitySummary> entities(Region region, int max) {
-        AABB box = new AABB(region.min().x(), region.min().y(), region.min().z(),
-                region.max().x() + 1, region.max().y() + 1, region.max().z() + 1);
         List<Ops.EntitySummary> out = new ArrayList<>();
-        for (Entity e : level.getEntities((Entity) null, box, e -> true)) {
+        for (Entity e : level.getEntities((Entity) null, box(region), e -> inside(region, e))) {
             if (out.size() == max) {
                 break;
             }
@@ -105,10 +103,8 @@ final class VanillaLevel implements AgentWorld<BlockState> {
 
     @Override
     public List<Ops.EntityInfo> entityInfos(Region region, String type) {
-        AABB box = new AABB(region.min().x(), region.min().y(), region.min().z(),
-                region.max().x() + 1, region.max().y() + 1, region.max().z() + 1);
         List<Ops.EntityInfo> out = new ArrayList<>();
-        for (Entity e : level.getEntities((Entity) null, box, e -> true)) {
+        for (Entity e : level.getEntities((Entity) null, box(region), e -> inside(region, e))) {
             String key = BuiltInRegistries.ENTITY_TYPE.getKey(e.getType()).toString();
             if (type != null && !type.equals(key)) {
                 continue;
@@ -131,6 +127,17 @@ final class VanillaLevel implements AgentWorld<BlockState> {
             return null;
         }
         return Ops.SignText.of(x, y, z, lines(sign.getText(SignTextSlot.FRONT)), lines(sign.getText(SignTextSlot.BACK)));
+    }
+
+    /** Candidates whose hitbox meets the region; {@link #inside} then keeps those whose position is in it. */
+    private static AABB box(Region region) {
+        return new AABB(region.min().x(), region.min().y(), region.min().z(),
+                region.max().x() + 1, region.max().y() + 1, region.max().z() + 1);
+    }
+
+    /** An entity is in a region by its position, as on every platform, so split reads count it once. */
+    private static boolean inside(Region region, Entity e) {
+        return region.containsPoint(e.getX(), e.getY(), e.getZ());
     }
 
     private static List<String> lines(SignText text) {
