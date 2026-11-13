@@ -70,6 +70,19 @@ class WorldOpsTest {
     }
 
     @Test
+    void writeRefusesXzThatUndoCannotRecord() {
+        int edge = PackedPos.MAX_XZ;
+        fill(box(edge, 70, -edge - 1, edge, 70, -edge - 1), STONE);
+        assertThat(world.get(edge, 70, -edge - 1)).isEqualTo(STONE);
+        int writes = world.writes;
+        assertThatThrownBy(() -> fill(box(40_000_000, 70, 0, 40_000_000, 70, 0), STONE))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("40000000");
+        assertThatThrownBy(() -> fill(box(0, 70, -edge - 2, 0, 70, -edge - 2), STONE))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThat(world.writes).isEqualTo(writes);
+    }
+
+    @Test
     void writeSkipsCellsMarkedMinusOne() {
         Region r = box(0, 70, 0, 1, 70, 1);
         // Y-Z-X order: (0,0) (1,0) (0,1) (1,1)
