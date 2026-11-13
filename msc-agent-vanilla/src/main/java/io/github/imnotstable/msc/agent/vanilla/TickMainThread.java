@@ -1,13 +1,12 @@
 package io.github.imnotstable.msc.agent.vanilla;
 
+import io.github.imnotstable.msc.agent.common.JobQueue;
 import io.github.imnotstable.msc.agent.common.MainThread;
 import io.github.imnotstable.msc.agent.common.SlicedJob;
 import io.github.imnotstable.msc.protocol.message.ErrorCodes;
 import io.github.imnotstable.msc.protocol.transport.OpException;
 import java.time.Duration;
-import java.util.Iterator;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
@@ -36,10 +35,9 @@ final class TickMainThread implements MainThread {
     private final Executor wake;
     private final Duration budget;
     private final Duration timeout;
-    private final ConcurrentLinkedQueue<Task<?>> tasks = new ConcurrentLinkedQueue<>();
+    private final JobQueue jobs = new JobQueue();
     private final AtomicLong ticks = new AtomicLong();
     private final AtomicBoolean wakePending = new AtomicBoolean();
-    private volatile boolean stopped;
 
     /**
      * @param onMainThread whether the calling thread is the server thread
@@ -80,15 +78,7 @@ final class TickMainThread implements MainThread {
         if (onMainThread.getAsBoolean()) {
             return job.runNow();
         }
-        if (stopped) {
-            throw new OpException(ErrorCodes.SHUTDOWN, "server is shutting down");
-        }
-        Task<T> task = new Task<>(job);
-        tasks.add(task);
-        if (stopped) {
-            task.future.completeExceptionally(new OpException(ErrorCodes.SHUTDOWN, "server is shutting down"));
-        }
-        return await(task.future);
+        return await(jobs.add(job));
     }
 
     /** Step every queued job once, sharing one budget. Call once per tick on the main thread. */
@@ -98,28 +88,17 @@ final class TickMainThread implements MainThread {
     }
 
     private void step() {
-        long deadline = System.nanoTime() + budget.toNanos();
-        Iterator<Task<?>> it = tasks.iterator();
-        while (it.hasNext()) {
-            Task<?> task = it.next();
-            if (task.future.isDone() || task.step(deadline)) {
-                it.remove();
-            }
-        }
+        jobs.step(budget);
     }
 
     /** How many jobs are queued and not finished yet. */
     int queued() {
-        return tasks.size();
+        return jobs.size();
     }
 
     /** Fail every queued job and refuse new ones. Call when the server stops. */
     void stop() {
-        stopped = true;
-        Task<?> task;
-        while ((task = tasks.poll()) != null) {
-            task.future.completeExceptionally(new OpException(ErrorCodes.SHUTDOWN, "server is shutting down"));
-        }
+        jobs.stop();
     }
 
     private <T> T await(CompletableFuture<T> future) {
@@ -161,29 +140,6 @@ final class TickMainThread implements MainThread {
             });
         } catch (RuntimeException e) {
             wakePending.set(false);
-        }
-    }
-
-    private static final class Task<T> {
-        final SlicedJob<T> job;
-        final CompletableFuture<T> future = new CompletableFuture<>();
-
-        Task(SlicedJob<T> job) {
-            this.job = job;
-        }
-
-        /** @return true when the task is finished, with or without a result */
-        boolean step(long deadline) {
-            try {
-                if (job.step(deadline)) {
-                    future.complete(job.result());
-                    return true;
-                }
-                return false;
-            } catch (Throwable t) {
-                future.completeExceptionally(t);
-                return true;
-            }
         }
     }
 }

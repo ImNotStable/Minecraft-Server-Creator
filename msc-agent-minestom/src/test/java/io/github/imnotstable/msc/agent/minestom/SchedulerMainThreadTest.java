@@ -6,7 +6,9 @@ import io.github.imnotstable.msc.agent.common.SlicedJob;
 import io.github.imnotstable.msc.protocol.message.ErrorCodes;
 import io.github.imnotstable.msc.protocol.transport.OpException;
 import java.time.Duration;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -82,6 +84,42 @@ class SchedulerMainThreadTest {
 
         assertThat(result.get(0, TimeUnit.SECONDS)).isEqualTo("done after 3");
         assertThat(job.stepped).hasValue(3);
+    }
+
+    /** Finishes on its second step and records the deadline of each step. */
+    private static final class DeadlineJob implements SlicedJob<Integer> {
+        final List<Long> deadlines = new CopyOnWriteArrayList<>();
+
+        @Override
+        public boolean step(long deadlineNanos) {
+            deadlines.add(deadlineNanos);
+            return deadlines.size() == 2;
+        }
+
+        @Override
+        public Integer result() {
+            return deadlines.size();
+        }
+    }
+
+    @Test
+    void concurrentJobsShareOneBudgetPerTick(Env env) throws Exception {
+        SchedulerMainThread main = main(env, TIMEOUT);
+        DeadlineJob first = new DeadlineJob();
+        DeadlineJob second = new DeadlineJob();
+        CompletableFuture<Integer> a = onVirtualThread(() -> main.run(first));
+        CompletableFuture<Integer> b = onVirtualThread(() -> main.run(second));
+        long end = System.nanoTime() + TIMEOUT.toNanos();
+        while (main.queued() < 2) {
+            assertThat(System.nanoTime()).as("jobs queued in time").isLessThan(end);
+            Thread.sleep(1);
+        }
+
+        env.tickWhile(() -> !a.isDone() || !b.isDone(), TIMEOUT);
+
+        assertThat(a.get(0, TimeUnit.SECONDS)).isEqualTo(2);
+        assertThat(b.get(0, TimeUnit.SECONDS)).isEqualTo(2);
+        assertThat(second.deadlines).hasSize(2).isEqualTo(first.deadlines);
     }
 
     @Test
