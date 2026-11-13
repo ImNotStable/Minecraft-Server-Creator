@@ -86,7 +86,10 @@ public final class TestPlayer implements Bot {
     private ScheduledExecutorService ticker;
     private final BlockSource blocks;
     private final RoutePlanner planner;
-    private final List<String> events = new ArrayList<>();
+    /** Most events kept between two calls. */
+    static final int MAX_EVENTS = 300;
+    private final java.util.ArrayDeque<String> events = new java.util.ArrayDeque<>();
+    private long droppedEvents;
     private final Map<Integer, Tracked> entities = new ConcurrentHashMap<>();
     private final AtomicInteger sequence = new AtomicInteger();
     private final CountDownLatch spawned = new CountDownLatch(1);
@@ -253,13 +256,16 @@ public final class TestPlayer implements Bot {
     private void drainEvents(StringBuilder out) {
         synchronized (events) {
             int shown = Math.min(events.size(), 40);
+            java.util.Iterator<String> it = events.iterator();
             for (int i = 0; i < shown; i++) {
-                out.append("  ").append(events.get(i)).append('\n');
+                out.append("  ").append(it.next()).append('\n');
             }
-            if (events.size() > shown) {
-                out.append("  (").append(events.size() - shown).append(" more)\n");
+            long more = events.size() - shown + droppedEvents;
+            if (more > 0) {
+                out.append("  (").append(more).append(" more)\n");
             }
             events.clear();
+            droppedEvents = 0;
         }
     }
 
@@ -269,7 +275,18 @@ public final class TestPlayer implements Bot {
             if (!events.isEmpty() && events.getLast().equals(text)) {
                 return;
             }
+            // A player left joined hears the server until the next call: keep the newest, count the rest.
+            if (events.size() == MAX_EVENTS) {
+                events.removeFirst();
+                droppedEvents++;
+            }
             events.add(text);
+        }
+    }
+
+    int pendingEvents() {
+        synchronized (events) {
+            return events.size();
         }
     }
 

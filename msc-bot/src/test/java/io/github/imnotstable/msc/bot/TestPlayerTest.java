@@ -62,6 +62,18 @@ class TestPlayerTest {
                 MscTester at 0.50,1.00,0.50""");
     }
 
+    @Test
+    void eventsBetweenCallsKeepOnlyTheNewest() throws InterruptedException {
+        TestPlayer p = Players.at(new FlatWorld(), null, 0.5, 1, 0.5);
+        for (int i = 0; i < 100_000; i++) {
+            p.event("[actionbar] tick " + i);
+        }
+        assertThat(p.pendingEvents()).isEqualTo(TestPlayer.MAX_EVENTS);
+        String out = p.run(List.of(), "w");
+        assertThat(out).startsWith("  [actionbar] tick " + (100_000 - TestPlayer.MAX_EVENTS) + "\n")
+                .contains("  (" + (100_000 - 40) + " more)\n");
+    }
+
     static PlayerSpawnInfo spawn(String world) {
         return new PlayerSpawnInfo(0, Key.key(world), 0, GameMode.SURVIVAL, GameMode.SURVIVAL, false, false, null, 0, 63);
     }
