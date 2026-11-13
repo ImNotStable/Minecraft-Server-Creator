@@ -140,25 +140,13 @@ public final class TestPlayer implements Bot {
     static final String RELOCATING = "the server put the player in another world; finding out which";
     private volatile String disconnect;
     private volatile int entityId;
-    private volatile boolean positioned;
     /**
-     * Set by a login or a respawn (a death's or a world change's) until the next position: then the player tells the
-     * server it has loaded, like the vanilla client. Until that, or a 60-tick timeout, the server ignores the player's
-     * moves and keeps the player invulnerable, even to /kill; Paper restarts that wait on every world change.
+     * Alive, dead, waiting for a respawn or a position: every packet that changes it goes through {@link #on}, and
+     * the tick asks it whether to move. After a login or a respawn the first position also tells the server the player
+     * has loaded, like the vanilla client: until that, or a 60-tick timeout, the server ignores the player's moves and
+     * keeps it invulnerable, even to /kill, and Paper restarts that wait on every world change.
      */
-    private boolean loadPending = true;
-    /**
-     * Set by a death (health 0, or the server's kill message for this player) until the next respawn or login. The
-     * server keeps a dead player dead until the client asks to respawn; the player asks {@link #RESPAWN_DELAY} ticks
-     * later, or on the next tick when the server turned the death screen off (immediate respawn), as the vanilla
-     * client does.
-     */
-    private volatile boolean dead;
-    private int deadTicks;
-    /** Ticks a dead player waits before it asks to respawn, as if a person read the death screen first. */
-    static final int RESPAWN_DELAY = 20;
-    /** The server shows no death screen (the doImmediateRespawn rule): a dead player respawns at once. */
-    private boolean immediateRespawn;
+    private final Life life = new Life();
     float yaw;
     float pitch;
     private float health = 20;
@@ -329,7 +317,7 @@ public final class TestPlayer implements Bot {
     /** Ask the locator again at the start of a call: a server can swap the player's world in place, with no teleport. */
     private void recheckWorld() {
         synchronized (this) {
-            if (locator == null || !positioned || relocate) {
+            if (locator == null || !life.positioned() || relocate) {
                 return;
             }
             worldMayHaveChanged(false);
@@ -343,7 +331,7 @@ public final class TestPlayer implements Bot {
      * question runs on its own thread, so the tick thread and the network thread never wait for the agent.
      */
     private synchronized java.util.concurrent.CompletableFuture<Void> startLocate() {
-        if (!relocate || !positioned) {
+        if (!relocate || !life.positioned()) {
             return null;
         }
         if (lookup == null || lookupChange != worldChanges) {
@@ -452,7 +440,7 @@ public final class TestPlayer implements Bot {
     String status() {
         return String.format("%s at %.2f,%.2f,%.2f yaw %.0f pitch %.0f%s, health %.1f, food %d%s", name, body.x,
                 body.y, body.z, yaw, pitch, body.onGround ? " on ground" : " in air", health, food,
-                dead ? ", dead" : "");
+                life.dead() ? ", dead" : "");
     }
 
     void drainEvents(StringBuilder out) {
@@ -519,13 +507,10 @@ public final class TestPlayer implements Bot {
             synchronized (this) {
                 ticks++;
                 // A vanilla client stops ticking while the server re-configures it, until the next login and position.
-                if (!positioned || !connected() || outbound.get() != ProtocolState.GAME) {
+                if (!connected() || outbound.get() != ProtocolState.GAME) {
                     return;
                 }
-                if (dead) {
-                    if (++deadTicks == (immediateRespawn ? 1 : RESPAWN_DELAY)) {
-                        send(new ServerboundClientCommandPacket(ClientCommand.PERFORM_RESPAWN));
-                    }
+                if (!act(life.tick()).has(Life.Action.MOVE)) {
                     return;
                 }
                 Script.Step step = current;
@@ -601,8 +586,12 @@ public final class TestPlayer implements Bot {
         return ticks;
     }
 
-    boolean dead() {
-        return dead;
+    synchronized boolean dead() {
+        return life.dead();
+    }
+
+    synchronized Life.State life() {
+        return life.state();
     }
 
     float health() {
@@ -768,12 +757,9 @@ public final class TestPlayer implements Bot {
                 synchronized (this) {
                     // A login after a re-configuration is a new player in a new level, like a respawn.
                     entityId = p.getEntityId();
-                    immediateRespawn = !p.isEnableRespawnScreen();
+                    life.immediateRespawn(!p.isEnableRespawnScreen());
                     entities.clear();
-                    dead = false;
-                    deadTicks = 0;
-                    loadPending = true;
-                    positioned = false;
+                    on(Life.Input.LOGIN, null);
                 }
                 spawnedIn(p.getCommonPlayerSpawnInfo().getWorldName().asString());
             }
@@ -785,6 +771,7 @@ public final class TestPlayer implements Bot {
             case ClientboundPlayerPositionPacket p -> position(p);
             case ClientboundSetHealthPacket p -> health(p.getHealth(), p.getFood());
             case ClientboundPlayerCombatKillPacket p -> {
+                // Another player's kill message is no death of this one.
                 if (p.getPlayerId() == entityId) {
                     event("[death] " + Text.plain(p.getMessage()));
                     // The vanilla client takes this as its death, health packet or not.
@@ -795,12 +782,9 @@ public final class TestPlayer implements Bot {
             case ClientboundRespawnPacket p -> {
                 boolean wasDead;
                 synchronized (this) {
-                    wasDead = dead;
-                    dead = false;
-                    deadTicks = 0;
-                    loadPending = true;
+                    wasDead = life.dead();
                     // A new player entity: it moves once the server places it, like after a login.
-                    positioned = false;
+                    on(Life.Input.RESPAWN, null);
                 }
                 String key = p.getCommonPlayerSpawnInfo().getWorldName().asString();
                 spawnedIn(key);
@@ -847,11 +831,7 @@ public final class TestPlayer implements Bot {
     private void reconfigure() {
         event("[configuring] the server re-configures the player");
         synchronized (this) {
-            positioned = false;
-            if (current != null) {
-                current.finish("stopped: the server re-configured the player");
-                current = null;
-            }
+            on(Life.Input.CONFIGURE, "stopped: the server re-configured the player");
         }
     }
 
@@ -861,10 +841,7 @@ public final class TestPlayer implements Bot {
         spawned.countDown();
         synchronized (this) {
             // End the running step now rather than when it times out.
-            if (current != null) {
-                current.finish("stopped: disconnected");
-                current = null;
-            }
+            on(Life.Input.DISCONNECT, "stopped: disconnected");
         }
     }
 
@@ -878,6 +855,9 @@ public final class TestPlayer implements Bot {
 
     private void position(ClientboundPlayerPositionPacket p) {
         synchronized (this) {
+            if (life.state() == Life.State.DISCONNECTED) {
+                return; // a packet still in flight when the connection closed
+            }
             serverMoves++;
             List<PositionElement> rel = p.getRelatives();
             Vector3d pos = p.getPosition();
@@ -885,7 +865,7 @@ public final class TestPlayer implements Bot {
             double ny = rel.contains(PositionElement.Y) ? body.y + pos.getY() : pos.getY();
             double nz = rel.contains(PositionElement.Z) ? body.z + pos.getZ() : pos.getZ();
             boolean teleported = false;
-            if (positioned && Math.abs(nx - body.x) + Math.abs(ny - body.y) + Math.abs(nz - body.z) > 0.01) {
+            if (life.positioned() && Math.abs(nx - body.x) + Math.abs(ny - body.y) + Math.abs(nz - body.z) > 0.01) {
                 event(String.format("[moved by server] from %.2f,%.2f,%.2f to %.2f,%.2f,%.2f", body.x, body.y, body.z,
                         nx, ny, nz));
                 // A teleport (a goal box, a respawn point, a stage change) ends a walk: its target is somewhere else
@@ -908,12 +888,8 @@ public final class TestPlayer implements Bot {
             yaw = rel.contains(PositionElement.Y_ROT) ? yaw + p.getYRot() : p.getYRot();
             pitch = rel.contains(PositionElement.X_ROT) ? pitch + p.getXRot() : p.getXRot();
             send(Compat.acceptTeleport(p.getId(), body.x, body.y, body.z, yaw, pitch));
-            if (loadPending) {
-                loadPending = false;
-                send(ServerboundPlayerLoadedPacket.INSTANCE);
-            }
-            if (!positioned) {
-                positioned = true;
+            on(Life.Input.POSITION, null); // after the confirmation, as the vanilla client sends PlayerLoaded
+            if (life.positioned()) {
                 spawned.countDown();
             }
             if (teleported) {
@@ -939,16 +915,36 @@ public final class TestPlayer implements Bot {
     }
 
     private synchronized void died() {
-        if (dead) {
-            return;
-        }
-        dead = true;
-        deadTicks = 0;
-        Script.Step step = current;
-        if (step != null) {
-            step.finish("stopped: died");
+        on(Life.Input.DIED, "stopped: died");
+    }
+
+    /**
+     * Take {@code input} through the life-cycle and do what the transition says; {@code stopped} is the running
+     * step's result when the transition ends it. Called under the lock.
+     */
+    private Life.Transition on(Life.Input input, String stopped) {
+        Life.Transition t = act(life.on(input));
+        if (t.has(Life.Action.END_STEP) && stopped != null && current != null) {
+            current.finish(stopped);
             current = null;
         }
+        return t;
+    }
+
+    /** Send what a transition sends; the caller runs the move and ends the step. */
+    private Life.Transition act(Life.Transition t) {
+        for (Life.Action action : t.actions()) {
+            switch (action) {
+                case ASK_RESPAWN -> send(new ServerboundClientCommandPacket(ClientCommand.PERFORM_RESPAWN));
+                case LOADED -> send(ServerboundPlayerLoadedPacket.INSTANCE);
+                case MOVE, END_STEP -> {
+                }
+            }
+        }
+        if (t.input() == Life.Input.WAIT_OVER && t.state() == Life.State.CREDITS) {
+            event("[credits closed] no respawn came; playing on where the player is");
+        }
+        return t;
     }
 
     /**
@@ -957,10 +953,10 @@ public final class TestPlayer implements Bot {
      */
     private void gameEvent(ClientboundGameEventPacket p) {
         switch (p.getNotification()) {
-            case WIN_GAME -> leftTheEnd(p.getValue() == EnterCreditsValue.FIRST_TIME);
+            case WIN_GAME -> credits(p.getValue() == EnterCreditsValue.FIRST_TIME);
             case IMMEDIATE_RESPAWN -> {
                 synchronized (this) {
-                    immediateRespawn = p.getValue() == RespawnScreenValue.IMMEDIATE_RESPAWN;
+                    life.immediateRespawn(p.getValue() == RespawnScreenValue.IMMEDIATE_RESPAWN);
                 }
             }
             default -> {
@@ -969,22 +965,22 @@ public final class TestPlayer implements Bot {
     }
 
     /**
-     * The player went through the End's exit portal: the server took it out of the End and keeps it in no world until
-     * the client asks to respawn, which the vanilla client does at once, or when the credits close. The player skips
-     * the credits; the server's Respawn and position bring it back like any world change. Until then it is in no world,
-     * so it sends no moves, and a step aimed at a place in the End ends.
+     * The server sent the credits. Through the End's exit portal it took the player out of the End and keeps it in no
+     * world until the client asks to respawn, which the vanilla client does at once, or when the credits close; the
+     * player skips the credits, and the server's Respawn and position bring it back like any world change. A server
+     * can also show the credits as an ending and keep the player where it is (Paper's Player#showWinScreen, Minestom's
+     * WIN_GAME); it then ignores the request, and the player plays on once {@link Life#CREDITS_WAIT} ticks pass with
+     * no Respawn (#319). Only in the End does a step aimed at a place end.
      */
-    private void leftTheEnd(boolean credits) {
-        event("[left the End] through the exit portal" + (credits ? ", credits skipped" : ""));
+    private void credits(boolean shown) {
         synchronized (this) {
-            positioned = false;
+            boolean inTheEnd = "minecraft:the_end".equals(dimension);
+            event((inTheEnd ? "[left the End] through the exit portal" : "[credits] the server sent the win screen")
+                    + (shown ? ", credits skipped" : ""));
             Script.Step step = current;
-            if (step != null && step.endsOnTeleport()) {
-                step.finish("stopped: left the End through the exit portal");
-                current = null;
-            }
+            on(Life.Input.WIN_GAME, inTheEnd && step != null && step.endsOnTeleport()
+                    ? "stopped: left the End through the exit portal" : null);
         }
-        send(new ServerboundClientCommandPacket(ClientCommand.PERFORM_RESPAWN));
     }
 
     /** A client only loads a zip with pack.mcmeta at its root. */
