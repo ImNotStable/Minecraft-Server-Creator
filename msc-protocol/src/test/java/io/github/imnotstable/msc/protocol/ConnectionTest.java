@@ -7,6 +7,10 @@ import com.google.gson.JsonObject;
 import io.github.imnotstable.msc.protocol.message.AgentInfo;
 import io.github.imnotstable.msc.protocol.message.ErrorCodes;
 import io.github.imnotstable.msc.protocol.message.Event;
+import io.github.imnotstable.msc.protocol.message.Goodbye;
+import io.github.imnotstable.msc.protocol.message.Hello;
+import io.github.imnotstable.msc.protocol.message.MessageCodec;
+import io.github.imnotstable.msc.protocol.message.Welcome;
 import io.github.imnotstable.msc.protocol.op.Events;
 import io.github.imnotstable.msc.protocol.op.Ops;
 import io.github.imnotstable.msc.protocol.world.BlockGrid;
@@ -15,9 +19,12 @@ import io.github.imnotstable.msc.protocol.transport.AgentClient;
 import io.github.imnotstable.msc.protocol.transport.Connection;
 import io.github.imnotstable.msc.protocol.transport.ConnectionClosedException;
 import io.github.imnotstable.msc.protocol.transport.CoreServer;
+import io.github.imnotstable.msc.protocol.transport.FrameReader;
+import io.github.imnotstable.msc.protocol.transport.FrameWriter;
 import io.github.imnotstable.msc.protocol.transport.OpException;
 import io.github.imnotstable.msc.protocol.transport.OpRouter;
 import io.github.imnotstable.msc.protocol.transport.RequestHandler;
+import java.net.Socket;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.BlockingQueue;
@@ -116,6 +123,37 @@ class ConnectionTest {
                 .thenApply(r -> {
                     throw new OpException(r.error());
                 }), ErrorCodes.INVALID_PARAMS);
+    }
+
+    @Test
+    void handlerErrorIsAnsweredAsInternal() throws Exception {
+        OpRouter broken = new OpRouter().on(Ops.SERVER_INFO, p -> {
+            throw new NoSuchMethodError("gone");
+        });
+        connect(TOKEN, broken);
+        Connection core = sessions.poll(5, TimeUnit.SECONDS).connection();
+        CompletableFuture<Ops.ServerInfo> call = core.call(Ops.SERVER_INFO, new Ops.Empty(), TIMEOUT);
+        assertCode(call, ErrorCodes.INTERNAL);
+        assertThat(call.exceptionNow()).hasMessageContaining("NoSuchMethodError");
+    }
+
+    @Test
+    void badFrameAfterHandshakeGetsAGoodbye() throws Exception {
+        AgentInfo info = new AgentInfo("paper", "test", "26.3", List.of());
+        for (int i = 0; i < 10; i++) {
+            try (Socket socket = new Socket("127.0.0.1", server.port())) {
+                socket.setSoTimeout(5_000);
+                FrameWriter writer = new FrameWriter(socket.getOutputStream(), Limits.MAX_FRAME_BYTES);
+                FrameReader reader = new FrameReader(socket.getInputStream(), Limits.MAX_FRAME_BYTES);
+                writer.write(MessageCodec.encode(new Hello(ProtocolVersion.CURRENT, TOKEN, info)));
+                assertThat(MessageCodec.decode(reader.read())).isInstanceOf(Welcome.class);
+                writer.write("this is not json");
+                String frame = reader.read();
+                assertThat(frame).as("goodbye before close").isNotNull();
+                assertThat(MessageCodec.decode(frame)).isInstanceOfSatisfying(Goodbye.class,
+                        g -> assertThat(g.code()).isEqualTo(ErrorCodes.BAD_FRAME));
+            }
+        }
     }
 
     @Test

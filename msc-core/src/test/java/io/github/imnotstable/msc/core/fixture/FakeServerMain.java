@@ -2,6 +2,7 @@ package io.github.imnotstable.msc.core.fixture;
 
 import com.google.gson.JsonObject;
 import io.github.imnotstable.msc.core.FakeAgent;
+import io.github.imnotstable.msc.protocol.Limits;
 import io.github.imnotstable.msc.protocol.message.AgentInfo;
 import io.github.imnotstable.msc.protocol.op.Events;
 import io.github.imnotstable.msc.protocol.transport.AgentClient;
@@ -44,9 +45,7 @@ public final class FakeServerMain {
             Thread.sleep(800);
         }
         OpRouter router = new FakeAgent().router();
-        AgentClient.Session session = AgentClient.connectFromEnvironment(
-                new AgentInfo("paper", "fake", "26.3", router.operations()), router, new Connection.Listener() {
-                }, Duration.ofSeconds(5));
+        AgentClient.Session session = connect(new AgentInfo("paper", "fake", "26.3", router.operations()), router);
         if (session != null) {
             session.connection().sendEvent(Events.SERVER_READY, new JsonObject());
         }
@@ -63,5 +62,18 @@ public final class FakeServerMain {
             System.out.println("[12:00:05 INFO]: console: " + line);
         }
         System.exit(0);
+    }
+
+    /** Connects like a real agent's CoreAddress does, or returns null when started without a core. */
+    private static AgentClient.Session connect(AgentInfo info, OpRouter router) throws Exception {
+        String address = System.getenv(Limits.ENV_CORE_ADDRESS);
+        String token = System.getenv(Limits.ENV_TOKEN);
+        if (address == null || token == null) {
+            return null;
+        }
+        int colon = address.lastIndexOf(':');
+        return AgentClient.connect(address.substring(0, colon), Integer.parseInt(address.substring(colon + 1)), token,
+                info, router, new Connection.Listener() {
+                }, Duration.ofSeconds(5));
     }
 }
