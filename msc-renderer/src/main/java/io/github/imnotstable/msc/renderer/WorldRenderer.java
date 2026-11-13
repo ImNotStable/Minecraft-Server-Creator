@@ -199,14 +199,22 @@ public final class WorldRenderer {
         StringBuilder sb = new StringBuilder("Markers, numbered (");
         sb.append(kinds.stream().map(WorldRenderer::legend).collect(java.util.stream.Collectors.joining(", ")))
                 .append("): ");
-        for (int i = 0; i < markers.size(); i++) {
+        for (int i = 0; i < shown; i++) {
             Marker m = markers.get(i);
             sb.append(i == 0 ? "" : "; ").append(i + 1).append(' ').append(m.label()).append(" at ")
                     .append(coord(m.x())).append(',').append(coord(m.y())).append(',').append(coord(m.z()));
         }
         sb.append('.');
         if (markers.size() > shown) {
-            sb.append(' ').append(markers.size() - shown).append(" more not drawn.");
+            // Only counts per type: numbers past the drawn ones would point at nothing in the image.
+            java.util.Map<String, Integer> rest = new java.util.TreeMap<>();
+            for (Marker m : markers.subList(shown, markers.size())) {
+                rest.merge(m.label().split(" ", 2)[0], 1, Integer::sum);
+            }
+            sb.append(' ').append(markers.size() - shown).append(" more not drawn: ")
+                    .append(rest.entrySet().stream().map(e -> e.getValue() + " " + e.getKey())
+                            .collect(java.util.stream.Collectors.joining(", ")))
+                    .append("; world_entities lists entities.");
         }
         if (!outside.isEmpty()) {
             sb.append(" Outside the image: ").append(numbers(outside)).append('.');

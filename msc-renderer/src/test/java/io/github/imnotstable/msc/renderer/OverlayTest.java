@@ -91,6 +91,19 @@ class OverlayTest {
     }
 
     @Test
+    void captionListsOnlyTheDrawnMarkers() {
+        List<Marker> markers = new java.util.ArrayList<>();
+        for (int i = 0; i < 1000; i++) {
+            markers.add(Marker.entity("minecraft:item", null, 1.5 + i % 14, 65, 1.5 + i % 13));
+        }
+        markers.add(Marker.sign(3, 65, 3, List.of("Late")));
+        String caption = renderer.render(floor().grid(), View.parse("top"), PLAIN, markers).caption();
+        assertThat(caption).contains("; 40 item at ").doesNotContain("41 item")
+                .endsWith(" 961 more not drawn: 960 item, 1 sign; world_entities lists entities.");
+        assertThat(caption.length()).isLessThan(2500);
+    }
+
+    @Test
     void glassDoesNotHideAMarker() {
         Scenes s = floor().fill(0, 67, 0, 15, 67, 15, "glass");
         RenderResult result = renderer.render(s.grid(), View.parse("top"), PLAIN,
