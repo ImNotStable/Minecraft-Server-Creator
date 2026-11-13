@@ -31,4 +31,12 @@ class BlockStatesTest {
         assertThatThrownBy(() -> BlockStates.parse("minecraft:stone[facing=up]"))
                 .isInstanceOf(IllegalArgumentException.class);
     }
+
+    @Test
+    void tellsAnUnknownBlockWithCloseNamesFromBadProperties() {
+        assertThatThrownBy(() -> BlockStates.parse("chain"))
+                .hasMessageStartingWith("unknown block state: chain; did you mean ").hasMessageContaining("iron_chain");
+        assertThatThrownBy(() -> BlockStates.parse("oak_stairs[facing=up]"))
+                .hasMessageStartingWith("bad block properties in oak_stairs[facing=up]: ").hasMessageContaining("up");
+    }
 }
