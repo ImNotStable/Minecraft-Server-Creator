@@ -77,6 +77,11 @@ final class TickMainThread implements MainThread {
         }
     }
 
+    /** How many jobs are queued and not finished yet. */
+    int queued() {
+        return tasks.size();
+    }
+
     /** Fail every queued job and refuse new ones. Call when the server stops. */
     void stop() {
         stopped = true;

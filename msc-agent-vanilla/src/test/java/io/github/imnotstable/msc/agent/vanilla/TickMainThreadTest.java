@@ -33,16 +33,21 @@ class TickMainThreadTest {
 
     private final TickMainThread main = new TickMainThread(() -> false, Duration.ofMillis(20), Duration.ofSeconds(5));
 
-    private static void waitQueued() throws InterruptedException {
-        Thread.sleep(50);
+    /** Waits until {@code count} jobs are queued, so a tick is sure to see them. */
+    private void awaitQueued(int count) throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        while (main.queued() < count) {
+            assertThat(System.nanoTime()).as("jobs queued in time").isLessThan(deadline);
+            Thread.sleep(1);
+        }
     }
 
     @Test
     void jobsRunInSlicesAcrossTicksAndQuickCallsDoNotWaitBehindThem() throws Exception {
         CompletableFuture<Integer> job = CompletableFuture.supplyAsync(() -> main.run(new CountingJob(3)));
-        waitQueued();
+        awaitQueued(1);
         CompletableFuture<String> call = CompletableFuture.supplyAsync(() -> main.call(() -> "info"));
-        waitQueued();
+        awaitQueued(2);
 
         main.tick();
         assertThat(call.get(1, TimeUnit.SECONDS)).isEqualTo("info");
@@ -57,7 +62,7 @@ class TickMainThreadTest {
         CompletableFuture<Object> call = CompletableFuture.supplyAsync(() -> main.call(() -> {
             throw new IllegalArgumentException("bad block");
         }));
-        waitQueued();
+        awaitQueued(1);
         main.tick();
 
         assertThat(call).failsWithin(Duration.ofSeconds(1))
@@ -68,7 +73,7 @@ class TickMainThreadTest {
     @Test
     void stoppingFailsQueuedAndNewJobsWithShutdown() throws Exception {
         CompletableFuture<Integer> job = CompletableFuture.supplyAsync(() -> main.run(new CountingJob(5)));
-        waitQueued();
+        awaitQueued(1);
         main.stop();
 
         assertThat(job).failsWithin(Duration.ofSeconds(1)).withThrowableThat().havingRootCause()
