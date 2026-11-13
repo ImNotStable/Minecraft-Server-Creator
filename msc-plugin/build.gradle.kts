@@ -25,6 +25,13 @@ val coreInstall = rootProject.layout.projectDirectory.dir("msc-core/build/instal
 tasks.test {
     dependsOn(":msc-core:installDist")
     inputs.dir(coreInstall).withPropertyName("coreInstall").withPathSensitivity(PathSensitivity.RELATIVE)
-    systemProperty("msc.coreInstall", coreInstall.asFile.absolutePath)
-    systemProperty("msc.pluginDir", layout.projectDirectory.asFile.absolutePath)
+    // PluginTest reads these plugin files, so a change to one must rerun it.
+    inputs.files(".mcp.json", ".claude-plugin/plugin.json", rootProject.file(".claude-plugin/marketplace.json"))
+        .withPropertyName("pluginFiles").withPathSensitivity(PathSensitivity.RELATIVE)
+    // Absolute paths through an argument provider, so the checkout's location stays out of the cache key.
+    val coreDir = coreInstall.asFile.absolutePath
+    val pluginDir = layout.projectDirectory.asFile.absolutePath
+    jvmArgumentProviders.add(CommandLineArgumentProvider {
+        listOf("-Dmsc.coreInstall=$coreDir", "-Dmsc.pluginDir=$pluginDir")
+    })
 }
