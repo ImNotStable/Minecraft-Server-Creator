@@ -68,7 +68,7 @@ class VanillaColorsTest {
             "red_poplar_leaves, oak_leaves", "yellow_poplar_leaves, oak_leaves", "sulfur_bricks, stone_bricks",
             "cinnabar_bricks, stone_bricks", "redstone_wall_torch, stone", "bamboo_slab, bamboo",
             "fire_coral, brain_coral", "dead_tube_coral, tube_coral", "verdant_froglight, ochre_froglight",
-            "white_tulip, red_tulip"})
+            "white_tulip, red_tulip", "white_bed, red_bed"})
     void differentBlocksAreNotDrawnAlike(String block, String other) {
         assertThat(BlockColors.find(block, BlockColors.SIDE).argb())
                 .isNotEqualTo(BlockColors.find(other, BlockColors.SIDE).argb());

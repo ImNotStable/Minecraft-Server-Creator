@@ -229,7 +229,6 @@ ladder=7c6035
 rail=7d7061
 redstone_wire=a01300
 beacon=75ddd7c0
-white_bed=a12722
 straw_bed=c9ab52
 copper=c06b4f
 copper_bars=b36246
