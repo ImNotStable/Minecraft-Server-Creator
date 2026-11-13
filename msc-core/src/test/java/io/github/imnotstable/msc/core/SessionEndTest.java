@@ -4,12 +4,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.imnotstable.msc.core.fixture.FakeBuildMain;
 import io.github.imnotstable.msc.core.fixture.FakeServerMain;
+import io.github.imnotstable.msc.core.tool.Schema;
+import io.github.imnotstable.msc.core.tool.Tool;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -95,5 +98,85 @@ class SessionEndTest {
         ProcessHandle warmup = scaffoldWithWarmup();
         h.ok("msc_workspace", "path", "other", "create", true);
         assertEnded(warmup);
+    }
+
+    /** A tool that runs until {@code release}; {@code stubborn} ones keep running when interrupted. */
+    private void blockingTool(String name, CountDownLatch release, boolean stubborn) {
+        h.core.addBenchTool(new Tool(name, "test", Schema.of().build(), args -> {
+            while (true) {
+                try {
+                    release.await();
+                    return name + " done";
+                } catch (InterruptedException e) {
+                    if (!stubborn) {
+                        throw e;
+                    }
+                }
+            }
+        }));
+    }
+
+    private CompletableFuture<String> callAsync(String tool, Object... pairs) throws Exception {
+        CompletableFuture<String> result = new CompletableFuture<>();
+        Thread.ofVirtual().start(() -> result.complete(h.call(tool, pairs).text()));
+        Thread.sleep(300);
+        return result;
+    }
+
+    @Test
+    void aCallThatIgnoresTheInterruptHoldsUpNeitherTheCloseNorTheServerStop() throws Exception {
+        h.ok("server_start", "timeoutSeconds", 30);
+        CountDownLatch release = new CountDownLatch(1);
+        blockingTool("stubborn", release, true);
+        CompletableFuture<String> call = callAsync("stubborn");
+        long started = System.nanoTime();
+        h.close();
+        assertThat(Duration.ofNanos(System.nanoTime() - started)).isLessThan(Duration.ofSeconds(10));
+        assertThat(h.core.server().running()).isFalse();
+        assertThat(call).isNotDone();
+        release.countDown();
+        assertThat(call.get(5, TimeUnit.SECONDS)).isEqualTo("stubborn done");
+        assertThat(h.error("msc_status")).isEqualTo("error: the session has ended; msc_status did not run");
+    }
+
+    @Test
+    void aCallThatEndsDuringTheWaitLetsTheSwitchThrough() throws Exception {
+        h.core.lockWait(Duration.ofSeconds(10));
+        CountDownLatch release = new CountDownLatch(1);
+        blockingTool("block", release, false);
+        CompletableFuture<String> call = callAsync("block");
+        CompletableFuture<String> sw = callAsync("msc_workspace", "path", "other", "create", true);
+        release.countDown();
+        assertThat(call.get(5, TimeUnit.SECONDS)).isEqualTo("block done");
+        assertThat(sw.get(10, TimeUnit.SECONDS)).startsWith("workspace: " + workspace.resolve("other").toRealPath());
+    }
+
+    @Test
+    void aSecondSwitchToTheSameFolderDuringTheWaitFindsItDone() throws Exception {
+        h.core.lockWait(Duration.ofSeconds(10));
+        CountDownLatch release = new CountDownLatch(1);
+        blockingTool("block", release, false);
+        callAsync("block");
+        Path other = Files.createDirectories(workspace.resolve("other")).toRealPath();
+        CompletableFuture<String> first = callAsync("msc_workspace", "path", "other");
+        CompletableFuture<String> second = callAsync("msc_workspace", "path", "other");
+        release.countDown();
+        assertThat(List.of(first.get(10, TimeUnit.SECONDS), second.get(10, TimeUnit.SECONDS)))
+                .containsExactlyInAnyOrder("workspace is already " + other,
+                        "workspace: " + other + "\nserver folder: " + other.resolve("run") + "; platform: paper");
+    }
+
+    @Test
+    void aCloseWhileASwitchWaitsEndsTheCallAndTheSwitchDoesNotHappen() throws Exception {
+        h.core.lockWait(Duration.ofSeconds(10));
+        blockingTool("block", new CountDownLatch(1), false);
+        CompletableFuture<String> call = callAsync("block");
+        CompletableFuture<String> sw = callAsync("msc_workspace", "path", "other", "create", true);
+        h.core.lockWait(Duration.ofMillis(300));
+        h.close();
+        // What the interrupted caller receives: an error that says why, not a bare "interrupted".
+        assertThat(call.get(5, TimeUnit.SECONDS)).isEqualTo("error: block was stopped: the session ended while it ran");
+        assertThat(sw.get(10, TimeUnit.SECONDS)).isEqualTo("error: did not switch: the session has ended");
+        assertThat(h.core.config().workspace()).isEqualTo(workspace);
     }
 }

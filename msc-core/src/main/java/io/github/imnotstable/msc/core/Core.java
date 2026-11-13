@@ -116,7 +116,11 @@ public final class Core implements AutoCloseable {
      * up the switch, every call queued behind it, or the exit when the session ends.
      */
     private volatile Duration lockWait = Duration.ofSeconds(5);
+    /** Guards the hand-over of {@link #bench} against {@link #close}, which may run without the write lock. */
+    private final Object benchGuard = new Object();
     private volatile Bench bench;
+    /** Set once by {@link #close}; a switch still under way then closes what it opened instead of installing it. */
+    private volatile boolean closed;
 
     public Core(CoreConfig config) throws IOException {
         this.log = new ToolLog(config.toolLog());
@@ -150,8 +154,17 @@ public final class Core implements AutoCloseable {
                 lock.readLock().lock();
                 running.put(Thread.currentThread(), name);
                 try {
+                    if (closed) {
+                        throw new ToolException("the session has ended; " + name + " did not run");
+                    }
                     return bench.tools().tools().stream().filter(t -> t.name().equals(name)).findFirst()
                             .orElseThrow().handler().output(args);
+                } catch (InterruptedException e) {
+                    if (!closed) {
+                        throw e;
+                    }
+                    // Only close interrupts a call. The interrupt was for this call, which ends here with a reason.
+                    throw new ToolException(name + " was stopped: the session ended while it ran");
                 } finally {
                     running.remove(Thread.currentThread());
                     lock.readLock().unlock();
@@ -174,6 +187,27 @@ public final class Core implements AutoCloseable {
             Thread.currentThread().interrupt();
             return null;
         }
+    }
+
+    /** For tests: add a tool to the current bench, forwarded like the others (a switch drops it). */
+    void addBenchTool(Tool tool) {
+        bench.tools().add(tool);
+        registry.add(new Tool(tool.name(), tool.description(), tool.inputSchema(), forward(tool.name())));
+    }
+
+    /**
+     * Make {@code next} the bench, unless the session ended meanwhile: then close it, so nothing opened by a switch
+     * outlives the close that did not wait for the switch.
+     */
+    private void install(Bench next) throws IOException {
+        synchronized (benchGuard) {
+            if (!closed) {
+                bench = next;
+                return;
+            }
+        }
+        next.close();
+        throw new ToolException("did not switch: the session ended during the switch");
     }
 
     private String runningCalls() {
@@ -207,6 +241,13 @@ public final class Core implements AutoCloseable {
                     + current.workspace());
         }
         try {
+            if (closed) {
+                throw new ToolException("did not switch: the session has ended");
+            }
+            // Another switch may have run while this one waited for the lock.
+            if (target.equals(realOrSelf(bench.config().workspace()))) {
+                return "workspace is already " + target;
+            }
             Bench old = bench;
             boolean detached = old.server().detached();
             boolean wasRunning = old.server().running();
@@ -216,11 +257,11 @@ public final class Core implements AutoCloseable {
             try {
                 next = Bench.open(old.config().withWorkspace(target), log);
             } catch (IOException | RuntimeException e) {
-                bench = Bench.open(old.config(), log);
+                install(Bench.open(old.config(), log));
                 throw new ToolException("could not open " + target + " (" + e.getMessage() + "); still in "
                         + old.config().workspace());
             }
-            bench = next;
+            install(next);
             log.moveTo(next.config().toolLog());
             StringBuilder out = new StringBuilder("workspace: ").append(target);
             if (detached) {
@@ -262,16 +303,24 @@ public final class Core implements AutoCloseable {
 
     /**
      * Ends the session. Waits at most {@link #lockWait} for running calls, then interrupts them and closes anyway:
-     * stopping the server also ends a server_wait or a dev_cycle start, so nothing outlives the session.
+     * stopping the server also ends a server_wait or a dev_cycle start, and the bench stops the builds calls left
+     * running, so nothing outlives the session, even a call that ignores the interrupt. A switch under way closes
+     * the bench it opened instead of installing it; one still waiting for the lock does not switch.
      */
     @Override
     public void close() throws IOException {
+        // First, so no new call runs and no switch installs a bench while this waits.
+        synchronized (benchGuard) {
+            closed = true;
+        }
         Lock write = writeLock();
         if (write == null) {
             running.keySet().forEach(Thread::interrupt);
         }
+        Bench current = bench;
         try {
-            bench.close();
+            // A switch closing this same bench is waited for; its server stop then counts for this close too.
+            current.close();
         } finally {
             if (write != null) {
                 write.unlock();
