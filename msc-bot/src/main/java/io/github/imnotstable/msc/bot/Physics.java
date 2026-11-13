@@ -34,7 +34,10 @@ final class Physics {
     }
 
     void tick(Input in, WorldView world) throws Exception {
-        world.ensure(box().expand(vx * 3, vy * 3 - 1, vz * 3));
+        // What move() reads (the swept box, the step-up, the jump and input it may add), and three ticks ahead.
+        Box needed = box().expand(vx, vy, vz).expand(0, -STEP, 0).expand(0, STEP, 0);
+        world.ensure(new Box(needed.minX() - 0.5, needed.minY(), needed.minZ() - 0.5, needed.maxX() + 0.5,
+                needed.maxY(), needed.maxZ() + 0.5), box().expand(vx * 3, vy * 3 - 1, vz * 3));
         double yaw = Math.toRadians(in.yaw());
         if (in.jump() && onGround) {
             vy = JUMP;

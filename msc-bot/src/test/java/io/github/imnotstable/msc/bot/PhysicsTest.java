@@ -31,6 +31,28 @@ class PhysicsTest {
     }
 
     @Test
+    void aLongFallLandsOnTheGroundWithoutReadingEveryTick() throws Exception {
+        for (double start : new double[] {30, 80.3, 150, 200.4, 320}) {
+            WorldView w = new WorldView(new FlatWorld(), "w");
+            Physics p = at(0.5, start, 0.5);
+            for (int ticks = 0; !p.onGround && ticks < 400; ticks++) {
+                p.tick(Physics.Input.NONE, w);
+            }
+            assertThat(p.y).as("from y=%s", start).isEqualTo(1.0);
+        }
+        FlatWorld flat = new FlatWorld();
+        WorldView w = new WorldView(flat, "w");
+        Physics p = at(0.5, 200.4, 0.5);
+        int ticks = 0;
+        while (!p.onGround) {
+            p.tick(Physics.Input.NONE, w);
+            ticks++;
+        }
+        assertThat(p.y).isEqualTo(1.0);
+        assertThat(flat.reads).as("reads in %s ticks", ticks).isLessThanOrEqualTo(ticks / 2);
+    }
+
+    @Test
     void walksAndSprintsAtVanillaSpeed() throws Exception {
         WorldView w = new WorldView(new FlatWorld(), "w");
         Physics walk = at(0.5, 1, 0.5);
