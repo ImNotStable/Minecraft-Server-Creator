@@ -34,6 +34,27 @@ class FrameIOTest {
     }
 
     @Test
+    void framesSpanReadChunksWhole() throws IOException {
+        // Larger than the reader's 64 KB chunk, with a two-byte character across a chunk boundary.
+        String big = "x".repeat(65_535) + "é" + "y".repeat(100_000);
+        String bytes = "a\n" + big + "\n\nlast\n";
+        FrameReader reader = new FrameReader(new ByteArrayInputStream(bytes.getBytes(StandardCharsets.UTF_8)), 200_000);
+        assertThat(reader.read()).isEqualTo("a");
+        assertThat(reader.read()).isEqualTo(big);
+        assertThat(reader.read()).isEmpty();
+        assertThat(reader.read()).isEqualTo("last");
+        assertThat(reader.read()).isNull();
+    }
+
+    @Test
+    void sizeLimitHoldsAcrossChunks() throws IOException {
+        byte[] exact = ("z".repeat(100_000) + "\n").getBytes(StandardCharsets.UTF_8);
+        assertThat(new FrameReader(new ByteArrayInputStream(exact), 100_000).read()).hasSize(100_000);
+        assertThatThrownBy(() -> new FrameReader(new ByteArrayInputStream(exact), 99_999).read())
+                .isInstanceOf(ProtocolException.class);
+    }
+
+    @Test
     void truncatedFrameIsAnError() {
         FrameReader reader = new FrameReader(new ByteArrayInputStream("{\"a\"".getBytes(StandardCharsets.UTF_8)), 1024);
         assertThatThrownBy(reader::read).isInstanceOf(ProtocolException.class);
