@@ -111,7 +111,7 @@ public final class WorldRenderer {
         // Marks (ticks, dots) are drawn as they come; all text goes through one placement step and is drawn last.
         Labels labels = new Labels(frame.imageW, frame.imageH);
         if (frame.ruler != null) {
-            frame.ruler.draw(pixels, frame);
+            frame.ruler.draw(pixels, frame, labels);
         }
         if (!frame.corners.isEmpty()) {
             drawCorners(pixels, frame, labels);
@@ -852,30 +852,52 @@ public final class WorldRenderer {
             return Math.max(PixelFont.width(Integer.toString(min), fontScale), PixelFont.width(Integer.toString(max), fontScale));
         }
 
-        void draw(int[] pixels, Frame frame) {
+        /**
+         * Draws a tick at each labelled column and row and places its label: centred on it, but moved inside the
+         * image (and off the corner) when the end of the ruler would cut it. A label that would then cover its
+         * neighbour is dropped.
+         */
+        void draw(int[] pixels, Frame frame, Labels labels) {
             int acrossStep = step((labelWidth(acrossMin, acrossMax) + 2 * fontScale) / frame.scale);
             int downStep = step((PixelFont.HEIGHT * fontScale + 2) / frame.scale);
-            for (int i = 0; i <= acrossMax - acrossMin; i++) {
+            int textH = PixelFont.HEIGHT * fontScale;
+            for (int i : endsFirst(acrossMax - acrossMin, acrossFlip ? acrossMax : acrossMin, acrossFlip ? -1 : 1,
+                    acrossStep)) {
                 int value = acrossFlip ? acrossMax - i : acrossMin + i;
-                if (Math.floorMod(value, acrossStep) == 0) {
-                    String label = Integer.toString(value);
-                    int centre = frame.offX + (int) ((i + 0.5) * frame.scale);
-                    PixelFont.draw(pixels, frame.imageW, frame.imageH, centre - PixelFont.width(label, fontScale) / 2,
-                            fontScale, label, fontScale, INK);
-                    PixelFont.fill(pixels, frame.imageW, frame.imageH, centre, marginTop - fontScale, 1, fontScale, INK);
-                }
+                Labels.Label label = Labels.Label.line(Labels.Kind.RULER, 0, Integer.toString(value), fontScale, 0, -1,
+                        INK);
+                int centre = frame.offX + (int) ((i + 0.5) * frame.scale);
+                // The top-left corner is empty, so the first label may lean into it.
+                int x = Math.clamp(centre - label.box().w() / 2, 0, Math.max(0, frame.imageW - label.box().w()));
+                labels.place(label, false, List.<int[]>of(new int[] {x, fontScale}));
+                PixelFont.fill(pixels, frame.imageW, frame.imageH, centre, marginTop - fontScale, 1, fontScale, INK);
             }
-            for (int i = 0; i <= downMax - downMin; i++) {
+            for (int i : endsFirst(downMax - downMin, downFlip ? downMax : downMin, downFlip ? -1 : 1, downStep)) {
                 int value = downFlip ? downMax - i : downMin + i;
-                if (Math.floorMod(value, downStep) == 0) {
-                    String label = Integer.toString(value);
-                    int centre = frame.offY + (int) ((i + 0.5) * frame.scale);
-                    PixelFont.draw(pixels, frame.imageW, frame.imageH,
-                            marginLeft - 2 * fontScale - PixelFont.width(label, fontScale),
-                            centre - PixelFont.HEIGHT * fontScale / 2, label, fontScale, INK);
-                    PixelFont.fill(pixels, frame.imageW, frame.imageH, marginLeft - fontScale, centre, fontScale, 1, INK);
+                Labels.Label label = Labels.Label.line(Labels.Kind.RULER, 0, Integer.toString(value), fontScale, 0, -1,
+                        INK);
+                int centre = frame.offY + (int) ((i + 0.5) * frame.scale);
+                int y = Math.clamp(centre - textH / 2, frame.offY, Math.max(frame.offY, frame.imageH - textH));
+                labels.place(label, false, List.<int[]>of(new int[] {marginLeft - 2 * fontScale - label.box().w(), y}));
+                PixelFont.fill(pixels, frame.imageW, frame.imageH, marginLeft - fontScale, centre, fontScale, 1, INK);
+            }
+        }
+
+        /**
+         * Indexes 0..last whose coordinate (start + sign * index) is a multiple of step, the first and last of them
+         * before the rest, so that when an end label is moved inside the image its neighbour gives way, not the end.
+         */
+        private static List<Integer> endsFirst(int last, int start, int sign, int step) {
+            List<Integer> labelled = new ArrayList<>();
+            for (int i = 0; i <= last; i++) {
+                if (Math.floorMod(start + sign * i, step) == 0) {
+                    labelled.add(i);
                 }
             }
+            if (labelled.size() > 2) {
+                labelled.add(1, labelled.removeLast());
+            }
+            return labelled;
         }
 
         /** Smallest step from 1, 2, 5, 10, 20, 50, ... that is at least {@code blocks} wide. */

@@ -73,6 +73,21 @@ class LabelPlacementTest {
                 .containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13");
     }
 
+    @Test
+    void rulerLabelsAtTheFarEndsStayWhole() {
+        // #343: at 4 px per block the label of the last column, 100, used to lose its last digit.
+        for (int min : new int[] {0, 1000}) {
+            Scenes scene = new Scenes(min, 0, min, min + 100, 0, min + 100).fill(min, 0, min, min + 100, 0, min + 100,
+                    "stone");
+            WorldRenderer.Drawn drawn = renderer.draw(scene.grid(), View.parse("top"), RenderOptions.defaults(),
+                    List.of());
+            check(drawn, 512, 0, "grid from " + min);
+            assertThat(drawn.labels().stream().filter(l -> l.kind() == Labels.Kind.RULER).map(Labels.Label::text))
+                    .as("both rulers keep both ends").containsSubsequence(Integer.toString(min),
+                            Integer.toString(min + 100), Integer.toString(min), Integer.toString(min + 100));
+        }
+    }
+
     private static String view(Random random, int x0, int y0, int z0, int sx, int sy, int sz) {
         int pick = random.nextInt(FIXED_VIEWS.size() + 2);
         if (pick < FIXED_VIEWS.size()) {
