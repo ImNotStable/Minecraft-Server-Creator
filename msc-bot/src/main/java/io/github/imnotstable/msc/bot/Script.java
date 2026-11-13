@@ -94,8 +94,9 @@ final class Script {
     static Step parse(String raw) {
         String line = raw.strip();
         if (line.startsWith("/")) {
+            String command = ChatLine.command(line);
             return once(line, p -> {
-                p.chat(line);
+                p.chat(command);
                 return "sent";
             }, 10);
         }
@@ -197,10 +198,12 @@ final class Script {
                 }, 1);
             }
             case "say" -> {
-                String text = line.substring(3).strip();
+                List<String> parts = ChatLine.say(line.substring(3));
                 yield once(line, p -> {
-                    p.chat(text);
-                    return "sent";
+                    parts.forEach(p::chat);
+                    return parts.size() == 1 ? "sent"
+                            : "sent as " + parts.size() + " messages, split at spaces (a chat message is at most "
+                                    + ChatLine.MAX + " characters)";
                 }, 10);
             }
             case "tp" -> {
