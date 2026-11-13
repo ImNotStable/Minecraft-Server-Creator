@@ -22,9 +22,11 @@ import io.github.imnotstable.msc.core.tools.TextureTools;
 import io.github.imnotstable.msc.core.tools.WorldTools;
 import io.github.imnotstable.msc.core.world.WorldService;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Properties;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
@@ -34,7 +36,21 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
  * list, which the MCP client fetched once, stays the same.
  */
 public final class Core implements AutoCloseable {
-    public static final String VERSION = "0.1.0";
+    /** The build's project.version (a release's -Pversion), from the version.properties msc-core's build writes. */
+    public static final String VERSION = readVersion();
+
+    private static String readVersion() {
+        try (InputStream in = Core.class.getResourceAsStream("version.properties")) {
+            if (in == null) {
+                return "unknown";
+            }
+            Properties props = new Properties();
+            props.load(in);
+            return props.getProperty("version", "unknown");
+        } catch (IOException e) {
+            return "unknown";
+        }
+    }
 
     /** The services of one workspace and the tools bound to them. */
     private record Bench(CoreConfig config, AgentHub hub, ServerManager server, ResourcePack pack,
