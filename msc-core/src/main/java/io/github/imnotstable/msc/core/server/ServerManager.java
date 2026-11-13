@@ -122,6 +122,9 @@ public final class ServerManager implements AutoCloseable {
             mark = log.mark();
             readyBefore = hub.readyCount();
             sawDone = false;
+            // Surviving the session is asked for per server (ADR 0014): a detached server that exited on its own
+            // must not pass that on to the next one.
+            detached = false;
             launchedAt = java.time.Instant.now();
             started = pb.start();
             process = started;
