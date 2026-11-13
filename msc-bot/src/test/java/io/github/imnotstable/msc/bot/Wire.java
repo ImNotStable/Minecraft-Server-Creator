@@ -19,6 +19,8 @@ import org.geysermc.mcprotocollib.protocol.MinecraftProtocol;
 import org.geysermc.mcprotocollib.protocol.codec.MinecraftCodec;
 import org.geysermc.mcprotocollib.protocol.codec.MinecraftPacket;
 import org.geysermc.mcprotocollib.protocol.data.ProtocolState;
+import org.geysermc.mcprotocollib.protocol.data.game.level.notify.EnterCreditsValue;
+import org.geysermc.mcprotocollib.protocol.data.game.level.notify.GameEvent;
 import org.geysermc.mcprotocollib.protocol.data.handshake.HandshakeIntent;
 import org.geysermc.mcprotocollib.protocol.packet.common.clientbound.ClientboundKeepAlivePacket;
 import org.geysermc.mcprotocollib.protocol.packet.common.clientbound.ClientboundPingPacket;
@@ -30,9 +32,11 @@ import org.geysermc.mcprotocollib.protocol.packet.configuration.clientbound.Clie
 import org.geysermc.mcprotocollib.protocol.packet.cookie.clientbound.ClientboundCookieRequestPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.ClientboundRespawnPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.ClientboundStartConfigurationPacket;
+import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.entity.player.ClientboundPlayerCombatKillPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.entity.player.ClientboundPlayerPositionPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.entity.player.ClientboundSetHealthPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.level.ClientboundChunkBatchFinishedPacket;
+import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.level.ClientboundGameEventPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.ServerboundClientCommandPacket;
 import org.geysermc.mcprotocollib.protocol.packet.login.clientbound.ClientboundCustomQueryPacket;
 import org.geysermc.mcprotocollib.protocol.packet.login.clientbound.ClientboundLoginFinishedPacket;
@@ -153,6 +157,10 @@ final class Wire {
             w -> w.join("minecraft:overworld")));
     private static final State PLAY = new State("play", JOINED.path.andThen(w -> w.deliver(position())));
     private static final State DEAD = new State("play, dead", PLAY.path.andThen(w -> w.deliver(died())));
+    /** Killed with only the kill message, no health packet: the vanilla client still takes it as its death. */
+    private static final State KILLED = new State("play, killed", PLAY.path.andThen(w -> w.deliver(killed())));
+    /** Through the End's exit portal: the server keeps the player in no world until it asks to respawn (#302). */
+    private static final State LEFT_END = new State("play, left the End", PLAY.path.andThen(w -> w.deliver(wonGame())));
     private static final State RESPAWNED = new State("play, respawned, before its position", DEAD.path.andThen(
             w -> w.deliver(new ClientboundRespawnPacket(TestPlayerTest.spawn("minecraft:overworld"), false, false))));
     private static final State RECONFIGURING = new State("re-configuration", PLAY.path.andThen(
@@ -165,7 +173,8 @@ final class Wire {
             w -> w.deliver(position())));
     private static final State REPLAY_DEAD = new State("play after re-configuration while dead",
             RECONFIGURING_DEAD.path.andThen(w -> w.join("minecraft:overworld")).andThen(w -> w.deliver(position())));
-    private static final List<State> STATES = List.of(LOGIN, CONFIGURATION, JOINED, PLAY, DEAD, RESPAWNED,
+    private static final List<State> STATES = List.of(LOGIN, CONFIGURATION, JOINED, PLAY, DEAD, KILLED,
+            LEFT_END, RESPAWNED,
             RECONFIGURING, RECONFIGURING_DEAD, REJOINED, REPLAY, REPLAY_DEAD);
 
     private static final List<Input> INPUTS = List.of(
@@ -181,6 +190,8 @@ final class Wire {
             new Input("PlayerPosition", Wire::position),
             new Input("ChunkBatchFinished", () -> new ClientboundChunkBatchFinishedPacket(4)),
             new Input("SetHealth 0", Wire::died),
+            new Input("PlayerCombatKill", Wire::killed),
+            new Input("GameEvent WIN_GAME", Wire::wonGame),
             new Input("Respawn", () -> new ClientboundRespawnPacket(TestPlayerTest.spawn("minecraft:overworld"),
                     false, false)),
             new Input("StartConfiguration", ClientboundStartConfigurationPacket::new));
@@ -196,6 +207,15 @@ final class Wire {
 
     private static Packet died() {
         return new ClientboundSetHealthPacket(0, 20, 5);
+    }
+
+    /** The kill message for the player {@link TestPlayerTest#login} made. */
+    private static Packet killed() {
+        return new ClientboundPlayerCombatKillPacket(7, net.kyori.adventure.text.Component.text("fell"));
+    }
+
+    private static Packet wonGame() {
+        return new ClientboundGameEventPacket(GameEvent.WIN_GAME, EnterCreditsValue.SEEN_BEFORE);
     }
 
     /**
