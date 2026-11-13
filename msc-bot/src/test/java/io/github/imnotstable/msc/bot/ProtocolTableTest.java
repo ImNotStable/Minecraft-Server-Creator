@@ -36,6 +36,8 @@ class ProtocolTableTest {
             | play, before the first position | PlayerPosition | AcceptTeleportation, PlayerLoaded |
             | play, before the first position | ChunkBatchFinished | ChunkBatchReceived |
             | play, before the first position | SetHealth 0 | - |
+            | play, before the first position | PlayerCombatKill | - |
+            | play, before the first position | GameEvent WIN_GAME | ClientCommand(PERFORM_RESPAWN) |
             | play, before the first position | Respawn | - |
             | play, before the first position | StartConfiguration | ConfigurationAcknowledged |
             | play, before the first position | (21 ticks) | - |
@@ -46,6 +48,8 @@ class ProtocolTableTest {
             | play | PlayerPosition | AcceptTeleportation |
             | play | ChunkBatchFinished | ChunkBatchReceived |
             | play | SetHealth 0 | - |
+            | play | PlayerCombatKill | - |
+            | play | GameEvent WIN_GAME | ClientCommand(PERFORM_RESPAWN) |
             | play | Respawn | - |
             | play | StartConfiguration | ConfigurationAcknowledged |
             | play | (21 ticks) | MovePlayerPosRot, ClientTickEnd |
@@ -56,9 +60,35 @@ class ProtocolTableTest {
             | play, dead | PlayerPosition | AcceptTeleportation |
             | play, dead | ChunkBatchFinished | ChunkBatchReceived |
             | play, dead | SetHealth 0 | - |
+            | play, dead | PlayerCombatKill | - |
+            | play, dead | GameEvent WIN_GAME | ClientCommand(PERFORM_RESPAWN) |
             | play, dead | Respawn | - |
             | play, dead | StartConfiguration | ConfigurationAcknowledged |
             | play, dead | (21 ticks) | ClientCommand(PERFORM_RESPAWN) |
+            | play, killed | CookieRequest | CookieResponse |
+            | play, killed | KeepAlive | KeepAlive |
+            | play, killed | Ping | Pong |
+            | play, killed | ResourcePackPush | ResourcePack(ACCEPTED), ResourcePack(FAILED_DOWNLOAD) |
+            | play, killed | PlayerPosition | AcceptTeleportation |
+            | play, killed | ChunkBatchFinished | ChunkBatchReceived |
+            | play, killed | SetHealth 0 | - |
+            | play, killed | PlayerCombatKill | - |
+            | play, killed | GameEvent WIN_GAME | ClientCommand(PERFORM_RESPAWN) |
+            | play, killed | Respawn | - |
+            | play, killed | StartConfiguration | ConfigurationAcknowledged |
+            | play, killed | (21 ticks) | ClientCommand(PERFORM_RESPAWN) |
+            | play, sent the credits | CookieRequest | CookieResponse |
+            | play, sent the credits | KeepAlive | KeepAlive |
+            | play, sent the credits | Ping | Pong |
+            | play, sent the credits | ResourcePackPush | ResourcePack(ACCEPTED), ResourcePack(FAILED_DOWNLOAD) |
+            | play, sent the credits | PlayerPosition | AcceptTeleportation |
+            | play, sent the credits | ChunkBatchFinished | ChunkBatchReceived |
+            | play, sent the credits | SetHealth 0 | - |
+            | play, sent the credits | PlayerCombatKill | - |
+            | play, sent the credits | GameEvent WIN_GAME | ClientCommand(PERFORM_RESPAWN) |
+            | play, sent the credits | Respawn | - |
+            | play, sent the credits | StartConfiguration | ConfigurationAcknowledged |
+            | play, sent the credits | (21 ticks) | - |
             | play, respawned, before its position | CookieRequest | CookieResponse |
             | play, respawned, before its position | KeepAlive | KeepAlive |
             | play, respawned, before its position | Ping | Pong |
@@ -66,6 +96,8 @@ class ProtocolTableTest {
             | play, respawned, before its position | PlayerPosition | AcceptTeleportation, PlayerLoaded |
             | play, respawned, before its position | ChunkBatchFinished | ChunkBatchReceived |
             | play, respawned, before its position | SetHealth 0 | - |
+            | play, respawned, before its position | PlayerCombatKill | - |
+            | play, respawned, before its position | GameEvent WIN_GAME | ClientCommand(PERFORM_RESPAWN) |
             | play, respawned, before its position | Respawn | - |
             | play, respawned, before its position | StartConfiguration | ConfigurationAcknowledged |
             | play, respawned, before its position | (21 ticks) | - |
@@ -92,6 +124,8 @@ class ProtocolTableTest {
             | play after re-configuration, before its position | PlayerPosition | AcceptTeleportation, PlayerLoaded |
             | play after re-configuration, before its position | ChunkBatchFinished | ChunkBatchReceived |
             | play after re-configuration, before its position | SetHealth 0 | - |
+            | play after re-configuration, before its position | PlayerCombatKill | - |
+            | play after re-configuration, before its position | GameEvent WIN_GAME | ClientCommand(PERFORM_RESPAWN) |
             | play after re-configuration, before its position | Respawn | - |
             | play after re-configuration, before its position | StartConfiguration | ConfigurationAcknowledged |
             | play after re-configuration, before its position | (21 ticks) | - |
@@ -102,6 +136,8 @@ class ProtocolTableTest {
             | play after re-configuration | PlayerPosition | AcceptTeleportation |
             | play after re-configuration | ChunkBatchFinished | ChunkBatchReceived |
             | play after re-configuration | SetHealth 0 | - |
+            | play after re-configuration | PlayerCombatKill | - |
+            | play after re-configuration | GameEvent WIN_GAME | ClientCommand(PERFORM_RESPAWN) |
             | play after re-configuration | Respawn | - |
             | play after re-configuration | StartConfiguration | ConfigurationAcknowledged |
             | play after re-configuration | (21 ticks) | MovePlayerPosRot, ClientTickEnd |
@@ -112,6 +148,8 @@ class ProtocolTableTest {
             | play after re-configuration while dead | PlayerPosition | AcceptTeleportation |
             | play after re-configuration while dead | ChunkBatchFinished | ChunkBatchReceived |
             | play after re-configuration while dead | SetHealth 0 | - |
+            | play after re-configuration while dead | PlayerCombatKill | - |
+            | play after re-configuration while dead | GameEvent WIN_GAME | ClientCommand(PERFORM_RESPAWN) |
             | play after re-configuration while dead | Respawn | - |
             | play after re-configuration while dead | StartConfiguration | ConfigurationAcknowledged |
             | play after re-configuration while dead | (21 ticks) | MovePlayerPosRot, ClientTickEnd |
@@ -124,6 +162,11 @@ class ProtocolTableTest {
 
     @Test
     void answersInEveryStateOnThePreviousProtocol() throws Exception {
+        assertThat(onThePreviousProtocol("table")).isEqualTo(EXPECTED);
+    }
+
+    /** Run the static Wire method {@code method} with the previous MCProtocolLib, in its own class loader. */
+    static Object onThePreviousProtocol(String method) throws Exception {
         Path protocols = Path.of(System.getProperty("msc.bot.protocols"));
         List<URL> urls = new ArrayList<>();
         urls.add(TestPlayer.class.getProtectionDomain().getCodeSource().getLocation());
@@ -136,9 +179,9 @@ class ProtocolTableTest {
         try (Bots.ChildFirst loader = new Bots.ChildFirst(urls.toArray(URL[]::new), Wire.class.getClassLoader())) {
             assertThat(loader.loadClass(TestPlayer.class.getName()).getMethod("minecraftVersion").invoke(null))
                     .isNotEqualTo(TestPlayer.minecraftVersion());
-            var table = loader.loadClass(Wire.class.getName()).getDeclaredMethod("table");
+            var table = loader.loadClass(Wire.class.getName()).getDeclaredMethod(method);
             table.setAccessible(true);
-            assertThat(table.invoke(null)).isEqualTo(EXPECTED);
+            return table.invoke(null);
         }
     }
 }

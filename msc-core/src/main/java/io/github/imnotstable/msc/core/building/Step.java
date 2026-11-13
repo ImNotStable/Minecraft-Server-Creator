@@ -152,37 +152,31 @@ public sealed interface Step {
         }
     }
 
-    /** A straight line from {@code from} to {@code to}, {@code width} blocks across (a round brush). */
+    /**
+     * A straight line from {@code from} to {@code to}, {@code width} blocks across (a round brush). An even width has
+     * no middle block, so its brush reaches one block further toward +x, +y and +z than toward -x, -y and -z.
+     */
     record Line(String world, BlockPos from, BlockPos to, int width, BlockPattern block, List<String> replace)
             implements Step {
         @Override
         public Region bounds() {
-            int r = (width - 1) / 2;
-            return Region.of(world, Math.min(from.x(), to.x()) - r, Math.min(from.y(), to.y()) - r,
-                    Math.min(from.z(), to.z()) - r, Math.max(from.x(), to.x()) + r, Math.max(from.y(), to.y()) + r,
-                    Math.max(from.z(), to.z()) + r);
+            int lo = Shapes.brushLow(width);
+            int hi = width - 1 - lo;
+            return Region.of(world, Math.min(from.x(), to.x()) - lo, Math.min(from.y(), to.y()) - lo,
+                    Math.min(from.z(), to.z()) - lo, Math.max(from.x(), to.x()) + hi, Math.max(from.y(), to.y()) + hi,
+                    Math.max(from.z(), to.z()) + hi);
         }
 
         @Override
         public void draw(Canvas c) throws InterruptedException {
-            int r = (width - 1) / 2;
-            boolean[] brush = Shapes.ball(r);
-            int n = 2 * r + 1;
             Canvas.Mask mask = c.mask(bounds(), replace);
-            for (BlockPos p : Shapes.line(from, to)) {
-                for (int dy = -r; dy <= r; dy++) {
-                    for (int dz = -r; dz <= r; dz++) {
-                        for (int dx = -r; dx <= r; dx++) {
-                            int x = p.x() + dx;
-                            int y = p.y() + dy;
-                            int z = p.z() + dz;
-                            if (brush[((dy + r) * n + dz + r) * n + dx + r] && mask.allows(x, y, z)) {
-                                c.set(x, y, z, block.at(x, y, z));
-                            }
-                        }
-                    }
+            // A block reached twice gets the same answer: the pattern depends only on the position, and after the
+            // first visit the mask sees either this step's own block there or what it already refused.
+            Shapes.sweep(Shapes.line(from, to), width, (x, y, z) -> {
+                if (mask.allows(x, y, z)) {
+                    c.set(x, y, z, block.at(x, y, z));
                 }
-            }
+            });
         }
     }
 

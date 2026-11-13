@@ -11,11 +11,17 @@ import io.github.imnotstable.msc.bench.task.TaskLoader;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.PrintStream;
+import java.io.UncheckedIOException;
+import java.net.InetAddress;
+import java.net.ServerSocket;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -23,6 +29,9 @@ class BenchRunnerTest {
 
     private static final String JAVA = ProcessHandle.current().info().command().orElse("java").replace("\\", "\\\\");
     private static final String CLASSPATH = System.getProperty("java.class.path").replace("\\", "\\\\");
+
+    /** Marks this test class's hanging agents on their command lines; unique per test JVM. */
+    private static final String HANG_MARKER = "hang-" + ProcessHandle.current().pid();
 
     @TempDir
     Path dir;
@@ -126,6 +135,58 @@ class BenchRunnerTest {
     }
 
     @Test
+    void aServerLeftOnTheBenchPortsIsStoppedBeforeTheSetupRuns() throws IOException {
+        // An earlier run cut short left its server answering on the RCON port; this run must not set up or check
+        // that world.
+        FakeRconServer[] holder = new FakeRconServer[1];
+        holder[0] = new FakeRconServer("pw", command -> {
+            if (command.equals("stop")) {
+                try {
+                    holder[0].close();
+                } catch (IOException e) {
+                    // test ends either way
+                }
+            }
+            return "There are 9 players online, in another workspace";
+        });
+        try (FakeRconServer orphan = holder[0]) {
+            Files.createDirectories(dir.resolve("tasks/world/fixture/server"));
+            Files.writeString(dir.resolve("tasks/world/task.json"), """
+                    {"category":"world","title":"needs a server","server":{"startBefore":true,"setup":["say setup"]},
+                     "checks":[{"type":"rcon","command":"list","expect":"There are 0 players"}]}
+                    """);
+            Files.writeString(dir.resolve("tasks/world/prompt.md"), "look");
+            Path cache = Files.createDirectories(dir.resolve("cache"));
+            Files.writeString(cache.resolve("paper-26.3-248.jar"), "stands in for paper");
+            Path home = Files.createDirectories(dir.resolve("home/.msc"));
+            Files.writeString(home.resolve("eula.json"), """
+                    {"accepted":true,"eula":"https://aka.ms/MinecraftEULA","acceptedBy":"owner","acceptedAt":"2026-11-12T00:00:00Z"}
+                    """);
+            int port = orphan.port();
+            Files.writeString(dir.resolve("bench.json"), """
+                    {"agent":{"command":["%s","-cp","%s","io.github.imnotstable.msc.bench.FakeAgent","{prompt}"]},
+                     "modes":{"baseline":{}},
+                     "server":{"command":["%s","-cp","%s","io.github.imnotstable.msc.bench.FakeRconMain","%d","pw"],
+                               "rconPort":%d,"serverPort":%d,"rconPassword":"pw","paperCacheDirs":["cache"],
+                               "startTimeoutSeconds":30}}
+                    """.formatted(JAVA, CLASSPATH, JAVA, CLASSPATH, port, port, freePort()));
+
+            List<RunRecord> records = new BenchRunner(BenchConfig.load(dir.resolve("bench.json"), dir.resolve("home")),
+                    dir.resolve("run"), "", new PrintStream(new ByteArrayOutputStream(), true, StandardCharsets.UTF_8))
+                    .run(TaskLoader.loadAll(dir.resolve("tasks")), List.of("baseline"), 1);
+
+            assertThat(orphan.commands()).as("the orphan gets only a stop, no setup").containsExactly("stop");
+            assertThat(records).singleElement().satisfies(r -> assertThat(r.passed()).as(r.toString()).isTrue());
+        }
+    }
+
+    private static int freePort() throws IOException {
+        try (ServerSocket socket = new ServerSocket(0, 1, InetAddress.getLoopbackAddress())) {
+            return socket.getLocalPort();
+        }
+    }
+
+    @Test
     void stopsAtTheFirstUsageLimitWithoutRecordingIt() throws IOException {
         for (String id : List.of("first", "second")) {
             Path task = Files.createDirectories(dir.resolve("tasks/" + id));
@@ -198,6 +259,75 @@ class BenchRunnerTest {
         Path workspace = dir.resolve("run/attempts/texture/baseline-1/workspace");
         assertThat(workspace.resolve("done.txt")).hasContent("No server.\n\nDraw it.");
         assertThat(workspace.resolve("server")).doesNotExist();
+    }
+
+    /** A run whose agent hangs with a child, as the runner's thread; returns once the agent and child are up. */
+    private Thread hangingRun(BenchRunner runner, List<List<RunRecord>> result) throws IOException, InterruptedException {
+        Path task = Files.createDirectories(dir.resolve("tasks/hang"));
+        Files.writeString(task.resolve("task.json"),
+                "{\"category\":\"code\",\"title\":\"x\",\"checks\":[{\"type\":\"file\",\"path\":\"done.txt\"}]}");
+        Files.writeString(task.resolve("prompt.md"), "Hang.");
+        List<TaskDef> taskDefs = TaskLoader.loadAll(dir.resolve("tasks"));
+        Thread thread = Thread.ofPlatform().start(() -> {
+            try {
+                result.add(runner.run(taskDefs, List.of("baseline"), 2));
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
+            }
+        });
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(60);
+        while (fakeAgents() < 2 && System.nanoTime() < deadline) {
+            Thread.sleep(100);
+        }
+        assertThat(fakeAgents()).as("the agent and its child are running").isEqualTo(2);
+        return thread;
+    }
+
+    private static long fakeAgents() {
+        return ProcessHandle.current().descendants().filter(ProcessHandle::isAlive)
+                .filter(p -> p.info().commandLine().orElse("").contains("-Dmsc.fakeAgent=" + HANG_MARKER)).count();
+    }
+
+    private BenchRunner hangingRunner() throws IOException {
+        Path configFile = dir.resolve("bench.json");
+        Files.writeString(configFile, """
+                {"agent":{"command":["%s","-Dmsc.fakeAgent=%s","-cp","%s","io.github.imnotstable.msc.bench.FakeAgent",
+                                     "{prompt}"],"timeoutSeconds":600},
+                 "modes":{"baseline":{"env":{"FAKE_HANG":"1"}}}}
+                """.formatted(JAVA, HANG_MARKER, CLASSPATH));
+        return new BenchRunner(BenchConfig.load(configFile, dir), dir.resolve("run"), "",
+                new PrintStream(new ByteArrayOutputStream(), true, StandardCharsets.UTF_8));
+    }
+
+    @Test
+    void anAbortedRunKillsTheAgentWithItsChildrenAndStartsNoMoreAttempts() throws Exception {
+        BenchRunner runner = hangingRunner();
+        List<List<RunRecord>> result = new CopyOnWriteArrayList<>();
+        Thread thread = hangingRun(runner, result);
+
+        runner.abort(); // what the shutdown hook does on Ctrl-C
+        thread.join(Duration.ofSeconds(30));
+
+        assertThat(thread.isAlive()).isFalse();
+        assertThat(fakeAgents()).as("no agent or agent child outlives the run").isZero();
+        assertThat(result).singleElement().satisfies(records -> assertThat(records).isEmpty());
+        assertThat(dir.resolve("run/attempts/hang/baseline-2")).doesNotExist();
+        assertThat(dir.resolve("run").resolve(BenchRunner.RESULTS_FILE)).doesNotExist();
+    }
+
+    @Test
+    void anInterruptedRunKillsTheAgentsChildrenToo() throws Exception {
+        BenchRunner runner = hangingRunner();
+        List<List<RunRecord>> result = new CopyOnWriteArrayList<>();
+        Thread thread = hangingRun(runner, result);
+
+        thread.interrupt();
+        thread.join(Duration.ofSeconds(30));
+
+        assertThat(thread.isAlive()).isFalse();
+        assertThat(fakeAgents()).as("the child is killed with the agent, not only the agent").isZero();
+        assertThat(result).singleElement().satisfies(records -> assertThat(records).isEmpty());
+        assertThat(dir.resolve("run/attempts/hang/baseline-2")).doesNotExist();
     }
 
     @Test

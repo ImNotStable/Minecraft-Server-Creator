@@ -13,7 +13,10 @@ public final class Limits {
     /** Longest the agent waits once, for the main thread or for chunks to load, before it answers {@code timeout}. */
     public static final Duration AGENT_WAIT = Duration.ofMinutes(2);
 
-    /** Most such waits one operation makes: a Minestom write or undo waits for its chunks, then for the edit. */
+    /**
+     * Most such waits one operation makes: on Minestom a read, write or undo waits for its chunks, then for one
+     * main-thread job (the edit, or the whole read with its entities and signs).
+     */
     public static final int AGENT_WAITS_PER_OP = 2;
 
     /**

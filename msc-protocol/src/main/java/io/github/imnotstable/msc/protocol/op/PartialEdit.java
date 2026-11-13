@@ -27,4 +27,12 @@ public final class PartialEdit {
         Matcher m = ID.matcher(message == null ? "" : message);
         return m.find() ? Optional.of(m.group(1)) : Optional.empty();
     }
+
+    /**
+     * {@code message} without the note {@link #note} appended. The id in it is the agent's own, which the AI's
+     * {@code build_undo} does not know, so the core strips it before showing the error (#292).
+     */
+    public static String strip(String message) {
+        return message == null ? null : ID.matcher(message).replaceFirst("");
+    }
 }

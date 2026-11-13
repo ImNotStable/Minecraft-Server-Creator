@@ -9,15 +9,29 @@ import java.nio.file.Path;
 /**
  * Stands in for Claude Code in runner tests: writes the prompt to {@code done.txt}, logs one tool
  * call when {@code MSC_TOOL_LOG} is set, and prints a Claude-style JSON result (a usage-limit error when
- * {@code FAKE_USAGE_LIMIT} is set, nothing when {@code FAKE_SILENT} is set).
+ * {@code FAKE_USAGE_LIMIT} is set, nothing when {@code FAKE_SILENT} is set). With {@code FAKE_HANG} set it starts a
+ * child that sleeps (as Claude Code starts msc-core) and sleeps itself, like an agent still at work.
  */
 public final class FakeAgent {
 
     private FakeAgent() {
     }
 
-    public static void main(String[] args) throws IOException {
+    /** First argument of the sleeping child {@code FAKE_HANG} starts. */
+    public static final String SLEEP = "--sleep";
+
+    public static void main(String[] args) throws IOException, InterruptedException {
+        if (args[0].equals(SLEEP)) {
+            Thread.sleep(Long.MAX_VALUE);
+        }
         Files.writeString(Path.of("done.txt"), args[0]);
+        if (System.getenv("FAKE_HANG") != null) {
+            // The marker comes first: the OS cuts long command lines.
+            new ProcessBuilder(ProcessHandle.current().info().command().orElse("java"),
+                    "-Dmsc.fakeAgent=" + System.getProperty("msc.fakeAgent", ""), "-cp", System.getProperty("java.class.path"), FakeAgent.class.getName(), SLEEP)
+                    .redirectOutput(ProcessBuilder.Redirect.DISCARD).redirectErrorStream(true).start();
+            Thread.sleep(Long.MAX_VALUE);
+        }
         String toolLog = System.getenv("MSC_TOOL_LOG");
         if (toolLog != null) {
             Files.writeString(Path.of(toolLog),

@@ -17,7 +17,7 @@ application {
     mainClass = "io.github.imnotstable.msc.bench.Main"
 }
 
-// Run from the module folder so the default paths (tasks/, bench.json, runs/) resolve. The test player speaks the
+// Run from the module folder so the default paths (tasks/, bench.json) resolve; runs go outside the repository. The test player speaks the
 // previous Minecraft version (Minestom lags Paper) from a jar in its own class loader, staged by msc.previous-protocol.
 tasks.named<JavaExec>("run") {
     workingDir = projectDir
@@ -30,4 +30,9 @@ tasks.test {
     val eulaFixtures = rootProject.layout.projectDirectory.dir("msc-core/src/test/resources/eula-fixtures")
     inputs.dir(eulaFixtures).withPropertyName("eulaFixtures")
     systemProperty("msc.eulaFixtures", eulaFixtures.asFile.absolutePath)
+    // Docs that name the default run folder, checked against RunIsolation so they cannot drift.
+    val root = rootProject.layout.projectDirectory
+    inputs.files(file("README.md"), root.file("docs/wiki/Benchmark.md"), root.file("msc-docs/docs/adr/0004-bench.md"))
+        .withPropertyName("runFolderDocs")
+    systemProperty("msc.repoRoot", root.asFile.absolutePath)
 }

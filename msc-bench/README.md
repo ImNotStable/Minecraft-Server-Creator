@@ -15,7 +15,7 @@ For each task and each mode (`baseline` = Claude Code alone, `toolset` = Claude 
 4. Runs the task's checks: files, build commands, PNGs, zips, and the live world and plugins over RCON.
 5. Stops the server and records time, turns, tokens and cost (from Claude Code's JSON result) plus tool-call totals, including image tokens from rendered views (from msc-core's tool log, [ADR 0004](../msc-docs/docs/adr/0004-bench.md)).
 
-In toolset mode the runner checks Claude Code's init event: when the `msc` server was not connected at the start (Claude Code `-p` sometimes starts before its MCP servers connect), and no msc tool was called either (the init event can come before the connection), the attempt is retried, up to 3 tries, instead of being scored as a toolset run without tools. Attempts are interleaved (task 1 baseline, task 1 toolset, task 2 ...) so drift in model speed hits both modes alike. When an agent run ends on an account usage limit (API error 429), the runner stops there: that attempt is not recorded, and every later one would fail in a second. Results go to `runs/<timestamp>/results.jsonl` and `report.md` (pass rate, time, turns and tokens per mode and task, plus a tool cost table: calls, tokens and time per msc-core tool); each attempt keeps its workspace, prompt, agent output and server log under `attempts/`.
+In toolset mode the runner checks Claude Code's init event: when the `msc` server was not connected at the start (Claude Code `-p` sometimes starts before its MCP servers connect), and no msc tool was called either (the init event can come before the connection), the attempt is retried, up to 3 tries, instead of being scored as a toolset run without tools. Attempts are interleaved (task 1 baseline, task 1 toolset, task 2 ...) so drift in model speed hits both modes alike. When an agent run ends on an account usage limit (API error 429), the runner stops there: that attempt is not recorded, and every later one would fail in a second. Results go to `~/.msc/bench-runs/<timestamp>/results.jsonl` (`--out` picks another folder; `run` prints the full path after `Report:`) and `report.md` (pass rate, time, turns and tokens per mode and task, plus a tool cost table: calls, tokens and time per msc-core tool); each attempt keeps its workspace, prompt, agent output and server log under `attempts/`.
 
 ## Tasks
 
@@ -41,9 +41,11 @@ Check types: `file` (exists, optional `contains` regex), `command` (exit code, o
 ./gradlew :msc-bench:run --args="list"
 ./gradlew :msc-bench:run --args="run --modes baseline"                 # the baseline
 ./gradlew :msc-bench:run --args="run --tasks build-hut --repeat 3"
-./gradlew :msc-bench:run --args="check build-hut runs/<ts>/attempts/build-hut/baseline-1/workspace"
-./gradlew :msc-bench:run --args="report runs/<ts>"
+./gradlew :msc-bench:run --args="check build-hut ~/.msc/bench-runs/<ts>/attempts/build-hut/baseline-1/workspace"
+./gradlew :msc-bench:run --args="report ~/.msc/bench-runs/<ts>"
 ```
+
+A leading `~` in a path argument (`check`'s workspace, `report`'s run folder, `--out`, `--config`, `--tasks-dir`) is your home folder: the bench expands it itself, because neither Gradle's `--args` nor a quoted shell argument does. The path `run` prints after `Report:` works too.
 
 `check` runs one task's checks on a workspace. Its RCON checks use a server already answering on the RCON port and leave it running; when none does and the EULA is accepted on the machine, it starts the workspace's own `server/` for the checks and stops it after them.
 
@@ -55,7 +57,7 @@ Before the first run:
 - Minestom tasks: Java 25 and network access for the project's Gradle build. The test player's previous-version protocol jar is staged by `:msc-bench:run` itself.
 - For `toolset` mode: run `./gradlew :msc-core:installDist :msc-agent-paper:shadowJar` first. Core starts from `paths.coreLib`, and the agent from `paths.agentJar` is put in `server/plugins` as `msc-agent-paper.jar` (the name core uses). Toolset workspaces also get the Paper jar in `.msc/cache`, so core does not download it during the timed run.
 
-The agent command runs Claude Code with `--setting-sources project,local`, so your own plugins, skills and memory stay out of the runs, with a pinned `--model` so runs compare like with like, and with `--dangerously-skip-permissions`, because nobody is there to answer prompts. Each attempt works in its own folder under `runs/`, but the agent can still run any command on the machine, so run the bench on a machine (or VM) where that is acceptable. Ports used: game 25566, RCON 25576, core 25590.
+The agent command runs Claude Code with `--setting-sources project,local`, so your own plugins, skills and memory stay out of the runs, with a pinned `--model` so runs compare like with like, and with `--dangerously-skip-permissions`, because nobody is there to answer prompts. Each attempt works in its own folder under the run folder, `~/.msc/bench-runs` by default. That folder must be outside any project: Claude Code loads `CLAUDE.md`, `CLAUDE.local.md` and `.claude/CLAUDE.md` from the working folder and every folder above it, and takes the enclosing git repository as the project, so attempts inside this repository would give both modes its instructions and the toolset's sources and the baseline would no longer be Claude Code alone. `run` refuses an `--out` folder with such a file or a `.git` in it or above it, after resolving symbolic links and `..` the way the system does, and writes to the folder it checked. When your home folder is itself inside a project (a dotfiles repository at `~`, or a `~/CLAUDE.md`), the default moves to `msc-bench-runs` in the system's temporary folder, and `run` says so: pass `--out` to keep the results somewhere the system does not clear. The agent can still run any command on the machine, though, so run the bench on a machine (or VM) where that is acceptable. Ports used: game 25566, RCON 25576, core 25590. A server already answering on those ports when a server task starts is a leftover from another run: the runner stops it before the setup, and the attempt fails if the ports stay taken. Stopping a run (Ctrl-C) kills the agent with its children (msc-core), the server and any check process, and sends `stop` over RCON to a server the agent started outside its own process tree.
 
 ## Depends on
 

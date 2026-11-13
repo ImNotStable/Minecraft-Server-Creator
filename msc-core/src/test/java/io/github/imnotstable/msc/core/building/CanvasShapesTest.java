@@ -4,7 +4,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.imnotstable.msc.protocol.world.BlockPos;
 import io.github.imnotstable.msc.protocol.world.Region;
+import io.github.imnotstable.msc.protocol.world.BlockGrid;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Random;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 class CanvasShapesTest {
@@ -83,6 +87,91 @@ class CanvasShapesTest {
     }
 
     @Test
+    void lineWidthIsTheNumberOfBlocksAcrossForEvenAndOddWidths() throws InterruptedException {
+        for (int w = 1; w <= 8; w++) {
+            Step.Line line = new Step.Line("world", new BlockPos(0, 64, 0), new BlockPos(10, 64, 0), w, STONE, List.of());
+            Canvas c = draw(line);
+            Region used = c.used();
+            assertThat(used.sizeY()).as("w=%d height", w).isEqualTo(w);
+            assertThat(used.sizeZ()).as("w=%d depth", w).isEqualTo(w);
+            assertThat(used.sizeX()).as("w=%d length", w).isEqualTo(11 + w - 1);
+            // The dry run's bounds are the blocks drawn, no wider and no narrower.
+            assertThat(line.bounds()).as("w=%d bounds", w).isEqualTo(used);
+            // A full row of w blocks crosses the line's middle.
+            int lo = (w - 1) / 2;
+            for (int dz = -lo; dz < w - lo; dz++) {
+                assertThat(c.planned(5, 64, dz)).as("w=%d dz=%d", w, dz).isNotNull();
+            }
+        }
+    }
+
+    @Test
+    void wideLinesMatchTheFullBrushAtEveryPointAndVisitEachBlockAboutOnce() throws InterruptedException {
+        for (long seed = 0; seed < 200; seed++) {
+            Random rnd = new Random(seed);
+            BlockPos from = new BlockPos(rnd.nextInt(21) - 10, 60 + rnd.nextInt(10), rnd.nextInt(21) - 10);
+            int len = rnd.nextInt(41);
+            BlockPos to = rnd.nextInt(4) == 0 ? from.offset(len, 0, 0) // straight along an axis, as in the report
+                    : from.offset(rnd.nextInt(2 * len + 1) - len, rnd.nextInt(2 * len + 1) - len,
+                    rnd.nextInt(2 * len + 1) - len);
+            int width = 1 + rnd.nextInt(rnd.nextBoolean() ? 6 : 24);
+            List<String> replace = rnd.nextBoolean() ? List.of() : List.of("air");
+            Step.Line line = new Step.Line("world", from, to, width, BlockPattern.parse("stone:3,dirt:1", seed), replace);
+            Region b = line.bounds();
+            Random world = new Random(seed * 31 + 7);
+            int[] cells = new int[Math.toIntExact(b.volume())];
+            for (int i = 0; i < cells.length; i++) {
+                cells[i] = world.nextInt(3) == 0 ? 1 : 0;
+            }
+            BlockGrid grid = new BlockGrid(b, List.of("minecraft:air", "minecraft:stone"), cells);
+            Canvas fast = new Canvas(b, r -> grid);
+            line.draw(fast);
+            Canvas slow = new Canvas(b, r -> grid);
+            stampFullBrushAtEveryPoint(line, slow);
+            for (int y = b.min().y(); y <= b.max().y(); y++) {
+                for (int z = b.min().z(); z <= b.max().z(); z++) {
+                    for (int x = b.min().x(); x <= b.max().x(); x++) {
+                        assertThat(fast.planned(x, y, z)).as("seed %d %s at %d,%d,%d", seed, line, x, y, z)
+                                .isEqualTo(slow.planned(x, y, z));
+                    }
+                }
+            }
+            // The work follows the blocks drawn: stamping every brush cell at every point visits a block
+            // about width / 2 times, which made a 64-wide line take seconds (#320).
+            Set<BlockPos> distinct = new HashSet<>();
+            long[] visits = {0};
+            Shapes.sweep(Shapes.line(from, to), width, (x, y, z) -> {
+                visits[0]++;
+                distinct.add(new BlockPos(x, y, z));
+            });
+            assertThat(visits[0]).as("seed %d %s: %d visits for %d blocks", seed, line, visits[0], distinct.size())
+                    .isLessThanOrEqualTo(distinct.size() + distinct.size() / 4);
+        }
+    }
+
+    /** The plain way to draw a line: the whole brush at every point, as {@link Step.Line} did before #320. */
+    private static void stampFullBrushAtEveryPoint(Step.Line line, Canvas c) throws InterruptedException {
+        int w = line.width();
+        int lo = Shapes.brushLow(w);
+        boolean[] brush = Shapes.brush(w);
+        Canvas.Mask mask = c.mask(line.bounds(), line.replace());
+        for (BlockPos p : Shapes.line(line.from(), line.to())) {
+            for (int dy = -lo; dy < w - lo; dy++) {
+                for (int dz = -lo; dz < w - lo; dz++) {
+                    for (int dx = -lo; dx < w - lo; dx++) {
+                        int x = p.x() + dx;
+                        int y = p.y() + dy;
+                        int z = p.z() + dz;
+                        if (brush[((dy + lo) * w + dz + lo) * w + dx + lo] && mask.allows(x, y, z)) {
+                            c.set(x, y, z, line.block().at(x, y, z));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
     void bandsGoOutwardAndLaterStepsWin() throws InterruptedException {
         Canvas c = draw(new Step.Bands("world", new BlockPos(0, 63, 0), 1, new int[] {3, 5},
                         List.of(BlockPattern.single("grass_block"), BlockPattern.single("sand")), 0, 0, List.of()),
@@ -108,5 +197,57 @@ class CanvasShapesTest {
         assertThat(walls.planned(2, 64, 2)).isNull();
         assertThat(walls.placed()).isEqualTo(16 * 4);
         assertThat(draw(new Step.Fill(r, STONE, "outline", List.of())).placed()).isEqualTo(100 - 18);
+    }
+
+    @Test
+    void everyShapeDrawsOnlyInsideItsBoundsAndFillsThemWhenSolid() throws InterruptedException {
+        for (long seed = 0; seed < 300; seed++) {
+            Random rnd = new Random(seed);
+            BlockPos o = new BlockPos(rnd.nextInt(41) - 20, 60 + rnd.nextInt(10), rnd.nextInt(41) - 20);
+            int r = rnd.nextInt(7);
+            int h = 1 + rnd.nextInt(5);
+            BlockPattern mix = BlockPattern.parse("stone:3,dirt:1", seed);
+            Step step = switch (rnd.nextInt(9)) {
+                case 0 -> new Step.Fill(Region.of("world", o.x(), o.y(), o.z(), o.x() + rnd.nextInt(6) - 3,
+                        o.y() + rnd.nextInt(6) - 3, o.z() + rnd.nextInt(6) - 3), mix,
+                        Step.Fill.SHAPES.get(rnd.nextInt(4)), List.of());
+                case 1 -> new Step.Cylinder("world", o, r, h, rnd.nextBoolean() ? -1 : rnd.nextInt(r + 1) - 1,
+                        rnd.nextBoolean() ? 0 : 1 + rnd.nextInt(r + 1), mix, List.of());
+                case 2 -> new Step.Sphere("world", o, r, rnd.nextBoolean() ? 0 : 1 + rnd.nextInt(r + 1), rnd.nextBoolean(),
+                        mix, List.of());
+                case 3 -> new Step.Line("world", o, o.offset(rnd.nextInt(13) - 6, rnd.nextInt(13) - 6, rnd.nextInt(13) - 6),
+                        1 + rnd.nextInt(8), mix, List.of());
+                case 4 -> new Step.Helix("world", o, 1 + r, h, rnd.nextDouble() * 4 - 2, 1 + rnd.nextInt(r + 2),
+                        rnd.nextInt(721) - 360, mix, List.of());
+                case 5 -> new Step.Bands("world", o, h, new int[] {r, r + 1 + rnd.nextInt(4)},
+                        List.of(STONE, BlockPattern.single("sand")), rnd.nextInt(4), seed, List.of());
+                case 6 -> new Step.Set("world", List.of(o, o.offset(rnd.nextInt(9) - 4, rnd.nextInt(9) - 4, 0)),
+                        List.of("minecraft:stone", "minecraft:dirt"), List.of());
+                case 7 -> new Step.Stamp("world", List.of(new Step.Stamp.Placement(new BlockGrid(
+                        Region.of("world", 0, 0, 0, r, h - 1, 2), List.of("minecraft:stone"), new int[(r + 1) * h * 3]), o)),
+                        true, List.of());
+                default -> new Step.Group(List.of(new Step.Sphere("world", o, r, 0, false, mix, List.of()),
+                        new Step.Line("world", o, o.offset(9, 0, 0), 2, mix, List.of())));
+            };
+            Region b = step.bounds();
+            // A canvas wider than the step on every side: anything drawn outside the step's bounds would show.
+            Canvas c = new Canvas(Region.of("world", b.min().x() - 9, b.min().y() - 9, b.min().z() - 9, b.max().x() + 9,
+                    b.max().y() + 9, b.max().z() + 9), q -> {
+                throw new AssertionError("no world read expected");
+            });
+            step.draw(c);
+            Region used = c.used();
+            assertThat(used).as("seed %d %s draws nothing", seed, step).isNotNull();
+            assertThat(b.contains(used.min().x(), used.min().y(), used.min().z())
+                    && b.contains(used.max().x(), used.max().y(), used.max().z()))
+                    .as("seed %d: %s drew %s outside its bounds %s", seed, step.getClass().getSimpleName(), used, b).isTrue();
+            boolean solid = step instanceof Step.Fill f && !f.shape().equals("walls") || step instanceof Step.Line
+                    || step instanceof Step.Stamp || step instanceof Step.Cylinder cy && cy.inner() < 0 && cy.thickness() == 0
+                    || step instanceof Step.Sphere sp && sp.thickness() == 0;
+            if (solid) {
+                // The dry run reports the step's bounds: for these shapes they are exactly the blocks drawn.
+                assertThat(used).as("seed %d %s", seed, step.getClass().getSimpleName()).isEqualTo(b);
+            }
+        }
     }
 }

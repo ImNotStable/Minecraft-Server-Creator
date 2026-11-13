@@ -1,0 +1,16 @@
+[12:00:00] [main/INFO]: Loading Minecraft 26.3 with Quilt Loader 0.29.0
+[12:00:00] [main/WARN]: Not remapping mods because intermediary is missing!
+mod adding took 12ms
+tmp jar copy took 3ms
+transform-cache took 2460ms
+zip sub copy took 9ms
+[12:00:01] [main/WARN]: Assets URL 'quilt.zfs://minecraft-26.3.jar/assets/.mcassetsroot' uses unexpected schema
+[12:00:01] [main/WARN]: Assets URL 'quilt.zfs://minecraft-26.3.jar/data/.mcassetsroot' uses unexpected schema
+[12:00:02] [Server thread/INFO]: Starting minecraft server version 26.3
+[12:00:02] [Server thread/INFO]: Loading properties
+[12:00:02] [Server thread/WARN]: **** SERVER IS RUNNING IN OFFLINE/INSECURE MODE!
+[12:00:02] [Server thread/WARN]: The server will make no attempt to authenticate usernames. Beware.
+[12:00:02] [Server thread/WARN]: While this makes the game possible to play without internet access, it also opens up the ability for hackers to connect with any username they choose.
+[12:00:02] [Server thread/WARN]: To change this, set "online-mode" to "true" in the server.properties file.
+[12:00:03] [Server thread/INFO]: Preparing level "world"
+[12:00:04] [Server thread/INFO]: Done (3.204s)! For help, type "help"

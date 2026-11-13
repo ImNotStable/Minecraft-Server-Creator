@@ -1,0 +1,17 @@
+[12:00:00] [main/INFO] [cp.mo.mo.Launcher/MODLAUNCHER]: ModLauncher running: args [--launchTarget, forge_server]
+[12:00:00] [main/WARN] [ne.mi.fm.co.ConfigFileTypeHandler/CONFIG]: Configuration file config/fml.toml is not correct. Correcting
+[12:00:00] [main/WARN] [ne.mi.fm.co.ConfigSpec/CORE]: Incorrect key earlyWindowControl was corrected from null to its default, true.
+[12:00:01] [main/ERROR] [io.ne.ch.kq.KQueue/]: KQueue support is not available
+java.lang.NoClassDefFoundError: Could not initialize class io.netty.channel.kqueue.Native
+	at io.netty.channel.kqueue.KQueue.<clinit>(KQueue.java:39) ~[netty-transport-classes-kqueue.jar:?]
+Caused by: java.lang.ExceptionInInitializerError: Exception java.lang.IllegalStateException: Only supported on OSX/BSD [in thread "main"]
+	at io.netty.channel.kqueue.Native.<clinit>(Native.java:62) ~[netty-transport-classes-kqueue.jar:?]
+[12:00:02] [Server thread/INFO] [minecraft/DedicatedServer]: Starting minecraft server version 26.3
+[12:00:02] [Server thread/WARN] [minecraft/DedicatedServer]: **** SERVER IS RUNNING IN OFFLINE/INSECURE MODE!
+[12:00:02] [Server thread/WARN] [minecraft/DedicatedServer]: The server will make no attempt to authenticate usernames. Beware.
+[12:00:02] [Server thread/WARN] [minecraft/DedicatedServer]: While this makes the game possible to play without internet access, it also opens up the ability for hackers to connect with any username they choose.
+[12:00:02] [Server thread/WARN] [minecraft/DedicatedServer]: To change this, set "online-mode" to "true" in the server.properties file.
+[12:00:03] [main/WARN] [os.dr.wi.re.HkeyPerformanceDataUtil/]: Unable to locate English counter names
+[12:00:03] [Server thread/WARN] [minecraft/SystemReport]: Failed to get system info for Process Loads
+[12:00:03] [Server thread/INFO] [minecraft/MinecraftServer]: Preparing level "world"
+[12:00:04] [Server thread/INFO] [minecraft/DedicatedServer]: Done (3.2s)! For help, type "help"

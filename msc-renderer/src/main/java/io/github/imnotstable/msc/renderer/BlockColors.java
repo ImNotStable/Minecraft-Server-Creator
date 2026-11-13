@@ -15,8 +15,10 @@ import java.util.Set;
 
 /**
  * Block name to colour, from this module's own table ({@code block-colors.txt}) plus naming rules:
- * shape suffixes (oak_slab is coloured like oak_planks), the 16 dye colours, and word fallbacks.
- * Colours are ARGB ints. Blocks nobody listed get a stable colour derived from their name.
+ * shape suffixes (oak_slab is coloured like oak_planks), wall-mounted forms (wall_torch like torch), copper
+ * ages, the 16 dye colours, and word fallbacks. Every vanilla block resolves through the table or a rule
+ * (VanillaColorsTest); word lines are a fallback for plugin and mod blocks. Colours are ARGB ints. Blocks
+ * nobody listed get a stable colour derived from their name.
  */
 final class BlockColors {
     static final int TOP = 0;
@@ -27,14 +29,20 @@ final class BlockColors {
             "cut_", "cracked_", "mossy_", "petrified_", "stripped_"};
     private static final String[] SUFFIXES = {"_wall_hanging_sign", "_hanging_sign", "_wall_sign", "_sign",
             "_fence_gate", "_fence", "_pressure_plate", "_button", "_trapdoor", "_door", "_stairs", "_slab", "_wall",
-            "_carpet", "_pane"};
-    private static final String[] ADDS = {"", "s", "_planks", "_block", "_wool"};
+            "_carpet", "_pane", "_fan", "_shelf"};
+    /** Tried after a shape suffix is cut off; _planks first, so bamboo_slab is bamboo_planks, not the bamboo plant. */
+    private static final String[] ADDS = {"_planks", "", "s", "_block", "_wool"};
     private static final String[] BARK = {"_log", "_wood", "_stem", "_hyphae"};
+    /** Copper ages: exposed_copper_bars is coloured like exposed_copper, whatever the shape. */
+    private static final String[] AGES = {"exposed_", "weathered_", "oxidized_"};
 
     private static final String[] DYES = {"light_blue", "light_gray", "white", "orange", "magenta", "yellow", "lime",
             "pink", "gray", "cyan", "purple", "blue", "brown", "green", "red", "black"};
     private static final int[] DYE_RGB = {0x3aafd9, 0x8e8e86, 0xe9ecec, 0xf07613, 0xbd44b3, 0xf8c627, 0x70b919,
             0xed8dac, 0x3e4447, 0x158991, 0x792aac, 0x35399d, 0x724728, 0x546d1b, 0xa12722, 0x141519};
+    /** Stained terracotta, in DYES order: the dye muted by the clay, so it needs its own colours, not a mix. */
+    private static final int[] TERRACOTTA_RGB = {0x716d8a, 0x876b62, 0xd2b2a1, 0xa15325, 0x96586d, 0xba8523,
+            0x687635, 0xa14e4e, 0x3a2a24, 0x575b5b, 0x764656, 0x4a3c5b, 0x4d3324, 0x4c532a, 0x8f3d2f, 0x251710};
 
     private static final Map<String, Integer> TABLE = new HashMap<>();
     private static final List<Map.Entry<String, Integer>> WORDS = new ArrayList<>();
@@ -66,8 +74,16 @@ final class BlockColors {
     private BlockColors() {
     }
 
-    /** A colour and whether it came from the table or rules ({@code known}) or from the name hash. */
-    record Found(int argb, boolean known) {
+    /** Where a colour came from: the table or a naming rule, a contains-word line, or the name hash. */
+    enum Source {
+        TABLE, WORD, HASH
+    }
+
+    /** A colour and where it came from. Table, rule and word colours count as {@code known}. */
+    record Found(int argb, Source source) {
+        boolean known() {
+            return source != Source.HASH;
+        }
     }
 
     static Found find(String name, int faceKind) {
@@ -83,15 +99,15 @@ final class BlockColors {
                 argb = dyed(c);
             }
             if (argb != null) {
-                return new Found(argb, true);
+                return new Found(argb, Source.TABLE);
             }
         }
         for (Map.Entry<String, Integer> word : WORDS) {
             if (name.contains(word.getKey())) {
-                return new Found(word.getValue(), true);
+                return new Found(word.getValue(), Source.WORD);
             }
         }
-        return new Found(hashColor(name), false);
+        return new Found(hashColor(name), Source.HASH);
     }
 
     /**
@@ -106,6 +122,22 @@ final class BlockColors {
 
     private static void collect(String name, Set<String> out, int depth) {
         out.add(name);
+        // Wall-mounted forms look like the standing one: wall_torch, creeper_wall_head, tube_coral_wall_fan.
+        if (depth < 3 && name.startsWith("wall_")) {
+            collect(name.substring("wall_".length()), out, depth + 1);
+        }
+        int wall = name.indexOf("_wall_");
+        if (depth < 3 && wall > 0) {
+            collect(name.substring(0, wall) + name.substring(wall + "_wall".length()), out, depth + 1);
+        }
+        if (name.endsWith("candle_cake")) {
+            out.add("cake");
+        }
+        for (String age : AGES) {
+            if (name.startsWith(age)) {
+                out.add(age + "copper");
+            }
+        }
         for (String bark : BARK) {
             if (name.endsWith(bark)) {
                 String wood = name.substring(0, name.length() - bark.length());
@@ -116,6 +148,10 @@ final class BlockColors {
                     out.add(wood + "_stem");
                 }
             }
+        }
+        // Bamboo's log form is bamboo_block; stripped, it shows the planks colour like stripped logs do.
+        if (name.startsWith("stripped_") && name.endsWith("_block")) {
+            out.add(name.substring("stripped_".length(), name.length() - "_block".length()) + "_planks");
         }
         for (String suffix : SUFFIXES) {
             if (name.endsWith(suffix) && name.length() > suffix.length()) {
@@ -146,7 +182,7 @@ final class BlockColors {
                         0xff000000 | rgb;
                 case "concrete" -> 0xff000000 | mix(rgb, 0x202020, 0.15);
                 case "concrete_powder" -> 0xff000000 | mix(rgb, 0xd0d0d0, 0.15);
-                case "terracotta" -> 0xff000000 | mix(rgb, 0x8f5b45, 0.55);
+                case "terracotta" -> 0xff000000 | TERRACOTTA_RGB[i];
                 case "stained_glass", "stained_glass_pane" -> 0x70000000 | rgb;
                 default -> null;
             };

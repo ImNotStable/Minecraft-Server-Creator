@@ -330,4 +330,70 @@ class WorldOpsTest {
         var router = AgentRoutes.router(new ServerOps(new FakeServer(), MainThread.inline()), ops);
         assertThat(router.operations()).containsExactlyInAnyOrderElementsOf(Ops.names());
     }
+
+    /** Counts the agent's waits: each main-thread hand-off and each chunk load (a wait on Minestom). */
+    private int[] countWaits() {
+        int[] waits = {0};
+        MainThread inline = MainThread.inline();
+        ops = new WorldOps<>(world, new MainThread() {
+            @Override
+            public <T> T call(java.util.function.Supplier<T> task) {
+                waits[0]++;
+                return inline.call(task);
+            }
+
+            @Override
+            public <T> T run(SlicedJob<T> job) {
+                waits[0]++;
+                return inline.run(job);
+            }
+        }, new EditHistory<>(1_000_000));
+        return waits;
+    }
+
+    private long chunkWaits() {
+        return world.loads.stream().filter(l -> !l.equals("released")).count();
+    }
+
+    @Test
+    void aReadWithEntitiesAndSignsStaysWithinTheAgentWaitsTheCoreAllowsFor() {
+        world.set(1, 70, 1, "minecraft:oak_sign", false);
+        world.signs.put(PackedPos.pack(1, 70, 1), new Ops.SignText(1, 70, 1, List.of("Shop"), null));
+        world.entities.add(new Ops.EntitySummary("minecraft:pig", 1.5, 70, 1.5, null));
+        int[] waits = countWaits();
+
+        Ops.ReadResult result = ops.read(new Ops.ReadParams(box(0, 70, 0, 3, 71, 3), true, true));
+
+        assertThat(result.signs()).hasSize(1);
+        assertThat(result.entities()).hasSize(1);
+        assertThat(waits[0] + chunkWaits()).isLessThanOrEqualTo(Limits.AGENT_WAITS_PER_OP);
+    }
+
+    @Test
+    void everyOtherWorldOpStaysWithinTheAgentWaitsTheCoreAllowsFor() {
+        int[] waits = countWaits();
+        Ops.EditResult fill = fill(box(0, 70, 0, 1, 70, 1), STONE);
+        assertThat(waits[0] + chunkWaits()).isLessThanOrEqualTo(Limits.AGENT_WAITS_PER_OP);
+
+        for (Runnable op : List.<Runnable>of(
+                () -> ops.undo(new Ops.UndoParams(fill.editId())),
+                () -> ops.heightmap(new Ops.HeightmapParams("world", new BlockPos(0, 0, 0), new BlockPos(1, 0, 1))),
+                () -> ops.entities(new Ops.EntitiesParams(box(0, 70, 0, 1, 70, 1), null, 10)))) {
+            waits[0] = 0;
+            world.loads.clear();
+            op.run();
+            assertThat(waits[0] + chunkWaits()).isLessThanOrEqualTo(Limits.AGENT_WAITS_PER_OP);
+        }
+    }
+
+    @Test
+    void aReadLeavesEntitiesAndSignsToTheNextTickWhenTheGridUsedThisOne() {
+        world.entities.add(new Ops.EntitySummary("minecraft:pig", 1.5, 70, 1.5, null));
+        WorldReadJob<String> job = new WorldReadJob<>(world, new Ops.ReadParams(box(0, 70, 0, 1, 70, 1), true, true));
+
+        assertThat(job.step(System.nanoTime() - 1)).isFalse();
+        assertThat(job.step(Long.MAX_VALUE)).isTrue();
+        assertThat(job.result().entities()).hasSize(1);
+        assertThat(job.result().grid().blocks()).hasSize(4);
+    }
 }

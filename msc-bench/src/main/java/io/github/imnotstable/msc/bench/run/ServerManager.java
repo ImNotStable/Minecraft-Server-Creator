@@ -14,25 +14,35 @@ import java.util.concurrent.TimeUnit;
 
 /**
  * Runs the dev server of one workspace. Connects to a server that is already up (for example one the
- * agent left running) before starting a new one, and always stops it on close.
+ * agent left running) before starting a new one, and always stops it on close. A server on the bench's ports from
+ * before the attempt belongs to another workspace; {@link #clearPorts} stops it first.
  */
 public final class ServerManager implements AutoCloseable {
 
     private static final Duration COMMAND_TIMEOUT = Duration.ofSeconds(30);
     private static final Duration STOP_TIMEOUT = Duration.ofSeconds(60);
+    /** How long {@link #sendStop} waits for an RCON login from whatever holds the RCON port. */
+    static final Duration LOGIN_TIMEOUT = Duration.ofSeconds(5);
 
     private final Path serverDir;
     private final BenchConfig.Server config;
     private final Map<String, String> env;
+    private final ChildProcesses children;
     private Process process;
     private RconClient rcon;
     private boolean reachedRcon;
     private IOException startFailure;
 
     public ServerManager(Path serverDir, BenchConfig.Server config, Map<String, String> env) {
+        this(serverDir, config, env, new ChildProcesses());
+    }
+
+    /** A manager whose server process is tracked in {@code children}, so a cut-short run can kill it. */
+    public ServerManager(Path serverDir, BenchConfig.Server config, Map<String, String> env, ChildProcesses children) {
         this.serverDir = serverDir;
         this.config = config;
         this.env = Map.copyOf(env);
+        this.children = children;
     }
 
     /** The console connection, starting the server first if nothing answers on the RCON port. */
@@ -107,7 +117,7 @@ public final class ServerManager implements AutoCloseable {
                 .redirectInput(ProcessBuilder.Redirect.PIPE);
         builder.environment().putAll(env);
         kill();
-        process = builder.start();
+        process = children.start(builder);
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(config.startTimeoutSeconds());
         while (System.nanoTime() < deadline) {
             if (!process.isAlive()) {
@@ -127,21 +137,65 @@ public final class ServerManager implements AutoCloseable {
         if (process == null) {
             return;
         }
-        process.descendants().forEach(ProcessHandle::destroyForcibly);
-        process.destroyForcibly();
-        try {
-            process.waitFor(10, TimeUnit.SECONDS);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
+        ChildProcesses.killTree(process);
         process = null;
     }
 
     private RconClient tryConnect(Duration commandTimeout) {
+        return tryConnect(config, commandTimeout);
+    }
+
+    private static RconClient tryConnect(BenchConfig.Server config, Duration commandTimeout) {
         try {
             return RconClient.connect("127.0.0.1", config.rconPort(), config.rconPassword(), commandTimeout);
         } catch (IOException e) {
             return null;
+        }
+    }
+
+    /**
+     * Stops a server left on the bench's ports from before this attempt (a run cut short, or a server an agent
+     * started outside its own process tree), so the setup commands and checks cannot reach another workspace's
+     * world, and waits until the ports are free. Throws when they stay taken.
+     */
+    public static void clearPorts(BenchConfig.Server config) throws IOException {
+        clearPorts(config, STOP_TIMEOUT);
+    }
+
+    static void clearPorts(BenchConfig.Server config, Duration wait) throws IOException {
+        if (!accepts(config.rconPort()) && !accepts(config.serverPort())) {
+            return;
+        }
+        sendStop(config, loginTimeout(wait));
+        awaitPortsFree(config, wait);
+        for (int port : new int[] {config.rconPort(), config.serverPort()}) {
+            if (accepts(port)) {
+                throw new IOException("port " + port + " is still taken by a process the bench did not start "
+                        + "(a server left from an earlier run?); stop it and run again");
+            }
+        }
+    }
+
+    /** The RCON login wait within a caller's {@code wait}: never longer than the caller asked for. */
+    static Duration loginTimeout(Duration wait) {
+        Duration atLeast = wait.isNegative() || wait.isZero() ? Duration.ofMillis(1) : wait;
+        return atLeast.compareTo(LOGIN_TIMEOUT) < 0 ? atLeast : LOGIN_TIMEOUT;
+    }
+
+    /** Sends {@code stop} to whatever server answers on the RCON port, without waiting for it to go. */
+    public static void sendStop(BenchConfig.Server config) {
+        sendStop(config, LOGIN_TIMEOUT);
+    }
+
+    private static void sendStop(BenchConfig.Server config, Duration loginTimeout) {
+        RconClient client = tryConnect(config, loginTimeout);
+        if (client == null) {
+            return;
+        }
+        try (client) {
+            client.command("stop");
+        } catch (IOException ignored) {
+            // the server may close the connection before replying
         }
     }
 
@@ -167,22 +221,21 @@ public final class ServerManager implements AutoCloseable {
         if (process != null) {
             try {
                 if (!process.waitFor(60, TimeUnit.SECONDS)) {
-                    process.destroyForcibly();
-                    process.waitFor(10, TimeUnit.SECONDS);
+                    ChildProcesses.killTree(process);
                 }
             } catch (InterruptedException e) {
-                process.destroyForcibly();
+                ChildProcesses.killTree(process);
                 Thread.currentThread().interrupt();
             }
             process = null;
         } else if (stopSent) {
-            awaitPortsFree();
+            awaitPortsFree(config, STOP_TIMEOUT);
         }
     }
 
     /** Waits (bounded) until nothing accepts connections on the RCON or game port any more. */
-    private void awaitPortsFree() {
-        long deadline = System.nanoTime() + STOP_TIMEOUT.toNanos();
+    private static void awaitPortsFree(BenchConfig.Server config, Duration wait) {
+        long deadline = System.nanoTime() + wait.toNanos();
         while ((accepts(config.rconPort()) || accepts(config.serverPort())) && System.nanoTime() < deadline) {
             try {
                 Thread.sleep(500);

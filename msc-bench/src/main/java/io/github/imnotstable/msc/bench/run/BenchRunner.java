@@ -40,6 +40,10 @@ public final class BenchRunner {
     private final Path runDir;
     private final Map<String, String> preambles;
     private final PrintStream log;
+    /** The agent, servers and check processes of the attempt under way, killed if the run is cut short. */
+    private final ChildProcesses children = new ChildProcesses();
+    /** True while an attempt whose task has a Paper server is under way. */
+    private volatile boolean serverTask;
     private String stoppedBy;
 
     /** A runner whose Paper tasks get {@code preamble}. */
@@ -81,6 +85,34 @@ public final class BenchRunner {
         }
         Files.createDirectories(runDir);
         stoppedBy = null;
+        // Ctrl-C ends the bench JVM without running the finally blocks that stop the agent and the server: left
+        // running, they would keep working unattended and the next run's setup and checks would reach their world.
+        Thread hook = Thread.ofPlatform().name("msc-bench-abort").unstarted(this::abort);
+        Runtime.getRuntime().addShutdownHook(hook);
+        try {
+            return runAll(tasks, modes, repeats);
+        } finally {
+            try {
+                Runtime.getRuntime().removeShutdownHook(hook);
+            } catch (IllegalStateException shuttingDown) {
+                // the hook is running or has run
+            }
+        }
+    }
+
+    /**
+     * Stops the run for good: kills the agent, server and check processes under way with their descendants, and
+     * sends {@code stop} to a server on the bench's RCON port (the agent may have started one outside its own
+     * process tree, through a Gradle daemon). Runs from the shutdown hook; later attempts do not start.
+     */
+    public void abort() {
+        children.killAll();
+        if (serverTask) {
+            ServerManager.sendStop(config.server());
+        }
+    }
+
+    private List<RunRecord> runAll(List<TaskDef> tasks, List<String> modes, int repeats) throws IOException {
         List<RunRecord> records = new ArrayList<>();
         for (TaskDef task : tasks) {
             if (task.needsServer() && !config.server().acceptEula()) {
@@ -98,6 +130,11 @@ public final class BenchRunner {
                         stoppedBy = e.getMessage();
                         log.printf("[%s] %s #%d: stopped, the agent hit a usage limit: %s%n",
                                 mode, task.id(), repeat, stoppedBy);
+                        return records;
+                    }
+                    if (children.closed() || Thread.currentThread().isInterrupted()) {
+                        // Cut short: the attempt's agent was killed, so its record would score nothing real.
+                        log.printf("[%s] %s #%d: stopped, the run was interrupted%n", mode, task.id(), repeat);
                         return records;
                     }
                     records.add(record);
@@ -163,11 +200,15 @@ public final class BenchRunner {
         String error = null;
 
         ServerManager server = null;
+        serverTask = task.needsServer();
         try {
+            if (task.needsServer()) {
+                ServerManager.clearPorts(config.server());
+            }
             Workspaces.prepare(task, workspace, config, mode, task.needsServer() ? paperJar() : null, values);
             if (task.needsServer()) {
                 ServerFiles.restore(sharedServerFiles(), workspace.resolve("server"));
-                server = new ServerManager(workspace.resolve("server"), config.server(), serverEnv);
+                server = new ServerManager(workspace.resolve("server"), config.server(), serverEnv, children);
             }
             if (task.server().startBefore()) {
                 RconClient rcon = server.rcon();
@@ -191,18 +232,16 @@ public final class BenchRunner {
 
             int timeout = task.timeoutSeconds() > 0 ? task.timeoutSeconds() : config.agent().timeoutSeconds();
             long start = System.nanoTime();
-            Process process = builder.start();
+            Process process = children.start(builder);
             try {
                 if (process.waitFor(timeout, TimeUnit.SECONDS)) {
                     exitCode = process.exitValue();
                 } else {
                     timedOut = true;
-                    process.descendants().forEach(ProcessHandle::destroyForcibly);
-                    process.destroyForcibly();
-                    process.waitFor(10, TimeUnit.SECONDS);
+                    ChildProcesses.killTree(process);
                 }
             } catch (InterruptedException e) {
-                process.destroyForcibly();
+                ChildProcesses.killTree(process);
                 Thread.currentThread().interrupt();
                 throw new IOException("interrupted", e);
             }
@@ -234,6 +273,11 @@ public final class BenchRunner {
                     }
                     return checkServer.rcon();
                 }
+
+                @Override
+                public Process start(ProcessBuilder builder) throws IOException {
+                    return children.start(builder);
+                }
             };
             for (Check check : task.checks()) {
                 results.add(check.run(context));
@@ -253,6 +297,7 @@ public final class BenchRunner {
                     }
                 }
             }
+            serverTask = false;
         }
 
         ToolStats tools = ToolLogReader.read(attemptDir.resolve("tool-calls.jsonl"));

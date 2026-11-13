@@ -7,6 +7,8 @@ import io.github.imnotstable.msc.bench.rcon.RconClient;
 import io.github.imnotstable.msc.bench.report.ReportWriter;
 import io.github.imnotstable.msc.bench.run.BenchConfig;
 import io.github.imnotstable.msc.bench.run.BenchRunner;
+import io.github.imnotstable.msc.bench.run.ChildProcesses;
+import io.github.imnotstable.msc.bench.run.RunIsolation;
 import io.github.imnotstable.msc.bench.run.RunRecord;
 import io.github.imnotstable.msc.bench.run.ServerManager;
 import io.github.imnotstable.msc.bench.run.Workspaces;
@@ -34,12 +36,17 @@ import java.util.Set;
  * run [--tasks a,b] [--modes baseline,toolset] [--repeat N]
  * check &lt;task&gt; &lt;workspace&gt;                 run one task's checks on a folder (starts its server for RCON checks)
  * report &lt;runDir&gt;                         rewrite report.md from results.jsonl
- * common: --tasks-dir DIR (default tasks), --config FILE (default bench.json), --out DIR (default runs)
+ * common: --tasks-dir DIR (default tasks), --config FILE (default bench.json),
+ *         --out DIR (default ~/.msc/bench-runs, or &lt;temp&gt;/msc-bench-runs when the home folder is inside a
+ *         repository; must be outside any repository or CLAUDE.md folder)
+ * A leading {@code ~} in a path argument is the home folder: Gradle's {@code --args="..."} and quoted shell
+ * arguments pass it unexpanded.
  * </pre>
  */
 public final class Main {
 
     private static final Set<String> FLAGS = Set.of("--tasks", "--modes", "--repeat", "--tasks-dir", "--config", "--out");
+    private static final Set<String> PATH_FLAGS = Set.of("--tasks-dir", "--config", "--out");
 
     private Main() {
     }
@@ -69,9 +76,11 @@ public final class Main {
             }
         }
         if (positional.isEmpty()) {
-            out.println("usage: msc-bench list | run [--tasks a,b] [--modes m1,m2] [--repeat N] | check <task> <workspace> | report <runDir>");
+            out.println(usage());
             return 1;
         }
+        Path home = Path.of(System.getProperty("user.home"));
+        flags.replaceAll((flag, value) -> PATH_FLAGS.contains(flag) ? expandHome(value, home).toString() : value);
         Path tasksDir = Path.of(flags.getOrDefault("--tasks-dir", "tasks"));
         return switch (positional.getFirst()) {
             case "list" -> list(tasksDir, out);
@@ -80,16 +89,37 @@ public final class Main {
                 if (positional.size() != 3) {
                     throw new IllegalArgumentException("usage: check <task> <workspace>");
                 }
-                yield check(tasksDir, positional.get(1), Path.of(positional.get(2)), flags, out);
+                yield check(tasksDir, positional.get(1), expandHome(positional.get(2), home), flags, out);
             }
             case "report" -> {
                 if (positional.size() != 2) {
                     throw new IllegalArgumentException("usage: report <runDir>");
                 }
-                yield report(Path.of(positional.get(1)), out);
+                yield report(expandHome(positional.get(1), home), out);
             }
             default -> throw new IllegalArgumentException("unknown command " + positional.getFirst());
         };
+    }
+
+    static String usage() {
+        return "usage: msc-bench list | run [--tasks a,b] [--modes m1,m2] [--repeat N] [--out DIR, default "
+                + RunIsolation.DEFAULT_RUNS_SHOWN + "] | check <task> <workspace> | report <runDir>";
+    }
+
+    /**
+     * The argument as a path, with a leading {@code ~} (alone or before a separator) as the home folder. Neither
+     * Gradle's {@code --args} nor a quoted shell argument expands it, and {@code Path.of} would read it as a folder
+     * named {@code ~} in msc-bench/.
+     */
+    static Path expandHome(String arg, Path home) {
+        if (arg.equals("~")) {
+            return home;
+        }
+        if (arg.startsWith("~/") || arg.startsWith("~\\")) {
+            String rest = arg.substring(2);
+            return rest.isEmpty() ? home : home.resolve(rest);
+        }
+        return Path.of(arg);
     }
 
     private static int list(Path tasksDir, PrintStream out) throws IOException {
@@ -101,14 +131,25 @@ public final class Main {
     }
 
     private static int runBench(Path tasksDir, Map<String, String> flags, PrintStream out) throws IOException {
+        // Attempts run in the run folder: inside this repository both modes would load its CLAUDE.md and sources.
+        // The checked folder is the resolved one, and the run writes to that same folder (links, .. and all).
+        Path home = Path.of(System.getProperty("user.home"));
+        Path temp = Path.of(System.getProperty("java.io.tmpdir"));
+        Path runsDir = flags.containsKey("--out")
+                ? RunIsolation.requireIsolated(Path.of(flags.get("--out")), home, temp)
+                : RunIsolation.defaultRunsDir(home, temp);
+        if (!flags.containsKey("--out") && !runsDir.equals(RunIsolation.resolve(RunIsolation.homeRunsDir(home)))) {
+            out.println(RunIsolation.DEFAULT_RUNS_SHOWN + " is inside a project (your home folder is a repository or "
+                    + "has a CLAUDE.md), so runs go to " + runsDir + "; the system may clear it, so pass --out to keep "
+                    + "them elsewhere");
+        }
         BenchConfig config = BenchConfig.load(Path.of(flags.getOrDefault("--config", "bench.json")));
         List<TaskDef> tasks = select(TaskLoader.loadAll(tasksDir), flags.get("--tasks"));
         List<String> modes = flags.containsKey("--modes")
                 ? Arrays.asList(flags.get("--modes").split(","))
                 : List.copyOf(config.modes().keySet()).stream().sorted().toList();
         int repeat = Integer.parseInt(flags.getOrDefault("--repeat", "1"));
-        Path runDir = Path.of(flags.getOrDefault("--out", "runs"))
-                .resolve(LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss")));
+        Path runDir = runsDir.resolve(LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss")));
         Map<String, String> preambles = new HashMap<>();
         preambles.put(TaskDef.PAPER, readIfPresent(tasksDir.resolve("_preamble.md")));
         preambles.put(TaskDef.MINESTOM, readIfPresent(tasksDir.resolve("_preamble-minestom.md")));
@@ -155,15 +196,25 @@ public final class Main {
                 "java", ProcessHandle.current().info().command().orElse("java"),
                 "serverPort", Integer.toString(config == null ? 25566 : config.server().serverPort()),
                 "scaffoldVersion", Workspaces.SCAFFOLD_VERSION);
+        // Ctrl-C skips the finally blocks: the hook kills the server and command processes this check started.
+        ChildProcesses children = new ChildProcesses();
+        Thread hook = Thread.ofPlatform().name("msc-bench-check-abort").unstarted(children::killAll);
+        Runtime.getRuntime().addShutdownHook(hook);
         try (ServerManager server = config != null && task.needsServer() && config.server().acceptEula()
-                ? new ServerManager(workspace.resolve("server"), config.server(), Map.of())
+                ? new ServerManager(workspace.resolve("server"), config.server(), Map.of(), children)
                 : null) {
-            return check(task, workspace, values, config, server, out);
+            return check(task, workspace, values, config, server, children, out);
+        } finally {
+            try {
+                Runtime.getRuntime().removeShutdownHook(hook);
+            } catch (IllegalStateException shuttingDown) {
+                // the hook is running or has run
+            }
         }
     }
 
     private static int check(TaskDef task, Path workspace, Map<String, String> values, BenchConfig config,
-            ServerManager server, PrintStream out) throws IOException {
+            ServerManager server, ChildProcesses children, PrintStream out) throws IOException {
         RconClient[] running = new RconClient[1];
         CheckContext context = new CheckContext() {
             private RconClient rcon;
@@ -196,6 +247,11 @@ public final class Main {
                     }
                 }
                 return rcon;
+            }
+
+            @Override
+            public Process start(ProcessBuilder builder) throws IOException {
+                return children.start(builder);
             }
         };
         try {

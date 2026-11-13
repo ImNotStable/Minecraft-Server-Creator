@@ -1,6 +1,7 @@
 package io.github.imnotstable.msc.bench;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.catchThrowable;
 
 import io.github.imnotstable.msc.bench.run.BenchConfig;
 import io.github.imnotstable.msc.bench.task.TaskDef;
@@ -13,8 +14,14 @@ import java.net.ServerSocket;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import io.github.imnotstable.msc.bench.run.RunIsolation;
+import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 class MainTest {
 
@@ -56,9 +63,65 @@ class MainTest {
                 .filter(p -> p.info().commandLine().orElse("").contains("FakeRconMain"))).isEmpty();
     }
 
+    @Test
+    void runRefusesARunFolderInsideAProject() throws IOException {
+        Files.writeString(dir.resolve("CLAUDE.md"), "project instructions");
+        Path runs = dir.resolve("msc-bench/runs");
+
+        Throwable refused = catchThrowable(() -> Main.run(new String[] {"run", "--out", runs.toString()},
+                new PrintStream(new ByteArrayOutputStream(), true, StandardCharsets.UTF_8)));
+
+        assertThat(refused).isInstanceOf(IOException.class).hasMessageContaining("CLAUDE.md");
+        assertThat(runs).doesNotExist();
+    }
+
     private static int freePort() throws IOException {
         try (ServerSocket socket = new ServerSocket(0, 1, InetAddress.getLoopbackAddress())) {
             return socket.getLocalPort();
+        }
+    }
+
+    @ParameterizedTest
+    @CsvSource({"~, ''", "~/.msc/bench-runs/x, .msc/bench-runs/x", "~\\.msc\\x, .msc/x", "~/, ''"})
+    void aLeadingTildeIsTheHomeFolder(String arg, String underHome) {
+        // Gradle's --args="report ~/.msc/..." passes the tilde unexpanded; Path.of read it as msc-bench/~/.msc/...
+        Path home = dir.resolve("home");
+        Path expected = underHome.isEmpty() ? home : home.resolve(underHome);
+
+        assertThat(Main.expandHome(arg, home).toString().replace('\\', '/'))
+                .isEqualTo(expected.toString().replace('\\', '/'));
+    }
+
+    @ParameterizedTest
+    @CsvSource({"~user/x", "runs/~/x", "x~"})
+    void otherTildesAreLeftAlone(String arg) {
+        assertThat(Main.expandHome(arg, dir.resolve("home"))).isEqualTo(Path.of(arg));
+    }
+
+    @Test
+    void theUsageNamesTheDefaultRunFolder() throws IOException {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+
+        Main.run(new String[0], new PrintStream(out, true, StandardCharsets.UTF_8));
+
+        assertThat(out.toString(StandardCharsets.UTF_8)).contains("--out DIR, default " + RunIsolation.DEFAULT_RUNS_SHOWN);
+    }
+
+    /** Every doc that names the run folder names the code's default, and none the old one inside the repository. */
+    @Test
+    void theDocsNameTheDefaultRunFolder() throws IOException {
+        Path root = Path.of(System.getProperty("msc.repoRoot"));
+        Pattern runFolder = Pattern.compile("[~\\w$./-]*(?:bench-runs|msc-bench/runs)\\b");
+        for (String doc : List.of("msc-bench/README.md", "docs/wiki/Benchmark.md", "msc-docs/docs/adr/0004-bench.md")) {
+            String text = Files.readString(root.resolve(doc));
+            assertThat(text).as(doc).contains(RunIsolation.DEFAULT_RUNS_SHOWN).contains(RunIsolation.TEMP_RUNS_NAME);
+            Matcher named = runFolder.matcher(text);
+            while (named.find()) {
+                String mention = named.group();
+                boolean history = text.substring(Math.max(0, named.start() - 40), named.start()).contains("the default was");
+                assertThat(mention.startsWith(RunIsolation.DEFAULT_RUNS_SHOWN) || mention.endsWith(RunIsolation.TEMP_RUNS_NAME)
+                        || history).as(doc + ": " + mention).isTrue();
+            }
         }
     }
 }
