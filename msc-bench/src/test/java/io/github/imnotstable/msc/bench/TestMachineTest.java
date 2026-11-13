@@ -2,6 +2,7 @@ package io.github.imnotstable.msc.bench;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.imnotstable.msc.buildlogic.RepoFiles;
 import java.io.IOException;
 import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
@@ -17,7 +18,7 @@ class TestMachineTest {
 
     @Test
     void theHomeIsAFakeThatIsAProjectInEveryWayClaudeCodeKnows() throws IOException {
-        Path repo = Path.of(System.getProperty("msc.repoRoot")).toRealPath();
+        Path repo = RepoFiles.path("repoClaudeMd", "CLAUDE.md").getParent().toRealPath();
 
         assertThat(HOME.toRealPath()).startsWith(repo.resolve("msc-bench/build"));
         assertThat(HOME.resolve(".claude/CLAUDE.md")).isRegularFile();

@@ -190,19 +190,10 @@ public final class TestPlayer implements Bot {
         return new TestPlayer(name, blocks, planner, locator, null, sender, outbound);
     }
 
-    /** Join the server and wait until the player is in the world. */
-    public static TestPlayer join(String name, String host, int port, BlockSource blocks, Duration timeout)
-            throws InterruptedException {
-        return join(name, host, port, blocks, null, timeout);
-    }
-
-    /** As {@link #join(String, String, int, BlockSource, Duration)}, with a planner for the walk action. */
-    public static TestPlayer join(String name, String host, int port, BlockSource blocks, RoutePlanner planner,
-                                  Duration timeout) throws InterruptedException {
-        return join(name, host, port, blocks, planner, null, timeout);
-    }
-
-    /** As {@link #join(String, String, int, BlockSource, RoutePlanner, Duration)}, with a locator (see {@link Bots}). */
+    /**
+     * Join the server and wait until the player is in the world. The planner serves the walk action and the locator
+     * says which world the player is in (see {@link Bots}); either may be null.
+     */
     public static TestPlayer join(String name, String host, int port, BlockSource blocks, RoutePlanner planner,
                                   WorldLocator locator, Duration timeout) throws InterruptedException {
         ClientSession session = ClientNetworkSessionFactory.factory().setAddress(host, port)
@@ -592,10 +583,6 @@ public final class TestPlayer implements Bot {
 
     synchronized Life.State life() {
         return life.state();
-    }
-
-    float health() {
-        return health;
     }
 
     synchronized WorldView view() {

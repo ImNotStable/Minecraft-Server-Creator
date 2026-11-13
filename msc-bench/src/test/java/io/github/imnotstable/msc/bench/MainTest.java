@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.catchThrowable;
 import io.github.imnotstable.msc.bench.run.BenchConfig;
 import io.github.imnotstable.msc.bench.task.TaskDef;
 import io.github.imnotstable.msc.bench.task.TaskLoader;
+import io.github.imnotstable.msc.buildlogic.RepoFiles;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.PrintStream;
@@ -116,10 +117,11 @@ class MainTest {
     /** Every doc that names the run folder names the code's default, and none the old one inside the repository. */
     @Test
     void theDocsNameTheDefaultRunFolder() throws IOException {
-        Path root = Path.of(System.getProperty("msc.repoRoot"));
         Pattern runFolder = Pattern.compile("[~\\w$./-]*(?:bench-runs|msc-bench/runs)\\b");
-        for (String doc : List.of("msc-bench/README.md", "docs/wiki/Benchmark.md", "msc-docs/docs/adr/0004-bench.md")) {
-            String text = Files.readString(root.resolve(doc));
+        // The docs are the build's runFolderDocs set, which makes them inputs of this test too.
+        assertThat(RepoFiles.list("runFolderDocs")).contains("msc-bench/README.md", "docs/wiki/Benchmark.md");
+        for (String doc : RepoFiles.list("runFolderDocs")) {
+            String text = Files.readString(RepoFiles.path("runFolderDocs", doc));
             assertThat(text).as(doc).contains(RunIsolation.DEFAULT_RUNS_SHOWN).contains(RunIsolation.TEMP_RUNS_NAME);
             Matcher named = runFolder.matcher(text);
             while (named.find()) {

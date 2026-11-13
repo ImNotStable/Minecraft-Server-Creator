@@ -792,4 +792,78 @@ class LifecycleToolsTest {
         assertThat(h.ok("msc_status", "stats", true)).startsWith("tool calls errors ms resultTokens\nmsc_status 1 0 ")
                 .contains("\nserver_command 1 1 ").contains("\ntotal 3 2 ");
     }
+
+    /**
+     * A server_setup that fails (a version the platform's pinned loader does not cover, a download that fails) leaves
+     * the workspace as it was: its platform, its run/ folder and so its working server (#356).
+     */
+    @Test
+    void aFailedSetupLeavesTheWorkspaceAsItWas() throws Exception {
+        String api = io.github.imnotstable.msc.templates.Templates.versions().get("fabricApiVersion");
+        String minecraft = api.substring(api.indexOf('+') + 1);
+        // Every download fails, as offline.
+        HttpServer offline = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        offline.createContext("/", exchange -> {
+            exchange.sendResponseHeaders(404, -1);
+            exchange.close();
+        });
+        offline.start();
+        String base = "http://127.0.0.1:" + offline.getAddress().getPort();
+        Path ws = Files.createDirectories(workspace.resolve("setup-fails"));
+        Path run = ws.resolve("run");
+        Files.createDirectories(run.resolve("plugins"));
+        Files.writeString(run.resolve("paper.jar"), "paper");
+        Files.writeString(run.resolve("plugins/msc-agent-paper.jar"), "agent");
+        Files.writeString(run.resolve("eula.txt"), "eula=false\n");
+        Files.writeString(run.resolve("server.properties"), "gamemode=creative\n");
+        Files.createDirectories(ws.resolve(".msc"));
+        Files.writeString(ws.resolve(".msc/platform"), "paper\n");
+        Path fresh = Files.createDirectories(workspace.resolve("setup-fails-fresh"));
+        List<List<Object>> calls = List.of(
+                List.of("platform", "fabric", "version", "1.0"),
+                List.of("platform", "quilt", "version", "1.0"),
+                List.of("platform", "neoforge", "version", "1.0"),
+                List.of("platform", "forge", "version", "1.0"),
+                List.of("platform", "fabric"),
+                List.of("platform", "quilt", "mode", "game"),
+                List.of("platform", "fabric", "mode", "game"),
+                List.of("version", "1.0", "mode", "game"),
+                List.of("mode", "game"));
+        try (CoreHarness s = new CoreHarness(ws, c -> c.withFabricUrls(base + "/meta", base + "/maven")
+                .withDownloadsUrl(base).withMinecraft(minecraft));
+             CoreHarness f = new CoreHarness(fresh, c -> c.withFabricUrls(base + "/meta", base + "/maven")
+                     .withDownloadsUrl(base).withMinecraft(minecraft))) {
+            var before = TreeSnapshot.of(run);
+            for (List<Object> call : calls) {
+                s.error("server_setup", call.toArray());
+                assertThat(TreeSnapshot.of(run)).as("run/ after %s", call).isEqualTo(before);
+                assertThat(ws.resolve(".msc/platform")).as("platform after %s", call).hasContent("paper\n");
+                assertThat(s.ok("msc_status")).as("status after %s", call).contains("platform: paper\n")
+                        .contains("server: stopped");
+                f.error("server_setup", call.toArray());
+                assertThat(fresh.resolve("run")).as("fresh run/ after %s", call).doesNotExist();
+                assertThat(fresh.resolve(".msc/platform")).as("fresh platform after %s", call).doesNotExist();
+            }
+        } finally {
+            offline.stop(0);
+        }
+    }
+
+    /** dev_cycle remembers a fresh workspace's platform only once it deployed the project's jar (#356). */
+    @Test
+    void aFailedDevCycleDoesNotSetTheWorkspacePlatform() throws Exception {
+        Files.createDirectories(project.resolve("src/main/resources"));
+        Files.writeString(project.resolve("src/main/resources/fabric.mod.json"), "{}");
+        Files.writeString(project.resolve("broken.flag"), "");
+        assertThat(h.ok("dev_cycle", "project", "demo", "restart", false)).startsWith("BUILD FAILED in ");
+        assertThat(workspace.resolve(".msc/platform")).doesNotExist();
+        Files.delete(project.resolve("broken.flag"));
+        // A jar named as the agent is refused before anything is deployed.
+        Files.writeString(project.resolve("name.txt"), "msc-agent-fabric");
+        assertThat(h.error("dev_cycle", "project", "demo", "restart", false)).contains("MSC's agent jar");
+        assertThat(workspace.resolve(".msc/platform")).doesNotExist();
+        Files.delete(project.resolve("name.txt"));
+        assertThat(h.ok("dev_cycle", "project", "demo", "restart", false)).contains("deployed demo-1.0.jar as mods/demo.jar");
+        assertThat(workspace.resolve(".msc/platform")).hasContent("fabric\n");
+    }
 }
