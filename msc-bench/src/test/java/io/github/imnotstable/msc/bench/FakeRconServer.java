@@ -85,9 +85,18 @@ public final class FakeRconServer implements AutoCloseable {
         out.flush();
     }
 
+    /**
+     * Closes the listener and waits for the accept thread to leave {@code accept()}: a virtual thread parked there
+     * holds the port until it wakes, so without the wait a new server could not bind the port yet.
+     */
     @Override
     public void close() throws IOException {
         socket.close();
         thread.interrupt();
+        try {
+            thread.join();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 }
