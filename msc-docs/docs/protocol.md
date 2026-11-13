@@ -29,10 +29,11 @@ On failure the core sends `{"type":"goodbye","code":"unauthorized","reason":"bad
 | ping / pong | `nonce` | pong echoes the nonce |
 | goodbye | `code`, `reason` | sender closes after sending |
 
-In the code a response's `result` is a `RawJson`, the value's JSON text: `OpSpec` writes the result record straight to
-text and reads it straight back, and the read loop only skips over it, so a large result never becomes a `JsonElement`
-tree ([ADR 0030](adr/0030-protocol-result-encoding.md)). A result that balances but is not valid JSON fails that call
-with `bad_frame` and leaves the connection open; a frame that does not balance closes it, like any bad frame.
+In the code a response's `result` and a request's `params` are a `RawJson`, the value's JSON text: `OpSpec` writes the
+record straight to text and reads it straight back, and the read loop only skips over it, so a large result or a large
+`world.write` never becomes a `JsonElement` tree ([ADR 0030](adr/0030-protocol-result-encoding.md)). A result that
+balances but is not valid JSON fails that call with `bad_frame`, and such params fail that request with
+`invalid_params`; both leave the connection open. A frame that does not balance closes it, like any bad frame.
 
 Error codes: `unknown_op`, `invalid_params`, `not_found`, `too_large`, `timeout`, `internal`, `unauthorized`, `version_mismatch`, `bad_frame`, `shutdown`.
 
