@@ -9,6 +9,11 @@ updates:
     open-pull-requests-limit: 5
     commit-message:
       prefix: "deps"
+    # Fabric API's versions end in the Minecraft line (0.166.0+26.3), and Dependabot offers the next line's build
+    # (+26.4) while everything else stays on 26.3. It cannot be limited to one suffix, so Fabric API is bumped by hand
+    # with the Minecraft version, like Paper's 26.3.build.+ (ADR 0012).
+    ignore:
+      - dependency-name: "net.fabricmc.fabric-api:fabric-api"
     groups:
       # Server platforms move together with the Minecraft version; one PR so they stay in step. Dependabot puts a
       # dependency in the first group it matches, so the catch-all below needs no exclude list.
