@@ -13,7 +13,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * {@link TextureSource#stamp() stamp} changes.
  */
 final class Looks {
-    private static final Set<String> INVISIBLE = Set.of("air", "cave_air", "void_air", "barrier", "light",
+    static final Set<String> INVISIBLE = Set.of("air", "cave_air", "void_air", "barrier", "light",
             "structure_void", "moving_piston");
     private static final int[] UPRIGHT = {BlockColors.SIDE, BlockColors.SIDE, BlockColors.BOTTOM, BlockColors.TOP,
             BlockColors.SIDE, BlockColors.SIDE};

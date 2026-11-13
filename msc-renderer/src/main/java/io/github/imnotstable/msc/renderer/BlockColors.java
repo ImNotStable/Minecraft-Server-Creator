@@ -15,8 +15,10 @@ import java.util.Set;
 
 /**
  * Block name to colour, from this module's own table ({@code block-colors.txt}) plus naming rules:
- * shape suffixes (oak_slab is coloured like oak_planks), the 16 dye colours, and word fallbacks.
- * Colours are ARGB ints. Blocks nobody listed get a stable colour derived from their name.
+ * shape suffixes (oak_slab is coloured like oak_planks), wall-mounted forms (wall_torch like torch), copper
+ * ages, the 16 dye colours, and word fallbacks. Every vanilla block resolves through the table or a rule
+ * (VanillaColorsTest); word lines are a fallback for plugin and mod blocks. Colours are ARGB ints. Blocks
+ * nobody listed get a stable colour derived from their name.
  */
 final class BlockColors {
     static final int TOP = 0;
@@ -27,9 +29,12 @@ final class BlockColors {
             "cut_", "cracked_", "mossy_", "petrified_", "stripped_"};
     private static final String[] SUFFIXES = {"_wall_hanging_sign", "_hanging_sign", "_wall_sign", "_sign",
             "_fence_gate", "_fence", "_pressure_plate", "_button", "_trapdoor", "_door", "_stairs", "_slab", "_wall",
-            "_carpet", "_pane"};
-    private static final String[] ADDS = {"", "s", "_planks", "_block", "_wool"};
+            "_carpet", "_pane", "_fan", "_shelf"};
+    /** Tried after a shape suffix is cut off; _planks first, so bamboo_slab is bamboo_planks, not the bamboo plant. */
+    private static final String[] ADDS = {"_planks", "", "s", "_block", "_wool"};
     private static final String[] BARK = {"_log", "_wood", "_stem", "_hyphae"};
+    /** Copper ages: exposed_copper_bars is coloured like exposed_copper, whatever the shape. */
+    private static final String[] AGES = {"exposed_", "weathered_", "oxidized_"};
 
     private static final String[] DYES = {"light_blue", "light_gray", "white", "orange", "magenta", "yellow", "lime",
             "pink", "gray", "cyan", "purple", "blue", "brown", "green", "red", "black"};
@@ -66,8 +71,16 @@ final class BlockColors {
     private BlockColors() {
     }
 
-    /** A colour and whether it came from the table or rules ({@code known}) or from the name hash. */
-    record Found(int argb, boolean known) {
+    /** Where a colour came from: the table or a naming rule, a contains-word line, or the name hash. */
+    enum Source {
+        TABLE, WORD, HASH
+    }
+
+    /** A colour and where it came from. Table, rule and word colours count as {@code known}. */
+    record Found(int argb, Source source) {
+        boolean known() {
+            return source != Source.HASH;
+        }
     }
 
     static Found find(String name, int faceKind) {
@@ -83,15 +96,15 @@ final class BlockColors {
                 argb = dyed(c);
             }
             if (argb != null) {
-                return new Found(argb, true);
+                return new Found(argb, Source.TABLE);
             }
         }
         for (Map.Entry<String, Integer> word : WORDS) {
             if (name.contains(word.getKey())) {
-                return new Found(word.getValue(), true);
+                return new Found(word.getValue(), Source.WORD);
             }
         }
-        return new Found(hashColor(name), false);
+        return new Found(hashColor(name), Source.HASH);
     }
 
     /**
@@ -106,6 +119,22 @@ final class BlockColors {
 
     private static void collect(String name, Set<String> out, int depth) {
         out.add(name);
+        // Wall-mounted forms look like the standing one: wall_torch, creeper_wall_head, tube_coral_wall_fan.
+        if (depth < 3 && name.startsWith("wall_")) {
+            collect(name.substring("wall_".length()), out, depth + 1);
+        }
+        int wall = name.indexOf("_wall_");
+        if (depth < 3 && wall > 0) {
+            collect(name.substring(0, wall) + name.substring(wall + "_wall".length()), out, depth + 1);
+        }
+        if (name.endsWith("candle_cake")) {
+            out.add("cake");
+        }
+        for (String age : AGES) {
+            if (name.startsWith(age)) {
+                out.add(age + "copper");
+            }
+        }
         for (String bark : BARK) {
             if (name.endsWith(bark)) {
                 String wood = name.substring(0, name.length() - bark.length());
