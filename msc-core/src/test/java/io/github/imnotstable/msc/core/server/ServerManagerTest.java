@@ -39,6 +39,19 @@ class ServerManagerTest {
     }
 
     @Test
+    void aStartThatEndsInACrashReturnsWithTheWholeTrace() throws Exception {
+        ServerManager m = manager(CrashingServer.class);
+        ServerManager.StartResult r = m.start(Duration.ofSeconds(60));
+        assertThat(r.ready()).isFalse();
+        assertThat(r.exited()).isTrue();
+        List<String> lines = m.log().since(r.logMark());
+        // The JVM may print a notice first (JAVA_TOOL_OPTIONS): count the trace's own lines.
+        assertThat(lines.stream().filter(l -> l.startsWith("\tat com.example.Mod.")).count())
+                .isEqualTo(CrashingServer.LINES - 1);
+        assertThat(lines.getLast()).isEqualTo(CrashingServer.LAST);
+    }
+
+    @Test
     void aStopLeavesThePidFileOfAServerStartedWhileItWaited() throws Exception {
         ServerManager m = manager(QuietServer.class);
         assertThat(m.start(Duration.ofSeconds(60)).ready()).isTrue();
@@ -51,6 +64,22 @@ class ServerManagerTest {
         assertThat(m.pidFile()).exists();
         assertThat(m.stop(Duration.ofSeconds(30))).isTrue();
         assertThat(m.pidFile()).doesNotExist();
+    }
+
+    /** Prints a long trace to stderr during start-up and exits 1. */
+    public static final class CrashingServer {
+        static final int LINES = 3000;
+        static final String LAST = "Caused by: java.lang.IllegalStateException: the root cause";
+
+        public static void main(String[] args) {
+            System.err.println("java.lang.RuntimeException: mod loading failed");
+            for (int i = 1; i < LINES; i++) {
+                System.err.println("\tat com.example.Mod.frame" + i + "(Mod.java:" + i + ")");
+            }
+            System.err.println(LAST);
+            System.err.flush();
+            System.exit(1);
+        }
     }
 
     /** Ready at once, stops on "stop". */

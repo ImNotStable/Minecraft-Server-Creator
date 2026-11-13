@@ -111,6 +111,7 @@ public final class ServerManager implements AutoCloseable {
         String token = hub.token();
         long readyBefore = hub.readyCount();
         Process started;
+        Thread pump;
         synchronized (this) {
             if (closed) {
                 // A call that was already running when the workspace closed: nothing would stop this server.
@@ -134,7 +135,7 @@ public final class ServerManager implements AutoCloseable {
             started = pb.start();
             process = started;
             PidFile.write(pidFile(), started.toHandle());
-            Thread.ofVirtual().name("msc-server-log").start(() -> pump(started));
+            pump = Thread.ofVirtual().name("msc-server-log").start(() -> pump(started));
         }
         long deadline = begin + timeout.toNanos();
         boolean ready = false;
@@ -162,11 +163,15 @@ public final class ServerManager implements AutoCloseable {
             }
         }
         if (!ready && !started.isAlive()) {
-            // Give the log pump a moment to drain the last lines.
-            Thread.sleep(100);
+            // The report reads the log next: let the pump reach the end of the output, which comes as soon as the
+            // pipe closes. Bounded, since a child the server left running may hold the pipe open (#324).
+            pump.join(PUMP_DRAIN);
         }
         return new StartResult(ready, !started.isAlive(), (System.nanoTime() - begin) / 1_000_000, mark, agentMillis);
     }
+
+    /** How long a start waits for the log pump to reach the end of an exited server's output. */
+    static final Duration PUMP_DRAIN = Duration.ofSeconds(10);
 
     /** How long a start waits after "Done" for an agent that has not connected yet. */
     static final Duration AGENT_GRACE = Duration.ofSeconds(10);
