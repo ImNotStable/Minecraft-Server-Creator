@@ -273,7 +273,12 @@ class TemplatesTest {
         record Case(String template, String name) {}
         for (Case c : List.of(new Case(Templates.FABRIC_MOD, "Minecraft"), new Case(Templates.FABRIC_GAME, "Fabric Api"),
                 new Case(Templates.FABRIC_MOD, "Java"), new Case(Templates.NEOFORGE_MOD, "Minecraft"),
-                new Case(Templates.NEOFORGE_MOD, "Neoforge"), new Case(Templates.FORGE_MOD, "Forge"))) {
+                new Case(Templates.NEOFORGE_MOD, "Neoforge"), new Case(Templates.FORGE_MOD, "Forge"),
+                // MSC's own agent runs next to the project on the dev server (#293).
+                new Case(Templates.FABRIC_MOD, "Msc Agent"), new Case(Templates.FABRIC_GAME, "msc-agent"),
+                new Case(Templates.NEOFORGE_MOD, "MSC agent"), new Case(Templates.FORGE_MOD, "msc_agent"),
+                new Case(Templates.PAPER_PLUGIN, "Msc Agent"), new Case(Templates.PAPER_GAME, "MscAgent"),
+                new Case(Templates.PAPER_PLUGIN, "Minecraft"), new Case(Templates.PAPER_GAME, "Bukkit"))) {
             Path target = dir.resolve(c.template() + "-" + c.name());
             assertThatThrownBy(() -> Templates.scaffold(c.template(), target, TemplateVariables.of(c.name())))
                     .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("keeps for itself");
