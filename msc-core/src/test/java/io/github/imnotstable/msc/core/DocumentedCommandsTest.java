@@ -2,14 +2,12 @@ package io.github.imnotstable.msc.core;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.imnotstable.msc.buildlogic.RepoFiles;
 import io.github.imnotstable.msc.core.server.EulaCommand;
 import java.io.IOException;
 import java.nio.charset.MalformedInputException;
-import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.SimpleFileVisitor;
-import java.nio.file.attribute.BasicFileAttributes;
 import java.time.Clock;
 import java.util.ArrayList;
 import java.util.List;
@@ -31,18 +29,27 @@ class DocumentedCommandsTest {
     private static final Pattern MAIN_COMMAND = Pattern.compile("(?:core\\.Main|`Main) ([a-z][a-z-]*)(?: ([a-z]+))?");
     /** The modes {@link Main#main} dispatches on. */
     private static final Set<String> MAIN_MODES = Set.of("eula", "refresh-legacy-install");
-    private static final Set<String> SKIPPED_DIRS = Set.of("build", "run", "out", "node_modules", "graphify-out",
-            "test", "testFixtures");
-    private static final Set<String> TEXT = Set.of(".md", ".java", ".kts", ".txt", ".json", ".yml", ".properties");
+    /** The files scanned: declared in msc-core/build.gradle.kts, which makes them test inputs too (#355). */
+    private static final String SET = "documentedCommands";
 
     @TempDir
     Path tmp;
 
+    /** The files #334 fixed and #355 found untracked are scanned, so a change to one reruns this test. */
+    @Test
+    void scansTheTextOfEveryModule() {
+        assertThat(RepoFiles.list(SET)).contains("README.md", "CLAUDE.md", "msc-bench/PLAN.md",
+                "msc-bench/src/main/java/io/github/imnotstable/msc/bench/run/MachineEula.java",
+                "msc-templates/src/main/templates/fabric-game/CLAUDE.md", "msc-plugin/.mcp.json",
+                "msc-core/build.gradle.kts", "gradle.properties")
+                .noneMatch(f -> f.contains("/build/") || f.contains("/test/") || f.matches("(.*/)?\\.[^/]*/.*"));
+    }
+
     @Test
     void noDocumentNamesAnMscExecutable() throws IOException {
         List<String> found = new ArrayList<>();
-        for (Path f : textFiles()) {
-            scan(f, BARE_MSC).forEach(m -> found.add(where(f) + ": msc " + m.group(1)));
+        for (String f : RepoFiles.list(SET)) {
+            scan(f, BARE_MSC).forEach(m -> found.add(f + ": msc " + m.group(1)));
         }
         assertThat(found).as("no `msc` executable is installed; name the line in ~/.msc/core/eula-accept.txt or "
                 + "'Main <command>' instead").isEmpty();
@@ -52,15 +59,15 @@ class DocumentedCommandsTest {
     void everyDocumentedMainCommandExists() throws IOException {
         List<String> found = new ArrayList<>();
         int seen = 0;
-        for (Path f : textFiles()) {
+        for (String f : RepoFiles.list(SET)) {
             List<MatchResult> hits = scan(f, MAIN_COMMAND);
             seen += hits.size();
             for (MatchResult m : hits) {
                 String mode = m.group(1);
                 if (!MAIN_MODES.contains(mode)) {
-                    found.add(where(f) + ": Main " + mode);
+                    found.add(f + ": Main " + mode);
                 } else if (mode.equals("eula") && m.group(2) != null && !eulaKnows(m.group(2))) {
-                    found.add(where(f) + ": Main eula " + m.group(2));
+                    found.add(f + ": Main eula " + m.group(2));
                 }
             }
         }
@@ -92,45 +99,11 @@ class DocumentedCommandsTest {
         return !out.toString().startsWith("usage:");
     }
 
-    private static List<MatchResult> scan(Path f, Pattern p) throws IOException {
+    private static List<MatchResult> scan(String f, Pattern p) throws IOException {
         try {
-            return p.matcher(Files.readString(f)).results().toList();
+            return p.matcher(Files.readString(RepoFiles.path(SET, f))).results().toList();
         } catch (MalformedInputException e) {
             return List.of();
         }
-    }
-
-    private static String where(Path f) {
-        return root().relativize(f).toString().replace('\\', '/');
-    }
-
-    private static Path root() {
-        return Path.of("..").toAbsolutePath().normalize();
-    }
-
-    /** The repo's text files outside build output, test sources and dot directories. */
-    private static List<Path> textFiles() throws IOException {
-        Path root = root();
-        assertThat(root.resolve("settings.gradle.kts")).as("tests run from msc-core").exists();
-        List<Path> files = new ArrayList<>();
-        Files.walkFileTree(root, new SimpleFileVisitor<>() {
-            @Override
-            public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) {
-                String name = dir.getFileName() == null ? "" : dir.getFileName().toString();
-                boolean skip = !dir.equals(root) && (name.startsWith(".") || SKIPPED_DIRS.contains(name));
-                return skip ? FileVisitResult.SKIP_SUBTREE : FileVisitResult.CONTINUE;
-            }
-
-            @Override
-            public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
-                String name = file.getFileName().toString();
-                int dot = name.lastIndexOf('.');
-                if (attrs.isRegularFile() && dot >= 0 && TEXT.contains(name.substring(dot))) {
-                    files.add(file);
-                }
-                return FileVisitResult.CONTINUE;
-            }
-        });
-        return files;
     }
 }
