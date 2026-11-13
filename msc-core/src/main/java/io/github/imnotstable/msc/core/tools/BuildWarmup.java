@@ -20,17 +20,19 @@ final class BuildWarmup {
     static final Duration TIMEOUT = Duration.ofMinutes(20);
 
     private final ProjectBuilder builder;
+    private final BackgroundWork background;
     private final Map<Path, CompletableFuture<ProjectBuilder.BuildResult>> running = new ConcurrentHashMap<>();
 
-    BuildWarmup(ProjectBuilder builder) {
+    /** Warmups run on {@code background}, so closing the workspace stops their Gradle builds. */
+    BuildWarmup(ProjectBuilder builder, BackgroundWork background) {
         this.builder = builder;
+        this.background = background;
     }
 
     /** Start building {@code project} in the background: the dev jar and the tests, as dev_cycle will. */
     void start(Path project) {
         CompletableFuture<ProjectBuilder.BuildResult> f = new CompletableFuture<>();
-        running.put(key(project), f);
-        Thread.ofVirtual().name("msc-build-warmup").start(() -> {
+        background.start("msc-build-warmup", () -> {
             try {
                 f.complete(builder.warm(project, TIMEOUT));
             } catch (IOException | RuntimeException e) {
@@ -40,15 +42,18 @@ final class BuildWarmup {
                 f.completeExceptionally(e);
             }
         });
+        running.put(key(project), f);
     }
 
     /**
-     * Wait for the project's warmup if one was started, and forget it.
+     * Wait for the project's warmup if one was started, and forget it once it ended. A waiter that is interrupted
+     * leaves it known, so the next dev_cycle still waits instead of building beside it.
      *
      * @return how long this call waited, in milliseconds, or -1 when there was no warmup
      */
     long await(Path project) throws InterruptedException {
-        CompletableFuture<ProjectBuilder.BuildResult> f = running.remove(key(project));
+        Path key = key(project);
+        CompletableFuture<ProjectBuilder.BuildResult> f = running.get(key);
         if (f == null) {
             return -1;
         }
@@ -58,6 +63,7 @@ final class BuildWarmup {
         } catch (ExecutionException e) {
             // A failed warmup is only a cold cache: dev_cycle's own build reports the real error.
         }
+        running.remove(key, f);
         return (System.nanoTime() - start) / 1_000_000;
     }
 

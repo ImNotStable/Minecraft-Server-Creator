@@ -21,8 +21,9 @@ match, and ModLauncher appends a `Transformer Audit:` block to every stack trace
    with a 20-minute limit. The result says so. The AI writes code meanwhile.
 2. **`dev_cycle` waits for its project's warmup** before building, so two Gradle builds never race for the loader's
    caches, and shows the wait as `waited for first build` in its timings. A failed warmup is ignored: it only means a
-   cold cache, and `dev_cycle`'s own build reports the real error. A warmup lives in the core's memory; after a core
-   restart there is nothing to wait for.
+   cold cache, and `dev_cycle`'s own build reports the real error. A warmup lives in the core's memory and belongs to the
+   workspace: ending the session or `msc_workspace` stops it and its Gradle build (#258), so after a core restart or a
+   switch back there is nothing to wait for and nothing left running.
 3. **Tests stay in every cycle.** They already run beside the server restart, and once warm they are short; skipping
    them would hide failures from the AI.
 4. **Log lines with a logger tag** are parsed without it (fewer tokens), except OSHI's (`oshi.` or Forge's shortened
