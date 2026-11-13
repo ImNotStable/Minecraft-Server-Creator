@@ -22,13 +22,17 @@ public final class FrameWriter {
         this.maxBytes = maxBytes;
     }
 
+    /**
+     * Write one frame. A frame with a newline or over the limit throws {@link ProtocolException} (for the limit
+     * {@link FrameTooLargeException}) before a byte is written; any other {@link IOException} means the stream broke.
+     */
     public void write(String frame) throws IOException {
         if (frame.indexOf('\n') >= 0) {
             throw new ProtocolException("frame contains a newline");
         }
         byte[] bytes = frame.getBytes(StandardCharsets.UTF_8);
         if (bytes.length > maxBytes) {
-            throw new ProtocolException("frame larger than " + maxBytes + " bytes");
+            throw new FrameTooLargeException("frame", bytes.length, maxBytes);
         }
         lock.lock();
         try {

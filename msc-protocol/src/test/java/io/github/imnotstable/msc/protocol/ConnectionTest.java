@@ -2,6 +2,7 @@ package io.github.imnotstable.msc.protocol;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowable;
 
 import com.google.gson.JsonObject;
 import io.github.imnotstable.msc.protocol.message.AgentInfo;
@@ -18,6 +19,7 @@ import io.github.imnotstable.msc.protocol.message.Response;
 import io.github.imnotstable.msc.protocol.message.Welcome;
 import io.github.imnotstable.msc.protocol.op.Events;
 import io.github.imnotstable.msc.protocol.op.Ops;
+import io.github.imnotstable.msc.protocol.op.PartialEdit;
 import io.github.imnotstable.msc.protocol.world.BlockGrid;
 import io.github.imnotstable.msc.protocol.world.Region;
 import io.github.imnotstable.msc.protocol.transport.AgentClient;
@@ -25,6 +27,7 @@ import io.github.imnotstable.msc.protocol.transport.Connection;
 import io.github.imnotstable.msc.protocol.transport.ConnectionClosedException;
 import io.github.imnotstable.msc.protocol.transport.CoreServer;
 import io.github.imnotstable.msc.protocol.transport.FrameReader;
+import io.github.imnotstable.msc.protocol.transport.FrameTooLargeException;
 import io.github.imnotstable.msc.protocol.transport.FrameWriter;
 import io.github.imnotstable.msc.protocol.transport.OpException;
 import io.github.imnotstable.msc.protocol.transport.OpRouter;
@@ -240,6 +243,69 @@ class ConnectionTest {
                 assertThat(ping.get(5, TimeUnit.SECONDS)).as("pong %d", i).isNotNull();
             }
         }
+    }
+
+    /** Long enough that a lost message shows as a TimeoutException, never as a slow pass on a loaded machine. */
+    private static final Duration LONG = Duration.ofSeconds(60);
+    /** Text that makes a frame just over the limit. */
+    private static final String OVER_LIMIT = "x".repeat(Limits.MAX_FRAME_BYTES);
+
+    @Test
+    void anAnswerOverTheFrameLimitComesBackAsTooLarge() throws Exception {
+        OpRouter router = fakeAgent().on(Ops.SERVER_COMMAND, p -> new Ops.CommandResult(true, List.of(OVER_LIMIT)));
+        connect(TOKEN, router);
+        Connection core = sessions.poll(5, TimeUnit.SECONDS).connection();
+
+        OpException e = failure(core.call(Ops.SERVER_COMMAND, new Ops.CommandParams("say"), LONG));
+        assertThat(e.code()).isEqualTo(ErrorCodes.TOO_LARGE);
+        assertThat(e.detail()).contains("server.command", "frame limit");
+        assertThat(core.call(Ops.SERVER_INFO, new Ops.Empty(), LONG).get().platform()).isEqualTo("paper");
+    }
+
+    @Test
+    void anErrorOverTheFrameLimitKeepsItsCodeAndUndoId() throws Exception {
+        OpRouter router = fakeAgent().on(Ops.WORLD_UNDO, p -> {
+            throw new OpException(ErrorCodes.TIMEOUT, PartialEdit.note(OVER_LIMIT, "e42"));
+        });
+        connect(TOKEN, router);
+        Connection core = sessions.poll(5, TimeUnit.SECONDS).connection();
+
+        OpException e = failure(core.call(Ops.WORLD_UNDO, new Ops.UndoParams("x"), LONG));
+        assertThat(e.code()).isEqualTo(ErrorCodes.TIMEOUT);
+        assertThat(e.detail()).hasSizeLessThan(2 * Limits.MAX_TEXT_CHARS).contains("[cut: ");
+        assertThat(PartialEdit.editId(e.detail())).contains("e42");
+    }
+
+    @Test
+    void aRequestOverTheFrameLimitFailsAtOnceAndTheConnectionStays() throws Exception {
+        connect(TOKEN, fakeAgent());
+        Connection core = sessions.poll(5, TimeUnit.SECONDS).connection();
+        JsonObject params = new JsonObject();
+        params.addProperty("command", OVER_LIMIT);
+
+        CompletableFuture<Response> call = core.request("server.command", params, LONG);
+        assertThat(call).isCompletedExceptionally();
+        assertThat(call.exceptionNow()).isInstanceOf(FrameTooLargeException.class)
+                .hasMessageContaining("request server.command");
+        assertThat(core.call(Ops.SERVER_INFO, new Ops.Empty(), LONG).get().platform()).isEqualTo("paper");
+    }
+
+    @Test
+    void anEventOverTheFrameLimitThrowsAndTheNextOneArrives() throws Exception {
+        AgentClient.Session agent = connect(TOKEN, fakeAgent());
+        JsonObject data = new JsonObject();
+        data.addProperty("text", OVER_LIMIT);
+
+        assertThatThrownBy(() -> agent.connection().sendEvent(Events.PLAYER_JOIN, data))
+                .isInstanceOf(FrameTooLargeException.class).hasMessageContaining("event " + Events.PLAYER_JOIN);
+        agent.connection().sendEvent(Events.SERVER_READY, new JsonObject());
+        assertThat(events.poll(LONG.toSeconds(), TimeUnit.SECONDS)).extracting(Event::name).isEqualTo(Events.SERVER_READY);
+    }
+
+    private static OpException failure(CompletableFuture<?> future) {
+        Throwable cause = catchThrowable(() -> future.get(LONG.toSeconds() + 30, TimeUnit.SECONDS));
+        assertThat(cause).isInstanceOf(ExecutionException.class).hasCauseInstanceOf(OpException.class);
+        return (OpException) cause.getCause();
     }
 
     private static void assertCode(CompletableFuture<?> future, String code) {

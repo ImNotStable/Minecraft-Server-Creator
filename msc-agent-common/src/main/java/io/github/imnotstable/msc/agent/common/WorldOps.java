@@ -16,8 +16,8 @@ import java.util.List;
  * @param <S> the platform's block state type
  */
 public final class WorldOps<S> {
-    /** Most entities one read returns. */
-    public static final int MAX_ENTITIES = 1000;
+    /** Most entities one read returns: as many as one {@code world.entities} answer. */
+    public static final int MAX_ENTITIES = Ops.EntitiesResult.MAX_ENTITIES;
 
     private final AgentWorlds<S> worlds;
     private final MainThread main;

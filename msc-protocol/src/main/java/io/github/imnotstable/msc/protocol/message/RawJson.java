@@ -1,7 +1,6 @@
 package io.github.imnotstable.msc.protocol.message;
 
 import com.google.gson.JsonElement;
-import com.google.gson.JsonParser;
 import java.util.Objects;
 
 /**
@@ -17,10 +16,5 @@ public record RawJson(String json) {
 
     public static RawJson of(JsonElement tree) {
         return new RawJson(tree.toString());
-    }
-
-    /** The value as a tree, for callers that read results without a type. */
-    public JsonElement tree() {
-        return JsonParser.parseString(json);
     }
 }

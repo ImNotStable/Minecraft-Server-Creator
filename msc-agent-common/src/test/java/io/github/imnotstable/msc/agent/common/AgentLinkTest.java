@@ -2,6 +2,8 @@ package io.github.imnotstable.msc.agent.common;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.google.gson.JsonObject;
+import io.github.imnotstable.msc.protocol.Limits;
 import io.github.imnotstable.msc.protocol.message.AgentInfo;
 import io.github.imnotstable.msc.protocol.message.Event;
 import io.github.imnotstable.msc.protocol.op.Events;
@@ -192,5 +194,22 @@ class AgentLinkTest {
         await(() -> !session.connection().isOpen());
         assertThat(sessions.poll(1200, TimeUnit.MILLISECONDS)).isNull();
         assertThat(link.session()).isNull();
+    }
+
+    @Test
+    void anEventTooLargeToSendIsLoggedAsAWarningAndTheLinkStays() throws Exception {
+        startCore();
+        linkToCore(TOKEN).start();
+        assertThat(sessions.poll(5, TimeUnit.SECONDS)).isNotNull();
+        await(() -> link.session() != null);
+        JsonObject data = new JsonObject();
+        data.addProperty("text", "x".repeat(Limits.MAX_FRAME_BYTES));
+
+        link.send(Events.PLAYER_JOIN, data);
+        link.serverLoaded();
+
+        assertThat(logged).anySatisfy(l -> assertThat(l).startsWith("warn Could not send " + Events.PLAYER_JOIN)
+                .contains("frame limit"));
+        assertThat(events.poll(30, TimeUnit.SECONDS)).isEqualTo(Events.SERVER_READY);
     }
 }

@@ -40,6 +40,6 @@ per-byte frame read and the message-level trees. Every split read and write (`wo
 
   About 50 percent less time per full-region round trip.
 - Source callers are unchanged: agents register handlers with `OpRouter.on` and the core calls `Connection.call`,
-  both typed. Only code that used `Response.result()` or wrote a `RequestHandler` by hand sees `RawJson`; `RawJson.tree()`
-  and `Response.ok(id, JsonElement)` keep that easy.
+  both typed. Only code that used `Response.result()` or wrote a `RequestHandler` by hand sees `RawJson`;
+  `Response.ok(id, JsonElement)` keeps that easy (a `RawJson.tree()` helper was removed later: nothing used it).
 - Request params and event data stay `JsonObject`: they are small.
