@@ -68,9 +68,9 @@ import java.util.stream.Collectors;
  * <p>Not owned by a workspace:
  * <ul>
  * <li>tool call threads: {@link #running}. {@link #close} waits up to {@link #lockWait} for them, interrupts the
- * ones still running, and then waits up to {@link #lockWait} again for those to end: a call that runs a process on
- * its own thread (dev_cycle's jar build, server_setup's installer) kills its tree in ProcessRunner when interrupted,
- * and the JVM exits right after the close (#296);</li>
+ * ones still running, and then waits up to {@link #cleanupWait} for those to end: a call that runs a process on its
+ * own thread (dev_cycle's jar build, server_setup's installer) kills its tree in ProcessRunner when interrupted, and
+ * the JVM exits right after the close (#296);</li>
  * <li>temp folders (Scaffold, ServerSetup staging): the call that makes one deletes it in a finally;</li>
  * <li>caches: on disk under .msc/cache, kept across sessions on purpose, or plain heap objects of the bench; nothing
  * to close;</li>
@@ -188,6 +188,12 @@ public final class Core implements AutoCloseable {
      * up the switch, every call queued behind it, or the exit when the session ends.
      */
     private volatile Duration lockWait = Duration.ofSeconds(5);
+    /**
+     * How long close waits, after interrupting the calls, for them to clean up. Plenty: an interrupted call only has
+     * to kill its process tree (ProcessRunner), which takes milliseconds; the bound is for a call that ignores the
+     * interrupt.
+     */
+    private volatile Duration cleanupWait = Duration.ofSeconds(5);
     /** Guards the hand-over of {@link #bench} against {@link #close}, which may run without the write lock. */
     private final Object benchGuard = new Object();
     private volatile Bench bench;
@@ -250,6 +256,11 @@ public final class Core implements AutoCloseable {
     /** For tests: how long a switch or close waits for running calls. */
     void lockWait(Duration wait) {
         this.lockWait = wait;
+    }
+
+    /** For tests: how long close waits for the calls it interrupted to clean up. */
+    void cleanupWait(Duration wait) {
+        this.cleanupWait = wait;
     }
 
     /** The write lock within {@link #lockWait}, or null when calls still run (also when interrupted). */
@@ -398,9 +409,12 @@ public final class Core implements AutoCloseable {
      * Ends the session. Waits at most {@link #lockWait} for running calls, then interrupts them and closes anyway:
      * stopping the server also ends a server_wait or a dev_cycle start, and the bench stops the builds calls left
      * running, so nothing outlives the session, even a call that ignores the interrupt. Then it waits up to
-     * {@link #lockWait} more for the interrupted calls to end, so a process a call runs on its own thread is killed
-     * before this returns and the JVM exits. A switch under way closes the bench it opened instead of installing it;
-     * one still waiting for the lock does not switch.
+     * {@link #cleanupWait} for the interrupted calls to end. The guarantee: when this returns, every interrupted call
+     * that honours the interrupt has ended, and ProcessRunner has sent a forced kill (SIGKILL, TerminateProcess) to
+     * each process of its tree, so none of them runs on after the JVM exits. The operating system may still list a
+     * killed process for a moment (an orphan stays a zombie until init reaps it); it does no more work. Only a call
+     * that ignores the interrupt for longer than {@link #cleanupWait} is not waited for. A switch under way closes
+     * the bench it opened instead of installing it; one still waiting for the lock does not switch.
      */
     @Override
     public void close() throws IOException {
@@ -426,17 +440,18 @@ public final class Core implements AutoCloseable {
     }
 
     /**
-     * Waits up to {@link #lockWait} for the calls close interrupted to end: each holds the read lock until it has
+     * Waits up to {@link #cleanupWait} for the calls close interrupted to end: each holds the read lock until it has
      * cleaned up (ProcessRunner kills its process tree first), so getting the write lock means they all did. Call
      * threads may be pooled, so this waits for the calls, not for their threads to die.
      */
     private void awaitInterruptedCalls() {
-        if (Thread.currentThread().isInterrupted()) {
-            return;
-        }
-        Lock write = writeLock();
-        if (write != null) {
-            write.unlock();
+        Lock write = lock.writeLock();
+        try {
+            if (write.tryLock(cleanupWait.toMillis(), TimeUnit.MILLISECONDS)) {
+                write.unlock();
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
         }
     }
 }
