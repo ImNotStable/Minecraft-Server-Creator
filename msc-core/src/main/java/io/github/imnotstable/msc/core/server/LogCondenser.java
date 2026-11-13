@@ -13,36 +13,6 @@ import java.util.regex.Pattern;
  * errors, stack traces cut down to the project's own frames, repeats collapsed.
  */
 public final class LogCondenser {
-    /** {@code [12:34:56 INFO]: msg} (Paper) or {@code [12:34:56] [Server thread/INFO]: msg} (vanilla). */
-    private static final Pattern LINE = Pattern.compile("^\\[(\\d\\d:\\d\\d:\\d\\d)(?:\\] \\[[^\\]]*/| )(\\w+)\\]:? ?(.*)$");
-    /**
-     * slf4j-simple at its defaults, which the Minestom templates log with: {@code [main] WARN com.example.Foo - msg},
-     * no timestamp (#272). The logger is dropped like Forge's.
-     */
-    private static final Pattern SIMPLE = Pattern.compile("^\\[[^\\]]+\\] (TRACE|DEBUG|INFO|WARN|ERROR) \\S+ - (.*)$");
-    /** The ready line every platform prints: vanilla and the loaders after their prefix, Minestom's template bare. */
-    private static final Pattern READY = Pattern.compile(".*\\bDone \\(\\d.*\\)!.*");
-    /** The JVM's report of an uncaught exception: printed to stderr without a prefix, never part of the line before. */
-    private static final Pattern UNCAUGHT = Pattern.compile("^Exception in thread \".*");
-    /**
-     * The first line of a printed throwable, {@code java.lang.IllegalStateException: msg}, unindented and without a
-     * log prefix. Minestom's default exception handler prints listener, command and task exceptions this way (#294).
-     */
-    private static final Pattern THROWABLE = Pattern.compile("^[\\w$]+(?:\\.[\\w$]+)+(?:Exception|Error|Throwable)(?:: .*)?$");
-    /**
-     * A stack frame; the class loader and module prefixes ({@code app//}, {@code java.base/}, Forge's
-     * {@code TRANSFORMER/mymod@1.0/}) are skipped.
-     */
-    private static final Pattern FRAME = Pattern.compile("^\\s+at (?:[^\\s/()]+/+){0,2}([\\w.$<>]+)\\(.*\\).*$");
-    private static final Pattern MORE = Pattern.compile("^\\s+\\.\\.\\. \\d+ (more|common frames omitted).*$");
-    /**
-     * Forge and NeoForge put the logger after the level: {@code [12:34:56] [main/WARN] [ne.mi.fm.Foo/CORE]: msg}. The
-     * logger is dropped from the message (it costs tokens and says little), but kept to recognise known noise.
-     */
-    private static final Pattern LOGGER = Pattern.compile("^\\[([\\w.$]+)/[^\\]]*\\]: (.*)$");
-    /** OSHI, the system-report library, under its own name or Forge's shortened one ({@code os.ha.pl...}). */
-    private static final Pattern OSHI_LOGGER = Pattern.compile("^(oshi|os)\\..*");
-
     /** Frames from these packages are noise unless nothing else is there. */
     private static final List<String> FRAMEWORK = List.of("java.", "javax.", "jdk.", "sun.", "com.sun.",
             "net.minecraft.", "com.mojang.", "org.bukkit.", "org.spigotmc.", "io.papermc.", "com.destroystokyo.",
@@ -76,9 +46,6 @@ public final class LogCondenser {
             // asset lookup does not know Quilt's in-memory file system.
             Pattern.compile("^Not remapping mods because intermediary is missing!$"),
             Pattern.compile("^Assets URL 'quilt\\.zfs://[^']*' uses unexpected schema$"));
-    /** Quilt Loader's start-up timings, printed to stdout without a timestamp, so they read as another entry's lines. */
-    private static final Pattern QUILT_TIMING =
-            Pattern.compile("^(mod adding|tmp jar copy|transform-cache|zip sub copy) took \\d+ms$");
     /**
      * Netty probing the macOS and Linux native transports on another OS (NeoForge and Forge log the failed probe
      * with its trace). Matched anywhere in an entry together with {@link #NETTY_UNSUPPORTED}.
@@ -102,19 +69,6 @@ public final class LogCondenser {
     private LogCondenser() {
     }
 
-    private static final class Entry {
-        final String time;
-        final String level;
-        final StringBuilder text = new StringBuilder();
-        final List<String> extra = new ArrayList<>();
-
-        Entry(String time, String level, String message) {
-            this.time = time;
-            this.level = level;
-            text.append(message);
-        }
-    }
-
     /**
      * @param text the condensed log, starting with a one-line count
      * @param hidden warnings and errors dropped as known-harmless
@@ -132,46 +86,15 @@ public final class LogCondenser {
 
     /** Errors and warnings from a server log. */
     public static Condensed analyze(List<String> lines, int maxChars) {
-        List<Entry> entries = new ArrayList<>();
-        Entry current = null;
-        for (String raw : lines) {
-            String line = stripAnsi(raw);
-            Matcher m = LINE.matcher(line);
-            if (m.matches()) {
-                String message = m.group(3);
-                Matcher logger = LOGGER.matcher(message);
-                if (logger.matches()) {
-                    message = OSHI_LOGGER.matcher(logger.group(1)).matches()
-                            ? "[" + logger.group(1) + "] " + logger.group(2) : logger.group(2);
-                }
-                current = new Entry(m.group(1), m.group(2).toUpperCase(), message);
-                entries.add(current);
-                continue;
-            }
-            Matcher simple = SIMPLE.matcher(line);
-            if (simple.matches()) {
-                current = new Entry("", simple.group(1), simple.group(2));
-                entries.add(current);
-            } else if (!line.isBlank() && !QUILT_TIMING.matcher(line).matches()) {
-                // A bare ready line (Minestom) or uncaught exception is its own entry, not the previous one's text.
-                if (current == null || READY.matcher(line).matches() || UNCAUGHT.matcher(line).matches()
-                        || printedThrowable(current, line)) {
-                    current = new Entry("", "", line);
-                    entries.add(current);
-                } else {
-                    current.extra.add(line);
-                }
-            }
-        }
         int errors = 0;
         int warnings = 0;
         int hidden = 0;
         Map<String, int[]> counts = new LinkedHashMap<>();
         Map<String, String> firstTime = new LinkedHashMap<>();
-        for (Entry e : entries) {
-            boolean error = e.level.equals("ERROR") || e.level.equals("FATAL") || e.level.equals("SEVERE");
-            boolean warn = e.level.startsWith("WARN");
-            boolean trace = e.extra.stream().anyMatch(x -> FRAME.matcher(x).matches());
+        for (LogReader.Entry e : LogReader.entries(lines)) {
+            boolean error = e.error();
+            boolean warn = e.level().startsWith("WARN");
+            boolean trace = e.trace();
             if (!error && !warn && !trace) {
                 continue;
             }
@@ -184,13 +107,16 @@ public final class LogCondenser {
             } else {
                 warnings++;
             }
-            StringBuilder body = new StringBuilder(e.level.isEmpty() ? "" : e.level + " ").append(e.text);
-            for (String x : trimTrace(e.extra)) {
+            StringBuilder body = new StringBuilder(e.level().isEmpty() ? "" : e.level() + " ").append(e.text());
+            for (String x : trimTrace(e.extra())) {
                 body.append('\n').append(x);
+            }
+            if (e.cut() > 0) {
+                body.append("\n\t... ").append(e.cut()).append(" more lines cut");
             }
             String key = body.toString();
             counts.computeIfAbsent(key, k -> new int[1])[0]++;
-            firstTime.putIfAbsent(key, e.time);
+            firstTime.putIfAbsent(key, e.time());
         }
         StringBuilder out = new StringBuilder();
         out.append(lines.size()).append(" lines, ").append(errors).append(" errors, ").append(warnings)
@@ -216,25 +142,11 @@ public final class LogCondenser {
                 errors, warnings, hidden);
     }
 
-    /**
-     * True when {@code line} starts a throwable that is not the trace of the entry before: that entry already has a
-     * trace, or it is not a warning or an error (a logger prints a throwable after its warning or error line). A
-     * warning followed by a bare trace stays one warning, since {@code logger.warn(msg, e)} prints the same lines.
-     */
-    private static boolean printedThrowable(Entry current, String line) {
-        if (!THROWABLE.matcher(line).matches()) {
-            return false;
-        }
-        boolean warnOrError = current.level.startsWith("WARN") || current.level.equals("ERROR")
-                || current.level.equals("FATAL") || current.level.equals("SEVERE");
-        return !warnOrError || current.extra.stream().anyMatch(x -> FRAME.matcher(x).matches());
-    }
-
-    private static boolean expected(Entry e) {
-        if (EXPECTED.stream().anyMatch(p -> p.matcher(e.text).matches())) {
+    private static boolean expected(LogReader.Entry e) {
+        if (EXPECTED.stream().anyMatch(p -> p.matcher(e.text()).matches())) {
             return true;
         }
-        String all = e.text + "\n" + String.join("\n", e.extra);
+        String all = e.text() + "\n" + String.join("\n", e.extra());
         return NETTY_NATIVE.matcher(all).find() && NETTY_UNSUPPORTED.matcher(all).find();
     }
 
@@ -248,10 +160,10 @@ public final class LogCondenser {
         boolean firstFrameOfBlock = true;
         boolean audit = false;
         for (String line : extra) {
-            if (MORE.matcher(line).matches()) {
+            if (LogReader.MORE.matcher(line).matches()) {
                 continue;
             }
-            Matcher f = FRAME.matcher(line);
+            Matcher f = LogReader.FRAME.matcher(line);
             if (line.strip().equals("Transformer Audit:")) {
                 audit = true;
                 continue;
@@ -293,7 +205,7 @@ public final class LogCondenser {
         Map<String, int[]> seen = new LinkedHashMap<>();
         boolean skipping = false;
         for (String raw : output.split("\\R")) {
-            String line = stripAnsi(raw).stripTrailing();
+            String line = LogReader.stripAnsi(raw).stripTrailing();
             // Gradle 9 repeats the whole compiler output, indented, after this line.
             if (line.startsWith("* Try:") || line.startsWith("* Get more help") || line.startsWith("* Exception is:")
                     || line.startsWith("> Compilation failed; see the compiler output below")) {
@@ -316,7 +228,7 @@ public final class LogCondenser {
             if (noise) {
                 continue;
             }
-            Matcher f = FRAME.matcher(line);
+            Matcher f = LogReader.FRAME.matcher(line);
             if (f.matches() && FRAMEWORK.stream().anyMatch(f.group(1)::startsWith)) {
                 continue;
             }
@@ -337,10 +249,6 @@ public final class LogCondenser {
 
     /** True for the line a server prints when it has started, with or without ANSI colour codes. */
     public static boolean readyLine(String line) {
-        return READY.matcher(stripAnsi(line)).matches();
-    }
-
-    static String stripAnsi(String s) {
-        return s.indexOf('\u001b') < 0 ? s : s.replaceAll("\u001b\\[[0-9;?]*[A-Za-z]", "");
+        return LogReader.READY.matcher(LogReader.stripAnsi(line)).matches();
     }
 }

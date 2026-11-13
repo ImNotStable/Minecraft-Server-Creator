@@ -4,10 +4,7 @@ import io.github.imnotstable.msc.core.CoreConfig;
 import io.github.imnotstable.msc.core.agent.AgentHub;
 import io.github.imnotstable.msc.core.tool.ToolException;
 import io.github.imnotstable.msc.protocol.Limits;
-import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -29,7 +26,8 @@ public final class ServerManager implements AutoCloseable {
 
     private final CoreConfig config;
     private final AgentHub hub;
-    private final LogBuffer log = new LogBuffer(20_000);
+    /** At most 20,000 lines of at most {@link LogReader#MAX_LINE_CHARS} chars, and 4M chars in all. */
+    private final LogBuffer log = new LogBuffer(20_000, 4_000_000);
     private Process process;
     private volatile boolean sawDone;
     private volatile boolean detached;
@@ -182,22 +180,9 @@ public final class ServerManager implements AutoCloseable {
 
     private void pump(Process p) {
         try {
-            pump(p.getInputStream(), log, () -> sawDone = true);
+            LogReader.pump(p.getInputStream(), log, () -> sawDone = true);
         } catch (IOException ignored) {
             // Stream closed with the process.
-        }
-    }
-
-    /** Reads a server's output into {@code log} line by line, calling {@code onReady} at each ready line. */
-    static void pump(InputStream in, LogBuffer log, Runnable onReady) throws IOException {
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8))) {
-            String line;
-            while ((line = reader.readLine()) != null) {
-                log.add(line);
-                if (LogCondenser.readyLine(line)) {
-                    onReady.run();
-                }
-            }
         }
     }
 
