@@ -5,8 +5,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.github.imnotstable.msc.protocol.world.BlockPos;
 import io.github.imnotstable.msc.protocol.world.Region;
 import io.github.imnotstable.msc.protocol.world.BlockGrid;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Random;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 class CanvasShapesTest {
@@ -99,6 +101,72 @@ class CanvasShapesTest {
             int lo = (w - 1) / 2;
             for (int dz = -lo; dz < w - lo; dz++) {
                 assertThat(c.planned(5, 64, dz)).as("w=%d dz=%d", w, dz).isNotNull();
+            }
+        }
+    }
+
+    @Test
+    void wideLinesMatchTheFullBrushAtEveryPointAndVisitEachBlockAboutOnce() throws InterruptedException {
+        for (long seed = 0; seed < 200; seed++) {
+            Random rnd = new Random(seed);
+            BlockPos from = new BlockPos(rnd.nextInt(21) - 10, 60 + rnd.nextInt(10), rnd.nextInt(21) - 10);
+            int len = rnd.nextInt(41);
+            BlockPos to = rnd.nextInt(4) == 0 ? from.offset(len, 0, 0) // straight along an axis, as in the report
+                    : from.offset(rnd.nextInt(2 * len + 1) - len, rnd.nextInt(2 * len + 1) - len,
+                    rnd.nextInt(2 * len + 1) - len);
+            int width = 1 + rnd.nextInt(rnd.nextBoolean() ? 6 : 24);
+            List<String> replace = rnd.nextBoolean() ? List.of() : List.of("air");
+            Step.Line line = new Step.Line("world", from, to, width, BlockPattern.parse("stone:3,dirt:1", seed), replace);
+            Region b = line.bounds();
+            Random world = new Random(seed * 31 + 7);
+            int[] cells = new int[Math.toIntExact(b.volume())];
+            for (int i = 0; i < cells.length; i++) {
+                cells[i] = world.nextInt(3) == 0 ? 1 : 0;
+            }
+            BlockGrid grid = new BlockGrid(b, List.of("minecraft:air", "minecraft:stone"), cells);
+            Canvas fast = new Canvas(b, r -> grid);
+            line.draw(fast);
+            Canvas slow = new Canvas(b, r -> grid);
+            stampFullBrushAtEveryPoint(line, slow);
+            for (int y = b.min().y(); y <= b.max().y(); y++) {
+                for (int z = b.min().z(); z <= b.max().z(); z++) {
+                    for (int x = b.min().x(); x <= b.max().x(); x++) {
+                        assertThat(fast.planned(x, y, z)).as("seed %d %s at %d,%d,%d", seed, line, x, y, z)
+                                .isEqualTo(slow.planned(x, y, z));
+                    }
+                }
+            }
+            // The work follows the blocks drawn: stamping every brush cell at every point visits a block
+            // about width / 2 times, which made a 64-wide line take seconds (#320).
+            Set<BlockPos> distinct = new HashSet<>();
+            long[] visits = {0};
+            Shapes.sweep(Shapes.line(from, to), width, (x, y, z) -> {
+                visits[0]++;
+                distinct.add(new BlockPos(x, y, z));
+            });
+            assertThat(visits[0]).as("seed %d %s: %d visits for %d blocks", seed, line, visits[0], distinct.size())
+                    .isLessThanOrEqualTo(distinct.size() + distinct.size() / 4);
+        }
+    }
+
+    /** The plain way to draw a line: the whole brush at every point, as {@link Step.Line} did before #320. */
+    private static void stampFullBrushAtEveryPoint(Step.Line line, Canvas c) throws InterruptedException {
+        int w = line.width();
+        int lo = Shapes.brushLow(w);
+        boolean[] brush = Shapes.brush(w);
+        Canvas.Mask mask = c.mask(line.bounds(), line.replace());
+        for (BlockPos p : Shapes.line(line.from(), line.to())) {
+            for (int dy = -lo; dy < w - lo; dy++) {
+                for (int dz = -lo; dz < w - lo; dz++) {
+                    for (int dx = -lo; dx < w - lo; dx++) {
+                        int x = p.x() + dx;
+                        int y = p.y() + dy;
+                        int z = p.z() + dz;
+                        if (brush[((dy + lo) * w + dz + lo) * w + dx + lo] && mask.allows(x, y, z)) {
+                            c.set(x, y, z, line.block().at(x, y, z));
+                        }
+                    }
+                }
             }
         }
     }

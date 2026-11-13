@@ -146,6 +146,78 @@ final class Shapes {
         return out;
     }
 
+    /** Receives one block position. */
+    @FunctionalInterface
+    interface Cell {
+        void at(int x, int y, int z);
+    }
+
+    /**
+     * Every block a {@link #brush} of {@code width} covers as it moves along {@code points}, as {@link #line} makes them.
+     * The whole brush is stamped at the first point only; after that, a step of one block in any of the 26 directions
+     * reports just the brush cells the step uncovers, so the work follows the blocks drawn, not length * width^3.
+     * A block can still be reported more than once when the line bends back over it, so {@code out} must not care.
+     */
+    static void sweep(List<BlockPos> points, int width, Cell out) {
+        int lo = brushLow(width);
+        boolean[] brush = brush(width);
+        int[] full = offsets(brush, width, 0, 0, 0);
+        int[][] leading = new int[27][];
+        BlockPos prev = null;
+        for (BlockPos p : points) {
+            int[] cells = full;
+            if (prev != null) {
+                int dx = p.x() - prev.x();
+                int dy = p.y() - prev.y();
+                int dz = p.z() - prev.z();
+                if (dx == 0 && dy == 0 && dz == 0) {
+                    continue;
+                }
+                if (Math.abs(dx) <= 1 && Math.abs(dy) <= 1 && Math.abs(dz) <= 1) {
+                    int d = ((dy + 1) * 3 + dz + 1) * 3 + dx + 1;
+                    if (leading[d] == null) {
+                        leading[d] = offsets(brush, width, dx, dy, dz);
+                    }
+                    cells = leading[d];
+                }
+            }
+            for (int i = 0; i < cells.length; i += 3) {
+                out.at(p.x() + cells[i] - lo, p.y() + cells[i + 1] - lo, p.z() + cells[i + 2] - lo);
+            }
+            prev = p;
+        }
+    }
+
+    /**
+     * The brush cells, as x, y, z triples counted from the brush's corner, that a brush moved by (dx, dy, dz) covers
+     * and the brush before the move did not. A move of (0, 0, 0) gives the whole brush.
+     */
+    private static int[] offsets(boolean[] brush, int width, int dx, int dy, int dz) {
+        int[] out = new int[3 * brush.length];
+        int k = 0;
+        for (int y = 0; y < width; y++) {
+            for (int z = 0; z < width; z++) {
+                for (int x = 0; x < width; x++) {
+                    if (!brush[(y * width + z) * width + x]) {
+                        continue;
+                    }
+                    boolean moved = dx != 0 || dy != 0 || dz != 0;
+                    int px = x + dx;
+                    int py = y + dy;
+                    int pz = z + dz;
+                    boolean coveredBefore = moved && px >= 0 && px < width && py >= 0 && py < width && pz >= 0
+                            && pz < width && brush[(py * width + pz) * width + px];
+                    if (!coveredBefore) {
+                        out[k++] = x;
+                        out[k++] = y;
+                        out[k++] = z;
+                    }
+                }
+            }
+        }
+        return java.util.Arrays.copyOf(out, k);
+    }
+
     /** A smooth wobble in [-1, 1] around a circle, different for every seed. */
     static double wobble(double angle, long seed) {
         double sum = 0;

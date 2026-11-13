@@ -17,6 +17,8 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 class ServerManagerTest {
 
@@ -158,5 +160,12 @@ class ServerManagerTest {
 
             assertThat(refused).isInstanceOf(IOException.class).hasMessageContaining("port " + taken.getLocalPort());
         }
+    }
+
+    @ParameterizedTest
+    @CsvSource({"PT0.2S, PT0.2S", "PT5S, PT5S", "PT60S, PT5S", "PT0S, PT0.001S", "PT-1S, PT0.001S"})
+    void theLoginWaitBeforeAStopNeverOutlastsTheCallersWait(Duration wait, Duration login) {
+        // clearPorts(config, wait) sent stop with a fixed 5 s login, so a silent port holder cost 5 s whatever the wait.
+        assertThat(ServerManager.loginTimeout(wait)).isEqualTo(login);
     }
 }

@@ -99,7 +99,10 @@ class TestPlayerTest {
         // Through the exit portal the server takes the player out of the End and waits for this request (#302).
         for (EnterCreditsValue credits : EnterCreditsValue.values()) {
             List<Packet> sent = new ArrayList<>();
-            TestPlayer p = Players.at(new FlatWorld(), null, 0.5, 1, 0.5, sent);
+            TestPlayer p = TestPlayer.offline("MscTester", new FlatWorld(), null, sent);
+            p.receive(login("minecraft:the_end"));
+            p.receive(teleport(0.5, 1, 0.5));
+            p.useWorld("w");
             Script.Step walk = Script.parse("goto 40.5,1,0.5");
             Script.Step wait = Script.parse("wait 100");
             p.begin(walk);
@@ -126,6 +129,32 @@ class TestPlayerTest {
     }
 
     @Test
+    void creditsOutsideTheEndHoldMovesOnlyUntilTheWaitWhenNoRespawnComes() throws InterruptedException {
+        // Paper's showWinScreen and Minestom's WIN_GAME keep the player where it is and ignore the respawn request:
+        // the player plays on after the wait instead of freezing (#319).
+        List<Packet> sent = new ArrayList<>();
+        TestPlayer p = Players.at(new FlatWorld(), null, 0.5, 1, 0.5, sent);
+        Script.Step walk = Script.parse("goto 40.5,1,0.5");
+        p.begin(walk);
+        p.receive(new ClientboundGameEventPacket(GameEvent.WIN_GAME, EnterCreditsValue.FIRST_TIME));
+        assertThat(walk.resultNow()).as("not in the End: the walk goes on").isNull();
+        assertThat(p.life()).isEqualTo(Life.State.CREDITS);
+        sent.clear();
+        for (int i = 1; i < Life.CREDITS_WAIT; i++) {
+            p.tick();
+        }
+        assertThat(sent).as("held while the server may still respawn it").isEmpty();
+        p.await(walk, java.time.Duration.ZERO);
+        assertThat(Players.drive(p, Script.parse("forward 10"), 400)).matches("moved [1-9][.0-9]* blocks");
+        assertThat(p.life()).isEqualTo(Life.State.ALIVE);
+        assertThat(sent).hasAtLeastOneElementOfType(ServerboundMovePlayerPosRotPacket.class).doesNotContain(RESPAWN);
+        assertThat(p.run(List.of(), "w")).startsWith("""
+                  [credits] the server sent the win screen, credits skipped
+                  [credits closed] no respawn came; playing on where the player is
+                """);
+    }
+
+    @Test
     void theKillMessageAloneIsADeath() {
         // The vanilla client takes the kill message as its death, so a server may send no health 0 before it.
         List<Packet> sent = new ArrayList<>();
@@ -137,7 +166,7 @@ class TestPlayerTest {
         p.receive(new ClientboundPlayerCombatKillPacket(0, net.kyori.adventure.text.Component.text("fell")));
         assertThat(p.dead()).isTrue();
         assertThat(walk.resultNow()).isEqualTo("stopped: died");
-        assertThat(respawnTick(p, sent)).isEqualTo(TestPlayer.RESPAWN_DELAY);
+        assertThat(respawnTick(p, sent)).isEqualTo(Life.RESPAWN_DELAY);
         p.receive(new ClientboundSetHealthPacket(0, 20, 5)); // the health that follows is the same death
         assertThat(sent).containsOnlyOnce(RESPAWN);
     }
@@ -147,9 +176,9 @@ class TestPlayerTest {
         // Table: what the server says about the death screen, at login then by game event, and when the dead ask.
         record Row(boolean screenAtLogin, RespawnScreenValue event, int tick) {
         }
-        for (Row row : List.of(new Row(true, null, TestPlayer.RESPAWN_DELAY), new Row(false, null, 1),
+        for (Row row : List.of(new Row(true, null, Life.RESPAWN_DELAY), new Row(false, null, 1),
                 new Row(true, RespawnScreenValue.IMMEDIATE_RESPAWN, 1),
-                new Row(false, RespawnScreenValue.ENABLE_RESPAWN_SCREEN, TestPlayer.RESPAWN_DELAY))) {
+                new Row(false, RespawnScreenValue.ENABLE_RESPAWN_SCREEN, Life.RESPAWN_DELAY))) {
             List<Packet> sent = new ArrayList<>();
             TestPlayer p = TestPlayer.offline("MscTester", new FlatWorld(), null, sent);
             p.receive(login("minecraft:overworld").withEnableRespawnScreen(row.screenAtLogin()));

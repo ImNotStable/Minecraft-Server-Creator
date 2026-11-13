@@ -8,15 +8,19 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * A whole {@code world.read} in one main-thread job: the grid in slices, then the entities and sign text on the
- * next tick. One job is one agent wait, so a read stays within {@link io.github.imnotstable.msc.protocol.Limits#AGENT_WAITS_PER_OP}
- * (#289).
+ * A whole {@code world.read} in one main-thread job: the grid in slices, then the entities and sign text. One job is
+ * one agent wait, so a read stays within {@link io.github.imnotstable.msc.protocol.Limits#AGENT_WAITS_PER_OP} (#289).
+ *
+ * <p>The extras run in the step that finishes the grid when the deadline allows, and otherwise in the next step
+ * whatever the deadline, as one bounded step. A read without extras finishes with its grid. So a read never waits
+ * for a spare budget that jobs queued before it may use up every tick (#310).
  */
 final class WorldReadJob<S> implements SlicedJob<Ops.ReadResult> {
     private final AgentWorld<S> world;
     private final Region region;
     private final Ops.ReadParams params;
     private final ReadJob<S> grid;
+    private boolean extrasDeferred;
     private Ops.ReadResult result;
 
     WorldReadJob(AgentWorld<S> world, Ops.ReadParams params) {
@@ -28,11 +32,15 @@ final class WorldReadJob<S> implements SlicedJob<Ops.ReadResult> {
 
     @Override
     public boolean step(long deadlineNanos) {
-        if (!grid.step(deadlineNanos)) {
-            return false;
-        }
-        if (System.nanoTime() - deadlineNanos > 0) {
-            return false; // the grid used this tick; the extras run on the next one
+        if (!extrasDeferred) {
+            if (!grid.step(deadlineNanos)) {
+                return false;
+            }
+            boolean extras = params.includeEntities() || params.includeSigns();
+            if (extras && System.nanoTime() - deadlineNanos > 0) {
+                extrasDeferred = true; // the grid used this step; the extras run in the next one, deadline or not
+                return false;
+            }
         }
         BlockGrid blocks = grid.result();
         List<Ops.EntitySummary> entities = params.includeEntities()

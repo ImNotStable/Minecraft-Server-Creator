@@ -42,7 +42,7 @@
    ./gradlew :msc-bench:run --args="run --tasks build-hut --repeat 3"
    ```
 
-5. Read the report in `msc-bench/runs/<time>/report.md`. Each attempt keeps its workspace, prompt, output and server log under `attempts/`.
+5. Read the report in `~/.msc/bench-runs/<time>/report.md` (the full path is printed after `Report:`). Each attempt keeps its workspace, prompt, output and server log under `attempts/`. Runs must stay outside any repository or folder with a `CLAUDE.md`, so Claude Code does not load this project into the attempts: `--out DIR` picks another such folder, and when your home folder is itself a repository the default moves to `msc-bench-runs` in the system's temporary folder.
 
 ## Good to know
 

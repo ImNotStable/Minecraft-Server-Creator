@@ -4,10 +4,7 @@ import io.github.imnotstable.msc.core.CoreConfig;
 import io.github.imnotstable.msc.core.agent.AgentHub;
 import io.github.imnotstable.msc.core.tool.ToolException;
 import io.github.imnotstable.msc.protocol.Limits;
-import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -29,7 +26,8 @@ public final class ServerManager implements AutoCloseable {
 
     private final CoreConfig config;
     private final AgentHub hub;
-    private final LogBuffer log = new LogBuffer(20_000);
+    /** At most 20,000 lines of at most {@link LogReader#MAX_LINE_CHARS} chars, and 4M chars in all. */
+    private final LogBuffer log = new LogBuffer(20_000, 4_000_000);
     private Process process;
     private volatile boolean sawDone;
     private volatile boolean detached;
@@ -113,6 +111,7 @@ public final class ServerManager implements AutoCloseable {
         String token = hub.token();
         long readyBefore = hub.readyCount();
         Process started;
+        Thread pump;
         synchronized (this) {
             if (closed) {
                 // A call that was already running when the workspace closed: nothing would stop this server.
@@ -136,7 +135,7 @@ public final class ServerManager implements AutoCloseable {
             started = pb.start();
             process = started;
             PidFile.write(pidFile(), started.toHandle());
-            Thread.ofVirtual().name("msc-server-log").start(() -> pump(started));
+            pump = Thread.ofVirtual().name("msc-server-log").start(() -> pump(started));
         }
         long deadline = begin + timeout.toNanos();
         boolean ready = false;
@@ -164,11 +163,15 @@ public final class ServerManager implements AutoCloseable {
             }
         }
         if (!ready && !started.isAlive()) {
-            // Give the log pump a moment to drain the last lines.
-            Thread.sleep(100);
+            // The report reads the log next: let the pump reach the end of the output, which comes as soon as the
+            // pipe closes. Bounded, since a child the server left running may hold the pipe open (#324).
+            pump.join(PUMP_DRAIN);
         }
         return new StartResult(ready, !started.isAlive(), (System.nanoTime() - begin) / 1_000_000, mark, agentMillis);
     }
+
+    /** How long a start waits for the log pump to reach the end of an exited server's output. */
+    static final Duration PUMP_DRAIN = Duration.ofSeconds(10);
 
     /** How long a start waits after "Done" for an agent that has not connected yet. */
     static final Duration AGENT_GRACE = Duration.ofSeconds(10);
@@ -182,22 +185,9 @@ public final class ServerManager implements AutoCloseable {
 
     private void pump(Process p) {
         try {
-            pump(p.getInputStream(), log, () -> sawDone = true);
+            LogReader.pump(p.getInputStream(), log, () -> sawDone = true);
         } catch (IOException ignored) {
             // Stream closed with the process.
-        }
-    }
-
-    /** Reads a server's output into {@code log} line by line, calling {@code onReady} at each ready line. */
-    static void pump(InputStream in, LogBuffer log, Runnable onReady) throws IOException {
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8))) {
-            String line;
-            while ((line = reader.readLine()) != null) {
-                log.add(line);
-                if (LogCondenser.readyLine(line)) {
-                    onReady.run();
-                }
-            }
         }
     }
 
@@ -291,12 +281,28 @@ public final class ServerManager implements AutoCloseable {
             p.destroyForcibly();
             p.waitFor(10, TimeUnit.SECONDS);
         }
+        released(p);
+        return true;
+    }
+
+    /**
+     * Delete the pid file of {@code p}, which has exited, unless a newer server already replaced it: a start that ran
+     * while a stop waited for the old process writes its own pid file, which must stay (#323).
+     */
+    synchronized void released(Process p) {
+        if (process != p) {
+            return;
+        }
         try {
             Files.deleteIfExists(pidFile());
         } catch (IOException ignored) {
             // A stale file is checked against the process start time anyway.
         }
-        return true;
+    }
+
+    /** The current or last server process, for tests. */
+    synchronized Process process() {
+        return process;
     }
 
     /**

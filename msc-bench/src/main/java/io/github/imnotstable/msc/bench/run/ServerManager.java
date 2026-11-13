@@ -21,6 +21,8 @@ public final class ServerManager implements AutoCloseable {
 
     private static final Duration COMMAND_TIMEOUT = Duration.ofSeconds(30);
     private static final Duration STOP_TIMEOUT = Duration.ofSeconds(60);
+    /** How long {@link #sendStop} waits for an RCON login from whatever holds the RCON port. */
+    static final Duration LOGIN_TIMEOUT = Duration.ofSeconds(5);
 
     private final Path serverDir;
     private final BenchConfig.Server config;
@@ -164,7 +166,7 @@ public final class ServerManager implements AutoCloseable {
         if (!accepts(config.rconPort()) && !accepts(config.serverPort())) {
             return;
         }
-        sendStop(config);
+        sendStop(config, loginTimeout(wait));
         awaitPortsFree(config, wait);
         for (int port : new int[] {config.rconPort(), config.serverPort()}) {
             if (accepts(port)) {
@@ -174,9 +176,19 @@ public final class ServerManager implements AutoCloseable {
         }
     }
 
+    /** The RCON login wait within a caller's {@code wait}: never longer than the caller asked for. */
+    static Duration loginTimeout(Duration wait) {
+        Duration atLeast = wait.isNegative() || wait.isZero() ? Duration.ofMillis(1) : wait;
+        return atLeast.compareTo(LOGIN_TIMEOUT) < 0 ? atLeast : LOGIN_TIMEOUT;
+    }
+
     /** Sends {@code stop} to whatever server answers on the RCON port, without waiting for it to go. */
     public static void sendStop(BenchConfig.Server config) {
-        RconClient client = tryConnect(config, Duration.ofSeconds(5));
+        sendStop(config, LOGIN_TIMEOUT);
+    }
+
+    private static void sendStop(BenchConfig.Server config, Duration loginTimeout) {
+        RconClient client = tryConnect(config, loginTimeout);
         if (client == null) {
             return;
         }
