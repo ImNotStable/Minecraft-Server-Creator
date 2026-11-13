@@ -15,6 +15,14 @@ import net.kyori.adventure.key.Key;
 import org.geysermc.mcprotocollib.protocol.data.game.entity.player.GameMode;
 import org.geysermc.mcprotocollib.protocol.data.game.entity.player.PlayerSpawnInfo;
 import org.geysermc.mcprotocollib.protocol.data.game.entity.player.PositionElement;
+import org.geysermc.mcprotocollib.protocol.data.game.ClientCommand;
+import org.geysermc.mcprotocollib.protocol.data.game.level.notify.EnterCreditsValue;
+import org.geysermc.mcprotocollib.protocol.data.game.level.notify.GameEvent;
+import org.geysermc.mcprotocollib.protocol.data.game.level.notify.RespawnScreenValue;
+import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.entity.player.ClientboundPlayerCombatKillPacket;
+import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.level.ClientboundGameEventPacket;
+import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.ServerboundClientCommandPacket;
+import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.player.ServerboundMovePlayerPosRotPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.ClientboundLoginPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.ClientboundRespawnPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.entity.player.ClientboundPlayerPositionPacket;
@@ -82,6 +90,88 @@ class TestPlayerTest {
                   [healed] health 20.0
                   [respawned]
                 MscTester at 0.50,1.00,0.50""");
+    }
+
+    private static final Packet RESPAWN = new ServerboundClientCommandPacket(ClientCommand.PERFORM_RESPAWN);
+
+    @Test
+    void leavingTheEndAsksToRespawnAtOnceWhetherOrNotTheCreditsWouldShow() throws InterruptedException {
+        // Through the exit portal the server takes the player out of the End and waits for this request (#302).
+        for (EnterCreditsValue credits : EnterCreditsValue.values()) {
+            List<Packet> sent = new ArrayList<>();
+            TestPlayer p = Players.at(new FlatWorld(), null, 0.5, 1, 0.5, sent);
+            Script.Step walk = Script.parse("goto 40.5,1,0.5");
+            Script.Step wait = Script.parse("wait 100");
+            p.begin(walk);
+            sent.clear();
+            p.receive(new ClientboundGameEventPacket(GameEvent.WIN_GAME, credits));
+            assertThat(sent).as("%s", credits).containsExactly(RESPAWN);
+            assertThat(walk.resultNow()).isEqualTo("stopped: left the End through the exit portal");
+            p.begin(wait);
+            for (int i = 0; i < 40; i++) {
+                p.tick();
+            }
+            assertThat(sent).as("in no world: no moves, no second request").containsExactly(RESPAWN);
+            assertThat(wait.resultNow()).as("a step not aimed at a place goes on").isNull();
+            p.receive(new ClientboundRespawnPacket(spawn("minecraft:overworld"), false, false));
+            p.receive(teleport(8.5, 1, 8.5));
+            p.tick();
+            assertThat(sent).contains(ServerboundPlayerLoadedPacket.INSTANCE)
+                    .hasAtLeastOneElementOfType(ServerboundMovePlayerPosRotPacket.class);
+            p.await(wait, java.time.Duration.ZERO);
+            assertThat(p.run(List.of(), "w")).startsWith("  [left the End] through the exit portal"
+                    + (credits == EnterCreditsValue.FIRST_TIME ? ", credits skipped" : "") + "\n"
+                    + "  [changed world] minecraft:overworld\nMscTester at 8.50,1.00,8.50");
+        }
+    }
+
+    @Test
+    void theKillMessageAloneIsADeath() {
+        // The vanilla client takes the kill message as its death, so a server may send no health 0 before it.
+        List<Packet> sent = new ArrayList<>();
+        TestPlayer p = Players.at(new FlatWorld(), null, 0.5, 1, 0.5, sent);
+        Script.Step walk = Script.parse("goto 40.5,1,0.5");
+        p.begin(walk);
+        p.receive(new ClientboundPlayerCombatKillPacket(99, net.kyori.adventure.text.Component.text("not me")));
+        assertThat(p.dead()).isFalse();
+        p.receive(new ClientboundPlayerCombatKillPacket(0, net.kyori.adventure.text.Component.text("fell")));
+        assertThat(p.dead()).isTrue();
+        assertThat(walk.resultNow()).isEqualTo("stopped: died");
+        assertThat(respawnTick(p, sent)).isEqualTo(TestPlayer.RESPAWN_DELAY);
+        p.receive(new ClientboundSetHealthPacket(0, 20, 5)); // the health that follows is the same death
+        assertThat(sent).containsOnlyOnce(RESPAWN);
+    }
+
+    @Test
+    void withNoDeathScreenTheDeadRespawnOnTheNextTick() {
+        // Table: what the server says about the death screen, at login then by game event, and when the dead ask.
+        record Row(boolean screenAtLogin, RespawnScreenValue event, int tick) {
+        }
+        for (Row row : List.of(new Row(true, null, TestPlayer.RESPAWN_DELAY), new Row(false, null, 1),
+                new Row(true, RespawnScreenValue.IMMEDIATE_RESPAWN, 1),
+                new Row(false, RespawnScreenValue.ENABLE_RESPAWN_SCREEN, TestPlayer.RESPAWN_DELAY))) {
+            List<Packet> sent = new ArrayList<>();
+            TestPlayer p = TestPlayer.offline("MscTester", new FlatWorld(), null, sent);
+            p.receive(login("minecraft:overworld").withEnableRespawnScreen(row.screenAtLogin()));
+            p.receive(teleport(0.5, 1, 0.5));
+            p.useWorld("w");
+            if (row.event() != null) {
+                p.receive(new ClientboundGameEventPacket(GameEvent.IMMEDIATE_RESPAWN, row.event()));
+            }
+            p.receive(new ClientboundSetHealthPacket(0, 20, 5));
+            assertThat(respawnTick(p, sent)).as("%s", row).isEqualTo(row.tick());
+        }
+    }
+
+    /** The tick on which the dead player asks to respawn, within 40; -1 when it does not. */
+    private static int respawnTick(TestPlayer p, List<Packet> sent) {
+        for (int i = 1; i <= 40; i++) {
+            p.tick();
+            if (sent.contains(RESPAWN)) {
+                return i;
+            }
+        }
+        return -1;
     }
 
     @Test

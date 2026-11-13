@@ -34,6 +34,8 @@ import org.geysermc.mcprotocollib.protocol.data.game.entity.object.Direction;
 import org.geysermc.mcprotocollib.protocol.data.game.entity.player.Hand;
 import org.geysermc.mcprotocollib.protocol.data.game.entity.player.PlayerState;
 import org.geysermc.mcprotocollib.protocol.data.game.entity.player.PositionElement;
+import org.geysermc.mcprotocollib.protocol.data.game.level.notify.EnterCreditsValue;
+import org.geysermc.mcprotocollib.protocol.data.game.level.notify.RespawnScreenValue;
 import org.geysermc.mcprotocollib.protocol.packet.common.clientbound.ClientboundPingPacket;
 import org.geysermc.mcprotocollib.protocol.packet.common.clientbound.ClientboundResourcePackPushPacket;
 import org.geysermc.mcprotocollib.protocol.packet.common.serverbound.ServerboundPongPacket;
@@ -57,6 +59,7 @@ import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.entity.play
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.entity.player.ClientboundSetHealthPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.entity.ClientboundAddEntityPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.level.ClientboundChunkBatchFinishedPacket;
+import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.level.ClientboundGameEventPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.title.ClientboundSetActionBarTextPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.title.ClientboundSetSubtitleTextPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.title.ClientboundSetTitleTextPacket;
@@ -144,8 +147,18 @@ public final class TestPlayer implements Bot {
      * moves and keeps the player invulnerable, even to /kill; Paper restarts that wait on every world change.
      */
     private boolean loadPending = true;
+    /**
+     * Set by a death (health 0, or the server's kill message for this player) until the next respawn or login. The
+     * server keeps a dead player dead until the client asks to respawn; the player asks {@link #RESPAWN_DELAY} ticks
+     * later, or on the next tick when the server turned the death screen off (immediate respawn), as the vanilla
+     * client does.
+     */
     private volatile boolean dead;
     private int deadTicks;
+    /** Ticks a dead player waits before it asks to respawn, as if a person read the death screen first. */
+    static final int RESPAWN_DELAY = 20;
+    /** The server shows no death screen (the doImmediateRespawn rule): a dead player respawns at once. */
+    private boolean immediateRespawn;
     float yaw;
     float pitch;
     private float health = 20;
@@ -510,7 +523,7 @@ public final class TestPlayer implements Bot {
                     return;
                 }
                 if (dead) {
-                    if (++deadTicks == 20) {
+                    if (++deadTicks == (immediateRespawn ? 1 : RESPAWN_DELAY)) {
                         send(new ServerboundClientCommandPacket(ClientCommand.PERFORM_RESPAWN));
                     }
                     return;
@@ -755,6 +768,7 @@ public final class TestPlayer implements Bot {
                 synchronized (this) {
                     // A login after a re-configuration is a new player in a new level, like a respawn.
                     entityId = p.getEntityId();
+                    immediateRespawn = !p.isEnableRespawnScreen();
                     entities.clear();
                     dead = false;
                     deadTicks = 0;
@@ -773,8 +787,11 @@ public final class TestPlayer implements Bot {
             case ClientboundPlayerCombatKillPacket p -> {
                 if (p.getPlayerId() == entityId) {
                     event("[death] " + Text.plain(p.getMessage()));
+                    // The vanilla client takes this as its death, health packet or not.
+                    died();
                 }
             }
+            case ClientboundGameEventPacket p -> gameEvent(p);
             case ClientboundRespawnPacket p -> {
                 boolean wasDead;
                 synchronized (this) {
@@ -915,16 +932,59 @@ public final class TestPlayer implements Bot {
             }
             health = now;
             food = newFood;
-            if (now <= 0 && !dead) {
-                dead = true;
-                deadTicks = 0;
-                Script.Step step = current;
-                if (step != null) {
-                    step.finish("stopped: died");
-                    current = null;
-                }
+            if (now <= 0) {
+                died();
             }
         }
+    }
+
+    private synchronized void died() {
+        if (dead) {
+            return;
+        }
+        dead = true;
+        deadTicks = 0;
+        Script.Step step = current;
+        if (step != null) {
+            step.finish("stopped: died");
+            current = null;
+        }
+    }
+
+    /**
+     * The game events that change what the player must send. Every other one (weather, sounds, the game mode) only
+     * changes what a person would see.
+     */
+    private void gameEvent(ClientboundGameEventPacket p) {
+        switch (p.getNotification()) {
+            case WIN_GAME -> leftTheEnd(p.getValue() == EnterCreditsValue.FIRST_TIME);
+            case IMMEDIATE_RESPAWN -> {
+                synchronized (this) {
+                    immediateRespawn = p.getValue() == RespawnScreenValue.IMMEDIATE_RESPAWN;
+                }
+            }
+            default -> {
+            }
+        }
+    }
+
+    /**
+     * The player went through the End's exit portal: the server took it out of the End and keeps it in no world until
+     * the client asks to respawn, which the vanilla client does at once, or when the credits close. The player skips
+     * the credits; the server's Respawn and position bring it back like any world change. Until then it is in no world,
+     * so it sends no moves, and a step aimed at a place in the End ends.
+     */
+    private void leftTheEnd(boolean credits) {
+        event("[left the End] through the exit portal" + (credits ? ", credits skipped" : ""));
+        synchronized (this) {
+            positioned = false;
+            Script.Step step = current;
+            if (step != null && step.endsOnTeleport()) {
+                step.finish("stopped: left the End through the exit portal");
+                current = null;
+            }
+        }
+        send(new ServerboundClientCommandPacket(ClientCommand.PERFORM_RESPAWN));
     }
 
     /** A client only loads a zip with pack.mcmeta at its root. */
