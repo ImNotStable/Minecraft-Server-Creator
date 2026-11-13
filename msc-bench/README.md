@@ -3,7 +3,7 @@
 Benchmark tasks and a runner that measure whether the toolset makes AI server development better on quality, speed and tokens.
 
 **Phase:** MVP  
-**Status:** Task set, checks, runner and report done; Minestom tasks run without the EULA. Next: the full run and targets.
+**Status:** Task set, checks, runner and report done; Minestom tasks run without the EULA. First full run done and targets set (2026-11-12, ADR 0004).
 
 ## How it works
 
@@ -44,6 +44,8 @@ Check types: `file` (exists, optional `contains` regex), `command` (exit code, o
 ./gradlew :msc-bench:run --args="check build-hut runs/<ts>/attempts/build-hut/baseline-1/workspace"
 ./gradlew :msc-bench:run --args="report runs/<ts>"
 ```
+
+`check` runs one task's checks on a workspace. Its RCON checks use a server already answering on the RCON port and leave it running; when none does and the EULA is accepted on the machine, it starts the workspace's own `server/` for the checks and stops it after them.
 
 Before the first run:
 

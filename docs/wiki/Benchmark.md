@@ -16,6 +16,7 @@
 | `world-find-block` | Finding one gold block among decoys |
 | `texture-ruby-item` | Drawing an item texture |
 | `texture-resource-pack` | Making a resource pack |
+| `game-sky-sprint` | Making a whole minigame on Minestom |
 
 ## Run it
 
@@ -25,7 +26,7 @@
    ./gradlew :msc-core:installDist :msc-agent-paper:shadowJar
    ```
 
-2. Accept the EULA, if you agree. Read the [Minecraft EULA](https://aka.ms/MinecraftEULA). Server tasks fail until you set `"acceptEula": true` under `server` in `msc-bench/bench.json`. The benchmark never does this for you.
+2. Accept the EULA, if you agree. Read the [Minecraft EULA](https://aka.ms/MinecraftEULA). The benchmark never accepts it for you, and no config file can: it reads the acceptance msc keeps in `~/.msc/eula.json`, which only you write (`msc eula accept`, or `./gradlew :msc-core:installMsc -Pmsc.acceptEula=true`). Without it, tasks that run a Paper server are skipped with a message and the rest run. Minestom tasks never need it.
 
 3. List the tasks:
 

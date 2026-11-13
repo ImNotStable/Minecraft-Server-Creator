@@ -34,6 +34,7 @@ public final class FakeAgent {
     final List<Region> writes = new ArrayList<>();
     private final Map<String, Map<BlockPos, String>> undo = new HashMap<>();
     private int editCounter;
+    private int undosBeforeFailure = -1;
 
     public synchronized String get(int x, int y, int z) {
         String s = blocks.get(new BlockPos(x, y, z));
@@ -179,7 +180,22 @@ public final class FakeAgent {
         return finish(before, changed);
     }
 
+    /** Drop the oldest edit that changed blocks, as a real agent does when its undo budget runs out. */
+    synchronized void forgetOldestEdit() {
+        undo.entrySet().stream().filter(e -> !e.getValue().isEmpty())
+                .min(java.util.Comparator.comparingInt(e -> Integer.parseInt(e.getKey().substring(6))))
+                .ifPresent(e -> undo.remove(e.getKey()));
+    }
+
+    /** Make the undo after {@code skip} more undos fail, as a timeout would. */
+    synchronized void failUndo(int skip) {
+        undosBeforeFailure = skip;
+    }
+
     private synchronized Ops.EditResult undo(Ops.UndoParams p) {
+        if (undosBeforeFailure >= 0 && undosBeforeFailure-- == 0) {
+            throw new OpException(ErrorCodes.INTERNAL, "timed out");
+        }
         Map<BlockPos, String> before = undo.remove(p.editId());
         if (before == null) {
             throw new OpException(ErrorCodes.NOT_FOUND, "no edit " + p.editId());

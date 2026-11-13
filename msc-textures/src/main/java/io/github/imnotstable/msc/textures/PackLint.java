@@ -179,7 +179,7 @@ public final class PackLint {
 
     private Texture readTexture(String path, byte[] png) {
         try {
-            return Texture.readPng(png);
+            return Texture.readAnyPng(png);
         } catch (TextureException ex) {
             add(Severity.ERROR, path, ex.getMessage());
             return null;
@@ -251,8 +251,9 @@ public final class PackLint {
             return;
         }
         if (json.has("parent")) {
-            String parent = qualify(json.get("parent").getAsString());
-            if (!parent.startsWith("minecraft:") && !models.contains(parent)) {
+            String raw = string(path, "parent", json.get("parent"));
+            String parent = raw == null ? null : qualify(raw);
+            if (parent != null && !parent.startsWith("minecraft:") && !models.contains(parent)) {
                 add(Severity.ERROR, path, "parent " + parent + " is not in the pack");
             }
         } else if (!json.has("elements")) {
@@ -260,8 +261,8 @@ public final class PackLint {
         }
         if (json.has("textures") && json.get("textures").isJsonObject()) {
             for (Map.Entry<String, JsonElement> slot : json.getAsJsonObject("textures").entrySet()) {
-                String ref = slot.getValue().getAsString();
-                if (ref.startsWith("#")) {
+                String ref = string(path, "texture " + slot.getKey(), slot.getValue());
+                if (ref == null || ref.startsWith("#")) {
                     continue;
                 }
                 String id = qualify(ref);
@@ -283,7 +284,7 @@ public final class PackLint {
             return;
         }
         List<String> refs = new ArrayList<>();
-        collectModelRefs(json.get("model"), refs);
+        collectModelRefs(path, json.get("model"), refs);
         for (String ref : refs) {
             String id = qualify(ref);
             if (!id.startsWith("minecraft:") && !models.contains(id)) {
@@ -293,17 +294,21 @@ public final class PackLint {
     }
 
     /** Every {@code "model"} string under a {@code minecraft:model} entry, however deeply nested. */
-    private static void collectModelRefs(JsonElement e, List<String> out) {
+    private void collectModelRefs(String path, JsonElement e, List<String> out) {
         if (e.isJsonArray()) {
-            e.getAsJsonArray().forEach(c -> collectModelRefs(c, out));
+            e.getAsJsonArray().forEach(c -> collectModelRefs(path, c, out));
         } else if (e.isJsonObject()) {
             JsonObject o = e.getAsJsonObject();
-            boolean plain = o.has("type") && qualify(o.get("type").getAsString()).equals("minecraft:model");
+            String type = o.has("type") ? string(path, "type", o.get("type")) : null;
+            boolean plain = type != null && qualify(type).equals("minecraft:model");
             for (Map.Entry<String, JsonElement> c : o.entrySet()) {
-                if (plain && c.getKey().equals("model") && c.getValue().isJsonPrimitive()) {
-                    out.add(c.getValue().getAsString());
+                if (plain && c.getKey().equals("model")) {
+                    String ref = string(path, "model", c.getValue());
+                    if (ref != null) {
+                        out.add(ref);
+                    }
                 } else {
-                    collectModelRefs(c.getValue(), out);
+                    collectModelRefs(path, c.getValue(), out);
                 }
             }
         }
@@ -319,6 +324,15 @@ public final class PackLint {
         } catch (JsonParseException ex) {
             add(Severity.ERROR, path, "invalid JSON: " + firstLine(ex.getMessage()));
         }
+        return null;
+    }
+
+    /** The value if it is a JSON string; otherwise an ERROR finding and null. */
+    private String string(String path, String what, JsonElement value) {
+        if (value.isJsonPrimitive() && value.getAsJsonPrimitive().isString()) {
+            return value.getAsString();
+        }
+        add(Severity.ERROR, path, what + " must be a string");
         return null;
     }
 

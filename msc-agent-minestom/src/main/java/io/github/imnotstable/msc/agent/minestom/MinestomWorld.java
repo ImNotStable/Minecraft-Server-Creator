@@ -24,15 +24,20 @@ import net.minestom.server.entity.LivingEntity;
 import net.minestom.server.entity.Player;
 import net.minestom.server.entity.attribute.Attribute;
 import net.minestom.server.entity.metadata.display.TextDisplayMeta;
+import net.minestom.server.instance.Chunk;
 import net.minestom.server.instance.Instance;
 import net.minestom.server.instance.block.Block;
+import net.minestom.server.tag.Tag;
 
 /**
  * {@link AgentWorld} on a Minestom {@link Instance}. Minestom does not load chunks on access, so
  * the operations load (or generate) every chunk they touch first, off the tick thread; block
- * access then runs on the main thread.
+ * access then runs on the main thread. Chunks only a read loaded are unloaded after it.
  */
 final class MinestomWorld implements AgentWorld<Block> {
+    /** On a chunk an edit loaded, so a read never unloads it. */
+    private static final Tag<Boolean> KEEP = Tag.Boolean("msc:keep");
+
     private final Instance instance;
     private final String name;
     private final Duration chunkTimeout;
@@ -182,15 +187,27 @@ final class MinestomWorld implements AgentWorld<Block> {
 
     // ---- chunk loading ----------------------------------------------------------------------
 
+    /** Loads the area for an edit; its chunks stay loaded, even if a read loaded them first. */
     @Override
     public void loadArea(int minX, int minZ, int maxX, int maxZ) {
-        Set<Long> chunks = new LinkedHashSet<>();
-        for (int cx = minX >> 4; cx <= maxX >> 4; cx++) {
-            for (int cz = minZ >> 4; cz <= maxZ >> 4; cz++) {
-                chunks.add(chunkKey(cx, cz));
-            }
-        }
+        keep(load(area(minX, minZ, maxX, maxZ)));
+    }
+
+    /**
+     * Loads the area for a read. Minestom never unloads chunks by itself, so the release unloads,
+     * on the instance's next tick, those this call loaded that no player sees, no entity is in and
+     * no edit loaded since.
+     */
+    @Override
+    public Runnable loadAreaToRead(int minX, int minZ, int maxX, int maxZ) {
+        Set<Long> chunks = area(minX, minZ, maxX, maxZ);
+        List<Long> fresh = chunks.stream().filter(k -> instance.getChunk(chunkX(k), chunkZ(k)) == null).toList();
         load(chunks);
+        if (fresh.isEmpty()) {
+            return () -> {
+            };
+        }
+        return () -> instance.scheduleNextTick(i -> unloadUnused(fresh));
     }
 
     @Override
@@ -199,18 +216,43 @@ final class MinestomWorld implements AgentWorld<Block> {
         for (long pos : positions) {
             chunks.add(chunkKey(PackedPos.x(pos) >> 4, PackedPos.z(pos) >> 4));
         }
-        load(chunks);
+        keep(load(chunks));
+    }
+
+    private static Set<Long> area(int minX, int minZ, int maxX, int maxZ) {
+        Set<Long> chunks = new LinkedHashSet<>();
+        for (int cx = minX >> 4; cx <= maxX >> 4; cx++) {
+            for (int cz = minZ >> 4; cz <= maxZ >> 4; cz++) {
+                chunks.add(chunkKey(cx, cz));
+            }
+        }
+        return chunks;
+    }
+
+    private static void keep(List<Chunk> chunks) {
+        chunks.forEach(chunk -> chunk.setTag(KEEP, true));
+    }
+
+    private void unloadUnused(List<Long> chunks) {
+        for (long key : chunks) {
+            Chunk chunk = instance.getChunk(chunkX(key), chunkZ(key));
+            if (chunk != null && !chunk.hasTag(KEEP) && chunk.getViewers().isEmpty()
+                    && instance.getChunkEntities(chunk).isEmpty()) {
+                instance.unloadChunk(chunk);
+            }
+        }
     }
 
     /** Loads (or generates) chunks and waits for them. Must not run on a tick thread. */
-    private void load(Set<Long> chunks) {
-        List<CompletableFuture<?>> loads = new ArrayList<>(chunks.size());
+    private List<Chunk> load(Set<Long> chunks) {
+        List<CompletableFuture<Chunk>> loads = new ArrayList<>(chunks.size());
         for (long key : chunks) {
-            loads.add(instance.loadChunk((int) (key >> 32), (int) key));
+            loads.add(instance.loadChunk(chunkX(key), chunkZ(key)));
         }
         try {
             CompletableFuture.allOf(loads.toArray(CompletableFuture[]::new))
                     .get(chunkTimeout.toMillis(), TimeUnit.MILLISECONDS);
+            return loads.stream().map(CompletableFuture::join).toList();
         } catch (TimeoutException e) {
             throw new OpException(ErrorCodes.TIMEOUT, "chunks did not load within " + chunkTimeout.toSeconds() + "s");
         } catch (InterruptedException e) {
@@ -223,5 +265,13 @@ final class MinestomWorld implements AgentWorld<Block> {
 
     private static long chunkKey(int cx, int cz) {
         return ((long) cx << 32) | (cz & 0xFFFFFFFFL);
+    }
+
+    private static int chunkX(long key) {
+        return (int) (key >> 32);
+    }
+
+    private static int chunkZ(long key) {
+        return (int) key;
     }
 }

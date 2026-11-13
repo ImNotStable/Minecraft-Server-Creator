@@ -35,12 +35,16 @@ public final class WorldOps<S> {
     public Ops.ReadResult read(Ops.ReadParams params) {
         Region region = withinLimit(params.region());
         AgentWorld<S> world = world(region.world());
-        world.loadArea(region.min().x(), region.min().z(), region.max().x(), region.max().z());
-        BlockGrid grid = main.run(new ReadJob<>(world, region));
-        List<Ops.EntitySummary> entities = params.includeEntities()
-                ? main.call(() -> world.entities(region, MAX_ENTITIES)) : List.of();
-        List<Ops.SignText> signs = params.includeSigns() ? signs(world, grid) : List.of();
-        return new Ops.ReadResult(grid, entities, signs);
+        Runnable release = world.loadAreaToRead(region.min().x(), region.min().z(), region.max().x(), region.max().z());
+        try {
+            BlockGrid grid = main.run(new ReadJob<>(world, region));
+            List<Ops.EntitySummary> entities = params.includeEntities()
+                    ? main.call(() -> world.entities(region, MAX_ENTITIES)) : List.of();
+            List<Ops.SignText> signs = params.includeSigns() ? signs(world, grid) : List.of();
+            return new Ops.ReadResult(grid, entities, signs);
+        } finally {
+            release.run();
+        }
     }
 
     /** Text of the signs in a grid; block entities are looked up only where the grid has a sign. */
@@ -78,9 +82,13 @@ public final class WorldOps<S> {
             throw new OpException(ErrorCodes.TOO_LARGE,
                     "area " + sizeX + "x" + sizeZ + " exceeds " + Limits.MAX_REGION_VOLUME + " columns");
         }
-        world.loadArea(minX, minZ, minX + sizeX - 1, minZ + sizeZ - 1);
-        int[] heights = main.run(new HeightmapJob(world, minX, minZ, sizeX, sizeZ));
-        return new Ops.HeightmapResult(minX, minZ, sizeX, sizeZ, heights);
+        Runnable release = world.loadAreaToRead(minX, minZ, minX + sizeX - 1, minZ + sizeZ - 1);
+        try {
+            int[] heights = main.run(new HeightmapJob(world, minX, minZ, sizeX, sizeZ));
+            return new Ops.HeightmapResult(minX, minZ, sizeX, sizeZ, heights);
+        } finally {
+            release.run();
+        }
     }
 
     // ---- edits ----------------------------------------------------------------------------

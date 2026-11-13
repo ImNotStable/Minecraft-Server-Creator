@@ -94,6 +94,12 @@ final class MapWorld implements AgentWorld<String>, AgentWorlds<String> {
     }
 
     @Override
+    public Runnable loadAreaToRead(int minX, int minZ, int maxX, int maxZ) {
+        loadArea(minX, minZ, maxX, maxZ);
+        return () -> loads.add("released");
+    }
+
+    @Override
     public void loadPositions(long[] positions) {
         loads.add("positions " + positions.length);
     }

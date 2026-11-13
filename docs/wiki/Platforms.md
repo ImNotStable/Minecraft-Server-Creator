@@ -91,5 +91,7 @@ All world, building and texture tools work the same on every platform. The agent
 | `paper-game` | Paper (minigame base) |
 | `fabric-mod` | Fabric |
 | `fabric-game` | Fabric (minigame base) |
+| `neoforge-mod` | NeoForge |
+| `forge-mod` | Forge |
 | `minestom-server` | Minestom |
 | `minestom-game` | Minestom (minigame base) |

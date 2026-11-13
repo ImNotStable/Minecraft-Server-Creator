@@ -1,6 +1,9 @@
 package io.github.imnotstable.msc.textures;
 
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import com.google.gson.JsonParseException;
+import com.google.gson.JsonParser;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -87,20 +90,46 @@ public final class PackSource {
     }
 
     /**
-     * Write a model and, for item kinds or when {@code item} is true, an item definition with the same
-     * name, so it can be used through the {@code item_model} component.
+     * Write a model and, for item kinds or when {@code item} is true, an item definition named like the
+     * model without its {@code item/} or {@code block/} folder ({@code block/ores/ruby} gives
+     * {@code ores/ruby}), so it can be used through the {@code item_model} component. An item definition
+     * that already shows another model is never replaced: that would change what an item shows unseen.
      *
      * @return the {@code item_model} value, or null when no item definition was written
      */
     public String writeModel(ResourceId model, Models.Kind kind, Map<String, ResourceId> textures, boolean item)
             throws IOException {
-        writeJson(modelPath(model), Models.model(kind, textures));
+        JsonObject json = Models.model(kind, textures);
         if (!kind.isItem() && !item) {
+            writeJson(modelPath(model), json);
             return null;
         }
-        ResourceId itemId = new ResourceId(model.namespace(), model.name());
-        writeJson(itemPath(itemId), Models.itemDefinition(model));
+        ResourceId itemId = new ResourceId(model.namespace(), withoutFolder(model.path()));
+        JsonObject definition = Models.itemDefinition(model);
+        Path itemFile = itemPath(itemId);
+        JsonElement existing = Files.isRegularFile(itemFile) ? readJson(itemFile) : definition;
+        if (!definition.equals(existing)) {
+            JsonElement shown = existing instanceof JsonObject o && o.get("model") instanceof JsonObject m
+                    ? m.get("model") : null;
+            throw new TextureException("item " + itemId + " already shows "
+                    + (shown != null && shown.isJsonPrimitive() ? "model " + shown.getAsString() : "something else")
+                    + "; give this one another name");
+        }
+        writeJson(modelPath(model), json);
+        writeJson(itemFile, definition);
         return itemId.toString();
+    }
+
+    /**
+     * Write the model of {@code kind} that shows one texture, and its item definition, so the texture can be
+     * used through the {@code item_model} component.
+     *
+     * @return the {@code item_model} value
+     */
+    public String writeTextureModel(ResourceId texture, Models.Kind kind) throws IOException {
+        ResourceId model = new ResourceId(texture.namespace(),
+                (kind.isItem() ? "item/" : "block/") + withoutFolder(texture.path()));
+        return writeModel(model, kind, Map.of(kind.slots().getFirst(), texture), true);
     }
 
     public void writePackMeta(int packFormat, String description) throws IOException {
@@ -112,6 +141,25 @@ public final class PackSource {
         JsonObject meta = new JsonObject();
         meta.add("pack", pack);
         writeJson(root.resolve("pack.mcmeta"), meta);
+    }
+
+    /** {@code item/red/gem} and {@code block/red/gem} give {@code red/gem}; other paths stay as they are. */
+    private static String withoutFolder(String path) {
+        for (String folder : new String[] {"item/", "block/"}) {
+            if (path.startsWith(folder)) {
+                return path.substring(folder.length());
+            }
+        }
+        return path;
+    }
+
+    /** The file's JSON, or null when it is not JSON. */
+    private static JsonElement readJson(Path file) throws IOException {
+        try {
+            return JsonParser.parseString(Files.readString(file, StandardCharsets.UTF_8));
+        } catch (JsonParseException e) {
+            return null;
+        }
     }
 
     private static void writeJson(Path file, JsonObject json) throws IOException {
@@ -146,7 +194,8 @@ public final class PackSource {
         return new Zipped(out, sha1(data), files.size(), data.length);
     }
 
-    static String sha1(byte[] data) {
+    /** Lowercase hex SHA-1, as {@code server.properties} and the resource pack packet want it. */
+    public static String sha1(byte[] data) {
         try {
             return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-1").digest(data));
         } catch (NoSuchAlgorithmException e) {

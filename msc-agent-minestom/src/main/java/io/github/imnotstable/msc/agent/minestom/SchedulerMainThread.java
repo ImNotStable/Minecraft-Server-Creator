@@ -4,6 +4,7 @@ import io.github.imnotstable.msc.agent.common.MainThread;
 import io.github.imnotstable.msc.agent.common.SlicedJob;
 import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Supplier;
 import net.minestom.server.MinecraftServer;
 import net.minestom.server.timer.ExecutionType;
@@ -77,7 +78,18 @@ public final class SchedulerMainThread implements MainThread {
 
     /** Pending calls end when the agent disconnects on shutdown, or at the timeout. */
     private void submit(Supplier<TaskSchedule> task) {
-        scheduler.submitTask(task, ExecutionType.TICK_START);
+        fromNextTick(scheduler, task);
+    }
+
+    /**
+     * Runs {@code task} at the start of the next tick, and again for as long as it asks to.
+     * {@link Scheduler#submitTask} runs a task's first round at once on the calling thread, which
+     * would put world access off the tick thread; this skips that round.
+     */
+    static void fromNextTick(Scheduler scheduler, Supplier<TaskSchedule> task) {
+        AtomicBoolean submitted = new AtomicBoolean();
+        scheduler.submitTask(() -> submitted.getAndSet(true) ? task.get() : TaskSchedule.nextTick(),
+                ExecutionType.TICK_START);
     }
 
     private <T> T await(CompletableFuture<T> future) {

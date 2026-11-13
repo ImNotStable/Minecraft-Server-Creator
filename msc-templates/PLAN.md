@@ -6,4 +6,4 @@ Phase: MVP. Steps are in order; each ends with passing tests.
 - [x] Dev server config defaults.
 - [x] Template variables the core fills in (name, package, version).
 - [x] Verify the Paper template's own build (`verifyTemplates`) on a machine with Java 25 and Paper access.
-- [ ] Post-MVP: Fabric and Minestom templates.
+- [x] Post-MVP: Fabric, Minestom, NeoForge and Forge templates (`fabric-mod`, `fabric-game`, `minestom-server`, `minestom-game`, `neoforge-mod`, `forge-mod`).

@@ -13,7 +13,7 @@ Minecraft Forge server mod for Minecraft {{mcVersion}}, Java {{javaVersion}}, Gr
 
 - `src/main/java/{{packagePath}}/{{mainClass}}.java`: entry point (`@Mod`). Only wiring here (commands, event listeners); put logic in its own classes.
 - `src/main/resources/META-INF/mods.toml`: mod metadata and dependencies. The mod id is `{{modId}}`.
-- `src/test/java/`: plain unit tests (`GreeterTest`)Each Forge event has its own bus: `ServerStartingEvent.BUS.addListener(e -> ...)`, `RegisterCommandsEvent.BUS`, `PlayerEvent.PlayerLoggedInEvent.BUS`, `TickEvent.ServerTickEvent.Post.BUS`, `BlockEvent.BreakEvent.BUS`. Add a mixin only when no event exists.
+- `src/test/java/`: plain unit tests (`GreeterTest`). They run on plain JUnit without Forge loaded: keep logic that tests need free of registries, and check commands and events on the dev server.
 - `gradle/libs.versions.toml`: every dependency version. Add versions there, never inline in `build.gradle.kts`.
 - `run/`: dev server. `server.properties` and `eula.txt` are committed; the world, logs and jars are not.
 
@@ -21,7 +21,7 @@ Minecraft Forge server mod for Minecraft {{mcVersion}}, Java {{javaVersion}}, Gr
 
 - Names are Mojang's official names (Minecraft 26.x is not obfuscated): `ServerPlayer`, `ServerLevel`, `BlockPos`, `Component`. Don't use SRG names (`m_12345_`) or names from old tutorials.
 - This is a server-side mod: never reference client classes (`net.minecraft.client`).
-- . They run on plain JUnit without Forge loaded: keep logic that tests need free of registries, and check commands and events on the dev server.
+- Each Forge event has its own bus: `ServerStartingEvent.BUS.addListener(e -> ...)`, `RegisterCommandsEvent.BUS`, `PlayerEvent.PlayerLoggedInEvent.BUS`, `TickEvent.ServerTickEvent.Post.BUS`, `BlockEvent.BreakEvent.BUS`. Add a mixin only when no event exists.
 - Commands are Brigadier trees built with `Commands.literal(...)` and `Commands.argument(...)`; reply with `source.sendSuccess(() -> component, false)` or `source.sendFailure(component)`.
 - Text is `Component.literal(...)` / `Component.translatable(...)` with `.withStyle(ChatFormatting.X)`. Never use `§` codes.
 - Never block the server thread (no I/O, sleeps or network in listeners or commands). Do slow work on another thread, then hop back with `server.execute(...)` before touching the world.

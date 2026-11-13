@@ -34,7 +34,7 @@ public final class VanillaAgent {
 
     /** The server is starting: build the operations and connect to the core. */
     public void starting(MinecraftServer server) {
-        main = new TickMainThread(server::isSameThread, AgentDefaults.TICK_BUDGET, AgentDefaults.OP_TIMEOUT);
+        main = new TickMainThread(server::isSameThread, server, AgentDefaults.TICK_BUDGET, AgentDefaults.OP_TIMEOUT);
         VanillaLevels levels = new VanillaLevels(server);
         VanillaServer access = new VanillaServer(server, levels, loader);
         serverOps = new ServerOps(access, main);

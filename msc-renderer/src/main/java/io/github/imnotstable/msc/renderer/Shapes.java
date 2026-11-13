@@ -89,7 +89,7 @@ final class Shapes {
         if (n.equals("end_rod") || n.equals("lightning_rod") || n.endsWith("chain")) {
             return one(Box.px(6, 0, 6, 10, 16, 10));
         }
-        if (n.endsWith("lantern")) {
+        if (n.endsWith("lantern") && !n.equals("sea_lantern") && !n.equals("jack_o_lantern")) {
             return one(s.is("hanging", "true") ? Box.px(5, 1, 5, 11, 10, 11) : Box.px(5, 0, 5, 11, 9, 11));
         }
         if (n.endsWith("_bed")) {
@@ -117,7 +117,7 @@ final class Shapes {
             return one(Box.px(1, 0, 1, 15, 16, 15));
         }
         if (PLANTS.contains(n) || n.endsWith("_sapling") || n.endsWith("_tulip") || n.endsWith("_fungus")
-                || n.endsWith("_roots") || n.endsWith("_coral") || n.endsWith("_coral_fan") || n.endsWith("_propagule")) {
+                || n.equals("crimson_roots") || n.equals("warped_roots") || n.endsWith("_coral") || n.endsWith("_coral_fan") || n.endsWith("_propagule")) {
             return PLANT;
         }
         return FULL;

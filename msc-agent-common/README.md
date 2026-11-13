@@ -9,6 +9,7 @@ Platform-neutral code shared by the server agents (`msc-agent-paper`, `msc-agent
   commands, resource packs). `S` is the platform's block state type.
 - `ReadJob`, `EditJob` and `HeightmapJob` are `SlicedJob`s the platform's `MainThread` runs in
   per-tick slices; `UndoRecord` and `EditHistory` keep undo.
+- `BlockNames` suggests close block ids when a state names an unknown block.
 - `AgentLink` connects to msc-core (`CoreAddress`), reconnects and sends events.
 
 Tests run the operations against an in-memory world (`MapWorld` in the tests). Design: ADR 0024.

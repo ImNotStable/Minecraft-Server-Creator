@@ -3,7 +3,6 @@ package io.github.imnotstable.msc.core.tools;
 import io.github.imnotstable.msc.core.CoreConfig;
 import io.github.imnotstable.msc.core.agent.AgentHub;
 import io.github.imnotstable.msc.core.texture.PackProperties;
-import io.github.imnotstable.msc.core.texture.PaletteTexture;
 import io.github.imnotstable.msc.core.texture.ResourcePack;
 import io.github.imnotstable.msc.core.tool.Args;
 import io.github.imnotstable.msc.core.tool.Budget;
@@ -26,7 +25,6 @@ import io.github.imnotstable.msc.textures.Shapes;
 import io.github.imnotstable.msc.textures.Stats;
 import io.github.imnotstable.msc.textures.Texture;
 import io.github.imnotstable.msc.textures.TextureException;
-import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -44,7 +42,7 @@ public final class TextureTools {
 
     public static void register(ToolRegistry registry, AgentHub hub, ResourcePack pack, CoreConfig config) {
         Path serverDir = config.serverDir();
-        PackSource source = new PackSource(pack.root());
+        PackSource source = pack.source();
         registry.add("texture",
                 "Add a pixel-art texture to the project's resource pack, in one of three ways: draw it as text "
                         + "(palette, rows), generate it (kind, color) or recolor a pack texture (copy, color). "
@@ -69,17 +67,13 @@ public final class TextureTools {
         registry.add("texture_view",
                 "Show a pack texture as a palette and pixel rows, the format texture draws. Animations show frame 1.",
                 Schema.of().req("name", "string", "Texture name such as item/ruby"),
-                args -> {
-                    ResourcePack.TextureId id = ResourcePack.id(args.str("name"));
-                    BufferedImage image = pack.readTexture(id);
-                    int frames = image.getHeight() / image.getWidth();
-                    String note = "";
-                    if (frames > 1 && image.getHeight() % image.getWidth() == 0 && animated(source, id)) {
-                        image = image.getSubimage(0, 0, image.getWidth(), image.getWidth());
-                        note = "frame 1 of " + frames + "\n";
-                    }
-                    return note + Budget.truncate(PaletteTexture.render(image), Budget.MAX_CHARS, "Texture too large to show.");
-                });
+                textures(args -> {
+                    ResourceId id = ResourceId.parse(args.str("name"));
+                    Texture t = source.readTexture(id);
+                    Texture frame = firstFrame(source, id, t);
+                    String note = frame == t ? "" : "frame 1 of " + (t.height() / t.width()) + "\n";
+                    return note + Budget.truncate(PaletteText.render(frame), Budget.MAX_CHARS, "Texture too large to show.");
+                }));
         registry.add("model_create",
                 "Write a block or item model from pack textures, and optionally an item definition.",
                 Schema.of().req("name", "string", "Model name such as block/ruby_log")
@@ -166,21 +160,20 @@ public final class TextureTools {
             throw new ToolException("give rows and palette to draw, kind and color to generate, copy and color to "
                     + "recolor, or animate to animate the texture already there");
         }
-        ResourcePack.TextureId id = ResourcePack.id(args.str("name"));
+        ResourceId id = ResourceId.parse(args.str("name"));
         StringBuilder out = new StringBuilder();
         String kind = args.str("kind", null);
         if (ways.contains("rows")) {
             if (!args.has("palette")) {
                 throw new ToolException("rows need a palette");
             }
-            PaletteTexture.Parsed parsed = PaletteTexture.parse(args.strings("palette"), args.strings("rows"));
-            String itemModel = pack.writeTexture(id, parsed.image(), model(args, id, "item"));
-            out.append("wrote ").append(id).append(' ').append(parsed.image().getWidth()).append('x')
-                    .append(parsed.image().getHeight());
+            Texture t = PaletteText.parse(args.strings("palette"), args.strings("rows"));
+            String itemModel = pack.writeTexture(id, t, model(args, id, "item"));
+            out.append("wrote ").append(id).append(' ').append(t.width()).append('x').append(t.height());
             if (itemModel != null) {
                 out.append("; item_model ").append(itemModel);
             }
-            for (String warning : parsed.warnings()) {
+            for (String warning : drawWarnings(t)) {
                 out.append("\nwarning: ").append(warning);
             }
         } else if (kind != null) {
@@ -196,7 +189,7 @@ public final class TextureTools {
             out.append(written(pack, id, Edits.recolor(in, Ramp.from(color(args), 5)), model(args, id, "item")));
         }
         if (args.has("animate")) {
-            out.append(out.isEmpty() ? "" : "\n").append(animate(args, source, ResourceId.parse(id.toString())));
+            out.append(out.isEmpty() ? "" : "\n").append(animate(args, source, id));
         }
         return out.append("\nnext: pack").toString();
     }
@@ -215,9 +208,8 @@ public final class TextureTools {
             if (!args.has("palette")) {
                 throw new ToolException("rows need a palette");
             }
-            PaletteTexture.Parsed parsed = PaletteTexture.parse(args.strings("palette"), args.strings("rows"));
-            t = Texture.of(parsed.image());
-            warnings = parsed.warnings();
+            t = PaletteText.parse(args.strings("palette"), args.strings("rows"));
+            warnings = drawWarnings(t);
         } else if (args.has("kind")) {
             t = generated(args);
         } else if (args.has("copy")) {
@@ -288,17 +280,40 @@ public final class TextureTools {
 
     /** A pack texture, or the first frame when it is already animated, so it can be animated or copied again. */
     private static Texture firstFrame(PackSource source, ResourceId id) throws IOException {
-        Texture t = source.readTexture(id);
+        return firstFrame(source, id, source.readTexture(id));
+    }
+
+    /** {@code t} itself, or its first frame when it is an animation strip. */
+    private static Texture firstFrame(PackSource source, ResourceId id, Texture t) {
+        Path png = source.texturePath(id);
         if (t.height() > t.width() && t.height() % t.width() == 0
-                && Files.exists(source.texturePath(id).resolveSibling(source.texturePath(id).getFileName() + ".mcmeta"))) {
-            return Animation.fromStrip(t, 1, false).frames().getFirst();
+                && Files.exists(png.resolveSibling(png.getFileName() + ".mcmeta"))) {
+            Texture frame = Texture.square(t.width());
+            frame.draw(t, 0, 0);
+            return frame;
         }
         return t;
     }
 
-    private static boolean animated(PackSource source, ResourcePack.TextureId id) {
-        Path png = source.texturePath(ResourceId.parse(id.toString()));
-        return Files.exists(png.resolveSibling(png.getFileName() + ".mcmeta"));
+    /** Things that will look wrong in game but do not stop a drawn texture being written. */
+    private static List<String> drawWarnings(Texture t) {
+        int width = t.width();
+        int height = t.height();
+        List<String> warnings = new ArrayList<>();
+        if (Integer.bitCount(width) != 1) {
+            warnings.add("width " + width + " is not a power of two; use 16, 32 or 64");
+        }
+        if (width != height && height % width != 0) {
+            warnings.add("height " + height + " is not a multiple of width " + width
+                    + "; textures are square, or stacked square frames for animation");
+        } else if (width != height) {
+            warnings.add((height / width) + " stacked frames: this needs a .png.mcmeta animation file to display correctly");
+        }
+        int colors = t.colors().size();
+        if (colors > 16) {
+            warnings.add(colors + " colors; vanilla-style textures use 4 to 12");
+        }
+        return warnings;
     }
 
     private static int color(Args args) {
@@ -343,12 +358,12 @@ public final class TextureTools {
      * The model to write: the one asked for, else {@code fallback}; but a vanilla texture ({@code minecraft:block/...})
      * is a retexture, and a written model would replace vanilla's (a stem's cube_column with a cube_all), so none.
      */
-    static String model(Args args, ResourcePack.TextureId id, String fallback) {
+    static String model(Args args, ResourceId id, String fallback) {
         return args.str("model", id.namespace().equals("minecraft") ? "none" : fallback);
     }
 
-    private static String written(ResourcePack pack, ResourcePack.TextureId id, Texture t, String model) throws IOException {
-        String itemModel = pack.writeTexture(id, t.toImage(), model);
+    private static String written(ResourcePack pack, ResourceId id, Texture t, String model) throws IOException {
+        String itemModel = pack.writeTexture(id, t, model);
         return "wrote " + id + ": " + Stats.of(t) + (itemModel == null ? "" : "; item_model " + itemModel);
     }
 }

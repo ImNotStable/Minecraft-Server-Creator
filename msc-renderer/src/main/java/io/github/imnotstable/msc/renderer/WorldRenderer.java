@@ -17,7 +17,7 @@ import javax.imageio.ImageIO;
 /**
  * Renders a block grid to a PNG so an AI can look at a build. Pure Java, no GPU and no window:
  * safe on headless servers and CI. Thread-safe; keep one instance so resolved blocks and textures
- * stay cached.
+ * stay cached (until the {@link TextureSource#stamp() texture source changes}).
  *
  * <pre>{@code
  * WorldRenderer renderer = new WorldRenderer(new PackTextures(List.of(packFolder)));
@@ -183,7 +183,8 @@ public final class WorldRenderer {
                     outside.add(n);
                     continue;
                 }
-                boolean behind = behind(frame, tracer, p);
+                // A sign's own block (post and board) sits around its anchor and must not hide its text.
+                boolean behind = behind(frame, tracer, p, m.kind() == Marker.Kind.SIGN);
                 if (behind) {
                     hidden.add(n);
                 }
@@ -198,14 +199,22 @@ public final class WorldRenderer {
         StringBuilder sb = new StringBuilder("Markers, numbered (");
         sb.append(kinds.stream().map(WorldRenderer::legend).collect(java.util.stream.Collectors.joining(", ")))
                 .append("): ");
-        for (int i = 0; i < markers.size(); i++) {
+        for (int i = 0; i < shown; i++) {
             Marker m = markers.get(i);
             sb.append(i == 0 ? "" : "; ").append(i + 1).append(' ').append(m.label()).append(" at ")
                     .append(coord(m.x())).append(',').append(coord(m.y())).append(',').append(coord(m.z()));
         }
         sb.append('.');
         if (markers.size() > shown) {
-            sb.append(' ').append(markers.size() - shown).append(" more not drawn.");
+            // Only counts per type: numbers past the drawn ones would point at nothing in the image.
+            java.util.Map<String, Integer> rest = new java.util.TreeMap<>();
+            for (Marker m : markers.subList(shown, markers.size())) {
+                rest.merge(m.label().split(" ", 2)[0], 1, Integer::sum);
+            }
+            sb.append(' ').append(markers.size() - shown).append(" more not drawn: ")
+                    .append(rest.entrySet().stream().map(e -> e.getValue() + " " + e.getKey())
+                            .collect(java.util.stream.Collectors.joining(", ")))
+                    .append("; world_entities lists entities.");
         }
         if (!outside.isEmpty()) {
             sb.append(" Outside the image: ").append(numbers(outside)).append('.');
@@ -220,17 +229,42 @@ public final class WorldRenderer {
         return numbers.stream().map(String::valueOf).collect(java.util.stream.Collectors.joining(", "));
     }
 
-    /** True when a solid block lies between a grid-local point and the camera. */
-    private static boolean behind(Frame frame, Tracer tracer, double[] p) {
+    /**
+     * True when a solid block lies between a grid-local point and the camera. With {@code skipOwnCell} the ray starts
+     * where it leaves the block that holds the point, so that block cannot hide it.
+     */
+    private static boolean behind(Frame frame, Tracer tracer, double[] p, boolean skipOwnCell) {
+        double[] d;
+        double distance;
         if (frame.perspective) {
-            double[] d = {frame.origin[0] - p[0], frame.origin[1] - p[1], frame.origin[2] - p[2]};
-            double distance = Math.sqrt(dot(d, d));
+            d = new double[] {frame.origin[0] - p[0], frame.origin[1] - p[1], frame.origin[2] - p[2]};
+            distance = Math.sqrt(dot(d, d));
             if (distance < 1e-6) {
                 return false;
             }
-            return tracer.blocked(p[0], p[1], p[2], d[0] / distance, d[1] / distance, d[2] / distance, distance);
+            d = new double[] {d[0] / distance, d[1] / distance, d[2] / distance};
+        } else {
+            d = new double[] {-frame.f[0], -frame.f[1], -frame.f[2]};
+            distance = Double.POSITIVE_INFINITY;
         }
-        return tracer.blocked(p[0], p[1], p[2], -frame.f[0], -frame.f[1], -frame.f[2], Double.POSITIVE_INFINITY);
+        double skip = skipOwnCell ? cellExit(p, d) : 0;
+        if (skip >= distance) {
+            return false;
+        }
+        return tracer.blocked(p[0] + d[0] * skip, p[1] + d[1] * skip, p[2] + d[2] * skip, d[0], d[1], d[2],
+                distance - skip);
+    }
+
+    /** Distance along a ray from a point to where it leaves the unit cell that holds the point. */
+    private static double cellExit(double[] p, double[] d) {
+        double exit = Double.POSITIVE_INFINITY;
+        for (int axis = 0; axis < 3; axis++) {
+            if (Math.abs(d[axis]) > 1e-12) {
+                double wall = Math.floor(p[axis]) + (d[axis] > 0 ? 1 : 0);
+                exit = Math.min(exit, (wall - p[axis]) / d[axis]);
+            }
+        }
+        return exit;
     }
 
     private static void drawDot(int[] pixels, Frame frame, int[] at, int font, int rgb, boolean hollow, String number,

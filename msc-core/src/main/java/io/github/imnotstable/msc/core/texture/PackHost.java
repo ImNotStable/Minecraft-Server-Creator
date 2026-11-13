@@ -1,16 +1,14 @@
 package io.github.imnotstable.msc.core.texture;
 
 import com.sun.net.httpserver.HttpServer;
+import io.github.imnotstable.msc.textures.PackSource;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.BindException;
 import java.net.InetSocketAddress;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
-import java.util.HexFormat;
 import java.util.function.Supplier;
 
 /**
@@ -69,14 +67,6 @@ public final class PackHost {
         }
     }
 
-    public static String sha1(byte[] data) {
-        try {
-            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-1").digest(data));
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException(e);
-        }
-    }
-
     /** Serves whatever {@code zip} holds now, so a later pack is picked up without a restart. */
     static Supplier<Served> file(Path zip) {
         return new Supplier<>() {
@@ -89,7 +79,7 @@ public final class PackHost {
                     long now = Files.getLastModifiedTime(zip).toMillis() ^ Files.size(zip);
                     if (now != stamp) {
                         byte[] data = Files.readAllBytes(zip);
-                        served = new Served(data, sha1(data));
+                        served = new Served(data, PackSource.sha1(data));
                         stamp = now;
                     }
                 } catch (IOException e) {

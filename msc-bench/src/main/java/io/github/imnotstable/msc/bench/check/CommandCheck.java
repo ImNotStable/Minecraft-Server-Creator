@@ -2,6 +2,7 @@ package io.github.imnotstable.msc.bench.check;
 
 import io.github.imnotstable.msc.bench.run.Workspaces;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -43,7 +44,9 @@ record CommandCheck(String name, List<String> run, int timeoutSeconds, int expec
                 process.destroyForcibly();
                 return CheckResult.fail(name, "timed out after " + timeoutSeconds + "s");
             }
-            String output = Files.readString(log);
+            // Lenient UTF-8: tools write in the console charset (Cp1252 on Windows), and a stray byte must not fail
+            // a command that passed.
+            String output = new String(Files.readAllBytes(log), StandardCharsets.UTF_8);
             if (process.exitValue() != expectExit) {
                 return CheckResult.fail(name, "exit " + process.exitValue() + ": " + tail(output));
             }

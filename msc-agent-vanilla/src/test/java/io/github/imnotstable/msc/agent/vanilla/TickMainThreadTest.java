@@ -7,7 +7,10 @@ import io.github.imnotstable.msc.protocol.message.ErrorCodes;
 import io.github.imnotstable.msc.protocol.transport.OpException;
 import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 
 class TickMainThreadTest {
@@ -33,16 +36,21 @@ class TickMainThreadTest {
 
     private final TickMainThread main = new TickMainThread(() -> false, Duration.ofMillis(20), Duration.ofSeconds(5));
 
-    private static void waitQueued() throws InterruptedException {
-        Thread.sleep(50);
+    /** Waits until {@code count} jobs are queued, so a tick is sure to see them. */
+    private void awaitQueued(int count) throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        while (main.queued() < count) {
+            assertThat(System.nanoTime()).as("jobs queued in time").isLessThan(deadline);
+            Thread.sleep(1);
+        }
     }
 
     @Test
     void jobsRunInSlicesAcrossTicksAndQuickCallsDoNotWaitBehindThem() throws Exception {
         CompletableFuture<Integer> job = CompletableFuture.supplyAsync(() -> main.run(new CountingJob(3)));
-        waitQueued();
+        awaitQueued(1);
         CompletableFuture<String> call = CompletableFuture.supplyAsync(() -> main.call(() -> "info"));
-        waitQueued();
+        awaitQueued(2);
 
         main.tick();
         assertThat(call.get(1, TimeUnit.SECONDS)).isEqualTo("info");
@@ -57,7 +65,7 @@ class TickMainThreadTest {
         CompletableFuture<Object> call = CompletableFuture.supplyAsync(() -> main.call(() -> {
             throw new IllegalArgumentException("bad block");
         }));
-        waitQueued();
+        awaitQueued(1);
         main.tick();
 
         assertThat(call).failsWithin(Duration.ofSeconds(1))
@@ -68,7 +76,7 @@ class TickMainThreadTest {
     @Test
     void stoppingFailsQueuedAndNewJobsWithShutdown() throws Exception {
         CompletableFuture<Integer> job = CompletableFuture.supplyAsync(() -> main.run(new CountingJob(5)));
-        waitQueued();
+        awaitQueued(1);
         main.stop();
 
         assertThat(job).failsWithin(Duration.ofSeconds(1)).withThrowableThat().havingRootCause()
@@ -85,5 +93,38 @@ class TickMainThreadTest {
 
         assertThat(call).failsWithin(Duration.ofSeconds(2)).withThrowableThat().havingRootCause()
                 .isInstanceOfSatisfying(OpException.class, e -> assertThat(e.code()).isEqualTo(ErrorCodes.TIMEOUT));
+    }
+
+    @Test
+    void jobsRunWhileThePausedServerFiresNoTicks() throws Exception {
+        ExecutorService server = Executors.newSingleThreadExecutor();
+        try {
+            Thread serverThread = server.submit(Thread::currentThread).get();
+            TickMainThread paused = new TickMainThread(() -> Thread.currentThread() == serverThread, server,
+                    Duration.ofMillis(20), Duration.ofSeconds(5));
+
+            CompletableFuture<String> call = CompletableFuture.supplyAsync(() -> paused.call(() -> "info"));
+            CompletableFuture<Integer> job = CompletableFuture.supplyAsync(() -> paused.run(new CountingJob(3)));
+
+            assertThat(call.get(3, TimeUnit.SECONDS)).isEqualTo("info");
+            assertThat(job.get(3, TimeUnit.SECONDS)).isEqualTo(3);
+        } finally {
+            server.shutdownNow();
+        }
+    }
+
+    @Test
+    void aTickingServerNeedsNoWake() throws Exception {
+        AtomicInteger wakes = new AtomicInteger();
+        TickMainThread ticking = new TickMainThread(() -> false, task -> wakes.incrementAndGet(),
+                Duration.ofMillis(20), Duration.ofSeconds(5));
+        CompletableFuture<Integer> job = CompletableFuture.supplyAsync(() -> ticking.run(new CountingJob(10)));
+
+        while (!job.isDone()) {
+            ticking.tick();
+            Thread.sleep(10);
+        }
+        assertThat(job.get()).isEqualTo(10);
+        assertThat(wakes).hasValue(0);
     }
 }

@@ -237,6 +237,33 @@ class TemplatesTest {
     }
 
     @Test
+    void claudeMdBulletsAreWhole() throws IOException {
+        for (String id : Templates.ids()) {
+            if (id.equals(Templates.PAPER_SERVER)) {
+                continue;
+            }
+            Path root = Templates.scaffold(id, dir.resolve(id), vars).root();
+            // A bullet starting with punctuation or a sentence glued after a closing `...`) means two bullets got spliced.
+            assertThat(Files.readString(root.resolve("CLAUDE.md"))).as(id)
+                    .doesNotContainPattern("(?m)^- +[^\\w`*\\[(\"]")
+                    .doesNotContainPattern("`\\)[A-Z]");
+        }
+    }
+
+    @Test
+    void refusesNamesWhoseClassClashesWithAnImport() {
+        assertThatThrownBy(() -> Templates.scaffold(Templates.MINESTOM_SERVER, dir.resolve("m"), TemplateVariables.of("Minecraft")))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("MinecraftServer").hasMessageContaining("Minecraft");
+        assertThatThrownBy(() -> Templates.scaffold(Templates.PAPER_PLUGIN, dir.resolve("p"), TemplateVariables.of("Java")))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("JavaPlugin");
+        assertThatThrownBy(() -> Templates.scaffold(Templates.FABRIC_MOD, dir.resolve("f"), vars.withMainClass("Greeter")))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("Greeter.java");
+        assertThat(dir.resolve("m")).doesNotExist();
+        assertThat(dir.resolve("p")).doesNotExist();
+        assertThat(dir.resolve("f")).doesNotExist();
+    }
+
+    @Test
     void scaffoldsServerDefaultsOnly() throws IOException {
         ScaffoldResult r = Templates.scaffold(Templates.PAPER_SERVER, dir, vars);
         assertThat(relative(r)).containsExactlyInAnyOrder("eula.txt", "server.properties");

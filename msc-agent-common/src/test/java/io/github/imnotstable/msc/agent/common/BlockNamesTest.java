@@ -1,4 +1,4 @@
-package io.github.imnotstable.msc.agent.paper;
+package io.github.imnotstable.msc.agent.common;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -15,5 +15,11 @@ class BlockNamesTest {
         assertThat(BlockNames.suggest("minecraft:polished_diorite_wall", KNOWN))
                 .containsExactly("polished_diorite", "diorite_wall", "polished_blackstone_wall");
         assertThat(BlockNames.suggest("glorp", KNOWN)).isEmpty();
+    }
+
+    @Test
+    void toleratesRepeatedWords() {
+        assertThat(BlockNames.suggest("minecraft:stone_brick_stone_wall", KNOWN)).first().isEqualTo("stone");
+        assertThat(BlockNames.suggest("a__b__c", KNOWN)).isEmpty();
     }
 }
