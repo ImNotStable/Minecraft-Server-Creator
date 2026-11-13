@@ -17,8 +17,10 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import net.minestom.server.coordinate.Pos;
+import net.minestom.server.entity.Player;
 import net.minestom.server.instance.Instance;
 import net.minestom.server.instance.block.Block;
+import net.minestom.server.network.packet.server.common.ResourcePackPushPacket;
 import net.minestom.testing.Env;
 import net.minestom.testing.EnvTest;
 import org.junit.jupiter.api.AfterEach;
@@ -106,5 +108,36 @@ class AgentSmokeTest {
         assertThat(join).isNotNull();
         assertThat(join.name()).isEqualTo(Events.PLAYER_JOIN);
         assertThat(join.data().get("name").getAsString()).isNotBlank();
+    }
+
+    @Test
+    void sendsTheCurrentPackToLaterJoinersAndReportsQuitAndStop(Env env) throws Exception {
+        Instance world = env.createFlatInstance();
+        agent = MscAgent.start();
+        CoreServer.AgentSession session = sessions.poll(TIMEOUT.toSeconds(), TimeUnit.SECONDS);
+        assertThat(session).isNotNull();
+        env.tick();
+        assertThat(events.poll(TIMEOUT.toSeconds(), TimeUnit.SECONDS).name()).isEqualTo(Events.SERVER_READY);
+
+        Ops.PackResult sent = tickUntil(env, session.connection().call(Ops.PACK_APPLY, new Ops.PackParams(
+                "http://127.0.0.1:8123/pack.zip", "0123456789abcdef0123456789abcdef01234567", true), TIMEOUT));
+        assertThat(sent.playersSent()).isZero();
+
+        var connection = env.createConnection();
+        var pushes = connection.trackIncoming(ResourcePackPushPacket.class);
+        Player player = connection.connect(world, new Pos(0, 42, 0));
+        pushes.assertSingle(p -> assertThat(p.url()).isEqualTo("http://127.0.0.1:8123/pack.zip"));
+        assertThat(events.poll(TIMEOUT.toSeconds(), TimeUnit.SECONDS).name()).isEqualTo(Events.PLAYER_JOIN);
+
+        player.remove();
+        Event quit = events.poll(TIMEOUT.toSeconds(), TimeUnit.SECONDS);
+        assertThat(quit).isNotNull();
+        assertThat(quit.name()).isEqualTo(Events.PLAYER_QUIT);
+        assertThat(quit.data().get("name").getAsString()).isEqualTo(player.getUsername());
+
+        agent.stop();
+        Event stopping = events.poll(TIMEOUT.toSeconds(), TimeUnit.SECONDS);
+        assertThat(stopping).isNotNull();
+        assertThat(stopping.name()).isEqualTo(Events.SERVER_STOPPING);
     }
 }

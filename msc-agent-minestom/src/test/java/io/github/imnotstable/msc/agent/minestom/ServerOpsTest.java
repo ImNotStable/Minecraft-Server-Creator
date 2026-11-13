@@ -108,7 +108,7 @@ class ServerOpsTest {
     }
 
     @Test
-    void packGoesToOnlinePlayersAndNewJoins(Env env) {
+    void packGoesToOnlinePlayers(Env env) {
         Instance world = env.createFlatInstance();
         ServerOps ops = ops(env);
         var connection = env.createConnection();
