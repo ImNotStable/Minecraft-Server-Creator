@@ -59,13 +59,15 @@ public final class Edits {
         return out;
     }
 
-    /** Colours are pre-bucketed until at most this many clusters remain, so merging stays fast. */
+    /** Merging starts from at most this many clusters, so it stays fast regardless of texture size. */
     static final int MAX_CLUSTERS = 256;
 
     /**
-     * Reduce to at most {@code max} opaque colours by repeatedly merging the closest pair, weighted by
-     * pixel count. Transparency is kept. Textures with more than {@link #MAX_CLUSTERS} colours are first
-     * bucketed by dropping low bits per channel, which bounds the work regardless of size.
+     * Reduce to at most {@code max} opaque RGB colours by repeatedly merging the closest pair, weighted by
+     * pixel count. Each pixel keeps its alpha, so colours that differ only in alpha stay apart, and
+     * transparent pixels stay as they are. A texture with more than {@code max} RGB colours ends with
+     * {@code min(max, MAX_CLUSTERS)} of them: colours are first grouped into {@link #MAX_CLUSTERS} start
+     * clusters (the most used fine buckets, each other bucket joining its nearest one), which bounds the work.
      */
     public static Texture quantize(Texture in, int max) {
         if (max < 1) {
@@ -75,12 +77,12 @@ public final class Edits {
             return in.copy();
         }
         int mask = bucketMask(in);
-        Map<Integer, long[]> sums = new LinkedHashMap<>();
+        Map<Integer, long[]> buckets = new LinkedHashMap<>();
         for (int y = 0; y < in.height(); y++) {
             for (int x = 0; x < in.width(); x++) {
                 int c = in.get(x, y);
                 if (Colors.opaque(c)) {
-                    long[] s = sums.computeIfAbsent(c & mask, k -> new long[4]);
+                    long[] s = buckets.computeIfAbsent(c & mask, k -> new long[4]);
                     s[0] += (c >> 16) & 0xFF;
                     s[1] += (c >> 8) & 0xFF;
                     s[2] += c & 0xFF;
@@ -88,14 +90,41 @@ public final class Edits {
                 }
             }
         }
+        List<Map.Entry<Integer, long[]>> byUse = new ArrayList<>(buckets.entrySet());
+        byUse.sort(Comparator.comparingLong(e -> -e.getValue()[3]));
+        int seeds = Math.min(MAX_CLUSTERS, byUse.size());
+        List<long[]> sums = new ArrayList<>();
         List<int[]> clusters = new ArrayList<>();
         Map<Integer, int[]> owner = new HashMap<>();
-        sums.forEach((key, s) -> {
-            int n = (int) s[3];
-            int[] cl = {Math.round((float) s[0] / n), Math.round((float) s[1] / n), Math.round((float) s[2] / n), n};
-            clusters.add(cl);
-            owner.put(key, cl);
-        });
+        for (int i = 0; i < seeds; i++) {
+            sums.add(byUse.get(i).getValue().clone());
+            clusters.add(mean(byUse.get(i).getValue()));
+        }
+        int[] home = new int[byUse.size()];
+        for (int i = seeds; i < byUse.size(); i++) {
+            int[] b = mean(byUse.get(i).getValue());
+            double best = Double.MAX_VALUE;
+            for (int j = 0; j < seeds; j++) {
+                double d = dist(b, clusters.get(j));
+                if (d < best) {
+                    best = d;
+                    home[i] = j;
+                }
+            }
+        }
+        for (int i = seeds; i < byUse.size(); i++) {
+            long[] to = sums.get(home[i]);
+            long[] from = byUse.get(i).getValue();
+            for (int k = 0; k < 4; k++) {
+                to[k] += from[k];
+            }
+        }
+        for (int j = 0; j < seeds; j++) {
+            clusters.set(j, mean(sums.get(j)));
+        }
+        for (int i = 0; i < byUse.size(); i++) {
+            owner.put(byUse.get(i).getKey(), clusters.get(i < seeds ? i : home[i]));
+        }
         while (clusters.size() > max) {
             int bi = 0;
             int bj = 1;
@@ -134,13 +163,21 @@ public final class Edits {
         return out;
     }
 
-    /** The finest RGB mask (8 bits per channel down to 1) that leaves at most {@link #MAX_CLUSTERS} buckets. */
+    private static int[] mean(long[] s) {
+        int n = (int) s[3];
+        return new int[] {Math.round((float) s[0] / n), Math.round((float) s[1] / n), Math.round((float) s[2] / n), n};
+    }
+
+    /** Fine buckets kept before grouping into start clusters; each bit dropped can cut the count by up to 8. */
+    private static final int MAX_BUCKETS = 8 * MAX_CLUSTERS;
+
+    /** The finest RGB mask (8 bits per channel down to 1) that leaves at most {@link #MAX_BUCKETS} buckets. */
     private static int bucketMask(Texture in) {
         for (int bits = 8; bits > 1; bits--) {
             int m = (0xFF << (8 - bits)) & 0xFF;
             int mask = m << 16 | m << 8 | m;
             Set<Integer> buckets = new HashSet<>();
-            for (int y = 0; y < in.height() && buckets.size() <= MAX_CLUSTERS; y++) {
+            for (int y = 0; y < in.height() && buckets.size() <= MAX_BUCKETS; y++) {
                 for (int x = 0; x < in.width(); x++) {
                     int c = in.get(x, y);
                     if (Colors.opaque(c)) {
@@ -148,7 +185,7 @@ public final class Edits {
                     }
                 }
             }
-            if (buckets.size() <= MAX_CLUSTERS) {
+            if (buckets.size() <= MAX_BUCKETS) {
                 return mask;
             }
         }
