@@ -72,6 +72,14 @@ public enum Platform {
         return agent;
     }
 
+    /**
+     * File name server_setup installs the agent under in {@link #addonDir()}. Named for the agent, not the platform:
+     * Quilt runs {@code msc-agent-fabric.jar}, Purpur {@code msc-agent-paper.jar}.
+     */
+    public String agentJar() {
+        return "msc-agent-" + agent + ".jar";
+    }
+
     /** True when the server is Mojang's and so needs an accepted {@code eula.txt}. */
     public boolean needsEula() {
         return eula;

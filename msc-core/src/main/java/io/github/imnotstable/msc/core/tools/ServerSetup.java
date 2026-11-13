@@ -192,7 +192,7 @@ final class ServerSetup {
     private void installAgent(Platform platform, Path addons, StringBuilder out) throws IOException {
         Path agent = findAgentJar(platform);
         if (agent != null) {
-            Files.copy(agent, addons.resolve(installedAgentName(platform)), StandardCopyOption.REPLACE_EXISTING);
+            Files.copy(agent, addons.resolve(platform.agentJar()), StandardCopyOption.REPLACE_EXISTING);
             out.append("agent installed in ").append(platform.addonDir()).append("/\n");
         } else {
             out.append("warning: msc ").append(platform.id()).append(" agent not found, so world and build tools will "
@@ -219,11 +219,6 @@ final class ServerSetup {
         } else {
             out.append("note: eula.txt has eula=true; running the server means the user agrees to https://aka.ms/MinecraftEULA\n");
         }
-    }
-
-    /** Named for the agent, not the platform: Quilt runs {@code msc-agent-fabric.jar}, Purpur {@code msc-agent-paper.jar}. */
-    static String installedAgentName(Platform platform) {
-        return "msc-agent-" + platform.agent() + ".jar";
     }
 
     /**

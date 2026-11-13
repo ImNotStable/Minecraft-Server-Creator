@@ -259,7 +259,7 @@ final class ServerRun {
         if (platform.addonDir() == null || server.running()) {
             return false;
         }
-        Path installed = config.serverDir().resolve(platform.addonDir()).resolve(ServerSetup.installedAgentName(platform));
+        Path installed = config.serverDir().resolve(platform.addonDir()).resolve(platform.agentJar());
         Path agent = setup.findAgentJar(platform);
         if (agent == null || !Files.exists(installed) || Files.mismatch(agent, installed) == -1) {
             return false;

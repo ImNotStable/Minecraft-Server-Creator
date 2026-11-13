@@ -278,7 +278,11 @@ class TemplatesTest {
                 new Case(Templates.FABRIC_MOD, "Msc Agent"), new Case(Templates.FABRIC_GAME, "msc-agent"),
                 new Case(Templates.NEOFORGE_MOD, "MSC agent"), new Case(Templates.FORGE_MOD, "msc_agent"),
                 new Case(Templates.PAPER_PLUGIN, "Msc Agent"), new Case(Templates.PAPER_GAME, "MscAgent"),
-                new Case(Templates.PAPER_PLUGIN, "Minecraft"), new Case(Templates.PAPER_GAME, "Bukkit"))) {
+                new Case(Templates.PAPER_PLUGIN, "Minecraft"), new Case(Templates.PAPER_GAME, "Bukkit"),
+                // ...and its jar, msc-agent-<platform>.jar, sits where dev_cycle deploys <projectId>.jar (#311).
+                new Case(Templates.PAPER_PLUGIN, "Msc Agent Paper"), new Case(Templates.PAPER_GAME, "msc-agent-paper"),
+                new Case(Templates.FABRIC_MOD, "msc-agent-fabric"), new Case(Templates.FABRIC_GAME, "MSC Agent Fabric"),
+                new Case(Templates.NEOFORGE_MOD, "msc-agent-neoforge"), new Case(Templates.FORGE_MOD, "Msc Agent Forge"))) {
             Path target = dir.resolve(c.template() + "-" + c.name());
             assertThatThrownBy(() -> Templates.scaffold(c.template(), target, TemplateVariables.of(c.name())))
                     .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("keeps for itself");
@@ -292,6 +296,9 @@ class TemplatesTest {
         ScaffoldResult forge = Templates.scaffold(Templates.FORGE_MOD, dir.resolve("ok2"), TemplateVariables.of("Neoforge"));
         assertThat(forge.root().resolve("src/main/resources/META-INF/mods.toml")).content().contains("modId = \"neoforge\"");
         Templates.scaffold(Templates.PAPER_PLUGIN, dir.resolve("ok3"), vars.withPackageName("org.bukkitlobby"));
+        // Another platform's agent jar is not in this project's addon folder.
+        Templates.scaffold(Templates.PAPER_PLUGIN, dir.resolve("ok4"), TemplateVariables.of("Msc Agent Fabric"));
+        Templates.scaffold(Templates.FABRIC_MOD, dir.resolve("ok5"), TemplateVariables.of("Msc Agent Paper Tools"));
     }
 
     @Test

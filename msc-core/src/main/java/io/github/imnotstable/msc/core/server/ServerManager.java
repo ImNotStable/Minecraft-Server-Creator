@@ -180,7 +180,7 @@ public final class ServerManager implements AutoCloseable {
     private boolean expectsAgent() {
         Platform platform = platform();
         return platform.addonDir() == null
-                || Files.exists(config.serverDir().resolve(platform.addonDir()).resolve("msc-agent-" + platform.agent() + ".jar"));
+                || Files.exists(config.serverDir().resolve(platform.addonDir()).resolve(platform.agentJar()));
     }
 
     private void pump(Process p) {
