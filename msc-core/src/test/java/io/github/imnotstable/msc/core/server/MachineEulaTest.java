@@ -30,6 +30,17 @@ class MachineEulaTest {
         assertThat(file).content().contains("\"how\": \"typed yes to 'msc eula accept' in an interactive terminal\"");
     }
 
+    /** The fixtures msc-bench's MachineEulaTest reads too, so the two readers keep one rule (ADR 0004 forbids sharing code). */
+    @Test
+    void sharedFixturesAreAcceptedOnlyWhenNamedSo() throws Exception {
+        try (var files = Files.list(Path.of("src/test/resources/eula-fixtures"))) {
+            for (Path f : files.toList()) {
+                boolean expected = f.getFileName().toString().startsWith("accepted-");
+                assertThat(MachineEula.read(f).isPresent()).as(f.getFileName().toString()).isEqualTo(expected);
+            }
+        }
+    }
+
     @Test
     void appliesTheAcceptanceToAServerOnlyWhenThereIsOne() throws Exception {
         Path file = dir.resolve("home/.msc/eula.json");
