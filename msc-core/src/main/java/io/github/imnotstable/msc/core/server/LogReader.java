@@ -6,7 +6,9 @@ import java.io.InputStreamReader;
 import java.io.Reader;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Consumer;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -38,8 +40,21 @@ import java.util.regex.Pattern;
  * frames. A warning or error followed by a header is {@code logger.warn(msg, e)} and stays one entry;</li>
  * <li>any other line when no entry has started yet.</li>
  * </ul>
- * Other non-blank lines continue the current entry, except Quilt's start-up timings, which are dropped. One
- * exception keeps interleaved streams apart: a trace line (a frame, {@code Caused by:}, {@code Suppressed:} or
+ * Other non-blank lines continue the current entry, except Quilt's start-up timings, which are dropped.
+ *
+ * <p><b>Printed traces with a prefix on every line.</b> Most platforms route {@code System.err} and
+ * {@code System.out} through their logger, so {@code e.printStackTrace()} arrives as one prefixed line per header,
+ * frame and {@code Caused by:} (#336): Paper and Purpur at WARN, as {@code [12:00:05 WARN]: [MyPlugin] [STDERR] at ...}
+ * for a plugin's output or untagged otherwise; vanilla, Fabric and Quilt at INFO, as
+ * {@code [12:00:05] [Server thread/INFO]: [STDERR]: at ...}; Forge and NeoForge under the logger {@code STDERR}, with
+ * the caller in front, as {@code [STDERR/]: [java.lang.Throwable:printStackTrace:662]: at ...}. The stream tag and
+ * the caller are taken off; a prefixed line whose message is then a throwable header starts a <i>printed</i> entry,
+ * which counts as an error whatever level the platform logs its streams at (with a stream tag at once, without one
+ * once a frame follows). A prefixed line whose message is a trace line (a frame, {@code Caused by:},
+ * {@code Suppressed:} or {@code ... N more}) continues the last prefixed entry with the same level and stream tag,
+ * also when other prefixed lines came between (two plugins printing at once, a log line from another thread), so the
+ * whole trace is one entry whose framework frames {@link LogCondenser} folds. One
+  * exception keeps interleaved streams apart: a trace line (a frame, {@code Caused by:}, {@code Suppressed:} or
  * {@code ... N more}) that arrives right after a fresh entry that is neither a warning nor an error and has no trace
  * of its own belongs to the last entry with a trace, not to that entry (stdout printed a log line while stderr was
  * in the middle of a trace). An entry keeps at most {@link #MAX_ENTRY_LINES} continuation lines and counts the rest
@@ -82,6 +97,13 @@ public final class LogReader {
     /** Quilt Loader's start-up timings, printed to stdout without a timestamp. */
     private static final Pattern QUILT_TIMING =
             Pattern.compile("^(mod adding|tmp jar copy|transform-cache|zip sub copy) took \\d+ms$");
+    /**
+     * A logged stream line: Paper's {@code [Plugin] [STDERR] msg} (the plugin name is optional) and vanilla's
+     * {@code [STDERR]: msg}.
+     */
+    private static final Pattern STREAM = Pattern.compile("^(?:\\[([^\\]]+)\\] )?\\[(STDERR|STDOUT)\\]:? (.*)$");
+    /** The caller a debug-level stream logger (Forge, NeoForge) puts first: {@code [java.lang.Throwable:println:9]: }. */
+    private static final Pattern CALLER = Pattern.compile("^\\[[\\w.$]+:[\\w$<>]+:\\d+\\]: (.*)$");
     private static final Pattern ANSI = Pattern.compile("\u001b\\[[0-9;?]*[A-Za-z]");
 
     private LogReader() {
@@ -94,14 +116,24 @@ public final class LogReader {
         private final String text;
         private final List<String> extra = new ArrayList<>();
         private int cut;
+        /** True when the entry's text is a throwable header after a log prefix. */
+        private final boolean header;
+        /** True when the entry is a throwable printed through a logged stream, so its level says nothing. */
+        private boolean printed;
         private boolean frames;
         private boolean trace;
 
         Entry(String time, String level, String text, boolean trace) {
+            this(time, level, text, trace, false);
+        }
+
+        private Entry(String time, String level, String text, boolean trace, boolean header) {
             this.time = time;
             this.level = level;
             this.text = text;
             this.trace = trace;
+            this.header = header;
+            this.printed = header && trace;
         }
 
         public String time() {
@@ -135,8 +167,9 @@ public final class LogReader {
             return level.startsWith("WARN") || error();
         }
 
+        /** An error-level entry, or a stack trace printed through a logged stream (#336). */
         public boolean error() {
-            return level.equals("ERROR") || level.equals("FATAL") || level.equals("SEVERE");
+            return level.equals("ERROR") || level.equals("FATAL") || level.equals("SEVERE") || (printed && trace);
         }
 
         void add(String line) {
@@ -252,10 +285,19 @@ public final class LogReader {
         List<Entry> entries = new ArrayList<>();
         Entry current = null;
         Entry lastTrace = null;
+        Map<String, Entry> lastByStream = new HashMap<>();
         for (String raw : lines) {
             String line = stripAnsi(raw);
-            Entry started = start(line, current);
-            if (started != null) {
+            Prefixed prefixed = prefixed(line);
+            Entry printing = prefixed == null || !traceLine(prefixed.payload()) ? null : lastByStream.get(prefixed.key());
+            if (printing != null) {
+                printing.printed |= printing.header;
+                printing.add(prefixed.payload());
+            } else if (prefixed != null) {
+                current = prefixed.entry();
+                entries.add(current);
+                lastByStream.put(prefixed.key(), current);
+            } else if (start(line, current) instanceof Entry started) {
                 current = started;
                 entries.add(current);
             } else if (!line.isBlank() && !QUILT_TIMING.matcher(line).matches()) {
@@ -270,18 +312,62 @@ public final class LogReader {
         return entries;
     }
 
-    /** The entry {@code line} starts, or null when it continues {@code current} (or is blank). */
-    private static Entry start(String line, Entry current) {
-        Matcher m = LINE.matcher(line);
-        if (m.matches()) {
-            String message = m.group(3);
-            Matcher logger = LOGGER.matcher(message);
-            if (logger.matches()) {
-                message = OSHI_LOGGER.matcher(logger.group(1)).matches()
-                        ? "[" + logger.group(1) + "] " + logger.group(2) : logger.group(2);
-            }
-            return new Entry(m.group(1), m.group(2).toUpperCase(java.util.Locale.ROOT), message, false);
+    /**
+     * A line with a time and level prefix: its message, and the message without a stream tag and caller (the
+     * payload) when the line is a logged {@code System.err} or {@code System.out} line.
+     *
+     * @param stream the stream tag, such as {@code MyPlugin/STDERR}; {@code ""} when there is none
+     * @param name the plugin that printed, or null
+     */
+    private record Prefixed(String time, String level, String message, String stream, String name, String payload) {
+        /** The level and stream: a trace line continues the last entry with the same key. */
+        String key() {
+            return level + " " + stream;
         }
+
+        Entry entry() {
+            if (THROWABLE.matcher(payload).matches()) {
+                String text = name == null ? payload : "[" + name + "] " + payload;
+                return new Entry(time, level, text, !stream.isEmpty(), true);
+            }
+            return new Entry(time, level, message, false, false);
+        }
+    }
+
+    /** The line as a {@link Prefixed} line, or null when it has no time and level prefix. */
+    private static Prefixed prefixed(String line) {
+        Matcher m = LINE.matcher(line);
+        if (!m.matches()) {
+            return null;
+        }
+        String message = m.group(3);
+        String level = m.group(2).toUpperCase(java.util.Locale.ROOT);
+        String stream = "";
+        String name = null;
+        String payload = message;
+        Matcher logger = LOGGER.matcher(message);
+        Matcher tagged = STREAM.matcher(message);
+        if (logger.matches()) {
+            message = OSHI_LOGGER.matcher(logger.group(1)).matches()
+                    ? "[" + logger.group(1) + "] " + logger.group(2) : logger.group(2);
+            payload = logger.group(2);
+            if (logger.group(1).equals("STDERR") || logger.group(1).equals("STDOUT")) {
+                stream = logger.group(1);
+            }
+        } else if (tagged.matches()) {
+            name = tagged.group(1);
+            stream = name == null ? tagged.group(2) : name + "/" + tagged.group(2);
+            payload = tagged.group(3);
+        }
+        Matcher caller = CALLER.matcher(payload);
+        if (!stream.isEmpty() && caller.matches()) {
+            payload = caller.group(1);
+        }
+        return new Prefixed(m.group(1), level, message, stream, name, payload);
+    }
+
+    /** The entry an unprefixed {@code line} starts, or null when it continues {@code current} (or is blank). */
+    private static Entry start(String line, Entry current) {
         Matcher simple = SIMPLE.matcher(line);
         if (simple.matches()) {
             return new Entry("", simple.group(1), simple.group(2), false);
