@@ -103,6 +103,17 @@ public final class PackSource {
         return itemId.toString();
     }
 
+    /**
+     * Write the model of {@code kind} that shows one texture, and its item definition, so the texture can be
+     * used through the {@code item_model} component.
+     *
+     * @return the {@code item_model} value
+     */
+    public String writeTextureModel(ResourceId texture, Models.Kind kind) throws IOException {
+        ResourceId model = new ResourceId(texture.namespace(), (kind.isItem() ? "item/" : "block/") + texture.name());
+        return writeModel(model, kind, Map.of(kind.slots().getFirst(), texture), true);
+    }
+
     public void writePackMeta(int packFormat, String description) throws IOException {
         JsonObject pack = new JsonObject();
         pack.addProperty("description", description);
@@ -146,7 +157,8 @@ public final class PackSource {
         return new Zipped(out, sha1(data), files.size(), data.length);
     }
 
-    static String sha1(byte[] data) {
+    /** Lowercase hex SHA-1, as {@code server.properties} and the resource pack packet want it. */
+    public static String sha1(byte[] data) {
         try {
             return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-1").digest(data));
         } catch (NoSuchAlgorithmException e) {

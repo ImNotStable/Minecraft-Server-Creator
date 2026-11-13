@@ -87,6 +87,17 @@ class TextureToolsTest {
     }
 
     @Test
+    void viewOutputDrawsTheSameTextureAgainAndBadFilesAreReported() throws Exception {
+        h.ok("texture", "name", "item/dot", "palette", List.of("r=#d4263a"), "rows", List.of("r.", ".r"));
+        List<String> view = h.ok("texture_view", "name", "item/dot").lines().toList();
+        h.ok("texture", "name", "item/dot2", "model", "none", "palette", List.of(view.get(1)), "rows", view.subList(2, 4));
+        assertThat(h.ok("texture_view", "name", "item/dot2")).isEqualTo(String.join("\n", view));
+        Path bad = workspace.resolve(".msc/pack/assets/msc/textures/item/bad.png");
+        Files.writeString(bad, "not a png");
+        assertThat(h.error("texture_view", "name", "item/bad")).isEqualTo("error: not a PNG image");
+    }
+
+    @Test
     void mistakesAreReportedPrecisely() {
         assertThat(h.error("pack", "apply", false)).contains("the pack is empty");
         assertThat(h.error("texture", "name", "item/x", "palette", List.of("a=#000000"), "rows", List.of("ab")))
@@ -96,7 +107,7 @@ class TextureToolsTest {
         assertThat(h.error("texture", "name", "item/x", "palette", List.of("a=#000"), "rows", List.of("aa", "a")))
                 .contains("row 2 has 1 pixels, expected 2");
         assertThat(h.error("texture", "name", "Item/Ruby", "palette", List.of("a=#000"), "rows", List.of("a")))
-                .contains("bad texture name");
+                .contains("bad resource name");
         assertThat(h.ok("texture", "name", "item/odd", "palette", List.of("a=#000"), "rows", List.of("aaa", "aaa", "aaa")))
                 .contains("warning: width 3 is not a power of two");
     }

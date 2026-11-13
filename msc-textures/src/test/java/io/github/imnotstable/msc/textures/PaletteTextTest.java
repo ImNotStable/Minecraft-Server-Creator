@@ -24,6 +24,8 @@ class PaletteTextTest {
                 .hasMessage("row 2 has 1 pixels, expected 2");
         assertThatThrownBy(() -> PaletteText.parse(List.of("a=#000"), List.of("ab")))
                 .hasMessageContaining("symbol 'b'");
+        assertThatThrownBy(() -> PaletteText.parse(List.of("a=#000"), List.of("", "")))
+                .hasMessage("texture size 0x2 is out of range");
     }
 
     @Test
