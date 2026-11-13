@@ -15,7 +15,7 @@ Coordinates are text: a position is `x,y,z`, a region is `x1,y1,z1 x2,y2,z2`, an
 
 | Tool | What it does |
 | --- | --- |
-| `project_scaffold` | Creates a new project from a template (`paper-plugin`, `fabric-mod`, `minestom-server`, and `paper-game`, `fabric-game`, `minestom-game` for minigames). |
+| `project_scaffold` | Creates a new project from a template (`paper-plugin`, `fabric-mod`, `neoforge-mod`, `forge-mod`, `minestom-server`, and `paper-game`, `fabric-game`, `minestom-game` for minigames). |
 | `server_setup` | Downloads the server and installs the agent and dev settings. `mode=game` switches to survival and normal difficulty for testing games; `mode=build` back to creative and peaceful. |
 | `server_start` | Starts the server and reports only startup warnings and errors. |
 | `server_stop` | Stops the server. |
