@@ -15,6 +15,9 @@ import io.github.imnotstable.msc.protocol.world.BlockPos;
 import io.github.imnotstable.msc.protocol.world.Region;
 import java.time.Duration;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.function.BooleanSupplier;
 import net.kyori.adventure.nbt.CompoundBinaryTag;
 import net.kyori.adventure.nbt.ListBinaryTag;
 import net.kyori.adventure.nbt.StringBinaryTag;
@@ -230,6 +233,43 @@ class WorldOpsTest {
         assertThat(world.getChunk(0, 0)).isNull();
         assertThat(world.getChunk(1, 0)).as("loaded by the short read, released by the long one").isNull();
         assertThat(world.getChunk(2, 0)).isNull();
+    }
+
+    @Test
+    void aReadThatTimesOutStillUnloadsTheChunksItLoaded(Env env) throws InterruptedException {
+        setUp(env);
+        CountDownLatch slow = new CountDownLatch(1);
+        world.setGenerator(unit -> {
+            if (unit.absoluteStart().chunkX() == 1) {
+                try {
+                    slow.await(10, TimeUnit.SECONDS);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+        });
+        MinestomWorld agentWorld = new MinestomWorld(world, "world", Duration.ofMillis(300));
+
+        assertThatThrownBy(() -> agentWorld.loadAreaToRead(0, 0, 16, 0))
+                .isInstanceOfSatisfying(OpException.class, e -> assertThat(e.code()).isEqualTo(ErrorCodes.TIMEOUT));
+        env.tick();
+        assertThat(world.getChunk(0, 0)).as("loaded before the timeout").isNull();
+
+        slow.countDown();
+        assertThat(tickUntil(env, () -> world.getChunk(1, 0) != null)).as("the late chunk arrives").isTrue();
+        assertThat(tickUntil(env, () -> world.getChunk(1, 0) == null)).as("loaded after the timeout").isTrue();
+    }
+
+    private static boolean tickUntil(Env env, BooleanSupplier condition) throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        while (!condition.getAsBoolean()) {
+            if (System.nanoTime() > deadline) {
+                return false;
+            }
+            env.tick();
+            Thread.sleep(10);
+        }
+        return true;
     }
 
     @Test
