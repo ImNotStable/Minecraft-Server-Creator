@@ -15,6 +15,7 @@ import io.modelcontextprotocol.server.transport.StdioServerTransportProvider;
 import io.modelcontextprotocol.spec.McpSchema;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.io.PrintStream;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
@@ -44,6 +45,11 @@ public final class McpBridge {
 
     /** Start serving on the given streams. The returned server runs until closed or the input ends. */
     public static McpSyncServer start(ToolRegistry registry, InputStream in, OutputStream out) {
+        return start(registry, in, out, System.err);
+    }
+
+    /** Same, with notes about dropped input lines going to {@code notes} instead of stderr. */
+    public static McpSyncServer start(ToolRegistry registry, InputStream in, OutputStream out, PrintStream notes) {
         List<McpServerFeatures.SyncToolSpecification> specs = new ArrayList<>();
         for (Tool tool : registry.tools()) {
             Map<String, Object> schema = GSON.fromJson(tool.inputSchema(), new TypeToken<Map<String, Object>>() {
@@ -62,7 +68,9 @@ public final class McpBridge {
                 return reply.addTextContent(result.text()).isError(!result.ok()).build();
             }));
         }
-        return McpServer.sync(new StdioServerTransportProvider(McpJsonDefaults.getMapper(), in, out))
+        return McpServer.sync(new StdioServerTransportProvider(McpJsonDefaults.getMapper(),
+                        // The SDK stops reading for good at a line it cannot parse (#283).
+                        new JsonRpcLines(in, notes), out))
                 .serverInfo("msc-core", Core.VERSION)
                 .instructions(INSTRUCTIONS)
                 .capabilities(McpSchema.ServerCapabilities.builder().tools(false).build())

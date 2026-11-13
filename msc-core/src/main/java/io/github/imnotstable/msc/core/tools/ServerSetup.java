@@ -18,7 +18,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.Arrays;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Stream;
@@ -115,11 +114,7 @@ final class ServerSetup {
             }
             return written;
         } finally {
-            try (Stream<Path> tree = Files.walk(staging)) {
-                for (Path p : tree.sorted(Comparator.reverseOrder()).toList()) {
-                    Files.delete(p);
-                }
-            }
+            Scaffold.deleteTree(staging);
         }
     }
 

@@ -42,6 +42,52 @@ import java.util.stream.Collectors;
  * The core without a transport: services plus the tool registry. The MCP server and tests both sit on this.
  * Everything that belongs to one workspace lives in a {@link Bench}; {@code msc_workspace} swaps it while the tool
  * list, which the MCP client fetched once, stays the same.
+ *
+ * <h2>Ownership model</h2>
+ * Read this before changing a switch, the session end or the tool call path; SessionEndTest and
+ * WorkspaceOwnershipTest check it per resource.
+ *
+ * <p>A {@link Bench} owns everything one workspace opens. {@link Bench#close} is the one place that closes it, once,
+ * in this order:
+ * <ol>
+ * <li>background builds ({@link BackgroundWork}: project_scaffold warmups, dev_cycle's tests): interrupted, so
+ * ProcessRunner kills their Gradle trees, and joined for a few seconds;</li>
+ * <li>test player ({@link PlayerTools}): the bot's connection to the dev server;</li>
+ * <li>server ({@link ServerManager#seal}): from here on nothing starts or detaches it, which settles whether it
+ * outlives the session;</li>
+ * <li>pack host ({@link ResourcePack}): the in-process HTTP server, and the standalone host process unless the
+ * server is detached;</li>
+ * <li>server process ({@link ServerManager#close}): stopped unless detached; its log pump thread ends with it;</li>
+ * <li>agent connection ({@link AgentHub}): the agent session and the listening socket, and CoreServer's threads.</li>
+ * </ol>
+ * Each part marks itself closed under its own monitor first, and every method that opens something (a process, a
+ * socket, a thread, a bot) checks that mark under the same monitor before opening it. So nothing opens after its
+ * close, even from a call that was already past every earlier check when the close began (#282); such a call gets
+ * {@link ToolException#workspaceClosed}. {@link Bench#open} closes what it opened when a later step fails.
+ *
+ * <p>Not owned by a workspace:
+ * <ul>
+ * <li>tool call threads: {@link #running}. {@link #close} interrupts them, and waits for them only up to
+ * {@link #lockWait};</li>
+ * <li>temp folders (Scaffold, ServerSetup staging): the call that makes one deletes it in a finally;</li>
+ * <li>caches: on disk under .msc/cache, kept across sessions on purpose, or plain heap objects of the bench; nothing
+ * to close;</li>
+ * <li>the tool log: no open file, it appends per call; a switch moves it;</li>
+ * <li>the MCP transport and its executors: Main and McpBridge; the client closing stdin ends the session.</li>
+ * </ul>
+ *
+ * <p>Lock order, outer to inner; nothing takes an outer lock while it holds an inner one:
+ * <ol>
+ * <li>{@link #lock}: a tool call holds the read lock for its whole run; a switch and {@link #close} take the write
+ * lock, waiting at most {@link #lockWait}. A switch that does not get it fails; close interrupts the calls and goes
+ * on without it.</li>
+ * <li>{@link #benchGuard}: only to set {@link #closed} and hand over {@link #bench}; nothing is taken inside it.</li>
+ * <li>the Bench's monitor ({@link Bench#close}); a second closer (a close during a switch) waits for the first.</li>
+ * <li>one part's monitor at a time, in the close order above. A part holds its monitor only for bounded or
+ * interruptible steps and never across a call's own long work (PlayerTools keeps its bot under a separate guard for
+ * that). The one nesting: AgentHub's lock may ask {@link ServerManager#running}, so ServerManager reads the hub
+ * before it takes its own monitor.</li>
+ * </ol>
  */
 public final class Core implements AutoCloseable {
     /** The build's project.version (a release's -Pversion), from the version.properties msc-core's build writes. */
@@ -63,9 +109,26 @@ public final class Core implements AutoCloseable {
     /** The services of one workspace and the tools bound to them. */
     private record Bench(CoreConfig config, AgentHub hub, ServerManager server, ResourcePack pack,
                          PlayerTools players, ToolRegistry tools, BackgroundWork background, AtomicBoolean closed) {
-        static Bench open(CoreConfig config, ToolLog log) throws IOException {
+        /** Opens a workspace's parts; when a step fails, closes those already opened (the agent socket). */
+        static Bench open(CoreConfig config, ToolLog log, OpenCheck check) throws IOException {
             BackgroundWork background = new BackgroundWork();
             AgentHub hub = new AgentHub(config.agentPort(), config.token());
+            try {
+                Bench bench = wire(config, log, background, hub);
+                check.check(config, hub);
+                return bench;
+            } catch (IOException | RuntimeException | Error e) {
+                background.close();
+                try {
+                    hub.close();
+                } catch (IOException suppressed) {
+                    e.addSuppressed(suppressed);
+                }
+                throw e;
+            }
+        }
+
+        private static Bench wire(CoreConfig config, ToolLog log, BackgroundWork background, AgentHub hub) {
             ServerManager server = new ServerManager(config, hub);
             if (config.agentPort() == 0) {
                 // No fixed address, so only a server this core starts can connect (MSC_CORE_ADDRESS attaches others).
@@ -97,12 +160,19 @@ public final class Core implements AutoCloseable {
             if (closed.getAndSet(true)) {
                 return;
             }
+            // The order and the reasons are in the ownership model on Core.
             background.close();
             players.close();
-            pack.close(server.detached());
+            pack.close(server.seal());
             server.close();
             hub.close();
         }
+    }
+
+    /** A last step of opening a bench; tests use it to make a switch fail after the parts were opened. */
+    @FunctionalInterface
+    interface OpenCheck {
+        void check(CoreConfig config, AgentHub hub) throws IOException;
     }
 
     private final ToolLog log;
@@ -121,10 +191,12 @@ public final class Core implements AutoCloseable {
     private volatile Bench bench;
     /** Set once by {@link #close}; a switch still under way then closes what it opened instead of installing it. */
     private volatile boolean closed;
+    private volatile OpenCheck openCheck = (config, hub) -> {
+    };
 
     public Core(CoreConfig config) throws IOException {
         this.log = new ToolLog(config.toolLog());
-        this.bench = Bench.open(config, log);
+        this.bench = Bench.open(config, log, openCheck);
         this.registry = new ToolRegistry(log);
         for (Tool tool : bench.tools().tools()) {
             registry.add(new Tool(tool.name(), tool.description(), tool.inputSchema(), forward(tool.name())));
@@ -187,6 +259,25 @@ public final class Core implements AutoCloseable {
             Thread.currentThread().interrupt();
             return null;
         }
+    }
+
+    /** For tests: the last step of every later bench open (a switch, and its reopen of the old folder). */
+    void openCheck(OpenCheck check) {
+        this.openCheck = check;
+    }
+
+    /** For tests: the current bench's own handler of a tool, which skips the session checks of {@link #forward}. */
+    Tool.Handler benchHandler(String name) {
+        return bench.tools().tools().stream().filter(t -> t.name().equals(name)).findFirst().orElseThrow().handler();
+    }
+
+    /** For tests: the current bench's resource pack and test player. */
+    ResourcePack pack() {
+        return bench.pack();
+    }
+
+    PlayerTools players() {
+        return bench.players();
     }
 
     /** For tests: add a tool to the current bench, forwarded like the others (a switch drops it). */
@@ -255,9 +346,9 @@ public final class Core implements AutoCloseable {
             old.close();
             Bench next;
             try {
-                next = Bench.open(old.config().withWorkspace(target), log);
+                next = Bench.open(old.config().withWorkspace(target), log, openCheck);
             } catch (IOException | RuntimeException e) {
-                install(Bench.open(old.config(), log));
+                install(Bench.open(old.config(), log, openCheck));
                 throw new ToolException("could not open " + target + " (" + e.getMessage() + "); still in "
                         + old.config().workspace());
             }
