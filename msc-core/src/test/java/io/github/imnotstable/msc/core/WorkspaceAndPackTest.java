@@ -5,7 +5,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.github.imnotstable.msc.core.fixture.FakeServerMain;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -73,6 +76,24 @@ class WorkspaceAndPackTest {
         h.ok("msc_status");
         assertThat(Files.readAllLines(first.resolve(".msc/tool-calls.jsonl"))).hasSize((int) firstLines);
         assertThat(second.resolve(".msc/tool-calls.jsonl")).content().contains("\"tool\":\"msc_status\"");
+    }
+
+    @Test
+    void aLongCallHoldsUpNeitherASwitchNorTheEndOfTheSession() throws Exception {
+        h.ok("server_start", "timeoutSeconds", 30);
+        h.core.lockWait(Duration.ofMillis(300));
+        CompletableFuture<String> wait = CompletableFuture.supplyAsync(
+                () -> h.call("server_wait", "until", "^no such line$", "timeoutSeconds", 600).text());
+        Thread.sleep(500);
+        long started = System.nanoTime();
+        assertThat(h.error("msc_workspace", "path", "../second", "create", true))
+                .contains("server_wait is still running").contains("still in " + first);
+        assertThat(h.ok("msc_status")).contains("workspace: " + first);
+        h.close();
+        // Closing interrupts the call (or stops the server under it) instead of waiting out its 600 s.
+        assertThat(wait.get(10, TimeUnit.SECONDS)).containsAnyOf("interrupted", "the server stopped");
+        assertThat(h.core.server().running()).isFalse();
+        assertThat(Duration.ofNanos(System.nanoTime() - started)).isLessThan(Duration.ofSeconds(15));
     }
 
     @Test
