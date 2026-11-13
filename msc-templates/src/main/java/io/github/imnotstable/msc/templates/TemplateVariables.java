@@ -56,6 +56,7 @@ public record TemplateVariables(
             + "{\"block\":\"minecraft:bedrock\",\"height\":1},{\"block\":\"minecraft:dirt\",\"height\":2},"
             + "{\"block\":\"minecraft:grass_block\",\"height\":1}]}";
     private static final Pattern NON_SPACING_MARKS = Pattern.compile("\\p{Mn}+");
+    private static final Pattern WORD_CHAR = Pattern.compile("[\\p{L}\\p{N}]");
     private static final Pattern NON_ASCII_WORD_CHAR = Pattern.compile("[\\p{L}\\p{N}&&[^\\p{ASCII}]]");
     private static final SecureRandom RANDOM = new SecureRandom();
 
@@ -135,18 +136,30 @@ public record TemplateVariables(
     }
 
     /**
-     * The name with accents taken off ({@code Café} becomes {@code Cafe}), since ids, packages and class names
-     * take ASCII only. A letter or digit with no ASCII form ({@code Ø}, {@code 日}) is refused, not dropped.
+     * The name in ASCII, since ids, packages and class names take ASCII only: accents come off ({@code Café} becomes
+     * {@code Cafe}) and letters and digits get their compatibility form (full-width {@code Ｌｏｂｂｙ} becomes
+     * {@code Lobby}, {@code ﬁ} becomes {@code fi}, {@code ²} becomes {@code 2}). Other characters keep their form,
+     * so a symbol such as {@code ™} is dropped later rather than spelled out. A letter or digit with no ASCII form
+     * ({@code Ø}, {@code ß}, {@code 日}) is refused, not dropped.
      */
     private static String ascii(String projectName) {
-        String plain = NON_SPACING_MARKS.matcher(Normalizer.normalize(projectName == null ? "" : projectName,
-                Normalizer.Form.NFD)).replaceAll("");
-        var other = NON_ASCII_WORD_CHAR.matcher(plain);
-        if (other.find()) {
-            throw new IllegalArgumentException("Project name '" + projectName + "' cannot be used: '" + other.group()
-                    + "' has no ASCII form, and ids, packages and class names take A-Z, a-z and 0-9 only");
-        }
-        return plain;
+        String name = projectName == null ? "" : projectName;
+        StringBuilder out = new StringBuilder(name.length());
+        name.codePoints().forEach(cp -> {
+            String c = Character.toString(cp);
+            if (WORD_CHAR.matcher(c).matches()) {
+                String plain = NON_SPACING_MARKS.matcher(Normalizer.normalize(c, Normalizer.Form.NFKD)).replaceAll("");
+                if (NON_ASCII_WORD_CHAR.matcher(plain).find()) {
+                    throw new IllegalArgumentException("Project name '" + projectName + "' cannot be used: '" + c
+                            + "' has no ASCII form, and ids, packages and class names take A-Z, a-z and 0-9 only");
+                }
+                out.append(plain);
+            } else {
+                out.append(c);
+            }
+        });
+        // Combining marks typed apart from their letter come off too.
+        return NON_SPACING_MARKS.matcher(out).replaceAll("");
     }
 
     private static List<String> words(String projectName) {

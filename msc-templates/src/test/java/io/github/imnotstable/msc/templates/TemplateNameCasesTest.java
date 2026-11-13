@@ -12,18 +12,18 @@ import com.google.gson.stream.JsonToken;
 import java.io.IOException;
 import java.io.StringReader;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import javax.lang.model.SourceVersion;
 import org.bukkit.plugin.PluginDescriptionFile;
-import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -41,6 +41,10 @@ class TemplateNameCasesTest {
     private static final Pattern JAVA_PACKAGE = Pattern.compile("(?m)^package\\s+([\\w.]+)\\s*;");
     private static final Pattern GRADLE_MAIN = Pattern.compile("mainClass = \"([\\w.]+)\"");
     private static final Set<String> PAPER_RESTRICTED = Set.of("bukkit", "minecraft", "mojang");
+    /** Where the in-memory projects are rendered; nothing is written there. */
+    private static final Path ROOT = Path.of("project").toAbsolutePath().normalize();
+    private static final Map<String, String> PLATFORMS = Templates.ids().stream()
+            .collect(Collectors.toMap(t -> t, t -> Templates.info(t).get("platform")));
 
     /** One input, and the platforms that must refuse it ({@link #ALL} for every one). */
     record Case(String input, Supplier<TemplateVariables> vars, Set<String> refusedOn) {
@@ -73,6 +77,8 @@ class TemplateNameCasesTest {
                 name("Box"), name("Progress"), name("Logger"), name("Instance"), name("Minestom"), name("Paper"),
                 name("Quilt Loader"), name("Neo Forge"), name("Minecraft Tools"), name("a".repeat(64)),
                 name("Café Lobby"), name("Über Spiel"), name("Ñandú"),
+                // Compatibility forms (#321): full-width, ligature, superscript and roman-numeral letters and digits.
+                name("Ｌｏｂｂｙ"), name("ﬁsh"), name("Mc²"), name("Ⅳ Lobby"),
                 // Refused by every platform: unusable names.
                 name("", ALL), name("  ", ALL), name("123", ALL), name("3d Parkour", ALL), name("A", ALL),
                 name("Void", ALL), name("class", ALL), name("new", ALL), name("Int", ALL), name("True", ALL),
@@ -98,9 +104,8 @@ class TemplateNameCasesTest {
 
     @ParameterizedTest(name = "{0} {1}")
     @MethodSource("matrix")
-    void rendersOrRefusesCleanly(String template, Case c, @TempDir Path dir) throws Exception {
-        String platform = Templates.info(template).get("platform");
-        Path target = dir.resolve("project");
+    void rendersOrRefusesCleanly(String template, Case c) throws Exception {
+        String platform = PLATFORMS.get(template);
         TemplateVariables vars;
         try {
             vars = c.vars().get();
@@ -109,30 +114,38 @@ class TemplateNameCasesTest {
             assertThat(e.getMessage()).contains(c.input().strip());
             return;
         }
+        Templates.Rendered rendered;
         try {
-            Templates.scaffold(template, target, vars);
+            // In memory: writing and deleting ~50 files per case took most of this class's time. TemplatesTest
+            // covers that a refused scaffold writes nothing to disk.
+            rendered = Templates.render(template, ROOT, vars);
         } catch (IllegalArgumentException e) {
             assertThat(c.refused(platform)).as("refused: %s", e.getMessage()).isTrue();
             assertThat(e.getMessage()).contains("Template '" + template + "'").contains("choose another");
-            assertThat(target).doesNotExist();
             return;
         }
         assertThat(c.refused(platform)).as("rendered, but %s should refuse it", platform).isFalse();
-        checkRendered(target, vars, platform);
+        checkRendered(project(rendered), vars, platform);
     }
 
-    private static void checkRendered(Path root, TemplateVariables vars, String platform) throws Exception {
-        List<Path> files;
-        try (Stream<Path> walk = Files.walk(root)) {
-            files = walk.filter(Files::isRegularFile).toList();
-        }
-        for (Path f : files) {
-            String rel = root.relativize(f).toString().replace('\\', '/');
+    /** The rendered files by path relative to the project root, with {@code /} separators. */
+    private static Map<String, byte[]> project(Templates.Rendered rendered) {
+        Map<String, byte[]> files = new LinkedHashMap<>();
+        rendered.files().forEach((path, bytes) -> {
+            assertThat(path.startsWith(ROOT)).as("%s under the root", path).isTrue();
+            files.put(ROOT.relativize(path).toString().replace('\\', '/'), bytes);
+        });
+        return files;
+    }
+
+    private static void checkRendered(Map<String, byte[]> files, TemplateVariables vars, String platform) throws Exception {
+        for (Map.Entry<String, byte[]> f : files.entrySet()) {
+            String rel = f.getKey();
             assertThat(rel).as("path").doesNotContain("{{").doesNotContain("}}");
             if (rel.endsWith(".jar")) {
                 continue;
             }
-            String text = Files.readString(f, StandardCharsets.UTF_8);
+            String text = new String(f.getValue(), StandardCharsets.UTF_8);
             assertThat(text).as(rel).doesNotContain("{{");
             assertThatCode(() -> parse(rel, text)).as(rel).doesNotThrowAnyException();
             if (rel.endsWith(".java")) {
@@ -140,15 +153,20 @@ class TemplateNameCasesTest {
             }
         }
         String mainClass = switch (platform) {
-            case "fabric" -> fabricMain(root, vars);
-            case "neoforge" -> forgeMain(root.resolve("src/main/resources/META-INF/neoforge.mods.toml"), vars, "neoforge");
-            case "forge" -> forgeMain(root.resolve("src/main/resources/META-INF/mods.toml"), vars, "forge");
-            case "paper" -> paperMain(root, vars);
-            case "minestom" -> gradleMain(root);
+            case "fabric" -> fabricMain(files, vars);
+            case "neoforge" -> forgeMain(files, "src/main/resources/META-INF/neoforge.mods.toml", vars, "neoforge");
+            case "forge" -> forgeMain(files, "src/main/resources/META-INF/mods.toml", vars, "forge");
+            case "paper" -> paperMain(files, vars);
+            case "minestom" -> gradleMain(files);
             default -> throw new AssertionError("unknown platform " + platform);
         };
         assertThat(mainClass).startsWith(vars.packageName() + ".");
-        assertThat(root.resolve("src/main/java/" + mainClass.replace('.', '/') + ".java")).as("main class").isRegularFile();
+        assertThat(files).as("main class").containsKey("src/main/java/" + mainClass.replace('.', '/') + ".java");
+    }
+
+    private static String text(Map<String, byte[]> files, String rel) {
+        assertThat(files).containsKey(rel);
+        return new String(files.get(rel), StandardCharsets.UTF_8);
     }
 
     private static void parse(String rel, String text) throws Exception {
@@ -182,8 +200,8 @@ class TemplateNameCasesTest {
         assertThat(text).as(rel).containsPattern("\\b(class|record|interface|enum)\\s+" + type + "\\b");
     }
 
-    private static String fabricMain(Path root, TemplateVariables vars) throws IOException {
-        JsonObject mod = json(Files.readString(root.resolve("src/main/resources/fabric.mod.json"))).getAsJsonObject();
+    private static String fabricMain(Map<String, byte[]> files, TemplateVariables vars) throws IOException {
+        JsonObject mod = json(text(files, "src/main/resources/fabric.mod.json")).getAsJsonObject();
         String id = mod.get("id").getAsString();
         assertThat(id).matches(FABRIC_ID).isEqualTo(vars.projectId())
                 .isNotIn("minecraft", "java", "fabricloader", "fabric-api", "fabric", "mixinextras", "msc-agent");
@@ -192,31 +210,27 @@ class TemplateNameCasesTest {
     }
 
     @SuppressWarnings("unchecked")
-    private static String forgeMain(Path toml, TemplateVariables vars, String loader) throws IOException {
-        Map<String, Object> doc = TomlSubset.parse(Files.readString(toml));
+    private static String forgeMain(Map<String, byte[]> files, String toml, TemplateVariables vars, String loader) {
+        Map<String, Object> doc = TomlSubset.parse(text(files, toml));
         String modId = (String) ((List<Map<String, Object>>) doc.get("mods")).getFirst().get("modId");
         assertThat(modId).matches(FORGE_ID).isEqualTo(vars.projectId().replace('-', '_'))
                 .isNotIn("minecraft", loader, "msc_agent");
         assertThat((Map<String, Object>) doc.get("dependencies")).containsOnlyKeys(modId);
         String main = vars.packageName() + "." + vars.mainClass();
-        Path source = toml.getParent().getParent().getParent().resolve("java/" + main.replace('.', '/') + ".java");
-        assertThat(source).content().contains("@Mod(").contains("MOD_ID = \"" + modId + "\"");
+        assertThat(text(files, "src/main/java/" + main.replace('.', '/') + ".java")).contains("@Mod(").contains("MOD_ID = \"" + modId + "\"");
         return main;
     }
 
-    private static String paperMain(Path root, TemplateVariables vars) throws Exception {
-        PluginDescriptionFile plugin;
-        try (var in = Files.newBufferedReader(root.resolve("src/main/resources/plugin.yml"))) {
-            plugin = new PluginDescriptionFile(in);
-        }
+    private static String paperMain(Map<String, byte[]> files, TemplateVariables vars) throws Exception {
+        PluginDescriptionFile plugin = new PluginDescriptionFile(new StringReader(text(files, "src/main/resources/plugin.yml")));
         // Read as Paper reads it: a bare Yes or On would come back as true.
         assertThat(plugin.getName()).isEqualTo(vars.name());
         assertThat(plugin.getName().toLowerCase(java.util.Locale.ROOT)).isNotIn(PAPER_RESTRICTED).isNotEqualTo("mscagent");
         return plugin.getMain();
     }
 
-    private static String gradleMain(Path root) throws IOException {
-        Matcher m = GRADLE_MAIN.matcher(Files.readString(root.resolve("build.gradle.kts")));
+    private static String gradleMain(Map<String, byte[]> files) {
+        Matcher m = GRADLE_MAIN.matcher(text(files, "build.gradle.kts"));
         assertThat(m.find()).as("mainClass in build.gradle.kts").isTrue();
         return m.group(1);
     }
