@@ -7,15 +7,26 @@ import net.minestom.server.command.builder.arguments.ArgumentType;
 import net.minestom.server.coordinate.Pos;
 import net.minestom.server.coordinate.Vec;
 import net.minestom.server.entity.Player;
+import net.minestom.server.timer.Scheduler;
+import net.minestom.server.timer.TaskSchedule;
 import net.minestom.server.utils.location.RelativeVec;
 
 /**
  * {@code /tp <player> <x> <y> <z>} on a dev server, as on every other platform: Minestom has no vanilla commands, and
- * the AI's test player moves with this one. Registered only while msc-core runs the server, and only when the
- * server has no {@code tp} of its own.
+ * the AI's test player moves with this one. Registered only while msc-core runs the server, on its first tick, and
+ * only when the server has no {@code tp} of its own by then, so a server that registers its own after starting the
+ * agent keeps it.
  */
 final class DevTeleport {
     private DevTeleport() {
+    }
+
+    /** On the scheduler's next tick, {@link #registerIfMissing}. */
+    static void registerOnFirstTick(Scheduler scheduler, CommandManager commands, Function<String, Player> players) {
+        SchedulerMainThread.fromNextTick(scheduler, () -> {
+            registerIfMissing(commands, players);
+            return TaskSchedule.stop();
+        });
     }
 
     /** Register the command unless {@code tp} exists; true when it was registered. */

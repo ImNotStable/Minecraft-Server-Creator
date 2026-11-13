@@ -213,6 +213,26 @@ class WorldOpsTest {
     }
 
     @Test
+    void aReadKeepsTheChunksAnOverlappingReadLoadedUntilItEnds(Env env) {
+        setUp(env);
+        MinestomWorld agentWorld = new MinestomWorld(world, "world", TIMEOUT);
+
+        Runnable shortRead = agentWorld.loadAreaToRead(16, 0, 16, 0);
+        Runnable longRead = agentWorld.loadAreaToRead(0, 0, 40, 0);
+        shortRead.run();
+        env.tick();
+
+        assertThat(world.getChunk(1, 0)).as("still read by the long read").isNotNull();
+
+        longRead.run();
+        env.tick();
+
+        assertThat(world.getChunk(0, 0)).isNull();
+        assertThat(world.getChunk(1, 0)).as("loaded by the short read, released by the long one").isNull();
+        assertThat(world.getChunk(2, 0)).isNull();
+    }
+
+    @Test
     void entitiesReportHealthAndTextDisplayText(Env env) {
         setUp(env);
         world.loadChunk(0, 0).join();
