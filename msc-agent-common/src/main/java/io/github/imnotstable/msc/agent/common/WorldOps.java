@@ -6,9 +6,7 @@ import io.github.imnotstable.msc.protocol.op.Ops;
 import io.github.imnotstable.msc.protocol.op.PartialEdit;
 import io.github.imnotstable.msc.protocol.transport.OpException;
 import io.github.imnotstable.msc.protocol.world.BlockGrid;
-import io.github.imnotstable.msc.protocol.world.BlockPos;
 import io.github.imnotstable.msc.protocol.world.Region;
-import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -38,32 +36,12 @@ public final class WorldOps<S> {
         AgentWorld<S> world = world(region.world());
         Runnable release = world.loadAreaToRead(region.min().x(), region.min().z(), region.max().x(), region.max().z());
         try {
-            BlockGrid grid = main.run(new ReadJob<>(world, region));
-            List<Ops.EntitySummary> entities = params.includeEntities()
-                    ? main.call(() -> world.entities(region, MAX_ENTITIES)) : List.of();
-            List<Ops.SignText> signs = params.includeSigns() ? signs(world, grid) : List.of();
-            return new Ops.ReadResult(grid, entities, signs);
+            // One main-thread job for the grid, entities and signs: with the chunk wait, a read makes at most
+            // Limits.AGENT_WAITS_PER_OP waits, so the core's timeout never fires first (#289).
+            return main.run(new WorldReadJob<>(world, params));
         } finally {
             release.run();
         }
-    }
-
-    /** Text of the signs in a grid; block entities are looked up only where the grid has a sign. */
-    private List<Ops.SignText> signs(AgentWorld<S> world, BlockGrid grid) {
-        List<BlockPos> at = Ops.SignText.positions(grid);
-        if (at.isEmpty()) {
-            return List.of();
-        }
-        return main.call(() -> {
-            List<Ops.SignText> out = new ArrayList<>();
-            for (BlockPos p : at) {
-                Ops.SignText text = world.sign(p.x(), p.y(), p.z());
-                if (text != null) {
-                    out.add(text);
-                }
-            }
-            return out;
-        });
     }
 
     /** Entities in a region with name, tags and health, sorted by type and then position. */
