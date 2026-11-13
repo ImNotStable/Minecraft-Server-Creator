@@ -25,6 +25,11 @@ public final class LogCondenser {
     /** The JVM's report of an uncaught exception: printed to stderr without a prefix, never part of the line before. */
     private static final Pattern UNCAUGHT = Pattern.compile("^Exception in thread \".*");
     /**
+     * The first line of a printed throwable, {@code java.lang.IllegalStateException: msg}, unindented and without a
+     * log prefix. Minestom's default exception handler prints listener, command and task exceptions this way (#294).
+     */
+    private static final Pattern THROWABLE = Pattern.compile("^[\\w$]+(?:\\.[\\w$]+)+(?:Exception|Error|Throwable)(?:: .*)?$");
+    /**
      * A stack frame; the class loader and module prefixes ({@code app//}, {@code java.base/}, Forge's
      * {@code TRANSFORMER/mymod@1.0/}) are skipped.
      */
@@ -149,7 +154,8 @@ public final class LogCondenser {
                 entries.add(current);
             } else if (!line.isBlank() && !QUILT_TIMING.matcher(line).matches()) {
                 // A bare ready line (Minestom) or uncaught exception is its own entry, not the previous one's text.
-                if (current == null || READY.matcher(line).matches() || UNCAUGHT.matcher(line).matches()) {
+                if (current == null || READY.matcher(line).matches() || UNCAUGHT.matcher(line).matches()
+                        || printedThrowable(current, line)) {
                     current = new Entry("", "", line);
                     entries.add(current);
                 } else {
@@ -208,6 +214,20 @@ public final class LogCondenser {
         }
         return new Condensed(Budget.truncate(out.toString(), maxChars, "Use server_logs with grep to narrow."),
                 errors, warnings, hidden);
+    }
+
+    /**
+     * True when {@code line} starts a throwable that is not the trace of the entry before: that entry already has a
+     * trace, or it is not a warning or an error (a logger prints a throwable after its warning or error line). A
+     * warning followed by a bare trace stays one warning, since {@code logger.warn(msg, e)} prints the same lines.
+     */
+    private static boolean printedThrowable(Entry current, String line) {
+        if (!THROWABLE.matcher(line).matches()) {
+            return false;
+        }
+        boolean warnOrError = current.level.startsWith("WARN") || current.level.equals("ERROR")
+                || current.level.equals("FATAL") || current.level.equals("SEVERE");
+        return !warnOrError || current.extra.stream().anyMatch(x -> FRAME.matcher(x).matches());
     }
 
     private static boolean expected(Entry e) {

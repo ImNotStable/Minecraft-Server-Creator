@@ -339,6 +339,57 @@ class LogCondenserTest {
                 \tat com.example.lobby.Lobby.main(Lobby.java:5)""");
     }
 
+    /** Minestom's default exception handler prints listener exceptions bare: each one is its own error (#294). */
+    @Test
+    void bareTracesAfterTheReadyLineAreSeparateErrors() {
+        List<String> log = List.of(
+                "[main] INFO com.example.lobby.Lobby - hi",
+                "Done (0.512s)! Listening on 0.0.0.0:25565. Type stop to stop.",
+                "java.lang.IllegalStateException: join failed",
+                "\tat com.example.lobby.Lobby.onJoin(Lobby.java:30)",
+                "\tat net.minestom.server.event.EventNodeImpl$Handle.call(EventNodeImpl.java:1)",
+                "java.lang.NullPointerException: arena is null",
+                "\tat com.example.lobby.Arena.tick(Arena.java:55)",
+                "\tat net.minestom.server.timer.SchedulerImpl.run(SchedulerImpl.java:1)",
+                "java.lang.NullPointerException: arena is null",
+                "\tat com.example.lobby.Arena.tick(Arena.java:55)",
+                "\tat net.minestom.server.timer.SchedulerImpl.run(SchedulerImpl.java:1)");
+        assertThat(LogCondenser.condense(log, 6000)).isEqualTo("""
+                11 lines, 3 errors, 0 warnings
+                java.lang.IllegalStateException: join failed
+                \tat com.example.lobby.Lobby.onJoin(Lobby.java:30)
+                \t... 1 framework frames
+                java.lang.NullPointerException: arena is null (x2)
+                \tat com.example.lobby.Arena.tick(Arena.java:55)
+                \t... 1 framework frames""");
+    }
+
+    @Test
+    void aBareTraceAfterAnInfoLineIsAnErrorOfItsOwn() {
+        List<String> log = List.of(
+                "[main] INFO com.example.lobby.Lobby - Loaded",
+                "java.lang.IllegalStateException: listener failed",
+                "\tat com.example.lobby.Lobby.onSpawn(Lobby.java:30)");
+        assertThat(LogCondenser.condense(log, 6000)).isEqualTo("""
+                3 lines, 1 errors, 0 warnings
+                java.lang.IllegalStateException: listener failed
+                \tat com.example.lobby.Lobby.onSpawn(Lobby.java:30)""");
+    }
+
+    /** A trace after a warning that already has one is a new error; the first trace stays the warning's. */
+    @Test
+    void aSecondTraceAfterAWarningsTraceIsAnError() {
+        List<String> log = List.of(
+                "[main] WARN com.example.lobby.LobbyConfig - lobby.json unreadable, using defaults",
+                "java.io.IOException: lobby.json",
+                "\tat com.example.lobby.LobbyConfig.load(LobbyConfig.java:12)",
+                "java.lang.IllegalStateException: listener failed",
+                "\tat com.example.lobby.Lobby.onSpawn(Lobby.java:30)");
+        LogCondenser.Condensed c = LogCondenser.analyze(log, 6000);
+        assertThat(c.errors()).isEqualTo(1);
+        assertThat(c.warnings()).isEqualTo(1);
+    }
+
     @Test
     void colouredLinesAreClassified() {
         List<String> log = List.of(
