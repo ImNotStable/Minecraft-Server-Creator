@@ -26,6 +26,8 @@ public final class FakeAgent {
     static final String STONE = "minecraft:stone";
     /** The Minecraft version SERVER_INFO reports. */
     volatile String minecraft = "26.3";
+    /** When set, PACK_APPLY fails as an agent error would. */
+    volatile boolean failPackApply;
 
     final Map<BlockPos, String> blocks = new HashMap<>();
     final List<String> commands = new ArrayList<>();
@@ -88,6 +90,9 @@ public final class FakeAgent {
                 .on(Ops.WORLD_WRITE, this::write)
                 .on(Ops.WORLD_UNDO, this::undo)
                 .on(Ops.PACK_APPLY, p -> {
+                    if (failPackApply) {
+                        throw new OpException(ErrorCodes.INTERNAL, "pack apply failed");
+                    }
                     synchronized (this) {
                         packs.add(p);
                     }

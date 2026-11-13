@@ -269,4 +269,43 @@ class TextureToolsTest {
                 .contains("saved: " + workspace.resolve("out/ruby-pack.zip"));
         assertThat(Files.readAllBytes(workspace.resolve("out/ruby-pack.zip"))).isEqualTo(response.body());
     }
+
+    /** A texture call refused for any argument, the animation included, writes nothing into the pack (#356). */
+    @Test
+    void aRefusedTextureLeavesThePackAsItWas() throws Exception {
+        Path pack = workspace.resolve(".msc/pack");
+        List<List<Object>> refused = List.of(
+                List.of("name", "item/ruby", "kind", "gem", "color", "#d4263a", "animate", "wobble"),
+                List.of("name", "item/ruby", "kind", "gem", "color", "#d4263a", "animate", "pulse", "frames", 999),
+                List.of("name", "item/ruby", "kind", "gem", "color", "#d4263a", "animate", "scroll", "frametime", 0),
+                List.of("name", "item/ruby", "kind", "gem", "color", "#d4263a", "animate", "scroll x,y"),
+                List.of("name", "item/ruby", "palette", List.of("r=#d4263a"), "rows", List.of("rr"), "animate", "pulse"),
+                List.of("name", "item/ruby", "palette", List.of("r=#d4263a"), "rows", ruby(), "model", "cube"));
+        for (List<Object> call : refused) {
+            h.error("texture", call.toArray());
+            assertThat(pack.resolve("assets")).as("pack after %s", call).doesNotExist();
+        }
+        h.ok("texture", "name", "item/ruby", "kind", "gem", "color", "#d4263a");
+        var before = TreeSnapshot.of(pack);
+        for (List<Object> call : refused) {
+            h.error("texture", call.toArray());
+            assertThat(TreeSnapshot.of(pack)).as("pack after %s", call).isEqualTo(before);
+        }
+        assertThat(h.ok("texture", "name", "item/ruby", "kind", "gem", "color", "#d4263a", "animate", "pulse"))
+                .contains("wrote msc:item/ruby: 16x16").contains("animated msc:item/ruby: 8 frames, 2 ticks each");
+        assertThat(pack.resolve("assets/msc/textures/item/ruby.png.mcmeta")).isRegularFile();
+    }
+
+    /** A pack call whose apply fails saves no copy of the zip into the workspace (#356). */
+    @Test
+    void aFailedPackApplySavesNoFile() {
+        h.ok("texture", "name", "item/ruby", "kind", "gem", "color", "#d4263a");
+        h.agent.failPackApply = true;
+        assertThat(h.error("pack", "file", "out/ruby-pack.zip")).contains("pack apply failed");
+        assertThat(workspace.resolve("out")).doesNotExist();
+        h.agent.failPackApply = false;
+        assertThat(h.ok("pack", "file", "out/ruby-pack.zip")).contains("applied: sent to 1 players")
+                .contains("saved: " + workspace.resolve("out/ruby-pack.zip"));
+        assertThat(workspace.resolve("out/ruby-pack.zip")).isRegularFile();
+    }
 }
