@@ -121,7 +121,12 @@ final class Tracer {
         for (int axis = 0; axis < 3; axis++) {
             double p = o[axis] + d[axis] * (t + 1e-9);
             cell[axis] = Math.clamp((int) Math.floor(p), 0, size[axis] - 1);
-            if (Math.abs(d[axis]) < 1e-12) {
+            boolean moves = Math.abs(d[axis]) >= 1e-12;
+            if (face < 0 && moves && o[axis] == Math.floor(o[axis])) {
+                // An origin exactly on a cell boundary enters the start cell through a face: it is not inside it.
+                face = axis * 2 + (d[axis] > 0 ? 0 : 1);
+            }
+            if (!moves) {
                 tNext[axis] = Double.POSITIVE_INFINITY;
                 tDelta[axis] = Double.POSITIVE_INFINITY;
             } else if (d[axis] > 0) {
@@ -140,7 +145,7 @@ final class Tracer {
             Look look = index < 0 ? null : looks[index];
             if (look != null && !(shadowMode && look.translucent)) {
                 if (look.full) {
-                    // A ray that starts inside a full block (face -1) looks out of it, not at it.
+                    // A ray that starts strictly inside a full block (face -1) looks out of it, not at it.
                     if (face >= 0) {
                         if (shadowMode) {
                             return t <= maxT;
