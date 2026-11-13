@@ -14,6 +14,10 @@ import java.net.ServerSocket;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import io.github.imnotstable.msc.bench.run.RunIsolation;
+import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -92,5 +96,32 @@ class MainTest {
     @CsvSource({"~user/x", "runs/~/x", "x~"})
     void otherTildesAreLeftAlone(String arg) {
         assertThat(Main.expandHome(arg, dir.resolve("home"))).isEqualTo(Path.of(arg));
+    }
+
+    @Test
+    void theUsageNamesTheDefaultRunFolder() throws IOException {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+
+        Main.run(new String[0], new PrintStream(out, true, StandardCharsets.UTF_8));
+
+        assertThat(out.toString(StandardCharsets.UTF_8)).contains("--out DIR, default " + RunIsolation.DEFAULT_RUNS_SHOWN);
+    }
+
+    /** Every doc that names the run folder names the code's default, and none the old one inside the repository. */
+    @Test
+    void theDocsNameTheDefaultRunFolder() throws IOException {
+        Path root = Path.of(System.getProperty("msc.repoRoot"));
+        Pattern runFolder = Pattern.compile("[~\\w$./-]*(?:bench-runs|msc-bench/runs)\\b");
+        for (String doc : List.of("msc-bench/README.md", "docs/wiki/Benchmark.md", "msc-docs/docs/adr/0004-bench.md")) {
+            String text = Files.readString(root.resolve(doc));
+            assertThat(text).as(doc).contains(RunIsolation.DEFAULT_RUNS_SHOWN).contains(RunIsolation.TEMP_RUNS_NAME);
+            Matcher named = runFolder.matcher(text);
+            while (named.find()) {
+                String mention = named.group();
+                boolean history = text.substring(Math.max(0, named.start() - 40), named.start()).contains("the default was");
+                assertThat(mention.startsWith(RunIsolation.DEFAULT_RUNS_SHOWN) || mention.endsWith(RunIsolation.TEMP_RUNS_NAME)
+                        || history).as(doc + ": " + mention).isTrue();
+            }
+        }
     }
 }
