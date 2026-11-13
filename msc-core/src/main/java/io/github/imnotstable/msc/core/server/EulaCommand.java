@@ -72,8 +72,9 @@ public final class EulaCommand {
             case "status" -> {
                 Optional<MachineEula.Acceptance> a = MachineEula.read(file);
                 t.println(a.map(x -> "Minecraft EULA accepted for this machine by " + x.describe() + " (" + file + ")")
-                        .orElse("Minecraft EULA not accepted for this machine (" + file + " missing). Each Paper or "
-                                + "Fabric server then needs your yes. To accept once: " + MachineEula.acceptCommand(installDir)));
+                        .orElse("Minecraft EULA not accepted for this machine (" + file + " missing). Each "
+                                + Platform.names(Platform::needsEula, "or") + " server then needs your yes. To accept "
+                                + "once: " + MachineEula.acceptCommand(installDir)));
                 return a.isPresent() ? 0 : 1;
             }
             case "revoke" -> {
