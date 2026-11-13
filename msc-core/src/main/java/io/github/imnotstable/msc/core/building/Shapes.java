@@ -37,6 +37,34 @@ final class Shapes {
         return out;
     }
 
+    /**
+     * A round brush exactly {@code width} blocks across, as a width^3 mask indexed [dy][dz][dx] over offsets
+     * {@code -low(width) .. width - 1 - low(width)} on each axis. Odd widths are {@link #ball} of radius
+     * (width - 1) / 2; even widths have their centre half a block off, toward the positive side.
+     */
+    static boolean[] brush(int width) {
+        int lo = brushLow(width);
+        double centre = (width - 1) / 2.0 - lo;
+        double limit = width * width / 4.0;
+        boolean[] out = new boolean[width * width * width];
+        for (int y = 0; y < width; y++) {
+            for (int z = 0; z < width; z++) {
+                for (int x = 0; x < width; x++) {
+                    double dx = x - lo - centre;
+                    double dy = y - lo - centre;
+                    double dz = z - lo - centre;
+                    out[(y * width + z) * width + x] = dx * dx + dy * dy + dz * dz < limit;
+                }
+            }
+        }
+        return out;
+    }
+
+    /** How far a {@link #brush} reaches below its point: {@code (width - 1) / 2}; it reaches {@code width / 2} above. */
+    static int brushLow(int width) {
+        return (width - 1) / 2;
+    }
+
     /** A (2r+1)^3 ball mask indexed [dy][dz][dx]. */
     static boolean[] ball(int r) {
         int n = 2 * r + 1;

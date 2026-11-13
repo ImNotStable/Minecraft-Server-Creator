@@ -83,6 +83,25 @@ class CanvasShapesTest {
     }
 
     @Test
+    void lineWidthIsTheNumberOfBlocksAcrossForEvenAndOddWidths() throws InterruptedException {
+        for (int w = 1; w <= 8; w++) {
+            Step.Line line = new Step.Line("world", new BlockPos(0, 64, 0), new BlockPos(10, 64, 0), w, STONE, List.of());
+            Canvas c = draw(line);
+            Region used = c.used();
+            assertThat(used.sizeY()).as("w=%d height", w).isEqualTo(w);
+            assertThat(used.sizeZ()).as("w=%d depth", w).isEqualTo(w);
+            assertThat(used.sizeX()).as("w=%d length", w).isEqualTo(11 + w - 1);
+            // The dry run's bounds are the blocks drawn, no wider and no narrower.
+            assertThat(line.bounds()).as("w=%d bounds", w).isEqualTo(used);
+            // A full row of w blocks crosses the line's middle.
+            int lo = (w - 1) / 2;
+            for (int dz = -lo; dz < w - lo; dz++) {
+                assertThat(c.planned(5, 64, dz)).as("w=%d dz=%d", w, dz).isNotNull();
+            }
+        }
+    }
+
+    @Test
     void bandsGoOutwardAndLaterStepsWin() throws InterruptedException {
         Canvas c = draw(new Step.Bands("world", new BlockPos(0, 63, 0), 1, new int[] {3, 5},
                         List.of(BlockPattern.single("grass_block"), BlockPattern.single("sand")), 0, 0, List.of()),
