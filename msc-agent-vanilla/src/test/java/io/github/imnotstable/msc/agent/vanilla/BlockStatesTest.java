@@ -33,6 +33,18 @@ class BlockStatesTest {
     }
 
     @Test
+    void rejectsTextAfterTheState() {
+        assertThatThrownBy(() -> BlockStates.parse("minecraft:chest[facing=east]{Items:[]}"))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("{Items:[]}");
+        assertThatThrownBy(() -> BlockStates.parse("oak_sign{front_text:{}}"))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("{front_text:{}}");
+        assertThatThrownBy(() -> BlockStates.parse("oak_stairs[facing=east][half=top]"))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("[half=top]");
+        assertThatThrownBy(() -> BlockStates.parse("minecraft:oak_stairs [facing=east]"))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining(" [facing=east]");
+    }
+
+    @Test
     void tellsAnUnknownBlockWithCloseNamesFromBadProperties() {
         assertThatThrownBy(() -> BlockStates.parse("chain"))
                 .hasMessageStartingWith("unknown block state: chain; did you mean ").hasMessageContaining("iron_chain");
