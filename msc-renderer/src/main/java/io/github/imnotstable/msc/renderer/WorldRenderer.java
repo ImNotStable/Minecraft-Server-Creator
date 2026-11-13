@@ -55,12 +55,24 @@ public final class WorldRenderer {
      * fall outside the image.
      */
     public RenderResult render(BlockGrid grid, View view, RenderOptions options, List<Marker> markers) {
+        return draw(grid, view, options, markers).result();
+    }
+
+    /** A render with the labels its placement step put on the image and the marker dots under them. */
+    record Drawn(RenderResult result, List<Labels.Label> labels, List<Labels.Rect> dots) {
+    }
+
+    Drawn draw(BlockGrid grid, View view, RenderOptions options, List<Marker> markers) {
         Region region = grid.region();
         Frame frame = switch (view) {
             case View.Ortho ortho -> orthoFrame(ortho, region, options);
             case View.Isometric iso -> isoFrame(iso, region, options);
             case View.Camera camera -> cameraFrame(camera, region, options);
         };
+        if (Math.max(frame.imageW, frame.imageH) > options.maxSize()) {
+            throw new IllegalStateException("a " + frame.imageW + "x" + frame.imageH + " frame is over the "
+                    + options.maxSize() + " px budget");
+        }
         Look[] palette = looks.resolve(grid.palette());
         int[] pixels = new int[frame.imageW * frame.imageH];
         java.util.Arrays.fill(pixels, MARGIN);
@@ -96,18 +108,21 @@ public final class WorldRenderer {
                 }
             }
         });
+        // Marks (ticks, dots) are drawn as they come; all text goes through one placement step and is drawn last.
+        Labels labels = new Labels(frame.imageW, frame.imageH);
         if (frame.ruler != null) {
-            frame.ruler.draw(pixels, frame);
+            frame.ruler.draw(pixels, frame, labels);
         }
         if (!frame.corners.isEmpty()) {
-            drawCorners(pixels, frame);
+            drawCorners(pixels, frame, labels);
         }
         String markerText = "";
         if (!markers.isEmpty()) {
             Tracer tracer = new Tracer(region.sizeX(), region.sizeY(), region.sizeZ(), grid.blocks(), palette, false,
                     false, false);
-            markerText = "\n" + drawMarkers(pixels, frame, region, markers, tracer);
+            markerText = "\n" + drawMarkers(pixels, frame, region, markers, tracer, labels);
         }
+        labels.drawAll(pixels);
         BufferedImage image = new BufferedImage(frame.imageW, frame.imageH, BufferedImage.TYPE_INT_RGB);
         image.setRGB(0, 0, frame.imageW, frame.imageH, pixels, 0, frame.imageW);
         ByteArrayOutputStream out = new ByteArrayOutputStream();
@@ -119,7 +134,8 @@ public final class WorldRenderer {
         int tokens = (int) Math.ceil(frame.imageW * frame.imageH / 750.0);
         String caption = frame.caption + " " + frame.imageW + "x" + frame.imageH + " px, about " + tokens
                 + " tokens.\n" + visible(palette, seen, (long) frame.w * frame.h) + markerText;
-        return new RenderResult(out.toByteArray(), frame.imageW, frame.imageH, caption, tokens);
+        return new Drawn(new RenderResult(out.toByteArray(), frame.imageW, frame.imageH, caption, tokens),
+                labels.labels(), labels.dots());
     }
 
     private static final int MAX_MARKERS = 40;
@@ -157,39 +173,73 @@ public final class WorldRenderer {
     /**
      * Draws the markers and returns their caption line. Entities are numbered dots one block above their feet, on
      * the body; holograms and signs are text boxes, moved up or down when they would cover another marker, or a
-     * numbered dot when there is no room. Markers behind solid blocks are drawn hollow or faded.
+     * numbered dot when there is no room. Markers behind solid blocks are drawn hollow or faded. Every dot is drawn
+     * before any text, and each number goes beside its dot where it fits whole, off every dot and label; a number
+     * with no such spot is left out and the caption says so.
      */
-    private static String drawMarkers(int[] pixels, Frame frame, Region region, List<Marker> markers, Tracer tracer) {
+    private static String drawMarkers(int[] pixels, Frame frame, Region region, List<Marker> markers, Tracer tracer,
+            Labels labels) {
         int font = frame.imageW >= 384 ? 2 : 1;
-        List<int[]> taken = new ArrayList<>();
         java.util.Set<Integer> outside = new java.util.TreeSet<>();
         java.util.Set<Integer> hidden = new java.util.TreeSet<>();
+        java.util.Set<Integer> crowded = new java.util.TreeSet<>();
         java.util.EnumSet<Marker.Kind> kinds = java.util.EnumSet.noneOf(Marker.Kind.class);
         int shown = Math.min(markers.size(), MAX_MARKERS);
-        // Dots first, so text boxes can move out of their way and stay on top.
-        for (int pass = 0; pass < 2; pass++) {
+        int[][] at = new int[shown][];
+        boolean[] behind = new boolean[shown];
+        boolean[] dotted = new boolean[shown];
+        for (int i = 0; i < shown; i++) {
+            Marker m = markers.get(i);
+            kinds.add(m.kind());
+            boolean textual = textual(m);
+            double[] p = {m.x() - region.min().x(), m.y() - region.min().y() + (textual ? 0 : 1.0),
+                    m.z() - region.min().z()};
+            int[] point = project(frame, p);
+            if (point == null || point[0] < 0 || point[1] < 0 || point[0] >= frame.imageW || point[1] >= frame.imageH) {
+                outside.add(i + 1);
+                continue;
+            }
+            at[i] = point;
+            // A sign's own block (post and board) sits around its anchor and must not hide its text.
+            behind[i] = behind(frame, tracer, p, m.kind() == Marker.Kind.SIGN);
+            if (behind[i]) {
+                hidden.add(i + 1);
+            }
+            if (!textual) {
+                dotted[i] = true;
+                labels.dot(dotBox(point, font));
+            }
+        }
+        // Text boxes after every entity dot is known, so they move off the dots. One with no room becomes a dot,
+        // and the boxes are placed again so none sits on that new dot.
+        int mark = labels.mark();
+        List<Runnable> moved = new ArrayList<>();
+        boolean again = true;
+        while (again) {
+            again = false;
+            labels.reset(mark);
+            moved.clear();
             for (int i = 0; i < shown; i++) {
-                Marker m = markers.get(i);
-                boolean textual = (m.kind() == Marker.Kind.TEXT || m.kind() == Marker.Kind.SIGN) && !m.text().isEmpty();
-                if (textual != (pass == 1)) {
-                    continue;
+                if (at[i] != null && !dotted[i] && textual(markers.get(i))
+                        && !placeText(pixels, frame, at[i], font, i + 1, markers.get(i), behind[i], labels, moved)) {
+                    dotted[i] = true;
+                    labels.dot(dotBox(at[i], font));
+                    again = true;
                 }
-                kinds.add(m.kind());
-                int n = i + 1;
-                double[] p = {m.x() - region.min().x(), m.y() - region.min().y() + (textual ? 0 : 1.0),
-                        m.z() - region.min().z()};
-                int[] at = project(frame, p);
-                if (at == null || at[0] < 0 || at[1] < 0 || at[0] >= frame.imageW || at[1] >= frame.imageH) {
-                    outside.add(n);
-                    continue;
-                }
-                // A sign's own block (post and board) sits around its anchor and must not hide its text.
-                boolean behind = behind(frame, tracer, p, m.kind() == Marker.Kind.SIGN);
-                if (behind) {
-                    hidden.add(n);
-                }
-                if (!textual || !drawText(pixels, frame, at, font, m, behind, taken)) {
-                    drawDot(pixels, frame, at, font, colour(m.kind()), behind, Integer.toString(n), taken);
+            }
+        }
+        moved.forEach(Runnable::run);
+        for (int i = 0; i < shown; i++) {
+            if (dotted[i]) {
+                drawDot(pixels, frame, at[i], font, colour(markers.get(i).kind()), behind[i]);
+            }
+        }
+        for (int i = 0; i < shown; i++) {
+            if (dotted[i]) {
+                Labels.Label number = Labels.Label.line(Labels.Kind.NUMBER, i + 1, Integer.toString(i + 1), font, font,
+                        MARGIN, INK);
+                if (labels.place(number, true, numberSpots(at[i], font, number.box())) == null) {
+                    crowded.add(i + 1);
                 }
             }
         }
@@ -222,7 +272,15 @@ public final class WorldRenderer {
         if (!hidden.isEmpty()) {
             sb.append(" Behind blocks (hollow or faded): ").append(numbers(hidden)).append('.');
         }
+        if (!crowded.isEmpty()) {
+            sb.append(" Dots too crowded for their number: ").append(numbers(crowded)).append('.');
+        }
         return sb.toString();
+    }
+
+    /** True when a marker shows its words in a box rather than a numbered dot. */
+    private static boolean textual(Marker m) {
+        return (m.kind() == Marker.Kind.TEXT || m.kind() == Marker.Kind.SIGN) && !m.text().isEmpty();
     }
 
     private static String numbers(java.util.Set<Integer> numbers) {
@@ -252,75 +310,81 @@ public final class WorldRenderer {
         return tracer.blocked(p[0], p[1], p[2], d[0], d[1], d[2], distance, own);
     }
 
-    private static void drawDot(int[] pixels, Frame frame, int[] at, int font, int rgb, boolean hollow, String number,
-            List<int[]> taken) {
+    /** The square a dot covers, black rim included. */
+    private static Labels.Rect dotBox(int[] at, int font) {
+        int outer = 4 * font;
+        return new Labels.Rect(at[0] - outer, at[1] - outer, 2 * outer + 1, 2 * outer + 1);
+    }
+
+    private static void drawDot(int[] pixels, Frame frame, int[] at, int font, int rgb, boolean hollow) {
         int dot = 3 * font;
-        int outer = dot + font;
-        PixelFont.fill(pixels, frame.imageW, frame.imageH, at[0] - outer, at[1] - outer, 2 * outer + 1, 2 * outer + 1,
-                0x000000);
+        Labels.Rect rim = dotBox(at, font);
+        PixelFont.fill(pixels, frame.imageW, frame.imageH, rim.x(), rim.y(), rim.w(), rim.h(), 0x000000);
         PixelFont.fill(pixels, frame.imageW, frame.imageH, at[0] - dot, at[1] - dot, 2 * dot + 1, 2 * dot + 1, rgb);
         if (hollow) {
             int inner = dot - font;
             PixelFont.fill(pixels, frame.imageW, frame.imageH, at[0] - inner, at[1] - inner, 2 * inner + 1,
                     2 * inner + 1, MARGIN);
         }
-        int lx = at[0] + dot + 2 * font;
-        int ly = at[1] - PixelFont.HEIGHT * font / 2;
-        int lw = PixelFont.width(number, font) + 2 * font;
-        int lh = PixelFont.HEIGHT * font + 2 * font;
-        PixelFont.fill(pixels, frame.imageW, frame.imageH, lx - font, ly - font, lw, lh, MARGIN);
-        PixelFont.draw(pixels, frame.imageW, frame.imageH, lx, ly, number, font, INK);
-        taken.add(new int[] {at[0] - outer, at[1] - outer, lx - font + lw - (at[0] - outer), 2 * outer + 1});
     }
 
     /**
-     * Draws a marker's lines in a box: a hologram's above its anchor, a sign's centred on the block. Returns false,
-     * drawing nothing, when the text is empty or no nearby spot is free.
+     * Spots for a dot's number, best first: right of the dot, left, above, below, the four diagonals, then the same
+     * again one, two and three dots further out.
      */
-    private static boolean drawText(int[] pixels, Frame frame, int[] at, int font, Marker m, boolean faded,
-            List<int[]> taken) {
+    private static List<int[]> numberSpots(int[] at, int font, Labels.Rect label) {
+        Labels.Rect dot = dotBox(at, font);
+        List<int[]> spots = new ArrayList<>();
+        for (int gap = 0; gap <= 3 * dot.w(); gap += dot.w()) {
+            int right = dot.x() + dot.w() + gap;
+            int left = dot.x() - label.w() - gap;
+            int middleX = at[0] - label.w() / 2;
+            int above = dot.y() - label.h() - gap;
+            int below = dot.y() + dot.h() + gap;
+            int middleY = at[1] - label.h() / 2;
+            for (int[] spot : new int[][] {{right, middleY}, {left, middleY}, {middleX, above}, {middleX, below},
+                    {right, above}, {right, below}, {left, above}, {left, below}}) {
+                spots.add(spot);
+            }
+        }
+        return spots;
+    }
+
+    /**
+     * Places a marker's lines in a box: a hologram's above its anchor, a sign's centred on the block, or moved up or
+     * down off other dots and labels (then adding to {@code moved} the mark that shows where it belongs). Returns
+     * false, placing nothing, when the text is empty or no nearby spot is free.
+     */
+    private static boolean placeText(int[] pixels, Frame frame, int[] at, int font, int number, Marker m,
+            boolean faded, Labels labels, List<Runnable> moved) {
         List<String> lines = textLines(m.text());
         if (lines.isEmpty()) {
             return false;
         }
         boolean sign = m.kind() == Marker.Kind.SIGN;
-        int pad = 2 * font;
-        int lineH = (PixelFont.HEIGHT + 1) * font;
-        int boxW = lines.stream().mapToInt(line -> PixelFont.width(line, font)).max().orElse(0) + 2 * pad;
-        int boxH = lines.size() * lineH - font + 2 * pad;
-        if (boxW > frame.imageW || boxH > frame.imageH) {
-            return false;
+        int fill = sign ? SIGN_BOX : HOLOGRAM_BOX;
+        int ink = sign ? INK : HOLOGRAM_INK;
+        if (faded) {
+            fill = mix(fill, MARGIN);
+            ink = mix(ink, fill);
         }
-        int x = Math.clamp(at[0] - boxW / 2, 0, frame.imageW - boxW);
+        Labels.Label box = Labels.Label.box(number, lines, font, sign ? SIGN_EDGE : 0x000000, fill, ink);
+        int boxW = box.box().w();
+        int boxH = box.box().h();
+        int x = Math.clamp(at[0] - boxW / 2, 0, Math.max(0, frame.imageW - boxW));
         int y0 = sign ? at[1] - boxH / 2 : at[1] - boxH - font;
         int step = boxH + font;
         for (int offset : new int[] {0, -step, step, -2 * step, 2 * step}) {
-            int y = Math.clamp(y0 + offset, 0, frame.imageH - boxH);
-            int[] box = {x, y, boxW, boxH};
-            if (taken.stream().anyMatch(other -> overlaps(box, other))) {
-                continue;
+            int y = Math.clamp(y0 + offset, 0, Math.max(0, frame.imageH - boxH));
+            if (labels.place(box, true, List.<int[]>of(new int[] {x, y})) != null) {
+                if (offset != 0) {
+                    // Moved off its spot: a small square shows where it belongs.
+                    int edge = sign ? SIGN_EDGE : 0x000000;
+                    moved.add(() -> PixelFont.fill(pixels, frame.imageW, frame.imageH, at[0] - font, at[1] - font,
+                            2 * font + 1, 2 * font + 1, edge));
+                }
+                return true;
             }
-            int fill = sign ? SIGN_BOX : HOLOGRAM_BOX;
-            int ink = sign ? INK : HOLOGRAM_INK;
-            if (faded) {
-                fill = mix(fill, MARGIN);
-                ink = mix(ink, fill);
-            }
-            PixelFont.fill(pixels, frame.imageW, frame.imageH, x, y, boxW, boxH, sign ? SIGN_EDGE : 0x000000);
-            PixelFont.fill(pixels, frame.imageW, frame.imageH, x + font, y + font, boxW - 2 * font, boxH - 2 * font,
-                    fill);
-            for (int i = 0; i < lines.size(); i++) {
-                String line = lines.get(i);
-                PixelFont.draw(pixels, frame.imageW, frame.imageH, x + (boxW - PixelFont.width(line, font)) / 2,
-                        y + pad + i * lineH, line, font, ink);
-            }
-            if (offset != 0) {
-                // Moved off its spot: a small square shows where it belongs.
-                PixelFont.fill(pixels, frame.imageW, frame.imageH, at[0] - font, at[1] - font, 2 * font + 1,
-                        2 * font + 1, sign ? SIGN_EDGE : 0x000000);
-            }
-            taken.add(box);
-            return true;
         }
         return false;
     }
@@ -344,10 +408,6 @@ public final class WorldRenderer {
 
     private static String cut(String line) {
         return line.length() > MAX_TEXT_CHARS ? line.substring(0, MAX_TEXT_CHARS - 2) + ".." : line;
-    }
-
-    private static boolean overlaps(int[] a, int[] b) {
-        return a[0] < b[0] + b[2] && b[0] < a[0] + a[2] && a[1] < b[1] + b[3] && b[1] < a[1] + a[3];
     }
 
     /** Halfway between two colours. */
@@ -538,8 +598,8 @@ public final class WorldRenderer {
         // Whole pixels per block keep edges crisp; below 4 px that would waste too much of the budget.
         scale = scale >= 4 ? Math.min(Math.floor(scale), MAX_PIXELS_PER_BLOCK) : scale;
         frame.scale = scale;
-        frame.w = Math.max(1, (int) Math.ceil(cols * scale - 1e-9));
-        frame.h = Math.max(1, (int) Math.ceil(rows * scale - 1e-9));
+        frame.w = side(cols * scale, options.maxSize() - frame.offX);
+        frame.h = side(rows * scale, options.maxSize() - frame.offY);
         // Centre on the box so block edges land on whole pixels when the scale is whole.
         frame.origin = new double[] {
                 sx / 2.0 + frame.r[0] * (frame.w / scale - cols) / 2 - frame.u[0] * (frame.h / scale - rows) / 2,
@@ -551,6 +611,14 @@ public final class WorldRenderer {
         frame.imageH = frame.offY + frame.h;
         frame.caption = what + ", " + number(scale) + " px per block" + (frame.ruler != null ? ", coordinates on the rulers." : ".");
         return frame;
+    }
+
+    /**
+     * Whole pixels for a length, at least 1 and at most {@code room}: the one size clamp every frame uses. The small
+     * slack keeps floating-point noise (1568 / w * w = 1568.0000000002) from adding a pixel past the budget.
+     */
+    static int side(double length, int room) {
+        return Math.clamp((long) Math.ceil(length - 1e-9), 1, Math.max(1, room));
     }
 
     private static String span(Ruler ruler, boolean across) {
@@ -610,8 +678,8 @@ public final class WorldRenderer {
         double scale = Math.min(Math.min((options.maxSize() - 2 * marginX) / width,
                 (options.maxSize() - 2 * marginY) / height), MAX_PIXELS_PER_BLOCK);
         frame.scale = scale;
-        frame.w = Math.max(1, (int) Math.ceil(width * scale));
-        frame.h = Math.max(1, (int) Math.ceil(height * scale));
+        frame.w = side(width * scale, options.maxSize() - 2 * marginX);
+        frame.h = side(height * scale, options.maxSize() - 2 * marginY);
         frame.origin = new double[] {sx / 2.0, sy / 2.0, sz / 2.0};
         frame.back = sx + sy + sz + 1;
         frame.footprint = 1 / scale;
@@ -674,12 +742,14 @@ public final class WorldRenderer {
         return x + "," + y + "," + z;
     }
 
-    private static void drawCorners(int[] pixels, Frame frame) {
+    /** Marks each corner and places its label beside it, or as near as fits inside the image. */
+    private static void drawCorners(int[] pixels, Frame frame, Labels labels) {
         int font = frame.cornerFont;
         int textH = PixelFont.HEIGHT * font;
         for (IsoCorner corner : frame.corners) {
             int[] at = project(frame, corner.point());
-            int w = PixelFont.width(corner.text(), font);
+            Labels.Label label = Labels.Label.line(Labels.Kind.CORNER, 0, corner.text(), font, 0, -1, INK);
+            int w = label.box().w();
             int x;
             int y;
             switch (corner.side()) {
@@ -700,10 +770,9 @@ public final class WorldRenderer {
                     y = at[1] - 2 * font - textH;
                 }
             }
-            x = Math.clamp(x, 0, Math.max(0, frame.imageW - w));
-            y = Math.clamp(y, 0, Math.max(0, frame.imageH - textH));
             PixelFont.fill(pixels, frame.imageW, frame.imageH, at[0] - font, at[1] - font, 2 * font, 2 * font, INK);
-            PixelFont.draw(pixels, frame.imageW, frame.imageH, x, y, corner.text(), font, INK);
+            labels.place(label, false, List.of(new int[] {x, y}, new int[] {
+                    Math.clamp(x, 0, Math.max(0, frame.imageW - w)), Math.clamp(y, 0, Math.max(0, frame.imageH - textH))}));
         }
     }
 
@@ -711,8 +780,8 @@ public final class WorldRenderer {
         Frame frame = new Frame();
         frame.perspective = true;
         aim(frame, view.yaw(), Math.clamp(view.pitch(), -89.9, 89.9));
-        frame.w = options.maxSize();
-        frame.h = Math.max(1, options.maxSize() * 3 / 4);
+        frame.w = side(options.maxSize(), options.maxSize());
+        frame.h = side(options.maxSize() * 3 / 4, options.maxSize());
         double tanHalf = Math.tan(Math.toRadians(view.fov() / 2));
         frame.scale = frame.h / 2.0 / tanHalf;
         frame.origin = new double[] {view.x() - region.min().x(), view.y() - region.min().y(), view.z() - region.min().z()};
@@ -783,30 +852,52 @@ public final class WorldRenderer {
             return Math.max(PixelFont.width(Integer.toString(min), fontScale), PixelFont.width(Integer.toString(max), fontScale));
         }
 
-        void draw(int[] pixels, Frame frame) {
+        /**
+         * Draws a tick at each labelled column and row and places its label: centred on it, but moved inside the
+         * image (and off the corner) when the end of the ruler would cut it. A label that would then cover its
+         * neighbour is dropped.
+         */
+        void draw(int[] pixels, Frame frame, Labels labels) {
             int acrossStep = step((labelWidth(acrossMin, acrossMax) + 2 * fontScale) / frame.scale);
             int downStep = step((PixelFont.HEIGHT * fontScale + 2) / frame.scale);
-            for (int i = 0; i <= acrossMax - acrossMin; i++) {
+            int textH = PixelFont.HEIGHT * fontScale;
+            for (int i : endsFirst(acrossMax - acrossMin, acrossFlip ? acrossMax : acrossMin, acrossFlip ? -1 : 1,
+                    acrossStep)) {
                 int value = acrossFlip ? acrossMax - i : acrossMin + i;
-                if (Math.floorMod(value, acrossStep) == 0) {
-                    String label = Integer.toString(value);
-                    int centre = frame.offX + (int) ((i + 0.5) * frame.scale);
-                    PixelFont.draw(pixels, frame.imageW, frame.imageH, centre - PixelFont.width(label, fontScale) / 2,
-                            fontScale, label, fontScale, INK);
-                    PixelFont.fill(pixels, frame.imageW, frame.imageH, centre, marginTop - fontScale, 1, fontScale, INK);
-                }
+                Labels.Label label = Labels.Label.line(Labels.Kind.RULER, 0, Integer.toString(value), fontScale, 0, -1,
+                        INK);
+                int centre = frame.offX + (int) ((i + 0.5) * frame.scale);
+                // The top-left corner is empty, so the first label may lean into it.
+                int x = Math.clamp(centre - label.box().w() / 2, 0, Math.max(0, frame.imageW - label.box().w()));
+                labels.place(label, false, List.<int[]>of(new int[] {x, fontScale}));
+                PixelFont.fill(pixels, frame.imageW, frame.imageH, centre, marginTop - fontScale, 1, fontScale, INK);
             }
-            for (int i = 0; i <= downMax - downMin; i++) {
+            for (int i : endsFirst(downMax - downMin, downFlip ? downMax : downMin, downFlip ? -1 : 1, downStep)) {
                 int value = downFlip ? downMax - i : downMin + i;
-                if (Math.floorMod(value, downStep) == 0) {
-                    String label = Integer.toString(value);
-                    int centre = frame.offY + (int) ((i + 0.5) * frame.scale);
-                    PixelFont.draw(pixels, frame.imageW, frame.imageH,
-                            marginLeft - 2 * fontScale - PixelFont.width(label, fontScale),
-                            centre - PixelFont.HEIGHT * fontScale / 2, label, fontScale, INK);
-                    PixelFont.fill(pixels, frame.imageW, frame.imageH, marginLeft - fontScale, centre, fontScale, 1, INK);
+                Labels.Label label = Labels.Label.line(Labels.Kind.RULER, 0, Integer.toString(value), fontScale, 0, -1,
+                        INK);
+                int centre = frame.offY + (int) ((i + 0.5) * frame.scale);
+                int y = Math.clamp(centre - textH / 2, frame.offY, Math.max(frame.offY, frame.imageH - textH));
+                labels.place(label, false, List.<int[]>of(new int[] {marginLeft - 2 * fontScale - label.box().w(), y}));
+                PixelFont.fill(pixels, frame.imageW, frame.imageH, marginLeft - fontScale, centre, fontScale, 1, INK);
+            }
+        }
+
+        /**
+         * Indexes 0..last whose coordinate (start + sign * index) is a multiple of step, the first and last of them
+         * before the rest, so that when an end label is moved inside the image its neighbour gives way, not the end.
+         */
+        private static List<Integer> endsFirst(int last, int start, int sign, int step) {
+            List<Integer> labelled = new ArrayList<>();
+            for (int i = 0; i <= last; i++) {
+                if (Math.floorMod(start + sign * i, step) == 0) {
+                    labelled.add(i);
                 }
             }
+            if (labelled.size() > 2) {
+                labelled.add(1, labelled.removeLast());
+            }
+            return labelled;
         }
 
         /** Smallest step from 1, 2, 5, 10, 20, 50, ... that is at least {@code blocks} wide. */
