@@ -72,6 +72,11 @@ final class Script {
             result.complete(r);
         }
 
+        /** The result once the step has finished, else null. */
+        String resultNow() {
+            return result.getNow(null);
+        }
+
         String await() throws InterruptedException {
             try {
                 return result.get(MAX_TICKS / 20 + 10, TimeUnit.SECONDS);

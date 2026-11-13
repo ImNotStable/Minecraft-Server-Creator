@@ -80,8 +80,10 @@ public final class TestPlayer implements Bot {
     }
 
     private final String name;
+    /** The connection; null for a player built by {@link #offline}, which only records what it sends. */
     private final ClientSession session;
-    private final ScheduledExecutorService ticker;
+    private final java.util.function.Consumer<Packet> sender;
+    private ScheduledExecutorService ticker;
     private final BlockSource blocks;
     private final RoutePlanner planner;
     private final List<String> events = new ArrayList<>();
@@ -109,17 +111,21 @@ public final class TestPlayer implements Bot {
     private Script.Step current;
     private long ticks;
 
-    private TestPlayer(String name, String host, int port, BlockSource blocks, RoutePlanner planner) {
+    private TestPlayer(String name, BlockSource blocks, RoutePlanner planner, ClientSession session,
+                       java.util.function.Consumer<Packet> sender) {
         this.name = name;
         this.blocks = blocks;
         this.planner = planner;
-        this.session = ClientNetworkSessionFactory.factory().setAddress(host, port)
-                .setProtocol(new MinecraftProtocol(name)).create();
-        this.ticker = Executors.newSingleThreadScheduledExecutor(r -> {
-            Thread t = new Thread(r, "msc-test-player");
-            t.setDaemon(true);
-            return t;
-        });
+        this.session = session;
+        this.sender = sender;
+    }
+
+    /**
+     * A player with no connection, for tests: packets go in through {@link #receive}, what it would send lands in
+     * {@code sent}, and the test drives {@link #tick} itself.
+     */
+    static TestPlayer offline(String name, BlockSource blocks, RoutePlanner planner, List<Packet> sent) {
+        return new TestPlayer(name, blocks, planner, null, sent::add);
     }
 
     /** Join the server and wait until the player is in the world. */
@@ -131,7 +137,9 @@ public final class TestPlayer implements Bot {
     /** As {@link #join(String, String, int, BlockSource, Duration)}, with a planner for the walk action. */
     public static TestPlayer join(String name, String host, int port, BlockSource blocks, RoutePlanner planner,
                                   Duration timeout) throws InterruptedException {
-        TestPlayer p = new TestPlayer(name, host, port, blocks, planner);
+        ClientSession session = ClientNetworkSessionFactory.factory().setAddress(host, port)
+                .setProtocol(new MinecraftProtocol(name)).create();
+        TestPlayer p = new TestPlayer(name, blocks, planner, session, session::send);
         p.session.addListener(p.new Listener());
         p.session.connect(true);
         // A kick also releases the latch, so check for one: being turned away is not a join.
@@ -141,6 +149,11 @@ public final class TestPlayer implements Bot {
             throw new IllegalStateException((why != null ? "kicked while joining " : "could not join ") + host + ":"
                     + port + " as " + name + (why != null ? ": " + why : " within " + timeout.toSeconds() + "s"));
         }
+        p.ticker = Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread t = new Thread(r, "msc-test-player");
+            t.setDaemon(true);
+            return t;
+        });
         p.ticker.scheduleAtFixedRate(p::tick, 50, 50, TimeUnit.MILLISECONDS);
         return p;
     }
@@ -167,7 +180,7 @@ public final class TestPlayer implements Bot {
 
     @Override
     public boolean connected() {
-        return disconnect == null && session.isConnected();
+        return disconnect == null && (session == null || session.isConnected());
     }
 
     @Override
@@ -176,11 +189,7 @@ public final class TestPlayer implements Bot {
         for (String line : lines) {
             steps.add(Script.parse(line));
         }
-        synchronized (this) {
-            if (view == null) {
-                view = new WorldView(blocks, world);
-            }
-        }
+        useWorld(world);
         StringBuilder out = new StringBuilder();
         drainEvents(out); // what happened since the last call, joining included
         for (Script.Step step : steps) {
@@ -189,11 +198,7 @@ public final class TestPlayer implements Bot {
                         .append('\n');
                 break;
             }
-            step.prepare(this); // outside the lock: it may read the world through the agent
-            synchronized (this) {
-                step.start(this);
-                current = step;
-            }
+            begin(step);
             String result = step.await();
             out.append(step.text()).append(": ").append(result).append('\n');
             drainEvents(out);
@@ -202,6 +207,22 @@ public final class TestPlayer implements Bot {
             out.append(status());
         }
         return out.toString();
+    }
+
+    /** Simulate movement against the blocks of {@code world}. */
+    synchronized void useWorld(String world) {
+        if (view == null) {
+            view = new WorldView(blocks, world);
+        }
+    }
+
+    /** Make {@code step} the running step; the tick thread runs it from the next tick. */
+    void begin(Script.Step step) {
+        step.prepare(this); // outside the lock: it may read the world through the agent
+        synchronized (this) {
+            step.start(this);
+            current = step;
+        }
     }
 
     String status() {
@@ -233,7 +254,11 @@ public final class TestPlayer implements Bot {
         }
     }
 
-    private void tick() {
+    private void send(Packet packet) {
+        sender.accept(packet);
+    }
+
+    void tick() {
         try {
             synchronized (this) {
                 ticks++;
@@ -242,7 +267,7 @@ public final class TestPlayer implements Bot {
                 }
                 if (dead) {
                     if (++deadTicks == 20) {
-                        session.send(new ServerboundClientCommandPacket(ClientCommand.PERFORM_RESPAWN));
+                        send(new ServerboundClientCommandPacket(ClientCommand.PERFORM_RESPAWN));
                     }
                     return;
                 }
@@ -263,7 +288,7 @@ public final class TestPlayer implements Bot {
                 outbox.move(new ServerboundMovePlayerPosRotPacket(body.onGround, body.horizontalCollision, body.x,
                         body.y, body.z, yaw, pitch));
                 for (Packet packet : outbox.drain(ServerboundClientTickEndPacket.INSTANCE)) {
-                    session.send(packet);
+                    send(packet);
                 }
                 if (step != null && step.check(this)) {
                     current = null;
@@ -278,12 +303,12 @@ public final class TestPlayer implements Bot {
         boolean sprint = in.sprint() && in.forward() > 0;
         if (sprint != sprinting) {
             sprinting = sprint;
-            session.send(new ServerboundPlayerCommandPacket(entityId,
+            send(new ServerboundPlayerCommandPacket(entityId,
                     sprint ? PlayerState.START_SPRINTING : PlayerState.STOP_SPRINTING));
         }
         if (!in.equals(lastInput)) {
             lastInput = in;
-            session.send(new ServerboundPlayerInputPacket(in.forward() > 0, in.forward() < 0, in.strafe() > 0,
+            send(new ServerboundPlayerInputPacket(in.forward() > 0, in.forward() < 0, in.strafe() > 0,
                     in.strafe() < 0, in.jump(), false, sprint));
         }
     }
@@ -321,15 +346,15 @@ public final class TestPlayer implements Bot {
 
     void chat(String text) {
         if (text.startsWith("/")) {
-            session.send(new ServerboundChatCommandPacket(text.substring(1)));
+            send(new ServerboundChatCommandPacket(text.substring(1)));
         } else {
-            session.send(new ServerboundChatPacket(text, System.currentTimeMillis(), 0L, null, 0,
+            send(new ServerboundChatPacket(text, System.currentTimeMillis(), 0L, null, 0,
                     new java.util.BitSet(), 0));
         }
     }
 
     void selectSlot(int slot) {
-        session.send(new ServerboundSetCarriedItemPacket(slot));
+        send(new ServerboundSetCarriedItemPacket(slot));
         inventory.select(slot);
     }
 
@@ -347,13 +372,13 @@ public final class TestPlayer implements Bot {
         if (id < 0) {
             return false;
         }
-        session.send(new ServerboundContainerClosePacket(id));
+        send(new ServerboundContainerClosePacket(id));
         inventory.closed();
         return true;
     }
 
     void useItem() {
-        session.send(new ServerboundUseItemPacket(Hand.MAIN_HAND, sequence.incrementAndGet(), yaw, pitch));
+        send(new ServerboundUseItemPacket(Hand.MAIN_HAND, sequence.incrementAndGet(), yaw, pitch));
     }
 
     /** Right-click a block on the face that looks at the player. */
@@ -369,7 +394,7 @@ public final class TestPlayer implements Bot {
         } else {
             face = ez > 0 ? Direction.SOUTH : Direction.NORTH;
         }
-        session.send(new ServerboundUseItemOnPacket(Vector3i.from(x, y, z), face, Hand.MAIN_HAND, 0.5f, 0.5f, 0.5f,
+        send(new ServerboundUseItemOnPacket(Vector3i.from(x, y, z), face, Hand.MAIN_HAND, 0.5f, 0.5f, 0.5f,
                 false, false, sequence.incrementAndGet()));
     }
 
@@ -440,8 +465,10 @@ public final class TestPlayer implements Bot {
 
     @Override
     public void close() {
-        ticker.shutdownNow();
-        if (session.isConnected()) {
+        if (ticker != null) {
+            ticker.shutdownNow();
+        }
+        if (session != null && session.isConnected()) {
             session.disconnect("test player done");
         }
     }
@@ -449,72 +476,81 @@ public final class TestPlayer implements Bot {
     private final class Listener extends SessionAdapter {
         @Override
         public void packetReceived(Session s, Packet packet) {
-            // Inventory and screen state is kept for the inventory and hud actions; events below still log titles.
-            if (inventory.accept(packet)) {
-                return;
-            }
-            hud.accept(packet);
-            switch (packet) {
-                case ClientboundLoginPacket p -> entityId = p.getEntityId();
-                case ClientboundPlayerPositionPacket p -> position(p);
-                case ClientboundSetHealthPacket p -> health(p.getHealth(), p.getFood());
-                case ClientboundPlayerCombatKillPacket p -> {
-                    if (p.getPlayerId() == entityId) {
-                        event("[death] " + Text.plain(p.getMessage()));
-                    }
-                }
-                case ClientboundRespawnPacket p -> {
-                    synchronized (TestPlayer.this) {
-                        dead = false;
-                        deadTicks = 0;
-                    }
-                    event("[respawned]");
-                }
-                case ClientboundSystemChatPacket p -> event((p.isOverlay() ? "[actionbar] " : "[chat] ")
-                        + Text.plain(p.getContent()));
-                case ClientboundPlayerChatPacket p -> event("[chat] <" + Text.plain(p.getName()) + "> "
-                        + (p.getUnsignedContent() != null ? Text.plain(p.getUnsignedContent()) : p.getContent()));
-                case ClientboundSetTitleTextPacket p -> event("[title] " + Text.plain(p.getText()));
-                case ClientboundSetSubtitleTextPacket p -> event("[subtitle] " + Text.plain(p.getText()));
-                case ClientboundSetActionBarTextPacket p -> event("[actionbar] " + Text.plain(p.getText()));
-                case ClientboundResourcePackPushPacket p -> pack(s, p);
-                // Like the vanilla client; Fabric API's configuration waits for this pong.
-                case ClientboundPingPacket p -> s.send(new ServerboundPongPacket(p.getId()));
-                case ClientboundChunkBatchFinishedPacket p -> s.send(new ServerboundChunkBatchReceivedPacket(64f));
-                case ClientboundAddEntityPacket p -> entities.put(p.getEntityId(), new Tracked(
-                        p.getType().name().toLowerCase(java.util.Locale.ROOT), p.getX(), p.getY(), p.getZ()));
-                case ClientboundRemoveEntitiesPacket p -> {
-                    for (int id : p.getEntityIds()) {
-                        entities.remove(id);
-                    }
-                }
-                case ClientboundMoveEntityPosPacket p -> moveEntity(p.getEntityId(), p.getMoveX(), p.getMoveY(),
-                        p.getMoveZ());
-                case ClientboundMoveEntityPosRotPacket p -> moveEntity(p.getEntityId(), p.getMoveX(),
-                        p.getMoveY(), p.getMoveZ());
-                case ClientboundTeleportEntityPacket p -> placeEntity(p.getId(), p.getPosition());
-                case ClientboundEntityPositionSyncPacket p -> {
-                    Vector3d end = Compat.syncPosition(p);
-                    if (end != null) {
-                        placeEntity(p.getId(), end);
-                    }
-                }
-                default -> {
-                }
-            }
+            receive(packet);
         }
 
         @Override
         public void disconnected(DisconnectedEvent event) {
-            disconnect = Text.plain(event.getReason());
-            event("[disconnected] " + disconnect);
-            spawned.countDown();
-            synchronized (TestPlayer.this) {
-                // End the running step now rather than when it times out.
-                if (current != null) {
-                    current.finish("stopped: disconnected");
-                    current = null;
+            TestPlayer.this.disconnected(Text.plain(event.getReason()));
+        }
+    }
+
+    /** Take in a packet from the server. */
+    void receive(Packet packet) {
+        // Inventory and screen state is kept for the inventory and hud actions; events below still log titles.
+        if (inventory.accept(packet)) {
+            return;
+        }
+        hud.accept(packet);
+        switch (packet) {
+            case ClientboundLoginPacket p -> entityId = p.getEntityId();
+            case ClientboundPlayerPositionPacket p -> position(p);
+            case ClientboundSetHealthPacket p -> health(p.getHealth(), p.getFood());
+            case ClientboundPlayerCombatKillPacket p -> {
+                if (p.getPlayerId() == entityId) {
+                    event("[death] " + Text.plain(p.getMessage()));
                 }
+            }
+            case ClientboundRespawnPacket p -> {
+                synchronized (this) {
+                    dead = false;
+                    deadTicks = 0;
+                }
+                event("[respawned]");
+            }
+            case ClientboundSystemChatPacket p -> event((p.isOverlay() ? "[actionbar] " : "[chat] ")
+                    + Text.plain(p.getContent()));
+            case ClientboundPlayerChatPacket p -> event("[chat] <" + Text.plain(p.getName()) + "> "
+                    + (p.getUnsignedContent() != null ? Text.plain(p.getUnsignedContent()) : p.getContent()));
+            case ClientboundSetTitleTextPacket p -> event("[title] " + Text.plain(p.getText()));
+            case ClientboundSetSubtitleTextPacket p -> event("[subtitle] " + Text.plain(p.getText()));
+            case ClientboundSetActionBarTextPacket p -> event("[actionbar] " + Text.plain(p.getText()));
+            case ClientboundResourcePackPushPacket p -> pack(p);
+            // Like the vanilla client; Fabric API's configuration waits for this pong.
+            case ClientboundPingPacket p -> send(new ServerboundPongPacket(p.getId()));
+            case ClientboundChunkBatchFinishedPacket p -> send(new ServerboundChunkBatchReceivedPacket(64f));
+            case ClientboundAddEntityPacket p -> entities.put(p.getEntityId(), new Tracked(
+                    p.getType().name().toLowerCase(java.util.Locale.ROOT), p.getX(), p.getY(), p.getZ()));
+            case ClientboundRemoveEntitiesPacket p -> {
+                for (int id : p.getEntityIds()) {
+                    entities.remove(id);
+                }
+            }
+            case ClientboundMoveEntityPosPacket p -> moveEntity(p.getEntityId(), p.getMoveX(), p.getMoveY(),
+                    p.getMoveZ());
+            case ClientboundMoveEntityPosRotPacket p -> moveEntity(p.getEntityId(), p.getMoveX(),
+                    p.getMoveY(), p.getMoveZ());
+            case ClientboundTeleportEntityPacket p -> placeEntity(p.getId(), p.getPosition());
+            case ClientboundEntityPositionSyncPacket p -> {
+                Vector3d end = Compat.syncPosition(p);
+                if (end != null) {
+                    placeEntity(p.getId(), end);
+                }
+            }
+            default -> {
+            }
+        }
+    }
+
+    void disconnected(String reason) {
+        disconnect = reason;
+        event("[disconnected] " + disconnect);
+        spawned.countDown();
+        synchronized (this) {
+            // End the running step now rather than when it times out.
+            if (current != null) {
+                current.finish("stopped: disconnected");
+                current = null;
             }
         }
     }
@@ -555,10 +591,10 @@ public final class TestPlayer implements Bot {
             body.vz = rel.contains(PositionElement.DELTA_Z) ? body.vz + d.getZ() : d.getZ();
             yaw = rel.contains(PositionElement.Y_ROT) ? yaw + p.getYRot() : p.getYRot();
             pitch = rel.contains(PositionElement.X_ROT) ? pitch + p.getXRot() : p.getXRot();
-            session.send(Compat.acceptTeleport(p.getId(), body.x, body.y, body.z, yaw, pitch));
+            send(Compat.acceptTeleport(p.getId(), body.x, body.y, body.z, yaw, pitch));
             if (!positioned) {
                 positioned = true;
-                session.send(ServerboundPlayerLoadedPacket.INSTANCE);
+                send(ServerboundPlayerLoadedPacket.INSTANCE);
                 spawned.countDown();
             }
         }
@@ -621,10 +657,10 @@ public final class TestPlayer implements Bot {
     }
 
     /** Accept the pack, and check that it downloads and matches its hash, which a real client would need. */
-    private void pack(Session s, ClientboundResourcePackPushPacket p) {
+    private void pack(ClientboundResourcePackPushPacket p) {
         event("[pack] offered " + p.getUrl() + (p.isRequired() ? " (required)" : ""));
         hud.pack("offered, downloading " + p.getUrl());
-        s.send(new ServerboundResourcePackPacket(p.getId(), ResourcePackStatus.ACCEPTED));
+        send(new ServerboundResourcePackPacket(p.getId(), ResourcePackStatus.ACCEPTED));
         Thread.ofVirtual().start(() -> {
             ResourcePackStatus status;
             try {
@@ -639,9 +675,9 @@ public final class TestPlayer implements Bot {
                 status = ResourcePackStatus.FAILED_DOWNLOAD;
             }
             if (status == ResourcePackStatus.SUCCESSFULLY_LOADED) {
-                s.send(new ServerboundResourcePackPacket(p.getId(), ResourcePackStatus.DOWNLOADED));
+                send(new ServerboundResourcePackPacket(p.getId(), ResourcePackStatus.DOWNLOADED));
             }
-            s.send(new ServerboundResourcePackPacket(p.getId(), status));
+            send(new ServerboundResourcePackPacket(p.getId(), status));
         });
     }
 }
