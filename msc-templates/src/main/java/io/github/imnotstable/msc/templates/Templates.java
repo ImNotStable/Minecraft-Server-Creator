@@ -126,11 +126,35 @@ public final class Templates {
     public static ScaffoldResult scaffold(String id, Path target, TemplateVariables vars) throws IOException {
         requireKnown(id);
         requireEmpty(target);
+        Path root = target.toAbsolutePath().normalize();
+        Rendered rendered = render(id, root, vars);
+        // Written only once every file rendered and passed the checks, so a refused scaffold leaves nothing behind.
+        List<Path> written = new ArrayList<>();
+        for (Map.Entry<Path, byte[]> f : rendered.files().entrySet()) {
+            Path out = f.getKey();
+            Files.createDirectories(out.getParent());
+            Files.write(out, f.getValue());
+            if (out.getFileName().toString().equals("gradlew")) {
+                out.toFile().setExecutable(true, false);
+            }
+            written.add(out);
+        }
+        return new ScaffoldResult(root, written, rendered.values());
+    }
+
+    /** A template rendered in memory: each file's absolute path under the root and its bytes, and the values used. */
+    record Rendered(Map<Path, byte[]> files, Map<String, String> values) {}
+
+    /**
+     * Renders template {@code id} in memory for a project at {@code root} (absolute and normalized), with every
+     * check {@link #scaffold} makes on the variables, and writes nothing.
+     */
+    static Rendered render(String id, Path root, TemplateVariables vars) throws IOException {
+        requireKnown(id);
         Map<String, String> values = new LinkedHashMap<>(versions());
         values.putAll(vars.asMap());
         requireLoaderAccepts(id, values);
 
-        Path root = target.toAbsolutePath().normalize();
         Map<Path, byte[]> files = new LinkedHashMap<>();
         for (String source : lines(ROOT + id + "/files.txt")) {
             String rel = TemplateRenderer.render(source, values);
@@ -155,18 +179,7 @@ public final class Templates {
                         + " twice; choose another name or main class");
             }
         }
-        // Written only once every file rendered and passed the checks, so a refused scaffold leaves nothing behind.
-        List<Path> written = new ArrayList<>();
-        for (Map.Entry<Path, byte[]> f : files.entrySet()) {
-            Path out = f.getKey();
-            Files.createDirectories(out.getParent());
-            Files.write(out, f.getValue());
-            if (out.getFileName().toString().equals("gradlew")) {
-                out.toFile().setExecutable(true, false);
-            }
-            written.add(out);
-        }
-        return new ScaffoldResult(root, written, values);
+        return new Rendered(files, values);
     }
 
     /**
