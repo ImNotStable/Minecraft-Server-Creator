@@ -7,7 +7,6 @@ import io.github.imnotstable.msc.protocol.message.ErrorCodes;
 import io.github.imnotstable.msc.protocol.transport.OpException;
 import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 import org.bukkit.Bukkit;
@@ -24,8 +23,6 @@ public final class BukkitMainThread implements MainThread {
     private final Duration budget;
     private final Duration timeout;
     private final JobQueue jobs = new JobQueue();
-    /** True while a repeating task steps {@link #jobs}. */
-    private final AtomicBoolean driving = new AtomicBoolean();
 
     public BukkitMainThread(Plugin plugin, Duration budget, Duration timeout) {
         this.plugin = plugin;
@@ -66,24 +63,19 @@ public final class BukkitMainThread implements MainThread {
 
     /** Start the repeating task that steps the jobs, unless one runs. */
     private void drive() {
-        if (!driving.compareAndSet(false, true)) {
+        if (!jobs.claimDriver()) {
             return;
         }
         // The scheduler hands the task to each tick, so a tick never reads a handle stored by this thread.
         Consumer<BukkitTask> tick = task -> {
-            jobs.step(budget);
-            // Stop when empty, unless a job came in after the check and its caller found this task still driving.
-            if (jobs.isEmpty()) {
-                driving.set(false);
-                if (jobs.isEmpty() || !driving.compareAndSet(false, true)) {
-                    task.cancel();
-                }
+            if (!jobs.stepAndKeepDriving(budget)) {
+                task.cancel();
             }
         };
         try {
             Bukkit.getScheduler().runTaskTimer(plugin, tick, 0L, 1L);
         } catch (IllegalStateException | IllegalArgumentException e) {
-            driving.set(false);
+            jobs.releaseDriver();
             jobs.stop();
             throw new OpException(ErrorCodes.SHUTDOWN, "server is shutting down");
         }
