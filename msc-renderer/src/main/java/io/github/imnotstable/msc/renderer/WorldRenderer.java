@@ -17,7 +17,7 @@ import javax.imageio.ImageIO;
 /**
  * Renders a block grid to a PNG so an AI can look at a build. Pure Java, no GPU and no window:
  * safe on headless servers and CI. Thread-safe; keep one instance so resolved blocks and textures
- * stay cached.
+ * stay cached (until the {@link TextureSource#stamp() texture source changes}).
  *
  * <pre>{@code
  * WorldRenderer renderer = new WorldRenderer(new PackTextures(List.of(packFolder)));

@@ -8,6 +8,7 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.FileTime;
 import java.util.List;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
@@ -56,5 +57,25 @@ class PackTexturesTest {
         BufferedImage image = Scenes.decode(result);
         assertThat(Scenes.green(image.getRGB(16, 16))).isGreaterThan(150);
         assertThat(Scenes.green(image.getRGB(48, 16))).isGreaterThan(150);
+    }
+
+    @Test
+    void oneRendererSeesTexturesWrittenAfterItsFirstRender(@TempDir Path dir) throws IOException {
+        WorldRenderer renderer = new WorldRenderer(new PackTextures(List.of(dir)));
+        Scenes s = new Scenes(0, 0, 0, 1, 0, 0).fill(0, 0, 0, 1, 0, 0, "myplugin:ruby_block");
+        RenderOptions options = new RenderOptions(64, false, false, false, false);
+        assertThat(renderer.render(s.grid(), View.parse("top"), options).caption()).contains("No colour known");
+
+        Path file = dir.resolve("assets/myplugin/textures/block/ruby_block.png");
+        Files.createDirectories(file.getParent());
+        Files.write(file, png(0x00ff00));
+        RenderResult added = renderer.render(s.grid(), View.parse("top"), options);
+        assertThat(added.caption()).doesNotContain("No colour known");
+        assertThat(Scenes.green(Scenes.decode(added).getRGB(16, 16))).isGreaterThan(150);
+
+        Files.write(file, png(0x0000ff));
+        Files.setLastModifiedTime(file, FileTime.fromMillis(Files.getLastModifiedTime(file).toMillis() + 5000));
+        RenderResult changed = renderer.render(s.grid(), View.parse("top"), options);
+        assertThat(Scenes.blue(Scenes.decode(changed).getRGB(16, 16))).isGreaterThan(150);
     }
 }

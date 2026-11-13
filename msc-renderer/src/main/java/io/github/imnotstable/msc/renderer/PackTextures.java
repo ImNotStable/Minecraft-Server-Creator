@@ -3,10 +3,12 @@ package io.github.imnotstable.msc.renderer;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 import javax.imageio.ImageIO;
@@ -40,6 +42,39 @@ public final class PackTextures implements TextureSource {
             }
         }
         return Optional.empty();
+    }
+
+    /**
+     * Changes when a file below a folder root's {@code assets/} or a zip root is added, removed or modified. Walks
+     * the folder roots, which hold the project's generated pack and stay small.
+     */
+    @Override
+    public long stamp() {
+        long h = 1;
+        for (Path root : roots) {
+            try {
+                if (Files.isDirectory(root)) {
+                    Path assets = root.resolve("assets");
+                    if (Files.isDirectory(assets)) {
+                        try (Stream<Path> files = Files.walk(assets)) {
+                            for (Path file : (Iterable<Path>) files::iterator) {
+                                h = 31 * h + file.hashCode();
+                                h = 31 * h + Files.getLastModifiedTime(file).toMillis();
+                                h = 31 * h + Files.size(file);
+                            }
+                        }
+                    }
+                } else if (Files.isRegularFile(root)) {
+                    h = 31 * h + Files.getLastModifiedTime(root).toMillis();
+                    h = 31 * h + Files.size(root);
+                }
+            } catch (IOException | UncheckedIOException e) {
+                // A file that vanished mid-walk: the next call sees a settled folder.
+                h = 31 * h + e.getClass().hashCode();
+            }
+            h = 31 * h + 7;
+        }
+        return h;
     }
 
     private static BufferedImage fromFolder(Path root, String entry) throws IOException {
