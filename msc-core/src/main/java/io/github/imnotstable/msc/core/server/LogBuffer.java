@@ -51,26 +51,33 @@ public final class LogBuffer {
     /**
      * Wait for the first line from {@code mark} on that {@code test} accepts. Returns null when {@code timeout}
      * passes or {@code alive} turns false first. Lines that already scrolled out of the buffer are not seen.
+     * {@code alive} runs without this buffer's monitor, so it may take other locks (#242).
      */
-    public synchronized Match await(long mark, Predicate<String> test, Duration timeout,
-                                    BooleanSupplier alive) throws InterruptedException {
+    public Match await(long mark, Predicate<String> test, Duration timeout,
+                       BooleanSupplier alive) throws InterruptedException {
         long deadline = System.nanoTime() + timeout.toNanos();
         long checked = mark;
         while (true) {
-            long first = next - lines.size();
-            long i = first;
-            for (String line : lines) {
-                if (i >= checked && test.test(line)) {
-                    return new Match(line, i);
+            synchronized (this) {
+                long i = next - lines.size();
+                for (String line : lines) {
+                    if (i >= checked && test.test(line)) {
+                        return new Match(line, i);
+                    }
+                    i++;
                 }
-                i++;
+                checked = next;
             }
-            checked = next;
             long left = deadline - System.nanoTime();
             if (left <= 0 || !alive.getAsBoolean()) {
                 return null;
             }
-            wait(Math.max(1, Math.min(TimeUnit.NANOSECONDS.toMillis(left), 250)));
+            synchronized (this) {
+                // Lines added while alive ran are scanned at once instead of after a missed notify.
+                if (next == checked) {
+                    wait(Math.max(1, Math.min(TimeUnit.NANOSECONDS.toMillis(left), 250)));
+                }
+            }
         }
     }
 
