@@ -43,6 +43,9 @@ public final class TextGrid {
     /** A row written once for N equal rows: {@code #...# (x3)}. */
     private static final Pattern REPEAT = Pattern.compile("^(.*\\S) \\(x(\\d{1,4})\\)$");
 
+    /** Most layers a structure may have: taller than any world. */
+    static final int MAX_LAYERS = 4096;
+
     private TextGrid() {
     }
 
@@ -197,6 +200,14 @@ public final class TextGrid {
         String all;
     }
 
+    private static int layerNumber(String digits) {
+        try {
+            return Integer.parseInt(digits);
+        } catch (NumberFormatException e) {
+            throw new ToolException("layer number " + digits + " is too large");
+        }
+    }
+
     /** Parse a structure and place its lowest corner (lowest x, y and z) at {@code origin}. */
     public static BlockGrid parse(String text, String world, BlockPos origin) {
         Map<Character, String> legend = new LinkedHashMap<>();
@@ -223,16 +234,19 @@ public final class TextGrid {
             }
             Matcher m = LAYER.matcher(line);
             if (m.matches()) {
-                int from = Integer.parseInt(m.group(1));
-                int to = m.group(2) == null ? from : Integer.parseInt(m.group(2));
+                int from = layerNumber(m.group(1));
+                int to = m.group(2) == null ? from : layerNumber(m.group(2));
                 if (to < from || (to > from && m.group(3) == null && m.group(4) == null)) {
                     throw new ToolException("y=" + from + ".." + to + " needs a rising range and \"same as\" or \"all\"");
                 }
+                if (layers.size() + ((long) to - from + 1) > MAX_LAYERS) {
+                    throw new ToolException("structure has more than " + MAX_LAYERS + " layers (y=" + from + ".." + to
+                            + "); split it");
+                }
+                Integer sameAs = m.group(3) == null ? null : layerNumber(m.group(3));
                 for (int y = from; y <= to; y++) {
                     current = new Layer();
-                    if (m.group(3) != null) {
-                        current.sameAs = Integer.parseInt(m.group(3));
-                    }
+                    current.sameAs = sameAs;
                     current.all = m.group(4);
                     if (layers.put(y, current) != null) {
                         throw new ToolException("layer y=" + y + " appears twice");

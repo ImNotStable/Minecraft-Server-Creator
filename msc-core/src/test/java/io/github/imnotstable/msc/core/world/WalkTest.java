@@ -82,6 +82,12 @@ class WalkTest {
         assertThat(Walk.classify("minecraft:stone_slab[type=top]")).isEqualTo(Walk.classify("minecraft:stone"));
         assertThat(Walk.classify("minecraft:stone_slab[type=bottom]")).isEqualTo(Walk.classify("minecraft:oak_stairs"));
         assertThat(Walk.classify("minecraft:mushroom_stem")).isEqualTo(Walk.classify("minecraft:stone"));
+        assertThat(Walk.classify("minecraft:torch")).isEqualTo(Walk.classify("minecraft:air"));
+        assertThat(Walk.classify("minecraft:rail[shape=north_south]")).isEqualTo(Walk.classify("minecraft:air"));
+        assertThat(Walk.classify("minecraft:candle[candles=1]")).isEqualTo(Walk.classify("minecraft:air"));
+        assertThat(Walk.classify("minecraft:mangrove_roots")).isEqualTo(Walk.classify("minecraft:stone"));
+        assertThat(Walk.classify("minecraft:muddy_mangrove_roots")).isEqualTo(Walk.classify("minecraft:stone"));
+        assertThat(Walk.classify("minecraft:crimson_roots")).isEqualTo(Walk.classify("minecraft:air"));
         assertThat(Walk.classify("mymod:glowing_moss")).isEqualTo(Walk.classify("minecraft:stone"));
     }
 }
