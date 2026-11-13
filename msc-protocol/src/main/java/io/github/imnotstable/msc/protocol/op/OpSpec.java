@@ -1,8 +1,8 @@
 package io.github.imnotstable.msc.protocol.op;
 
-import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import io.github.imnotstable.msc.protocol.message.MessageCodec;
+import io.github.imnotstable.msc.protocol.message.RawJson;
 import java.util.Objects;
 
 /**
@@ -23,11 +23,13 @@ public record OpSpec<P, R>(String name, Class<P> paramsType, Class<R> resultType
         return MessageCodec.gson().fromJson(json, paramsType);
     }
 
-    public JsonElement encodeResult(R result) {
-        return MessageCodec.gson().toJsonTree(result, resultType);
+    /** The result as JSON text, written straight from the record with no tree in between (ADR 0030). */
+    public RawJson encodeResult(R result) {
+        return new RawJson(MessageCodec.gson().toJson(result, resultType));
     }
 
-    public R decodeResult(JsonElement json) {
-        return MessageCodec.gson().fromJson(json, resultType);
+    /** The result read straight from its JSON text; {@code null} for a missing result. */
+    public R decodeResult(RawJson json) {
+        return json == null ? null : MessageCodec.gson().fromJson(json.json(), resultType);
     }
 }

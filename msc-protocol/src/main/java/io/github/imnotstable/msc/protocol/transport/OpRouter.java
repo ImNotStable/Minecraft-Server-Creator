@@ -1,8 +1,8 @@
 package io.github.imnotstable.msc.protocol.transport;
 
-import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import io.github.imnotstable.msc.protocol.message.ErrorCodes;
+import io.github.imnotstable.msc.protocol.message.RawJson;
 import io.github.imnotstable.msc.protocol.op.OpSpec;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -37,7 +37,7 @@ public final class OpRouter implements RequestHandler {
     }
 
     @Override
-    public JsonElement handle(String op, JsonObject params) throws Exception {
+    public RawJson handle(String op, JsonObject params) throws Exception {
         RequestHandler route = routes.get(op);
         if (route == null) {
             throw new OpException(ErrorCodes.UNKNOWN_OP, op);

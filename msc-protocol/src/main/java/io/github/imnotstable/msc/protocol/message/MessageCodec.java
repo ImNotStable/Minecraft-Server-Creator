@@ -6,7 +6,11 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParseException;
 import com.google.gson.JsonParser;
+import com.google.gson.TypeAdapter;
+import com.google.gson.stream.JsonReader;
+import com.google.gson.stream.JsonWriter;
 import io.github.imnotstable.msc.protocol.ProtocolException;
+import java.io.IOException;
 import java.util.Map;
 
 /**
@@ -25,7 +29,9 @@ public final class MessageCodec {
             "pong", Pong.class);
 
     private static final String TYPE_PREFIX = "{\"type\":\"";
-    private static final Gson GSON = new GsonBuilder().disableHtmlEscaping().create();
+    private static final Gson GSON = new GsonBuilder().disableHtmlEscaping()
+            .registerTypeAdapter(RawJson.class, new RawJsonAdapter().nullSafe())
+            .create();
 
     private MessageCodec() {
     }
@@ -55,7 +61,12 @@ public final class MessageCodec {
             int close = line.indexOf('"', TYPE_PREFIX.length());
             Class<? extends Message> cls = close < 0 ? null : TYPES.get(line.substring(TYPE_PREFIX.length(), close));
             char next = cls == null || close + 1 >= line.length() ? 0 : line.charAt(close + 1);
-            if (next == ',' || next == '}') {
+            if (cls == Response.class) {
+                Response response = ResponseReader.read(line, close + 1);
+                if (response != null) {
+                    return response;
+                }
+            } else if (next == ',' || next == '}') {
                 try {
                     String body = "{" + line.substring(next == '}' ? close + 1 : close + 2);
                     Message message = GSON.fromJson(body, cls);
@@ -97,6 +108,19 @@ public final class MessageCodec {
             return message;
         } catch (RuntimeException e) {
             throw new ProtocolException("malformed " + type.getAsString() + " frame: " + e.getMessage(), e);
+        }
+    }
+
+    /** Writes a {@link RawJson} into the frame as is; reads one through a tree, which only the slow path needs. */
+    private static final class RawJsonAdapter extends TypeAdapter<RawJson> {
+        @Override
+        public void write(JsonWriter out, RawJson value) throws IOException {
+            out.jsonValue(value.json());
+        }
+
+        @Override
+        public RawJson read(JsonReader in) {
+            return RawJson.of(JsonParser.parseReader(in));
         }
     }
 

@@ -111,9 +111,15 @@ public final class WorldOps<S> {
     public Ops.EditResult undo(Ops.UndoParams params) {
         UndoRecord<S> record = history.take(params.editId())
                 .orElseThrow(() -> new OpException(ErrorCodes.NOT_FOUND, "no undo kept for edit " + params.editId()));
-        AgentWorld<S> world = world(record.world());
-        world.loadPositions(record.positions());
-        return apply(world, record.restore(), false);
+        try {
+            AgentWorld<S> world = world(record.world());
+            world.loadPositions(record.positions());
+            return apply(world, record.restore(), false);
+        } catch (RuntimeException e) {
+            // Keep the record so the core's retry undoes the rest (#192).
+            history.putBack(params.editId(), record);
+            throw e;
+        }
     }
 
     private Ops.EditResult apply(AgentWorld<S> world, ChangeSource<S> changes, boolean physics) {

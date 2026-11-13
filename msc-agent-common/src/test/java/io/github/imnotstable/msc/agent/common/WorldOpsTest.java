@@ -70,6 +70,38 @@ class WorldOpsTest {
     }
 
     @Test
+    void failedUndoKeepsTheRecordSoARetryUndoesTheRest() {
+        boolean[] timeOut = {false};
+        MainThread inline = MainThread.inline();
+        EditHistory<String> history = new EditHistory<>(1_000_000);
+        ops = new WorldOps<>(world, new MainThread() {
+            @Override
+            public <T> T call(java.util.function.Supplier<T> task) {
+                return inline.call(task);
+            }
+
+            @Override
+            public <T> T run(SlicedJob<T> job) {
+                if (timeOut[0]) {
+                    timeOut[0] = false;
+                    throw new OpException(ErrorCodes.TIMEOUT, "main thread did not finish");
+                }
+                return inline.run(job);
+            }
+        }, history);
+        Ops.EditResult fill = fill(box(0, 70, 0, 1, 70, 0), STONE);
+
+        timeOut[0] = true;
+        assertThatThrownBy(() -> ops.undo(new Ops.UndoParams(fill.editId())))
+                .isInstanceOfSatisfying(OpException.class, e -> assertThat(e.code()).isEqualTo(ErrorCodes.TIMEOUT));
+        assertThat(history.rememberedBlocks()).isEqualTo(2);
+
+        Ops.EditResult retry = ops.undo(new Ops.UndoParams(fill.editId()));
+        assertThat(retry.changed()).isEqualTo(2);
+        assertThat(world.get(0, 70, 0)).isEqualTo(MapWorld.AIR);
+    }
+
+    @Test
     void undoPutsBackBlockEntityDataTheStateLeavesOut() {
         world.set(0, 70, 0, "minecraft:oak_sign", false);
         Ops.SignText text = new Ops.SignText(0, 70, 0, List.of("Shop"), null);

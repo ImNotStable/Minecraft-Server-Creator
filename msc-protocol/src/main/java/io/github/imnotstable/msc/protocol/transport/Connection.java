@@ -1,6 +1,6 @@
 package io.github.imnotstable.msc.protocol.transport;
 
-import com.google.gson.JsonElement;
+import com.google.gson.JsonParseException;
 import com.google.gson.JsonObject;
 import io.github.imnotstable.msc.protocol.Limits;
 import io.github.imnotstable.msc.protocol.ProtocolException;
@@ -12,6 +12,7 @@ import io.github.imnotstable.msc.protocol.message.Message;
 import io.github.imnotstable.msc.protocol.message.MessageCodec;
 import io.github.imnotstable.msc.protocol.message.Ping;
 import io.github.imnotstable.msc.protocol.message.Pong;
+import io.github.imnotstable.msc.protocol.message.RawJson;
 import io.github.imnotstable.msc.protocol.message.Request;
 import io.github.imnotstable.msc.protocol.message.Response;
 import io.github.imnotstable.msc.protocol.message.Welcome;
@@ -95,7 +96,12 @@ public final class Connection implements AutoCloseable {
             if (!response.isOk()) {
                 throw new OpException(response.error());
             }
-            return op.decodeResult(response.result());
+            try {
+                return op.decodeResult(response.result());
+            } catch (JsonParseException e) {
+                // The read loop skips over a result without parsing it; a malformed one fails only this call.
+                throw new OpException(ErrorCodes.BAD_FRAME, "malformed " + op.name() + " result: " + e.getMessage());
+            }
         });
     }
 
@@ -202,7 +208,7 @@ public final class Connection implements AutoCloseable {
     private void answer(Request request) {
         Response response;
         try {
-            JsonElement result = handler.handle(request.op(), request.params());
+            RawJson result = handler.handle(request.op(), request.params());
             response = Response.ok(request.id(), result);
         } catch (OpException e) {
             response = Response.fail(request.id(), e.code(), e.detail());
