@@ -61,6 +61,10 @@ public final class WorldRenderer {
             case View.Isometric iso -> isoFrame(iso, region, options);
             case View.Camera camera -> cameraFrame(camera, region, options);
         };
+        if (Math.max(frame.imageW, frame.imageH) > options.maxSize()) {
+            throw new IllegalStateException("a " + frame.imageW + "x" + frame.imageH + " frame is over the "
+                    + options.maxSize() + " px budget");
+        }
         Look[] palette = looks.resolve(grid.palette());
         int[] pixels = new int[frame.imageW * frame.imageH];
         java.util.Arrays.fill(pixels, MARGIN);
@@ -538,8 +542,8 @@ public final class WorldRenderer {
         // Whole pixels per block keep edges crisp; below 4 px that would waste too much of the budget.
         scale = scale >= 4 ? Math.min(Math.floor(scale), MAX_PIXELS_PER_BLOCK) : scale;
         frame.scale = scale;
-        frame.w = Math.max(1, (int) Math.ceil(cols * scale - 1e-9));
-        frame.h = Math.max(1, (int) Math.ceil(rows * scale - 1e-9));
+        frame.w = side(cols * scale, options.maxSize() - frame.offX);
+        frame.h = side(rows * scale, options.maxSize() - frame.offY);
         // Centre on the box so block edges land on whole pixels when the scale is whole.
         frame.origin = new double[] {
                 sx / 2.0 + frame.r[0] * (frame.w / scale - cols) / 2 - frame.u[0] * (frame.h / scale - rows) / 2,
@@ -551,6 +555,14 @@ public final class WorldRenderer {
         frame.imageH = frame.offY + frame.h;
         frame.caption = what + ", " + number(scale) + " px per block" + (frame.ruler != null ? ", coordinates on the rulers." : ".");
         return frame;
+    }
+
+    /**
+     * Whole pixels for a length, at least 1 and at most {@code room}: the one size clamp every frame uses. The small
+     * slack keeps floating-point noise (1568 / w * w = 1568.0000000002) from adding a pixel past the budget.
+     */
+    static int side(double length, int room) {
+        return Math.clamp((long) Math.ceil(length - 1e-9), 1, Math.max(1, room));
     }
 
     private static String span(Ruler ruler, boolean across) {
@@ -610,8 +622,8 @@ public final class WorldRenderer {
         double scale = Math.min(Math.min((options.maxSize() - 2 * marginX) / width,
                 (options.maxSize() - 2 * marginY) / height), MAX_PIXELS_PER_BLOCK);
         frame.scale = scale;
-        frame.w = Math.max(1, (int) Math.ceil(width * scale));
-        frame.h = Math.max(1, (int) Math.ceil(height * scale));
+        frame.w = side(width * scale, options.maxSize() - 2 * marginX);
+        frame.h = side(height * scale, options.maxSize() - 2 * marginY);
         frame.origin = new double[] {sx / 2.0, sy / 2.0, sz / 2.0};
         frame.back = sx + sy + sz + 1;
         frame.footprint = 1 / scale;
@@ -711,8 +723,8 @@ public final class WorldRenderer {
         Frame frame = new Frame();
         frame.perspective = true;
         aim(frame, view.yaw(), Math.clamp(view.pitch(), -89.9, 89.9));
-        frame.w = options.maxSize();
-        frame.h = Math.max(1, options.maxSize() * 3 / 4);
+        frame.w = side(options.maxSize(), options.maxSize());
+        frame.h = side(options.maxSize() * 3 / 4, options.maxSize());
         double tanHalf = Math.tan(Math.toRadians(view.fov() / 2));
         frame.scale = frame.h / 2.0 / tanHalf;
         frame.origin = new double[] {view.x() - region.min().x(), view.y() - region.min().y(), view.z() - region.min().z()};
