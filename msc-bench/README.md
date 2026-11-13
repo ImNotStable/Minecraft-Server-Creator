@@ -3,7 +3,7 @@
 Benchmark tasks and a runner that measure whether the toolset makes AI server development better on quality, speed and tokens.
 
 **Phase:** MVP  
-**Status:** Task set, checks, runner and report done; Minestom tasks run without the EULA. Next: the full run and targets.
+**Status:** Task set, checks, runner and report done; Minestom tasks run without the EULA. First full run done and targets set (2026-11-12, ADR 0004).
 
 ## How it works
 
