@@ -471,6 +471,18 @@ class LifecycleToolsTest {
                     .doesNotContain("ask the user");
             assertThat(workspace.resolve("ws4/run/plugins/msc-agent-paper.jar")).hasContent("bundled");
             assertThat(workspace.resolve("ws4/run/eula.txt")).content().contains("eula=true").doesNotContain("eula=false");
+        }
+        // dev_cycle or server_start acceptEula=true may fill run/ first: the missing defaults are still written.
+        Path ws8 = workspace.resolve("ws8");
+        Files.createDirectories(ws8.resolve("run/plugins"));
+        Files.writeString(ws8.resolve("run/plugins/demo.jar"), "deployed before setup");
+        Files.writeString(ws8.resolve("run/eula.txt"), "eula=true\n");
+        try (CoreHarness s = new CoreHarness(ws8, c -> c.withDownloadsUrl(base))) {
+            assertThat(s.ok("server_setup")).contains("wrote 1 default config files");
+            assertThat(ws8.resolve("run/server.properties")).content().contains("online-mode=false");
+            assertThat(ws8.resolve("run/eula.txt")).hasContent("eula=true\n");
+            assertThat(ws8.resolve("run/plugins/demo.jar")).hasContent("deployed before setup");
+            assertThat(s.ok("server_setup")).doesNotContain("default config files");
         } finally {
             fill.stop(0);
         }
