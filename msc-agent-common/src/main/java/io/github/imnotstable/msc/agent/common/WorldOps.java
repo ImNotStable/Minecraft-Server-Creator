@@ -3,6 +3,7 @@ package io.github.imnotstable.msc.agent.common;
 import io.github.imnotstable.msc.protocol.Limits;
 import io.github.imnotstable.msc.protocol.message.ErrorCodes;
 import io.github.imnotstable.msc.protocol.op.Ops;
+import io.github.imnotstable.msc.protocol.op.PartialEdit;
 import io.github.imnotstable.msc.protocol.transport.OpException;
 import io.github.imnotstable.msc.protocol.world.BlockGrid;
 import io.github.imnotstable.msc.protocol.world.BlockPos;
@@ -105,7 +106,31 @@ public final class WorldOps<S> {
         requireUndoableXz(region);
         List<S> palette = grid.palette().stream().map(worlds::parse).toList();
         world.loadArea(region.min().x(), region.min().z(), region.max().x(), region.max().z());
-        return apply(world, new GridCursor<>(region, grid.blocks(), palette), params.updatePhysics());
+        EditJob<S> job = new EditJob<>(world, new GridCursor<>(region, grid.blocks(), palette), params.updatePhysics());
+        try {
+            return apply(job);
+        } catch (RuntimeException e) {
+            throw keepPartial(job, e);
+        }
+    }
+
+    /**
+     * A write that failed after changing blocks keeps them undoable: their record goes into the history and the
+     * error names its id ({@link PartialEdit}), so the core can undo them (#275).
+     */
+    private RuntimeException keepPartial(EditJob<S> job, RuntimeException e) {
+        UndoRecord<S> partial = job.stop();
+        if (partial.size() == 0) {
+            return e;
+        }
+        String id = history.add(partial);
+        if (e instanceof OpException op) {
+            return new OpException(op.code(), PartialEdit.note(op.detail(), id));
+        }
+        if (e instanceof IllegalArgumentException) {
+            return new OpException(ErrorCodes.INVALID_PARAMS, PartialEdit.note(String.valueOf(e.getMessage()), id));
+        }
+        return new OpException(ErrorCodes.INTERNAL, PartialEdit.note(e.getClass().getSimpleName() + ": " + e.getMessage(), id));
     }
 
     public Ops.EditResult undo(Ops.UndoParams params) {
@@ -114,7 +139,8 @@ public final class WorldOps<S> {
         try {
             AgentWorld<S> world = world(record.world());
             world.loadPositions(record.positions());
-            return apply(world, record.restore(), false);
+            // A failed undo keeps its record instead of a partial one: re-running it is safe (#192).
+            return apply(new EditJob<>(world, record.restore(), false));
         } catch (RuntimeException e) {
             // Keep the record so the core's retry undoes the rest (#192).
             history.putBack(params.editId(), record);
@@ -122,8 +148,8 @@ public final class WorldOps<S> {
         }
     }
 
-    private Ops.EditResult apply(AgentWorld<S> world, ChangeSource<S> changes, boolean physics) {
-        UndoRecord<S> record = main.run(new EditJob<>(world, changes, physics));
+    private Ops.EditResult apply(EditJob<S> job) {
+        UndoRecord<S> record = main.run(job);
         return new Ops.EditResult(history.add(record), record.size());
     }
 

@@ -1,6 +1,7 @@
 package io.github.imnotstable.msc.core.agent;
 
 import io.github.imnotstable.msc.core.tool.ToolException;
+import io.github.imnotstable.msc.protocol.Limits;
 import io.github.imnotstable.msc.protocol.message.Event;
 import io.github.imnotstable.msc.protocol.op.Events;
 import io.github.imnotstable.msc.protocol.op.OpSpec;
@@ -22,8 +23,11 @@ import java.util.concurrent.locks.ReentrantLock;
 public final class AgentHub implements AutoCloseable {
     /** How long a world tool waits for an agent that is not connected yet. */
     public static final Duration CONNECT_WAIT = Duration.ofSeconds(30);
-    /** Longer than the agents' own 2 minute limit per operation, so the agent's answer (or its timeout error) wins. */
-    public static final Duration CALL_TIMEOUT = Duration.ofSeconds(130);
+    /**
+     * Longer than every wait an agent may make in one operation ({@link Limits#CORE_CALL_TIMEOUT}), so the agent's
+     * answer (or its timeout error, with the undo id of a write's changed blocks) wins.
+     */
+    public static final Duration CALL_TIMEOUT = Limits.CORE_CALL_TIMEOUT;
 
     private final ReentrantLock lock = new ReentrantLock();
     private final Condition changed = lock.newCondition();

@@ -3,6 +3,7 @@ package io.github.imnotstable.msc.core;
 import io.github.imnotstable.msc.protocol.message.AgentInfo;
 import io.github.imnotstable.msc.protocol.message.ErrorCodes;
 import io.github.imnotstable.msc.protocol.op.Ops;
+import io.github.imnotstable.msc.protocol.op.PartialEdit;
 import io.github.imnotstable.msc.protocol.transport.AgentClient;
 import io.github.imnotstable.msc.protocol.transport.Connection;
 import io.github.imnotstable.msc.protocol.transport.OpException;
@@ -35,6 +36,7 @@ public final class FakeAgent {
     private final Map<String, Map<BlockPos, String>> undo = new HashMap<>();
     private int editCounter;
     private int undosBeforeFailure = -1;
+    private int writesBeforeTimeout = -1;
 
     public synchronized String get(int x, int y, int z) {
         String s = blocks.get(new BlockPos(x, y, z));
@@ -167,12 +169,19 @@ public final class FakeAgent {
         writes.add(r);
         Map<BlockPos, String> before = new HashMap<>();
         long changed = 0;
+        boolean timeOut = writesBeforeTimeout >= 0 && writesBeforeTimeout-- == 0;
         for (int y = r.min().y(); y <= r.max().y(); y++) {
+
             for (int z = r.min().z(); z <= r.max().z(); z++) {
                 for (int x = r.min().x(); x <= r.max().x(); x++) {
                     String s = p.grid().stateAt(x, y, z);
                     if (s != null) {
                         changed += put(before, x, y, z, s);
+                    }
+                    if (timeOut && changed > 0) {
+                        // Like a real agent whose main-thread wait ran out mid-way: what changed stays, undoable.
+                        String id = finish(before, changed).editId();
+                        throw new OpException(ErrorCodes.TIMEOUT, PartialEdit.note("main thread did not finish within 120s", id));
                     }
                 }
             }
@@ -185,6 +194,11 @@ public final class FakeAgent {
         undo.entrySet().stream().filter(e -> !e.getValue().isEmpty())
                 .min(java.util.Comparator.comparingInt(e -> Integer.parseInt(e.getKey().substring(6))))
                 .ifPresent(e -> undo.remove(e.getKey()));
+    }
+
+    /** Make the write after {@code skip} more writes time out after its first changed block, as a slow server would. */
+    synchronized void timeOutWrite(int skip) {
+        writesBeforeTimeout = skip;
     }
 
     /** Make the undo after {@code skip} more undos fail, as a timeout would. */
