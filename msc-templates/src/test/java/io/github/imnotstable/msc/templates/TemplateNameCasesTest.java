@@ -73,6 +73,8 @@ class TemplateNameCasesTest {
                 name("Box"), name("Progress"), name("Logger"), name("Instance"), name("Minestom"), name("Paper"),
                 name("Quilt Loader"), name("Neo Forge"), name("Minecraft Tools"), name("a".repeat(64)),
                 name("Café Lobby"), name("Über Spiel"), name("Ñandú"),
+                // Compatibility forms (#321): full-width, ligature, superscript and roman-numeral letters and digits.
+                name("Ｌｏｂｂｙ"), name("ﬁsh"), name("Mc²"), name("Ⅳ Lobby"),
                 // Refused by every platform: unusable names.
                 name("", ALL), name("  ", ALL), name("123", ALL), name("3d Parkour", ALL), name("A", ALL),
                 name("Void", ALL), name("class", ALL), name("new", ALL), name("Int", ALL), name("True", ALL),

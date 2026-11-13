@@ -3,6 +3,7 @@ package io.github.imnotstable.msc.templates;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 class TemplateVariablesTest {
@@ -37,8 +38,20 @@ class TemplateVariablesTest {
             assertThatThrownBy(() -> TemplateVariables.of(name)).as(name)
                     .isInstanceOf(IllegalArgumentException.class).hasMessageContaining(name).hasMessageContaining("ASCII");
         }
+        assertThatThrownBy(() -> TemplateVariables.of("ｶﾌｪ"))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("'ｶ' has no ASCII form");
         assertThatThrownBy(() -> TemplateVariables.of("3d Parkour"))
                 .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("'3d Parkour'").hasMessageContaining("letter");
+    }
+
+    /** Letters and digits whose ASCII form is a compatibility one (#321); symbols are still dropped, not spelled. */
+    @Test
+    void givesLettersAndDigitsTheirCompatibilityForm() {
+        Map<String, String> names = Map.of(
+                "Ｌｏｂｂｙ", "Lobby", "ﬁsh", "Fish", "Mc²", "Mc2", "Ⅳ Lobby", "IvLobby", "Ǆungla", "DZungla",
+                "Lobby™", "Lobby", "Café ﬁ", "CafeFi", "Ｃａｆé", "Cafe",
+                "Cafe\u0301s", "Cafes");
+        names.forEach((input, name) -> assertThat(TemplateVariables.of(input).name()).as(input).isEqualTo(name));
     }
 
     @Test
