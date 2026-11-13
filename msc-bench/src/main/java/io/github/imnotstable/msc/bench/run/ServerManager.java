@@ -2,6 +2,9 @@ package io.github.imnotstable.msc.bench.run;
 
 import io.github.imnotstable.msc.bench.rcon.RconClient;
 import java.io.IOException;
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
+import java.net.Socket;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -16,6 +19,7 @@ import java.util.concurrent.TimeUnit;
 public final class ServerManager implements AutoCloseable {
 
     private static final Duration COMMAND_TIMEOUT = Duration.ofSeconds(30);
+    private static final Duration STOP_TIMEOUT = Duration.ofSeconds(60);
 
     private final Path serverDir;
     private final BenchConfig.Server config;
@@ -23,6 +27,7 @@ public final class ServerManager implements AutoCloseable {
     private Process process;
     private RconClient rcon;
     private boolean reachedRcon;
+    private IOException startFailure;
 
     public ServerManager(Path serverDir, BenchConfig.Server config, Map<String, String> env) {
         this.serverDir = serverDir;
@@ -36,14 +41,25 @@ public final class ServerManager implements AutoCloseable {
             rcon = tryConnect(COMMAND_TIMEOUT);
         }
         if (rcon == null) {
+            // A server that failed to start would fail the same way for every later check, and a second start
+            // would only meet the ports and world lock of the first.
+            if (startFailure != null) {
+                throw new IOException(startFailure.getMessage(), startFailure);
+            }
             try {
-                start();
-            } catch (IOException first) {
-                // A launcher download cut short makes Paper exit on start; one retry fetches it again.
-                if (process == null || process.isAlive()) {
-                    throw first;
+                try {
+                    start();
+                } catch (IOException first) {
+                    // A launcher download cut short makes Paper exit on start; one retry fetches it again.
+                    if (process == null || process.isAlive()) {
+                        throw first;
+                    }
+                    start();
                 }
-                start();
+            } catch (IOException e) {
+                kill();
+                startFailure = e;
+                throw e;
             }
         }
         reachedRcon = true;
@@ -70,6 +86,7 @@ public final class ServerManager implements AutoCloseable {
                 .redirectOutput(serverDir.resolve("bench-console.log").toFile())
                 .redirectInput(ProcessBuilder.Redirect.PIPE);
         builder.environment().putAll(env);
+        kill();
         process = builder.start();
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(config.startTimeoutSeconds());
         while (System.nanoTime() < deadline) {
@@ -85,6 +102,21 @@ public final class ServerManager implements AutoCloseable {
         throw new IOException("server did not open RCON within " + config.startTimeoutSeconds() + "s");
     }
 
+    /** Kills the server this class started, if any, with its child processes. */
+    private void kill() {
+        if (process == null) {
+            return;
+        }
+        process.descendants().forEach(ProcessHandle::destroyForcibly);
+        process.destroyForcibly();
+        try {
+            process.waitFor(10, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+        process = null;
+    }
+
     private RconClient tryConnect(Duration commandTimeout) {
         try {
             return RconClient.connect("127.0.0.1", config.rconPort(), config.rconPassword(), commandTimeout);
@@ -93,9 +125,13 @@ public final class ServerManager implements AutoCloseable {
         }
     }
 
-    /** Stops whatever server answers on the RCON port and waits for a server this class started. */
+    /**
+     * Stops whatever server answers on the RCON port and waits until it is gone: for a server this class started,
+     * until its process ends; for one it found running, until its RCON and game ports are free.
+     */
     @Override
     public synchronized void close() {
+        boolean stopSent = rcon != null;
         if (rcon != null) {
             try {
                 rcon.command("stop");
@@ -120,6 +156,33 @@ public final class ServerManager implements AutoCloseable {
                 Thread.currentThread().interrupt();
             }
             process = null;
+        } else if (stopSent) {
+            awaitPortsFree();
+        }
+    }
+
+    /** Waits (bounded) until nothing accepts connections on the RCON or game port any more. */
+    private void awaitPortsFree() {
+        long deadline = System.nanoTime() + STOP_TIMEOUT.toNanos();
+        while ((accepts(config.rconPort()) || accepts(config.serverPort())) && System.nanoTime() < deadline) {
+            try {
+                Thread.sleep(500);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+        }
+    }
+
+    private static boolean accepts(int port) {
+        if (port <= 0) {
+            return false;
+        }
+        try (Socket socket = new Socket()) {
+            socket.connect(new InetSocketAddress(InetAddress.getLoopbackAddress(), port), 1000);
+            return true;
+        } catch (IOException e) {
+            return false;
         }
     }
 
