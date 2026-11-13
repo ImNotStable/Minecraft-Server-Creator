@@ -67,8 +67,10 @@ import java.util.stream.Collectors;
  *
  * <p>Not owned by a workspace:
  * <ul>
- * <li>tool call threads: {@link #running}. {@link #close} interrupts them, and waits for them only up to
- * {@link #lockWait};</li>
+ * <li>tool call threads: {@link #running}. {@link #close} waits up to {@link #lockWait} for them, interrupts the
+ * ones still running, and then waits up to {@link #lockWait} again for those to end: a call that runs a process on
+ * its own thread (dev_cycle's jar build, server_setup's installer) kills its tree in ProcessRunner when interrupted,
+ * and the JVM exits right after the close (#296);</li>
  * <li>temp folders (Scaffold, ServerSetup staging): the call that makes one deletes it in a finally;</li>
  * <li>caches: on disk under .msc/cache, kept across sessions on purpose, or plain heap objects of the bench; nothing
  * to close;</li>
@@ -395,8 +397,10 @@ public final class Core implements AutoCloseable {
     /**
      * Ends the session. Waits at most {@link #lockWait} for running calls, then interrupts them and closes anyway:
      * stopping the server also ends a server_wait or a dev_cycle start, and the bench stops the builds calls left
-     * running, so nothing outlives the session, even a call that ignores the interrupt. A switch under way closes
-     * the bench it opened instead of installing it; one still waiting for the lock does not switch.
+     * running, so nothing outlives the session, even a call that ignores the interrupt. Then it waits up to
+     * {@link #lockWait} more for the interrupted calls to end, so a process a call runs on its own thread is killed
+     * before this returns and the JVM exits. A switch under way closes the bench it opened instead of installing it;
+     * one still waiting for the lock does not switch.
      */
     @Override
     public void close() throws IOException {
@@ -415,7 +419,24 @@ public final class Core implements AutoCloseable {
         } finally {
             if (write != null) {
                 write.unlock();
+            } else {
+                awaitInterruptedCalls();
             }
+        }
+    }
+
+    /**
+     * Waits up to {@link #lockWait} for the calls close interrupted to end: each holds the read lock until it has
+     * cleaned up (ProcessRunner kills its process tree first), so getting the write lock means they all did. Call
+     * threads may be pooled, so this waits for the calls, not for their threads to die.
+     */
+    private void awaitInterruptedCalls() {
+        if (Thread.currentThread().isInterrupted()) {
+            return;
+        }
+        Lock write = writeLock();
+        if (write != null) {
+            write.unlock();
         }
     }
 }

@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.imnotstable.msc.core.fixture.FakeBuildMain;
 import io.github.imnotstable.msc.core.fixture.FakeServerMain;
+import io.github.imnotstable.msc.core.server.ProcessRunner;
 import io.github.imnotstable.msc.core.tool.Schema;
 import io.github.imnotstable.msc.core.tool.Tool;
 import java.nio.file.Files;
@@ -14,6 +15,7 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -137,6 +139,48 @@ class SessionEndTest {
         release.countDown();
         assertThat(call.get(5, TimeUnit.SECONDS)).isEqualTo("stubborn done");
         assertThat(h.error("msc_status")).isEqualTo("error: the session has ended; msc_status did not run");
+    }
+
+    @Test
+    void closeReturnsOnlyOnceAnInterruptedCallHasCleanedUp() throws Exception {
+        // The JVM exits right after close: a call still cleaning up then would leave its processes behind.
+        AtomicBoolean cleanedUp = new AtomicBoolean();
+        h.core.addBenchTool(new Tool("slow-cleanup", "test", Schema.of().build(), args -> {
+            try {
+                new CountDownLatch(1).await();
+                return "never";
+            } catch (InterruptedException e) {
+                // Cleaning up takes a moment, like ProcessRunner killing a process tree.
+                Thread.sleep(150);
+                cleanedUp.set(true);
+                throw e;
+            }
+        }));
+        callAsync("slow-cleanup");
+        h.close();
+        assertThat(cleanedUp).isTrue();
+    }
+
+    @Test
+    void closingDuringABuildOnTheCallThreadKillsItsProcessTreeBeforeReturning() throws Exception {
+        // dev_cycle's jar build and server_setup's installer run ProcessRunner on the call thread itself (#296).
+        Path pids = workspace.resolve("pids");
+        h.core.addBenchTool(new Tool("call-build", "test", Schema.of().build(), args -> ProcessRunner.run(
+                List.of("sh", "-c", "sleep 60 & echo $! $$ > pids.tmp && mv pids.tmp pids && exec sleep 60"),
+                workspace, Duration.ofSeconds(60)).output()));
+        CompletableFuture<String> call = callAsync("call-build");
+        long deadline = System.nanoTime() + Duration.ofSeconds(10).toNanos();
+        while (!Files.exists(pids)) {
+            assertThat(System.nanoTime()).as("the build started").isLessThan(deadline);
+            Thread.sleep(20);
+        }
+        List<ProcessHandle> tree = java.util.Arrays.stream(Files.readString(pids).strip().split(" "))
+                .map(pid -> ProcessHandle.of(Long.parseLong(pid)).orElseThrow()).toList();
+        h.close();
+        for (ProcessHandle p : tree) {
+            p.onExit().get(2, TimeUnit.SECONDS);
+        }
+        assertThat(call.get(5, TimeUnit.SECONDS)).isEqualTo("error: call-build was stopped: the session ended while it ran");
     }
 
     @Test
