@@ -4,6 +4,7 @@ import org.gradle.api.Task
 import org.gradle.api.file.Directory
 import org.gradle.api.file.FileCollection
 import org.gradle.api.provider.Provider
+import org.gradle.api.tasks.ClasspathNormalizer
 import org.gradle.api.tasks.Sync
 import org.gradle.api.tasks.TaskProvider
 import org.gradle.process.CommandLineArgumentProvider
@@ -25,6 +26,9 @@ open class PreviousProtocolClient(
     /** Stages the jars before [task] runs and passes their root to it as -Dmsc.bot.protocols. */
     fun <T> passTo(task: T) where T : Task, T : JavaForkOptions {
         task.dependsOn(stage)
+        // The path argument alone is no input: declare the jars, so a client bump re-runs tests instead of caching.
+        task.inputs.files(jars).withPropertyName("previousProtocolJars").withNormalizer(ClasspathNormalizer::class.java)
+        task.inputs.property("previousProtocolVersion", version)
         val dir = root
         task.jvmArgumentProviders.add(CommandLineArgumentProvider {
             listOf("-Dmsc.bot.protocols=" + dir.get().asFile.absolutePath)
