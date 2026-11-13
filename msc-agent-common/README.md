@@ -9,7 +9,8 @@ the `msc-agent-vanilla` source folder too). Depends only on `msc-protocol`; no s
   `AgentWorld<S>` (block, entity and sign access for one world) and `AgentServer` (versions,
   commands, resource packs). `S` is the platform's block state type.
 - `ReadJob`, `EditJob` and `HeightmapJob` are `SlicedJob`s the platform's `MainThread` runs in
-  per-tick slices; `UndoRecord` and `EditHistory` keep undo.
+  per-tick slices; every platform steps its jobs through one `JobQueue`, so all jobs in flight share one
+  tick budget (`AgentDefaults.TICK_BUDGET`); `UndoRecord` and `EditHistory` keep undo.
 - `BlockNames` suggests close block ids when a state names an unknown block.
 - `AgentLink` connects to msc-core (`CoreAddress`), reconnects and sends events.
 
