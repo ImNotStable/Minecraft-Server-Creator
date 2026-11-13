@@ -27,6 +27,7 @@ import org.geysermc.mcprotocollib.network.factory.ClientNetworkSessionFactory;
 import org.geysermc.mcprotocollib.network.packet.Packet;
 import org.geysermc.mcprotocollib.protocol.MinecraftProtocol;
 import org.geysermc.mcprotocollib.protocol.codec.MinecraftCodec;
+import org.geysermc.mcprotocollib.protocol.data.ProtocolState;
 import org.geysermc.mcprotocollib.protocol.data.game.ClientCommand;
 import org.geysermc.mcprotocollib.protocol.data.game.ResourcePackStatus;
 import org.geysermc.mcprotocollib.protocol.data.game.entity.object.Direction;
@@ -37,9 +38,14 @@ import org.geysermc.mcprotocollib.protocol.packet.common.clientbound.Clientbound
 import org.geysermc.mcprotocollib.protocol.packet.common.clientbound.ClientboundResourcePackPushPacket;
 import org.geysermc.mcprotocollib.protocol.packet.common.serverbound.ServerboundPongPacket;
 import org.geysermc.mcprotocollib.protocol.packet.common.serverbound.ServerboundResourcePackPacket;
+import org.geysermc.mcprotocollib.protocol.packet.configuration.clientbound.ClientboundCodeOfConductPacket;
+import org.geysermc.mcprotocollib.protocol.packet.configuration.serverbound.ServerboundAcceptCodeOfConductPacket;
+import org.geysermc.mcprotocollib.protocol.packet.cookie.clientbound.ClientboundCookieRequestPacket;
+import org.geysermc.mcprotocollib.protocol.packet.cookie.serverbound.ServerboundCookieResponsePacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.ClientboundLoginPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.ClientboundPlayerChatPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.ClientboundRespawnPacket;
+import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.ClientboundStartConfigurationPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.ClientboundSystemChatPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.entity.ClientboundEntityPositionSyncPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.entity.ClientboundMoveEntityPosPacket;
@@ -69,6 +75,8 @@ import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.player.Serv
 import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.player.ServerboundSetCarriedItemPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.player.ServerboundUseItemOnPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.player.ServerboundUseItemPacket;
+import org.geysermc.mcprotocollib.protocol.packet.login.clientbound.ClientboundCustomQueryPacket;
+import org.geysermc.mcprotocollib.protocol.packet.login.serverbound.ServerboundCustomQueryAnswerPacket;
 
 /**
  * A headless player on the dev server: an offline-mode client that moves with its own physics against blocks read
@@ -83,6 +91,8 @@ public final class TestPlayer implements Bot {
     /** The connection; null for a player built by {@link #offline}, which only records what it sends. */
     private final ClientSession session;
     private final java.util.function.Consumer<Packet> sender;
+    /** The state the connection encodes outgoing packets in: a packet the state has no id for would end it. */
+    private final java.util.function.Supplier<ProtocolState> outbound;
     private ScheduledExecutorService ticker;
     private final BlockSource blocks;
     private final RoutePlanner planner;
@@ -147,13 +157,15 @@ public final class TestPlayer implements Bot {
     private long serverMoves;
 
     private TestPlayer(String name, BlockSource blocks, RoutePlanner planner, WorldLocator locator,
-                       ClientSession session, java.util.function.Consumer<Packet> sender) {
+                       ClientSession session, java.util.function.Consumer<Packet> sender,
+                       java.util.function.Supplier<ProtocolState> outbound) {
         this.name = name;
         this.blocks = blocks;
         this.planner = planner;
         this.locator = locator;
         this.session = session;
         this.sender = sender;
+        this.outbound = outbound;
     }
 
     /**
@@ -167,7 +179,14 @@ public final class TestPlayer implements Bot {
     /** As {@link #offline(String, BlockSource, RoutePlanner, List)}, with a locator. */
     static TestPlayer offline(String name, BlockSource blocks, RoutePlanner planner, WorldLocator locator,
                               List<Packet> sent) {
-        return new TestPlayer(name, blocks, planner, locator, null, sent::add);
+        return offline(name, blocks, planner, locator, sent::add, () -> ProtocolState.GAME);
+    }
+
+    /** As {@link #offline(String, BlockSource, RoutePlanner, List)}, sending in the state {@code outbound} says. */
+    static TestPlayer offline(String name, BlockSource blocks, RoutePlanner planner, WorldLocator locator,
+                              java.util.function.Consumer<Packet> sender,
+                              java.util.function.Supplier<ProtocolState> outbound) {
+        return new TestPlayer(name, blocks, planner, locator, null, sender, outbound);
     }
 
     /** Join the server and wait until the player is in the world. */
@@ -187,7 +206,8 @@ public final class TestPlayer implements Bot {
                                   WorldLocator locator, Duration timeout) throws InterruptedException {
         ClientSession session = ClientNetworkSessionFactory.factory().setAddress(host, port)
                 .setProtocol(new MinecraftProtocol(name)).create();
-        TestPlayer p = new TestPlayer(name, blocks, planner, locator, session, session::send);
+        TestPlayer p = new TestPlayer(name, blocks, planner, locator, session, session::send,
+                () -> session.getPacketProtocol().getOutboundState());
         p.session.addListener(p.new Listener());
         p.session.connect(true);
         // A kick also releases the latch, so check for one: being turned away is not a join.
@@ -422,7 +442,7 @@ public final class TestPlayer implements Bot {
                 dead ? ", dead" : "");
     }
 
-    private void drainEvents(StringBuilder out) {
+    void drainEvents(StringBuilder out) {
         synchronized (events) {
             int shown = Math.min(events.size(), 40);
             java.util.Iterator<String> it = events.iterator();
@@ -459,15 +479,34 @@ public final class TestPlayer implements Bot {
         }
     }
 
+    /**
+     * Send, unless the connection's state has no id for the packet: encoding it would end the connection, as a play
+     * packet does during a re-configuration. Such a packet is dropped and reported instead.
+     */
     private void send(Packet packet) {
+        ProtocolState state = outbound.get();
+        if (!sendable(state, packet)) {
+            event("[not sent] " + packet.getClass().getSimpleName() + " during " + state);
+            return;
+        }
         sender.accept(packet);
+    }
+
+    static boolean sendable(ProtocolState state, Packet packet) {
+        try {
+            MinecraftCodec.CODEC.getCodec(state).getServerboundId(packet.getClass());
+            return true;
+        } catch (IllegalArgumentException e) {
+            return false;
+        }
     }
 
     void tick() {
         try {
             synchronized (this) {
                 ticks++;
-                if (!positioned || !connected()) {
+                // A vanilla client stops ticking while the server re-configures it, until the next login and position.
+                if (!positioned || !connected() || outbound.get() != ProtocolState.GAME) {
                     return;
                 }
                 if (dead) {
@@ -713,9 +752,22 @@ public final class TestPlayer implements Bot {
         hud.accept(packet);
         switch (packet) {
             case ClientboundLoginPacket p -> {
-                entityId = p.getEntityId();
+                synchronized (this) {
+                    // A login after a re-configuration is a new player in a new level, like a respawn.
+                    entityId = p.getEntityId();
+                    entities.clear();
+                    dead = false;
+                    deadTicks = 0;
+                    loadPending = true;
+                    positioned = false;
+                }
                 spawnedIn(p.getCommonPlayerSpawnInfo().getWorldName().asString());
             }
+            case ClientboundStartConfigurationPacket p -> reconfigure();
+            // Answered like the vanilla client: accept the code of conduct, hold no cookies, know no login channel.
+            case ClientboundCodeOfConductPacket p -> send(ServerboundAcceptCodeOfConductPacket.INSTANCE);
+            case ClientboundCookieRequestPacket p -> send(new ServerboundCookieResponsePacket(p.getKey(), null));
+            case ClientboundCustomQueryPacket p -> send(new ServerboundCustomQueryAnswerPacket(p.getMessageId()));
             case ClientboundPlayerPositionPacket p -> position(p);
             case ClientboundSetHealthPacket p -> health(p.getHealth(), p.getFood());
             case ClientboundPlayerCombatKillPacket p -> {
@@ -730,6 +782,8 @@ public final class TestPlayer implements Bot {
                     dead = false;
                     deadTicks = 0;
                     loadPending = true;
+                    // A new player entity: it moves once the server places it, like after a login.
+                    positioned = false;
                 }
                 String key = p.getCommonPlayerSpawnInfo().getWorldName().asString();
                 spawnedIn(key);
@@ -765,6 +819,21 @@ public final class TestPlayer implements Bot {
                 }
             }
             default -> {
+            }
+        }
+    }
+
+    /**
+     * The server takes the player back to configuration (MCProtocolLib has acknowledged it): the player is out of the
+     * world until the next login and position, so the tick thread sends nothing and the running step ends.
+     */
+    private void reconfigure() {
+        event("[configuring] the server re-configures the player");
+        synchronized (this) {
+            positioned = false;
+            if (current != null) {
+                current.finish("stopped: the server re-configured the player");
+                current = null;
             }
         }
     }

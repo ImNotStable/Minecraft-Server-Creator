@@ -134,6 +134,7 @@ class TestPlayerTest {
         assertThat(Players.drive(p, Script.parse("walk 1,1,0"), 100)).startsWith("reached");
         assertThat(planned).containsExactly("w_nether");
         p.receive(new ClientboundRespawnPacket(spawn("minecraft:arena"), false, false));
+        p.receive(teleport(1.5, 1, 0.5)); // the respawned player moves once the server places it
         p.useWorld("w");
         assertThat(Players.drive(p, Script.parse("jump"), 100)).startsWith("rose");
         assertThat(blocks.regions.getLast().world()).isEqualTo("minecraft:arena");
