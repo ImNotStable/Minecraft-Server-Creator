@@ -1,6 +1,6 @@
 # Building and viewing the world
 
-The server must be running (`server_start`) for these tools. They work the same on Paper, Fabric and Minestom.
+The server must be running (`server_start`) for these tools. They work the same on every platform.
 
 ## How to point at blocks
 

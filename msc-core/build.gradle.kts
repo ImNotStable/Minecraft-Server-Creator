@@ -164,10 +164,18 @@ val installMsc = tasks.register("installMsc") {
     }
 }
 
+// The version msc_status and the MCP serverInfo report: project.version (a release passes -Pversion=<tag>).
+val versionResource = tasks.register<WriteProperties>("versionResource") {
+    destinationFile = layout.buildDirectory.file("generated/version/io/github/imnotstable/msc/core/version.properties")
+    property("version", project.version.toString())
+}
+sourceSets.main { resources.srcDir(versionResource.map { layout.buildDirectory.dir("generated/version").get() }) }
+
 // e2eTest: a real Minestom server driven through the installed core over MCP stdio (MinestomEndToEndTest, tag e2e).
 // Not part of `build`: it scaffolds a project and runs its own Gradle build. CI runs it on Linux and Windows.
 tasks.test {
     useJUnitPlatform { excludeTags("e2e") }
+    systemProperty("msc.expectedVersion", project.version.toString())
 }
 
 tasks.register<Test>("e2eTest") {

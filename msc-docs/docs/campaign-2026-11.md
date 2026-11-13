@@ -6,7 +6,7 @@ done only when a new auditor finds nothing **twice**; then each piece is fixed. 
 resume point: a restarted thread reads the *State* section and the tracking issue first. Rules are in
 [ADR 0029](adr/0029-perfection-campaign.md).
 
-Base: main `650cb4d` (v0.5.0 plus #70 to #72). Ends 2026-11-14 23:00Z.
+Base: main `650cb4d` (v0.5.0 plus #70 to #72). Ends 2026-11-14 23:00Z. State as of main `df5a5ea`.
 
 ## What "perfect" means here
 
@@ -112,19 +112,24 @@ Updated at each milestone. The tracking issue has the per-round log.
 
 | Piece | Rounds run | Clean in a row | Issues filed | Fixed | Status |
 |---|---|---|---|---|---|
-| core-tools | 0 | 0 | 0 | 0 | not started |
-| core-server | 0 | 0 | 0 | 0 | not started |
-| core-world | 0 | 0 | 0 | 0 | not started |
-| textures | 0 | 0 | 0 | 0 | not started |
-| protocol | 0 | 0 | 0 | 0 | not started |
-| agent-paper | 0 | 0 | 0 | 0 | not started |
-| agent-mods | 0 | 0 | 0 | 0 | not started |
-| agent-minestom | 0 | 0 | 0 | 0 | not started |
-| bot | 0 | 0 | 0 | 0 | not started |
-| renderer | 0 | 0 | 0 | 0 | not started |
-| templates | 0 | 0 | 0 | 0 | not started |
-| bench | 0 | 0 | 0 | 0 | not started |
-| build | 0 | 0 | 0 | 0 | not started |
-| cross | 0 | 0 | 0 | 0 | not started |
+| core-tools | 4 | 0 | 11 | 10 | round 4 fix pending (#245, no PR yet) |
+| core-server | 4 | 0 | 11 | 10 | round 4 fixes in review (#246) |
+| core-world | 4 | 1 | 9 | 9 | round 3 fixes merged (#231) |
+| textures | 4 | 0 | 13 | 11 | round 4 fixes pending (#236, #237, no PR yet) |
+| protocol | 4 | 0 | 9 | 9 | round 4 fixes merged (#239) |
+| agent-paper | 3 | 2 | 4 | 4 | done (two clean rounds) |
+| agent-mods | 4 | 2 | 5 | 5 | done (two clean rounds) |
+| agent-minestom | 4 | 0 | 10 | 9 | round 4 fix pending (#238, no PR yet) |
+| bot | 4 | 0 | 14 | 14 | round 4 fixes merged (#244) |
+| renderer | 4 | 0 | 8 | 8 | round 4 fixes merged (#240) |
+| templates | 3 | 2 | 5 | 5 | done (two clean rounds) |
+| bench | 4 | 1 | 9 | 9 | round 3 fixes merged (#232) |
+| build | 4 | 0 | 11 | 9 | round 4 fixes in review (#241, #243) |
+| cross | 2 | 0 | 12 | 12 | round 2 fixes merged (#219) |
 
-Platform matrix (PC): baseline not run yet. Bench: Sky Sprint rerun pending in the bench thread.
+Totals: 131 campaign issues filed, 124 closed, 7 open (#236, #237, #238, #241, #242, #243, #245); 36 fix PRs merged.
+Updated 2026-11-13 09:50 UTC.
+
+Platform matrix (PC): baseline run done and merged in #170 (all 7 platforms, 14 cells pass). Second run requested
+2026-11-13, waiting for the PC session.
+Bench: rerun pending.
