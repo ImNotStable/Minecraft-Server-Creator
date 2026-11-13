@@ -13,6 +13,14 @@ class MachineEulaTest {
     Path dir;
 
     @Test
+    void theNoticesNameEveryPlatformThatNeedsTheEula() {
+        for (Platform p : Platform.values()) {
+            assertThat(MachineEula.SERVERS.toLowerCase(java.util.Locale.ROOT)).as(p.id())
+                    .matches(s -> s.contains(p.id()) == p.needsEula());
+        }
+    }
+
+    @Test
     void readsOnlyACompleteAcceptance() throws Exception {
         Path file = dir.resolve("eula.json");
         assertThat(MachineEula.read(file)).isEmpty();
