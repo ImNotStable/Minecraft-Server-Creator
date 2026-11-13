@@ -8,7 +8,7 @@ Source of truth is the code in `msc-protocol` (`io.github.imnotstable.msc.protoc
    - `MSC_CORE_ADDRESS`: `host:port` of the core
    - `MSC_TOKEN`: a random token for this session
 2. The agent connects through `AgentLink` in `msc-agent-common` ([ADR 0024](adr/0024-agent-common.md)), which finds the core with `CoreAddress.resolve()`: the two environment variables, or else the system properties `msc.core.address` (`host:port`) and `msc.token` for servers started by hand and for tests. If neither is set, the agent stays idle. `AgentLink` retries with backoff, reconnects when the core drops it, and sends `server.ready` once both the connection is up and the server has finished starting.
-3. Every frame is one JSON object on one line, UTF-8, ending in `\n`, at most 16 MiB. The `type` field names the message.
+3. Every frame is one JSON object on one line, UTF-8, ending in `\n`, at most 16 MiB (`Limits.MAX_FRAME_BYTES`). The `type` field names the message. See [Size limits](#size-limits) for what happens to a message that would not fit.
 
 ## Handshake
 
@@ -35,6 +35,31 @@ tree ([ADR 0030](adr/0030-protocol-result-encoding.md)). A result that balances 
 with `bad_frame` and leaves the connection open; a frame that does not balance closes it, like any bad frame.
 
 Error codes: `unknown_op`, `invalid_params`, `not_found`, `too_large`, `timeout`, `internal`, `unauthorized`, `version_mismatch`, `bad_frame`, `shutdown`.
+
+### Size limits
+
+No message is dropped silently. A message that cannot be sent while the connection is fine (its frame is over
+16 MiB, or it cannot be encoded) is never written, and:
+
+- an answer is replaced by a small error answer for the same request id: `too_large` ("the server.command result is N
+  bytes, over the 16777216-byte frame limit; ask for less"), or `internal` when it could not be encoded. An error
+  answer that is itself too large keeps its code, the first 1024 characters of its message and its `PartialEdit`
+  undo id. So the caller fails at once instead of waiting out its timeout.
+- a request fails its future at once with `FrameTooLargeException` (or another `ProtocolException`), naming the op.
+- an event throws the same from `Connection.sendEvent`; `AgentLink` logs it as a warning.
+
+Results whose size the server decides, not the request, are cut where they are made, with a marker, so they fit
+(`Limits`):
+
+| result | limit | marker |
+| --- | --- | --- |
+| `server.command` `output` | 4 Mi characters in all, each line counting one more (`MAX_RESULT_TEXT_CHARS`) | the line that crosses it ends in ` [cut: N more chars]`; a last line `[output cut at 4194304 characters: N more lines not shown]` when lines were left out |
+| `world.entities` | 1000 entities (`EntitiesResult.MAX_ENTITIES`) and 4 Mi characters of names and tags | fewer `entities` than `total` |
+| entity `name`, each tag (also `world.read` entities) | 1024 characters (`MAX_TEXT_CHARS`) | ends in ` [cut: N more chars]` |
+| sign lines in `world.read` | 1000 signs (`SignText.MAX_SIGNS`), 256 characters a line (`MAX_SIGN_LINE_CHARS`) | a cut line ends in ` [cut: N more chars]` |
+
+The other results are bounded by their request: a region of at most `MAX_REGION_VOLUME` blocks or columns. The wire
+format is unchanged: cut text is ordinary text, so an older core or agent reads it as before.
 
 ## Operations (core asks, agent answers)
 

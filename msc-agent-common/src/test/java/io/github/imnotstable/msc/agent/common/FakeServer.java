@@ -4,7 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
 
-/** A fake server: an {@code echo} command, a fixed player count, and a record of packs sent. */
+/** A fake server: {@code echo} and {@code flood} commands, a fixed player count, and a record of packs sent. */
 final class FakeServer implements AgentServer {
     final List<Pack> packsSent = new ArrayList<>();
     int players;
@@ -41,6 +41,14 @@ final class FakeServer implements AgentServer {
 
     @Override
     public boolean runCommand(String line, Consumer<String> feedback) {
+        if (line.startsWith("flood ")) { // flood <lines> <chars per line>
+            String[] args = line.split(" ");
+            String text = "f".repeat(Integer.parseInt(args[2]));
+            for (int i = Integer.parseInt(args[1]); i > 0; i--) {
+                feedback.accept(text);
+            }
+            return true;
+        }
         if (line.startsWith("echo ")) {
             feedback.accept("said " + line.substring(5));
             return true;

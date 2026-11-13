@@ -1,12 +1,10 @@
 package io.github.imnotstable.msc.agent.common;
 
+import io.github.imnotstable.msc.protocol.Limits;
 import io.github.imnotstable.msc.protocol.op.Ops;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
@@ -30,7 +28,8 @@ public final class ServerOps {
     /**
      * Runs a command as a console-like sender and captures the feedback it sends. Success means the
      * command was found and its executor reported success; commands that fail usually still say
-     * why in the output.
+     * why in the output. The output is capped at {@link Limits#MAX_RESULT_TEXT_CHARS} characters with a marker
+     * ({@link CommandOutput}), so even a huge one fits in a frame (#341).
      */
     public Ops.CommandResult command(Ops.CommandParams params) {
         String command = params.command().strip();
@@ -42,9 +41,9 @@ public final class ServerOps {
         }
         String line = command;
         return main.call(() -> {
-            List<String> output = Collections.synchronizedList(new ArrayList<>());
-            boolean success = server.runCommand(line, output::add);
-            return new Ops.CommandResult(success, List.copyOf(output));
+            CommandOutput output = new CommandOutput(Limits.MAX_RESULT_TEXT_CHARS);
+            boolean success = server.runCommand(line, output);
+            return new Ops.CommandResult(success, output.lines());
         });
     }
 
