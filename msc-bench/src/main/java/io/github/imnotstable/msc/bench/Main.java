@@ -7,6 +7,7 @@ import io.github.imnotstable.msc.bench.rcon.RconClient;
 import io.github.imnotstable.msc.bench.report.ReportWriter;
 import io.github.imnotstable.msc.bench.run.BenchConfig;
 import io.github.imnotstable.msc.bench.run.BenchRunner;
+import io.github.imnotstable.msc.bench.run.ChildProcesses;
 import io.github.imnotstable.msc.bench.run.RunIsolation;
 import io.github.imnotstable.msc.bench.run.RunRecord;
 import io.github.imnotstable.msc.bench.run.ServerManager;
@@ -160,15 +161,25 @@ public final class Main {
                 "java", ProcessHandle.current().info().command().orElse("java"),
                 "serverPort", Integer.toString(config == null ? 25566 : config.server().serverPort()),
                 "scaffoldVersion", Workspaces.SCAFFOLD_VERSION);
+        // Ctrl-C skips the finally blocks: the hook kills the server and command processes this check started.
+        ChildProcesses children = new ChildProcesses();
+        Thread hook = Thread.ofPlatform().name("msc-bench-check-abort").unstarted(children::killAll);
+        Runtime.getRuntime().addShutdownHook(hook);
         try (ServerManager server = config != null && task.needsServer() && config.server().acceptEula()
-                ? new ServerManager(workspace.resolve("server"), config.server(), Map.of())
+                ? new ServerManager(workspace.resolve("server"), config.server(), Map.of(), children)
                 : null) {
-            return check(task, workspace, values, config, server, out);
+            return check(task, workspace, values, config, server, children, out);
+        } finally {
+            try {
+                Runtime.getRuntime().removeShutdownHook(hook);
+            } catch (IllegalStateException shuttingDown) {
+                // the hook is running or has run
+            }
         }
     }
 
     private static int check(TaskDef task, Path workspace, Map<String, String> values, BenchConfig config,
-            ServerManager server, PrintStream out) throws IOException {
+            ServerManager server, ChildProcesses children, PrintStream out) throws IOException {
         RconClient[] running = new RconClient[1];
         CheckContext context = new CheckContext() {
             private RconClient rcon;
@@ -201,6 +212,11 @@ public final class Main {
                     }
                 }
                 return rcon;
+            }
+
+            @Override
+            public Process start(ProcessBuilder builder) throws IOException {
+                return children.start(builder);
             }
         };
         try {

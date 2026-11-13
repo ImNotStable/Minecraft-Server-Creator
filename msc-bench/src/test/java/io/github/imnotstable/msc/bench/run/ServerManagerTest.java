@@ -7,11 +7,13 @@ import io.github.imnotstable.msc.bench.FakeRconServer;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.ServerSocket;
+import java.net.Socket;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -114,6 +116,47 @@ class ServerManagerTest {
             assertThat(after.commands()).containsExactly("check", "stop");
             assertThat(Duration.ofNanos(System.nanoTime() - start)).as("close() returns once the port is free")
                     .isLessThan(Duration.ofSeconds(10));
+        }
+    }
+
+    @Test
+    void clearPortsStopsAServerLeftFromAnEarlierRun() throws IOException {
+        FakeRconServer[] holder = new FakeRconServer[1];
+        holder[0] = new FakeRconServer("pw", command -> {
+            if (command.equals("stop")) {
+                try {
+                    holder[0].close();
+                } catch (IOException e) {
+                    // test ends either way
+                }
+            }
+            return "";
+        });
+        try (FakeRconServer orphan = holder[0]) {
+            ServerManager.clearPorts(config(List.of("unused"), orphan.port()), Duration.ofSeconds(10));
+
+            assertThat(orphan.commands()).containsExactly("stop");
+        }
+    }
+
+    @Test
+    void clearPortsRefusesPortsItCannotFree() throws IOException {
+        // Something that is not a bench server: accepts connections but speaks no RCON.
+        try (ServerSocket taken = new ServerSocket(0, 50, InetAddress.getLoopbackAddress())) {
+            List<Socket> held = new CopyOnWriteArrayList<>();
+            Thread.ofVirtual().start(() -> {
+                try {
+                    while (true) {
+                        held.add(taken.accept());
+                    }
+                } catch (IOException closed) {
+                    // test over
+                }
+            });
+            Throwable refused = catchThrowable(() -> ServerManager.clearPorts(
+                    config(List.of("unused"), taken.getLocalPort()), Duration.ofMillis(200)));
+
+            assertThat(refused).isInstanceOf(IOException.class).hasMessageContaining("port " + taken.getLocalPort());
         }
     }
 }

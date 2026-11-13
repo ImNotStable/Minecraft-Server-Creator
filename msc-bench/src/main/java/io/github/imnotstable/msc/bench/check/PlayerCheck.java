@@ -1,6 +1,7 @@
 package io.github.imnotstable.msc.bench.check;
 
 import com.google.gson.JsonObject;
+import io.github.imnotstable.msc.bench.run.ChildProcesses;
 import io.github.imnotstable.msc.bot.BlockSource;
 import io.github.imnotstable.msc.bot.Bot;
 import io.github.imnotstable.msc.bot.Bots;
@@ -89,11 +90,10 @@ record PlayerCheck(
             deleteTree(dir);
             Files.createDirectories(dir);
             Files.copy(builtJar, dir.resolve("server.jar"), StandardCopyOption.REPLACE_EXISTING);
-            server = new ProcessBuilder(Placeholders.fill(command, context.placeholders()))
+            server = context.start(new ProcessBuilder(Placeholders.fill(command, context.placeholders()))
                     .directory(dir.toFile())
                     .redirectErrorStream(true)
-                    .redirectOutput(log.toFile())
-                    .start();
+                    .redirectOutput(log.toFile()));
             if (!waitFor(ready, log, server, deadline)) {
                 return CheckResult.fail(name, (server.isAlive() ? "server not ready in time: " : "server stopped: ")
                         + tail(read(log)));
@@ -131,8 +131,7 @@ record PlayerCheck(
             return CheckResult.fail(name, "interrupted");
         } finally {
             if (server != null && server.isAlive()) {
-                server.descendants().forEach(ProcessHandle::destroyForcibly);
-                server.destroyForcibly();
+                ChildProcesses.killTree(server);
             }
         }
     }
@@ -195,9 +194,7 @@ record PlayerCheck(
             // Already gone: nothing to stop.
         }
         if (!server.waitFor(20, TimeUnit.SECONDS)) {
-            server.descendants().forEach(ProcessHandle::destroyForcibly);
-            server.destroyForcibly();
-            server.waitFor(10, TimeUnit.SECONDS);
+            ChildProcesses.killTree(server);
         }
     }
 

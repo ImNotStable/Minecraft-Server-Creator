@@ -1,5 +1,6 @@
 package io.github.imnotstable.msc.bench.check;
 
+import io.github.imnotstable.msc.bench.run.ChildProcesses;
 import io.github.imnotstable.msc.bench.run.Workspaces;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -34,14 +35,12 @@ record CommandCheck(String name, List<String> run, int timeoutSeconds, int expec
                 Workspaces.copyTree(addFiles, context.workspace());
             }
             log = Files.createTempFile("msc-bench-check", ".log");
-            Process process = new ProcessBuilder(command)
+            Process process = context.start(new ProcessBuilder(command)
                     .directory(context.workspace().toFile())
                     .redirectErrorStream(true)
-                    .redirectOutput(log.toFile())
-                    .start();
+                    .redirectOutput(log.toFile()));
             if (!process.waitFor(timeoutSeconds, TimeUnit.SECONDS)) {
-                process.descendants().forEach(ProcessHandle::destroyForcibly);
-                process.destroyForcibly();
+                ChildProcesses.killTree(process);
                 return CheckResult.fail(name, "timed out after " + timeoutSeconds + "s");
             }
             // Lenient UTF-8: tools write in the console charset (Cp1252 on Windows), and a stray byte must not fail
