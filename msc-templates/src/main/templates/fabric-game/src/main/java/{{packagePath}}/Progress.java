@@ -10,21 +10,23 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.Map;
 import java.util.Properties;
-import java.util.TreeMap;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Saved progress: the stage each player has reached, by stage name (so reordering stages keeps progress).
- * Stored as {@code <uuid>=<stage>} lines in {@code progress.properties} in the server directory ({@code run/} in development). Add more per-player
- * fields here (scores, unlocks) as needed.
+ * Stored as {@code <uuid>=<stage>} lines in {@code {{projectId}}-progress.properties} in the server directory
+ * ({@code run/} in development). Add more per-player fields here (scores, unlocks) as needed.
+ *
+ * <p>Changes only touch memory, so they are cheap on the server thread; {@link #flush()} builds the file text
+ * and writes it, so run it off the server thread.
  */
 public final class Progress {
     private final Map<UUID, String> stages = new ConcurrentHashMap<>();
     private final Path file;
     private final Object writeLock = new Object();
-    private final AtomicReference<String> pending = new AtomicReference<>();
+    private final AtomicBoolean dirty = new AtomicBoolean();
 
     public Progress(Path file) {
         this.file = file;
@@ -38,14 +40,18 @@ public final class Progress {
                 p.load(in);
             }
             for (String key : p.stringPropertyNames()) {
-                try {
-                    stages.put(UUID.fromString(key), p.getProperty(key));
-                } catch (IllegalArgumentException e) {
-                    throw new IOException(file + ": not a player UUID: " + key, e);
-                }
+                stages.put(playerId(key), p.getProperty(key));
             }
         }
         return this;
+    }
+
+    private UUID playerId(String key) throws IOException {
+        try {
+            return UUID.fromString(key);
+        } catch (IllegalArgumentException e) {
+            throw new IOException(file + ": not a player UUID: " + key, e);
+        }
     }
 
     /** The saved stage name, or null for a player with no progress. */
@@ -55,51 +61,54 @@ public final class Progress {
 
     public void setStage(UUID player, String stage) {
         stages.put(player, stage);
-        pending.set(serialize());
+        dirty.set(true);
     }
 
     public void clear(UUID player) {
         stages.remove(player);
-        pending.set(serialize());
+        dirty.set(true);
     }
 
     public int size() {
         return stages.size();
     }
 
-    String serialize() {
+    /** The file text for these entries, sorted by UUID, so the file only changes when progress does. */
+    static String serialize(Map<UUID, String> entries) {
+        Properties p = new Properties();
+        entries.forEach((uuid, stage) -> p.setProperty(uuid.toString(), stage));
+        StringWriter text = new StringWriter();
+        try {
+            p.store(text, null); // one date comment line, then the entries in key order
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
         StringBuilder out = new StringBuilder("# Saved game progress: player UUID = stage name\n");
-        new TreeMap<>(stages).forEach((uuid, stage) -> {
-            StringWriter line = new StringWriter();
-            Properties one = new Properties();
-            one.setProperty(uuid.toString(), stage);
-            try {
-                one.store(line, null);
-            } catch (IOException e) {
-                throw new UncheckedIOException(e);
-            }
-            // store() writes a date comment first; keep only the entry, so the file only changes when progress does.
-            line.toString().lines().filter(l -> !l.startsWith("#")).forEach(l -> out.append(l).append('\n'));
-        });
+        text.toString().lines().skip(1).forEach(l -> out.append(l).append('\n'));
         return out.toString();
     }
 
     /**
-     * Writes the latest change, if any. Safe to call from any thread: run it off the server thread after a change
-     * and once more on stop. Writes happen in order, so an older snapshot never overwrites a newer one.
+     * Writes the latest changes, if any. Safe to call from any thread: run it off the server thread after a change
+     * and once more on stop. Writes happen in order, so an older state never overwrites a newer one.
      */
     public void flush() throws IOException {
         synchronized (writeLock) {
-            // Take and clear in one step: a snapshot set between a separate read and clear would be lost.
-            String text = pending.getAndSet(null);
-            if (text == null) {
+            // Clear the flag before the snapshot: a change made after this is either in the snapshot or sets the
+            // flag again for the next flush, so none is lost.
+            if (!dirty.getAndSet(false)) {
                 return;
             }
-            Path parent = file.toAbsolutePath().getParent();
-            Files.createDirectories(parent);
-            Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
-            Files.writeString(tmp, text, StandardCharsets.UTF_8);
-            Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING);
+            try {
+                String text = serialize(Map.copyOf(stages));
+                Files.createDirectories(file.toAbsolutePath().getParent());
+                Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
+                Files.writeString(tmp, text, StandardCharsets.UTF_8);
+                Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING);
+            } catch (IOException | RuntimeException e) {
+                dirty.set(true); // keep the changes for the next flush
+                throw e;
+            }
         }
     }
 }

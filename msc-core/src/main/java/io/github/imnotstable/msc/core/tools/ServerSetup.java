@@ -54,17 +54,27 @@ final class ServerSetup {
         } catch (IllegalArgumentException e) {
             throw new ToolException(e.getMessage());
         }
-        Platform platform = server.platform();
-        if (args.str("platform", null) != null) {
-            platform = Platform.of(args.str("platform"));
-            Platform.remember(config, platform);
-        }
+        // Chosen here, remembered for the workspace only once the setup succeeded: a refused or failed setup
+        // (unsupported version, download error) leaves the workspace as it was, its working server included.
+        Platform chosen = args.str("platform", null) == null ? null : Platform.of(args.str("platform"));
+        Platform platform = chosen == null ? server.platform() : chosen;
         Path dir = config.serverDir();
         if (platform == Platform.MINESTOM) {
             Files.createDirectories(dir);
+            remember(chosen);
             return (mode == null ? "" : "mode ignored: a Minestom server sets game mode and difficulty in its own code\n")
                     + "minestom needs no server download and has no EULA step: the project's own jar is the server and "
                     + "the msc agent is built into it. Server directory: " + dir + "; next: dev_cycle";
+        }
+        // The fallible part first (version checks, downloads, installers); run/ is only written once it is through.
+        StringBuilder installed = new StringBuilder();
+        switch (platform) {
+            case FABRIC -> fabric(version, dir, installed);
+            case QUILT -> quilt(version, dir, installed);
+            case NEOFORGE -> neoforge(version, dir, installed);
+            case FORGE -> forge(version, dir, installed);
+            case PURPUR -> report("purpur", loaders.purpur(version, dir), installed);
+            default -> paper(version, dir, installed);
         }
         StringBuilder out = new StringBuilder();
         if (Templates.ids().contains(Templates.PAPER_SERVER)) {
@@ -78,19 +88,18 @@ final class ServerSetup {
             out.append("mode ").append(mode.id()).append(": ").append(mode.settings().get("gamemode")).append(", ")
                     .append(mode.settings().get("difficulty")).append(" difficulty from the next start\n");
         }
-        Path addons = Files.createDirectories(dir.resolve(platform.addonDir()));
-        switch (platform) {
-            case FABRIC -> fabric(version, dir, addons, out);
-            case QUILT -> quilt(version, dir, addons, out);
-            case NEOFORGE -> neoforge(version, dir, out);
-            case FORGE -> forge(version, dir, out);
-            case PURPUR -> report("purpur", loaders.purpur(version, dir), out);
-            default -> paper(version, dir, out);
-        }
-        installAgent(platform, addons, out);
+        out.append(installed);
+        installAgent(platform, Files.createDirectories(dir.resolve(platform.addonDir())), out);
         eulaStep(dir.resolve("eula.txt"), acceptEula, out);
+        remember(chosen);
         out.append(platform.id()).append(" server ready in ").append(dir).append("; next: server_start or dev_cycle");
         return out.toString();
+    }
+
+    private void remember(Platform chosen) throws IOException {
+        if (chosen != null) {
+            Platform.remember(config, chosen);
+        }
     }
 
     /**
@@ -120,32 +129,38 @@ final class ServerSetup {
 
     private void paper(String version, Path dir, StringBuilder out) throws IOException, InterruptedException {
         PaperDownloader.Download d = paper.download(version);
+        Files.createDirectories(dir);
         Files.copy(d.jar(), dir.resolve(Platform.PAPER.serverJar()), StandardCopyOption.REPLACE_EXISTING);
         out.append("paper ").append(d.version()).append(" build ").append(d.build())
                 .append(d.cached() ? " (cached)" : " (downloaded)").append('\n');
     }
 
     /** Fabric: the server launcher plus the Fabric API mod, at the versions the fabric-mod template pins. */
-    private void fabric(String version, Path dir, Path mods, StringBuilder out) throws IOException, InterruptedException {
+    private void fabric(String version, Path dir, StringBuilder out) throws IOException, InterruptedException {
         String loader = pinned("fabricLoaderVersion", "Fabric Loader");
         String api = fabricApi(version);
         FabricDownloader.Download launcher = fabric.launcher(version, loader);
+        FabricDownloader.Download apiJar = fabric.api(api);
+        Files.createDirectories(dir);
         Files.copy(launcher.jar(), dir.resolve(Platform.FABRIC.serverJar()), StandardCopyOption.REPLACE_EXISTING);
         out.append("fabric launcher for ").append(version).append(", loader ").append(loader)
                 .append(launcher.cached() ? " (cached)" : " (downloaded)")
                 .append("; it downloads the Minecraft server on first start\n");
-        FabricDownloader.Download apiJar = fabric.api(api);
-        Files.copy(apiJar.jar(), mods.resolve("fabric-api.jar"), StandardCopyOption.REPLACE_EXISTING);
-        out.append("fabric api ").append(api).append(apiJar.cached() ? " (cached)" : " (downloaded)").append('\n');
+        installFabricApi(api, apiJar, dir.resolve(Platform.FABRIC.addonDir()), out);
     }
 
     /** Quilt: its launcher, plus Fabric API, which Quilt loads like any Fabric mod. The Fabric agent runs on it. */
-    private void quilt(String version, Path dir, Path mods, StringBuilder out) throws IOException, InterruptedException {
+    private void quilt(String version, Path dir, StringBuilder out) throws IOException, InterruptedException {
         String loader = pinned("quiltLoaderVersion", "Quilt");
         String api = fabricApi(version);
-        report("quilt loader", loaders.quilt(version, loader, pinned("quiltInstallerVersion", "Quilt"), dir), out);
         FabricDownloader.Download apiJar = fabric.api(api);
-        Files.copy(apiJar.jar(), mods.resolve("fabric-api.jar"), StandardCopyOption.REPLACE_EXISTING);
+        report("quilt loader", loaders.quilt(version, loader, pinned("quiltInstallerVersion", "Quilt"), dir), out);
+        installFabricApi(api, apiJar, dir.resolve(Platform.QUILT.addonDir()), out);
+    }
+
+    private static void installFabricApi(String api, FabricDownloader.Download apiJar, Path mods, StringBuilder out)
+            throws IOException {
+        Files.copy(apiJar.jar(), Files.createDirectories(mods).resolve("fabric-api.jar"), StandardCopyOption.REPLACE_EXISTING);
         out.append("fabric api ").append(api).append(apiJar.cached() ? " (cached)" : " (downloaded)").append('\n');
     }
 

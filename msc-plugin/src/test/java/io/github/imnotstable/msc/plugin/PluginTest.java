@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import io.github.imnotstable.msc.buildlogic.RepoFiles;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
@@ -23,7 +24,8 @@ import org.junit.jupiter.api.io.TempDir;
 
 /** The plugin's files as Claude Code reads them, and the launcher starting the real core over MCP stdio. */
 class PluginTest {
-    private static final Path PLUGIN = Path.of(System.getProperty("msc.pluginDir"));
+    private static final String FILES = "pluginFiles";
+    private static final Path PLUGIN = RepoFiles.path(FILES, "msc-plugin/.mcp.json").getParent();
     private static final Path CORE_INSTALL = Path.of(System.getProperty("msc.coreInstall"));
     private static final String ROOT_VAR = "${CLAUDE_PLUGIN_ROOT}/";
 
@@ -32,8 +34,8 @@ class PluginTest {
 
     @Test
     void manifestAndMarketplaceAgree() throws IOException {
-        JsonObject plugin = json(PLUGIN.resolve(".claude-plugin/plugin.json"));
-        JsonObject market = json(PLUGIN.getParent().resolve(".claude-plugin/marketplace.json"));
+        JsonObject plugin = json(RepoFiles.path(FILES, "msc-plugin/.claude-plugin/plugin.json"));
+        JsonObject market = json(RepoFiles.path(FILES, ".claude-plugin/marketplace.json"));
         JsonObject entry = market.getAsJsonArray("plugins").get(0).getAsJsonObject();
 
         assertThat(plugin.get("name").getAsString()).isEqualTo("msc").isEqualTo(entry.get("name").getAsString());
@@ -42,7 +44,7 @@ class PluginTest {
 
     @Test
     void mcpConfigRunsTheLauncherSourceWithJava() throws IOException {
-        JsonObject server = json(PLUGIN.resolve(".mcp.json")).getAsJsonObject("mcpServers").getAsJsonObject("msc");
+        JsonObject server = json(RepoFiles.path(FILES, "msc-plugin/.mcp.json")).getAsJsonObject("mcpServers").getAsJsonObject("msc");
         String arg = server.getAsJsonArray("args").get(0).getAsString();
 
         assertThat(server.get("command").getAsString()).isEqualTo("java");

@@ -138,16 +138,16 @@ final class DevCycle {
     }
 
     /**
-     * The project's platform, remembered for the workspace when none is yet; else the workspace's. A workspace set up
-     * as a platform that runs the same projects (Quilt for a Fabric mod, Purpur for a Paper plugin) keeps its own.
+     * The project's platform when the workspace has none yet ({@link #rememberPlatform} keeps it once deployed); else
+     * the workspace's. A workspace set up as a platform that runs the same projects (Quilt for a Fabric mod, Purpur
+     * for a Paper plugin) keeps its own.
      */
-    private Platform platform(Path project) throws IOException {
+    private Platform platform(Path project) {
         Platform platform = Platform.detect(project);
         if (platform == null) {
             return server.platform();
         }
         if (!Files.exists(Platform.file(config))) {
-            Platform.remember(config, platform);
             return platform;
         }
         Platform workspace = server.platform();
@@ -191,6 +191,7 @@ final class DevCycle {
             mirror(build.libs(), libs, false);
         }
         rememberDeploy(project, target);
+        rememberPlatform(project, platform);
         out.append(", deployed ").append(build.jar().getFileName()).append(" as ").append(shown);
         if (!restart) {
             return out.append(wasRunning ? "; server still running the old jar until restarted" : "").toString();
@@ -204,6 +205,16 @@ final class DevCycle {
             time.add("agent", report.result().agentMillis());
         }
         return out.append('\n').append(report.text()).toString();
+    }
+
+    /**
+     * A workspace with no platform yet takes the deployed project's, but only once the jar is deployed: a failed build
+     * or a refused deploy leaves the workspace as it was.
+     */
+    private void rememberPlatform(Path project, Platform platform) throws IOException {
+        if (Platform.detect(project) != null && !Files.exists(Platform.file(config))) {
+            Platform.remember(config, platform);
+        }
     }
 
     private static long millisSince(long nanos) {

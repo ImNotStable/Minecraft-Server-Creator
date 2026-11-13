@@ -7,6 +7,7 @@ import java.util.Properties
 plugins {
     id("msc.application-conventions")
     id("msc.previous-protocol")
+    id("msc.repo-inputs")
 }
 
 description = "The MCP server the AI talks to."
@@ -174,11 +175,21 @@ sourceSets.main { resources.srcDir(versionResource.map { layout.buildDirectory.d
 tasks.test {
     useJUnitPlatform { excludeTags("e2e") }
     systemProperty("msc.expectedVersion", project.version.toString())
-    // DocumentedCommandsTest reads the repo's docs: rerun it when they change.
-    inputs.files(rootProject.fileTree(rootDir) {
-        include("*.md", "docs/**/*.md", "msc-docs/**/*.md", "msc-*/README.md")
-    }).withPropertyName("documentedCommands").withPathSensitivity(PathSensitivity.RELATIVE)
 }
+
+// Files outside msc-core the tests read (msc.repo-inputs): each set is both what the test reads and a test input.
+// DocumentedCommandsTest: every text file of the repository outside build output, server and IDE run folders (at
+// the root or a module's root, so source packages named run stay in), test sources and dot folders. A `**/.*/**`
+// pattern would also drop dot files such as msc-plugin/.mcp.json, so dot folders are matched by their contents.
+repoInputs.set("documentedCommands", rootProject.fileTree(rootDir) {
+    include("**/*.md", "**/*.java", "**/*.kts", "**/*.txt", "**/*.json", "**/*.yml", "**/*.properties")
+    exclude("**/build/**", "run/**", "*/run/**", "out/**", "*/out/**", "**/node_modules/**", "**/test/**",
+        "**/testFixtures/**", "graphify-out/**", "**/.*/*/**")
+})
+// RepoInputsTest: every module's test sources, checked for reads that bypass these sets.
+repoInputs.set("testSources", rootProject.fileTree(rootDir) {
+    include("msc-*/src/test/**/*.java", "msc-*/src/test/**/*.kt")
+})
 
 tasks.register<Test>("e2eTest") {
     description = "Scaffolds minestom-game and drives a real Minestom server end to end through the installed core."

@@ -107,6 +107,18 @@ class {{mainClass}}Test {
     }
 
     @Test
+    void aBadProgressFileDisablesThePluginInsteadOfCrashing() throws Exception {
+        server.getPluginManager().disablePlugin(plugin);
+        Path saved = plugin.getDataFolder().toPath().resolve("progress.yml");
+        Files.createDirectories(saved.getParent());
+        Files.writeString(saved, "stage:\n  not-a-uuid: arena\n");
+
+        server.getPluginManager().enablePlugin(plugin);
+
+        assertThat(plugin.isEnabled()).isFalse();
+    }
+
+    @Test
     void deathKeepsTheInventoryAndRespawnsAtTheCurrentStage() {
         PlayerMock steve = server.addPlayer("Steve");
         plugin.game().moveTo(steve, 1, "test");

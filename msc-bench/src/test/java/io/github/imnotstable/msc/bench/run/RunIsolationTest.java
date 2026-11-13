@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
+import io.github.imnotstable.msc.buildlogic.RepoFiles;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -134,7 +135,7 @@ class RunIsolationTest {
     void theOldDefaultInsideThisRepositoryIsRefused() {
         // The old default was msc-bench/runs, which put every attempt under the repository's CLAUDE.md. The walk stops
         // at the repository, so folders above the checkout cannot change the result.
-        Path repo = Path.of(System.getProperty("msc.repoRoot"));
+        Path repo = RepoFiles.path("repoClaudeMd", "CLAUDE.md").getParent();
 
         assertThat(RunIsolation.leaks(repo.resolve("msc-bench/runs"), dir, repo))
                 .contains(RunIsolation.resolve(repo.resolve("CLAUDE.md")));
