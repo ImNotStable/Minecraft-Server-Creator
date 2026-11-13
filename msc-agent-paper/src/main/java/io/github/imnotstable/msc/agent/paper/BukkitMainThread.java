@@ -6,6 +6,7 @@ import io.github.imnotstable.msc.protocol.message.ErrorCodes;
 import io.github.imnotstable.msc.protocol.transport.OpException;
 import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.Consumer;
 import java.util.function.Supplier;
 import org.bukkit.Bukkit;
 import org.bukkit.plugin.Plugin;
@@ -48,24 +49,24 @@ public final class BukkitMainThread implements MainThread {
             return job.runNow();
         }
         CompletableFuture<T> future = new CompletableFuture<>();
-        BukkitTask[] task = new BukkitTask[1];
-        Runnable tick = () -> {
+        // The scheduler hands the task to each tick, so a tick never reads a handle stored by this thread.
+        Consumer<BukkitTask> tick = task -> {
             if (future.isDone()) {
-                task[0].cancel();
+                task.cancel();
                 return;
             }
             try {
                 if (job.step(System.nanoTime() + budget.toNanos())) {
                     future.complete(job.result());
-                    task[0].cancel();
+                    task.cancel();
                 }
             } catch (Throwable t) {
                 future.completeExceptionally(t);
-                task[0].cancel();
+                task.cancel();
             }
         };
         try {
-            task[0] = Bukkit.getScheduler().runTaskTimer(plugin, tick, 0L, 1L);
+            Bukkit.getScheduler().runTaskTimer(plugin, tick, 0L, 1L);
         } catch (IllegalStateException | IllegalArgumentException e) {
             throw new OpException(ErrorCodes.SHUTDOWN, "server is shutting down");
         }

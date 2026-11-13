@@ -16,4 +16,10 @@ class BlockNamesTest {
                 .containsExactly("polished_diorite", "diorite_wall", "polished_blackstone_wall");
         assertThat(BlockNames.suggest("glorp", KNOWN)).isEmpty();
     }
+
+    @Test
+    void toleratesRepeatedWords() {
+        assertThat(BlockNames.suggest("minecraft:stone_brick_stone_wall", KNOWN)).first().isEqualTo("stone");
+        assertThat(BlockNames.suggest("a__b__c", KNOWN)).isEmpty();
+    }
 }
