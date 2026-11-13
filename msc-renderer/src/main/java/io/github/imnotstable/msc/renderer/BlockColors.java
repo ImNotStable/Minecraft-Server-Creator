@@ -40,6 +40,9 @@ final class BlockColors {
             "pink", "gray", "cyan", "purple", "blue", "brown", "green", "red", "black"};
     private static final int[] DYE_RGB = {0x3aafd9, 0x8e8e86, 0xe9ecec, 0xf07613, 0xbd44b3, 0xf8c627, 0x70b919,
             0xed8dac, 0x3e4447, 0x158991, 0x792aac, 0x35399d, 0x724728, 0x546d1b, 0xa12722, 0x141519};
+    /** Stained terracotta, in DYES order: the dye muted by the clay, so it needs its own colours, not a mix. */
+    private static final int[] TERRACOTTA_RGB = {0x716d8a, 0x876b62, 0xd2b2a1, 0xa15325, 0x96586d, 0xba8523,
+            0x687635, 0xa14e4e, 0x3a2a24, 0x575b5b, 0x764656, 0x4a3c5b, 0x4d3324, 0x4c532a, 0x8f3d2f, 0x251710};
 
     private static final Map<String, Integer> TABLE = new HashMap<>();
     private static final List<Map.Entry<String, Integer>> WORDS = new ArrayList<>();
@@ -179,7 +182,7 @@ final class BlockColors {
                         0xff000000 | rgb;
                 case "concrete" -> 0xff000000 | mix(rgb, 0x202020, 0.15);
                 case "concrete_powder" -> 0xff000000 | mix(rgb, 0xd0d0d0, 0.15);
-                case "terracotta" -> 0xff000000 | mix(rgb, 0x8f5b45, 0.55);
+                case "terracotta" -> 0xff000000 | TERRACOTTA_RGB[i];
                 case "stained_glass", "stained_glass_pane" -> 0x70000000 | rgb;
                 default -> null;
             };

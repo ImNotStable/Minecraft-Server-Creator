@@ -194,6 +194,8 @@ quartz_pillar=ebe6e0
 smooth_quartz=ebe5de
 glass=c0dfe640
 tinted_glass=2c262e90
+# Dyed blocks follow the dye rule in BlockColors; black powder is too dark for its light-grey mix.
+black_concrete_powder=1a1b20
 iron_bars=6d6e6f
 heavy_weighted_pressure_plate=dcdcdc
 light_weighted_pressure_plate=f6d03d

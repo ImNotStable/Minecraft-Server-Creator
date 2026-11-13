@@ -86,7 +86,7 @@ class VanillaColorsTest {
         assertThat(result.caption()).contains("poplar_stairs").doesNotContain("No colour known");
     }
 
-    private static List<String> blocks(String resource) throws IOException {
+    static List<String> blocks(String resource) throws IOException {
         List<String> names = new ArrayList<>();
         try (InputStream in = VanillaColorsTest.class.getResourceAsStream(resource)) {
             assertThat(in).as(resource + " (regenerate it for the catalog's Minecraft version)").isNotNull();
