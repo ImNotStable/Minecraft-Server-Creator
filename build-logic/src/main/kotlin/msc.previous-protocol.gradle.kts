@@ -1,7 +1,7 @@
 // MCProtocolLib for the previous Minecraft version (Minestom lags Paper by one), which msc-bot's Bots loads in its
 // own class loader from <root>/<version>/. One definition for msc-bot, msc-bench (staged for tests and runs) and
 // msc-core (shipped in its distribution's bot/<version>/), so the three cannot drift.
-import io.github.imnotstable.msc.build.PreviousProtocolClient
+import io.github.imnotstable.msc.buildlogic.PreviousProtocolClient
 
 val libs = the<VersionCatalogsExtension>().named("libs")
 val clientVersion = provider { libs.findVersion("mcprotocollib-previous").get().requiredVersion }
