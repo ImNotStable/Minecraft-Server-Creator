@@ -11,6 +11,8 @@ dependencies {
     // Minestom tasks start from a scaffolded template, and their player checks join with the test player.
     implementation(project(":msc-templates"))
     implementation(project(":msc-bot"))
+    // The tree kill shared with msc-core; its own module, since the bench must not depend on core (ADR 0004).
+    implementation(project(":msc-process"))
 }
 
 application {
