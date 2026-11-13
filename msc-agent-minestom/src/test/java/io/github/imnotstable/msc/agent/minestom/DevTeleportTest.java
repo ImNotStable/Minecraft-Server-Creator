@@ -33,4 +33,27 @@ class DevTeleportTest {
         assertThat(DevTeleport.registerIfMissing(env.process().command(), name -> null)).isFalse();
         assertThat(env.process().command().getCommand("tp")).isSameAs(own);
     }
+
+    @Test
+    void registersOnTheFirstTickSoAServersLaterTpWins(Env env) {
+        var commands = env.process().command();
+        DevTeleport.registerOnFirstTick(env.process().scheduler(), commands, name -> null);
+        Command own = new Command("tp");
+        commands.register(own);
+
+        env.tick();
+
+        assertThat(commands.getCommand("tp")).isSameAs(own);
+    }
+
+    @Test
+    void registersOnTheFirstTickWhenTheServerHasNoTp(Env env) {
+        var commands = env.process().command();
+        DevTeleport.registerOnFirstTick(env.process().scheduler(), commands, name -> null);
+        assertThat(commands.commandExists("tp")).isFalse();
+
+        env.tick();
+
+        assertThat(commands.commandExists("tp")).isTrue();
+    }
 }
