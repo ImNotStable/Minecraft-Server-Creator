@@ -112,24 +112,26 @@ Updated at each milestone. The tracking issue has the per-round log.
 
 | Piece | Rounds run | Clean in a row | Issues filed | Fixed | Status |
 |---|---|---|---|---|---|
-| core-tools | 4 | 0 | 11 | 10 | round 4 fix pending (#245, no PR yet) |
-| core-server | 4 | 0 | 11 | 10 | round 4 fixes in review (#246) |
-| core-world | 4 | 1 | 9 | 9 | round 3 fixes merged (#231) |
-| textures | 4 | 0 | 13 | 11 | round 4 fixes pending (#236, #237, no PR yet) |
-| protocol | 4 | 0 | 9 | 9 | round 4 fixes merged (#239) |
+| core-tools | 5 | 0 | 13 | 11 | round 5 found #257, #258 (open) |
+| core-server | 5 | 0 | 12 | 11 | round 5 audit clean, but the real-server run filed #254 (open), so it does not count |
+| core-world | 5 | 0 | 11 | 9 | round 5 found #262, #263 (open) |
+| textures | 5 | 1 | 13 | 13 | round 5 clean, one more clean round to go |
+| protocol | 5 | 1 | 9 | 9 | round 5 clean, one more clean round to go |
 | agent-paper | 3 | 2 | 4 | 4 | done (two clean rounds) |
 | agent-mods | 4 | 2 | 5 | 5 | done (two clean rounds) |
-| agent-minestom | 4 | 0 | 10 | 9 | round 4 fix pending (#238, no PR yet) |
-| bot | 4 | 0 | 14 | 14 | round 4 fixes merged (#244) |
-| renderer | 4 | 0 | 8 | 8 | round 4 fixes merged (#240) |
+| agent-minestom | 5 | 1 | 10 | 10 | round 5 clean, one more clean round to go |
+| bot | 5 | 0 | 15 | 14 | round 5 audit clean, but the real-server run filed #253 (open), so it does not count |
+| renderer | 5 | 0 | 9 | 8 | round 5 found #256 (open) |
 | templates | 3 | 2 | 5 | 5 | done (two clean rounds) |
-| bench | 4 | 1 | 9 | 9 | round 3 fixes merged (#232) |
-| build | 4 | 0 | 11 | 9 | round 4 fixes in review (#241, #243) |
-| cross | 2 | 0 | 12 | 12 | round 2 fixes merged (#219) |
+| bench | 5 | 0 | 10 | 9 | round 5 found #260 (open) |
+| build | 5 | 0 | 12 | 11 | round 5 found #259 (fix in review) |
+| cross | 4 | 0 | 14 | 13 | round 4 found #261 (open) |
 
-Totals: 131 campaign issues filed, 124 closed, 7 open (#236, #237, #238, #241, #242, #243, #245); 36 fix PRs merged.
-Updated 2026-11-13 09:50 UTC.
+Totals: 142 campaign issues filed, 132 closed, 10 open (#253, #254, #256 to #263); 42 fix PRs merged. Round 4 is
+fully merged. Updated 2026-11-13 10:06 UTC, on main 6f6a8da.
 
-Platform matrix (PC): baseline run done and merged in #170 (all 7 platforms, 14 cells pass). Second run requested
-2026-11-13, waiting for the PC session.
+Platform matrix (PC): baseline run merged in #170 (all 7 platforms, 14 cells pass). Second run at 113058b merged in
+#255: every cell passes the baseline steps and the earlier fixes hold; it filed #253 (Paper and Purpur: a `/kill`
+in the nether reports no death or respawn) and #254 (Forge and Quilt still warn on a clean start). `gradlew build`
+and `:msc-core:e2eTest` pass on Windows.
 Bench: rerun pending.

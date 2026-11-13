@@ -6,6 +6,7 @@ import java.util.Properties
 
 plugins {
     id("msc.application-conventions")
+    id("msc.previous-protocol")
 }
 
 description = "The MCP server the AI talks to."
@@ -37,11 +38,7 @@ dependencies {
 
 // The test player's client for the previous Minecraft version (Minestom lags Paper by one), in bot/<version>/.
 // Not on the class path: msc-bot's Bots loads it in its own class loader when a server answers with that protocol.
-val previousProtocol = configurations.dependencyScope("previousProtocol")
-val previousProtocolJars = configurations.resolvable("previousProtocolJars") { extendsFrom(previousProtocol.get()) }
-dependencies {
-    previousProtocol(libs.mcprotocollib.previous) { isTransitive = false }
-}
+// The configuration and the bot/<version> layout come from msc.previous-protocol, shared with msc-bot and msc-bench.
 
 distributions {
     main {
@@ -51,8 +48,8 @@ distributions {
                 // Loom's runtimeElements may also carry the dev (named) jar; only the remapped one loads.
                 exclude("*-dev.jar", "*-sources.jar")
             }
-            into("bot/${libs.versions.mcprotocollib.previous.get()}") {
-                from(previousProtocolJars)
+            into(previousProtocolClient.distributionDir) {
+                from(previousProtocolClient.jars)
             }
         }
     }
