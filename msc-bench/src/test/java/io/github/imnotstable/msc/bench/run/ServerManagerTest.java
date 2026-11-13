@@ -3,6 +3,7 @@ package io.github.imnotstable.msc.bench.run;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
 
+import io.github.imnotstable.msc.bench.ClosedPort;
 import io.github.imnotstable.msc.bench.FakeRconServer;
 import java.io.IOException;
 import java.net.InetAddress;
@@ -15,6 +16,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -27,14 +30,21 @@ class ServerManagerTest {
     @TempDir
     Path serverDir;
 
-    private BenchConfig.Server config(List<String> command, int rconPort) throws IOException {
-        return new BenchConfig.Server(command, null, List.of(), null, true, freePort(), rconPort, "pw", 1);
+    /** The game port: held closed for the whole test, so nothing on the machine answers on it. */
+    private ClosedPort gamePort;
+
+    @BeforeEach
+    void reserveGamePort() throws IOException {
+        gamePort = ClosedPort.reserve();
     }
 
-    private static int freePort() throws IOException {
-        try (ServerSocket socket = new ServerSocket(0, 1, InetAddress.getLoopbackAddress())) {
-            return socket.getLocalPort();
-        }
+    @AfterEach
+    void releaseGamePort() throws IOException {
+        gamePort.close();
+    }
+
+    private BenchConfig.Server config(List<String> command, int rconPort) {
+        return new BenchConfig.Server(command, null, List.of(), null, true, gamePort.port(), rconPort, "pw", 1);
     }
 
     private long liveServers() {
@@ -52,7 +62,8 @@ class ServerManagerTest {
         List<String> command = List.of(JAVA, "-Dmarker=" + serverDir, "-cp", System.getProperty("java.class.path"),
                 "io.github.imnotstable.msc.bench.FakeServer");
 
-        try (ServerManager server = new ServerManager(serverDir, config(command, freePort()), Map.of())) {
+        try (ClosedPort rconPort = ClosedPort.reserve();
+             ServerManager server = new ServerManager(serverDir, config(command, rconPort.port()), Map.of())) {
             assertThat(catchThrowable(server::rcon)).hasMessageContaining("did not open RCON within 1s");
             assertThat(liveServers()).as("the server that did not open RCON is stopped").isZero();
 

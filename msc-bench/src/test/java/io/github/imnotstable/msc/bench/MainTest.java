@@ -46,13 +46,19 @@ class MainTest {
                 {"accepted":true,"eula":"https://aka.ms/MinecraftEULA","acceptedBy":"owner","acceptedAt":"2026-11-12T00:00:00Z"}
                 """);
         int port = freePort();
+        try (ClosedPort gamePort = ClosedPort.reserve()) {
+            checkWithServer(task, home, port, gamePort.port());
+        }
+    }
+
+    private void checkWithServer(TaskDef task, Path home, int port, int gamePort) throws IOException {
         String java = ProcessHandle.current().info().command().orElse("java").replace("\\", "\\\\");
         String classpath = System.getProperty("java.class.path").replace("\\", "\\\\");
         Files.writeString(dir.resolve("bench.json"), """
                 {"server":{"command":["%s","-cp","%s","io.github.imnotstable.msc.bench.FakeRconMain","%d","pw"],
                  "rconPort":%d,"serverPort":%d,"rconPassword":"pw","startTimeoutSeconds":30}}
-                """.formatted(java, classpath, port, port, freePort()));
-        BenchConfig config = BenchConfig.load(dir.resolve("bench.json"), dir.resolve("home"));
+                """.formatted(java, classpath, port, port, gamePort));
+        BenchConfig config = BenchConfig.load(dir.resolve("bench.json"), home.getParent());
         ByteArrayOutputStream out = new ByteArrayOutputStream();
 
         int exit = Main.check(task, dir.resolve("workspace"), config, new PrintStream(out, true, StandardCharsets.UTF_8));

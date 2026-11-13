@@ -27,11 +27,11 @@ class RunIsolationTest {
         Files.writeString(file, "x");
         Path runs = project.resolve("msc-bench/runs");
 
-        List<Path> leaks = RunIsolation.leaks(runs, dir.resolve("home"));
+        List<Path> leaks = RunIsolation.leaks(runs, dir.resolve("home"), dir);
 
         String expected = marker.startsWith(".git/") ? ".git" : marker;
         assertThat(leaks).containsExactly(project.toRealPath().resolve(expected));
-        assertThat(catchThrowable(() -> RunIsolation.requireIsolated(runs, dir.resolve("home"), dir.resolve("tmp"))))
+        assertThat(catchThrowable(() -> RunIsolation.requireIsolated(runs, dir.resolve("home"), dir.resolve("tmp"), dir)))
                 .isInstanceOf(IOException.class).hasMessageContaining("--out")
                 .hasMessageContaining(RunIsolation.homeRunsDir(dir.resolve("home")).getFileName().toString());
         assertThat(runs).as("nothing is created for a refused run folder").doesNotExist();
@@ -43,7 +43,7 @@ class RunIsolationTest {
         Files.createDirectories(home.resolve(".claude"));
         Files.writeString(home.resolve(".claude/CLAUDE.md"), "user memory, left out by --setting-sources");
 
-        assertThat(RunIsolation.defaultRunsDir(home, dir.resolve("tmp")))
+        assertThat(RunIsolation.defaultRunsDir(home, dir.resolve("tmp"), dir))
                 .isEqualTo(home.toRealPath().resolve(".msc/bench-runs"));
     }
 
@@ -66,11 +66,11 @@ class RunIsolationTest {
         Files.writeString(home.resolve(marker), "x");
         Path temp = Files.createDirectories(dir.resolve("tmp"));
 
-        Path chosen = RunIsolation.defaultRunsDir(home, temp);
+        Path chosen = RunIsolation.defaultRunsDir(home, temp, dir);
 
         assertThat(chosen).isEqualTo(temp.toRealPath().resolve(RunIsolation.TEMP_RUNS_NAME));
-        assertThat(RunIsolation.leaks(chosen, home)).isEmpty();
-        Throwable refused = catchThrowable(() -> RunIsolation.requireIsolated(RunIsolation.homeRunsDir(home), home, temp));
+        assertThat(RunIsolation.leaks(chosen, home, dir)).isEmpty();
+        Throwable refused = catchThrowable(() -> RunIsolation.requireIsolated(RunIsolation.homeRunsDir(home), home, temp, dir));
         assertThat(refused).isInstanceOf(IOException.class).hasMessageContaining("for example " + chosen);
         assertThat(refused.getMessage().split("for example")[1]).doesNotContain(".msc");
     }
@@ -81,8 +81,8 @@ class RunIsolationTest {
         Files.createDirectories(home.resolve(".git"));
         Path temp = Files.createDirectories(home.resolve("tmp"));
 
-        Throwable noDefault = catchThrowable(() -> RunIsolation.defaultRunsDir(home, temp));
-        Throwable refused = catchThrowable(() -> RunIsolation.requireIsolated(home.resolve("x"), home, temp));
+        Throwable noDefault = catchThrowable(() -> RunIsolation.defaultRunsDir(home, temp, dir));
+        Throwable refused = catchThrowable(() -> RunIsolation.requireIsolated(home.resolve("x"), home, temp, dir));
 
         assertThat(noDefault).isInstanceOf(IOException.class).hasMessageContaining("--out")
                 .hasMessageContaining(home.toRealPath().resolve(".git").toString());
@@ -105,8 +105,8 @@ class RunIsolationTest {
         Path resolved = RunIsolation.resolve(out);
 
         assertThat(resolved).isEqualTo(dir.toRealPath().resolve("repo/runs"));
-        assertThat(RunIsolation.leaks(out, dir.resolve("home"))).containsExactly(dir.toRealPath().resolve("repo/CLAUDE.md"));
-        assertThat(catchThrowable(() -> RunIsolation.requireIsolated(out, dir.resolve("home"), dir.resolve("tmp"))))
+        assertThat(RunIsolation.leaks(out, dir.resolve("home"), dir)).containsExactly(dir.toRealPath().resolve("repo/CLAUDE.md"));
+        assertThat(catchThrowable(() -> RunIsolation.requireIsolated(out, dir.resolve("home"), dir.resolve("tmp"), dir)))
                 .isInstanceOf(IOException.class);
         Files.createDirectories(out.resolve("20261113"));
         assertThat(out.resolve("20261113").toRealPath()).isEqualTo(resolved.resolve("20261113"));
@@ -124,7 +124,7 @@ class RunIsolationTest {
             // no links here: the missing tail is still resolved
         }
 
-        Path resolved = RunIsolation.requireIsolated(out, dir.resolve("home"), dir.resolve("tmp"));
+        Path resolved = RunIsolation.requireIsolated(out, dir.resolve("home"), dir.resolve("tmp"), dir);
 
         assertThat(resolved).isEqualTo(outside.toRealPath().resolve("b/runs")).isAbsolute();
         assertThat(resolved.getParent().getParent()).isEqualTo(outside.toRealPath());
@@ -132,9 +132,40 @@ class RunIsolationTest {
 
     @Test
     void theOldDefaultInsideThisRepositoryIsRefused() {
-        // Tests run in msc-bench/, where the old default runs/ put every attempt under the repository's CLAUDE.md.
-        assertThat(RunIsolation.leaks(Path.of("runs"), dir))
-                .anySatisfy(p -> assertThat(p.getFileName()).hasToString("CLAUDE.md"))
-                .anySatisfy(p -> assertThat(p.getFileName()).hasToString(".git"));
+        // The old default was msc-bench/runs, which put every attempt under the repository's CLAUDE.md. The walk stops
+        // at the repository, so folders above the checkout cannot change the result.
+        Path repo = Path.of(System.getProperty("msc.repoRoot"));
+
+        assertThat(RunIsolation.leaks(repo.resolve("msc-bench/runs"), dir, repo))
+                .contains(RunIsolation.resolve(repo.resolve("CLAUDE.md")));
+    }
+
+    @Test
+    void markersAboveTheTopFolderAreNotLookedAt() throws IOException {
+        // The Windows layout: the temporary folder is %USERPROFILE%\AppData\Local\Temp, inside a home that is a
+        // project to Claude Code. A test's folder is the top, so that home cannot leak into the test's result (#335).
+        Path machineHome = dir.resolve("Users/owner");
+        for (String marker : RunIsolation.MARKERS) {
+            Files.createDirectories(machineHome.resolve(marker).getParent());
+            Files.writeString(machineHome.resolve(marker), "x");
+        }
+        Path top = Files.createDirectories(machineHome.resolve("AppData/Local/Temp/junit-1"));
+        Path home = top.resolve("home");
+        Path runs = top.resolve("runs");
+
+        Path temp = top.resolve("tmp");
+
+        assertThat(RunIsolation.leaks(runs, home, top)).isEmpty();
+        assertThat(RunIsolation.requireIsolated(runs, home, temp, top)).isEqualTo(top.toRealPath().resolve("runs"));
+        assertThat(RunIsolation.defaultRunsDir(home, temp, top)).isEqualTo(top.toRealPath().resolve("home/.msc/bench-runs"));
+        Path realHome = machineHome.toRealPath();
+        assertThat(RunIsolation.leaks(runs, home)).as("without a top the walk reaches the file-system root")
+                .containsAll(RunIsolation.MARKERS.stream().map(realHome::resolve).toList());
+    }
+
+    @Test
+    void aRunFolderOutsideTheTopIsNotWalked() {
+        assertThat(catchThrowable(() -> RunIsolation.leaks(dir.getParent(), dir, dir)))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 }
