@@ -110,6 +110,19 @@ class TextureToolsTest {
     }
 
     @Test
+    void viewShowsATextureWithMoreColorsThanSymbols() throws Exception {
+        BufferedImage image = new BufferedImage(16, 16, BufferedImage.TYPE_INT_ARGB);
+        for (int i = 0; i < 73; i++) {
+            image.setRGB(i % 16, i / 16, 0xFF000000 | i * 3 << 16 | i << 8);
+        }
+        Path png = workspace.resolve(".msc/pack/assets/minecraft/textures/block/shaded.png");
+        Files.createDirectories(png.getParent());
+        ImageIO.write(image, "png", png.toFile());
+        assertThat(h.ok("texture_view", "name", "minecraft:block/shaded"))
+                .startsWith("73 colors merged to 72 to show them; the file is unchanged\n16x16\n");
+    }
+
+    @Test
     void mistakesAreReportedPrecisely() {
         assertThat(h.error("pack", "apply", false)).contains("the pack is empty");
         assertThat(h.error("texture", "name", "item/x", "palette", List.of("a=#000000"), "rows", List.of("ab")))

@@ -72,7 +72,7 @@ public final class TextureTools {
                     Texture t = source.readTexture(id);
                     Texture frame = firstFrame(source, id, t);
                     String note = frame == t ? "" : "frame 1 of " + (t.height() / t.width()) + "\n";
-                    return note + Budget.truncate(PaletteText.render(frame), Budget.MAX_CHARS, "Texture too large to show.");
+                    return note + Budget.truncate(PaletteText.view(frame), Budget.MAX_CHARS, "Texture too large to show.");
                 }));
         registry.add("model_create",
                 "Write a block or item model from pack textures, and optionally an item definition.",

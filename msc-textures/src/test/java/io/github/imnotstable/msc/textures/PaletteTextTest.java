@@ -19,6 +19,19 @@ class PaletteTextTest {
     }
 
     @Test
+    void viewMergesColorsBeyondTheSymbolsSoAnyTextureCanBeShown() {
+        Texture t = new Texture(16, 16);
+        for (int i = 0; i < 73; i++) {
+            t.set(i % 16, i / 16, 0xFF000000 | i * 3 << 16 | i << 8);
+        }
+        assertThatThrownBy(() -> PaletteText.render(t)).hasMessageContaining("more than 72 colors");
+        String text = PaletteText.view(t);
+        assertThat(text).startsWith("73 colors merged to 72 to show them; the file is unchanged\n16x16\n");
+        assertThat(PaletteText.view(PaletteText.parse(List.of("a=#3a0a12"), List.of("a.")))).isEqualTo(
+                "2x1\npalette: .=transparent a=#3a0a12\na.");
+    }
+
+    @Test
     void reportsBadInputInOneLine() {
         assertThatThrownBy(() -> PaletteText.parse(List.of("a=#000"), List.of("aa", "a")))
                 .hasMessage("row 2 has 1 pixels, expected 2");

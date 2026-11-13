@@ -122,13 +122,22 @@ public final class PackSource {
 
     /**
      * Write the model of {@code kind} that shows one texture, and its item definition, so the texture can be
-     * used through the {@code item_model} component.
+     * used through the {@code item_model} component. A model that already shows another texture
+     * ({@code block/ruby} and {@code item/ruby} share {@code item/ruby}) is never repointed.
      *
      * @return the {@code item_model} value
      */
     public String writeTextureModel(ResourceId texture, Models.Kind kind) throws IOException {
         ResourceId model = new ResourceId(texture.namespace(),
                 (kind.isItem() ? "item/" : "block/") + withoutFolder(texture.path()));
+        Path modelFile = modelPath(model);
+        if (Files.isRegularFile(modelFile)
+                && readJson(modelFile) instanceof JsonObject old && old.get("textures") instanceof JsonObject slots
+                && slots.get(kind.slots().getFirst()) instanceof JsonElement shown && shown.isJsonPrimitive()
+                && !shown.getAsString().equals(texture.toString())) {
+            throw new TextureException("model " + model + " already shows texture " + shown.getAsString()
+                    + "; give this one another name");
+        }
         return writeModel(model, kind, Map.of(kind.slots().getFirst(), texture), true);
     }
 

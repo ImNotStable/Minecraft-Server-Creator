@@ -60,6 +60,23 @@ public final class PaletteText {
         return t;
     }
 
+    /**
+     * {@link #render} for any texture: one with more opaque colours than there are symbols is shown with
+     * its closest colours merged, after a line that says so.
+     */
+    public static String view(Texture t) {
+        int colors = t.colors().size();
+        Texture shown = t;
+        for (int max = SYMBOLS.length(); shown.colors().size() > SYMBOLS.length() && max >= 1; max /= 2) {
+            shown = Edits.quantize(t, max);
+        }
+        if (shown == t) {
+            return render(t);
+        }
+        return colors + " colors merged to " + shown.colors().size() + " to show them; the file is unchanged\n"
+                + render(shown);
+    }
+
     /** The texture as a size line, a palette line and pixel rows. */
     public static String render(Texture t) {
         Map<Integer, Character> symbols = new LinkedHashMap<>();
@@ -75,7 +92,7 @@ public final class PaletteText {
                 Character c = symbols.get(argb);
                 if (c == null) {
                     if (symbols.size() >= SYMBOLS.length()) {
-                        throw new TextureException("texture has more than " + SYMBOLS.length() + " colors; reduce it with quantize first");
+                        throw new TextureException("texture has more than " + SYMBOLS.length() + " colors to show as text");
                     }
                     c = SYMBOLS.charAt(symbols.size());
                     symbols.put(argb, c);
