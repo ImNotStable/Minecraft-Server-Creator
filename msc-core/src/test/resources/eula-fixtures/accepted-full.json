@@ -1,0 +1,8 @@
+{
+  "eula": "https://aka.ms/MinecraftEULA",
+  "accepted": true,
+  "acceptedBy": "owner",
+  "host": "pc",
+  "acceptedAt": "2026-11-12T08:00:00Z",
+  "how": "ran installMsc with -Pmsc.acceptEula=true"
+}

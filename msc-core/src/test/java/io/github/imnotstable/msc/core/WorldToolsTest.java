@@ -8,6 +8,7 @@ import java.io.ByteArrayInputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import io.github.imnotstable.msc.protocol.op.Ops;
+import io.github.imnotstable.msc.protocol.world.Region;
 import java.util.List;
 import javax.imageio.ImageIO;
 import org.junit.jupiter.api.AfterEach;
@@ -210,14 +211,18 @@ class WorldToolsTest {
 
     @Test
     void largeFillIsSplitAndUndoneAsOneEdit() {
-        // 200 x 1 x 200: two 128-wide pieces per axis, so four agent calls behind one edit id.
+        // 200 x 1 x 200 = 40,000 blocks fits one agent call.
         assertThat(h.ok("build_batch", "steps", "fill 0,70,0 199,70,199 glass"))
                 .isEqualTo("edit e1: 40000 blocks changed, region world 0,70,0 199,70,199");
-        // Volume fits one call; widen past it to force a split.
-        assertThat(h.ok("build_batch", "steps", "fill 0,71,0 199,140,199 glass replace=air"))
-                .isEqualTo("edit e2: 2800000 blocks changed, region world 0,71,0 199,140,199");
-        assertThat(h.ok("build_undo", "edit", "e2")).isEqualTo("undid e2: 2800000 blocks restored");
-        assertThat(h.agent.get(150, 100, 150)).isEqualTo("minecraft:air");
+        // 129 x 64 x 128 is one column of blocks over the region limit: the smallest split, two agent calls.
+        h.agent.writes.clear();
+        assertThat(h.ok("build_batch", "steps", "fill 0,71,0 128,134,127 glass replace=air"))
+                .isEqualTo("edit e2: 1056768 blocks changed, region world 0,71,0 128,134,127");
+        assertThat(h.agent.writes).contains(Region.of("world", 0, 71, 0, 127, 134, 127),
+                Region.of("world", 128, 71, 0, 128, 134, 127));
+        assertThat(h.ok("build_undo", "edit", "e2")).isEqualTo("undid e2: 1056768 blocks restored");
+        assertThat(h.agent.get(0, 71, 0)).isEqualTo("minecraft:air");
+        assertThat(h.agent.get(128, 134, 127)).isEqualTo("minecraft:air");
         assertThat(h.agent.get(150, 70, 150)).isEqualTo("minecraft:glass");
     }
 

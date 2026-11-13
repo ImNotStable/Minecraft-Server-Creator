@@ -347,16 +347,24 @@ public final class WorldService {
                     + MAX_ENTITY_SIDE + "x" + MAX_ENTITY_SIDE + ". Use a smaller region.");
         }
         String full = type == null || type.isBlank() ? null : BlockNames.full(type.strip().toLowerCase(java.util.Locale.ROOT));
+        // Minestom lists every entity of the instance and has no forceload command (ADR 0010).
+        boolean loadedChunksOnly = !"minestom".equals(hub.require().agent().platform());
         Ops.EntitiesResult r = hub.call(Ops.WORLD_ENTITIES, new Ops.EntitiesParams(region, full, Math.max(1, limit)));
-        return Budget.truncate(formatEntities(r, full, ids, region), maxChars, "Pass type, a smaller region or a lower limit.");
+        return Budget.truncate(formatEntities(r, full, ids, region, loadedChunksOnly), maxChars, "Pass type, a smaller region or a lower limit.");
     }
 
-    /** The listing: a count line with totals per type, then one line per entity. */
-    static String formatEntities(Ops.EntitiesResult r, String type, boolean ids, Region region) {
+    /**
+     * The listing: a count line with totals per type, then one line per entity. {@code loadedChunksOnly} says the
+     * agent searches only loaded chunks, so an empty answer suggests forceloading them.
+     */
+    static String formatEntities(Ops.EntitiesResult r, String type, boolean ids, Region region, boolean loadedChunksOnly) {
         if (r.total() == 0) {
+            String none = "no " + (type == null ? "entities" : BlockNames.brief(type) + " entities") + " in the region";
+            if (!loadedChunksOnly) {
+                return none;
+            }
             // With no player online the region's chunks are usually unloaded, and their entities with them.
-            return "no " + (type == null ? "entities" : BlockNames.brief(type) + " entities")
-                    + " in the region. Only loaded chunks are searched, and with no player nearby they are unloaded: "
+            return none + ". Only loaded chunks are searched, and with no player nearby they are unloaded: "
                     + "server_command \"forceload add " + region.min().x() + " " + region.min().z() + " "
                     + region.max().x() + " " + region.max().z() + "\" loads them, then ask again";
         }

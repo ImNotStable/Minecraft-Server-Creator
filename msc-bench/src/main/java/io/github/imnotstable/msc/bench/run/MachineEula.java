@@ -6,6 +6,8 @@ import com.google.gson.JsonParser;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Instant;
+import java.time.format.DateTimeParseException;
 
 /**
  * Reads the owner's one-time Minecraft EULA acceptance that msc-core keeps in {@code ~/.msc/eula.json} (written only
@@ -24,7 +26,10 @@ public final class MachineEula {
         return home.resolve(".msc").resolve("eula.json");
     }
 
-    /** True when the file holds an acceptance in msc-core's format. */
+    /**
+     * True when the file holds an acceptance in msc-core's format, by the same rule as msc-core's
+     * {@code MachineEula.read}; both are tested against msc-core's {@code eula-fixtures}.
+     */
     public static boolean accepted(Path home) {
         Path file = file(home);
         if (!Files.isRegularFile(file)) {
@@ -34,8 +39,9 @@ public final class MachineEula {
             JsonObject o = JsonParser.parseString(Files.readString(file)).getAsJsonObject();
             return o.has("accepted") && o.get("accepted").getAsBoolean()
                     && o.has("eula") && EULA_URL.equals(o.get("eula").getAsString())
-                    && o.has("acceptedBy") && o.has("acceptedAt");
-        } catch (IOException | JsonParseException | IllegalStateException | UnsupportedOperationException e) {
+                    && o.has("acceptedBy") && o.has("acceptedAt") && Instant.parse(o.get("acceptedAt").getAsString()) != null;
+        } catch (IOException | JsonParseException | IllegalStateException | UnsupportedOperationException
+                 | DateTimeParseException e) {
             return false;
         }
     }
