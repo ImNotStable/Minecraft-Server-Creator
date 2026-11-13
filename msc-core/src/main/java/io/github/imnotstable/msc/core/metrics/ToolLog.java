@@ -23,11 +23,16 @@ public final class ToolLog {
         }
     }
 
-    private final Path file;
+    private Path file;
     private final Map<String, Totals> totals = new TreeMap<>();
 
     /** @param file where to append, or null to keep totals only */
     public ToolLog(Path file) {
+        this.file = file;
+    }
+
+    /** Appends to {@code file} from now on (a workspace switch); the session's totals are kept. */
+    public synchronized void moveTo(Path file) {
         this.file = file;
     }
 

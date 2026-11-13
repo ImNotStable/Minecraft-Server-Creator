@@ -154,6 +154,7 @@ public final class Core implements AutoCloseable {
                         + old.config().workspace());
             }
             bench = next;
+            log.moveTo(next.config().toolLog());
             StringBuilder out = new StringBuilder("workspace: ").append(target);
             if (detached) {
                 out.append("\nthe detached server of ").append(old.config().workspace()).append(" keeps running");
