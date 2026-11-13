@@ -10,8 +10,14 @@ import java.util.Map;
  * The blocks an edit replaced, so the edit can be undone. States are kept in a palette.
  *
  * @param <S> the platform's block state type
+ * @param blockEntities by index into {@code positions}, the block entity data the platform keeps outside the state
  */
-public record UndoRecord<S>(String world, long[] positions, int[] states, List<S> palette) {
+public record UndoRecord<S>(String world, long[] positions, int[] states, List<S> palette,
+        Map<Integer, Object> blockEntities) {
+
+    public UndoRecord(String world, long[] positions, int[] states, List<S> palette) {
+        this(world, positions, states, palette, Map.of());
+    }
 
     public int size() {
         return positions.length;
@@ -48,6 +54,11 @@ public record UndoRecord<S>(String world, long[] positions, int[] states, List<S
             }
 
             @Override
+            public Object blockEntity() {
+                return blockEntities.get(i);
+            }
+
+            @Override
             public long size() {
                 return positions.length;
             }
@@ -62,6 +73,7 @@ public record UndoRecord<S>(String world, long[] positions, int[] states, List<S
         private int size;
         private final Map<S, Integer> index = new HashMap<>();
         private final List<S> palette = new ArrayList<>();
+        private final Map<Integer, Object> blockEntities = new HashMap<>();
 
         public Builder(String world, long expected) {
             this.world = world;
@@ -71,6 +83,11 @@ public record UndoRecord<S>(String world, long[] positions, int[] states, List<S
         }
 
         public void add(int x, int y, int z, S previous) {
+            add(x, y, z, previous, null);
+        }
+
+        /** As {@link #add(int, int, int, Object)}, with the block entity data {@code previous} leaves out. */
+        public void add(int x, int y, int z, S previous, Object blockEntity) {
             if (size == positions.length) {
                 positions = Arrays.copyOf(positions, size * 2);
                 states = Arrays.copyOf(states, size * 2);
@@ -83,6 +100,9 @@ public record UndoRecord<S>(String world, long[] positions, int[] states, List<S
             }
             positions[size] = PackedPos.pack(x, y, z);
             states[size] = id;
+            if (blockEntity != null) {
+                blockEntities.put(size, blockEntity);
+            }
             size++;
         }
 
@@ -91,7 +111,8 @@ public record UndoRecord<S>(String world, long[] positions, int[] states, List<S
         }
 
         public UndoRecord<S> build() {
-            return new UndoRecord<>(world, Arrays.copyOf(positions, size), Arrays.copyOf(states, size), List.copyOf(palette));
+            return new UndoRecord<>(world, Arrays.copyOf(positions, size), Arrays.copyOf(states, size), List.copyOf(palette),
+                    Map.copyOf(blockEntities));
         }
     }
 }

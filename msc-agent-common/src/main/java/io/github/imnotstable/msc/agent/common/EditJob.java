@@ -30,8 +30,12 @@ public final class EditJob<S> implements SlicedJob<UndoRecord<S>> {
             S target = changes.target();
             S current = world.get(x, y, z);
             if (!world.sameState(current, target)) {
-                undo.add(x, y, z, current);
+                undo.add(x, y, z, current, world.blockEntity(x, y, z));
                 world.set(x, y, z, target, physics);
+                Object data = changes.blockEntity();
+                if (data != null) {
+                    world.loadBlockEntity(x, y, z, data);
+                }
             }
             if (++n % CHECK_EVERY == 0 && System.nanoTime() - deadlineNanos > 0) {
                 return false;

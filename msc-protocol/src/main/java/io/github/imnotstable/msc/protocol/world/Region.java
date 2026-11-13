@@ -55,6 +55,14 @@ public record Region(String world, BlockPos min, BlockPos max) {
         return x >= min.x() && x <= max.x() && y >= min.y() && y <= max.y() && z >= min.z() && z <= max.z();
     }
 
+    /**
+     * Whether the point lies in one of this region's blocks: the rule every agent uses for entities, by position and
+     * not by hitbox, so a region split into pieces holds each entity in exactly one piece.
+     */
+    public boolean containsPoint(double x, double y, double z) {
+        return x >= min.x() && x < max.x() + 1 && y >= min.y() && y < max.y() + 1 && z >= min.z() && z < max.z() + 1;
+    }
+
     /** Index into a Y-Z-X ordered block array for the world position (x, y, z). */
     public int index(int x, int y, int z) {
         if (!contains(x, y, z)) {

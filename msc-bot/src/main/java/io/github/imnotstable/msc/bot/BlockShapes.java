@@ -7,7 +7,8 @@ import java.util.Set;
 
 /**
  * Collision boxes of block states, inside the unit cube. An approximation of vanilla's shapes that is good enough
- * to walk and jump: thin and odd shapes (panes, fences, doors) are simplified, unknown blocks are full cubes.
+ * to walk and jump: thin and odd shapes (panes, fences, doors) are simplified, unknown blocks are full cubes. The only
+ * table of which blocks a player passes: the core's route search reads it through {@link Footing}.
  */
 final class BlockShapes {
     private static final List<Box> FULL = List.of(new Box(0, 0, 0, 1, 1, 1));
@@ -23,9 +24,10 @@ final class BlockShapes {
             "lily_of_the_valley", "wither_rose", "torchflower", "sunflower", "lilac", "rose_bush", "peony",
             "brown_mushroom", "red_mushroom", "glow_lichen", "hanging_roots", "spore_blossom",
             "pink_petals", "wildflowers", "leaf_litter", "firefly_bush", "crimson_roots", "warped_roots",
-            "nether_sprouts", "weeping_vines", "twisting_vines", "cave_vines", "cave_vines_plant", "big_dripleaf_stem",
+            "nether_sprouts", "weeping_vines", "weeping_vines_plant", "twisting_vines", "twisting_vines_plant", "cave_vines", "cave_vines_plant", "big_dripleaf_stem",
             "small_dripleaf", "pitcher_plant", "rail", "powered_rail", "detector_rail", "activator_rail", "sculk_vein",
-            "resin_clump", "tripwire_string", "pale_hanging_moss", "open_eyeblossom", "closed_eyeblossom");
+            "resin_clump", "tripwire_string", "pale_hanging_moss", "open_eyeblossom", "closed_eyeblossom",
+            "cactus_flower");
     private static final Map<String, Double> HEIGHT = new HashMap<>(Map.of("farmland", 15 / 16.0, "dirt_path",
             15 / 16.0, "soul_sand", 7 / 8.0, "mud", 7 / 8.0, "chest", 7 / 8.0, "trapped_chest", 7 / 8.0,
             "ender_chest", 7 / 8.0, "enchanting_table", 0.75, "stonecutter", 9 / 16.0, "daylight_detector", 6 / 16.0));
@@ -40,8 +42,11 @@ final class BlockShapes {
         if (PASSABLE.contains(name) || name.endsWith("_sapling") || name.endsWith("_button")
                 || name.endsWith("_pressure_plate") || name.endsWith("_sign") || name.endsWith("_banner")
                 || name.endsWith("_coral_fan") || name.endsWith("_coral") || name.endsWith("_tulip")
-                || name.endsWith("_wall_torch")) {
+                || name.endsWith("_wall_torch") || name.endsWith("_fungus") || name.endsWith("_propagule")) {
             return NONE;
+        }
+        if (name.equals("candle") || name.endsWith("_candle")) {
+            return List.of(new Box(0, 0, 0, 1, 6 / 16.0, 1));
         }
         if (name.endsWith("_carpet") || name.equals("moss_carpet")) {
             return List.of(new Box(0, 0, 0, 1, 1 / 16.0, 1));

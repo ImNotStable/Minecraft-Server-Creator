@@ -1,5 +1,6 @@
 package io.github.imnotstable.msc.core.world;
 
+import io.github.imnotstable.msc.bot.Footing;
 import io.github.imnotstable.msc.core.tool.ToolException;
 import io.github.imnotstable.msc.protocol.world.BlockGrid;
 import io.github.imnotstable.msc.protocol.world.BlockPos;
@@ -13,9 +14,10 @@ import java.util.Set;
 /**
  * Can a player walk and jump from one place to another? A search over the blocks of one region, with the moves a
  * survival player makes without tools: walk, step up one block, drop up to {@link #SAFE_DROP} blocks, jump a gap of
- * up to {@link #FLAT_GAP} blocks (one less going up), climb ladders and vines, swim. Block shapes are judged by name,
- * so this is a check for builders, not a physics engine: carpets, flowers and signs are walked through, fences and
- * walls cannot be jumped onto, doors and fence gates open, iron doors do not.
+ * up to {@link #FLAT_GAP} blocks (one less going up), climb ladders and vines, swim. Block shapes come from the test
+ * player's own table ({@link Footing}), whole blocks at a time, so this is a check for builders, not a physics engine:
+ * carpets, flowers and signs are walked through, fences and walls cannot be jumped onto, closed doors and fence gates
+ * are in the way (the route opens nothing).
  */
 public final class Walk {
     /** Highest drop without fall damage. */
@@ -32,24 +34,11 @@ public final class Walk {
     /** Solid, and low enough to walk onto without a jump: stairs and bottom slabs. */
     private static final byte STEP = 5;
 
-    private static final Set<String> OPEN_IDS = Set.of("air", "cave_air", "void_air", "short_grass", "tall_grass",
-            "fern", "large_fern", "dead_bush", "glow_lichen", "light", "structure_void", "redstone_wire", "tripwire",
-            "tripwire_hook", "lever", "sugar_cane", "cobweb", "snow", "seagrass", "tall_seagrass", "nether_portal",
-            "hanging_roots", "pink_petals", "sweet_berry_bush", "wheat", "carrots", "potatoes", "beetroots",
-            "nether_wart", "cocoa", "dandelion", "poppy", "blue_orchid", "allium", "azure_bluet", "oxeye_daisy",
-            "cornflower", "lily_of_the_valley", "wither_rose", "sunflower", "lilac", "rose_bush", "peony",
-            "torchflower", "pitcher_plant", "spore_blossom", "small_dripleaf", "brown_mushroom", "red_mushroom",
-            "moss_carpet", "pale_moss_carpet", "leaf_litter", "short_dry_grass", "tall_dry_grass", "bush",
-            "firefly_bush", "wildflowers", "cactus_flower", "end_rod", "string", "torch", "rail", "candle");
-    /** Full blocks whose names end with an open suffix. */
-    private static final Set<String> SOLID_IDS = Set.of("mangrove_roots", "muddy_mangrove_roots");
-    private static final Set<String> CLIMB_IDS = Set.of("ladder", "vine", "scaffolding", "water", "bubble_column",
-            "twisting_vines", "twisting_vines_plant", "weeping_vines", "weeping_vines_plant", "cave_vines",
-            "cave_vines_plant", "kelp", "kelp_plant");
+    /** Passable blocks a player climbs or swims in. */
+    private static final Set<String> CLIMB_IDS = Set.of("ladder", "vine", "water", "bubble_column", "twisting_vines",
+            "twisting_vines_plant", "weeping_vines", "weeping_vines_plant", "cave_vines", "cave_vines_plant", "kelp",
+            "kelp_plant");
     private static final Set<String> DEADLY_IDS = Set.of("lava", "fire", "soul_fire", "powder_snow");
-    private static final List<String> OPEN_SUFFIXES = List.of("_sapling", "_sign", "_banner", "_button",
-            "_pressure_plate", "_carpet", "_torch", "_tulip", "_rail", "_roots", "_fungus", "_sprouts", "_coral",
-            "_coral_fan", "_propagule", "_candle", "_fence_gate", "_door");
 
     private final BlockGrid grid;
     private final Region region;
@@ -69,7 +58,10 @@ public final class Walk {
         }
     }
 
-    /** How a block behaves for a walking player, judged from its name and properties. */
+    /**
+     * How a block behaves for a walking player: by its collision shape from msc-bot's {@link Footing}, the one table
+     * the test player also moves by, then climbing and danger by name.
+     */
     static byte classify(String state) {
         String id = BlockNames.brief(BlockNames.id(state));
         if (id.contains(":")) {
@@ -78,35 +70,17 @@ public final class Walk {
         if (DEADLY_IDS.contains(id)) {
             return DEADLY;
         }
-        if (CLIMB_IDS.contains(id) || state.contains("waterlogged=true") && !isSolidShape(id)) {
+        Footing footing = Footing.of(state);
+        if (footing == Footing.OPEN && (CLIMB_IDS.contains(id) || state.contains("waterlogged=true")
+                || id.endsWith("_trapdoor"))) {
             return CLIMB;
         }
-        if (OPEN_IDS.contains(id)) {
-            return OPEN;
-        }
-        if (id.equals("iron_door") || id.equals("iron_trapdoor") || SOLID_IDS.contains(id)) {
-            return SOLID;
-        }
-        if (id.endsWith("_trapdoor")) {
-            return state.contains("open=true") ? CLIMB : SOLID;
-        }
-        for (String suffix : OPEN_SUFFIXES) {
-            if (id.endsWith(suffix) && !id.endsWith("_block")) {
-                return OPEN;
-            }
-        }
-        if (id.endsWith("_fence") || id.endsWith("_wall") || id.equals("iron_bars") || id.endsWith("_pane")) {
-            return TALL;
-        }
-        if (id.endsWith("_stairs") || id.endsWith("_slab") && !state.contains("type=top")
-                && !state.contains("type=double")) {
-            return STEP;
-        }
-        return SOLID;
-    }
-
-    private static boolean isSolidShape(String id) {
-        return id.endsWith("_stairs") || id.endsWith("_slab") || id.endsWith("_fence") || id.endsWith("_wall");
+        return switch (footing) {
+            case OPEN -> OPEN;
+            case STEP -> STEP;
+            case SOLID -> SOLID;
+            case TALL -> TALL;
+        };
     }
 
     private byte at(int x, int y, int z) {
@@ -417,6 +391,9 @@ public final class Walk {
                         .append(Coords.show(new BlockPos(x, y + h, z)));
                 if (what.equals("iron_door")) {
                     return out.append(" (opens only with redstone)").toString();
+                }
+                if (what.endsWith("_door") || what.endsWith("_fence_gate")) {
+                    return out.append(" (closed; a walk opens nothing)").toString();
                 }
                 if (h == 0 && height == 1 && at(x, y, z) == TALL) {
                     return out.append(" (fences and walls are too tall to jump onto)").toString();

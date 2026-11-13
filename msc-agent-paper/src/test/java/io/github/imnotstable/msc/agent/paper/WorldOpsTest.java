@@ -18,10 +18,12 @@ import net.kyori.adventure.text.Component;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.World;
+import org.bukkit.block.Chest;
 import org.bukkit.block.Sign;
 import org.bukkit.block.sign.Side;
 import org.bukkit.entity.EntityType;
 import org.bukkit.entity.Zombie;
+import org.bukkit.inventory.ItemStack;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -135,6 +137,26 @@ class WorldOpsTest {
     }
 
     @Test
+    void undoPutsBackSignTextAndChestContents() {
+        world.getBlockAt(1, 70, 1).setType(Material.OAK_SIGN);
+        Sign sign = (Sign) world.getBlockAt(1, 70, 1).getState();
+        sign.getSide(Side.FRONT).line(0, Component.text("Shop"));
+        sign.update(true, false);
+        world.getBlockAt(2, 70, 1).setType(Material.CHEST);
+        Chest chest = (Chest) world.getBlockAt(2, 70, 1).getState();
+        chest.getSnapshotInventory().setItem(3, new ItemStack(Material.DIAMOND, 5));
+        chest.update(true, false);
+
+        Ops.EditResult fill = fill(box(0, 70, 0, 3, 70, 3), "minecraft:stone");
+        ops.undo(new Ops.UndoParams(fill.editId()));
+
+        assertThat(ops.read(new Ops.ReadParams(box(1, 70, 1, 1, 70, 1), false, true)).signs())
+                .containsExactly(new Ops.SignText(1, 70, 1, List.of("Shop", "", "", ""), null));
+        assertThat(((Chest) world.getBlockAt(2, 70, 1).getState()).getSnapshotInventory().getItem(3))
+                .isEqualTo(new ItemStack(Material.DIAMOND, 5));
+    }
+
+    @Test
     void readReportsSignTextOnlyWhenAsked() {
         world.getBlockAt(1, 70, 1).setType(Material.OAK_SIGN);
         Sign sign = (Sign) world.getBlockAt(1, 70, 1).getState();
@@ -193,6 +215,20 @@ class WorldOpsTest {
         assertThat(zombies.total()).isEqualTo(2);
         assertThat(zombies.entities()).hasSize(1);
         assertThat(zombies.entities().getFirst().x()).isEqualTo(1.5);
+    }
+
+    @Test
+    void anEntityBelongsToTheRegionHoldingItsPositionNotItsHitbox() {
+        // The zombie's hitbox (0.6 wide) spans x = 9.9 to 10.5, across the edge between the two halves.
+        world.spawnEntity(new Location(world, 10.2, 70, 2.5), EntityType.ZOMBIE);
+
+        Ops.EntitiesResult left = ops.entities(new Ops.EntitiesParams(box(0, 60, 0, 9, 80, 10), null, 0));
+        Ops.EntitiesResult right = ops.entities(new Ops.EntitiesParams(box(10, 60, 0, 19, 80, 10), null, 0));
+        List<Ops.EntitySummary> read = ops.read(new Ops.ReadParams(box(0, 69, 0, 9, 71, 9), true)).entities();
+
+        assertThat(left.total()).isZero();
+        assertThat(read).isEmpty();
+        assertThat(right.total()).isEqualTo(1);
     }
 
     @Test

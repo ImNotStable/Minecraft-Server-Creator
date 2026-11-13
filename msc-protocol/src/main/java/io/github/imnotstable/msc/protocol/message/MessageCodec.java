@@ -24,6 +24,7 @@ public final class MessageCodec {
             "ping", Ping.class,
             "pong", Pong.class);
 
+    private static final String TYPE_PREFIX = "{\"type\":\"";
     private static final Gson GSON = new GsonBuilder().disableHtmlEscaping().create();
 
     private MessageCodec() {
@@ -34,17 +35,42 @@ public final class MessageCodec {
         return GSON;
     }
 
+    /**
+     * The message as one line with {@code type} first. Written straight from the record: building a tree first
+     * would copy a large result (a million blocks) once more.
+     */
     public static String encode(Message message) {
-        JsonObject body = GSON.toJsonTree(message).getAsJsonObject();
-        JsonObject out = new JsonObject();
-        out.addProperty("type", typeOf(message));
-        for (Map.Entry<String, JsonElement> e : body.entrySet()) {
-            out.add(e.getKey(), e.getValue());
-        }
-        return GSON.toJson(out);
+        String body = GSON.toJson(message);
+        String type = "{\"type\":\"" + typeOf(message) + '"';
+        return body.equals("{}") ? type + '}' : type + ',' + body.substring(1);
     }
 
+    /**
+     * The message on a line. A line that starts with its {@code type}, as {@link #encode} writes it, is read straight
+     * into its record; any other line, or one that fails that way, goes through a JSON tree, which also names what
+     * is wrong.
+     */
     public static Message decode(String line) throws ProtocolException {
+        if (line.startsWith(TYPE_PREFIX)) {
+            int close = line.indexOf('"', TYPE_PREFIX.length());
+            Class<? extends Message> cls = close < 0 ? null : TYPES.get(line.substring(TYPE_PREFIX.length(), close));
+            char next = cls == null || close + 1 >= line.length() ? 0 : line.charAt(close + 1);
+            if (next == ',' || next == '}') {
+                try {
+                    String body = "{" + line.substring(next == '}' ? close + 1 : close + 2);
+                    Message message = GSON.fromJson(body, cls);
+                    if (message != null) {
+                        return message;
+                    }
+                } catch (RuntimeException e) {
+                    // fall through: the tree path gives the precise error
+                }
+            }
+        }
+        return decodeTree(line);
+    }
+
+    private static Message decodeTree(String line) throws ProtocolException {
         JsonObject obj;
         try {
             JsonElement parsed = JsonParser.parseString(line);

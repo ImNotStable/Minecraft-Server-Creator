@@ -17,6 +17,11 @@ public interface ChangeSource<S> {
 
     S target();
 
+    /** Block entity data to load after the target is set (an undo puts a sign's text back), or null. */
+    default Object blockEntity() {
+        return null;
+    }
+
     /** Upper bound on the number of changes, used to size buffers. */
     long size();
 }
