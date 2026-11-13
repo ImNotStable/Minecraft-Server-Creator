@@ -31,6 +31,22 @@ public final class EditHistory<S> {
         if (record.size() > maxBlocks) {
             return id;
         }
+        keep(id, record);
+        return id;
+    }
+
+    /**
+     * Put back a record {@link #take} returned, under its old id, when its undo failed, so that a
+     * retry can undo the rest. Re-running a half-applied record is safe: blocks already restored
+     * are skipped.
+     */
+    public synchronized void putBack(String id, UndoRecord<S> record) {
+        if (record.size() <= maxBlocks && !edits.containsKey(id)) {
+            keep(id, record);
+        }
+    }
+
+    private void keep(String id, UndoRecord<S> record) {
         edits.put(id, record);
         blocks += record.size();
         Iterator<UndoRecord<S>> oldest = edits.values().iterator();
@@ -38,7 +54,6 @@ public final class EditHistory<S> {
             blocks -= oldest.next().size();
             oldest.remove();
         }
-        return id;
     }
 
     /** Remove and return an edit, so it can be undone once. */
