@@ -6,7 +6,7 @@ A toolset that helps an AI develop custom Minecraft servers. One Gradle monorepo
 
 - Java 25 (Gradle downloads it if missing), Gradle 9.9 wrapper, Kotlin DSL.
 - `./gradlew build` builds and tests everything. `./gradlew :msc-protocol:test` for one module.
-- Versions live only in `gradle/libs.versions.toml`. Shared build setup lives in `build-logic/` (`msc.java-conventions`, `msc.application-conventions`).
+- Versions live only in `gradle/libs.versions.toml`. Shared build setup lives in `build-logic/` (`msc.java-conventions`, `msc.application-conventions`, `msc.previous-protocol`).
 - `-Xlint:all -Werror` is on: fix warnings, don't suppress them broadly.
 
 ## Code
