@@ -85,7 +85,46 @@ class LogCondenserTest {
                 "[14:03:39] [Server thread/WARN] [ne.mi.co.ForgeMod/CORE]: Something worth reading",
                 "[14:03:40] [Server thread/INFO] [minecraft/DedicatedServer]: Done (3.1s)! For help, type \"help\"");
         assertThat(LogCondenser.condense(log, 6000))
-                .isEqualTo("5 lines, 0 errors, 1 warnings\n14:03:39 WARN Something worth reading");
+                .isEqualTo("5 lines, 0 errors, 1 warnings, 3 known-harmless hidden\n14:03:39 WARN Something worth reading");
+    }
+
+    @Test
+    void windowsLoaderStartupNoiseIsDroppedAndCounted() {
+        List<String> log = List.of(
+                // NeoForge and Forge on Windows: netty probes the macOS and Linux native transports.
+                "[14:03:30] [main/ERROR] [io.ne.ch.kq.KQueue/]: KQueue support is not available",
+                "java.lang.NoClassDefFoundError: Could not initialize class io.netty.channel.kqueue.Native",
+                "\tat io.netty.channel.kqueue.KQueue.<clinit>(KQueue.java:39) ~[netty-transport-classes-kqueue.jar:?]",
+                "Caused by: java.lang.ExceptionInInitializerError: Exception java.lang.IllegalStateException: Only supported on OSX/BSD [in thread \"main\"]",
+                "\tat io.netty.channel.kqueue.Native.<clinit>(Native.java:62) ~[netty-transport-classes-kqueue.jar:?]",
+                "[14:03:30] [main/DEBUG] [io.ne.ch.ep.Epoll/]: Epoll support is not available",
+                "java.lang.NoClassDefFoundError: Could not initialize class io.netty.channel.epoll.Native",
+                "\tat io.netty.channel.epoll.Epoll.<clinit>(Epoll.java:40) ~[netty-transport-classes-epoll.jar:?]",
+                "Caused by: java.lang.IllegalStateException: Only supported on Linux",
+                // Forge's first start writes its config files.
+                "[14:03:31] [main/WARN] [ne.mi.fm.co.ConfigFileTypeHandler/CONFIG]: Configuration file C:\\srv\\config\\fml.toml is not correct. Correcting",
+                "[14:03:31] [main/WARN] [ne.mi.fm.co.ConfigSpec/CORE]: Incorrect key earlyWindowControl was corrected from null to its default, true. ",
+                "[14:03:33] [Worker-Main-2/WARN] [ne.mi.re.pa.ResourcePackLoader/]: Missing metadata in pack mod:mymod",
+                // Fabric and Quilt print oshi's message without its logger.
+                "[14:03:34] [Server thread/ERROR]: Unable to locate English counter names in registry Perflib 009",
+                "com.sun.jna.platform.win32.Win32Exception: The parameter is incorrect.",
+                "\tat com.sun.jna.platform.win32.Advapi32Util.registryGetValue(Advapi32Util.java:1104) ~[jna-platform.jar:?]",
+                "[14:03:34] [Server thread/WARN]: Unable to locate English counter names in registry Perflib 009. Assuming English counters.",
+                "[14:03:35] [Server thread/WARN] [ne.mi.co.ConfigSpec/CORE]: Incorrect key arena.size was corrected from 500 to its default, 64.",
+                "[14:03:40] [Server thread/INFO] [minecraft/DedicatedServer]: Done (3.1s)! For help, type \"help\"");
+        LogCondenser.Condensed c = LogCondenser.analyze(log, 6000);
+        assertThat(c.text()).isEqualTo("18 lines, 0 errors, 1 warnings, 7 known-harmless hidden\n"
+                + "14:03:35 WARN Incorrect key arena.size was corrected from 500 to its default, 64.");
+        assertThat(c.hidden()).isEqualTo(7);
+    }
+
+    @Test
+    void aNettyErrorThatIsNotTheNativeProbeIsKept() {
+        List<String> log = List.of(
+                "[14:03:30] [Server thread/ERROR] [io.ne.ch.DefaultChannelPipeline/]: An exceptionCaught() event was fired",
+                "java.lang.IllegalStateException: boom",
+                "\tat io.netty.channel.epoll.EpollEventLoop.run(EpollEventLoop.java:1) ~[netty.jar:?]");
+        assertThat(LogCondenser.analyze(log, 6000).errors()).isEqualTo(1);
     }
 
     @Test

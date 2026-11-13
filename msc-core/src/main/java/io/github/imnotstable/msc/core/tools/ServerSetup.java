@@ -18,6 +18,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Stream;
@@ -67,11 +68,11 @@ final class ServerSetup {
                     + "the msc agent is built into it. Server directory: " + dir + "; next: dev_cycle";
         }
         StringBuilder out = new StringBuilder();
-        if (isEmpty(dir) && Templates.ids().contains(Templates.PAPER_SERVER)) {
-            // paper-server holds plain vanilla server config (server.properties, eula.txt), so every platform uses it.
-            ScaffoldResult defaults = Templates.scaffold(Templates.PAPER_SERVER, dir,
-                    TemplateVariables.of("server").withAcceptEula(acceptEula));
-            out.append("wrote ").append(defaults.files().size()).append(" default config files\n");
+        if (Templates.ids().contains(Templates.PAPER_SERVER)) {
+            int written = writeMissingDefaults(dir, acceptEula);
+            if (written > 0) {
+                out.append("wrote ").append(written).append(" default config files\n");
+            }
         }
         if (mode != null) {
             ServerProperties.set(dir.resolve("server.properties"), mode.settings());
@@ -93,12 +94,32 @@ final class ServerSetup {
         return out.toString();
     }
 
-    private static boolean isEmpty(Path dir) throws IOException {
-        if (!Files.exists(dir)) {
-            return true;
-        }
-        try (Stream<Path> list = Files.list(dir)) {
-            return list.findAny().isEmpty();
+    /**
+     * Writes each paper-server default (plain vanilla config: server.properties, eula.txt, so every platform uses it)
+     * that {@code dir} lacks. Per file, not per folder: dev_cycle or server_start acceptEula=true may have put
+     * something in {@code run/} before the first server_setup.
+     */
+    private int writeMissingDefaults(Path dir, boolean acceptEula) throws IOException {
+        Path staging = Files.createTempDirectory(Files.createDirectories(config.dataDir()), "server-defaults-");
+        try {
+            ScaffoldResult defaults = Templates.scaffold(Templates.PAPER_SERVER, staging.resolve("server"),
+                    TemplateVariables.of("server").withAcceptEula(acceptEula));
+            int written = 0;
+            for (Path file : defaults.files()) {
+                Path target = dir.resolve(defaults.root().relativize(file).toString());
+                if (!Files.exists(target)) {
+                    Files.createDirectories(target.getParent());
+                    Files.move(file, target);
+                    written++;
+                }
+            }
+            return written;
+        } finally {
+            try (Stream<Path> tree = Files.walk(staging)) {
+                for (Path p : tree.sorted(Comparator.reverseOrder()).toList()) {
+                    Files.delete(p);
+                }
+            }
         }
     }
 

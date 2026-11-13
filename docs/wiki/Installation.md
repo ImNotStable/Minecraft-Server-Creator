@@ -27,7 +27,7 @@ You do not need to install Java 25 yourself. The build downloads it if it is mis
 
    On Windows: `gradlew.bat :msc-core:installMsc`. The first run downloads Gradle, Java and libraries, so it can take a few minutes.
 
-   This puts MSC and its Paper and Fabric agents in a new folder under `~/.msc/core`, for example `~/.msc/core/msc-core-0.2.0-20261112-080000`.
+   This puts MSC and its agents (Paper, Fabric, NeoForge and Forge; Minestom's comes with its template) in a new folder under `~/.msc/core`, for example `~/.msc/core/msc-core-0.2.0-20261112-080000`.
 
 3. Add the plugin. In Claude Code (any folder), run these once:
 
@@ -59,12 +59,12 @@ MSC works in whatever folder you start Claude Code in, so each server gets its o
 Use this if you'd rather not build MSC. You need **Java 25** installed yourself (check with `java -version`), plus Claude Code.
 
 1. Open the [latest release](https://github.com/ImNotStable/Minecraft-Server-Creator/releases/latest). You need to be signed in to GitHub with access to the repo.
-2. Download `msc-core-0.1.0.zip` and unzip it into `~/.msc/core` (make the folder if needed). You get a folder `~/.msc/core/msc-core-0.1.0` with `bin/`, `lib/` and `agents/` (the Paper and Fabric agents, found automatically).
+2. Download `msc-core-<version>.zip` (for example `msc-core-0.5.0.zip`) and unzip it into `~/.msc/core` (make the folder if needed). You get a folder `~/.msc/core/msc-core-<version>` with `bin/`, `lib/` and `agents/` (the Paper, Fabric, NeoForge and Forge agents, found automatically).
 3. Add the plugin as in step 3 above. The launcher finds the unzipped folder by itself and runs it with your Java 25 (the `java` on PATH, else `JAVA_HOME`, else set `MSC_CORE_JAVA` to a Java 25 `java`).
 
 4. Continue with steps 4 and 5 above: start `claude` in an empty folder and ask for `msc_status`.
 
-The release also has the agents as separate jars (`msc-agent-paper`, `msc-agent-fabric`, `msc-agent-minestom`) and `SHA256SUMS.txt` to check the downloads. You only need those if you want an agent on its own.
+The release also has the agents as separate jars (`msc-agent-paper`, `msc-agent-fabric`, `msc-agent-neoforge`, `msc-agent-forge`, `msc-agent-minestom`) and `SHA256SUMS.txt` to check the downloads. You only need those if you want an agent on its own.
 
 To update: unzip the new release into `~/.msc/core` too, then reconnect msc in `/mcp`. The launcher runs whichever install it saw last.
 

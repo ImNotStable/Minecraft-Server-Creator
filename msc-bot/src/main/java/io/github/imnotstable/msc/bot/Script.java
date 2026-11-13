@@ -72,9 +72,17 @@ final class Script {
             result.complete(r);
         }
 
-        String await() throws InterruptedException {
+        /** The result once the step has finished, else null. */
+        String resultNow() {
+            return result.getNow(null);
+        }
+
+        /** How long a step may take: its own limit and some slack for a slow server. */
+        static final java.time.Duration WAIT = java.time.Duration.ofSeconds(MAX_TICKS / 20 + 10);
+
+        String await(java.time.Duration wait) throws InterruptedException {
             try {
-                return result.get(MAX_TICKS / 20 + 10, TimeUnit.SECONDS);
+                return result.get(wait.toMillis(), TimeUnit.MILLISECONDS);
             } catch (ExecutionException e) {
                 return "error: " + e.getCause();
             } catch (TimeoutException e) {
@@ -197,10 +205,7 @@ final class Script {
             }
             case "tp" -> {
                 double[] v = numbers(arg(w, line), 3, 3, line);
-                yield once(line, p -> {
-                    p.chat("/tp " + p.name() + " " + v[0] + " " + v[1] + " " + v[2]);
-                    return "sent";
-                }, 10);
+                yield new Teleport(line, v[0], v[1], v[2]);
             }
             case "entities" -> once(line, p -> {
                 List<String> near = p.nearby(8);
@@ -284,6 +289,39 @@ final class Script {
         boolean check(TestPlayer p) {
             if (elapsed(p) >= ticks) {
                 finish(String.format("waited %.1fs", ticks / 20.0));
+            }
+            return super.check(p);
+        }
+    }
+
+    /** {@code /tp} the player, then wait for the server to move it: a server without the command answers nothing. */
+    static final class Teleport extends Step {
+        private static final int WAIT_TICKS = 20;
+        private final double x;
+        private final double y;
+        private final double z;
+        private long moves;
+
+        Teleport(String text, double x, double y, double z) {
+            super(text);
+            this.x = x;
+            this.y = y;
+            this.z = z;
+        }
+
+        @Override
+        void start(TestPlayer p) {
+            super.start(p);
+            moves = p.serverMoves();
+            p.chat("/tp " + p.name() + " " + x + " " + y + " " + z);
+        }
+
+        @Override
+        boolean check(TestPlayer p) {
+            if (p.serverMoves() > moves) {
+                finish(String.format("moved to %.2f,%.2f,%.2f", p.body.x, p.body.y, p.body.z));
+            } else if (elapsed(p) >= WAIT_TICKS) {
+                finish("no teleport happened: the server did not move the player (it may have no /tp command)");
             }
             return super.check(p);
         }
@@ -467,16 +505,17 @@ final class Script {
             }
             int[] step = at(next);
             double d = Math.hypot(horizontal(p, step), p.body.y - step[1]);
+            // The time limit comes before progress: a long walk makes progress every tick.
             if (p.body.onGround && p.body.y < Math.min(step[1], at(next - 1)[1]) - 1.5) {
                 finish(String.format("fell: landed at %.1f,%.1f,%.1f, off the route %s", p.body.x, p.body.y,
                         p.body.z, where(next)));
+            } else if (elapsed(p) > MAX_TICKS) {
+                finish("timed out after 60s " + where(next));
             } else if (d < best - 0.1) {
                 best = d;
                 bestTick = p.ticks();
             } else if (p.ticks() - bestTick > 40) {
                 finish(String.format("stuck at %.1f,%.1f,%.1f for 2s %s", p.body.x, p.body.y, p.body.z, where(next)));
-            } else if (elapsed(p) > MAX_TICKS) {
-                finish("timed out after 60s " + where(next));
             }
             return super.check(p);
         }
@@ -606,13 +645,14 @@ final class Script {
                 finish(String.format("reached in %.1fs%s", elapsed(p) / 20.0, jumps > 0 ? ", " + jumps + " jumps" : ""));
             } else if (!Double.isNaN(ty) && p.body.onGround && p.body.y < ty - 2.5) {
                 finish(String.format("fell: landed at y=%.2f, %.1f blocks from the target", p.body.y, d));
+            } else if (elapsed(p) > MAX_TICKS) {
+                // Before progress: a long walk makes progress every tick.
+                finish(String.format("timed out after 60s, %.1f blocks from the target", d));
             } else if (d < best - 0.1) {
                 best = d;
                 bestTick = p.ticks();
             } else if (p.ticks() - bestTick > 40) {
                 finish(String.format("blocked: no progress for 2s, %.1f blocks from the target", d));
-            } else if (elapsed(p) > MAX_TICKS) {
-                finish(String.format("timed out after 60s, %.1f blocks from the target", d));
             }
             return super.check(p);
         }

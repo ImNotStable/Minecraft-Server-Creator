@@ -24,6 +24,11 @@ public final class MachineEula {
     public static final String EULA_URL = "https://aka.ms/MinecraftEULA";
     /** MSC's terms for turning EULA acceptance on. */
     public static final String TERMS_URL = "https://github.com/ImNotStable/Minecraft-Server-Creator/blob/main/TERMS.md";
+    /**
+     * The servers an acceptance covers, for every notice that names them: each {@link Platform} that
+     * {@link Platform#needsEula() needs the EULA} because it runs Mojang's server software. TERMS.md says the same.
+     */
+    public static final String SERVERS = "Paper, Purpur, Fabric, Quilt, NeoForge and Forge";
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();
 
     /** Who agreed, where and when. */

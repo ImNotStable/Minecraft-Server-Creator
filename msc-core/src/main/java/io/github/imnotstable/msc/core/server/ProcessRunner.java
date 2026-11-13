@@ -9,7 +9,7 @@ import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
-/** Runs a command to completion and captures what it printed. */
+/** Runs a command to completion and captures what it printed. An interrupt stops the command and its children. */
 public final class ProcessRunner {
     public record Result(int exitCode, String output, boolean timedOut, long millis) {
         public boolean ok() {
@@ -42,10 +42,16 @@ public final class ProcessRunner {
                 // Process went away; what we have is what we report.
             }
         });
-        boolean finished = process.waitFor(timeout.toMillis(), TimeUnit.MILLISECONDS);
+        boolean finished;
+        try {
+            finished = process.waitFor(timeout.toMillis(), TimeUnit.MILLISECONDS);
+        } catch (InterruptedException e) {
+            // The caller gave up on the result: stop the command instead of leaving it running unseen.
+            destroyTree(process);
+            throw e;
+        }
         if (!finished) {
-            process.descendants().forEach(ProcessHandle::destroyForcibly);
-            process.destroyForcibly();
+            destroyTree(process);
         }
         reader.join(2000);
         String text;
@@ -54,5 +60,10 @@ public final class ProcessRunner {
         }
         return new Result(finished ? process.exitValue() : -1, text, !finished,
                 (System.nanoTime() - start) / 1_000_000);
+    }
+
+    private static void destroyTree(Process process) {
+        process.descendants().forEach(ProcessHandle::destroyForcibly);
+        process.destroyForcibly();
     }
 }

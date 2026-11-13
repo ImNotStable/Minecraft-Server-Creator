@@ -8,6 +8,7 @@ import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 /**
@@ -16,26 +17,28 @@ import java.util.stream.Collectors;
  */
 public enum Platform {
     /** Paper jar, plugins in {@code plugins/}. */
-    PAPER("paper.jar", "plugins", true, "paper"),
+    PAPER("Paper", "paper.jar", "plugins", true, "paper"),
     /** Purpur, a Paper fork: Paper plugins and the Paper agent run on it unchanged. See ADR 0027. */
-    PURPUR("purpur.jar", "plugins", true, "paper"),
+    PURPUR("Purpur", "purpur.jar", "plugins", true, "paper"),
     /** Fabric server launcher, mods in {@code mods/}. */
-    FABRIC("fabric-server-launch.jar", "mods", true, "fabric"),
+    FABRIC("Fabric", "fabric-server-launch.jar", "mods", true, "fabric"),
     /** Quilt server launcher; Quilt loads Fabric mods, so the Fabric agent and Fabric API run on it. See ADR 0027. */
-    QUILT("quilt-server-launch.jar", "mods", true, "fabric"),
+    QUILT("Quilt", "quilt-server-launch.jar", "mods", true, "fabric"),
     /** NeoForge's server starter jar (it reads the installer's argument files), mods in {@code mods/}. */
-    NEOFORGE("server.jar", "mods", true, "neoforge"),
+    NEOFORGE("NeoForge", "server.jar", "mods", true, "neoforge"),
     /** Minecraft Forge's runnable shim jar, copied to a fixed name, mods in {@code mods/}. */
-    FORGE("forge-server.jar", "mods", true, "forge"),
+    FORGE("Forge", "forge-server.jar", "mods", true, "forge"),
     /** The project's own runnable jar is the server; the agent is built into it. No Mojang EULA step. */
-    MINESTOM("server.jar", null, false, "minestom");
+    MINESTOM("Minestom", "server.jar", null, false, "minestom");
 
+    private final String displayName;
     private final String serverJar;
     private final String addonDir;
     private final boolean eula;
     private final String agent;
 
-    Platform(String serverJar, String addonDir, boolean eula, String agent) {
+    Platform(String displayName, String serverJar, String addonDir, boolean eula, String agent) {
+        this.displayName = displayName;
         this.serverJar = serverJar;
         this.addonDir = addonDir;
         this.eula = eula;
@@ -44,6 +47,11 @@ public enum Platform {
 
     public String id() {
         return name().toLowerCase(Locale.ROOT);
+    }
+
+    /** The platform's own spelling, such as {@code NeoForge}, for text the user or model reads. */
+    public String displayName() {
+        return displayName;
     }
 
     /** File name of the jar the server starts from, inside the server directory. */
@@ -67,6 +75,18 @@ public enum Platform {
     /** True when the server is Mojang's and so needs an accepted {@code eula.txt}. */
     public boolean needsEula() {
         return eula;
+    }
+
+    /**
+     * Display names of the platforms that pass {@code filter}, as prose: {@code "Paper, Fabric or Minestom"} with
+     * {@code conjunction} "or".
+     */
+    public static String names(Predicate<Platform> filter, String conjunction) {
+        List<String> names = Arrays.stream(values()).filter(filter).map(Platform::displayName).toList();
+        if (names.size() < 2) {
+            return String.join("", names);
+        }
+        return String.join(", ", names.subList(0, names.size() - 1)) + " " + conjunction + " " + names.getLast();
     }
 
     public static String ids() {

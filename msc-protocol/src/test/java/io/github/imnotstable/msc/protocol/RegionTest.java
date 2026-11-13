@@ -36,6 +36,18 @@ class RegionTest {
     }
 
     @Test
+    void spansBeyondIntDoNotWrapUnderTheLimit() {
+        Region wide = Region.of("w", -2_000_000_000, 0, 0, 2_000_000_000, 0, 0);
+        assertThat(wide.volume()).isEqualTo(4_000_000_001L);
+        assertThatThrownBy(wide::requireWithinLimit).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(wide::sizeX).isInstanceOf(ArithmeticException.class);
+        Region full = Region.of("w", Integer.MIN_VALUE, Integer.MIN_VALUE, Integer.MIN_VALUE,
+                Integer.MAX_VALUE, Integer.MAX_VALUE, Integer.MAX_VALUE);
+        assertThat(full.volume()).isEqualTo(Long.MAX_VALUE);
+        assertThatThrownBy(full::requireWithinLimit).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
     void gridValidatesSizeAndPalette() {
         Region r = Region.of("w", 0, 0, 0, 1, 0, 0);
         BlockGrid grid = new BlockGrid(r, List.of("minecraft:stone"), new int[] {0, -1});

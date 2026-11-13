@@ -8,30 +8,51 @@ import io.github.imnotstable.msc.core.tool.Schema;
 import io.github.imnotstable.msc.core.tool.ToolException;
 import io.github.imnotstable.msc.core.tool.ToolRegistry;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 
-/** Platform API lookups from a local index, built on first use. */
+/**
+ * Platform API lookups from a local index, built on first use and rebuilt when the platform or its jars change
+ * (another project_scaffold or server_setup platform, or a newer API version Gradle downloaded).
+ */
 public final class ApiTools {
     private final CoreConfig config;
+    private final Path gradleHome;
     private ApiIndex index;
+    /** The jars and their modification times the index was built from. */
+    private List<JarStamp> builtFrom;
 
-    public ApiTools(CoreConfig config) {
-        this.config = config;
+    private record JarStamp(Path jar, long modified) {
     }
 
-    private synchronized ApiIndex index() throws IOException {
-        if (index == null) {
-            List<Path> jars = config.apiJars();
+    public ApiTools(CoreConfig config) {
+        this(config, Path.of(System.getProperty("user.home"), ".gradle"));
+    }
+
+    ApiTools(CoreConfig config, Path gradleHome) {
+        this.config = config;
+        this.gradleHome = gradleHome;
+    }
+
+    synchronized ApiIndex index() throws IOException {
+        List<Path> jars = config.apiJars();
+        if (jars.isEmpty()) {
+            String platform = Platform.current(config).agent();
+            jars = ApiIndex.findJars(gradleHome, platform);
             if (jars.isEmpty()) {
-                String platform = Platform.current(config).agent();
-                jars = ApiIndex.findJars(Path.of(System.getProperty("user.home"), ".gradle"), platform);
-                if (jars.isEmpty()) {
-                    throw new ToolException("no " + platform + " API jar found. Build the project once (dev_cycle) so "
-                            + "Gradle downloads it, or set MSC_API_JARS.");
-                }
+                throw new ToolException("no " + platform + " API jar found. Build the project once (dev_cycle) so "
+                        + "Gradle downloads it, or set MSC_API_JARS.");
             }
+        }
+        List<JarStamp> stamps = new ArrayList<>();
+        for (Path jar : jars) {
+            stamps.add(new JarStamp(jar, Files.exists(jar) ? Files.getLastModifiedTime(jar).toMillis() : -1));
+        }
+        if (index == null || !stamps.equals(builtFrom)) {
             index = ApiIndex.load(jars);
+            builtFrom = stamps;
         }
         return index;
     }

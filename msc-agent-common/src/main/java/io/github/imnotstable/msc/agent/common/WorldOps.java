@@ -76,12 +76,16 @@ public final class WorldOps<S> {
         AgentWorld<S> world = world(params.world());
         int minX = Math.min(params.min().x(), params.max().x());
         int minZ = Math.min(params.min().z(), params.max().z());
-        int sizeX = Math.abs(params.max().x() - params.min().x()) + 1;
-        int sizeZ = Math.abs(params.max().z() - params.min().z()) + 1;
-        if ((long) sizeX * sizeZ > Limits.MAX_REGION_VOLUME) {
+        long spanX = Math.abs((long) params.max().x() - params.min().x()) + 1;
+        long spanZ = Math.abs((long) params.max().z() - params.min().z()) + 1;
+        // Each span is at most 2^32, so check them alone first: their product could overflow a long.
+        if (spanX > Limits.MAX_REGION_VOLUME || spanZ > Limits.MAX_REGION_VOLUME
+                || spanX * spanZ > Limits.MAX_REGION_VOLUME) {
             throw new OpException(ErrorCodes.TOO_LARGE,
-                    "area " + sizeX + "x" + sizeZ + " exceeds " + Limits.MAX_REGION_VOLUME + " columns");
+                    "area " + spanX + "x" + spanZ + " exceeds " + Limits.MAX_REGION_VOLUME + " columns");
         }
+        int sizeX = (int) spanX;
+        int sizeZ = (int) spanZ;
         Runnable release = world.loadAreaToRead(minX, minZ, minX + sizeX - 1, minZ + sizeZ - 1);
         try {
             int[] heights = main.run(new HeightmapJob(world, minX, minZ, sizeX, sizeZ));
@@ -98,6 +102,7 @@ public final class WorldOps<S> {
         Region region = withinLimit(grid.region());
         AgentWorld<S> world = world(region.world());
         requireBuildHeight(world, region.min().y(), region.max().y());
+        requireUndoableXz(region);
         List<S> palette = grid.palette().stream().map(worlds::parse).toList();
         world.loadArea(region.min().x(), region.min().z(), region.max().x(), region.max().z());
         return apply(world, new GridCursor<>(region, grid.blocks(), palette), params.updatePhysics());
@@ -129,6 +134,16 @@ public final class WorldOps<S> {
                     "region volume " + region.volume() + " exceeds " + Limits.MAX_REGION_VOLUME);
         }
         return region;
+    }
+
+    /** Undo records pack X and Z into 26 bits each ({@link PackedPos}); beyond that undo would hit the wrong blocks. */
+    private static void requireUndoableXz(Region region) {
+        if (region.min().x() < PackedPos.MIN_XZ || region.max().x() > PackedPos.MAX_XZ
+                || region.min().z() < PackedPos.MIN_XZ || region.max().z() > PackedPos.MAX_XZ) {
+            throw new IllegalArgumentException("x and z must be within " + PackedPos.MIN_XZ + ".." + PackedPos.MAX_XZ
+                    + " to be undoable, got " + region.min().x() + ".." + region.max().x() + ", "
+                    + region.min().z() + ".." + region.max().z());
+        }
     }
 
     private static void requireBuildHeight(AgentWorld<?> world, int minY, int maxY) {
