@@ -1,5 +1,6 @@
 plugins {
     id("msc.java-conventions")
+    id("msc.repo-inputs")
 }
 
 description = "The Claude Code plugin: MCP config plus a launcher that runs the newest installed msc-core."
@@ -25,13 +26,10 @@ val coreInstall = rootProject.layout.projectDirectory.dir("msc-core/build/instal
 tasks.test {
     dependsOn(":msc-core:installDist")
     inputs.dir(coreInstall).withPropertyName("coreInstall").withPathSensitivity(PathSensitivity.RELATIVE)
-    // PluginTest reads these plugin files, so a change to one must rerun it.
-    inputs.files(".mcp.json", ".claude-plugin/plugin.json", rootProject.file(".claude-plugin/marketplace.json"))
-        .withPropertyName("pluginFiles").withPathSensitivity(PathSensitivity.RELATIVE)
-    // Absolute paths through an argument provider, so the checkout's location stays out of the cache key.
+    // An absolute path through an argument provider, so the checkout's location stays out of the cache key.
     val coreDir = coreInstall.asFile.absolutePath
-    val pluginDir = layout.projectDirectory.asFile.absolutePath
-    jvmArgumentProviders.add(CommandLineArgumentProvider {
-        listOf("-Dmsc.coreInstall=$coreDir", "-Dmsc.pluginDir=$pluginDir")
-    })
+    jvmArgumentProviders.add(CommandLineArgumentProvider { listOf("-Dmsc.coreInstall=$coreDir") })
 }
+// The plugin files PluginTest reads, as Claude Code does (msc.repo-inputs: both what it reads and its inputs).
+repoInputs.set("pluginFiles", file(".mcp.json"), file(".claude-plugin/plugin.json"),
+    rootProject.file(".claude-plugin/marketplace.json"))
