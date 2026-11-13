@@ -20,7 +20,8 @@ import java.util.regex.PatternSyntaxException;
 /** Reading the server log ({@code server_logs}, {@code server_wait}) and typing into it ({@code server_command}). */
 final class ServerConsole {
     static final int MAX_WAIT_SECONDS = 600;
-    private static final Pattern LOG_PREFIX = Pattern.compile("^\\[[^\\]]*\\]:? ?(\\[[^\\]]*(INFO|WARN|ERROR)\\]:? ?)?");
+    private static final Pattern LOG_PREFIX = Pattern.compile(
+            "^(?:\\[[^\\]]*\\] (?:TRACE|DEBUG|INFO|WARN|ERROR) \\S+ - |\\[[^\\]]*\\]:? ?(\\[[^\\]]*(INFO|WARN|ERROR)\\]:? ?)?)");
 
     private final AgentHub hub;
     private final ServerManager server;
