@@ -174,6 +174,8 @@ public final class BenchRunner {
                 for (String command : task.server().setup()) {
                     rcon.command(Placeholders.fill(command, values));
                 }
+                // The agent may stop or restart the server; the checks then connect afresh.
+                server.disconnect();
             }
 
             values.put("prompt", fullPrompt(task, values));
