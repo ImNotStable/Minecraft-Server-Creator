@@ -97,7 +97,8 @@ public final class Templates {
      *
      * @throws IllegalArgumentException if the id is unknown, a placeholder has no value, or the variables give a
      *                                  class that clashes with an import or two files with one path
-     * @throws IllegalStateException    if {@code target} exists and is not an empty directory
+     * @throws IllegalStateException    if {@code target} exists and is not an empty directory; a directory
+     *                                  holding only MSC's own {@code .msc} folder counts as empty
      * @throws IOException              if writing fails
      */
     public static ScaffoldResult scaffold(String id, Path target, TemplateVariables vars) throws IOException {

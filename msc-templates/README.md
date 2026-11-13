@@ -3,7 +3,7 @@
 Starter server projects per platform, ready for the AI to build on, with tests and conventions wired in. `msc-core` scaffolds them through a small Java API; nothing else needs to know how they are stored.
 
 **Phase:** MVP  
-**Status:** Paper plugin and Paper dev server templates done and verified (Java 25, Paper 26.3.build.248, MockBukkit 4.120.0). Fabric mod template done and verified (Fabric Loader 0.20.1, Fabric API 0.166.0+26.3, Loom 1.19.4). Minestom server template done and verified in the cloud (Minestom 2026.10.07-26.2). NeoForge mod template (NeoForge 26.3.0.102, ModDevGradle 2.0.148) and Forge mod template (Forge 26.3-66.1.5, ForgeGradle 7.0.40) build and pass their tests in the cloud (ADR 0027). Paper game template (`paper-game`) builds and passes its 15 tests against Paper 26.3.build.249 and MockBukkit 4.120.0. Minestom game template (`minestom-game`, 14 tests, `@EnvTest` game tests) and Fabric game template (`fabric-game`, 9 tests) build and pass in the cloud; `fabric-game`'s player paths still need a check on a real Fabric server.
+**Status:** Paper plugin and Paper dev server templates done and verified (Java 25, Paper 26.3.build.248, MockBukkit 4.120.0). Fabric mod template done and verified (Fabric Loader 0.20.1, Fabric API 0.166.0+26.3, Loom 1.19.4). Minestom server template done and verified in the cloud (Minestom 2026.10.07-26.2). NeoForge mod template (NeoForge 26.3.0.102, ModDevGradle 2.0.148) and Forge mod template (Forge 26.3-66.1.5, ForgeGradle 7.0.40) build and pass their tests in the cloud (ADR 0027). Paper game template (`paper-game`) builds and passes its tests against Paper 26.3.build.249 and MockBukkit 4.120.0. Minestom game template (`minestom-game`, with `@EnvTest` game tests) and Fabric game template (`fabric-game`) build and pass in the cloud; `fabric-game`'s player paths still need a check on a real Fabric server.
 
 ## Templates
 
@@ -32,7 +32,7 @@ result.values().get("rconPassword");  // plus rconPort, serverPort, serverIp, mc
 ```
 
 - `Templates.ids()`: packaged template ids. `Templates.info(id)`: `platform` and `description`. `Templates.versions()`: versions pinned into scaffolded projects.
-- `Templates.scaffold(id, target, vars)` throws `IllegalArgumentException` for an unknown id, `IllegalStateException` if `target` exists and is not an empty directory (it never overwrites), and `IOException` if writing fails.
+- `Templates.scaffold(id, target, vars)` throws `IllegalArgumentException` for an unknown id, `IllegalStateException` if `target` exists and is not an empty directory (it never overwrites; a directory holding only MSC's own `.msc` folder counts as empty), and `IOException` if writing fails.
 - After scaffolding `paper-plugin`: `gradlew build` (or `gradlew.bat build`) in the target builds and tests it; the jar is `build/libs/<projectId>-<version>.jar`.
 
 ### Variables
