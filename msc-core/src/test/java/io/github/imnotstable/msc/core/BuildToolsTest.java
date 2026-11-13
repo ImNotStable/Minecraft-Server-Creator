@@ -173,10 +173,25 @@ class BuildToolsTest {
         // Writes: the name check, the first part, then the second part, which times out after one block (#275).
         h.agent.timeOutWrite(2);
         String err = h.error("build_batch", "steps", "set 0,64,0 stone\nfill 200,90,200 201,90,201 andesite");
-        assertThat(err).contains("main thread did not finish");
+        // The agent's own undo id means nothing to build_undo, and the blocks are undone already (#292).
+        assertThat(err).isEqualTo("error: agent answered timeout: main thread did not finish within 120s");
         assertThat(h.agent.writes).hasSize(3);
         assertThat(h.agent.get(0, 64, 0)).isEqualTo("minecraft:air");
         assertThat(h.agent.get(200, 90, 200)).isEqualTo("minecraft:air");
+        assertThat(h.agent.blocks.values()).allMatch("minecraft:air"::equals);
+    }
+
+    @Test
+    void aFailedCleanUpLeavesABuildUndoIdForWhatStayed() {
+        // The second part times out after one block, then undoing that partial edit fails too (#292).
+        h.agent.timeOutWrite(2);
+        h.agent.failUndo(0);
+        String err = h.error("build_batch", "steps", "set 0,64,0 stone\nfill 200,90,200 201,90,201 andesite");
+        assertThat(err).isEqualTo("error: agent answered timeout: main thread did not finish within 120s;"
+                + " undoing it failed (timed out), build_undo edit=e1 removes the rest");
+        assertThat(h.agent.get(0, 64, 0)).isEqualTo("minecraft:air");
+        assertThat(h.agent.get(200, 90, 200)).isEqualTo("minecraft:andesite");
+        assertThat(h.ok("build_undo", "edit", "e1")).isEqualTo("undid e1: 1 blocks restored");
         assertThat(h.agent.blocks.values()).allMatch("minecraft:air"::equals);
     }
 

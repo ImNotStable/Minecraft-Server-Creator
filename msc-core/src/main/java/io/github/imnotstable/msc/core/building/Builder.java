@@ -19,7 +19,8 @@ import java.util.Map;
  * Runs steps as one edit: draw them all on a {@link Canvas}, check every block name with the agent,
  * then write the canvas in protocol-sized parts under a single undo id. If a part fails, the parts
  * already written are undone, and so are the blocks the failed part changed before it failed when the agent names
- * their undo id ({@link PartialEdit}), so a build is placed whole or not at all.
+ * their undo id ({@link PartialEdit}), so a build is placed whole or not at all; what a failed undo leaves gets a
+ * build_undo id.
  */
 public final class Builder {
     /** Largest box one build may cover. */
@@ -81,20 +82,54 @@ public final class Builder {
             if (e instanceof OpException op) {
                 PartialEdit.editId(op.detail()).ifPresent(ids::add);
             }
-            for (int i = ids.size() - 1; i >= 0; i--) {
-                try {
-                    hub.call(Ops.WORLD_UNDO, new Ops.UndoParams(ids.get(i)));
-                } catch (RuntimeException ignored) {
-                    // Best effort: report the first failure, not the clean-up.
-                }
-            }
-            throw e;
+            throw cleanUp(ids, e);
         }
         String id = world.remember(ids);
         // One kind of block, or nothing left unchanged: the extra numbers say nothing new.
         return "edit " + id + ": " + changed + " blocks changed"
                 + (changed == canvas.placed() ? "" : " (" + canvas.placed() + " placed)") + ", region "
                 + Coords.show(used) + (canvas.counts().size() > 1 ? "\n" + counts : "");
+    }
+
+    /**
+     * Undo the parts a failed build changed, newest first, and return the error to throw. The agent's undo id in
+     * {@code failure} is stripped: build_undo does not know it. Parts whose undo fails go under a core id that the
+     * error names, so no block the build changed is left without a build_undo id (#292).
+     */
+    private RuntimeException cleanUp(List<String> ids, Exception failure) throws InterruptedException {
+        List<String> kept = new ArrayList<>();
+        String why = null;
+        boolean interrupted = false;
+        for (int i = ids.size() - 1; i >= 0; i--) {
+            try {
+                hub.call(Ops.WORLD_UNDO, new Ops.UndoParams(ids.get(i)));
+            } catch (OpException e) {
+                if (!e.code().equals(ErrorCodes.NOT_FOUND)) {
+                    kept.addFirst(ids.get(i));
+                    why = why == null ? e.detail() : why;
+                }
+            } catch (RuntimeException | InterruptedException e) {
+                interrupted |= e instanceof InterruptedException;
+                kept.addFirst(ids.get(i));
+                why = why == null ? String.valueOf(e.getMessage()) : why;
+            }
+        }
+        if (interrupted || failure instanceof InterruptedException && !kept.isEmpty()) {
+            Thread.currentThread().interrupt();
+        }
+        String reason = failure instanceof OpException op ? "agent answered " + op.code() + ": " + PartialEdit.strip(op.detail())
+                : failure instanceof InterruptedException ? "interrupted" : String.valueOf(failure.getMessage());
+        if (!kept.isEmpty()) {
+            return new ToolException(reason + "; undoing it failed (" + why + "), build_undo edit="
+                    + world.remember(kept) + " removes the rest");
+        }
+        if (failure instanceof OpException op) {
+            return new OpException(op.code(), PartialEdit.strip(op.detail()));
+        }
+        if (failure instanceof InterruptedException ie) {
+            throw ie;
+        }
+        return (RuntimeException) failure;
     }
 
     /**

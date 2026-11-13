@@ -21,6 +21,13 @@ class PartialEditTest {
     }
 
     @Test
+    void stripRemovesOnlyTheNote() {
+        assertThat(PartialEdit.strip(PartialEdit.note("timed out", "k3x-7"))).isEqualTo("timed out");
+        assertThat(PartialEdit.strip("timed out (see log)")).isEqualTo("timed out (see log)");
+        assertThat(PartialEdit.strip(null)).isNull();
+    }
+
+    @Test
     void theCoreWaitsPastEveryWaitOfOneAgentOperation() {
         assertThat(Limits.CORE_CALL_TIMEOUT)
                 .isGreaterThan(Limits.AGENT_WAIT.multipliedBy(Limits.AGENT_WAITS_PER_OP));
