@@ -131,7 +131,7 @@ class TemplatesTest {
         assertThat(Files.readString(r.root().resolve("src/main/java/com/example/spawnlobby/SpawnLobbyPlugin.java")))
                 .contains("package com.example.spawnlobby;", "public class SpawnLobbyPlugin extends JavaPlugin");
         assertThat(Files.readString(r.root().resolve("src/main/resources/plugin.yml")))
-                .contains("name: SpawnLobby", "main: com.example.spawnlobby.SpawnLobbyPlugin", "version: '${version}'");
+                .contains("name: \"SpawnLobby\"", "main: com.example.spawnlobby.SpawnLobbyPlugin", "version: '${version}'");
         assertThat(Files.readString(r.root().resolve("settings.gradle.kts"))).contains("rootProject.name = \"spawn-lobby\"");
         assertThat(Files.readString(r.root().resolve("run/server.properties")))
                 .contains("rcon.password=secret", "rcon.port=25575", "online-mode=false", "server-ip=127.0.0.1");
@@ -300,6 +300,13 @@ class TemplatesTest {
         assertThat(relative(r)).containsExactlyInAnyOrder("eula.txt", "server.properties");
         assertThat(Files.readString(dir.resolve("eula.txt"))).containsPattern("(?m)^eula=false$").doesNotContainPattern("(?m)^eula=true$");
         assertThat(Files.readString(dir.resolve("server.properties"))).contains("generator-settings={\"biome\"");
+    }
+
+    @Test
+    void serverDefaultsTakeAnyName() throws IOException {
+        // paper-server is config only, so plugin-name rules do not apply to it.
+        Templates.scaffold(Templates.PAPER_SERVER, dir, TemplateVariables.of("Msc Agent"));
+        assertThat(dir.resolve("server.properties")).content().contains("motd=MscAgent dev server");
     }
 
     @Test

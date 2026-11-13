@@ -175,6 +175,9 @@ public final class Templates {
      * {@code msc-agent}), or on Paper a main class inside {@code org.bukkit}.
      */
     private static void requireLoaderAccepts(String id, Map<String, String> values) {
+        if (id.equals(PAPER_SERVER)) {
+            return; // server config only: no plugin, so no plugin name or main class
+        }
         String platform = info(id).get("platform");
         LoaderIds ids = LOADER_IDS.get(platform);
         if (ids != null) {
