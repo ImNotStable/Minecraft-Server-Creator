@@ -15,7 +15,11 @@ import java.util.regex.Pattern;
 public final class LogCondenser {
     /** {@code [12:34:56 INFO]: msg} (Paper) or {@code [12:34:56] [Server thread/INFO]: msg} (vanilla). */
     private static final Pattern LINE = Pattern.compile("^\\[(\\d\\d:\\d\\d:\\d\\d)(?:\\] \\[[^\\]]*/| )(\\w+)\\]:? ?(.*)$");
-    private static final Pattern FRAME = Pattern.compile("^\\s+at (?:[\\w.]+//?)?([\\w.$<>]+)\\(.*\\).*$");
+    /**
+     * A stack frame; the class loader and module prefixes ({@code app//}, {@code java.base/}, Forge's
+     * {@code TRANSFORMER/mymod@1.0/}) are skipped.
+     */
+    private static final Pattern FRAME = Pattern.compile("^\\s+at (?:[^\\s/()]+/+){0,2}([\\w.$<>]+)\\(.*\\).*$");
     private static final Pattern MORE = Pattern.compile("^\\s+\\.\\.\\. \\d+ (more|common frames omitted).*$");
     /**
      * Forge and NeoForge put the logger after the level: {@code [12:34:56] [main/WARN] [ne.mi.fm.Foo/CORE]: msg}. The
@@ -30,7 +34,8 @@ public final class LogCondenser {
             "net.minecraft.", "com.mojang.", "org.bukkit.", "org.spigotmc.", "io.papermc.", "com.destroystokyo.",
             "io.netty.", "org.apache.", "com.google.", "it.unimi.", "org.slf4j.", "co.aikar.", "ca.spottedleaf.",
             "org.gradle.", "org.junit.", "org.mockbukkit.", "be.seeseemelk.", "kotlin.", "worker.org.gradle.", "oshi.",
-            "net.minestom.");
+            "net.minestom.", "org.purpurmc.", "net.fabricmc.", "org.quiltmc.", "net.neoforged.", "net.minecraftforge.",
+            "cpw.mods.", "org.spongepowered.");
 
     /**
      * Entries every dev server prints and the AI can do nothing about: Paper's banners for running as root or

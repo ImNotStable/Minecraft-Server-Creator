@@ -51,6 +51,24 @@ class LogCondenserTest {
     }
 
     @Test
+    void modLoaderFramesAreFramework() {
+        List<String> log = List.of(
+                "[12:00:03] [main/ERROR] [ne.ne.fm.ModLoader/LOADING]: Failed to create mod instance",
+                "java.lang.IllegalStateException: boom",
+                "\tat TRANSFORMER/mymod@1.0/com.example.mymod.MyMod.<init>(MyMod.java:12) ~[mymod-1.0.jar%23190!/:?]",
+                "\tat net.neoforged.fml.javafmlmod.FMLModContainer.constructMod(FMLModContainer.java:110) ~[?:?]",
+                "\tat MC-BOOTSTRAP/cpw.mods.modlauncher@11.0.4/cpw.mods.modlauncher.Launcher.run(Launcher.java:108) ~[?:?]",
+                "\tat net.minecraftforge.eventbus.EventBus.post(EventBus.java:302) ~[?:?]",
+                "\tat org.spongepowered.asm.mixin.transformer.MixinProcessor.applyMixins(MixinProcessor.java:363) ~[?:?]",
+                "\tat net.fabricmc.loader.impl.launch.knot.Knot.launch(Knot.java:74) ~[?:?]",
+                "\tat org.quiltmc.loader.impl.launch.knot.Knot.init(Knot.java:3) ~[?:?]",
+                "\tat org.purpurmc.purpur.PurpurConfig.init(PurpurConfig.java:1) ~[?:?]");
+        assertThat(LogCondenser.condense(log, 6000)).endsWith("""
+                \tat TRANSFORMER/mymod@1.0/com.example.mymod.MyMod.<init>(MyMod.java:12) ~[mymod-1.0.jar%23190!/:?]
+                \t... 7 framework frames""");
+    }
+
+    @Test
     void devServerBannersAndTheWindowsOshiErrorAreDropped() {
         List<String> log = List.of(
                 "[01:06:43 WARN]: ****************************",

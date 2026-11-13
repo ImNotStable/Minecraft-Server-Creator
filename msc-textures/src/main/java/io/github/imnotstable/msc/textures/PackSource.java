@@ -56,10 +56,6 @@ public final class PackSource {
         return root.resolve("assets").resolve(id.namespace());
     }
 
-    public boolean hasTexture(ResourceId id) {
-        return Files.isRegularFile(texturePath(id));
-    }
-
     public Texture readTexture(ResourceId id) throws IOException {
         Path file = texturePath(id);
         if (!Files.isRegularFile(file)) {
