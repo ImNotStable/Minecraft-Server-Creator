@@ -18,13 +18,13 @@ The MCP server the AI talks to. It runs servers, condenses their output, answers
 
 ## Run
 
-`./gradlew :msc-core:installMsc` installs the distribution (core plus the Paper and Fabric agent jars in `agents/`) into a new folder under `~/.msc/core` (`-Pmsc.installDir=...` to change), which the `msc` Claude Code plugin ([msc-plugin](../msc-plugin/README.md)) starts; see the root README. The server speaks MCP on stdin/stdout and works in its current directory unless `MSC_WORKSPACE` is set. Other settings are environment variables; see the tool catalogue in `msc-docs/docs/tools.md`. Do not register `gradlew :msc-core:run` as an MCP server: Gradle's own output would corrupt the protocol stream.
+`./gradlew :msc-core:installMsc` installs the distribution (core plus the Paper, Fabric, NeoForge and Forge agent jars in `agents/`) into a new folder under `~/.msc/core` (`-Pmsc.installDir=...` to change), which the `msc` Claude Code plugin ([msc-plugin](../msc-plugin/README.md)) starts; see the root README. The server speaks MCP on stdin/stdout and works in its current directory unless `MSC_WORKSPACE` is set. Other settings are environment variables; see the tool catalogue in `msc-docs/docs/tools.md`. Do not register `gradlew :msc-core:run` as an MCP server: Gradle's own output would corrupt the protocol stream.
 
 ## Layout
 
 - `tool/`: tool registry, argument parsing, result budgets. `mcp/McpBridge` is the only class that uses the MCP SDK.
 - `agent/AgentHub`: the core's end of `msc-protocol`.
-- `server/`: server process, platforms (Paper, Fabric, Minestom), Paper and Fabric downloads, build runner, log condensing.
+- `server/`: server process, platforms (Paper, Purpur, Fabric, Quilt, NeoForge, Forge, Minestom), Paper and Fabric downloads, `LoaderInstaller` (Purpur download, NeoForge, Forge and Quilt installers), the machine-wide EULA acceptance (`MachineEula`, `eula` command), finding servers an earlier core left running (`PidFile`), build runner, log condensing.
 - `api/`: API index read from class files.
 - `world/`: text structure format, views, edits with undo, schematics.
 - `texture/`: palette-grid textures and the resource pack.
