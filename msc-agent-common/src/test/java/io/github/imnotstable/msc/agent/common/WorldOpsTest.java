@@ -158,6 +158,12 @@ class WorldOpsTest {
                 .isInstanceOfSatisfying(OpException.class, e -> assertThat(e.code()).isEqualTo(ErrorCodes.TOO_LARGE));
         assertThatThrownBy(() -> ops.heightmap(new Ops.HeightmapParams("world", new BlockPos(0, 0, 0), new BlockPos(2000, 0, 2000))))
                 .isInstanceOfSatisfying(OpException.class, e -> assertThat(e.code()).isEqualTo(ErrorCodes.TOO_LARGE));
+        assertThatThrownBy(() -> ops.read(new Ops.ReadParams(Region.of("world", -2_000_000_000, 64, 0, 2_000_000_000, 64, 0), false)))
+                .isInstanceOfSatisfying(OpException.class, e -> assertThat(e.code()).isEqualTo(ErrorCodes.TOO_LARGE));
+        assertThatThrownBy(() -> ops.heightmap(new Ops.HeightmapParams("world",
+                new BlockPos(Integer.MIN_VALUE, 0, Integer.MIN_VALUE), new BlockPos(Integer.MAX_VALUE, 0, Integer.MAX_VALUE))))
+                .isInstanceOfSatisfying(OpException.class, e -> assertThat(e.code()).isEqualTo(ErrorCodes.TOO_LARGE));
+        assertThat(world.loads).isEmpty();
         assertThatThrownBy(() -> fill(box(0, 70, 0, 0, 70, 0), "minecraft:not_a_block"))
                 .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("not_a_block");
         int top = world.maxY();
