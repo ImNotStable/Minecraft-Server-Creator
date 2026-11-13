@@ -105,8 +105,8 @@ public final class EulaCommand {
                     + MachineEula.acceptCommand(installDir));
             return 2;
         }
-        t.println("Paper and Fabric dev servers run Mojang's Minecraft server, which needs your agreement to the");
-        t.println("Minecraft End User License Agreement: " + MachineEula.EULA_URL);
+        t.println(Platform.names(Platform::needsEula, "and") + " dev servers run Mojang's Minecraft server,");
+        t.println("which needs your agreement to the Minecraft End User License Agreement: " + MachineEula.EULA_URL);
         t.println("Agreeing here records it once for user " + user + " on " + host + " (" + file + "). MSC then");
         t.println("writes eula=true into each dev server it sets up on this machine, without asking again.");
         t.println("Terms: " + MachineEula.TERMS_URL);

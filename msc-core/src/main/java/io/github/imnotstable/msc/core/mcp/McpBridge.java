@@ -4,6 +4,7 @@ import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import com.google.gson.reflect.TypeToken;
 import io.github.imnotstable.msc.core.Core;
+import io.github.imnotstable.msc.core.server.Platform;
 import io.github.imnotstable.msc.core.tool.Tool;
 import io.github.imnotstable.msc.core.tool.ToolRegistry;
 import io.modelcontextprotocol.json.McpJsonDefaults;
@@ -22,9 +23,10 @@ import java.util.Map;
 /** The only class that touches the MCP SDK: exposes the tool registry over stdio. */
 public final class McpBridge {
     private static final Gson GSON = new Gson();
-    private static final String INSTRUCTIONS = "Tools for developing a Minecraft server (Paper, Fabric or Minestom). "
+    private static final String INSTRUCTIONS = "Tools for developing a Minecraft server ("
+            + Platform.names(p -> true, "or") + "). "
             + "Start: project_scaffold (template <platform>-game for a minigame base), then read the project's CLAUDE.md. "
-            + "Paper and Fabric need the user's agreement to the Minecraft EULA (https://aka.ms/MinecraftEULA): if "
+            + Platform.names(Platform::needsEula, "and") + " need the user's agreement to the Minecraft EULA (https://aka.ms/MinecraftEULA): if "
             + "server_setup says this machine lacks it, ask them, then server_setup acceptEula=true; never accept it for them. After each code change call "
             + "dev_cycle (build, test, deploy, restart, errors only). Look names up with api_search before guessing. "
             + "Dev worlds are superflat; server_start and dev_cycle say where the ground is. See the world with "

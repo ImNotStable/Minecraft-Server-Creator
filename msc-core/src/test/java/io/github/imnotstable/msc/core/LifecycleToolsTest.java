@@ -384,7 +384,7 @@ class LifecycleToolsTest {
             assertThat(machineEula).doesNotExist();
             assertThat(s.call("server_start", "acceptEula", true, "timeoutSeconds", 20).text())
                     .startsWith("Minecraft EULA (https://aka.ms/MinecraftEULA) accepted for this machine, saved in ")
-                    .contains("TERMS.md");
+                    .contains("TERMS.md").contains("every Paper, Purpur, Fabric, Quilt, NeoForge and Forge server");
             // The notice is shown once.
             assertThat(s.call("server_start", "acceptEula", true, "timeoutSeconds", 20).text()).doesNotContain("TERMS.md");
             assertThat(ws.resolve("run/eula.txt")).content().contains("eula=true");
