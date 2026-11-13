@@ -9,6 +9,8 @@ dependencies {
     // Region and BlockGrid describe the world the bot moves through.
     api(project(":msc-protocol"))
     implementation(libs.mcprotocollib)
+    // Raises the netty-all 4.2.1.Final that MCProtocolLib pulls; reaches msc-core and msc-bench through msc-bot.
+    implementation(platform(libs.netty.bom))
     implementation(libs.gson)
 }
 

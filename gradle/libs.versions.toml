@@ -26,6 +26,7 @@ quilt-loader = "0.30.2"     # newest stable Quilt Loader; runs the Fabric agent 
 quilt-installer = "0.15.1"
 minestom = "2026.10.07-26.2"  # Minestom lags Paper: newest build targets Minecraft 26.2
 mcprotocollib = "26.3-3"  # GeyserMC Java Edition protocol client for the msc-bot test player (opencollab repo)
+netty = "4.2.20.Final"  # floor for mcprotocollib, which pulls netty-all 4.2.1.Final (old, with advisories); like jackson
 mcprotocollib-previous = "26.2"  # the previous Minecraft version, for servers that lag Paper (Minestom); stays one behind
 slf4j = "2.0.20"  # matches Minestom's slf4j-api; scaffolded Minestom servers log through slf4j-simple
 
@@ -49,6 +50,7 @@ forge-eventbus = { module = "net.minecraftforge:eventbus", version.ref = "forge-
 minestom = { module = "net.minestom:minestom", version.ref = "minestom" }
 minestom-testing = { module = "net.minestom:testing", version.ref = "minestom" }
 mcprotocollib = { module = "org.geysermc.mcprotocollib:protocol", version.ref = "mcprotocollib" }
+netty-bom = { module = "io.netty:netty-bom", version.ref = "netty" }
 mcprotocollib-previous = { module = "org.geysermc.mcprotocollib:protocol", version.ref = "mcprotocollib-previous" }
 mockbukkit = { module = "org.mockbukkit.mockbukkit:mockbukkit-v26.3", version.ref = "mockbukkit" }
 
