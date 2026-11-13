@@ -115,12 +115,6 @@ public final class TextureTools {
                     out.append("pack built: ").append(built.files()).append(" files, ").append(built.bytes())
                             .append(" bytes, pack_format ").append(pack.packFormat()).append("\nurl: ").append(built.url())
                             .append("\nsha1: ").append(built.sha1());
-                    if (args.has("file")) {
-                        Path copy = config.resolve(args.str("file"));
-                        Files.createDirectories(copy.toAbsolutePath().getParent());
-                        Files.copy(built.zip(), copy, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-                        out.append("\nsaved: ").append(copy);
-                    }
                     if (args.bool("apply", true)) {
                         if (hub.current() == null) {
                             out.append("\nnot applied: no server agent connected");
@@ -131,6 +125,13 @@ public final class TextureTools {
                             out.append("\napplied: sent to ").append(r.playersSent())
                                     .append(" players; players who join later get it too, also after a restart");
                         }
+                    }
+                    // Saved only once the apply went through: a failed pack call writes no file into the workspace.
+                    if (args.has("file")) {
+                        Path copy = config.resolve(args.str("file"));
+                        Files.createDirectories(copy.toAbsolutePath().getParent());
+                        Files.copy(built.zip(), copy, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                        out.append("\nsaved: ").append(copy);
                     }
                     // A detached session made server.properties offer the pack: keep it pointing at this build.
                     Path properties = serverDir.resolve("server.properties");
@@ -161,35 +162,52 @@ public final class TextureTools {
                     + "recolor, or animate to animate the texture already there");
         }
         ResourceId id = ResourceId.parse(args.str("name"));
-        StringBuilder out = new StringBuilder();
+        // Everything that can refuse the arguments runs before the first write, so a refused call (a bad animate,
+        // too many frames, an item that shows another model) leaves the pack as it was.
         String kind = args.str("kind", null);
+        Texture t = null;
+        String model = null;
+        List<String> warnings = List.of();
         if (ways.contains("rows")) {
             if (!args.has("palette")) {
                 throw new ToolException("rows need a palette");
             }
-            Texture t = PaletteText.parse(args.strings("palette"), args.strings("rows"));
-            String itemModel = pack.writeTexture(id, t, model(args, id, "item"));
-            out.append("wrote ").append(id).append(' ').append(t.width()).append('x').append(t.height());
+            t = PaletteText.parse(args.strings("palette"), args.strings("rows"));
+            model = model(args, id, "item");
+            warnings = drawWarnings(t);
+        } else if (kind != null) {
+            boolean shape = Shapes.NAMES.contains(kind);
+            t = generated(args);
+            model = model(args, id, shape ? (kind.equals("sword") || kind.equals("pickaxe") ? "handheld" : "item") : "block");
+        } else if (ways.contains("copy")) {
+            Texture in = firstFrame(source, ResourceId.parse(args.str("copy")));
+            t = Edits.recolor(in, Ramp.from(color(args), 5));
+            model = model(args, id, "item");
+        }
+        Animation animation = args.has("animate") ? animation(args, t == null ? firstFrame(source, id) : t) : null;
+        StringBuilder out = new StringBuilder();
+        if (t != null) {
+            String itemModel = pack.writeTexture(id, t, model);
+            if (ways.contains("rows")) {
+                out.append("wrote ").append(id).append(' ').append(t.width()).append('x').append(t.height());
+            } else {
+                out.append("wrote ").append(id).append(": ").append(Stats.of(t));
+            }
             if (itemModel != null) {
                 out.append("; item_model ").append(itemModel);
             }
-            for (String warning : drawWarnings(t)) {
+            for (String warning : warnings) {
                 out.append("\nwarning: ").append(warning);
             }
-        } else if (kind != null) {
-            boolean shape = Shapes.NAMES.contains(kind);
-            Texture t = generated(args);
-            String model = shape ? (kind.equals("sword") || kind.equals("pickaxe") ? "handheld" : "item") : "block";
-            out.append(written(pack, id, t, model(args, id, model)));
-            if (!args.has("animate")) {
+            if (kind != null && animation == null) {
                 out.append('\n').append(Budget.truncate(PaletteText.render(t), Budget.DEFAULT_CHARS, "Use texture_view."));
             }
-        } else if (ways.contains("copy")) {
-            Texture in = firstFrame(source, ResourceId.parse(args.str("copy")));
-            out.append(written(pack, id, Edits.recolor(in, Ramp.from(color(args), 5)), model(args, id, "item")));
         }
-        if (args.has("animate")) {
-            out.append(out.isEmpty() ? "" : "\n").append(animate(args, source, id));
+        if (animation != null) {
+            source.writeAnimation(id, animation);
+            out.append(out.isEmpty() ? "" : "\n").append("animated ").append(id).append(": ")
+                    .append(animation.frames().size()).append(" frames, ").append(args.integer("frametime", 2))
+                    .append(" ticks each");
         }
         return out.append("\nnext: pack").toString();
     }
@@ -246,11 +264,11 @@ public final class TextureTools {
                 accent == null ? null : Ramp.from(accent, 4, 1.0), args.integer("seed", 1));
     }
 
-    private static String animate(Args args, PackSource source, ResourceId id) throws IOException {
-        Texture base = firstFrame(source, id);
+    /** The animation {@code animate} asks for, made from {@code base}; refuses a bad spec without writing anything. */
+    private static Animation animation(Args args, Texture base) {
         String[] mode = args.str("animate").trim().split("\\s+", 2);
         int frametime = args.integer("frametime", 2);
-        Animation a = switch (mode[0]) {
+        return switch (mode[0]) {
             case "scroll" -> {
                 int dx = 0;
                 int dy = 1;
@@ -274,8 +292,6 @@ public final class TextureTools {
             }
             default -> throw new ToolException("animate must be scroll, \"scroll dx,dy\" or pulse");
         };
-        source.writeAnimation(id, a);
-        return "animated " + id + ": " + a.frames().size() + " frames, " + frametime + " ticks each";
     }
 
     /** A pack texture, or the first frame when it is already animated, so it can be animated or copied again. */
@@ -360,10 +376,5 @@ public final class TextureTools {
      */
     static String model(Args args, ResourceId id, String fallback) {
         return args.str("model", id.namespace().equals("minecraft") ? "none" : fallback);
-    }
-
-    private static String written(ResourcePack pack, ResourceId id, Texture t, String model) throws IOException {
-        String itemModel = pack.writeTexture(id, t, model);
-        return "wrote " + id + ": " + Stats.of(t) + (itemModel == null ? "" : "; item_model " + itemModel);
     }
 }
