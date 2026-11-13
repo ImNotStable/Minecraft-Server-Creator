@@ -52,10 +52,12 @@ class JobQueueTest {
 
         long start = System.nanoTime();
         queue.step(BUDGET);
-        long spent = System.nanoTime() - start;
+        long end = System.nanoTime();
 
+        // One deadline for both, within one budget of the step: the jobs never get a budget each. Asserted on the
+        // deadlines rather than the time spent, so a loaded machine cannot fail it.
         assertThat(second.deadlines).isEqualTo(first.deadlines);
-        assertThat(spent).isLessThan(BUDGET.toNanos() * 3 / 2);
+        assertThat(first.deadlines.getFirst() - BUDGET.toNanos()).isBetween(start, end);
         queue.step(BUDGET);
         assertThat(a).isCompletedWithValue(2);
         assertThat(b).isCompletedWithValue(2);
