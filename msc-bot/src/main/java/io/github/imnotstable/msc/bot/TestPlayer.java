@@ -109,14 +109,22 @@ public final class TestPlayer implements Bot {
     /**
      * Set when the server may have put the player in another world (a login, a respawn, a teleport, or the start of a
      * call, since Minestom moves a player between two instances of one dimension with no packet that says so) until
-     * the locator says which world it is.
+     * the locator says which world it is. The question goes out as soon as the player's position is known.
      */
     private boolean relocate;
+    /**
+     * Set by a dimension change (a login or a respawn) until the locator answers: the old world is surely wrong, so
+     * the player does not simulate meanwhile. A teleport keeps the view, as it is most likely in the same world.
+     */
+    private boolean worldUnknown;
     /** Counts {@link #relocate} settings, so a locator answer that a newer world change overtook is dropped. */
     private long worldChanges;
+    /** The question to the locator for world change {@link #lookupChange}; null before the first. */
+    private java.util.concurrent.CompletableFuture<Void> lookup;
+    private long lookupChange = -1;
     /** The world the locator found; null to go by the dimension. */
     private String located;
-    static final String RELOCATING = "the server put the player in another world; the next action finds out which";
+    static final String RELOCATING = "the server put the player in another world; finding out which";
     private volatile String disconnect;
     private volatile int entityId;
     private volatile boolean positioned;
@@ -252,8 +260,8 @@ public final class TestPlayer implements Bot {
 
     /** Point the simulation at the player's world: the located one, else the dimension's; none while unknown. */
     private void refreshView() {
-        String name = relocate ? null : located != null ? located : baseWorld != null ? worldName(baseWorld, dimension)
-                : null;
+        String name = worldUnknown ? null : located != null ? located
+                : baseWorld != null ? worldName(baseWorld, dimension) : null;
         if (name == null) {
             view = null;
         } else if (view == null || !view.world().equals(name)) {
@@ -261,57 +269,83 @@ public final class TestPlayer implements Bot {
         }
     }
 
-    /** The server put the player in a world, maybe another one: stop simulating until the locator says which. */
-    private synchronized void enteredWorld() {
-        if (locator != null) {
-            relocate = true;
+    /**
+     * The server may have put the player in another world: ask the locator. A dimension change ({@code dimension})
+     * stops the simulation until the answer; a teleport or a call start keeps the current view meanwhile, so the
+     * player keeps falling and walking. Without a locator the dimension alone says the world.
+     */
+    private synchronized void worldMayHaveChanged(boolean dimension) {
+        if (locator == null) {
+            return;
+        }
+        relocate = true;
+        worldChanges++;
+        if (dimension) {
+            worldUnknown = true;
             located = null;
-            worldChanges++;
             refreshView();
         }
     }
 
-    /**
-     * Ask the locator again at the start of a call: a server can swap the player's world in place, with no teleport.
-     * The view stays until the answer, so the player keeps falling and walking meanwhile.
-     */
+    /** Ask the locator again at the start of a call: a server can swap the player's world in place, with no teleport. */
     private void recheckWorld() {
         synchronized (this) {
             if (locator == null || !positioned || relocate) {
                 return;
             }
-            relocate = true;
-            worldChanges++;
+            worldMayHaveChanged(false);
         }
         locate();
     }
 
     /**
-     * Ask the locator which world the player is in, after the server put it in one. Runs outside the lock, where the
-     * call through the agent may wait. When the locator finds none the bot goes by the dimension.
+     * Start asking the locator about the latest world change, unless that question is out already; null when there
+     * is nothing to ask yet (no change, or no position: a login or respawn asks at the position that follows). The
+     * question runs on its own thread, so the tick thread and the network thread never wait for the agent.
      */
-    void locate() {
-        long change;
-        io.github.imnotstable.msc.protocol.world.BlockPos at;
-        synchronized (this) {
-            if (!relocate) {
-                return;
-            }
-            change = worldChanges;
-            at = feet();
+    private synchronized java.util.concurrent.CompletableFuture<Void> startLocate() {
+        if (!relocate || !positioned) {
+            return null;
         }
+        if (lookup == null || lookupChange != worldChanges) {
+            long change = worldChanges;
+            io.github.imnotstable.msc.protocol.world.BlockPos at = feet();
+            lookupChange = change;
+            lookup = java.util.concurrent.CompletableFuture.runAsync(() -> ask(change, at),
+                    r -> Thread.ofVirtual().name("msc-test-player-locate").start(r));
+        }
+        return lookup;
+    }
+
+    /** Ask the locator which world the player is in, and wait for the answer: a step runs in the right world. */
+    void locate() {
+        java.util.concurrent.CompletableFuture<Void> pending = startLocate();
+        if (pending != null) {
+            try {
+                pending.get();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            } catch (java.util.concurrent.ExecutionException e) {
+                // ask catches everything; nothing to report
+            }
+        }
+    }
+
+    /** One question to the locator, outside the lock. When it finds the player nowhere the bot goes by the dimension. */
+    private void ask(long change, io.github.imnotstable.msc.protocol.world.BlockPos at) {
         String found;
         try {
             found = locator.locate(name, at);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            return;
+            found = null;
         } catch (Exception e) {
             found = null;
         }
         synchronized (this) {
             if (change == worldChanges) {
                 relocate = false;
+                worldUnknown = false;
                 located = found;
                 refreshView();
             }
@@ -343,7 +377,7 @@ public final class TestPlayer implements Bot {
     /** The server sent the player to {@code key}'s world: by dying and respawning, or by a world change. */
     private synchronized void spawnedIn(String key) {
         dimension = key;
-        enteredWorld();
+        worldMayHaveChanged(true);
         refreshView();
     }
 
@@ -517,7 +551,7 @@ public final class TestPlayer implements Bot {
         return health;
     }
 
-    WorldView view() {
+    synchronized WorldView view() {
         return view;
     }
 
@@ -757,6 +791,7 @@ public final class TestPlayer implements Bot {
             double nx = rel.contains(PositionElement.X) ? body.x + pos.getX() : pos.getX();
             double ny = rel.contains(PositionElement.Y) ? body.y + pos.getY() : pos.getY();
             double nz = rel.contains(PositionElement.Z) ? body.z + pos.getZ() : pos.getZ();
+            boolean teleported = false;
             if (positioned && Math.abs(nx - body.x) + Math.abs(ny - body.y) + Math.abs(nz - body.z) > 0.01) {
                 event(String.format("[moved by server] from %.2f,%.2f,%.2f to %.2f,%.2f,%.2f", body.x, body.y, body.z,
                         nx, ny, nz));
@@ -768,9 +803,7 @@ public final class TestPlayer implements Bot {
                     step.finish(String.format("moved by server to %.2f,%.2f,%.2f (%.1f blocks)", nx, ny, nz, moved));
                     current = null;
                 }
-                if (moved > TELEPORT) {
-                    enteredWorld(); // maybe another world: Minestom sends no other sign between same-dimension instances
-                }
+                teleported = moved > TELEPORT;
             }
             body.x = nx;
             body.y = ny;
@@ -787,6 +820,10 @@ public final class TestPlayer implements Bot {
                 send(ServerboundPlayerLoadedPacket.INSTANCE);
                 spawned.countDown();
             }
+            if (teleported) {
+                worldMayHaveChanged(false); // Minestom sends no other sign between same-dimension instances
+            }
+            startLocate(); // after a teleport, or the first position after a login or respawn
         }
     }
 
