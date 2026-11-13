@@ -213,23 +213,41 @@ public final class ResourcePack implements AutoCloseable {
                 .redirectOutput(ProcessBuilder.Redirect.DISCARD)
                 .redirectError(hostLog().toFile())
                 .start();
-        p.getOutputStream().close();
-        long deadline = System.nanoTime() + 15_000_000_000L;
-        while (p.isAlive() && System.nanoTime() < deadline && !accepts(port)) {
-            Thread.sleep(100);
+        // Owned from the moment it exists, so an interrupt below (the session ending while the host starts) leaves
+        // it where close and a later session's stopLeftoverHost find it, never as an orphan with no pid file (#297).
+        hostProcess = p;
+        hostPort = port;
+        PidFile.write(hostPidFile(), p.toHandle());
+        try {
+            p.getOutputStream().close();
+            long deadline = System.nanoTime() + 15_000_000_000L;
+            while (p.isAlive() && System.nanoTime() < deadline && !accepts(port)) {
+                Thread.sleep(100);
+            }
+        } catch (IOException | RuntimeException e) {
+            abandonHost(p, port);
+            throw e;
         }
         if (!p.isAlive() || !accepts(port)) {
-            p.destroyForcibly();
-            p.waitFor(5, TimeUnit.SECONDS);
-            server = PackHost.startWithin(host, port, () -> served, PackHost.PORT_PATIENCE);
+            abandonHost(p, port);
             String why = lastLine(hostLog());
             throw new ToolException("could not start a standalone pack host" + (why.isEmpty() ? "" : " (" + why + ")")
                     + "; the pack is still served by this session");
         }
-        hostProcess = p;
-        hostPort = port;
-        PidFile.write(hostPidFile(), p.toHandle());
         return true;
+    }
+
+    /** Kill a standalone host that did not come up, and serve in-process again on its port. */
+    private void abandonHost(Process p, int port) throws IOException, InterruptedException {
+        p.destroyForcibly();
+        hostProcess = null;
+        try {
+            Files.deleteIfExists(hostPidFile());
+        } catch (IOException ignored) {
+            // A stale file is checked against the process start time anyway.
+        }
+        p.waitFor(5, TimeUnit.SECONDS);
+        server = PackHost.startWithin(host, port, () -> served, PackHost.PORT_PATIENCE);
     }
 
     /** {@code .msc/pack-host.log}: what the standalone host printed, so a failed start can say why. */
