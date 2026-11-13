@@ -1,5 +1,6 @@
 package io.github.imnotstable.msc.bench.run;
 
+import io.github.imnotstable.msc.process.ProcessTree;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -49,12 +50,12 @@ public final class ChildProcesses {
     }
 
     /**
-     * Kills a process's descendants, then the process, and waits briefly for it. Descendants first: once the parent
-     * is gone they are re-parented and no longer found.
+     * Kills a process with every process proven to descend from it, including a child forked during the kill, and
+     * never a process that only records its pid as a parent (msc-process's {@link ProcessTree}, #358). Then waits
+     * briefly for it.
      */
     public static void killTree(Process process) {
-        process.descendants().forEach(ProcessHandle::destroyForcibly);
-        process.destroyForcibly();
+        ProcessTree.destroy(process.toHandle());
         try {
             process.waitFor(10, TimeUnit.SECONDS);
         } catch (InterruptedException e) {
