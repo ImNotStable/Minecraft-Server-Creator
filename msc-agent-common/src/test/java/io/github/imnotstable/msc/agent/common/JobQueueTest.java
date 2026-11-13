@@ -4,7 +4,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.imnotstable.msc.protocol.message.ErrorCodes;
+import io.github.imnotstable.msc.protocol.op.Ops;
 import io.github.imnotstable.msc.protocol.transport.OpException;
+import io.github.imnotstable.msc.protocol.world.Region;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -58,6 +60,26 @@ class JobQueueTest {
         assertThat(a).isCompletedWithValue(2);
         assertThat(b).isCompletedWithValue(2);
         assertThat(queue.isEmpty()).isTrue();
+    }
+
+    @Test
+    void aReadQueuedBehindAJobThatUsesTheWholeBudgetFinishesWithinTwoTicks() {
+        MapWorld world = new MapWorld();
+        world.entities.add(new Ops.EntitySummary("minecraft:pig", 0.5, 70, 0.5, null));
+        Region one = Region.of("world", 0, 70, 0, 0, 70, 0);
+        JobQueue queue = new JobQueue();
+        CompletableFuture<Integer> hog = queue.add(new GreedyJob(10));
+        CompletableFuture<Ops.ReadResult> plain = queue.add(new WorldReadJob<>(world, new Ops.ReadParams(one, false, false)));
+        CompletableFuture<Ops.ReadResult> extras = queue.add(new WorldReadJob<>(world, new Ops.ReadParams(one, true, true)));
+        Duration budget = Duration.ofMillis(1);
+
+        queue.step(budget);
+        assertThat(plain).isCompleted();
+        assertThat(extras).isNotDone();
+        queue.step(budget);
+        assertThat(extras).isCompleted();
+        assertThat(extras.join().entities()).hasSize(1);
+        assertThat(hog).isNotDone();
     }
 
     @Test
