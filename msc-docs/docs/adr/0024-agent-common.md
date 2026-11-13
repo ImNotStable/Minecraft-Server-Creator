@@ -29,6 +29,8 @@ wording, timeout messages).
      reads without NBT), and `loadArea`/`loadPositions` (only Minestom loads chunks before a job; no-ops elsewhere).
    - `AgentServer`: platform id and versions, worlds, players, running a command, sending a resource pack.
    - `MainThread`: the platform's scheduler (Bukkit scheduler, Fabric tick hook, Minestom scheduler) stays per agent.
+     Each steps its jobs through the shared `JobQueue` from one task per tick, so all jobs in flight share one 20 ms
+     budget on every platform (#247; before, Paper and Minestom gave each job its own 20 ms).
 4. **Logging goes through a four-method `AgentLog`**, so common code needs no logging library; Paper adapts its JUL
    logger, Fabric slf4j, Minestom `System.Logger` (`AgentLog.of`).
 5. **Shared constants** (`AgentDefaults`: 20 ms tick budget, 2 min op timeout, 10 s connect timeout, about 8 full-size
