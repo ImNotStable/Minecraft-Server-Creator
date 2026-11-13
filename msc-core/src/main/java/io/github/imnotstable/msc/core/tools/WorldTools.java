@@ -22,10 +22,14 @@ import io.github.imnotstable.msc.renderer.RenderOptions;
 import io.github.imnotstable.msc.renderer.RenderResult;
 import io.github.imnotstable.msc.renderer.View;
 import io.github.imnotstable.msc.renderer.WorldRenderer;
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.FileTime;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
+import java.util.stream.Stream;
 
 /** Seeing and building in the world. Coordinates are strings: "x,y,z" and "x1,y1,z1 x2,y2,z2". */
 public final class WorldTools {
@@ -34,6 +38,8 @@ public final class WorldTools {
 
     /** Largest region one world_render reads, stitched from protocol-sized reads. */
     static final long MAX_RENDER_BLOCKS = 16_000_000L;
+    /** Saved renders kept in {@code .msc/renders}: a fallback for clients that drop images, so only recent ones matter. */
+    static final int KEPT_RENDERS = 20;
 
     private WorldTools() {
     }
@@ -83,6 +89,7 @@ public final class WorldTools {
                     RenderResult r = renderer.render(grid, view, options, markers(entities, signs));
                     Path dir = Files.createDirectories(config.dataDir().resolve("renders"));
                     Path file = Files.write(Files.createTempFile(dir, "render-", ".png"), r.png());
+                    pruneRenders(dir, file, KEPT_RENDERS);
                     return new Tool.Output(r.caption() + "\nsaved: " + file, r.png(), r.estimatedTokens());
                 });
         registry.add("world_summary",
@@ -167,5 +174,28 @@ public final class WorldTools {
             }
         }
         return out;
+    }
+
+    /** Deletes the oldest {@code render-*.png} in {@code dir} beyond {@code keep}, never {@code latest}. */
+    static void pruneRenders(Path dir, Path latest, int keep) throws IOException {
+        List<Path> older;
+        try (Stream<Path> list = Files.list(dir)) {
+            older = list.filter(p -> !p.equals(latest))
+                    .filter(p -> p.getFileName().toString().startsWith("render-") && p.getFileName().toString().endsWith(".png"))
+                    .toList();
+        }
+        List<Path> oldestFirst = new ArrayList<>(older);
+        oldestFirst.sort(Comparator.comparing(WorldTools::modified));
+        for (Path p : oldestFirst.subList(0, Math.max(0, oldestFirst.size() - (keep - 1)))) {
+            Files.deleteIfExists(p);
+        }
+    }
+
+    private static FileTime modified(Path p) {
+        try {
+            return Files.getLastModifiedTime(p);
+        } catch (IOException e) {
+            return FileTime.fromMillis(0);
+        }
     }
 }

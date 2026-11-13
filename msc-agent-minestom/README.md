@@ -3,7 +3,7 @@
 A library a Minestom server calls at startup so msc-core's world and server tools work on it, the same way `msc-agent-paper` does for Paper.
 
 **Phase:** Post-MVP  
-**Status:** Built and tested (28 tests, plus an end-to-end run of the template's server jar against a protocol core). Design decisions: [ADR 0010](../msc-docs/docs/adr/0010-minestom-agent.md).
+**Status:** Built and tested (Minestom `@EnvTest` tests, including a smoke test against a real core socket, plus an end-to-end run of the template's server jar against a protocol core). Design decisions: [ADR 0010](../msc-docs/docs/adr/0010-minestom-agent.md).
 
 ## Use
 
@@ -21,7 +21,7 @@ The `minestom-server` template in `msc-templates` already does this and ships th
 
 - Connects to `msc-core` over `msc-protocol` (`MSC_CORE_ADDRESS`, `MSC_TOKEN`; or `-Dmsc.core.address=host:port -Dmsc.token=...`), retrying and reconnecting like the Paper agent.
 - Implements every operation in `Ops`, with the Paper agent's limits, errors, undo and events.
-- Runs world work on Minestom's scheduler at tick start in 20 ms slices; loads or generates the chunks a call touches first.
+- Runs world work on Minestom's scheduler at tick start in 20 ms slices; loads or generates the chunks a call touches first, and unloads the ones only a read loaded.
 - `server.command` runs the server's own commands (Minestom has no vanilla ones).
 
 ## Build

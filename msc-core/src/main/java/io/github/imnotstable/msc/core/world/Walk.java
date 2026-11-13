@@ -40,7 +40,9 @@ public final class Walk {
             "cornflower", "lily_of_the_valley", "wither_rose", "sunflower", "lilac", "rose_bush", "peony",
             "torchflower", "pitcher_plant", "spore_blossom", "small_dripleaf", "brown_mushroom", "red_mushroom",
             "moss_carpet", "pale_moss_carpet", "leaf_litter", "short_dry_grass", "tall_dry_grass", "bush",
-            "firefly_bush", "wildflowers", "cactus_flower", "end_rod", "string");
+            "firefly_bush", "wildflowers", "cactus_flower", "end_rod", "string", "torch", "rail", "candle");
+    /** Full blocks whose names end with an open suffix. */
+    private static final Set<String> SOLID_IDS = Set.of("mangrove_roots", "muddy_mangrove_roots");
     private static final Set<String> CLIMB_IDS = Set.of("ladder", "vine", "scaffolding", "water", "bubble_column",
             "twisting_vines", "twisting_vines_plant", "weeping_vines", "weeping_vines_plant", "cave_vines",
             "cave_vines_plant", "kelp", "kelp_plant");
@@ -82,7 +84,7 @@ public final class Walk {
         if (OPEN_IDS.contains(id)) {
             return OPEN;
         }
-        if (id.equals("iron_door") || id.equals("iron_trapdoor")) {
+        if (id.equals("iron_door") || id.equals("iron_trapdoor") || SOLID_IDS.contains(id)) {
             return SOLID;
         }
         if (id.endsWith("_trapdoor")) {

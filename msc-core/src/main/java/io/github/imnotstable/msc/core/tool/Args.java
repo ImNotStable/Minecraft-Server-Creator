@@ -13,10 +13,6 @@ public final class Args {
         this.json = json == null ? new JsonObject() : json;
     }
 
-    public JsonObject json() {
-        return json;
-    }
-
     public boolean has(String name) {
         return json.has(name) && !json.get(name).isJsonNull();
     }

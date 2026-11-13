@@ -37,6 +37,18 @@ class AnimationTest {
     }
 
     @Test
+    void rejectsBadCountsBeforeBuildingFrames() {
+        Texture big = Texture.square(512);
+        Ramp ramp = Ramp.from(0xFF3060E0, 4);
+        assertThatThrownBy(() -> Animation.scroll(big, 0, 1, Integer.MAX_VALUE, 2)).hasMessageContaining("1 to 64 frames");
+        assertThatThrownBy(() -> Animation.pulse(big, ramp, Integer.MAX_VALUE, 2)).hasMessageContaining("1 to 64 frames");
+        assertThatThrownBy(() -> Animation.scroll(big, 0, 1, 65, 2)).hasMessageContaining("not 65");
+        assertThatThrownBy(() -> Animation.pulse(big, ramp, 0, 2)).hasMessageContaining("not 0");
+        assertThatThrownBy(() -> Animation.scroll(big, 0, 1, 64, 0)).hasMessageContaining("frametime");
+        assertThatThrownBy(() -> Animation.fromStrip(new Texture(1, 65), 2, false)).hasMessageContaining("not 65");
+    }
+
+    @Test
     void rejectsMixedFrameSizes() {
         assertThatThrownBy(() -> Animation.fromStrip(new Texture(16, 40), 1, false)).hasMessageContaining("multiple");
     }

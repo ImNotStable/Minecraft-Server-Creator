@@ -12,6 +12,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 /**
@@ -93,8 +95,10 @@ public final class Templates {
      * Writes template {@code id} into {@code target}, rendering {@code {{placeholders}}} in file
      * contents and paths.
      *
-     * @throws IllegalArgumentException if the id is unknown or a placeholder has no value
-     * @throws IllegalStateException    if {@code target} exists and is not an empty directory
+     * @throws IllegalArgumentException if the id is unknown, a placeholder has no value, or the variables give a
+     *                                  class that clashes with an import or two files with one path
+     * @throws IllegalStateException    if {@code target} exists and is not an empty directory; a directory
+     *                                  holding only MSC's own {@code .msc} folder counts as empty
      * @throws IOException              if writing fails
      */
     public static ScaffoldResult scaffold(String id, Path target, TemplateVariables vars) throws IOException {
@@ -104,7 +108,7 @@ public final class Templates {
         values.putAll(vars.asMap());
 
         Path root = target.toAbsolutePath().normalize();
-        List<Path> written = new ArrayList<>();
+        Map<Path, byte[]> files = new LinkedHashMap<>();
         for (String source : lines(ROOT + id + "/files.txt")) {
             String rel = TemplateRenderer.render(source, values);
             if (rel.endsWith(TEMPLATE_SUFFIX)) {
@@ -119,17 +123,44 @@ public final class Templates {
                 bytes = in.readAllBytes();
             }
             if (!isBinary(source)) {
-                bytes = TemplateRenderer.render(new String(bytes, StandardCharsets.UTF_8), values)
-                        .getBytes(StandardCharsets.UTF_8);
+                String text = TemplateRenderer.render(new String(bytes, StandardCharsets.UTF_8), values);
+                requireNoImportClash(id, rel, text);
+                bytes = text.getBytes(StandardCharsets.UTF_8);
             }
+            if (files.put(out, bytes) != null) {
+                throw new IllegalArgumentException("These variables make template '" + id + "' write " + rel
+                        + " twice; choose another name or main class");
+            }
+        }
+        // Written only once every file rendered and passed the checks, so a refused scaffold leaves nothing behind.
+        List<Path> written = new ArrayList<>();
+        for (Map.Entry<Path, byte[]> f : files.entrySet()) {
+            Path out = f.getKey();
             Files.createDirectories(out.getParent());
-            Files.write(out, bytes);
+            Files.write(out, f.getValue());
             if (out.getFileName().toString().equals("gradlew")) {
                 out.toFile().setExecutable(true, false);
             }
             written.add(out);
         }
         return new ScaffoldResult(root, written, values);
+    }
+
+    /**
+     * A Java file whose class is named like one of its imports does not compile, for example project name
+     * {@code Minecraft} giving {@code MinecraftServer} next to {@code import net.minestom.server.MinecraftServer}.
+     */
+    private static void requireNoImportClash(String id, String rel, String text) {
+        if (!rel.endsWith(".java")) {
+            return;
+        }
+        String file = rel.substring(rel.lastIndexOf('/') + 1);
+        String className = file.substring(0, file.length() - ".java".length());
+        Matcher m = Pattern.compile("(?m)^import\\s+([\\w.]+\\.)" + Pattern.quote(className) + "\\s*;").matcher(text);
+        if (m.find()) {
+            throw new IllegalArgumentException("Template '" + id + "' would name a class " + className
+                    + ", which clashes with import " + m.group(1) + className + "; choose another project name or main class");
+        }
     }
 
     private static boolean isBinary(String path) {

@@ -13,7 +13,8 @@ on:
       - "msc-*/README.md"
       - "msc-*/PLAN.md"
   pull_request:
-    # "labeled" lets the full-ci label start a full run; other labels skip every job (see the job ifs).
+    # "labeled" lets the full-ci label start a full run; other labels skip every job (see the job ifs) and get a
+    # concurrency group of their own, so they cannot cancel the PR's running build.
     types: [opened, synchronize, reopened, ready_for_review, labeled]
     paths-ignore:
       - "docs/**"
@@ -26,9 +27,10 @@ on:
     - cron: "17 3 * * *"
   workflow_dispatch:
 
-# A newer push to the same branch or PR cancels the older run (saves Actions minutes).
+# A newer push to the same branch or PR cancels the older run (saves Actions minutes). Concurrency applies before
+# the job ifs, so a label other than full-ci gets a group of its own (its run id) and cancels nothing.
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.ref }}-${{ github.event.action == 'labeled' && github.event.label.name != 'full-ci' && github.run_id || 'run' }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 permissions:
@@ -78,8 +80,11 @@ jobs:
 
   e2e:
     name: End to end on Minestom (${{ matrix.os }})
-    # Not on ordinary PRs: main, nightly, by hand, or a PR labelled full-ci.
-    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'full-ci')
+    # Not on ordinary PRs: main, nightly, by hand, or a PR labelled full-ci. Like build, a labelled event runs it only
+    # when the label is full-ci, so adding another label to a full-ci PR does not start it again.
+    if: >-
+      (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'full-ci'))
+      && (github.event.action != 'labeled' || github.event.label.name == 'full-ci')
     runs-on: ${{ matrix.os }}
     timeout-minutes: 40
     strategy:

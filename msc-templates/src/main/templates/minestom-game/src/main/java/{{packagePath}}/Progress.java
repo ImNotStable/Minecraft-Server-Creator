@@ -13,6 +13,7 @@ import java.util.Properties;
 import java.util.TreeMap;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Saved progress: the stage each player has reached, by stage name (so reordering stages keeps progress).
@@ -23,7 +24,7 @@ public final class Progress {
     private final Map<UUID, String> stages = new ConcurrentHashMap<>();
     private final Path file;
     private final Object writeLock = new Object();
-    private volatile String pending;
+    private final AtomicReference<String> pending = new AtomicReference<>();
 
     public Progress(Path file) {
         this.file = file;
@@ -54,12 +55,12 @@ public final class Progress {
 
     public void setStage(UUID player, String stage) {
         stages.put(player, stage);
-        pending = serialize();
+        pending.set(serialize());
     }
 
     public void clear(UUID player) {
         stages.remove(player);
-        pending = serialize();
+        pending.set(serialize());
     }
 
     public int size() {
@@ -89,11 +90,11 @@ public final class Progress {
      */
     public void flush() throws IOException {
         synchronized (writeLock) {
-            String text = pending;
+            // Take and clear in one step: a snapshot set between a separate read and clear would be lost.
+            String text = pending.getAndSet(null);
             if (text == null) {
                 return;
             }
-            pending = null;
             Path parent = file.toAbsolutePath().getParent();
             Files.createDirectories(parent);
             Path tmp = file.resolveSibling(file.getFileName() + ".tmp");

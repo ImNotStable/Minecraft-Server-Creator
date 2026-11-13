@@ -1,6 +1,6 @@
 # Minecraft Server Creator
 
-A toolset that helps an AI develop custom Minecraft servers on any platform. This is one git repo (a monorepo); each folder is a module. The MVP targets Paper on the latest stable Minecraft release.
+A toolset that helps an AI develop custom Minecraft servers on any platform. This is one git repo (a monorepo); each folder is a module. It targets the latest stable Minecraft release on Paper, Purpur, Fabric, Quilt, NeoForge, Forge and Minestom ([Platforms](docs/wiki/Platforms.md)).
 
 ## Quick start (Claude Code)
 
@@ -27,19 +27,24 @@ Step-by-step guide: [Wiki](https://github.com/ImNotStable/Minecraft-Server-Creat
 
 To update after pulling new code, run `installMsc` again, then reconnect msc in `/mcp` (or restart Claude Code). Claude Code can stay open: each install is a new folder. Tool reference: [msc-docs/docs/tools.md](msc-docs/docs/tools.md).
 
-| Module | Phase |
+| Module | What it is |
 | --- | --- |
-| [msc-docs](msc-docs/README.md) | MVP |
-| [msc-protocol](msc-protocol/README.md) | MVP |
-| [msc-core](msc-core/README.md) | MVP |
-| [msc-agent-paper](msc-agent-paper/README.md) | MVP |
-| [msc-templates](msc-templates/README.md) | MVP |
-| [msc-bench](msc-bench/README.md) | MVP |
-| [msc-agent-fabric](msc-agent-fabric/README.md) | Post-MVP |
-| [msc-agent-minestom](msc-agent-minestom/README.md) | Post-MVP |
-| [msc-renderer](msc-renderer/README.md) | Post-MVP |
-| [msc-textures](msc-textures/README.md) | Post-MVP |
-| [msc-plugin](msc-plugin/README.md) | Post-MVP |
+| [msc-docs](msc-docs/README.md) | Plan, tool catalogue, protocol and decision records |
+| [msc-protocol](msc-protocol/README.md) | Messages and transport between the core and the agents |
+| [msc-core](msc-core/README.md) | The MCP server the AI talks to |
+| [msc-agent-common](msc-agent-common/README.md) | The platform-neutral half of every agent |
+| [msc-agent-paper](msc-agent-paper/README.md) | Agent for Paper and Purpur |
+| [msc-agent-fabric](msc-agent-fabric/README.md) | Agent for Fabric and Quilt |
+| [msc-agent-neoforge](msc-agent-neoforge/README.md) | Agent for NeoForge |
+| [msc-agent-forge](msc-agent-forge/README.md) | Agent for Forge |
+| [msc-agent-vanilla](msc-agent-vanilla/README.md) | Vanilla Minecraft sources the Fabric, NeoForge and Forge agents compile in (not a Gradle module) |
+| [msc-agent-minestom](msc-agent-minestom/README.md) | Agent for Minestom |
+| [msc-templates](msc-templates/README.md) | Starter projects per platform |
+| [msc-renderer](msc-renderer/README.md) | Headless renderer behind `world_render` |
+| [msc-textures](msc-textures/README.md) | Texture and resource pack generation |
+| [msc-bot](msc-bot/) | Headless test player behind `player_test` |
+| [msc-bench](msc-bench/README.md) | Benchmark tasks and runner |
+| [msc-plugin](msc-plugin/README.md) | The Claude Code plugin and its launcher |
 
 ## Build (developing this repo)
 

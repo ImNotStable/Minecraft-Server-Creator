@@ -3,7 +3,7 @@
 The home for plans, the spec, the tool catalogue and decision records for Minecraft Server Creator.
 
 **Phase:** MVP  
-**Status:** Planning. No code yet.
+**Status:** Active: kept in step with the code (`tools.md` is generated from the tool definitions).
 
 ## Scope
 

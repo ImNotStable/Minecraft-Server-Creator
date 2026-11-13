@@ -70,6 +70,19 @@ class WorldOpsTest {
     }
 
     @Test
+    void writeRefusesXzThatUndoCannotRecord() {
+        int edge = PackedPos.MAX_XZ;
+        fill(box(edge, 70, -edge - 1, edge, 70, -edge - 1), STONE);
+        assertThat(world.get(edge, 70, -edge - 1)).isEqualTo(STONE);
+        int writes = world.writes;
+        assertThatThrownBy(() -> fill(box(40_000_000, 70, 0, 40_000_000, 70, 0), STONE))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("40000000");
+        assertThatThrownBy(() -> fill(box(0, 70, -edge - 2, 0, 70, -edge - 2), STONE))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThat(world.writes).isEqualTo(writes);
+    }
+
+    @Test
     void writeSkipsCellsMarkedMinusOne() {
         Region r = box(0, 70, 0, 1, 70, 1);
         // Y-Z-X order: (0,0) (1,0) (0,1) (1,1)
@@ -99,6 +112,7 @@ class WorldOpsTest {
         assertThat(grid.palette()).hasSize(3);
         assertThat(result.entities()).isEmpty();
         assertThat(result.signs()).isEmpty();
+        assertThat(world.loads).containsExactly("area 0,0..1,1", "released");
     }
 
     @Test
@@ -145,7 +159,7 @@ class WorldOpsTest {
         assertThat(result.sizeX()).isEqualTo(2);
         assertThat(result.sizeZ()).isEqualTo(2);
         assertThat(result.heights()).containsExactly(80, 75, -65, -65);
-        assertThat(world.loads).containsExactly("area 0,0..1,1");
+        assertThat(world.loads).containsExactly("area 0,0..1,1", "released");
     }
 
     @Test
@@ -157,6 +171,12 @@ class WorldOpsTest {
                 .isInstanceOfSatisfying(OpException.class, e -> assertThat(e.code()).isEqualTo(ErrorCodes.TOO_LARGE));
         assertThatThrownBy(() -> ops.heightmap(new Ops.HeightmapParams("world", new BlockPos(0, 0, 0), new BlockPos(2000, 0, 2000))))
                 .isInstanceOfSatisfying(OpException.class, e -> assertThat(e.code()).isEqualTo(ErrorCodes.TOO_LARGE));
+        assertThatThrownBy(() -> ops.read(new Ops.ReadParams(Region.of("world", -2_000_000_000, 64, 0, 2_000_000_000, 64, 0), false)))
+                .isInstanceOfSatisfying(OpException.class, e -> assertThat(e.code()).isEqualTo(ErrorCodes.TOO_LARGE));
+        assertThatThrownBy(() -> ops.heightmap(new Ops.HeightmapParams("world",
+                new BlockPos(Integer.MIN_VALUE, 0, Integer.MIN_VALUE), new BlockPos(Integer.MAX_VALUE, 0, Integer.MAX_VALUE))))
+                .isInstanceOfSatisfying(OpException.class, e -> assertThat(e.code()).isEqualTo(ErrorCodes.TOO_LARGE));
+        assertThat(world.loads).isEmpty();
         assertThatThrownBy(() -> fill(box(0, 70, 0, 0, 70, 0), "minecraft:not_a_block"))
                 .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("not_a_block");
         int top = world.maxY();

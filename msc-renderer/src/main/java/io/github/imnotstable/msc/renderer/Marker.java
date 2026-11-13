@@ -8,7 +8,8 @@ import java.util.Set;
 
 /**
  * Something that is not a block, drawn on top of the image. Entities are numbered dots coloured by {@link Kind};
- * holograms and signs show their words in a text box. The caption lists every marker by number with its label.
+ * holograms and signs show their words in a text box. The caption lists each drawn marker by number with its label
+ * and counts the rest by type.
  * Build one with {@link #entity}, {@link #sign} or {@link #text}.
  *
  * @param x     world x: an entity's feet, a hologram's anchor, or a sign block's centre

@@ -72,7 +72,7 @@ case), `sev:3` (cleanup).
 | 10 | `piece:renderer` | `msc-renderer` |
 | 11 | `piece:templates` | `msc-templates` (generator and all nine templates) |
 | 12 | `piece:bench` | `msc-bench` |
-| 13 | `piece:build` | `build-logic`, `gradle/`, root Gradle files, `.github/`, `msc-plugin`, `msc-docs`, README, TERMS |
+| 13 | `piece:build` | `build-logic`, `gradle/`, root Gradle files, `.github/`, `msc-plugin`, `msc-docs`, `docs/wiki`, README, TERMS |
 | 14 | `piece:cross` | Whole repo: duplication between modules, the per-platform parity of every op and tool, dead code, test suite time |
 
 Tests of a module belong to its piece. Every campaign issue carries `campaign`, one `piece:*`, one `kind:*`, one

@@ -23,7 +23,12 @@ public final class FakeRconServer implements AutoCloseable {
     private final Thread thread;
 
     public FakeRconServer(String password, UnaryOperator<String> replies) throws IOException {
-        this.socket = new ServerSocket(0, 10, InetAddress.getLoopbackAddress());
+        this(0, password, replies);
+    }
+
+    /** Listens on {@code port}, or on a free one when it is 0. */
+    public FakeRconServer(int port, String password, UnaryOperator<String> replies) throws IOException {
+        this.socket = new ServerSocket(port, 10, InetAddress.getLoopbackAddress());
         this.password = password;
         this.replies = replies;
         this.thread = Thread.ofVirtual().start(this::acceptLoop);

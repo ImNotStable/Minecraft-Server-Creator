@@ -30,37 +30,53 @@ class TemplateVariablesTest {
 
     @Test
     void defaultsAreDevFriendly() {
-        TemplateVariables v = TemplateVariables.of("x");
+        TemplateVariables v = TemplateVariables.of("xy");
         assertThat(v.serverIp()).isEqualTo("127.0.0.1");
         assertThat(v.serverPort()).isEqualTo(25565);
         assertThat(v.rconPort()).isEqualTo(25575);
-        assertThat(v.rconPassword()).hasSize(24).isNotEqualTo(TemplateVariables.of("x").rconPassword());
+        assertThat(v.rconPassword()).hasSize(24).isNotEqualTo(TemplateVariables.of("xy").rconPassword());
         assertThat(v.levelType()).isEqualTo("minecraft:flat");
         assertThat(v.acceptEula()).isFalse();
         assertThat(v.asMap()).containsEntry("eula", "false");
         assertThat(v.asMap().get("generatorSettings")).contains("\"layers\"", "minecraft:bedrock");
         assertThat(v.withLevelType("minecraft:normal").asMap()).containsEntry("generatorSettings", "{}");
         assertThat(v.withAcceptEula(true).asMap()).containsEntry("eula", "true");
-        assertThat(v.asMap()).containsEntry("packagePath", "com/example/x");
+        assertThat(v.asMap()).containsEntry("packagePath", "com/example/xy");
     }
 
     @Test
     void withersOverrideOneValue() {
-        TemplateVariables v = TemplateVariables.of("x").withPackageName("dev.me.x").withRconPort(25580);
-        assertThat(v.packageName()).isEqualTo("dev.me.x");
+        TemplateVariables v = TemplateVariables.of("xy").withPackageName("dev.me.xy").withRconPort(25580);
+        assertThat(v.packageName()).isEqualTo("dev.me.xy");
         assertThat(v.rconPort()).isEqualTo(25580);
-        assertThat(v.name()).isEqualTo("X");
+        assertThat(v.name()).isEqualTo("Xy");
     }
 
     @Test
     void rejectsBadValues() {
         assertThatThrownBy(() -> TemplateVariables.of("2fast")).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> TemplateVariables.of("  ")).isInstanceOf(IllegalArgumentException.class);
-        TemplateVariables v = TemplateVariables.of("x");
+        TemplateVariables v = TemplateVariables.of("xy");
         assertThatThrownBy(() -> v.withPackageName("Com.Bad")).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> v.withDescription("say \"hi\"")).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> v.withAuthor("a\nb")).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> v.withRconPort(25565)).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> v.withServerPort(70000)).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void rejectsNamesThatGiveAnUnusablePackageOrModId() {
+        for (String name : new String[] {"Void", "Switch", "Default", "Class", "Int", "True", "Null"}) {
+            assertThatThrownBy(() -> TemplateVariables.of(name)).as(name)
+                    .isInstanceOf(IllegalArgumentException.class).hasMessageContaining(name).hasMessageContaining("keyword");
+        }
+        assertThatThrownBy(() -> TemplateVariables.of("xy").withPackageName("dev.new.xy"))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("new");
+        assertThatThrownBy(() -> TemplateVariables.of("X"))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("X").hasMessageContaining("2-64");
+        assertThatThrownBy(() -> TemplateVariables.of("xy").withProjectId("a" + "-b".repeat(32)))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThat(TemplateVariables.of("Void Run").packageName()).isEqualTo("com.example.voidrun");
+        assertThat(TemplateVariables.of("xy").withProjectId("a" + "b".repeat(63)).projectId()).hasSize(64);
     }
 }

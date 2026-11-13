@@ -3,6 +3,7 @@ package io.github.imnotstable.msc.core;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import io.github.imnotstable.msc.core.server.Platform;
 import io.github.imnotstable.msc.core.tool.Tool;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -154,6 +155,24 @@ public final class ToolDocs {
         return problems;
     }
 
+    /** Problems with the hand-written Platforms table in tools.md: each {@link Platform} needs a row. */
+    public static List<String> checkPlatforms(String doc) {
+        int start = doc.indexOf("### Platforms");
+        String section = start < 0 ? "" : doc.substring(start, nextHeading(doc, start));
+        List<String> problems = new ArrayList<>();
+        for (Platform p : Platform.values()) {
+            if (!section.contains("| `" + p.id() + "` |")) {
+                problems.add("tools.md's Platforms table has no row for " + p.id());
+            }
+        }
+        return problems;
+    }
+
+    private static int nextHeading(String doc, int from) {
+        int next = doc.indexOf("\n#", from + 1);
+        return next < 0 ? doc.length() : next;
+    }
+
     /** {@code write|check <tools.md> <wiki Tools-reference.md>}. Check exits 1 with what is wrong. */
     public static void main(String[] args) throws Exception {
         if (args.length != 3 || !List.of("write", "check").contains(args[0])) {
@@ -182,6 +201,7 @@ public final class ToolDocs {
             } else if (!fresh.equals(doc)) {
                 problems.add(docFile + " is out of date with the tool definitions");
             }
+            problems.addAll(checkPlatforms(fresh));
             problems.addAll(checkWiki(Files.readString(wikiFile, StandardCharsets.UTF_8), tools));
         } finally {
             deleteTree(workspace);

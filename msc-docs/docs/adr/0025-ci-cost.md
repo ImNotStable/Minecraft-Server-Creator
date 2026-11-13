@@ -9,7 +9,7 @@ The repository is private, so GitHub Actions minutes are billed, and Windows min
 ## Decisions
 
 1. **Pull requests run one job: `Build and test (ubuntu-latest)`.** It runs `./gradlew build`, which holds every unit test.
-2. **The full set runs elsewhere.** The Windows build and the Minestom end-to-end job (Linux and Windows) run on pushes to `main`, nightly at 03:17 UTC, by hand (`workflow_dispatch`), and on a pull request labelled `full-ci`. Adding the label starts a full run; other labels start nothing.
+2. **The full set runs elsewhere.** The Windows build and the Minestom end-to-end job (Linux and Windows) run on pushes to `main`, nightly at 03:17 UTC, by hand (`workflow_dispatch`), and on a pull request labelled `full-ci`. Adding the label starts a full run; other labels start nothing and cancel nothing (their runs get a concurrency group of their own, and both jobs skip a labelled event unless the label is `full-ci`).
 3. **Kept from before:** a newer push cancels the older run on the same branch (not on `main`), docs-only changes skip CI, and `setup-gradle` caches dependencies and the build cache, written only from `main`.
 4. **Use `full-ci` on PRs that touch** OS-specific code (paths, processes, ports, file locking, line endings), the agents, the core's MCP layer, `dev_cycle`, templates or the CI workflow itself.
 

@@ -60,7 +60,8 @@ final class MinestomServer implements AgentServer {
 
     /**
      * Minestom has no vanilla commands: only commands the server registered exist. Success means the
-     * command was found and parsed; an unknown command or bad syntax fails with a line saying which.
+     * command was found and parsed; an unknown command, bad syntax, or a command cancelled by its
+     * condition or a thrown exception fails with a line saying which. Commands run as the console.
      */
     @Override
     public boolean runCommand(String line, Consumer<String> feedback) {
@@ -73,6 +74,12 @@ final class MinestomServer implements AgentServer {
             case INVALID_SYNTAX -> {
                 if (output.isEmpty()) {
                     feedback.accept("Invalid syntax: " + line);
+                }
+            }
+            case CANCELLED -> {
+                if (output.isEmpty()) {
+                    feedback.accept("Command was cancelled: its condition refused the console or it threw"
+                            + " (see the server log)");
                 }
             }
             default -> {

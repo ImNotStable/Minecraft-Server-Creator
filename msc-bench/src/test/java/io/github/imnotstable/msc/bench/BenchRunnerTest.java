@@ -214,7 +214,8 @@ class BenchRunnerTest {
                 {"agent":{"command":["%s","-cp","%s","io.github.imnotstable.msc.bench.FakeAgent","{prompt}"]},
                  "modes":{"toolset":{"requireMcp":"msc","env":{"FAKE_MCP_COUNTER":"%s"}},
                           "other":{"requireMcp":"missing","env":{"FAKE_MCP_COUNTER":"%s"}},
-                          "late":{"requireMcp":"missing","env":{"MSC_TOOL_LOG":"{toolLog}"}}}}
+                          "late":{"requireMcp":"missing","env":{"MSC_TOOL_LOG":"{toolLog}"}},
+                          "silent":{"requireMcp":"msc","env":{"FAKE_SILENT":"1"}}}}
                 """.formatted(java, classpath, counter, counter));
         BenchRunner runner = new BenchRunner(BenchConfig.load(configFile), dir.resolve("run"), "",
                 new PrintStream(new ByteArrayOutputStream(), true, StandardCharsets.UTF_8));
@@ -233,5 +234,10 @@ class BenchRunnerTest {
         assertThat(gaveUp.passed()).isFalse();
         assertThat(gaveUp.error()).contains("MCP server missing was not connected").contains("3 tries");
         assertThat(dir.resolve("run/attempts/write-file/other-1-try3")).isDirectory();
+
+        RunRecord silent = runner.run(taskDefs, List.of("silent"), 1).getFirst();
+        assertThat(silent.agent().parsed()).isFalse();
+        assertThat(silent.error()).as("no init event read, so nothing says MCP was missing").isNull();
+        assertThat(dir.resolve("run/attempts/write-file/silent-1-try2")).doesNotExist();
     }
 }

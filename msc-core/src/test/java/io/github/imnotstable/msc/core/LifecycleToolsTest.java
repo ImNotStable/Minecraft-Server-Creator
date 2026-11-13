@@ -157,6 +157,21 @@ class LifecycleToolsTest {
     }
 
     @Test
+    void aServerStartedAfterADetachedOneExitedIsNotDetached() throws Exception {
+        h.ok("server_start", "timeoutSeconds", 30);
+        h.ok("server_detach");
+        h.core.server().console("stop");
+        for (int i = 0; i < 100 && h.core.server().running(); i++) {
+            Thread.sleep(100);
+        }
+        assertThat(h.core.server().running()).isFalse();
+        h.ok("server_start", "timeoutSeconds", 30);
+        assertThat(h.ok("msc_status")).contains("server: running").doesNotContain("detached");
+        h.core.server().close();
+        assertThat(h.core.server().running()).isFalse();
+    }
+
+    @Test
     void stoppingADetachedServerInTheSameSessionStopsItsPackHostToo() throws Exception {
         h.ok("server_start", "timeoutSeconds", 30);
         h.ok("texture", "name", "item/dot", "palette", List.of("a=#ff0000"), "rows", List.of("a"));
@@ -226,6 +241,10 @@ class LifecycleToolsTest {
         assertThat(LifecycleToolsAccess.deployName(Path.of("demo-1.0.jar"), folder)).isEqualTo("demo");
         assertThat(LifecycleToolsAccess.deployName(Path.of("my-mod-2.3+26.3.jar"), folder)).isEqualTo("my-mod");
         assertThat(LifecycleToolsAccess.deployName(Path.of("plugin.jar"), folder)).isEqualTo("plugin");
+        assertThat(LifecycleToolsAccess.deployName(Path.of("parkour-2-0.1.0-SNAPSHOT.jar"), folder)).isEqualTo("parkour-2");
+        assertThat(LifecycleToolsAccess.deployName(Path.of("bedwars-4v4-1.0.jar"), folder)).isEqualTo("bedwars-4v4");
+        assertThat(LifecycleToolsAccess.deployName(Path.of("lobby-1v1-2.0-rc1.jar"), folder)).isEqualTo("lobby-1v1");
+        assertThat(LifecycleToolsAccess.deployName(Path.of("arena-2-1.0.jar"), folder)).isEqualTo("arena-2");
     }
 
     @Test
@@ -280,6 +299,31 @@ class LifecycleToolsTest {
         assertThat(h.ok("dev_cycle", "project", "legacy", "restart", false)).contains("as plugins/arena.jar");
         try (var jars = Files.list(plugins)) {
             assertThat(jars.map(p -> p.getFileName().toString())).containsExactlyInAnyOrder("arena.jar", "msc-agent-paper.jar");
+        }
+    }
+
+    @Test
+    void aFailedDeployStopsTheTestsRunningBesideIt() throws Exception {
+        Path ws = Files.createDirectories(workspace.resolve("ws9"));
+        Path slow = Files.createDirectories(ws.resolve("slow"));
+        Files.writeString(slow.resolve("version.txt"), "1.0");
+        Files.writeString(slow.resolve("slow-check.flag"), "");
+        Files.createDirectories(ws.resolve("run"));
+        Files.writeString(ws.resolve("run/paper.jar"), "not a jar");
+        try (CoreHarness s = new CoreHarness(ws, c -> c.withBuildCommand(java(FakeBuildMain.class)))) {
+            assertThat(s.error("dev_cycle", "project", "slow")).contains("EULA");
+            Path started = slow.resolve("check-started");
+            for (int i = 0; i < 50 && !Files.exists(started); i++) {
+                Thread.sleep(100);
+            }
+            // The check may be stopped before its process starts; once started, it must not outlive the failure.
+            if (Files.exists(started)) {
+                ProcessHandle check = ProcessHandle.of(Long.parseLong(Files.readString(started).strip())).orElse(null);
+                for (int i = 0; i < 100 && check != null && check.isAlive(); i++) {
+                    Thread.sleep(100);
+                }
+                assertThat(check == null || !check.isAlive()).isTrue();
+            }
         }
     }
 
@@ -380,7 +424,7 @@ class LifecycleToolsTest {
             assertThat(machineEula).doesNotExist();
             assertThat(s.call("server_start", "acceptEula", true, "timeoutSeconds", 20).text())
                     .startsWith("Minecraft EULA (https://aka.ms/MinecraftEULA) accepted for this machine, saved in ")
-                    .contains("TERMS.md");
+                    .contains("TERMS.md").contains("every Paper, Purpur, Fabric, Quilt, NeoForge and Forge server");
             // The notice is shown once.
             assertThat(s.call("server_start", "acceptEula", true, "timeoutSeconds", 20).text()).doesNotContain("TERMS.md");
             assertThat(ws.resolve("run/eula.txt")).content().contains("eula=true");
@@ -471,6 +515,18 @@ class LifecycleToolsTest {
                     .doesNotContain("ask the user");
             assertThat(workspace.resolve("ws4/run/plugins/msc-agent-paper.jar")).hasContent("bundled");
             assertThat(workspace.resolve("ws4/run/eula.txt")).content().contains("eula=true").doesNotContain("eula=false");
+        }
+        // dev_cycle or server_start acceptEula=true may fill run/ first: the missing defaults are still written.
+        Path ws8 = workspace.resolve("ws8");
+        Files.createDirectories(ws8.resolve("run/plugins"));
+        Files.writeString(ws8.resolve("run/plugins/demo.jar"), "deployed before setup");
+        Files.writeString(ws8.resolve("run/eula.txt"), "eula=true\n");
+        try (CoreHarness s = new CoreHarness(ws8, c -> c.withDownloadsUrl(base))) {
+            assertThat(s.ok("server_setup")).contains("wrote 1 default config files");
+            assertThat(ws8.resolve("run/server.properties")).content().contains("online-mode=false");
+            assertThat(ws8.resolve("run/eula.txt")).hasContent("eula=true\n");
+            assertThat(ws8.resolve("run/plugins/demo.jar")).hasContent("deployed before setup");
+            assertThat(s.ok("server_setup")).doesNotContain("default config files");
         } finally {
             fill.stop(0);
         }

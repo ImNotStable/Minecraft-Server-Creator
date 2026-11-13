@@ -6,7 +6,8 @@ import java.nio.file.Path;
 /**
  * A stand-in for {@code gradlew}. {@code assemble} (or no task) fails like javac when {@code broken.flag} exists, else
  * writes a jar; {@code check} fails like a test when {@code failing-test.flag} exists, and appends each task it ran to
- * {@code tasks.log}. With {@code thin.flag}, the jar also goes to {@code build/msc/server.jar} with one dependency in
+ * {@code tasks.log}. With {@code slow-check.flag}, {@code check} writes its pid to {@code check-started} and sleeps a
+ * minute. With {@code thin.flag}, the jar also goes to {@code build/msc/server.jar} with one dependency in
  * {@code build/msc/libs}, as the init script's thin Minestom jar does.
  */
 public final class FakeBuildMain {
@@ -17,6 +18,11 @@ public final class FakeBuildMain {
         Files.writeString(Path.of("tasks.log"), String.join(" ", args) + "\n", java.nio.file.StandardOpenOption.CREATE,
                 java.nio.file.StandardOpenOption.APPEND);
         if (args.length > 0 && args[0].equals("check")) {
+            if (Files.exists(Path.of("slow-check.flag"))) {
+                Files.move(Files.writeString(Path.of("check-started.tmp"), String.valueOf(ProcessHandle.current().pid())),
+                        Path.of("check-started"));
+                Thread.sleep(60_000);
+            }
             if (Files.exists(Path.of("failing-test.flag"))) {
                 System.out.println("> Task :test FAILED\n\nDemoTest > greets() FAILED\n    org.opentest4j.AssertionFailedError: "
                         + "expected: \"hi\" but was: \"bye\"\n\n1 test completed, 1 failed\n\nBUILD FAILED in 1s");

@@ -1,6 +1,7 @@
 package io.github.imnotstable.msc.agent.paper;
 
 import io.github.imnotstable.msc.agent.common.AgentWorlds;
+import io.github.imnotstable.msc.agent.common.BlockNames;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
@@ -11,7 +12,7 @@ import org.bukkit.Server;
 import org.bukkit.World;
 import org.bukkit.block.data.BlockData;
 
-/** The server's worlds by their Bukkit names, and Bukkit block data parsing. */
+/** The server's worlds by their Bukkit names (or dimension ids), and Bukkit block data parsing. */
 final class PaperWorlds implements AgentWorlds<BlockData> {
     private final Server server;
 
@@ -24,11 +25,11 @@ final class PaperWorlds implements AgentWorlds<BlockData> {
         return server.getWorlds().stream().map(World::getName).toList();
     }
 
-    /** The world with this Bukkit name, or with this key ({@code minecraft:arena}), as clients know it. */
+    /** A world by its Bukkit name or by its dimension id ({@code minecraft:the_nether}), as on the mod agents. */
     @Override
     public Optional<PaperWorld> byName(String name) {
         World world = server.getWorld(name);
-        if (world == null && name.indexOf(':') > 0) {
+        if (world == null) {
             NamespacedKey key = NamespacedKey.fromString(name);
             world = key == null ? null : server.getWorld(key);
         }
