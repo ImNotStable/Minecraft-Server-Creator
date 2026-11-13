@@ -64,10 +64,6 @@ public final class ToolLog {
         }
     }
 
-    public synchronized Map<String, Totals> totals() {
-        return new TreeMap<>(totals);
-    }
-
     /** A short table of this session's tool use. */
     public synchronized String summary() {
         if (totals.isEmpty()) {

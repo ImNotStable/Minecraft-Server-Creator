@@ -192,10 +192,6 @@ public final class Core implements AutoCloseable {
         return registry;
     }
 
-    public ToolLog log() {
-        return log;
-    }
-
     @Override
     public void close() throws IOException {
         lock.writeLock().lock();
