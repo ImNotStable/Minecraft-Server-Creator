@@ -29,6 +29,13 @@ class PlatformTest {
     }
 
     @Test
+    void namesListPlatformsAsProse() {
+        assertThat(Platform.names(p -> p == Platform.PAPER, "or")).isEqualTo("Paper");
+        assertThat(Platform.names(p -> p.agent().equals("paper"), "or")).isEqualTo("Paper or Purpur");
+        assertThat(Platform.names(Platform::needsEula, "and")).isEqualTo("Paper, Purpur, Fabric, Quilt, NeoForge and Forge");
+    }
+
+    @Test
     void forksAndCompatibleLoadersShareTheirUpstreamsAgent() {
         assertThat(Platform.PURPUR.agent()).isEqualTo("paper");
         assertThat(Platform.PURPUR.addonDir()).isEqualTo("plugins");

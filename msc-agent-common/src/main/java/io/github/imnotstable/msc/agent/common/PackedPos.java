@@ -2,6 +2,11 @@ package io.github.imnotstable.msc.agent.common;
 
 /** Packs a block position into one long: 26 bits X, 26 bits Z, 12 bits Y, all signed. */
 public final class PackedPos {
+    /** Lowest X or Z that packs without wrapping. */
+    public static final int MIN_XZ = -(1 << 25);
+    /** Highest X or Z that packs without wrapping. */
+    public static final int MAX_XZ = (1 << 25) - 1;
+
     private PackedPos() {
     }
 

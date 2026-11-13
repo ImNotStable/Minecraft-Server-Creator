@@ -130,7 +130,9 @@ final class ServerRun {
             if (s != null) {
                 out.append(resendPack());
             }
-            out.append('\n').append(analysis.clean() ? "no errors or warnings" : analysis.text());
+            out.append('\n').append(analysis.clean() ? "no errors or warnings"
+                    + (analysis.hidden() > 0 ? " (" + analysis.hidden() + " known-harmless hidden)" : "")
+                    : analysis.text());
         } else if (r.exited()) {
             out.append("server exited during startup after ").append(LogText.seconds(r.millis())).append('\n')
                     .append(analysis.text());

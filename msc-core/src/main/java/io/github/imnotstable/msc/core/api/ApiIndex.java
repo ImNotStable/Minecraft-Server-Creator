@@ -22,6 +22,11 @@ import java.util.stream.Stream;
  * what does it take" in a few lines, so the AI does not read Javadoc pages or decompile.
  */
 public final class ApiIndex {
+    /** The event base types of each platform; Forge's EventBus 7 events implement one of three. */
+    private static final List<String> EVENT_ROOTS = List.of("org.bukkit.event.Event", "net.neoforged.bus.api.Event",
+            "net.minecraftforge.eventbus.api.event.RecordEvent", "net.minecraftforge.eventbus.api.event.MutableEvent",
+            "net.minecraftforge.eventbus.api.event.InheritableEvent", "net.minestom.server.event.Event");
+
     private final Map<String, ClassInfo> classes = new LinkedHashMap<>();
     private final List<Path> jars;
 
@@ -166,6 +171,18 @@ public final class ApiIndex {
         return false;
     }
 
+    /**
+     * True for a platform event: a subtype of the Bukkit, NeoForge bus, Forge EventBus 7 or Minestom event root,
+     * or for Fabric, a {@code ...Events} or {@code ...Callback} type of Fabric API (it declares its events as fields).
+     */
+    public boolean isEvent(ClassInfo c) {
+        if (c.name().startsWith("net.fabricmc.fabric.api.")
+                && (c.simpleName().endsWith("Events") || c.simpleName().endsWith("Callback"))) {
+            return true;
+        }
+        return EVENT_ROOTS.stream().anyMatch(root -> isA(c, root));
+    }
+
     private record Hit(int score, String text) {
     }
 
@@ -179,7 +196,7 @@ public final class ApiIndex {
         List<Hit> hits = new ArrayList<>();
         for (ClassInfo c : classes.values()) {
             if (kind != null) {
-                boolean match = kind.equals("event") ? isA(c, "org.bukkit.event.Event") : c.kind().equals(kind);
+                boolean match = kind.equals("event") ? isEvent(c) : c.kind().equals(kind);
                 if (!match) {
                     continue;
                 }

@@ -35,7 +35,11 @@ import org.junit.jupiter.api.Timeout;
 class LargeTrafficTest {
     private static final Duration TIMEOUT = Duration.ofSeconds(60);
     private static final String TOKEN = "t";
-    /** 128 x 64 x 128 = the region limit; about 2 to 4 MB of JSON per reply. */
+    /**
+     * 128 x 64 x 128 = the region limit; about 2 to 4 MB of JSON per reply. A few such frames in flight
+     * at once are more than the loopback socket buffers hold, which is all these tests need; more
+     * frames only add codec time.
+     */
     private static final Region BIG = Region.of("world", 0, 0, 0, 127, 63, 127);
 
     private final BlockingQueue<CoreServer.AgentSession> sessions = new LinkedBlockingQueue<>();
@@ -93,7 +97,7 @@ class LargeTrafficTest {
     void manyLargeRepliesBackToBack() throws Exception {
         agent();
         Connection core = sessions.poll(10, TimeUnit.SECONDS).connection();
-        for (int i = 0; i < 20; i++) {
+        for (int i = 0; i < 3; i++) {
             Ops.ReadResult r = core.call(Ops.WORLD_READ, new Ops.ReadParams(BIG, false), TIMEOUT).get();
             assertThat(r.grid().blocks()).hasSize((int) BIG.volume());
         }
@@ -105,7 +109,7 @@ class LargeTrafficTest {
         Connection core = sessions.poll(10, TimeUnit.SECONDS).connection();
         Ops.ReadResult sample = bigRead(new Ops.ReadParams(BIG, false));
         List<CompletableFuture<?>> all = new ArrayList<>();
-        for (int i = 0; i < 8; i++) {
+        for (int i = 0; i < 3; i++) {
             all.add(core.call(Ops.WORLD_READ, new Ops.ReadParams(BIG, false), TIMEOUT));
             all.add(core.call(Ops.WORLD_WRITE, new Ops.WriteParams(sample.grid(), false), TIMEOUT));
             all.add(core.ping(TIMEOUT));

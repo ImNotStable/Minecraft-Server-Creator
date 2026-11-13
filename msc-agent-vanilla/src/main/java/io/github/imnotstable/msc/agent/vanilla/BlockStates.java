@@ -1,6 +1,9 @@
 package io.github.imnotstable.msc.agent.vanilla;
 
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
+import io.github.imnotstable.msc.agent.common.BlockNames;
+import java.util.List;
+import java.util.Locale;
 import net.minecraft.commands.arguments.blocks.BlockStateParser;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.level.block.state.BlockState;
@@ -10,7 +13,10 @@ final class BlockStates {
     private BlockStates() {
     }
 
-    /** @throws IllegalArgumentException for an unknown block, property or value */
+    /**
+     * @throws IllegalArgumentException for an unknown block (with close ids), or a bad property or value on a
+     *     real block (with Brigadier's reason)
+     */
     static BlockState parse(String state) {
         return parseResult(state).blockState();
     }
@@ -24,7 +30,27 @@ final class BlockStates {
         try {
             return BlockStateParser.parseForBlock(BuiltInRegistries.BLOCK, state, false);
         } catch (CommandSyntaxException e) {
-            throw new IllegalArgumentException("unknown block state: " + state + " (" + e.getMessage() + ")", e);
+            throw new IllegalArgumentException(explain(state, e), e);
+        }
+    }
+
+    /** Why {@code state} failed: bad properties on a real block, or an unknown id with close names. */
+    private static String explain(String state, CommandSyntaxException cause) {
+        try {
+            String id = (state.contains("[") ? state.substring(0, state.indexOf('[')) : state).strip()
+                    .toLowerCase(Locale.ROOT);
+            String full = id.contains(":") ? id : "minecraft:" + id;
+            List<String> known = BuiltInRegistries.BLOCK.keySet().stream()
+                    .map(k -> "minecraft".equals(k.getNamespace()) ? k.getPath() : k.toString()).toList();
+            String bare = full.startsWith("minecraft:") ? full.substring("minecraft:".length()) : full;
+            if (known.contains(bare)) {
+                return "bad block properties in " + state + ": " + cause.getMessage();
+            }
+            List<String> close = BlockNames.suggest(bare, known);
+            return "unknown block state: " + state
+                    + (close.isEmpty() ? "" : "; did you mean " + String.join(", ", close) + "?");
+        } catch (RuntimeException e) {
+            return "unknown block state: " + state + " (" + cause.getMessage() + ")"; // never hide the real error
         }
     }
 }

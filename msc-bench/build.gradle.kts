@@ -39,6 +39,10 @@ tasks.named<JavaExec>("run") {
 
 tasks.test {
     dependsOn(stagePreviousProtocol)
+    // eula.json cases shared with msc-core's MachineEulaTest, so the bench copy of the rule cannot drift (ADR 0004).
+    val eulaFixtures = rootProject.layout.projectDirectory.dir("msc-core/src/test/resources/eula-fixtures")
+    inputs.dir(eulaFixtures).withPropertyName("eulaFixtures")
+    systemProperty("msc.eulaFixtures", eulaFixtures.asFile.absolutePath)
     val protocols = layout.buildDirectory.dir("protocols")
     jvmArgumentProviders.add(CommandLineArgumentProvider {
         listOf("-Dmsc.bot.protocols=" + protocols.get().asFile.absolutePath)

@@ -5,9 +5,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.imnotstable.msc.protocol.transport.FrameReader;
 import io.github.imnotstable.msc.protocol.transport.FrameWriter;
+import java.io.BufferedInputStream;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import org.junit.jupiter.api.Test;
 
@@ -52,6 +54,26 @@ class FrameIOTest {
         assertThat(new FrameReader(new ByteArrayInputStream(exact), 100_000).read()).hasSize(100_000);
         assertThatThrownBy(() -> new FrameReader(new ByteArrayInputStream(exact), 99_999).read())
                 .isInstanceOf(ProtocolException.class);
+    }
+
+    @Test
+    void readsInBulkAcrossChunkBoundaries() throws IOException {
+        String big = "x".repeat(200_000);
+        byte[] bytes = ("a\n" + big + "\nb\n").getBytes(StandardCharsets.UTF_8);
+        InputStream bulkOnly = new BufferedInputStream(new ByteArrayInputStream(bytes)) {
+            @Override
+            public int read() {
+                throw new AssertionError("per-byte read");
+            }
+        };
+        FrameReader reader = new FrameReader(bulkOnly, 200_000);
+        assertThat(reader.read()).isEqualTo("a");
+        assertThat(reader.read()).isEqualTo(big);
+        assertThat(reader.read()).isEqualTo("b");
+        assertThat(reader.read()).isNull();
+        FrameReader small = new FrameReader(new ByteArrayInputStream(bytes), 199_999);
+        assertThat(small.read()).isEqualTo("a");
+        assertThatThrownBy(small::read).isInstanceOf(ProtocolException.class);
     }
 
     @Test

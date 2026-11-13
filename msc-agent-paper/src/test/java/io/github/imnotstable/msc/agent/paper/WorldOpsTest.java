@@ -70,6 +70,20 @@ class WorldOpsTest {
     }
 
     @Test
+    void findsAWorldByItsDimensionKeyToo() {
+        // The test player knows a plugin's world only by the key the server sends for it.
+        WorldMock arena = new WorldMock(Material.AIR, 0);
+        arena.setName("Arena");
+        server.addWorld(arena);
+        PaperWorlds worlds = new PaperWorlds(server);
+
+        assertThat(worlds.byName(arena.getKey().asString())).isPresent();
+        assertThat(worlds.byName("world")).isPresent();
+        assertThat(worlds.byName("minecraft:nowhere")).isEmpty();
+        assertThat(worlds.byName("Not A Key")).isEmpty();
+    }
+
+    @Test
     void writeChangesEveryBlockAndCountsOnlyRealChanges() {
         world.getBlockAt(1, 70, 1).setType(Material.STONE);
 

@@ -50,6 +50,8 @@ public final class Connection implements AutoCloseable {
         }
     }
 
+    private static final Duration FAREWELL_WAIT = Duration.ofSeconds(2);
+
     private final Socket socket;
     private final FrameReader reader;
     private final FrameWriter writer;
@@ -161,7 +163,7 @@ public final class Connection implements AutoCloseable {
             }
         } catch (ProtocolException e) {
             cause = e;
-            sendLater(new Goodbye(ErrorCodes.BAD_FRAME, e.getMessage()));
+            sendBeforeClose(new Goodbye(ErrorCodes.BAD_FRAME, e.getMessage()));
         } catch (IOException e) {
             cause = e;
         }
@@ -204,7 +206,8 @@ public final class Connection implements AutoCloseable {
             response = Response.ok(request.id(), result);
         } catch (OpException e) {
             response = Response.fail(request.id(), e.code(), e.detail());
-        } catch (Exception e) {
+        } catch (Throwable e) {
+            // Errors too (NoSuchMethodError from API drift, StackOverflowError): the caller must not wait out its timeout.
             response = Response.fail(request.id(), ErrorCodes.INTERNAL, e.getClass().getSimpleName() + ": " + e.getMessage());
         }
         trySend(response);
@@ -213,6 +216,20 @@ public final class Connection implements AutoCloseable {
     /** Send without blocking the calling thread (used from the read thread). */
     private void sendLater(Message message) {
         Thread.ofVirtual().name("msc-send").start(() -> trySend(message));
+    }
+
+    /**
+     * Send from the read thread and wait a bounded time for it, so a farewell reaches the socket
+     * before {@link #shutdown} closes it. The write runs on its own thread: if the peer stops
+     * reading, the read thread still gives up after {@link #FAREWELL_WAIT} and the close unblocks it.
+     */
+    private void sendBeforeClose(Message message) {
+        Thread sender = Thread.ofVirtual().name("msc-send").start(() -> trySend(message));
+        try {
+            sender.join(FAREWELL_WAIT);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     private void trySend(Message message) {

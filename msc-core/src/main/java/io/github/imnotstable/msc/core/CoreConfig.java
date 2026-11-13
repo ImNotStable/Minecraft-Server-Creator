@@ -157,12 +157,6 @@ public record CoreConfig(Path workspace, Path serverDir, int agentPort, String t
                 fabricMavenUrl, dir, packPort, eulaFile);
     }
 
-    public CoreConfig withPackPort(int port) {
-        return new CoreConfig(workspace, serverDir, agentPort, token, toolLog, javaCommand, serverCommand,
-                buildCommand, downloadsUrl, minecraft, apiJars, packHost, packFormat, agentJar, fabricMetaUrl,
-                fabricMavenUrl, installDir, port, eulaFile);
-    }
-
     /**
      * The same settings for another workspace. The server folder and tool log move along when they were the
      * defaults inside the old workspace; a folder set explicitly (MSC_SERVER_DIR, MSC_TOOL_LOG) stays.

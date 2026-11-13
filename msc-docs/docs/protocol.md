@@ -7,7 +7,7 @@ Source of truth is the code in `msc-protocol` (`io.github.imnotstable.msc.protoc
 1. The core listens on `127.0.0.1` (`CoreServer.start`) and starts the game server with two environment variables:
    - `MSC_CORE_ADDRESS`: `host:port` of the core
    - `MSC_TOKEN`: a random token for this session
-2. The agent connects (`AgentClient.connectFromEnvironment`). If the variables are missing, the server was started by hand and the agent stays idle.
+2. The agent connects through `AgentLink` in `msc-agent-common` ([ADR 0024](adr/0024-agent-common.md)), which finds the core with `CoreAddress.resolve()`: the two environment variables, or else the system properties `msc.core.address` (`host:port`) and `msc.token` for servers started by hand and for tests. If neither is set, the agent stays idle. `AgentLink` retries with backoff, reconnects when the core drops it, and sends `server.ready` once both the connection is up and the server has finished starting.
 3. Every frame is one JSON object on one line, UTF-8, ending in `\n`, at most 16 MiB. The `type` field names the message.
 
 ## Handshake
@@ -67,7 +67,10 @@ OpRouter router = new OpRouter()
         .on(Ops.SERVER_INFO, p -> new Ops.ServerInfo("paper", paperVersion, mcVersion, worlds, online, tps))
         .on(Ops.WORLD_WRITE, p -> write(p.grid(), p.updatePhysics()));
 AgentInfo info = new AgentInfo("paper", paperVersion, mcVersion, router.operations());
-AgentClient.Session session = AgentClient.connectFromEnvironment(info, router, new Connection.Listener() {}, Duration.ofSeconds(10));
+AgentLink link = new AgentLink(info, router, log); // CoreAddress.resolve(): env vars, then msc.core.address / msc.token
+link.start();          // connects on a virtual thread
+link.serverLoaded();   // when the server has started: sends server.ready once connected
+link.stop();           // on shutdown: sends server.stopping and closes
 ```
 
 Handlers run on virtual threads, so they may block while waiting for the server's main thread. Throw `OpException(code, message)` to answer with a specific error code; `IllegalArgumentException` maps to `invalid_params` and anything else to `internal`.

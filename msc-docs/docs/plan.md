@@ -70,9 +70,14 @@ One monorepo; each module is a folder, later a Gradle subproject.
 | msc-bench | MVP | Benchmark tasks and a runner that measure whether the toolset makes AI server development better on quality, speed and tokens. |
 | msc-agent-fabric | Post-MVP | A server-side Fabric mod that speaks `msc-protocol`, giving Fabric servers the same world and server tools as Paper. |
 | msc-agent-minestom | Post-MVP | A Minestom extension or library hook that speaks `msc-protocol`, giving Minestom servers the same world and server tools. |
+| msc-agent-neoforge | Post-MVP | A server-side NeoForge mod that speaks `msc-protocol` ([ADR 0027](adr/0027-more-platforms.md)). |
+| msc-agent-forge | Post-MVP | A server-side Minecraft Forge mod that speaks `msc-protocol` ([ADR 0027](adr/0027-more-platforms.md)). |
+| msc-agent-vanilla | Post-MVP | Not a Gradle module: the vanilla Minecraft sources the Fabric, NeoForge and Forge agents compile in ([ADR 0027](adr/0027-more-platforms.md)). |
 | msc-agent-common | Post-MVP | The platform-neutral half of every agent: operations, sliced jobs, undo and the link to msc-core. Each agent only adapts its server API to it. |
 | msc-renderer | Post-MVP (library done; `world_render` tool in msc-core) | A headless renderer that turns a region into images so the AI can check how a build looks. |
 | msc-textures | Post-MVP | Advanced texture and model generation beyond the MVP's palette-grid textures. |
+| msc-bot | Post-MVP | A headless test player that joins the dev server as a real client, for `player_test`. |
+| msc-plugin | Post-MVP | The Claude Code plugin: MCP config plus a launcher that runs the newest installed msc-core ([ADR 0021](adr/0021-plugin-install.md)). |
 
 ## Decisions
 
@@ -104,7 +109,7 @@ Product decisions were made by Jeremiah on 2026-11-10. Build and design decision
 | Fabric agent and template | Minecraft 26.3 with Fabric Loader 0.20.1, Fabric API 0.166.0+26.3 and Loom 1.19.4 (no remapping); same protocol behaviour as the Paper agent; Paper-style world names; one server-only mod jar with msc-protocol and three Fabric API modules nested; `fabric-mod` template; Gradle daemon on Java 25 | [ADR 0009](adr/0009-fabric-agent.md) |
 | Minestom agent | A library the server calls (`MscAgent.start()`), shipped as one shaded jar inside the `minestom-server` template; same ops, limits, undo and events as the Paper agent; instances named by tag; Minestom 2026.10.07 (MC 26.2), no EULA step | [ADR 0010](adr/0010-minestom-agent.md) |
 | Core platforms | Core lifecycle tools cover Paper, Fabric and Minestom; the project's platform is kept in `.msc/platform` | [ADR 0011](adr/0011-core-platforms.md) |
-| CI/CD | GitHub Actions: `./gradlew build` on Java 25 for pushes and PRs (docs-only changes skipped, cache written only by `main`); weekly grouped Dependabot for Gradle and Actions; tag `vX.Y.Z` publishes a GitHub Release with the msc-core zip and the three agent jars; nothing in CI accepts the EULA | [ADR 0012](adr/0012-ci-cd.md) |
+| CI/CD | GitHub Actions: `./gradlew build` on Java 25 for pushes and PRs (docs-only changes skipped, cache written only by `main`); weekly grouped Dependabot for Gradle and Actions; tag `vX.Y.Z` publishes a GitHub Release with the msc-core zip and the five agent jars (Paper, Fabric, NeoForge, Forge, Minestom); nothing in CI accepts the EULA | [ADR 0012](adr/0012-ci-cd.md) |
 | CI end to end | A CI job on Linux and Windows runs `:msc-core:e2eTest` (a real Minestom server scaffolded, built, built in, rendered and play-tested through the installed core over MCP stdio) and `verifyTemplates`; Minestom needs no EULA | [ADR 0022](adr/0022-minestom-e2e-in-ci.md) |
 | Install | `:msc-core:installMsc` installs core plus agents to `~/.msc/core` and prints the `claude mcp add` line; first-use fixes from dogfooding | [ADR 0013](adr/0013-install-and-first-use.md) |
 | Plugin install | MSC ships as the `msc` Claude Code plugin: an MCP config plus a one-file Java launcher that starts the newest install under `~/.msc/core`; every `installMsc` is a new folder, so updates need no re-registration and no closed Claude Code | [ADR 0021](adr/0021-plugin-install.md) |

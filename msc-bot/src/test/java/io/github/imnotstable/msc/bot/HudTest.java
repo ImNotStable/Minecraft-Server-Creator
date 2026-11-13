@@ -20,6 +20,7 @@ import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.scoreboard.
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.scoreboard.ClientboundSetObjectivePacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.scoreboard.ClientboundSetPlayerTeamPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.scoreboard.ClientboundSetScorePacket;
+import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.title.ClientboundClearTitlesPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.title.ClientboundSetActionBarTextPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.title.ClientboundSetSubtitleTextPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.title.ClientboundSetTitleTextPacket;
@@ -66,6 +67,17 @@ class HudTest {
         assertThat(hud.report()).startsWith("sidebar \"Lumen Siege\": Wave: /10 9 | Gold: 120 5 | Kills 3\n");
         hud.accept(new ClientboundSetDisplayObjectivePacket(ScoreboardPosition.SIDEBAR, ""));
         assertThat(hud.report()).doesNotContain("sidebar");
+    }
+
+    @Test
+    void keepsASubtitleSentBeforeItsTitleUntilTheTitlesAreCleared() {
+        // Adventure's showTitle and vanilla /title send the subtitle first.
+        hud.accept(new ClientboundSetSubtitleTextPacket(Component.text("Hold the gate")));
+        hud.accept(new ClientboundSetTitleTextPacket(Component.text("Wave 2")));
+        assertThat(hud.report()).startsWith("last title: Wave 2 / Hold the gate\n");
+        hud.accept(new ClientboundClearTitlesPacket(true));
+        hud.accept(new ClientboundSetTitleTextPacket(Component.text("Wave 3")));
+        assertThat(hud.report()).startsWith("last title: Wave 3\n");
     }
 
     @Test

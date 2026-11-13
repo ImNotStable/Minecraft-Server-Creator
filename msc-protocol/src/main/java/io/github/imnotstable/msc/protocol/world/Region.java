@@ -25,20 +25,30 @@ public record Region(String world, BlockPos min, BlockPos max) {
         return new Region(world, new BlockPos(x1, y1, z1), new BlockPos(x2, y2, z2));
     }
 
+    /** Blocks along X. Throws {@link ArithmeticException} if the span does not fit an int. */
     public int sizeX() {
-        return max.x() - min.x() + 1;
+        return Math.toIntExact(span(min.x(), max.x()));
     }
 
     public int sizeY() {
-        return max.y() - min.y() + 1;
+        return Math.toIntExact(span(min.y(), max.y()));
     }
 
     public int sizeZ() {
-        return max.z() - min.z() + 1;
+        return Math.toIntExact(span(min.z(), max.z()));
     }
 
+    /** Number of blocks, computed in long and capped at {@link Long#MAX_VALUE}, so it never wraps. */
     public long volume() {
-        return (long) sizeX() * sizeY() * sizeZ();
+        try {
+            return Math.multiplyExact(Math.multiplyExact(span(min.x(), max.x()), span(min.y(), max.y())), span(min.z(), max.z()));
+        } catch (ArithmeticException e) {
+            return Long.MAX_VALUE;
+        }
+    }
+
+    private static long span(int lo, int hi) {
+        return (long) hi - lo + 1;
     }
 
     public boolean contains(int x, int y, int z) {

@@ -101,10 +101,10 @@ public final class LoaderInstaller {
         Path installer = installer("neoforge-" + version + "-installer.jar",
                 urls.neoforgeMaven() + "/net/neoforged/neoforge/" + version + "/neoforge-" + version + "-installer.jar",
                 "NeoForge has no version " + version);
-        install(dir, List.of(java, "-jar", installer.toString(), "--install-server", dir.toString(), "--server-jar"),
-                "NeoForge");
+        String output = install(dir, List.of(java, "-jar", installer.toString(), "--install-server", dir.toString(),
+                "--server-jar"), "NeoForge");
         if (!Files.exists(dir.resolve(Platform.NEOFORGE.serverJar()))) {
-            throw new ToolException("the NeoForge installer finished but wrote no " + Platform.NEOFORGE.serverJar());
+            throw wroteNothing("NeoForge", Platform.NEOFORGE.serverJar(), output);
         }
         mark(dir, id);
         return new Result(version, false);
@@ -117,9 +117,10 @@ public final class LoaderInstaller {
             Path installer = installer("forge-" + version + "-installer.jar",
                     urls.forgeMaven() + "/net/minecraftforge/forge/" + version + "/forge-" + version + "-installer.jar",
                     "Forge has no version " + version);
-            install(dir, List.of(java, "-jar", installer.toString(), "--installServer", dir.toString()), "Forge");
+            String output = install(dir, List.of(java, "-jar", installer.toString(), "--installServer",
+                    dir.toString()), "Forge");
             if (!Files.exists(shim)) {
-                throw new ToolException("the Forge installer finished but wrote no " + shim.getFileName());
+                throw wroteNothing("Forge", shim.getFileName().toString(), output);
             }
         } else {
             // The fixed-name jar may be another version's shim: it is this one only when the bytes match.
@@ -144,11 +145,12 @@ public final class LoaderInstaller {
                 urls.quiltMaven() + "/org/quiltmc/quilt-installer/" + installerVersion + "/quilt-installer-"
                         + installerVersion + ".jar",
                 "Quilt has no installer " + installerVersion);
-        install(dir, List.of(java, "-jar", installer.toString(), "install", "server", minecraft, loader,
+        String output = install(dir, List.of(java, "-jar", installer.toString(), "install", "server", minecraft,
+                loader,
                 // Relative: the installer splits its options on spaces, so a folder like "MSC Quilt Test" broke it.
                 "--download-server", "--install-dir=."), "Quilt");
         if (!Files.exists(dir.resolve(Platform.QUILT.serverJar()))) {
-            throw new ToolException("the Quilt installer finished but wrote no " + Platform.QUILT.serverJar());
+            throw wroteNothing("Quilt", Platform.QUILT.serverJar(), output);
         }
         mark(dir, id);
         return new Result(loader, false);
@@ -171,7 +173,8 @@ public final class LoaderInstaller {
         return jar;
     }
 
-    private void install(Path dir, List<String> command, String what) throws IOException, InterruptedException {
+    /** Runs an installer and returns its output; a failed or timed-out run throws with the output's tail. */
+    private String install(Path dir, List<String> command, String what) throws IOException, InterruptedException {
         Files.createDirectories(dir);
         // An install that fails half way must not leave the old marker saying the old version is complete.
         Files.deleteIfExists(dir.resolve(MARKER));
@@ -180,6 +183,14 @@ public final class LoaderInstaller {
             throw new ToolException("the " + what + " installer " + (r.timedOut() ? "timed out" : "failed (exit "
                     + r.exitCode() + ")") + ":\n" + tail(r.output(), 15));
         }
+        return r.output();
+    }
+
+    /** An installer that exits 0 without its jar says why in its output (a failed download, for example). */
+    private static ToolException wroteNothing(String what, String jar, String output) {
+        String tail = tail(output, 15);
+        return new ToolException("the " + what + " installer finished but wrote no " + jar
+                + (tail.isEmpty() ? "" : ":\n" + tail));
     }
 
     static String tail(String text, int lines) {
