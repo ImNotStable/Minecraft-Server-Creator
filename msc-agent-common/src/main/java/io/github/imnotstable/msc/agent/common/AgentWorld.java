@@ -66,6 +66,18 @@ public interface AgentWorld<S> {
     default void loadArea(int minX, int minZ, int maxX, int maxZ) {
     }
 
+    /**
+     * As {@link #loadArea}, for a job that only reads. The returned action, run once the job is
+     * done (from any thread), releases the chunks this call loaded that nothing else needs, so
+     * reads do not pile up chunks on a platform that never unloads them. Defaults to
+     * {@link #loadArea} and nothing to release.
+     */
+    default Runnable loadAreaToRead(int minX, int minZ, int maxX, int maxZ) {
+        loadArea(minX, minZ, maxX, maxZ);
+        return () -> {
+        };
+    }
+
     /** As {@link #loadArea}, for the chunks under a set of {@link PackedPos packed positions}. */
     default void loadPositions(long[] positions) {
     }

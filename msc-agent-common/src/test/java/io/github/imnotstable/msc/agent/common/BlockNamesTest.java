@@ -1,4 +1,4 @@
-package io.github.imnotstable.msc.agent.paper;
+package io.github.imnotstable.msc.agent.common;
 
 import static org.assertj.core.api.Assertions.assertThat;
 

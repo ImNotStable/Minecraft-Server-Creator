@@ -2,6 +2,8 @@
 
 Status: accepted, 2026-11-11. Decided by Claude under Jeremiah's hand-over of build decisions.
 
+This ADR is kept as history: the shared agent code moved to msc-agent-common ([ADR 0024](0024-agent-common.md)), msc-core runs Minestom projects ([ADR 0011](0011-core-platforms.md)), and the test count below is from 2026-11-11.
+
 ## Context
 
 Minestom is a library, not a server jar: there is no plugin loader and no vanilla gameplay, and a Minestom server is the user's own `main` method. The core's tools must work against it the same way they work against Paper ([ADR 0006](0006-paper-agent.md)). The newest Minestom build, `2026.10.07-26.2`, speaks Minecraft 26.2, one release behind Paper 26.3.

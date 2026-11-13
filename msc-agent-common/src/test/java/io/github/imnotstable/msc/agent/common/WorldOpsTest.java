@@ -99,6 +99,7 @@ class WorldOpsTest {
         assertThat(grid.palette()).hasSize(3);
         assertThat(result.entities()).isEmpty();
         assertThat(result.signs()).isEmpty();
+        assertThat(world.loads).containsExactly("area 0,0..1,1", "released");
     }
 
     @Test
@@ -145,7 +146,7 @@ class WorldOpsTest {
         assertThat(result.sizeX()).isEqualTo(2);
         assertThat(result.sizeZ()).isEqualTo(2);
         assertThat(result.heights()).containsExactly(80, 75, -65, -65);
-        assertThat(world.loads).containsExactly("area 0,0..1,1");
+        assertThat(world.loads).containsExactly("area 0,0..1,1", "released");
     }
 
     @Test
