@@ -230,8 +230,8 @@ public final class WorldRenderer {
     }
 
     /**
-     * True when a solid block lies between a grid-local point and the camera. With {@code skipOwnCell} the ray starts
-     * where it leaves the block that holds the point, so that block cannot hide it.
+     * True when a solid block lies between a grid-local point and the camera. With {@code skipOwnCell} the block that
+     * holds the point cannot hide it; its neighbours still can.
      */
     private static boolean behind(Frame frame, Tracer tracer, double[] p, boolean skipOwnCell) {
         double[] d;
@@ -247,24 +247,9 @@ public final class WorldRenderer {
             d = new double[] {-frame.f[0], -frame.f[1], -frame.f[2]};
             distance = Double.POSITIVE_INFINITY;
         }
-        double skip = skipOwnCell ? cellExit(p, d) : 0;
-        if (skip >= distance) {
-            return false;
-        }
-        return tracer.blocked(p[0] + d[0] * skip, p[1] + d[1] * skip, p[2] + d[2] * skip, d[0], d[1], d[2],
-                distance - skip);
-    }
-
-    /** Distance along a ray from a point to where it leaves the unit cell that holds the point. */
-    private static double cellExit(double[] p, double[] d) {
-        double exit = Double.POSITIVE_INFINITY;
-        for (int axis = 0; axis < 3; axis++) {
-            if (Math.abs(d[axis]) > 1e-12) {
-                double wall = Math.floor(p[axis]) + (d[axis] > 0 ? 1 : 0);
-                exit = Math.min(exit, (wall - p[axis]) / d[axis]);
-            }
-        }
-        return exit;
+        int[] own = skipOwnCell ? new int[] {(int) Math.floor(p[0]), (int) Math.floor(p[1]), (int) Math.floor(p[2])}
+                : null;
+        return tracer.blocked(p[0], p[1], p[2], d[0], d[1], d[2], distance, own);
     }
 
     private static void drawDot(int[] pixels, Frame frame, int[] at, int font, int rgb, boolean hollow, String number,

@@ -61,7 +61,7 @@ final class Tracer {
         b = 0;
         a = 0;
         firstHit = -1;
-        march(ox, oy, oz, dx, dy, dz, footprint, footprintPerT, false, Double.POSITIVE_INFINITY);
+        march(ox, oy, oz, dx, dy, dz, footprint, footprintPerT, false, Double.POSITIVE_INFINITY, null);
         double rest = 1 - a;
         int ri = (int) Math.round(r + rest * ((BACKGROUND >> 16) & 0xff));
         int gi = (int) Math.round(g + rest * ((BACKGROUND >> 8) & 0xff));
@@ -71,10 +71,11 @@ final class Tracer {
 
     /**
      * True when something solid (not glass or another see-through block) lies on the ray within {@code maxT}
-     * blocks of its start. {@code (dx, dy, dz)} must be a unit vector.
+     * blocks of its start. {@code (dx, dy, dz)} must be a unit vector. The block in cell {@code ignore} (grid-local
+     * x, y, z; null for none) never blocks, so a ray can start inside a block and still be stopped by its neighbours.
      */
-    boolean blocked(double ox, double oy, double oz, double dx, double dy, double dz, double maxT) {
-        return march(ox, oy, oz, dx, dy, dz, 0, 0, true, maxT);
+    boolean blocked(double ox, double oy, double oz, double dx, double dy, double dz, double maxT, int[] ignore) {
+        return march(ox, oy, oz, dx, dy, dz, 0, 0, true, maxT, ignore);
     }
 
     /**
@@ -82,7 +83,7 @@ final class Tracer {
      * {@code maxT}" (returns true); otherwise it accumulates colour front to back until the ray is opaque.
      */
     private boolean march(double ox, double oy, double oz, double dx, double dy, double dz, double footprint,
-            double footprintPerT, boolean shadowMode, double maxT) {
+            double footprintPerT, boolean shadowMode, double maxT, int[] ignore) {
         double tEnter = 0;
         double tLeave = Double.POSITIVE_INFINITY;
         int face = -1;
@@ -134,7 +135,8 @@ final class Tracer {
             }
         }
         while (true) {
-            int index = blocks[(cell[1] * sz + cell[2]) * sx + cell[0]];
+            boolean ignored = ignore != null && cell[0] == ignore[0] && cell[1] == ignore[1] && cell[2] == ignore[2];
+            int index = ignored ? -1 : blocks[(cell[1] * sz + cell[2]) * sx + cell[0]];
             Look look = index < 0 ? null : looks[index];
             if (look != null && !(shadowMode && look.translucent)) {
                 if (look.full) {
@@ -272,7 +274,7 @@ final class Tracer {
         if (shadows && n[0] * SUN[0] + n[1] * SUN[1] + n[2] * SUN[2] > 0) {
             // Shadow mode never touches the colour state, so the nested walk is safe here.
             boolean dark = march(wx + n[0] * 1e-3, wy + n[1] * 1e-3, wz + n[2] * 1e-3, SUN[0], SUN[1], SUN[2], 0, 0, true,
-                    Double.POSITIVE_INFINITY);
+                    Double.POSITIVE_INFINITY, null);
             if (dark) {
                 light *= SHADOW;
             }

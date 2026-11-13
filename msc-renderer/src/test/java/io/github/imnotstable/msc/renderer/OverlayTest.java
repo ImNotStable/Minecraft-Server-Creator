@@ -88,6 +88,18 @@ class OverlayTest {
         Scenes roofed = floor().set(8, 65, 12, "oak_sign").fill(0, 67, 0, 15, 67, 15, "oak_planks");
         assertThat(renderer.render(roofed.grid(), View.parse("top"), PLAIN,
                 List.of(Marker.sign(8, 65, 12, List.of("Shop")))).caption()).endsWith("Behind blocks (hollow or faded): 1.");
+        // So does a roof that rests right on top of the sign's block.
+        Scenes touching = floor().set(8, 65, 12, "oak_sign").fill(0, 66, 0, 15, 66, 15, "oak_planks");
+        assertThat(renderer.render(touching.grid(), View.parse("top"), PLAIN,
+                List.of(Marker.sign(8, 65, 12, List.of("Shop")))).caption()).endsWith("Behind blocks (hollow or faded): 1.");
+        // And a partial block (a slab) right above it.
+        Scenes slab = floor().set(8, 65, 12, "oak_sign").set(8, 66, 12, "oak_slab[type=bottom]");
+        assertThat(renderer.render(slab.grid(), View.parse("top"), PLAIN,
+                List.of(Marker.sign(8, 65, 12, List.of("Shop")))).caption()).endsWith("Behind blocks (hollow or faded): 1.");
+        // A wall sign seen from the far side of its wall.
+        Scenes wall = floor().fill(0, 65, 8, 15, 68, 8, "stone_bricks").set(8, 66, 7, "oak_wall_sign[facing=north]");
+        assertThat(renderer.render(wall.grid(), View.parse("south"), PLAIN,
+                List.of(Marker.sign(8, 66, 7, List.of("Shop")))).caption()).endsWith("Behind blocks (hollow or faded): 1.");
     }
 
     @Test
