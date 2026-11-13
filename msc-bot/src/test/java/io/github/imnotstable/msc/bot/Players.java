@@ -34,6 +34,6 @@ final class Players {
 
     /** A planner that answers this route whatever is asked. */
     static RoutePlanner route(List<int[]> steps) {
-        return (from, to) -> steps;
+        return (world, from, to) -> steps;
     }
 }

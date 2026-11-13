@@ -22,6 +22,10 @@ final class WorldView {
         this.world = world;
     }
 
+    String world() {
+        return world;
+    }
+
     /**
      * Make sure {@code needed} (what this tick's move touches) is loaded and fresh enough. A new read covers
      * {@code ahead} too, the next few ticks of the move, so a fast fall does not read every tick.

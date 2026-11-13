@@ -13,6 +13,8 @@ public interface RoutePlanner {
      * The route block by block: each entry is {x, y, z, move}, the feet block and how it is reached ({@code 'w'} walk,
      * {@code 'u'} up one, {@code 'd'} drop, {@code 'j'} jump a gap, {@code 'c'} climb or swim); the first entry is
      * the start. Throws with the reason, such as the gap or wall in the way, when there is none.
+     *
+     * @param world the world the player is in, by the name the agent knows it
      */
-    List<int[]> route(BlockPos from, BlockPos to) throws Exception;
+    List<int[]> route(String world, BlockPos from, BlockPos to) throws Exception;
 }

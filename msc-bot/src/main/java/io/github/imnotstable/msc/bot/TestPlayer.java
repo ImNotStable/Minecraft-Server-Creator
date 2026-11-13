@@ -100,6 +100,12 @@ public final class TestPlayer implements Bot {
     static final double TELEPORT = 2.0;
     final Physics body = new Physics();
     private WorldView view;
+    /** The world the core named in the last call: the server's first, its overworld. */
+    private String baseWorld;
+    /** The dimension the server says the player is in, such as minecraft:the_nether; null before the login. */
+    private String dimension;
+    /** Set when the player went to a world the bot cannot name: why movement is not simulated. */
+    private String lostWorld;
     private volatile String disconnect;
     private volatile int entityId;
     private volatile boolean positioned;
@@ -213,10 +219,46 @@ public final class TestPlayer implements Bot {
         return out.toString();
     }
 
-    /** Simulate movement against the blocks of {@code world}. */
-    synchronized void useWorld(String world) {
-        if (view == null) {
-            view = new WorldView(blocks, world);
+    /** Simulate movement in the world the player is in; {@code base} is the server's first world. */
+    synchronized void useWorld(String base) {
+        baseWorld = base;
+        String name = lostWorld == null ? worldName(base, dimension) : null;
+        if (name == null) {
+            view = null;
+        } else if (view == null || !view.world().equals(name)) {
+            view = new WorldView(blocks, name);
+        }
+    }
+
+    /**
+     * The agent's name for a dimension, as every agent names worlds (Paper's style): the overworld is the base
+     * world, the vanilla nether and end add {@code _nether} and {@code _the_end}, any other is its id.
+     */
+    static String worldName(String base, String dimension) {
+        if (dimension == null) {
+            return base;
+        }
+        return switch (dimension) {
+            case "minecraft:overworld" -> base;
+            case "minecraft:the_nether" -> base + "_nether";
+            case "minecraft:the_end" -> base + "_the_end";
+            default -> dimension;
+        };
+    }
+
+    /** The server sent the player to {@code key}'s world: by dying and respawning, or by a world change. */
+    private synchronized void spawnedIn(String key, boolean respawned) {
+        if (!respawned && key.equals(dimension)) {
+            // Another world of the same dimension (a second Minestom instance): nothing says which it is.
+            String from = view != null ? view.world() : worldName(baseWorld, dimension);
+            lostWorld = "the server moved the player to another " + key + " world, which the test player cannot tell"
+                    + " from " + from + "; movement is only simulated in a world it knows";
+        } else {
+            lostWorld = null;
+        }
+        dimension = key;
+        if (baseWorld != null) {
+            useWorld(baseWorld);
         }
     }
 
@@ -309,6 +351,11 @@ public final class TestPlayer implements Bot {
                     return;
                 }
                 Script.Step step = current;
+                if (view == null && step != null && step.endsOnTeleport() && lostWorld != null) {
+                    step.finish("stopped: " + lostWorld);
+                    current = null;
+                    step = null;
+                }
                 Physics.Input in = step == null ? Physics.Input.NONE : step.input(this);
                 if (view != null) {
                     try {
@@ -356,11 +403,16 @@ public final class TestPlayer implements Bot {
             throw new IllegalStateException("this test player has no route planner");
         }
         io.github.imnotstable.msc.protocol.world.BlockPos from;
+        String world;
         synchronized (this) {
+            if (view == null) {
+                throw new IllegalStateException(lostWorld != null ? lostWorld : "the player is in no known world");
+            }
+            world = view.world();
             from = new io.github.imnotstable.msc.protocol.world.BlockPos((int) Math.floor(body.x),
                     (int) Math.floor(body.y + 0.01), (int) Math.floor(body.z));
         }
-        return planner.route(from, to);
+        return planner.route(world, from, to);
     }
 
     /** How many times the server has set the player's position. */
@@ -535,7 +587,10 @@ public final class TestPlayer implements Bot {
         }
         hud.accept(packet);
         switch (packet) {
-            case ClientboundLoginPacket p -> entityId = p.getEntityId();
+            case ClientboundLoginPacket p -> {
+                entityId = p.getEntityId();
+                spawnedIn(p.getCommonPlayerSpawnInfo().getWorldName().asString(), true);
+            }
             case ClientboundPlayerPositionPacket p -> position(p);
             case ClientboundSetHealthPacket p -> health(p.getHealth(), p.getFood());
             case ClientboundPlayerCombatKillPacket p -> {
@@ -544,11 +599,15 @@ public final class TestPlayer implements Bot {
                 }
             }
             case ClientboundRespawnPacket p -> {
+                boolean wasDead;
                 synchronized (this) {
+                    wasDead = dead;
                     dead = false;
                     deadTicks = 0;
                 }
-                event("[respawned]");
+                String key = p.getCommonPlayerSpawnInfo().getWorldName().asString();
+                spawnedIn(key, wasDead);
+                event(wasDead ? "[respawned]" : "[changed world] " + key);
             }
             case ClientboundSystemChatPacket p -> event((p.isOverlay() ? "[actionbar] " : "[chat] ")
                     + Text.plain(p.getContent()));

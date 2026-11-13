@@ -14,6 +14,7 @@ import net.kyori.adventure.key.Key;
 import org.geysermc.mcprotocollib.protocol.data.game.entity.player.GameMode;
 import org.geysermc.mcprotocollib.protocol.data.game.entity.player.PlayerSpawnInfo;
 import org.geysermc.mcprotocollib.protocol.data.game.entity.player.PositionElement;
+import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.ClientboundLoginPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.ClientboundRespawnPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.entity.player.ClientboundPlayerPositionPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.entity.player.ClientboundSetHealthPacket;
@@ -91,6 +92,51 @@ class TestPlayerTest {
         String out = p.run(List.of(), "w");
         assertThat(out).startsWith("  [actionbar] tick " + (100_000 - TestPlayer.MAX_EVENTS) + "\n")
                 .contains("  (" + (100_000 - 40) + " more)\n");
+    }
+
+    @Test
+    void followsThePlayerIntoAnotherWorld() throws InterruptedException {
+        FlatWorld blocks = new FlatWorld();
+        List<String> planned = new ArrayList<>();
+        TestPlayer p = Players.at(blocks, (world, from, to) -> {
+            planned.add(world);
+            return List.of(new int[] {0, 1, 0, 'w'}, new int[] {1, 1, 0, 'w'});
+        }, 0.5, 1, 0.5);
+        p.receive(login("minecraft:overworld"));
+        p.receive(new ClientboundRespawnPacket(spawn("minecraft:the_nether"), false, false));
+        p.receive(teleport(0.5, 1, 0.5));
+        assertThat(p.run(List.of(), "w")).startsWith("  [changed world] minecraft:the_nether\n")
+                .doesNotContain("[respawned]");
+        assertThat(Players.drive(p, Script.parse("jump"), 100)).startsWith("rose");
+        assertThat(blocks.regions.getLast().world()).isEqualTo("w_nether");
+        assertThat(Players.drive(p, Script.parse("walk 1,1,0"), 100)).startsWith("reached");
+        assertThat(planned).containsExactly("w_nether");
+        p.receive(new ClientboundRespawnPacket(spawn("minecraft:arena"), false, false));
+        p.useWorld("w");
+        assertThat(Players.drive(p, Script.parse("jump"), 100)).startsWith("rose");
+        assertThat(blocks.regions.getLast().world()).isEqualTo("minecraft:arena");
+    }
+
+    @Test
+    void stopsMovingInAWorldItCannotName() {
+        TestPlayer p = Players.at(new FlatWorld(), null, 0.5, 1, 0.5);
+        p.receive(login("minecraft:overworld"));
+        // A second overworld-type world (a Minestom instance): the dimension does not say which one.
+        p.receive(new ClientboundRespawnPacket(spawn("minecraft:overworld"), false, false));
+        p.useWorld("w");
+        assertThat(Players.drive(p, Script.parse("goto 5.5,0.5"), 100)).isEqualTo("stopped: the server moved the player"
+                + " to another minecraft:overworld world, which the test player cannot tell from w; movement is only"
+                + " simulated in a world it knows");
+        // Dying and respawning puts it somewhere it can name again.
+        p.receive(new ClientboundSetHealthPacket(0, 20, 5));
+        p.receive(new ClientboundRespawnPacket(spawn("minecraft:overworld"), false, false));
+        p.useWorld("w");
+        assertThat(Players.drive(p, Script.parse("jump"), 100)).startsWith("rose");
+    }
+
+    static ClientboundLoginPacket login(String world) {
+        return new ClientboundLoginPacket(7, false, new Key[] {Key.key(world)}, 20, 10, 10, false, true, false,
+                spawn(world), false, false);
     }
 
     static PlayerSpawnInfo spawn(String world) {

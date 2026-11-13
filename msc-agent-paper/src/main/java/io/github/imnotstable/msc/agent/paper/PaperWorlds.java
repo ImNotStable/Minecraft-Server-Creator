@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 import org.bukkit.Material;
+import org.bukkit.NamespacedKey;
 import org.bukkit.Server;
 import org.bukkit.World;
 import org.bukkit.block.data.BlockData;
@@ -23,9 +24,15 @@ final class PaperWorlds implements AgentWorlds<BlockData> {
         return server.getWorlds().stream().map(World::getName).toList();
     }
 
+    /** The world with this Bukkit name, or with this key ({@code minecraft:arena}), as clients know it. */
     @Override
     public Optional<PaperWorld> byName(String name) {
-        return Optional.ofNullable(server.getWorld(name)).map(PaperWorld::new);
+        World world = server.getWorld(name);
+        if (world == null && name.indexOf(':') > 0) {
+            NamespacedKey key = NamespacedKey.fromString(name);
+            world = key == null ? null : server.getWorld(key);
+        }
+        return Optional.ofNullable(world).map(PaperWorld::new);
     }
 
     @Override
