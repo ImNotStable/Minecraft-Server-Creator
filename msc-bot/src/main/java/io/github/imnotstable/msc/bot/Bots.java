@@ -41,18 +41,13 @@ public final class Bots {
      */
     public static Bot join(String name, String host, int port, BlockSource blocks, Duration timeout, Path protocols)
             throws InterruptedException {
-        return join(name, host, port, blocks, null, timeout, protocols);
-    }
-
-    /** As {@link #join(String, String, int, BlockSource, Duration, Path)}, with a planner for the walk action. */
-    public static Bot join(String name, String host, int port, BlockSource blocks, RoutePlanner planner,
-                           Duration timeout, Path protocols) throws InterruptedException {
-        return join(name, host, port, blocks, planner, null, timeout, protocols);
+        return join(name, host, port, blocks, null, null, timeout, protocols);
     }
 
     /**
-     * As {@link #join(String, String, int, BlockSource, RoutePlanner, Duration, Path)}, with a locator that says which
-     * world the player is in after the server puts it in one; without it the bot goes by the dimension.
+     * As {@link #join(String, String, int, BlockSource, Duration, Path)}, with a planner for the walk action and a
+     * locator that says which world the player is in after the server puts it in one; without the locator the bot
+     * goes by the dimension.
      */
     public static Bot join(String name, String host, int port, BlockSource blocks, RoutePlanner planner,
                            WorldLocator locator, Duration timeout, Path protocols) throws InterruptedException {

@@ -130,7 +130,7 @@ class BlockShapesDriftTest {
     void everyStateOfTheDataGetsVanillasKind() {
         List<String> wrong = new ArrayList<>();
         vanilla.forEach((name, states) -> {
-            String why = check(name, name, states);
+            String why = check(name, states);
             if (why != null) {
                 wrong.add(why);
             }
@@ -154,7 +154,7 @@ class BlockShapesDriftTest {
             if (like == null) {
                 wrong.add(name + ": not in the data; add it to NEWER");
             } else if (vanilla.containsKey(like)) {
-                String why = check(name, like, vanilla.get(like));
+                String why = check(name, vanilla.get(like));
                 if (why != null) {
                     wrong.add(why + " (as " + like + ")");
                 }
@@ -168,8 +168,8 @@ class BlockShapesDriftTest {
         assertThat(wrong).as("blocks of " + version + " with the wrong collision kind").isEmpty();
     }
 
-    /** Null when every state of {@code name} gets the kind vanilla gives the same state of {@code like}. */
-    private static String check(String name, String like, Map<String, Kind> states) {
+    /** Null when every state of {@code name} gets the kind vanilla gives that state in {@code states}. */
+    private static String check(String name, Map<String, Kind> states) {
         for (Map.Entry<String, Kind> state : states.entrySet()) {
             String props = state.getKey().equals("[]") ? "" : state.getKey();
             Kind got = Kind.of(BlockShapes.of("minecraft:" + name + props));
