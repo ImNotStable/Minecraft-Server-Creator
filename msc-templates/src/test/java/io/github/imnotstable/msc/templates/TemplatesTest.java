@@ -269,6 +269,27 @@ class TemplatesTest {
     }
 
     @Test
+    void refusesModIdsAndPackagesTheLoaderOwns() throws IOException {
+        record Case(String template, String name) {}
+        for (Case c : List.of(new Case(Templates.FABRIC_MOD, "Minecraft"), new Case(Templates.FABRIC_GAME, "Fabric Api"),
+                new Case(Templates.FABRIC_MOD, "Java"), new Case(Templates.NEOFORGE_MOD, "Minecraft"),
+                new Case(Templates.NEOFORGE_MOD, "Neoforge"), new Case(Templates.FORGE_MOD, "Forge"))) {
+            Path target = dir.resolve(c.template() + "-" + c.name());
+            assertThatThrownBy(() -> Templates.scaffold(c.template(), target, TemplateVariables.of(c.name())))
+                    .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("keeps for itself");
+            assertThat(target).doesNotExist();
+        }
+        assertThatThrownBy(() -> Templates.scaffold(Templates.PAPER_PLUGIN, dir.resolve("b"), vars.withPackageName("org.bukkit.lobby")))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("org.bukkit");
+        // Only the exact ids are the loader's; another platform's id is fine.
+        ScaffoldResult fabric = Templates.scaffold(Templates.FABRIC_MOD, dir.resolve("ok1"), TemplateVariables.of("Minecraft Tools"));
+        assertThat(fabric.root().resolve("src/main/resources/fabric.mod.json")).content().contains("\"id\": \"minecraft-tools\"");
+        ScaffoldResult forge = Templates.scaffold(Templates.FORGE_MOD, dir.resolve("ok2"), TemplateVariables.of("Neoforge"));
+        assertThat(forge.root().resolve("src/main/resources/META-INF/mods.toml")).content().contains("modId = \"neoforge\"");
+        Templates.scaffold(Templates.PAPER_PLUGIN, dir.resolve("ok3"), vars.withPackageName("org.bukkitlobby"));
+    }
+
+    @Test
     void scaffoldsServerDefaultsOnly() throws IOException {
         ScaffoldResult r = Templates.scaffold(Templates.PAPER_SERVER, dir, vars);
         assertThat(relative(r)).containsExactlyInAnyOrder("eula.txt", "server.properties");
