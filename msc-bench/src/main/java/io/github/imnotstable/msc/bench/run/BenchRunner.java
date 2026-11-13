@@ -123,9 +123,10 @@ public final class BenchRunner {
         for (int attempt = 1; attempt <= MCP_TRIES; attempt++) {
             record = runOne(task, modeName, repeat, attempt);
             // Claude Code connects MCP servers in the background, so the init event can list none even though the
-            // tools arrived a moment later: a logged tool call proves the server was there.
-            if (required == null || record.error() != null || record.agent().mcpConnected().contains(required)
-                    || record.tools().calls() > 0) {
+            // tools arrived a moment later: a logged tool call proves the server was there. Without a parsed result
+            // (a time-out, a crash) no init event says the server was missing, so the attempt stands as it is.
+            if (required == null || record.error() != null || record.timedOut() || !record.agent().parsed()
+                    || record.agent().mcpConnected().contains(required) || record.tools().calls() > 0) {
                 return record;
             }
             log.printf("[%s] %s #%d: MCP server %s was not connected when the agent started (try %d of %d)%n",
