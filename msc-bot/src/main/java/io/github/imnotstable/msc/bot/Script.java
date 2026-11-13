@@ -205,10 +205,7 @@ final class Script {
             }
             case "tp" -> {
                 double[] v = numbers(arg(w, line), 3, 3, line);
-                yield once(line, p -> {
-                    p.chat("/tp " + p.name() + " " + v[0] + " " + v[1] + " " + v[2]);
-                    return "sent";
-                }, 10);
+                yield new Teleport(line, v[0], v[1], v[2]);
             }
             case "entities" -> once(line, p -> {
                 List<String> near = p.nearby(8);
@@ -292,6 +289,39 @@ final class Script {
         boolean check(TestPlayer p) {
             if (elapsed(p) >= ticks) {
                 finish(String.format("waited %.1fs", ticks / 20.0));
+            }
+            return super.check(p);
+        }
+    }
+
+    /** {@code /tp} the player, then wait for the server to move it: a server without the command answers nothing. */
+    static final class Teleport extends Step {
+        private static final int WAIT_TICKS = 20;
+        private final double x;
+        private final double y;
+        private final double z;
+        private long moves;
+
+        Teleport(String text, double x, double y, double z) {
+            super(text);
+            this.x = x;
+            this.y = y;
+            this.z = z;
+        }
+
+        @Override
+        void start(TestPlayer p) {
+            super.start(p);
+            moves = p.serverMoves();
+            p.chat("/tp " + p.name() + " " + x + " " + y + " " + z);
+        }
+
+        @Override
+        boolean check(TestPlayer p) {
+            if (p.serverMoves() > moves) {
+                finish(String.format("moved to %.2f,%.2f,%.2f", p.body.x, p.body.y, p.body.z));
+            } else if (elapsed(p) >= WAIT_TICKS) {
+                finish("no teleport happened: the server did not move the player (it may have no /tp command)");
             }
             return super.check(p);
         }

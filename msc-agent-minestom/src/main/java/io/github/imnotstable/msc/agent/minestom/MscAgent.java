@@ -4,6 +4,7 @@ import io.github.imnotstable.msc.agent.common.AgentDefaults;
 import io.github.imnotstable.msc.agent.common.AgentLink;
 import io.github.imnotstable.msc.agent.common.AgentLog;
 import io.github.imnotstable.msc.agent.common.AgentRoutes;
+import io.github.imnotstable.msc.agent.common.CoreAddress;
 import io.github.imnotstable.msc.agent.common.EditHistory;
 import io.github.imnotstable.msc.agent.common.MainThread;
 import io.github.imnotstable.msc.agent.common.ServerOps;
@@ -38,7 +39,9 @@ import net.minestom.server.timer.TaskSchedule;
  * <p>The agent connects to msc-core when the core started this server ({@code MSC_CORE_ADDRESS} and
  * {@code MSC_TOKEN} are set, or the {@code msc.core.address} and {@code msc.token} system
  * properties) and otherwise stays idle, so it is safe to leave in a production build. Connecting
- * happens on a virtual thread and never delays startup.
+ * happens on a virtual thread and never delays startup. While the core runs the server, the agent also adds a
+ * {@code /tp <player> <x> <y> <z>} command when the server has none, so the AI's test player can move as on other
+ * platforms.
  */
 public final class MscAgent {
     private final ServerOps serverOps;
@@ -69,6 +72,11 @@ public final class MscAgent {
         });
         events.addListener(PlayerDisconnectEvent.class, e -> link.playerQuit(e.getPlayer().getUsername(), e.getPlayer().getUuid()));
         MinecraftServer.getGlobalEventHandler().addChild(events);
+        // The test player moves with /tp, which Minestom does not have: give the dev server one.
+        if (CoreAddress.resolve().isPresent()) {
+            DevTeleport.registerIfMissing(MinecraftServer.getCommandManager(),
+                    MinecraftServer.getConnectionManager()::getOnlinePlayerByUsername);
+        }
 
         // Ticks only run once the server has started, so the first one marks it ready.
         MinecraftServer.getSchedulerManager().submitTask(() -> {

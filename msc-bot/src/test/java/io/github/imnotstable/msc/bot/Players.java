@@ -12,7 +12,12 @@ final class Players {
 
     /** A player the server has placed at x,y,z, simulating against {@code world} (named "w"). */
     static TestPlayer at(BlockSource world, RoutePlanner planner, double x, double y, double z) {
-        TestPlayer p = TestPlayer.offline("MscTester", world, planner, new ArrayList<Packet>());
+        return at(world, planner, x, y, z, new ArrayList<>());
+    }
+
+    /** As {@link #at(BlockSource, RoutePlanner, double, double, double)}, recording what it sends in {@code sent}. */
+    static TestPlayer at(BlockSource world, RoutePlanner planner, double x, double y, double z, List<Packet> sent) {
+        TestPlayer p = TestPlayer.offline("MscTester", world, planner, sent);
         p.receive(new ClientboundPlayerPositionPacket(1, x, y, z, 0, 0, 0, 0, 0));
         p.useWorld("w");
         return p;

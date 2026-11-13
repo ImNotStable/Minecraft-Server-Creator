@@ -113,6 +113,7 @@ public final class TestPlayer implements Bot {
     private boolean sprinting;
     private Script.Step current;
     private long ticks;
+    private long serverMoves;
 
     private TestPlayer(String name, BlockSource blocks, RoutePlanner planner, ClientSession session,
                        java.util.function.Consumer<Packet> sender) {
@@ -362,6 +363,11 @@ public final class TestPlayer implements Bot {
         return planner.route(from, to);
     }
 
+    /** How many times the server has set the player's position. */
+    synchronized long serverMoves() {
+        return serverMoves;
+    }
+
     long ticks() {
         return ticks;
     }
@@ -601,6 +607,7 @@ public final class TestPlayer implements Bot {
 
     private void position(ClientboundPlayerPositionPacket p) {
         synchronized (this) {
+            serverMoves++;
             List<PositionElement> rel = p.getRelatives();
             Vector3d pos = p.getPosition();
             double nx = rel.contains(PositionElement.X) ? body.x + pos.getX() : pos.getX();
