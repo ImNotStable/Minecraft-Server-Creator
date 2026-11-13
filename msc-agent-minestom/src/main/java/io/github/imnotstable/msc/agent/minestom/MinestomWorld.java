@@ -15,6 +15,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.stream.Collectors;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import net.minestom.server.component.DataComponents;
@@ -37,6 +38,10 @@ import net.minestom.server.tag.Tag;
 final class MinestomWorld implements AgentWorld<Block> {
     /** On a chunk an edit loaded, so a read never unloads it. */
     private static final Tag<Boolean> KEEP = Tag.Boolean("msc:keep");
+    /** On a chunk a read loaded, so the last read using it unloads it. */
+    private static final Tag<Boolean> READ_LOADED = Tag.<Boolean>Transient("msc:read-loaded");
+    /** On the instance: the chunks operations are using right now. */
+    private static final Tag<ChunkReaders> READERS = Tag.<ChunkReaders>Transient("msc:readers");
 
     private final Instance instance;
     private final String name;
@@ -188,24 +193,33 @@ final class MinestomWorld implements AgentWorld<Block> {
     /** Loads the area for an edit; its chunks stay loaded, even if a read loaded them first. */
     @Override
     public void loadArea(int minX, int minZ, int maxX, int maxZ) {
-        keep(load(area(minX, minZ, maxX, maxZ)));
+        loadAndKeep(area(minX, minZ, maxX, maxZ));
     }
 
     /**
      * Loads the area for a read. Minestom never unloads chunks by itself, so the release unloads,
-     * on the instance's next tick, those this call loaded that no player sees, no entity is in and
-     * no edit loaded since.
+     * on the instance's next tick, the chunks of the area a read loaded that no other read or edit
+     * is using, no player sees, no entity is in and no edit loaded since.
      */
     @Override
     public Runnable loadAreaToRead(int minX, int minZ, int maxX, int maxZ) {
         Set<Long> chunks = area(minX, minZ, maxX, maxZ);
-        List<Long> fresh = chunks.stream().filter(k -> instance.getChunk(chunkX(k), chunkZ(k)) == null).toList();
-        load(chunks);
-        if (fresh.isEmpty()) {
-            return () -> {
-            };
+        ChunkReaders readers = readers();
+        readers.acquire(chunks);
+        try {
+            Set<Long> fresh = chunks.stream().filter(k -> instance.getChunk(chunkX(k), chunkZ(k)) == null)
+                    .collect(Collectors.toSet());
+            List<Chunk> loaded = load(chunks);
+            loaded.stream().filter(c -> fresh.contains(chunkKey(c.getChunkX(), c.getChunkZ())))
+                    .forEach(c -> c.setTag(READ_LOADED, true));
+        } catch (RuntimeException e) {
+            readers.release(chunks);
+            throw e;
         }
-        return () -> instance.scheduleNextTick(i -> unloadUnused(fresh));
+        return () -> {
+            readers.release(chunks);
+            instance.scheduleNextTick(i -> readers.unloadUnused(chunks, this::unloadIfUnused));
+        };
     }
 
     @Override
@@ -214,7 +228,22 @@ final class MinestomWorld implements AgentWorld<Block> {
         for (long pos : positions) {
             chunks.add(chunkKey(PackedPos.x(pos) >> 4, PackedPos.z(pos) >> 4));
         }
-        keep(load(chunks));
+        loadAndKeep(chunks);
+    }
+
+    /** Counts the chunks as in use until they carry {@link #KEEP}, so no read's release unloads them first. */
+    private void loadAndKeep(Set<Long> chunks) {
+        ChunkReaders readers = readers();
+        readers.acquire(chunks);
+        try {
+            load(chunks).forEach(chunk -> chunk.setTag(KEEP, true));
+        } finally {
+            readers.release(chunks);
+        }
+    }
+
+    private ChunkReaders readers() {
+        return instance.updateAndGetTag(READERS, r -> r == null ? new ChunkReaders() : r);
     }
 
     private static Set<Long> area(int minX, int minZ, int maxX, int maxZ) {
@@ -227,17 +256,11 @@ final class MinestomWorld implements AgentWorld<Block> {
         return chunks;
     }
 
-    private static void keep(List<Chunk> chunks) {
-        chunks.forEach(chunk -> chunk.setTag(KEEP, true));
-    }
-
-    private void unloadUnused(List<Long> chunks) {
-        for (long key : chunks) {
-            Chunk chunk = instance.getChunk(chunkX(key), chunkZ(key));
-            if (chunk != null && !chunk.hasTag(KEEP) && chunk.getViewers().isEmpty()
-                    && instance.getChunkEntities(chunk).isEmpty()) {
-                instance.unloadChunk(chunk);
-            }
+    private void unloadIfUnused(long key) {
+        Chunk chunk = instance.getChunk(chunkX(key), chunkZ(key));
+        if (chunk != null && chunk.hasTag(READ_LOADED) && !chunk.hasTag(KEEP) && chunk.getViewers().isEmpty()
+                && instance.getChunkEntities(chunk).isEmpty()) {
+            instance.unloadChunk(chunk);
         }
     }
 
