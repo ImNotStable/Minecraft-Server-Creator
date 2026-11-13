@@ -179,7 +179,7 @@ public final class PackLint {
 
     private Texture readTexture(String path, byte[] png) {
         try {
-            return Texture.readPng(png);
+            return Texture.readAnyPng(png);
         } catch (TextureException ex) {
             add(Severity.ERROR, path, ex.getMessage());
             return null;
