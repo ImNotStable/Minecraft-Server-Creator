@@ -173,6 +173,10 @@ sourceSets.main { resources.srcDir(versionResource.map { layout.buildDirectory.d
 tasks.test {
     useJUnitPlatform { excludeTags("e2e") }
     systemProperty("msc.expectedVersion", project.version.toString())
+    // DocumentedCommandsTest reads the repo's docs: rerun it when they change.
+    inputs.files(rootProject.fileTree(rootDir) {
+        include("*.md", "docs/**/*.md", "msc-docs/**/*.md", "msc-*/README.md")
+    }).withPropertyName("documentedCommands").withPathSensitivity(PathSensitivity.RELATIVE)
 }
 
 tasks.register<Test>("e2eTest") {

@@ -22,14 +22,18 @@ public enum Footing {
 
     /** The footing of a block state such as {@code minecraft:oak_door[half=lower,open=false]}. */
     public static Footing of(String state) {
-        List<Box> boxes = BlockShapes.of(state);
+        return of(BlockShapes.of(state));
+    }
+
+    /** The footing of collision boxes inside the unit cube. */
+    static Footing of(List<Box> boxes) {
         double top = 0;
-        boolean lowBase = false;
+        double base = -1;
         for (Box b : boxes) {
             top = Math.max(top, b.maxY());
             if (b.minY() == 0 && b.maxY() <= STEP_HEIGHT && b.minX() == 0 && b.minZ() == 0 && b.maxX() == 1
                     && b.maxZ() == 1) {
-                lowBase = true; // stairs: step onto the base, then onto the step
+                base = Math.max(base, b.maxY()); // stairs: step onto the base, then onto the step
             }
         }
         if (top <= CARPET) {
@@ -38,6 +42,7 @@ public enum Footing {
         if (top > 1) {
             return TALL;
         }
-        return top <= STEP_HEIGHT || lowBase ? STEP : SOLID;
+        // A low base only helps when the rest is one more step up: not the walls of a composter on its floor.
+        return top <= STEP_HEIGHT || base >= 0 && top - base <= STEP_HEIGHT ? STEP : SOLID;
     }
 }
