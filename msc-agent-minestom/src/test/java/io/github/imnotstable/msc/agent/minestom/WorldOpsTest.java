@@ -195,6 +195,24 @@ class WorldOpsTest {
     }
 
     @Test
+    void readsUnloadTheChunksTheyLoadedButWritesKeepThem(Env env) {
+        setUp(env);
+        world.loadChunk(0, 0).join();
+
+        ops.read(new Ops.ReadParams(box(0, 70, 0, 40, 70, 0), false));
+        ops.heightmap(new Ops.HeightmapParams("world", new BlockPos(0, 0, 32), new BlockPos(0, 0, 32)));
+        fill(box(64, 70, 0, 64, 70, 0), "minecraft:stone");
+        ops.read(new Ops.ReadParams(box(64, 70, 0, 64, 70, 0), false));
+        env.tick();
+
+        assertThat(world.getChunk(0, 0)).as("loaded before the read").isNotNull();
+        assertThat(world.getChunk(1, 0)).as("loaded by the read").isNull();
+        assertThat(world.getChunk(2, 0)).as("loaded by the read").isNull();
+        assertThat(world.getChunk(0, 2)).as("loaded by the heightmap").isNull();
+        assertThat(world.getChunk(4, 0)).as("loaded by a write").isNotNull();
+    }
+
+    @Test
     void entitiesReportHealthAndTextDisplayText(Env env) {
         setUp(env);
         world.loadChunk(0, 0).join();
