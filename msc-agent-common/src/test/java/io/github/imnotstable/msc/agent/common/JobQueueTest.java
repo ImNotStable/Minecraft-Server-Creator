@@ -9,6 +9,8 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 
 class JobQueueTest {
@@ -89,5 +91,62 @@ class JobQueueTest {
         assertThat(queued).isCompletedExceptionally();
         assertThatThrownBy(() -> queue.add(new GreedyJob(1))).isInstanceOfSatisfying(OpException.class,
                 e -> assertThat(e.code()).isEqualTo(ErrorCodes.SHUTDOWN));
+    }
+
+    @Test
+    void theDriverIsHeldWhileJobsWaitAndFreedWhenTheQueueEmpties() {
+        JobQueue queue = new JobQueue();
+        CompletableFuture<Integer> job = queue.add(new GreedyJob(2));
+
+        assertThat(queue.claimDriver()).isTrue();
+        assertThat(queue.claimDriver()).isFalse();
+        assertThat(queue.stepAndKeepDriving(Duration.ZERO)).isTrue();
+        assertThat(queue.stepAndKeepDriving(Duration.ZERO)).isFalse();
+        assertThat(job).isCompletedWithValue(2);
+        assertThat(queue.claimDriver()).isTrue();
+    }
+
+    /** Races an add against the driver stopping; a lost wakeup leaves the added job unstepped. */
+    @Test
+    void aJobAddedWhileTheDriverStopsIsStillStepped() throws InterruptedException {
+        for (int i = 0; i < 2_000; i++) {
+            JobQueue queue = new JobQueue();
+            CompletableFuture<Integer> first = queue.add(new GreedyJob(1));
+            assertThat(queue.claimDriver()).isTrue();
+            AtomicReference<CompletableFuture<Integer>> second = new AtomicReference<>();
+            CountDownLatch go = new CountDownLatch(1);
+            Thread driver = Thread.ofVirtual().start(() -> {
+                awaitQuietly(go);
+                drive(queue);
+            });
+            Thread adder = Thread.ofVirtual().start(() -> {
+                awaitQuietly(go);
+                second.set(queue.add(new GreedyJob(1)));
+                if (queue.claimDriver()) {
+                    drive(queue);
+                }
+            });
+            go.countDown();
+            driver.join();
+            adder.join();
+
+            assertThat(first).isCompletedWithValue(1);
+            assertThat(second.get()).as("job added in round %d", i).isCompletedWithValue(1);
+            assertThat(queue.claimDriver()).isTrue();
+        }
+    }
+
+    private static void drive(JobQueue queue) {
+        while (queue.stepAndKeepDriving(Duration.ZERO)) {
+            Thread.onSpinWait();
+        }
+    }
+
+    private static void awaitQuietly(CountDownLatch latch) {
+        try {
+            latch.await();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 }

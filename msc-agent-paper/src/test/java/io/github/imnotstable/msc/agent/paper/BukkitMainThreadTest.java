@@ -77,4 +77,26 @@ class BukkitMainThreadTest {
         // off the primary thread, like a request from the core
         assertThat(CompletableFuture.supplyAsync(() -> main.run(job)).join()).isEqualTo("done");
     }
+
+    @Test
+    void aJobAfterTheTaskStoppedStartsItAgain() {
+        BukkitMainThread main = new BukkitMainThread(plugin, Duration.ofMillis(20), Duration.ofSeconds(5));
+        for (int round = 1; round <= 2; round++) {
+            int[] steps = {0};
+            SlicedJob<Integer> job = new SlicedJob<>() {
+                @Override
+                public boolean step(long deadlineNanos) {
+                    return ++steps[0] == 2;
+                }
+
+                @Override
+                public Integer result() {
+                    return steps[0];
+                }
+            };
+
+            assertThat(CompletableFuture.supplyAsync(() -> main.run(job)).join()).as("round %d", round).isEqualTo(2);
+            assertThat(main.queued()).isZero();
+        }
+    }
 }

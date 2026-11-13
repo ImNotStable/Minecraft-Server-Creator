@@ -24,8 +24,6 @@ public final class SchedulerMainThread implements MainThread {
     private final Duration budget;
     private final Duration timeout;
     private final JobQueue jobs = new JobQueue();
-    /** True while a task steps {@link #jobs}. */
-    private final AtomicBoolean driving = new AtomicBoolean();
 
     public SchedulerMainThread(Scheduler scheduler, Duration budget, Duration timeout) {
         this.scheduler = scheduler;
@@ -74,20 +72,10 @@ public final class SchedulerMainThread implements MainThread {
 
     /** Start the task that steps the jobs each tick, unless one runs. */
     private void drive() {
-        if (!driving.compareAndSet(false, true)) {
+        if (!jobs.claimDriver()) {
             return;
         }
-        submit(() -> {
-            jobs.step(budget);
-            // Stop when empty, unless a job came in after the check and its caller found this task still driving.
-            if (jobs.isEmpty()) {
-                driving.set(false);
-                if (jobs.isEmpty() || !driving.compareAndSet(false, true)) {
-                    return TaskSchedule.stop();
-                }
-            }
-            return TaskSchedule.nextTick();
-        });
+        submit(() -> jobs.stepAndKeepDriving(budget) ? TaskSchedule.nextTick() : TaskSchedule.stop());
     }
 
     /** Pending calls end when the agent disconnects on shutdown, or at the timeout. */
