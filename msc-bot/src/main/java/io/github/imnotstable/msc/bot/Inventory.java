@@ -136,10 +136,11 @@ final class Inventory {
             case "SHULKER_BOX" -> 27;
             case "CRAFTER_3x3" -> 9;
             case "BREWING_STAND" -> 5;
-            case "FURNACE", "BLAST_FURNACE", "SMOKER", "MERCHANT", "ANVIL", "GRINDSTONE", "CARTOGRAPHY", "SMITHING" -> 3;
+            case "FURNACE", "BLAST_FURNACE", "SMOKER", "MERCHANT", "ANVIL", "GRINDSTONE", "CARTOGRAPHY" -> 3;
+            case "SMITHING", "LOOM" -> 4;
             case "CRAFTING" -> 10;
             case "BEACON", "LECTERN" -> 1;
-            case "ENCHANTMENT", "LOOM", "STONECUTTER" -> 2;
+            case "ENCHANTMENT", "STONECUTTER" -> 2;
             default -> -1;
         };
     }

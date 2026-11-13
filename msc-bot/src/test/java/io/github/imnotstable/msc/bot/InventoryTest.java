@@ -76,6 +76,23 @@ class InventoryTest {
     }
 
     @Test
+    void smithingAndLoomMenusHaveFourSlotsBeforeThePlayers() {
+        for (ContainerType type : new ContainerType[] {ContainerType.SMITHING, ContainerType.LOOM}) {
+            Inventory fresh = new Inventory(Items.forVersion("26.3"));
+            fresh.accept(new ClientboundOpenScreenPacket(5, type, Component.text("T")));
+            ItemStack[] menu = new ItemStack[4 + 36];
+            menu[3] = new ItemStack(3, 1); // the menu's result slot
+            menu[4 + 27] = new ItemStack(1, 1); // hotbar 1
+            menu[4 + 35] = new ItemStack(2, 1); // hotbar 9
+            fresh.accept(new ClientboundContainerSetContentPacket(5, 1, menu, null));
+            assertThat(fresh.report()).as(type.name()).startsWith("""
+                    holding slot 1: stone
+                    hotbar: 1 stone; 9 granite
+                    open menu""");
+        }
+    }
+
+    @Test
     void readsMenusSentWithoutThePlayersSlots() {
         // Minestom sends only the menu's own slots.
         inv.accept(new ClientboundOpenScreenPacket(4, ContainerType.GENERIC_9X6, Component.text("Big")));
