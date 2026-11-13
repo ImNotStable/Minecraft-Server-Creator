@@ -86,12 +86,12 @@ final class ServerConsole {
         }
         long from = Math.max(marks.waitFrom, marks.start);
         long started = System.nanoTime();
-        LogBuffer.Match m = server.log().await(from, line -> pattern.matcher(LogText.clean(line)).find(),
+        LogBuffer.Match m = server.log().await(from, line -> pattern.matcher(line).find(),
                 Duration.ofSeconds(timeout), server::running);
         String waited = LogText.seconds((System.nanoTime() - started) / 1_000_000);
         if (m != null) {
             marks.waitFrom = m.seq() + 1;
-            return "matched after " + waited + ": " + LogText.clean(m.line());
+            return "matched after " + waited + ": " + m.line();
         }
         marks.waitFrom = server.log().mark();
         String last = LogText.tail(server.log().since(from), 5);
@@ -172,7 +172,7 @@ final class ServerConsole {
     static List<String> consoleLines(List<String> lines, List<String> returned) {
         List<String> raw = new ArrayList<>();
         for (String line : lines) {
-            raw.add(LOG_PREFIX.matcher(LogText.clean(line)).replaceFirst("").stripTrailing());
+            raw.add(LOG_PREFIX.matcher(line).replaceFirst("").stripTrailing());
         }
         Set<String> skip = new HashSet<>(returned);
         List<String> out = new ArrayList<>();
