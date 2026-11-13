@@ -250,7 +250,7 @@ public final class ServerManager implements AutoCloseable {
         if (!saved) {
             h.destroy();
             if (!exits(h, Duration.ofSeconds(20))) {
-                h.destroyForcibly();
+                ProcessRunner.destroyTree(h);
                 exits(h, Duration.ofSeconds(10));
             }
         }
@@ -283,8 +283,7 @@ public final class ServerManager implements AutoCloseable {
             }
         }
         if (!p.waitFor(timeout.toMillis(), TimeUnit.MILLISECONDS)) {
-            p.descendants().forEach(ProcessHandle::destroyForcibly);
-            p.destroyForcibly();
+            ProcessRunner.destroyTree(p.toHandle());
             p.waitFor(10, TimeUnit.SECONDS);
         }
         released(p);
