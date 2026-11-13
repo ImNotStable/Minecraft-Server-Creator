@@ -48,6 +48,7 @@ final class MapWorld implements AgentWorld<String>, AgentWorlds<String> {
     public void set(int x, int y, int z, String state, boolean physics) {
         writes++;
         lastPhysics = physics;
+        signs.remove(PackedPos.pack(x, y, z)); // like a real world: a new block drops the old block entity
         if (state.equals(AIR)) {
             blocks.remove(PackedPos.pack(x, y, z));
         } else {
@@ -81,6 +82,17 @@ final class MapWorld implements AgentWorld<String>, AgentWorlds<String> {
         return entityInfos.stream().filter(e -> type == null || type.equals(e.type()))
                 .filter(e -> region.contains((int) Math.floor(e.x()), (int) Math.floor(e.y()), (int) Math.floor(e.z())))
                 .toList();
+    }
+
+    /** Sign text lives outside the state, as on Paper and the mod loaders. */
+    @Override
+    public Object blockEntity(int x, int y, int z) {
+        return signs.get(PackedPos.pack(x, y, z));
+    }
+
+    @Override
+    public void loadBlockEntity(int x, int y, int z, Object data) {
+        signs.put(PackedPos.pack(x, y, z), (Ops.SignText) data);
     }
 
     @Override

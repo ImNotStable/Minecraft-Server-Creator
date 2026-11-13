@@ -70,6 +70,20 @@ class WorldOpsTest {
     }
 
     @Test
+    void undoPutsBackBlockEntityDataTheStateLeavesOut() {
+        world.set(0, 70, 0, "minecraft:oak_sign", false);
+        Ops.SignText text = new Ops.SignText(0, 70, 0, List.of("Shop"), null);
+        world.signs.put(PackedPos.pack(0, 70, 0), text);
+        Ops.EditResult fill = fill(box(0, 70, 0, 1, 70, 0), STONE);
+        assertThat(world.sign(0, 70, 0)).isNull();
+
+        ops.undo(new Ops.UndoParams(fill.editId()));
+
+        assertThat(world.get(0, 70, 0)).isEqualTo("minecraft:oak_sign");
+        assertThat(world.sign(0, 70, 0)).isEqualTo(text);
+    }
+
+    @Test
     void writeSkipsCellsMarkedMinusOne() {
         Region r = box(0, 70, 0, 1, 70, 1);
         // Y-Z-X order: (0,0) (1,0) (0,1) (1,1)

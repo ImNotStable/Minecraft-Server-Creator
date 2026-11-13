@@ -7,21 +7,26 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.TreeSet;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.HolderLookup;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.syncher.EntityDataSerializers;
 import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.util.ProblemReporter;
 import net.minecraft.world.entity.Display;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.SignBlockEntity;
 import net.minecraft.world.level.block.entity.SignText;
 import net.minecraft.world.level.block.entity.SignTextSlot;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.levelgen.Heightmap;
+import net.minecraft.world.level.storage.TagValueInput;
 import net.minecraft.world.phys.AABB;
 
 /** {@link AgentWorld} on a {@code ServerLevel}. Main thread only. */
@@ -68,6 +73,32 @@ final class VanillaLevel implements AgentWorld<BlockState> {
     @Override
     public void set(int x, int y, int z, BlockState state, boolean physics) {
         level.setBlock(pos.set(x, y, z), state, physics ? PHYSICS : NO_PHYSICS);
+    }
+
+    /** The block entity's data (sign text, container items), which a {@code BlockState} leaves out. */
+    @Override
+    public Object blockEntity(int x, int y, int z) {
+        BlockEntity entity = level.getBlockEntity(pos.set(x, y, z));
+        return entity == null ? null : save(entity, level.registryAccess());
+    }
+
+    @Override
+    public void loadBlockEntity(int x, int y, int z, Object data) {
+        BlockEntity entity = level.getBlockEntity(pos.set(x, y, z));
+        if (entity != null) {
+            load(entity, (CompoundTag) data, level.registryAccess());
+            BlockState state = level.getBlockState(pos);
+            level.sendBlockUpdated(pos, state, state, Block.UPDATE_CLIENTS);
+        }
+    }
+
+    static CompoundTag save(BlockEntity entity, HolderLookup.Provider registries) {
+        return entity.saveWithFullMetadata(registries);
+    }
+
+    static void load(BlockEntity entity, CompoundTag data, HolderLookup.Provider registries) {
+        entity.loadWithComponents(TagValueInput.create(ProblemReporter.DISCARDING, registries, data));
+        entity.setChanged();
     }
 
     /** Block states are interned singletons, so identity is equality. */

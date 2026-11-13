@@ -33,6 +33,18 @@ public interface AgentWorld<S> {
     /** Set a block; {@code physics} lets neighbours react (sand falls, torches pop off). */
     void set(int x, int y, int z, S state, boolean physics);
 
+    /**
+     * The block entity data at a position that {@link #get} leaves out (sign text, container items), or null when
+     * there is none or the state already holds it. An undo record keeps it. Defaults to null.
+     */
+    default Object blockEntity(int x, int y, int z) {
+        return null;
+    }
+
+    /** Writes data from {@link #blockEntity} back, after {@link #set} put the block itself there. */
+    default void loadBlockEntity(int x, int y, int z, Object data) {
+    }
+
     /** Whether writing {@code target} over {@code current} would change nothing. Defaults to {@code equals}. */
     default boolean sameState(S current, S target) {
         return Objects.equals(current, target);

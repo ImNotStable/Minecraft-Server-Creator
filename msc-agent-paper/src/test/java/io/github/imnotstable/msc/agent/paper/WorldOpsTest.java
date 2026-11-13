@@ -18,10 +18,12 @@ import net.kyori.adventure.text.Component;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.World;
+import org.bukkit.block.Chest;
 import org.bukkit.block.Sign;
 import org.bukkit.block.sign.Side;
 import org.bukkit.entity.EntityType;
 import org.bukkit.entity.Zombie;
+import org.bukkit.inventory.ItemStack;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -118,6 +120,26 @@ class WorldOpsTest {
 
         assertThat(world.getBlockAt(5, 70, 5).getBlockData().getAsString()).contains("facing=east");
         assertThat(at(6, 70, 5)).isEqualTo(Material.GLASS);
+    }
+
+    @Test
+    void undoPutsBackSignTextAndChestContents() {
+        world.getBlockAt(1, 70, 1).setType(Material.OAK_SIGN);
+        Sign sign = (Sign) world.getBlockAt(1, 70, 1).getState();
+        sign.getSide(Side.FRONT).line(0, Component.text("Shop"));
+        sign.update(true, false);
+        world.getBlockAt(2, 70, 1).setType(Material.CHEST);
+        Chest chest = (Chest) world.getBlockAt(2, 70, 1).getState();
+        chest.getSnapshotInventory().setItem(3, new ItemStack(Material.DIAMOND, 5));
+        chest.update(true, false);
+
+        Ops.EditResult fill = fill(box(0, 70, 0, 3, 70, 3), "minecraft:stone");
+        ops.undo(new Ops.UndoParams(fill.editId()));
+
+        assertThat(ops.read(new Ops.ReadParams(box(1, 70, 1, 1, 70, 1), false, true)).signs())
+                .containsExactly(new Ops.SignText(1, 70, 1, List.of("Shop", "", "", ""), null));
+        assertThat(((Chest) world.getBlockAt(2, 70, 1).getState()).getSnapshotInventory().getItem(3))
+                .isEqualTo(new ItemStack(Material.DIAMOND, 5));
     }
 
     @Test

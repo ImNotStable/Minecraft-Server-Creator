@@ -12,7 +12,10 @@ import org.bukkit.HeightMap;
 import org.bukkit.World;
 import org.bukkit.attribute.Attribute;
 import org.bukkit.attribute.AttributeInstance;
+import org.bukkit.block.Block;
+import org.bukkit.block.BlockState;
 import org.bukkit.block.Sign;
+import org.bukkit.block.TileState;
 import org.bukkit.block.data.BlockData;
 import org.bukkit.block.sign.Side;
 import org.bukkit.block.sign.SignSide;
@@ -53,6 +56,18 @@ final class PaperWorld implements AgentWorld<BlockData> {
     @Override
     public void set(int x, int y, int z, BlockData state, boolean physics) {
         world.getBlockAt(x, y, z).setBlockData(state, physics);
+    }
+
+    /** A snapshot of a block entity (sign text, container items), which {@link BlockData} leaves out. */
+    @Override
+    public Object blockEntity(int x, int y, int z) {
+        Block block = world.getBlockAt(x, y, z);
+        return block.getState(false) instanceof TileState ? block.getState(true) : null;
+    }
+
+    @Override
+    public void loadBlockEntity(int x, int y, int z, Object data) {
+        ((BlockState) data).update(true, false);
     }
 
     @Override
