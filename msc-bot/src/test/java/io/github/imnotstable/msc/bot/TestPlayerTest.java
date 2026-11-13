@@ -119,9 +119,9 @@ class TestPlayerTest {
     }
 
     @Test
-    void asksTheLocatorWhichMinestomInstanceThePlayerIsIn() {
-        // Minestom moves a player between two instances of one dimension with no Respawn: only a position sync and
-        // a world border reset; and its instances have names of their own, whatever their dimension.
+    void asksTheLocatorWhichMinestomInstanceThePlayerIsIn() throws InterruptedException {
+        // Minestom moves a player between two instances of one dimension with no Respawn and no world border reset:
+        // only a position sync; and its instances have names of their own, whatever their dimension.
         FlatWorld blocks = new FlatWorld();
         String[] at = {"lobby"};
         List<String> asked = new ArrayList<>();
@@ -131,22 +131,47 @@ class TestPlayerTest {
         }, new ArrayList<>());
         p.receive(login("minecraft:the_nether"));
         p.receive(teleport(0.5, 1, 0.5));
-        p.receive(border());
         p.useWorld("w");
         assertThat(Players.drive(p, Script.parse("jump"), 100)).startsWith("rose");
         assertThat(blocks.regions.getLast().world()).isEqualTo("lobby");
-        // A walk under way when the server moves the player stops: its world is gone.
+        // A walk under way when the server moves the player stops, and the next action asks again.
         Script.Step walk = Script.parse("goto 40.5,1,0.5");
         p.begin(walk);
         p.tick();
         at[0] = "arena";
-        p.receive(teleport(0.5, 1, 0.5));
-        p.receive(border());
+        p.receive(teleport(100.5, 1, 0.5));
         p.tick();
-        assertThat(walk.resultNow()).isEqualTo("stopped: " + TestPlayer.RELOCATING);
+        assertThat(walk.resultNow()).startsWith("moved by server");
         assertThat(Players.drive(p, Script.parse("jump"), 100)).startsWith("rose");
         assertThat(blocks.regions.getLast().world()).isEqualTo("arena");
-        assertThat(asked).containsExactly("MscTester 0,1,0", "MscTester 0,1,0");
+        // A swap to an instance at the same spot sends no teleport at all: each call asks once.
+        at[0] = "arena2";
+        p.run(List.of(), "w");
+        assertThat(Players.drive(p, Script.parse("jump"), 100)).startsWith("rose");
+        assertThat(blocks.regions.getLast().world()).isEqualTo("arena2");
+        assertThat(asked).containsExactly("MscTester 0,1,0", "MscTester 100,1,0", "MscTester 100,1,0");
+    }
+
+    @Test
+    void aWorldBorderAloneIsNoWorldChange() {
+        // Paper sends one for a per-player border, with the player staying where it is.
+        FlatWorld blocks = new FlatWorld();
+        List<String> asked = new ArrayList<>();
+        TestPlayer p = TestPlayer.offline("MscTester", blocks, null, (player, pos) -> {
+            asked.add(player);
+            return "world";
+        }, new ArrayList<>());
+        p.receive(login("minecraft:overworld"));
+        p.receive(teleport(0.5, 1, 0.5));
+        p.useWorld("world");
+        Script.Step walk = Script.parse("goto 40.5,1,0.5");
+        p.begin(walk);
+        p.tick();
+        p.receive(new ClientboundInitializeBorderPacket(0, 0, 6e7, 6e7, 0, 29_999_984, 5, 15));
+        p.tick();
+        assertThat(walk.resultNow()).isNull();
+        assertThat(p.view()).isNotNull();
+        assertThat(asked).hasSize(1);
     }
 
     @Test
@@ -158,10 +183,6 @@ class TestPlayerTest {
         p.useWorld("w");
         assertThat(Players.drive(p, Script.parse("jump"), 100)).startsWith("rose");
         assertThat(blocks.regions.getLast().world()).isEqualTo("w_nether");
-    }
-
-    static ClientboundInitializeBorderPacket border() {
-        return new ClientboundInitializeBorderPacket(0, 0, 6e7, 6e7, 0, 29_999_984, 5, 15);
     }
 
     static ClientboundLoginPacket login(String world) {

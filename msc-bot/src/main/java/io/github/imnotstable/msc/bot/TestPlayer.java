@@ -51,7 +51,6 @@ import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.entity.play
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.entity.player.ClientboundSetHealthPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.entity.ClientboundAddEntityPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.level.ClientboundChunkBatchFinishedPacket;
-import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.level.border.ClientboundInitializeBorderPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.title.ClientboundSetActionBarTextPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.title.ClientboundSetSubtitleTextPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.title.ClientboundSetTitleTextPacket;
@@ -108,8 +107,9 @@ public final class TestPlayer implements Bot {
     /** The dimension the server says the player is in, such as minecraft:the_nether; null before the login. */
     private String dimension;
     /**
-     * Set when the server put the player in a world (a login, a respawn, or a world border reset, which every server
-     * sends then, Minestom also between two instances of one dimension) until the locator says which world it is.
+     * Set when the server may have put the player in another world (a login, a respawn, a teleport, or the start of a
+     * call, since Minestom moves a player between two instances of one dimension with no packet that says so) until
+     * the locator says which world it is.
      */
     private boolean relocate;
     /** Counts {@link #relocate} settings, so a locator answer that a newer world change overtook is dropped. */
@@ -224,6 +224,7 @@ public final class TestPlayer implements Bot {
             steps.add(Script.parse(line));
         }
         useWorld(world);
+        recheckWorld();
         StringBuilder out = new StringBuilder();
         drainEvents(out); // what happened since the last call, joining included
         for (Script.Step step : steps) {
@@ -268,6 +269,21 @@ public final class TestPlayer implements Bot {
             worldChanges++;
             refreshView();
         }
+    }
+
+    /**
+     * Ask the locator again at the start of a call: a server can swap the player's world in place, with no teleport.
+     * The view stays until the answer, so the player keeps falling and walking meanwhile.
+     */
+    private void recheckWorld() {
+        synchronized (this) {
+            if (locator == null || !positioned || relocate) {
+                return;
+            }
+            relocate = true;
+            worldChanges++;
+        }
+        locate();
     }
 
     /**
@@ -689,7 +705,6 @@ public final class TestPlayer implements Bot {
             // Like the vanilla client; Fabric API's configuration waits for this pong.
             case ClientboundPingPacket p -> send(new ServerboundPongPacket(p.getId()));
             case ClientboundChunkBatchFinishedPacket p -> send(new ServerboundChunkBatchReceivedPacket(64f));
-            case ClientboundInitializeBorderPacket p -> enteredWorld();
             case ClientboundAddEntityPacket p -> entities.put(p.getEntityId(), new Tracked(
                     p.getType().name().toLowerCase(java.util.Locale.ROOT), p.getX(), p.getY(), p.getZ()));
             case ClientboundRemoveEntitiesPacket p -> {
@@ -752,6 +767,9 @@ public final class TestPlayer implements Bot {
                 if (moved > TELEPORT && step != null && step.endsOnTeleport()) {
                     step.finish(String.format("moved by server to %.2f,%.2f,%.2f (%.1f blocks)", nx, ny, nz, moved));
                     current = null;
+                }
+                if (moved > TELEPORT) {
+                    enteredWorld(); // maybe another world: Minestom sends no other sign between same-dimension instances
                 }
             }
             body.x = nx;
