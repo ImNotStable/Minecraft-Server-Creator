@@ -16,6 +16,15 @@ public final class LogCondenser {
     /** {@code [12:34:56 INFO]: msg} (Paper) or {@code [12:34:56] [Server thread/INFO]: msg} (vanilla). */
     private static final Pattern LINE = Pattern.compile("^\\[(\\d\\d:\\d\\d:\\d\\d)(?:\\] \\[[^\\]]*/| )(\\w+)\\]:? ?(.*)$");
     /**
+     * slf4j-simple at its defaults, which the Minestom templates log with: {@code [main] WARN com.example.Foo - msg},
+     * no timestamp (#272). The logger is dropped like Forge's.
+     */
+    private static final Pattern SIMPLE = Pattern.compile("^\\[[^\\]]+\\] (TRACE|DEBUG|INFO|WARN|ERROR) \\S+ - (.*)$");
+    /** The ready line every platform prints: vanilla and the loaders after their prefix, Minestom's template bare. */
+    private static final Pattern READY = Pattern.compile(".*\\bDone \\(\\d.*\\)!.*");
+    /** The JVM's report of an uncaught exception: printed to stderr without a prefix, never part of the line before. */
+    private static final Pattern UNCAUGHT = Pattern.compile("^Exception in thread \".*");
+    /**
      * A stack frame; the class loader and module prefixes ({@code app//}, {@code java.base/}, Forge's
      * {@code TRANSFORMER/mymod@1.0/}) are skipped.
      */
@@ -132,8 +141,15 @@ public final class LogCondenser {
                 }
                 current = new Entry(m.group(1), m.group(2).toUpperCase(), message);
                 entries.add(current);
+                continue;
+            }
+            Matcher simple = SIMPLE.matcher(line);
+            if (simple.matches()) {
+                current = new Entry("", simple.group(1), simple.group(2));
+                entries.add(current);
             } else if (!line.isBlank() && !QUILT_TIMING.matcher(line).matches()) {
-                if (current == null) {
+                // A bare ready line (Minestom) or uncaught exception is its own entry, not the previous one's text.
+                if (current == null || READY.matcher(line).matches() || UNCAUGHT.matcher(line).matches()) {
                     current = new Entry("", "", line);
                     entries.add(current);
                 } else {
@@ -297,6 +313,11 @@ public final class LogCondenser {
             }
         }
         return Budget.truncate(out.toString(), maxChars, "Fix the first errors and build again.");
+    }
+
+    /** True for the line a server prints when it has started, with or without ANSI colour codes. */
+    public static boolean readyLine(String line) {
+        return READY.matcher(stripAnsi(line)).matches();
     }
 
     static String stripAnsi(String s) {

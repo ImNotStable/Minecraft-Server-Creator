@@ -30,4 +30,10 @@ class ServerConsoleTest {
         assertThat(ServerConsole.consoleLines(List.of("[12:00:00 INFO]: hello", "[12:00:00 INFO]: [Server] Wave 3"),
                 List.of("hello"))).containsExactly("[Server] Wave 3");
     }
+
+    @Test
+    void minestomLogPrefixesAreStripped() {
+        assertThat(ServerConsole.consoleLines(List.of("[main] INFO com.example.Lobby - Wave 3"), List.of()))
+                .containsExactly("Wave 3");
+    }
 }
