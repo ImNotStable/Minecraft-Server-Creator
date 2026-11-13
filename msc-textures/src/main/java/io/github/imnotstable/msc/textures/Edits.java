@@ -3,9 +3,11 @@ package io.github.imnotstable.msc.textures;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /** Edits on whole textures: outline, recolour onto a ramp, and colour-count reduction. */
 public final class Edits {
@@ -57,32 +59,42 @@ public final class Edits {
         return out;
     }
 
+    /** Colours are pre-bucketed until at most this many clusters remain, so merging stays fast. */
+    static final int MAX_CLUSTERS = 256;
+
     /**
      * Reduce to at most {@code max} opaque colours by repeatedly merging the closest pair, weighted by
-     * pixel count. Transparency is kept.
+     * pixel count. Transparency is kept. Textures with more than {@link #MAX_CLUSTERS} colours are first
+     * bucketed by dropping low bits per channel, which bounds the work regardless of size.
      */
     public static Texture quantize(Texture in, int max) {
         if (max < 1) {
             throw new TextureException("max colors must be at least 1");
         }
-        Map<Integer, Integer> counts = new LinkedHashMap<>();
+        if (in.colors().size() <= max) {
+            return in.copy();
+        }
+        int mask = bucketMask(in);
+        Map<Integer, long[]> sums = new LinkedHashMap<>();
         for (int y = 0; y < in.height(); y++) {
             for (int x = 0; x < in.width(); x++) {
                 int c = in.get(x, y);
                 if (Colors.opaque(c)) {
-                    counts.merge(coarse(c, in), 1, Integer::sum);
+                    long[] s = sums.computeIfAbsent(c & mask, k -> new long[4]);
+                    s[0] += (c >> 16) & 0xFF;
+                    s[1] += (c >> 8) & 0xFF;
+                    s[2] += c & 0xFF;
+                    s[3]++;
                 }
             }
         }
-        if (in.colors().size() <= max) {
-            return in.copy();
-        }
         List<int[]> clusters = new ArrayList<>();
         Map<Integer, int[]> owner = new HashMap<>();
-        counts.forEach((c, n) -> {
-            int[] cl = {(c >> 16) & 0xFF, (c >> 8) & 0xFF, c & 0xFF, n, c};
+        sums.forEach((key, s) -> {
+            int n = (int) s[3];
+            int[] cl = {Math.round((float) s[0] / n), Math.round((float) s[1] / n), Math.round((float) s[2] / n), n};
             clusters.add(cl);
-            owner.put(c, cl);
+            owner.put(key, cl);
         });
         while (clusters.size() > max) {
             int bi = 0;
@@ -114,7 +126,7 @@ public final class Edits {
             for (int x = 0; x < in.width(); x++) {
                 int c = in.get(x, y);
                 if (Colors.opaque(c)) {
-                    int[] cl = owner.get(coarse(c, in));
+                    int[] cl = owner.get(c & mask);
                     out.set(x, y, (c & 0xFF000000) | cl[0] << 16 | cl[1] << 8 | cl[2]);
                 }
             }
@@ -122,9 +134,25 @@ public final class Edits {
         return out;
     }
 
-    /** Large images are pre-reduced to 5 bits per channel so merging stays fast. */
-    private static int coarse(int c, Texture in) {
-        return in.width() * in.height() > 4096 ? c & 0xFFF8F8F8 : c & 0xFFFFFFFF;
+    /** The finest RGB mask (8 bits per channel down to 1) that leaves at most {@link #MAX_CLUSTERS} buckets. */
+    private static int bucketMask(Texture in) {
+        for (int bits = 8; bits > 1; bits--) {
+            int m = (0xFF << (8 - bits)) & 0xFF;
+            int mask = m << 16 | m << 8 | m;
+            Set<Integer> buckets = new HashSet<>();
+            for (int y = 0; y < in.height() && buckets.size() <= MAX_CLUSTERS; y++) {
+                for (int x = 0; x < in.width(); x++) {
+                    int c = in.get(x, y);
+                    if (Colors.opaque(c)) {
+                        buckets.add(c & mask);
+                    }
+                }
+            }
+            if (buckets.size() <= MAX_CLUSTERS) {
+                return mask;
+            }
+        }
+        return 0x808080;
     }
 
     private static double dist(int[] a, int[] b) {

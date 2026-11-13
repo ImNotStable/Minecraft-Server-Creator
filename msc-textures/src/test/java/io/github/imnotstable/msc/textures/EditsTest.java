@@ -38,4 +38,21 @@ class EditsTest {
         assertThat(q.get(0, 0)).isZero();
         assertThat(Edits.quantize(q, 8)).isEqualTo(q);
     }
+
+    @Test
+    void quantizeAndViewStayFastOnManyDistinctColors() {
+        Texture small = new Texture(64, 64);
+        Texture large = new Texture(256, 256);
+        for (int i = 0; i < 256 * 256; i++) {
+            int c = 0xFF000000 | i * 2654435 & 0xFFFFFF;
+            if (i < 64 * 64) {
+                small.set(i % 64, i / 64, c);
+            }
+            large.set(i % 256, i / 256, c);
+        }
+        long start = System.nanoTime();
+        assertThat(PaletteText.view(small)).startsWith("4096 colors merged to ");
+        assertThat(Edits.quantize(large, 16).colors()).hasSize(16);
+        assertThat((System.nanoTime() - start) / 1_000_000).isLessThan(5_000);
+    }
 }
