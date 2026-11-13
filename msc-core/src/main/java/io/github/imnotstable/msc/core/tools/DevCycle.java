@@ -316,11 +316,17 @@ final class DevCycle {
     }
 
     /**
+     * A trailing version: digits and dots, then qualifiers that start with a letter ({@code -SNAPSHOT}, {@code -rc1})
+     * and build metadata ({@code +26.3}). So name parts like {@code parkour-2} or {@code bedwars-4v4} survive.
+     */
+    private static final String VERSION_SUFFIX = "-\\d+(\\.\\d+)*(-[A-Za-z][\\w.]*)*(\\+[\\w.+-]*)?$";
+
+    /**
      * The deployed jar's name: the built jar's name without its version ({@code lobby-0.1.0-SNAPSHOT.jar} becomes
      * {@code lobby}), so it stays the same across versions and does not depend on the folder name.
      */
     static String deployName(Path jar, Path project) {
-        String base = jar.getFileName().toString().replaceFirst("\\.jar$", "").replaceFirst("-\\d[\\w.+-]*$", "");
+        String base = jar.getFileName().toString().replaceFirst("\\.jar$", "").replaceFirst(VERSION_SUFFIX, "");
         if (!base.isEmpty()) {
             return base;
         }
