@@ -14,9 +14,12 @@ import org.junit.jupiter.api.io.TempDir;
 
 class TaskLoaderTest {
 
+    /** The bundled tasks, found from the repository root and not the working folder. */
+    private static final Path BUNDLED = Path.of(System.getProperty("msc.repoRoot"), "msc-bench", "tasks");
+
     @Test
     void bundledTasksLoadAndCoverEveryArea() throws IOException {
-        List<TaskDef> tasks = TaskLoader.loadAll(Path.of("tasks"));
+        List<TaskDef> tasks = TaskLoader.loadAll(BUNDLED);
 
         assertThat(tasks).hasSizeBetween(5, 10);
         assertThat(tasks).extracting(TaskDef::category).contains("code", "build", "world", "texture");
@@ -29,7 +32,7 @@ class TaskLoaderTest {
 
     @Test
     void worldTasksStartTheServerAndCodeTasksShipTheBuggyFixture() throws IOException {
-        List<TaskDef> tasks = TaskLoader.loadAll(Path.of("tasks"));
+        List<TaskDef> tasks = TaskLoader.loadAll(BUNDLED);
 
         assertThat(tasks).filteredOn(t -> t.category().equals("build") || t.category().equals("world"))
                 .allMatch(t -> t.server().startBefore() && t.needsServer());
