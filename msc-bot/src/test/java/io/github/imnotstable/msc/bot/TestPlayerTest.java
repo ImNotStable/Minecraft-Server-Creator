@@ -18,6 +18,7 @@ import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.Clientbound
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.ClientboundRespawnPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.entity.player.ClientboundPlayerPositionPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.entity.player.ClientboundSetHealthPacket;
+import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.level.border.ClientboundInitializeBorderPacket;
 import org.junit.jupiter.api.Test;
 
 class TestPlayerTest {
@@ -118,20 +119,49 @@ class TestPlayerTest {
     }
 
     @Test
-    void stopsMovingInAWorldItCannotName() {
-        TestPlayer p = Players.at(new FlatWorld(), null, 0.5, 1, 0.5);
-        p.receive(login("minecraft:overworld"));
-        // A second overworld-type world (a Minestom instance): the dimension does not say which one.
-        p.receive(new ClientboundRespawnPacket(spawn("minecraft:overworld"), false, false));
-        p.useWorld("w");
-        assertThat(Players.drive(p, Script.parse("goto 5.5,0.5"), 100)).isEqualTo("stopped: the server moved the player"
-                + " to another minecraft:overworld world, which the test player cannot tell from w; movement is only"
-                + " simulated in a world it knows");
-        // Dying and respawning puts it somewhere it can name again.
-        p.receive(new ClientboundSetHealthPacket(0, 20, 5));
-        p.receive(new ClientboundRespawnPacket(spawn("minecraft:overworld"), false, false));
+    void asksTheLocatorWhichMinestomInstanceThePlayerIsIn() {
+        // Minestom moves a player between two instances of one dimension with no Respawn: only a position sync and
+        // a world border reset; and its instances have names of their own, whatever their dimension.
+        FlatWorld blocks = new FlatWorld();
+        String[] at = {"lobby"};
+        List<String> asked = new ArrayList<>();
+        TestPlayer p = TestPlayer.offline("MscTester", blocks, null, (player, pos) -> {
+            asked.add(player + " " + pos.x() + "," + pos.y() + "," + pos.z());
+            return at[0];
+        }, new ArrayList<>());
+        p.receive(login("minecraft:the_nether"));
+        p.receive(teleport(0.5, 1, 0.5));
+        p.receive(border());
         p.useWorld("w");
         assertThat(Players.drive(p, Script.parse("jump"), 100)).startsWith("rose");
+        assertThat(blocks.regions.getLast().world()).isEqualTo("lobby");
+        // A walk under way when the server moves the player stops: its world is gone.
+        Script.Step walk = Script.parse("goto 40.5,1,0.5");
+        p.begin(walk);
+        p.tick();
+        at[0] = "arena";
+        p.receive(teleport(0.5, 1, 0.5));
+        p.receive(border());
+        p.tick();
+        assertThat(walk.resultNow()).isEqualTo("stopped: " + TestPlayer.RELOCATING);
+        assertThat(Players.drive(p, Script.parse("jump"), 100)).startsWith("rose");
+        assertThat(blocks.regions.getLast().world()).isEqualTo("arena");
+        assertThat(asked).containsExactly("MscTester 0,1,0", "MscTester 0,1,0");
+    }
+
+    @Test
+    void goesByTheDimensionWhenTheLocatorFindsThePlayerNowhere() {
+        FlatWorld blocks = new FlatWorld();
+        TestPlayer p = TestPlayer.offline("MscTester", blocks, null, (player, pos) -> null, new ArrayList<>());
+        p.receive(login("minecraft:the_nether"));
+        p.receive(teleport(0.5, 1, 0.5));
+        p.useWorld("w");
+        assertThat(Players.drive(p, Script.parse("jump"), 100)).startsWith("rose");
+        assertThat(blocks.regions.getLast().world()).isEqualTo("w_nether");
+    }
+
+    static ClientboundInitializeBorderPacket border() {
+        return new ClientboundInitializeBorderPacket(0, 0, 6e7, 6e7, 0, 29_999_984, 5, 15);
     }
 
     static ClientboundLoginPacket login(String world) {
