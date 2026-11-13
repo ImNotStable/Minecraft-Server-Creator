@@ -169,24 +169,14 @@ public sealed interface Step {
 
         @Override
         public void draw(Canvas c) throws InterruptedException {
-            int lo = Shapes.brushLow(width);
-            int n = width;
-            boolean[] brush = Shapes.brush(width);
             Canvas.Mask mask = c.mask(bounds(), replace);
-            for (BlockPos p : Shapes.line(from, to)) {
-                for (int dy = -lo; dy < n - lo; dy++) {
-                    for (int dz = -lo; dz < n - lo; dz++) {
-                        for (int dx = -lo; dx < n - lo; dx++) {
-                            int x = p.x() + dx;
-                            int y = p.y() + dy;
-                            int z = p.z() + dz;
-                            if (brush[((dy + lo) * n + dz + lo) * n + dx + lo] && mask.allows(x, y, z)) {
-                                c.set(x, y, z, block.at(x, y, z));
-                            }
-                        }
-                    }
+            // A block reached twice gets the same answer: the pattern depends only on the position, and after the
+            // first visit the mask sees either this step's own block there or what it already refused.
+            Shapes.sweep(Shapes.line(from, to), width, (x, y, z) -> {
+                if (mask.allows(x, y, z)) {
+                    c.set(x, y, z, block.at(x, y, z));
                 }
-            }
+            });
         }
     }
 

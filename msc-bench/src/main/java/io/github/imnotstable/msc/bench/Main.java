@@ -37,12 +37,16 @@ import java.util.Set;
  * check &lt;task&gt; &lt;workspace&gt;                 run one task's checks on a folder (starts its server for RCON checks)
  * report &lt;runDir&gt;                         rewrite report.md from results.jsonl
  * common: --tasks-dir DIR (default tasks), --config FILE (default bench.json),
- *         --out DIR (default ~/.msc/bench-runs; must be outside any repository or CLAUDE.md folder)
+ *         --out DIR (default ~/.msc/bench-runs, or &lt;temp&gt;/msc-bench-runs when the home folder is inside a
+ *         repository; must be outside any repository or CLAUDE.md folder)
+ * A leading {@code ~} in a path argument is the home folder: Gradle's {@code --args="..."} and quoted shell
+ * arguments pass it unexpanded.
  * </pre>
  */
 public final class Main {
 
     private static final Set<String> FLAGS = Set.of("--tasks", "--modes", "--repeat", "--tasks-dir", "--config", "--out");
+    private static final Set<String> PATH_FLAGS = Set.of("--tasks-dir", "--config", "--out");
 
     private Main() {
     }
@@ -72,9 +76,11 @@ public final class Main {
             }
         }
         if (positional.isEmpty()) {
-            out.println("usage: msc-bench list | run [--tasks a,b] [--modes m1,m2] [--repeat N] | check <task> <workspace> | report <runDir>");
+            out.println(usage());
             return 1;
         }
+        Path home = Path.of(System.getProperty("user.home"));
+        flags.replaceAll((flag, value) -> PATH_FLAGS.contains(flag) ? expandHome(value, home).toString() : value);
         Path tasksDir = Path.of(flags.getOrDefault("--tasks-dir", "tasks"));
         return switch (positional.getFirst()) {
             case "list" -> list(tasksDir, out);
@@ -83,16 +89,37 @@ public final class Main {
                 if (positional.size() != 3) {
                     throw new IllegalArgumentException("usage: check <task> <workspace>");
                 }
-                yield check(tasksDir, positional.get(1), Path.of(positional.get(2)), flags, out);
+                yield check(tasksDir, positional.get(1), expandHome(positional.get(2), home), flags, out);
             }
             case "report" -> {
                 if (positional.size() != 2) {
                     throw new IllegalArgumentException("usage: report <runDir>");
                 }
-                yield report(Path.of(positional.get(1)), out);
+                yield report(expandHome(positional.get(1), home), out);
             }
             default -> throw new IllegalArgumentException("unknown command " + positional.getFirst());
         };
+    }
+
+    static String usage() {
+        return "usage: msc-bench list | run [--tasks a,b] [--modes m1,m2] [--repeat N] [--out DIR, default "
+                + RunIsolation.DEFAULT_RUNS_SHOWN + "] | check <task> <workspace> | report <runDir>";
+    }
+
+    /**
+     * The argument as a path, with a leading {@code ~} (alone or before a separator) as the home folder. Neither
+     * Gradle's {@code --args} nor a quoted shell argument expands it, and {@code Path.of} would read it as a folder
+     * named {@code ~} in msc-bench/.
+     */
+    static Path expandHome(String arg, Path home) {
+        if (arg.equals("~")) {
+            return home;
+        }
+        if (arg.startsWith("~/") || arg.startsWith("~\\")) {
+            String rest = arg.substring(2);
+            return rest.isEmpty() ? home : home.resolve(rest);
+        }
+        return Path.of(arg);
     }
 
     private static int list(Path tasksDir, PrintStream out) throws IOException {
@@ -105,9 +132,17 @@ public final class Main {
 
     private static int runBench(Path tasksDir, Map<String, String> flags, PrintStream out) throws IOException {
         // Attempts run in the run folder: inside this repository both modes would load its CLAUDE.md and sources.
+        // The checked folder is the resolved one, and the run writes to that same folder (links, .. and all).
         Path home = Path.of(System.getProperty("user.home"));
-        Path runsDir = flags.containsKey("--out") ? Path.of(flags.get("--out")) : RunIsolation.defaultRunsDir(home);
-        RunIsolation.requireIsolated(runsDir, home);
+        Path temp = Path.of(System.getProperty("java.io.tmpdir"));
+        Path runsDir = flags.containsKey("--out")
+                ? RunIsolation.requireIsolated(Path.of(flags.get("--out")), home, temp)
+                : RunIsolation.defaultRunsDir(home, temp);
+        if (!flags.containsKey("--out") && !runsDir.equals(RunIsolation.resolve(RunIsolation.homeRunsDir(home)))) {
+            out.println(RunIsolation.DEFAULT_RUNS_SHOWN + " is inside a project (your home folder is a repository or "
+                    + "has a CLAUDE.md), so runs go to " + runsDir + "; the system may clear it, so pass --out to keep "
+                    + "them elsewhere");
+        }
         BenchConfig config = BenchConfig.load(Path.of(flags.getOrDefault("--config", "bench.json")));
         List<TaskDef> tasks = select(TaskLoader.loadAll(tasksDir), flags.get("--tasks"));
         List<String> modes = flags.containsKey("--modes")
