@@ -183,7 +183,8 @@ public final class WorldRenderer {
                     outside.add(n);
                     continue;
                 }
-                boolean behind = behind(frame, tracer, p);
+                // A sign's own block (post and board) sits around its anchor and must not hide its text.
+                boolean behind = behind(frame, tracer, p, m.kind() == Marker.Kind.SIGN);
                 if (behind) {
                     hidden.add(n);
                 }
@@ -220,17 +221,42 @@ public final class WorldRenderer {
         return numbers.stream().map(String::valueOf).collect(java.util.stream.Collectors.joining(", "));
     }
 
-    /** True when a solid block lies between a grid-local point and the camera. */
-    private static boolean behind(Frame frame, Tracer tracer, double[] p) {
+    /**
+     * True when a solid block lies between a grid-local point and the camera. With {@code skipOwnCell} the ray starts
+     * where it leaves the block that holds the point, so that block cannot hide it.
+     */
+    private static boolean behind(Frame frame, Tracer tracer, double[] p, boolean skipOwnCell) {
+        double[] d;
+        double distance;
         if (frame.perspective) {
-            double[] d = {frame.origin[0] - p[0], frame.origin[1] - p[1], frame.origin[2] - p[2]};
-            double distance = Math.sqrt(dot(d, d));
+            d = new double[] {frame.origin[0] - p[0], frame.origin[1] - p[1], frame.origin[2] - p[2]};
+            distance = Math.sqrt(dot(d, d));
             if (distance < 1e-6) {
                 return false;
             }
-            return tracer.blocked(p[0], p[1], p[2], d[0] / distance, d[1] / distance, d[2] / distance, distance);
+            d = new double[] {d[0] / distance, d[1] / distance, d[2] / distance};
+        } else {
+            d = new double[] {-frame.f[0], -frame.f[1], -frame.f[2]};
+            distance = Double.POSITIVE_INFINITY;
         }
-        return tracer.blocked(p[0], p[1], p[2], -frame.f[0], -frame.f[1], -frame.f[2], Double.POSITIVE_INFINITY);
+        double skip = skipOwnCell ? cellExit(p, d) : 0;
+        if (skip >= distance) {
+            return false;
+        }
+        return tracer.blocked(p[0] + d[0] * skip, p[1] + d[1] * skip, p[2] + d[2] * skip, d[0], d[1], d[2],
+                distance - skip);
+    }
+
+    /** Distance along a ray from a point to where it leaves the unit cell that holds the point. */
+    private static double cellExit(double[] p, double[] d) {
+        double exit = Double.POSITIVE_INFINITY;
+        for (int axis = 0; axis < 3; axis++) {
+            if (Math.abs(d[axis]) > 1e-12) {
+                double wall = Math.floor(p[axis]) + (d[axis] > 0 ? 1 : 0);
+                exit = Math.min(exit, (wall - p[axis]) / d[axis]);
+            }
+        }
+        return exit;
     }
 
     private static void drawDot(int[] pixels, Frame frame, int[] at, int font, int rgb, boolean hollow, String number,

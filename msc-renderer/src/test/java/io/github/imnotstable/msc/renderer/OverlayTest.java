@@ -77,6 +77,20 @@ class OverlayTest {
     }
 
     @Test
+    void aSignBlockDoesNotHideItsOwnText() {
+        for (String sign : List.of("oak_sign[rotation=0]", "oak_hanging_sign[rotation=0]")) {
+            Scenes s = floor().set(8, 65, 12, sign);
+            RenderResult result = renderer.render(s.grid(), View.parse("top"), PLAIN,
+                    List.of(Marker.sign(8, 65, 12, List.of("Shop"))));
+            assertThat(result.caption()).as(sign).doesNotContain("Behind blocks");
+        }
+        // A roof over the sign still hides it.
+        Scenes roofed = floor().set(8, 65, 12, "oak_sign").fill(0, 67, 0, 15, 67, 15, "oak_planks");
+        assertThat(renderer.render(roofed.grid(), View.parse("top"), PLAIN,
+                List.of(Marker.sign(8, 65, 12, List.of("Shop")))).caption()).endsWith("Behind blocks (hollow or faded): 1.");
+    }
+
+    @Test
     void glassDoesNotHideAMarker() {
         Scenes s = floor().fill(0, 67, 0, 15, 67, 15, "glass");
         RenderResult result = renderer.render(s.grid(), View.parse("top"), PLAIN,
