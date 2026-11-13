@@ -83,6 +83,17 @@ class PackTest {
     }
 
     @Test
+    void textureModelNeverRepointsAModelOfAnotherFolder() throws IOException {
+        PackSource pack = new PackSource(dir);
+        ResourceId model = ResourceId.parse("item/ruby");
+        assertThat(pack.writeTextureModel(ResourceId.parse("block/ruby"), Models.Kind.ITEM)).isEqualTo("msc:ruby");
+        assertThat(pack.writeTextureModel(ResourceId.parse("block/ruby"), Models.Kind.HANDHELD)).isEqualTo("msc:ruby");
+        assertThatThrownBy(() -> pack.writeTextureModel(ResourceId.parse("item/ruby"), Models.Kind.ITEM))
+                .hasMessage("model msc:item/ruby already shows texture msc:block/ruby; give this one another name");
+        assertThat(pack.modelPath(model)).content().contains("\"layer0\":\"msc:block/ruby\"");
+    }
+
+    @Test
     void animationWritesMcmetaAndStillTextureRemovesIt() throws IOException {
         PackSource pack = new PackSource(dir);
         ResourceId id = ResourceId.parse("block/glow");
