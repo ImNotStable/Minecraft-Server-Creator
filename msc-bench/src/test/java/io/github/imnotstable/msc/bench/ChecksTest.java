@@ -117,6 +117,14 @@ class ChecksTest {
     }
 
     @Test
+    void commandCheckReadsOutputThatIsNotUtf8() {
+        CheckResult result = run("{\"type\":\"command\",\"run\":[\"{java}\",\"-cp\",\"{classpath}\","
+                + "\"io.github.imnotstable.msc.bench.PrintNonUtf8\"],\"outputMatches\":\"caf\"}");
+
+        assertThat(result.passed()).as(result.detail()).isTrue();
+    }
+
+    @Test
     void pngCheckAcceptsAnItemShapedRuby() throws IOException {
         Files.createDirectories(workspace.resolve("textures"));
         Files.write(workspace.resolve("textures/ruby.png"), ruby(0xFFD01030, 0xFF801020, 0xFFFF8090));
