@@ -85,6 +85,24 @@ class BuildToolsTest {
     }
 
     @Test
+    void replaceAlsoLimitsSetStructureAndCopy() {
+        h.ok("build_batch", "steps", "set 0,64,0 glass\nset 1,64,0 glass");
+        h.ok("build_batch", "steps", "set 0,64,0 torch replace=air\nset 0,65,0 torch replace=air");
+        assertThat(h.agent.get(0, 64, 0)).isEqualTo("minecraft:glass");
+        assertThat(h.agent.get(0, 65, 0)).isEqualTo("minecraft:torch");
+
+        h.ok("build_batch", "steps", "structure 0,64,0 replace=air\nlegend: #=stone\ny=0\n###\nend");
+        assertThat(h.agent.get(0, 64, 0)).isEqualTo("minecraft:glass");
+        assertThat(h.agent.get(2, 64, 0)).isEqualTo("minecraft:stone");
+
+        h.ok("build_batch", "steps", "copy 0,64,0 2,64,0 to=0,64,0 replace=stone");
+        h.ok("build_batch", "steps", "set 1,64,5 sand\ncopy 0,64,0 2,64,0 to=0,64,5 replace=air");
+        assertThat(h.agent.get(0, 64, 5)).isEqualTo("minecraft:glass");
+        assertThat(h.agent.get(1, 64, 5)).isEqualTo("minecraft:sand");
+        assertThat(h.agent.get(2, 64, 5)).isEqualTo("minecraft:stone");
+    }
+
+    @Test
     void stampRepeatsAndTurnsToFaceACentre() throws Exception {
         String tower = "legend: #=stone d=oak_stairs[facing=north]\ny=0\n#d#\n###\nend";
         String out = h.ok("build_batch", "steps",

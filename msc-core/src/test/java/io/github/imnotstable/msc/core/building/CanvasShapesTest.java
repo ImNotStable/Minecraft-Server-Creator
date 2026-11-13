@@ -86,7 +86,7 @@ class CanvasShapesTest {
     void bandsGoOutwardAndLaterStepsWin() throws InterruptedException {
         Canvas c = draw(new Step.Bands("world", new BlockPos(0, 63, 0), 1, new int[] {3, 5},
                         List.of(BlockPattern.single("grass_block"), BlockPattern.single("sand")), 0, 0, List.of()),
-                new Step.Set("world", List.of(new BlockPos(0, 63, 0)), List.of("minecraft:water")));
+                new Step.Set("world", List.of(new BlockPos(0, 63, 0)), List.of("minecraft:water"), List.of()));
         assertThat(c.planned(0, 63, 0)).isEqualTo("minecraft:water");
         assertThat(c.planned(3, 63, 0)).isEqualTo("minecraft:grass_block");
         assertThat(c.planned(5, 63, 0)).isEqualTo("minecraft:sand");
