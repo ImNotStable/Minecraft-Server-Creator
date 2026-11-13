@@ -44,10 +44,15 @@ public final class RunIsolation {
      * repository, a {@code ~/CLAUDE.md}), then {@link #tempRunsDir}. Throws when both are inside a project.
      */
     public static Path defaultRunsDir(Path home, Path temp) throws IOException {
+        return defaultRunsDir(home, temp, null);
+    }
+
+    /** {@link #defaultRunsDir(Path, Path)}, looking no higher than {@code top} (see {@link #leaks}). */
+    static Path defaultRunsDir(Path home, Path temp, Path top) throws IOException {
         List<String> refused = new ArrayList<>();
         for (Path candidate : List.of(homeRunsDir(home), tempRunsDir(temp))) {
             Path resolved = resolve(candidate);
-            List<Path> leaks = leaks(resolved, home);
+            List<Path> leaks = leaks(resolved, home, top);
             if (leaks.isEmpty()) {
                 return resolved;
             }
@@ -63,9 +68,23 @@ public final class RunIsolation {
      * memory, which {@code --setting-sources project,local} leaves out, so it does not count.
      */
     public static List<Path> leaks(Path runDir, Path home) {
+        return leaks(runDir, home, null);
+    }
+
+    /**
+     * {@link #leaks(Path, Path)}, looking no higher than {@code top} ({@code null}: up to the file-system root). Tests
+     * pass their temporary folder, so what lies above it on the machine (a home with {@code .claude/CLAUDE.md}, as
+     * the Windows temporary folder has) cannot change their result; a run folder outside {@code top} is refused.
+     */
+    static List<Path> leaks(Path runDir, Path home, Path top) {
+        Path start = resolve(runDir);
+        Path ceiling = top == null ? null : resolve(top);
+        if (ceiling != null && !start.startsWith(ceiling)) {
+            throw new IllegalArgumentException(start + " is not inside " + ceiling);
+        }
         Path userMemory = resolve(home).resolve(".claude").resolve("CLAUDE.md");
         List<Path> found = new ArrayList<>();
-        for (Path folder = resolve(runDir); folder != null; folder = folder.getParent()) {
+        for (Path folder = start; folder != null; folder = folder.equals(ceiling) ? null : folder.getParent()) {
             for (String marker : MARKERS) {
                 Path candidate = folder.resolve(marker);
                 if (Files.exists(candidate) && !candidate.equals(userMemory)) {
@@ -81,14 +100,22 @@ public final class RunIsolation {
      * resolved: the run must write to the returned folder, the one that was checked.
      */
     public static Path requireIsolated(Path runDir, Path home, Path temp) throws IOException {
+        return requireIsolated(runDir, home, temp, null);
+    }
+
+    /**
+     * {@link #requireIsolated(Path, Path, Path)}, looking no higher than {@code top} (see
+     * {@link #leaks(Path, Path, Path)}).
+     */
+    static Path requireIsolated(Path runDir, Path home, Path temp, Path top) throws IOException {
         Path resolved = resolve(runDir);
-        List<Path> leaks = leaks(resolved, home);
+        List<Path> leaks = leaks(resolved, home, top);
         if (leaks.isEmpty()) {
             return resolved;
         }
         String suggestion;
         try {
-            Path fallback = defaultRunsDir(home, temp);
+            Path fallback = defaultRunsDir(home, temp, top);
             suggestion = fallback.equals(resolved) || fallback.startsWith(resolved) || resolved.startsWith(fallback)
                     ? "a folder outside any repository or CLAUDE.md folder"
                     : "for example " + fallback + " (the default when --out is left out)";

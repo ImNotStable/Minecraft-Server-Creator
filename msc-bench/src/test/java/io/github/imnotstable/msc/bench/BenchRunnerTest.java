@@ -12,8 +12,6 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.io.UncheckedIOException;
-import java.net.InetAddress;
-import java.net.ServerSocket;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -22,6 +20,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -35,6 +35,22 @@ class BenchRunnerTest {
 
     @TempDir
     Path dir;
+
+    /** Server ports held closed for each test, so whatever runs on the machine cannot answer on them. */
+    private ClosedPort rconPort;
+    private ClosedPort gamePort;
+
+    @BeforeEach
+    void reservePorts() throws IOException {
+        rconPort = ClosedPort.reserve();
+        gamePort = ClosedPort.reserve();
+    }
+
+    @AfterEach
+    void releasePorts() throws IOException {
+        rconPort.close();
+        gamePort.close();
+    }
 
     @Test
     void runsEachModeChecksTheWorkspaceAndWritesResults() throws IOException {
@@ -58,7 +74,7 @@ class BenchRunnerTest {
                           "toolset":{"mcpConfigTemplate":"mcp.template.json","env":{"MSC_TOOL_LOG":"{toolLog}"}}}}
                 """.formatted(java.replace("\\", "\\\\"), classpath));
 
-        BenchConfig config = BenchConfig.load(configFile);
+        BenchConfig config = BenchConfig.load(configFile, dir);
         List<TaskDef> taskDefs = TaskLoader.loadAll(tasks);
         Path runDir = dir.resolve("run");
         ByteArrayOutputStream log = new ByteArrayOutputStream();
@@ -94,8 +110,9 @@ class BenchRunnerTest {
         Path configFile = dir.resolve("bench.json");
         Path cache = Files.createDirectories(dir.resolve("cache"));
         Files.writeString(cache.resolve("paper-26.3-248.jar"), "not really a jar");
-        Files.writeString(configFile, "{\"server\":{\"rconPort\":1,\"paperCacheDirs\":[\"cache\"],\"startTimeoutSeconds\":5,"
-                + "\"acceptEula\":true}}");
+        Files.writeString(configFile, """
+                {"server":{"rconPort":%d,"serverPort":%d,"paperCacheDirs":["cache"],"startTimeoutSeconds":5,"acceptEula":true}}
+                """.formatted(rconPort.port(), gamePort.port()));
         return configFile;
     }
 
@@ -129,7 +146,7 @@ class BenchRunnerTest {
 
         assertThat(records).singleElement().satisfies(r -> assertThat(r.passed()).isFalse());
         Path server = dir.resolve("run/attempts/world/baseline-1/workspace/server");
-        assertThat(Files.readString(server.resolve("server.properties"))).contains("enable-rcon=true", "rcon.port=1");
+        assertThat(Files.readString(server.resolve("server.properties"))).contains("enable-rcon=true", "rcon.port=" + rconPort.port());
         assertThat(server.resolve("paper.jar")).hasContent("not really a jar");
         assertThat(server.resolve("eula.txt")).hasContent("eula=true");
     }
@@ -169,7 +186,7 @@ class BenchRunnerTest {
                      "server":{"command":["%s","-cp","%s","io.github.imnotstable.msc.bench.FakeRconMain","%d","pw"],
                                "rconPort":%d,"serverPort":%d,"rconPassword":"pw","paperCacheDirs":["cache"],
                                "startTimeoutSeconds":30}}
-                    """.formatted(JAVA, CLASSPATH, JAVA, CLASSPATH, port, port, freePort()));
+                    """.formatted(JAVA, CLASSPATH, JAVA, CLASSPATH, port, port, gamePort.port()));
 
             List<RunRecord> records = new BenchRunner(BenchConfig.load(dir.resolve("bench.json"), dir.resolve("home")),
                     dir.resolve("run"), "", new PrintStream(new ByteArrayOutputStream(), true, StandardCharsets.UTF_8))
@@ -177,12 +194,6 @@ class BenchRunnerTest {
 
             assertThat(orphan.commands()).as("the orphan gets only a stop, no setup").containsExactly("stop");
             assertThat(records).singleElement().satisfies(r -> assertThat(r.passed()).as(r.toString()).isTrue());
-        }
-    }
-
-    private static int freePort() throws IOException {
-        try (ServerSocket socket = new ServerSocket(0, 1, InetAddress.getLoopbackAddress())) {
-            return socket.getLocalPort();
         }
     }
 
@@ -347,7 +358,7 @@ class BenchRunnerTest {
                           "late":{"requireMcp":"missing","env":{"MSC_TOOL_LOG":"{toolLog}"}},
                           "silent":{"requireMcp":"msc","env":{"FAKE_SILENT":"1"}}}}
                 """.formatted(java, classpath, counter, counter));
-        BenchRunner runner = new BenchRunner(BenchConfig.load(configFile), dir.resolve("run"), "",
+        BenchRunner runner = new BenchRunner(BenchConfig.load(configFile, dir), dir.resolve("run"), "",
                 new PrintStream(new ByteArrayOutputStream(), true, StandardCharsets.UTF_8));
         List<TaskDef> taskDefs = TaskLoader.loadAll(dir.resolve("tasks"));
 

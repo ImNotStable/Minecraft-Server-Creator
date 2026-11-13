@@ -35,4 +35,25 @@ tasks.test {
     inputs.files(file("README.md"), root.file("docs/wiki/Benchmark.md"), root.file("msc-docs/docs/adr/0004-bench.md"))
         .withPropertyName("runFolderDocs")
     systemProperty("msc.repoRoot", root.asFile.absolutePath)
+
+    // The tests run on a stand-in machine, so no result depends on the real one (#335): user.home is a fresh fake
+    // home that is a project in every way Claude Code knows (.claude/CLAUDE.md, CLAUDE.md, .git, as a Windows home
+    // with Claude Code and dotfiles is), java.io.tmpdir and the working folder lie inside it (as
+    // %USERPROFILE%\AppData\Local\Temp does), and the variables the fakes read are cleared. The whole fake home sits
+    // in build/, inside this repository, so the repository's own CLAUDE.md and .git are above it as well.
+    val machine = layout.buildDirectory.dir("test-machine").get().asFile
+    val home = machine.resolve("home")
+    val temp = home.resolve("AppData/Local/Temp")
+    val work = home.resolve("work")
+    systemProperty("user.home", home.absolutePath)
+    systemProperty("java.io.tmpdir", temp.absolutePath)
+    workingDir = work
+    environment.keys.removeIf { it.startsWith("FAKE_") || it.startsWith("MSC_") }
+    doFirst {
+        machine.deleteRecursively()
+        listOf(temp, work, home.resolve(".claude"), home.resolve(".git")).forEach { it.mkdirs() }
+        home.resolve(".claude/CLAUDE.md").writeText("user memory\n")
+        home.resolve("CLAUDE.md").writeText("home project\n")
+        home.resolve(".git/HEAD").writeText("ref: refs/heads/main\n")
+    }
 }
