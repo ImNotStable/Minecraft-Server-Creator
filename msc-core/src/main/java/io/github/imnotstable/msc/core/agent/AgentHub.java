@@ -135,23 +135,32 @@ public final class AgentHub implements AutoCloseable {
 
     /** The connected agent, waiting a little for one to arrive. */
     public CoreServer.AgentSession require() throws InterruptedException {
-        long nanos = connectWait.toNanos();
-        lock.lock();
-        try {
-            while (session == null || !session.connection().isOpen()) {
-                if (!agentExpected.getAsBoolean()) {
-                    throw new ToolException("the server is not running. Start it with server_start, or dev_cycle to "
-                            + "build and deploy first.");
+        long deadline = System.nanoTime() + connectWait.toNanos();
+        while (true) {
+            CoreServer.AgentSession s = current();
+            if (s != null) {
+                return s;
+            }
+            // Asked without the hub lock: the answer may need another lock (ServerManager's monitor), whose holder
+            // may be waiting for this one.
+            if (!agentExpected.getAsBoolean()) {
+                throw new ToolException("the server is not running. Start it with server_start, or dev_cycle to "
+                        + "build and deploy first.");
+            }
+            lock.lock();
+            try {
+                if (session != null && session.connection().isOpen()) {
+                    return session;
                 }
+                long nanos = deadline - System.nanoTime();
                 if (nanos <= 0) {
                     throw new ToolException("no server agent connected. Start the server with server_start "
                             + "(server_setup installs the msc agent; a Minestom project has it built in).");
                 }
-                nanos = changed.awaitNanos(nanos);
+                changed.awaitNanos(nanos);
+            } finally {
+                lock.unlock();
             }
-            return session;
-        } finally {
-            lock.unlock();
         }
     }
 
