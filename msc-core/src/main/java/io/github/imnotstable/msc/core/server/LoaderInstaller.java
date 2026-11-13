@@ -8,7 +8,6 @@ import java.net.URI;
 import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.time.Duration;
 import java.util.List;
 import java.util.stream.Stream;
@@ -16,7 +15,7 @@ import java.util.stream.Stream;
 /**
  * Sets up the servers that come from an installer (NeoForge, Forge, Quilt) or a fork's own download service
  * (Purpur). Installers and jars are cached in {@code .msc/cache}; an installer only runs when the server directory
- * does not have that loader version yet. See ADR 0027.
+ * does not have that loader version yet. Each step creates the server directory itself (#367). See ADR 0027.
  */
 public final class LoaderInstaller {
     private static final Duration INSTALL_TIMEOUT = Duration.ofMinutes(10);
@@ -70,7 +69,7 @@ public final class LoaderInstaller {
             if (offline == null) {
                 throw new ToolException("cannot reach " + latest + ": " + e.getMessage());
             }
-            Files.copy(offline, dir.resolve(Platform.PURPUR.serverJar()), StandardCopyOption.REPLACE_EXISTING);
+            ServerFiles.place(offline, dir, Platform.PURPUR.serverJar());
             return new Result(minecraft + " build " + between(offline, "purpur-" + minecraft + "-", ".jar"), true);
         }
         Path jar = cacheDir.resolve("purpur-" + minecraft + "-" + build + ".jar");
@@ -79,7 +78,7 @@ public final class LoaderInstaller {
             fetch(URI.create(urls.purpurApi() + "/v2/purpur/" + minecraft + "/" + build + "/download"), jar,
                     "Purpur has no build " + build + " of " + minecraft);
         }
-        Files.copy(jar, dir.resolve(Platform.PURPUR.serverJar()), StandardCopyOption.REPLACE_EXISTING);
+        ServerFiles.place(jar, dir, Platform.PURPUR.serverJar());
         return new Result(minecraft + " build " + build, cached);
     }
 
@@ -129,7 +128,7 @@ public final class LoaderInstaller {
                 return new Result(version, true);
             }
         }
-        Files.copy(shim, dir.resolve(Platform.FORGE.serverJar()), StandardCopyOption.REPLACE_EXISTING);
+        ServerFiles.place(shim, dir, Platform.FORGE.serverJar());
         return new Result(version, false);
     }
 
