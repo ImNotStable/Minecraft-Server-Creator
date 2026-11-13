@@ -22,11 +22,13 @@ public final class Canvas {
     private final List<String> palette = new ArrayList<>();
     private final Map<String, Integer> paletteIndex = new HashMap<>();
     private final WorldReader worldReader;
+    private final List<Region> readAhead = new ArrayList<>();
+    private final List<BlockGrid> worldReads = new ArrayList<>();
     private long placed;
 
     /**
      * @param worldReader reads the current world for steps that only replace some blocks; called at
-     *                    most once per such step, with that step's bounds
+     *                    most once per such step, with that step's bounds, or once per {@link #readAhead} region
      */
     public Canvas(Region bounds, WorldReader worldReader) {
         this.bounds = bounds;
@@ -76,7 +78,7 @@ public final class Canvas {
         if (replace == null || replace.isEmpty()) {
             return (x, y, z) -> true;
         }
-        BlockGrid world = worldReader.read(stepBounds);
+        BlockGrid world = world(stepBounds);
         List<String> wanted = replace.stream().map(BlockNames::full).toList();
         Map<String, Boolean> judged = new HashMap<>();
         return (x, y, z) -> {
@@ -86,6 +88,31 @@ public final class Canvas {
             }
             return current != null && judged.computeIfAbsent(current, s -> matches(s, wanted));
         };
+    }
+
+    /**
+     * Read all of {@code region} at once when a later step inside it first needs the world, so the copies
+     * of a repeated step share one read. The world does not change while the canvas is drawn.
+     */
+    void readAhead(Region region) {
+        readAhead.add(region);
+    }
+
+    private BlockGrid world(Region stepBounds) throws InterruptedException {
+        for (BlockGrid g : worldReads) {
+            if (encloses(g.region(), stepBounds)) {
+                return g;
+            }
+        }
+        Region read = readAhead.stream().filter(r -> encloses(r, stepBounds)).findFirst().orElse(stepBounds);
+        BlockGrid g = worldReader.read(read);
+        worldReads.add(g);
+        return g;
+    }
+
+    private static boolean encloses(Region outer, Region inner) {
+        return outer.contains(inner.min().x(), inner.min().y(), inner.min().z())
+                && outer.contains(inner.max().x(), inner.max().y(), inner.max().z());
     }
 
     /**

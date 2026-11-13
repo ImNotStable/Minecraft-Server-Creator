@@ -236,6 +236,7 @@ public sealed interface Step {
 
         @Override
         public void draw(Canvas c) throws InterruptedException {
+            c.readAhead(bounds());
             for (Step s : steps) {
                 s.draw(c);
             }

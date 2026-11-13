@@ -244,7 +244,8 @@ public final class TextGrid {
                             + "); split it");
                 }
                 Integer sameAs = m.group(3) == null ? null : layerNumber(m.group(3));
-                for (int y = from; y <= to; y++) {
+                for (long ly = from; ly <= to; ly++) { // long: an int counter wraps when to is Integer.MAX_VALUE
+                    int y = (int) ly;
                     current = new Layer();
                     current.sameAs = sameAs;
                     current.all = m.group(4);
