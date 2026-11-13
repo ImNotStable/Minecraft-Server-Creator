@@ -43,7 +43,7 @@ public final class PaletteText {
             throw new TextureException("texture has no rows");
         }
         int width = rows.getFirst().length();
-        Texture t = new Texture(Math.max(width, 1), rows.size());
+        Texture t = new Texture(width, rows.size());
         for (int y = 0; y < rows.size(); y++) {
             String row = rows.get(y);
             if (row.length() != width) {
