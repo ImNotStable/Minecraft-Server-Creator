@@ -85,6 +85,10 @@ class TemplateNameCasesTest {
                 name("Msc Agent", "fabric", "neoforge", "forge", "paper"),
                 name("msc-agent", "fabric", "neoforge", "forge", "paper"),
                 name("MSC_agent", "fabric", "neoforge", "forge", "paper"), name("Mscagent", "paper"),
+                // The agent's jar, msc-agent-<platform>.jar, where dev_cycle deploys <projectId>.jar (#311).
+                name("Msc Agent Paper", "paper"), name("msc-agent-fabric", "fabric"),
+                name("MSC Agent Neoforge", "neoforge"), name("msc_agent_forge", "forge"),
+                name("Msc Agent Minestom"),
                 // Packages.
                 pkg("a"), pkg("com.example.lobby_2"), pkg("javax.lobby"), pkg("org.bukkitlobby"), pkg("dev.record.var"),
                 pkg("org.bukkit", "paper"), pkg("org.bukkit.lobby", "paper"), pkg("java.lobby", ALL), pkg("java", ALL),

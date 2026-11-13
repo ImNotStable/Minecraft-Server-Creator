@@ -303,6 +303,29 @@ class LifecycleToolsTest {
     }
 
     @Test
+    void aProjectNamedLikeTheAgentJarIsRefusedAndTheAgentStays() throws Exception {
+        Path plugins = Files.createDirectories(workspace.resolve("run/plugins"));
+        Files.writeString(plugins.resolve("msc-agent-paper.jar"), "agent");
+        // #311: the jar's name minus its version is the agent's, in any case.
+        for (String name : List.of("msc-agent-paper", "MSC-Agent-Paper")) {
+            Path p = Files.createDirectories(workspace.resolve("p-" + name));
+            Files.writeString(p.resolve("version.txt"), "0.1.0-SNAPSHOT");
+            Files.writeString(p.resolve("name.txt"), name);
+            assertThat(h.error("dev_cycle", "project", "p-" + name, "restart", false))
+                    .contains("plugins/" + name + ".jar").contains("MSC's agent jar on Paper");
+        }
+        // A project folder named like the agent jar, with no earlier deploy recorded, is not taken for one.
+        Path folder = Files.createDirectories(workspace.resolve("msc-agent-paper"));
+        Files.writeString(folder.resolve("version.txt"), "1.0");
+        Files.writeString(folder.resolve("name.txt"), "demo");
+        assertThat(h.ok("dev_cycle", "project", "msc-agent-paper", "restart", false)).contains("as plugins/demo.jar");
+        assertThat(plugins.resolve("msc-agent-paper.jar")).hasContent("agent");
+        try (var jars = Files.list(plugins)) {
+            assertThat(jars.map(p -> p.getFileName().toString())).containsExactlyInAnyOrder("demo.jar", "msc-agent-paper.jar");
+        }
+    }
+
+    @Test
     void aFailedDeployStopsTheTestsRunningBesideIt() throws Exception {
         Path ws = Files.createDirectories(workspace.resolve("ws9"));
         Path slow = Files.createDirectories(ws.resolve("slow"));

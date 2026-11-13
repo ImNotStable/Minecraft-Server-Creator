@@ -184,7 +184,7 @@ final class DevCycle {
             time.add("stop", millisSince(t));
         }
         if (platform.addonDir() != null) {
-            removeEarlierDeploy(project, target.getParent(), target);
+            removeEarlierDeploy(platform, project, target.getParent(), target);
         }
         copy(build.jar(), target);
         if (build.libs() != null) {
@@ -216,8 +216,19 @@ final class DevCycle {
             Files.createDirectories(config.serverDir());
             return config.serverDir().resolve(platform.serverJar());
         }
+        String name = deployName(jar, project) + ".jar";
+        if (isAgentJar(platform, name)) {
+            throw new ToolException("the project's jar deploys as " + platform.addonDir() + "/" + name
+                    + ", which is MSC's agent jar on " + platform.displayName() + ": deploying it would replace the agent."
+                    + " Rename the project (rootProject.name in settings.gradle.kts), then dev_cycle.");
+        }
         Path addons = Files.createDirectories(config.serverDir().resolve(platform.addonDir()));
-        return addons.resolve(deployName(jar, project) + ".jar");
+        return addons.resolve(name);
+    }
+
+    /** Ignoring case, as Windows and macOS file names do: {@code MSC-Agent-Paper.jar} is the agent jar there too. */
+    static boolean isAgentJar(Platform platform, String fileName) {
+        return fileName.equalsIgnoreCase(platform.agentJar());
     }
 
     /**
@@ -297,7 +308,7 @@ final class DevCycle {
      * two copies (Paper: ambiguous plugin name; Fabric: duplicate mod id). Without a record, the folder-named jar
      * that earlier cores deployed is the earlier one.
      */
-    private void removeEarlierDeploy(Path project, Path addons, Path target) throws IOException {
+    private void removeEarlierDeploy(Platform platform, Path project, Path addons, Path target) throws IOException {
         String recorded = deployed().getProperty(project.toAbsolutePath().normalize().toString());
         Path earlier;
         if (recorded != null) {
@@ -306,7 +317,9 @@ final class DevCycle {
             Path folder = project.toAbsolutePath().normalize().getFileName();
             earlier = folder == null ? null : addons.resolve(folder + ".jar");
         }
-        if (earlier != null && !earlier.equals(target) && earlier.startsWith(addons) && Files.isRegularFile(earlier)) {
+        // Never the agent's jar: a project folder named msc-agent-paper, or a record from before #311, names it.
+        if (earlier != null && !earlier.equals(target) && earlier.startsWith(addons) && Files.isRegularFile(earlier)
+                && !isAgentJar(platform, earlier.getFileName().toString())) {
             try {
                 Files.delete(earlier);
             } catch (IOException e) {

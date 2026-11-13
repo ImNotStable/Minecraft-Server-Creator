@@ -63,6 +63,8 @@ public final class Templates {
      * Fabric ids. Each entry also names the id of MSC's own agent, which server_setup installs next to the project:
      * {@code msc-agent} (Fabric, Quilt), {@code msc_agent} (NeoForge, Forge) and plugin {@code MscAgent} (Paper,
      * Purpur). Paper refuses plugins named Bukkit, Minecraft or Mojang and compares plugin names ignoring case.
+     * The map's keys are also the agent families, so server_setup installs the agent as
+     * {@code msc-agent-<key>.jar} in the folder dev_cycle deploys the project's {@code <projectId>.jar} to.
      */
     private static final Map<String, LoaderIds> LOADER_IDS = Map.of(
             "fabric", new LoaderIds("projectId", "mod id", Set.of(
@@ -172,7 +174,8 @@ public final class Templates {
     /**
      * Refuses variables the template's loader would refuse at startup: a mod id or plugin name the loader or MSC's
      * agent owns (project name {@code Minecraft} gives mod id {@code minecraft}, {@code Msc Agent} the agent's
-     * {@code msc-agent}), or on Paper a main class inside {@code org.bukkit}.
+     * {@code msc-agent}), a jar name the agent's jar has ({@code Msc Agent Paper} gives {@code msc-agent-paper}), or
+     * on Paper a main class inside {@code org.bukkit}.
      */
     private static void requireLoaderAccepts(String id, Map<String, String> values) {
         if (id.equals(PAPER_SERVER)) {
@@ -187,6 +190,14 @@ public final class Templates {
                 throw new IllegalArgumentException("Template '" + id + "' would give " + ids.kind() + " '" + value
                         + "', which the " + (ids.agent().equals(key) ? "MSC agent on the dev server" : platform + " loader")
                         + " keeps for itself; choose another project name");
+            }
+            // dev_cycle deploys the jar as <projectId>.jar next to the agent's msc-agent-<platform>.jar (#311);
+            // ignoring case, since Windows and macOS file names do.
+            String agentJar = "msc-agent-" + platform;
+            if (values.get("projectId").equalsIgnoreCase(agentJar)) {
+                throw new IllegalArgumentException("Template '" + id + "' would give jar name '" + values.get("projectId")
+                        + "', which the MSC agent on the dev server keeps for itself (" + agentJar
+                        + ".jar); choose another project name");
             }
         }
         String pkg = values.get("packageName");

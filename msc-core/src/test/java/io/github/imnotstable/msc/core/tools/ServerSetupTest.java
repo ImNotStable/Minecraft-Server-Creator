@@ -9,9 +9,9 @@ import org.junit.jupiter.api.Test;
 class ServerSetupTest {
     @Test
     void platformsThatShareAnAgentInstallItUnderTheAgentsName() {
-        assertThat(ServerSetup.installedAgentName(Platform.QUILT)).isEqualTo("msc-agent-fabric.jar");
-        assertThat(ServerSetup.installedAgentName(Platform.PURPUR)).isEqualTo("msc-agent-paper.jar");
-        assertThat(ServerSetup.installedAgentName(Platform.NEOFORGE)).isEqualTo("msc-agent-neoforge.jar");
+        assertThat(Platform.QUILT.agentJar()).isEqualTo("msc-agent-fabric.jar");
+        assertThat(Platform.PURPUR.agentJar()).isEqualTo("msc-agent-paper.jar");
+        assertThat(Platform.NEOFORGE.agentJar()).isEqualTo("msc-agent-neoforge.jar");
     }
 
     @Test
