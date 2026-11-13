@@ -1,10 +1,10 @@
 {
   "name": "msc",
   "version": "0.1.1",
-  "description": "Minecraft Server Creator: MCP tools to build, run, view and test custom Minecraft servers (Paper, Fabric, Minestom). Runs the newest msc-core installed under ~/.msc/core.",
+  "description": "Minecraft Server Creator: MCP tools to build, run, view and test custom Minecraft servers (Paper, Purpur, Fabric, Quilt, NeoForge, Forge, Minestom). Runs the newest msc-core installed under ~/.msc/core.",
   "author": {
     "name": "ImNotStable"
   },
   "homepage": "https://github.com/ImNotStable/Minecraft-Server-Creator",
-  "keywords": ["minecraft", "mcp", "paper", "fabric", "minestom"]
+  "keywords": ["minecraft", "mcp", "paper", "purpur", "fabric", "quilt", "neoforge", "forge", "minestom"]
 }
