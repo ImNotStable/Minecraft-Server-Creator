@@ -5,7 +5,7 @@ import static org.assertj.core.api.Assertions.catchThrowable;
 
 import io.github.imnotstable.msc.bench.ClosedPort;
 import io.github.imnotstable.msc.bench.FakeRconMain;
-import io.github.imnotstable.msc.bench.FakeRconServer;
+import io.github.imnotstable.msc.process.rcon.FakeRconServer;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.ServerSocket;

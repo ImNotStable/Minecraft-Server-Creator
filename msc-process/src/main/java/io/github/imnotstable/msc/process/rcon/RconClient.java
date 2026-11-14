@@ -1,4 +1,4 @@
-package io.github.imnotstable.msc.bench.rcon;
+package io.github.imnotstable.msc.process.rcon;
 
 import java.io.DataInputStream;
 import java.io.IOException;
@@ -11,8 +11,15 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 
 /**
- * Minimal Source RCON client, as spoken by Minecraft servers. Used by checks and setup steps,
- * so the bench works the same with or without the toolset.
+ * Minimal Source RCON client, as spoken by Minecraft servers: the only one in the repository (ADR 0032). msc-bench
+ * runs its setup commands and checks with it, so the bench works the same with or without the toolset, and msc-core
+ * asks a server an earlier core left running to stop with it. Every body, the password included, is UTF-8.
+ *
+ * <p>How a request is sent. The vanilla server reads each request with a single read of up to {@value #READ} bytes, and
+ * closes the connection without running anything when that read does not hold exactly one packet. A packet is
+ * {@value #OVERHEAD} bytes of framing plus its body, so a body over {@value #MAX_BODY} bytes would be cut by that read
+ * and dropped. Such a command or password is refused here, before anything is sent, with an error that names the
+ * limit.
  *
  * <p>How a reply is read. A Minecraft server answers a command with packets of at most 4096 characters,
  * all with the command's id and no end marker. The vanilla server also reads each request with a single read of up
@@ -35,6 +42,12 @@ public final class RconClient implements AutoCloseable {
 
     /** The largest reply packet a Minecraft server sends, in characters. */
     static final int CHUNK = 4096;
+    /** The most bytes the vanilla server reads for one request (its connection loop's single read). */
+    public static final int READ = 1460;
+    /** Framing bytes per packet: length, id, type and the two closing zero bytes. */
+    static final int OVERHEAD = 14;
+    /** The longest command or password, in UTF-8 bytes, the vanilla server can take in one read. */
+    public static final int MAX_BODY = READ - OVERHEAD;
     /** How long to wait for the end marker's answer after the last reply packet before taking the reply as whole. */
     static final Duration END_WAIT = Duration.ofSeconds(2);
 
@@ -56,11 +69,23 @@ public final class RconClient implements AutoCloseable {
     private RconClient(InetSocketAddress address, String password, Duration timeout, Duration endWait) {
         this.address = address;
         this.password = password;
-        this.timeoutMillis = (int) timeout.toMillis();
-        this.endWaitMillis = (int) Math.max(1, Math.min(endWait.toMillis(), timeout.toMillis()));
+        this.timeoutMillis = millis(timeout, "timeout");
+        this.endWaitMillis = Math.min(millis(endWait, "endWait"), timeoutMillis);
     }
 
-    /** Connects and logs in. Throws if the server is unreachable or the password is wrong. */
+    /** A socket timeout in milliseconds: never 0, which a socket takes as "wait forever". */
+    private static int millis(Duration duration, String name) {
+        if (duration.isNegative() || duration.isZero()) {
+            throw new IllegalArgumentException("RCON " + name + " must be positive, was " + duration);
+        }
+        Duration longest = Duration.ofMillis(Integer.MAX_VALUE);
+        return Math.clamp((duration.compareTo(longest) > 0 ? longest : duration).toMillis(), 1, Integer.MAX_VALUE);
+    }
+
+    /**
+     * Connects and logs in. Throws if the server is unreachable or the password is wrong or too long, and when
+     * {@code timeout} is not positive. Connecting and every read wait at most {@code timeout}.
+     */
     public static RconClient connect(String host, int port, String password, Duration timeout) throws IOException {
         return connect(host, port, password, timeout, END_WAIT);
     }
@@ -72,6 +97,7 @@ public final class RconClient implements AutoCloseable {
     public static RconClient connect(String host, int port, String password, Duration timeout, Duration endWait)
             throws IOException {
         RconClient client = new RconClient(new InetSocketAddress(host, port), password, timeout, endWait);
+        checkFits("password", password);
         client.open();
         return client;
     }
@@ -110,6 +136,7 @@ public final class RconClient implements AutoCloseable {
         if (closed) {
             throw new IOException("RCON client is closed");
         }
+        checkFits("command", command);
         if (socket == null) {
             open(); // dropped after a long reply whose end marker went unanswered
         }
@@ -150,10 +177,20 @@ public final class RconClient implements AutoCloseable {
         out = null;
     }
 
+    /** Throws, naming the limit, when {@code body} is longer than one vanilla read can take. */
+    private static void checkFits(String what, String body) throws IOException {
+        int bytes = body.getBytes(StandardCharsets.UTF_8).length;
+        if (bytes > MAX_BODY) {
+            throw new IOException("RCON " + what + " is " + bytes + " bytes in UTF-8; a Minecraft server reads at most "
+                    + MAX_BODY + " bytes per request (" + READ + " minus " + OVERHEAD + " of framing) and drops a "
+                    + "longer one, so it was not sent");
+        }
+    }
+
     private int send(int type, String body) throws IOException {
-        int id = nextId++;
         byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
-        ByteBuffer buffer = ByteBuffer.allocate(14 + bytes.length).order(ByteOrder.LITTLE_ENDIAN);
+        int id = nextId++;
+        ByteBuffer buffer = ByteBuffer.allocate(OVERHEAD + bytes.length).order(ByteOrder.LITTLE_ENDIAN);
         buffer.putInt(10 + bytes.length).putInt(id).putInt(type).put(bytes).put((byte) 0).put((byte) 0);
         out.write(buffer.array());
         out.flush();

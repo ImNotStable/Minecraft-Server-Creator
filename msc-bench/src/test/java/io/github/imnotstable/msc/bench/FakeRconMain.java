@@ -1,5 +1,6 @@
 package io.github.imnotstable.msc.bench;
 
+import io.github.imnotstable.msc.process.rcon.FakeRconServer;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;

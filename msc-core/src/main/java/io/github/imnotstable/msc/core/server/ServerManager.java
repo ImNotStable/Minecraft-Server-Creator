@@ -244,8 +244,8 @@ public final class ServerManager implements AutoCloseable {
         }
         long pid = h.pid();
         // Its console belonged to the dead core, so ask over RCON first: "stop" saves the world. Then kill.
-        Rcon.Target rcon = Rcon.target(config.serverDir());
-        boolean asked = rcon != null && Rcon.send(rcon, "stop");
+        RconTarget rcon = RconTarget.of(config.serverDir());
+        boolean asked = rcon != null && rcon.askToStop();
         boolean saved = asked && exits(h, Duration.ofSeconds(60));
         if (!saved) {
             h.destroy();

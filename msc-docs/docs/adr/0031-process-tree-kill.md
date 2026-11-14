@@ -1,6 +1,7 @@
 # ADR 0031: One identity-proven process tree kill, in msc-process
 
-Status: accepted, 2026-11-13. Decided by Claude under ADR 0029. Closes #357 and #358.
+Status: accepted, 2026-11-13. Decided by Claude under ADR 0029. Closes #357 and #358. The module also holds the RCON
+client since [ADR 0032](0032-one-rcon-client.md).
 
 ## Context
 

@@ -1,15 +1,19 @@
-package io.github.imnotstable.msc.bench;
+package io.github.imnotstable.msc.process.rcon;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import io.github.imnotstable.msc.bench.FakeRconServer.Other;
-import io.github.imnotstable.msc.bench.FakeRconServer.Quirks;
-import io.github.imnotstable.msc.bench.rcon.RconClient;
+import io.github.imnotstable.msc.process.rcon.FakeRconServer.Other;
+import io.github.imnotstable.msc.process.rcon.FakeRconServer.Quirks;
 import java.io.IOException;
+import java.net.InetAddress;
+import java.net.ServerSocket;
+import java.net.SocketTimeoutException;
 import java.time.Duration;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
@@ -110,6 +114,81 @@ class RconClientTest {
             client.close();
             assertThatThrownBy(() -> client.command("list")).isInstanceOf(IOException.class);
             assertThat(server.commands()).isEmpty();
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"pässwörd", "密码", "pw€\u00a0🙂"})
+    void logsInWithANonAsciiPassword(String password) throws IOException {
+        // #380: msc-core's client sent the password as US-ASCII, so 'ä' went out as '?' and the login was refused.
+        try (FakeRconServer server = new FakeRconServer(password, cmd -> "ran " + cmd);
+                RconClient client = RconClient.connect("127.0.0.1", server.port(), password, Duration.ofSeconds(30))) {
+            assertThat(client.command("say ö")).isEqualTo("ran say ö");
+        }
+    }
+
+    @Test
+    void theLimitIsWhatOneVanillaReadHolds() {
+        assertThat(RconClient.READ).isEqualTo(FakeRconServer.READ);
+        assertThat(RconClient.MAX_BODY).isEqualTo(FakeRconServer.READ - 14).isEqualTo(1446);
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+        "x, 1446, true",
+        "x, 1447, false",
+        "é, 723, true", // two bytes each in UTF-8: 1446 bytes
+        "é, 724, false",
+        "€, 482, true", // three bytes each: 1446 bytes
+        "€, 483, false",
+    })
+    void refusesACommandOneVanillaReadCannotHoldBeforeSendingIt(String unit, int count, boolean fits)
+            throws IOException {
+        String command = unit.repeat(count);
+        try (FakeRconServer server = new FakeRconServer("pw", cmd -> "ran " + cmd.length());
+                RconClient client = RconClient.connect("127.0.0.1", server.port(), "pw", Duration.ofSeconds(30))) {
+            if (fits) {
+                assertThat(client.command(command)).isEqualTo("ran " + count);
+                assertThat(server.commands()).containsExactly(command);
+            } else {
+                assertThatThrownBy(() -> client.command(command)).isInstanceOf(IOException.class)
+                        .hasMessageContaining("at most 1446 bytes").hasMessageContaining("not sent");
+                assertThat(server.commands()).isEmpty();
+            }
+            assertThat(client.command("list")).as("the connection still works").isEqualTo("ran 4");
+            assertThat(server.connections()).isEqualTo(1);
+        }
+    }
+
+    @Test
+    void refusesAPasswordOneVanillaReadCannotHold() throws IOException {
+        String password = "p".repeat(RconClient.MAX_BODY + 1);
+        try (FakeRconServer server = new FakeRconServer(password, cmd -> "")) {
+            assertThatThrownBy(() -> RconClient.connect("127.0.0.1", server.port(), password, Duration.ofSeconds(30)))
+                    .isInstanceOf(IOException.class).hasMessageContaining("password").hasMessageContaining("1446");
+            assertThat(server.connections()).isZero();
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(longs = {0, -1})
+    void refusesATimeoutThatWouldMeanWaitingForever(long millis) throws IOException {
+        // A socket timeout of 0 waits forever; a client stuck on a silent server would hang the core or the bench.
+        try (FakeRconServer server = new FakeRconServer("pw", cmd -> "")) {
+            assertThatThrownBy(() -> RconClient.connect("127.0.0.1", server.port(), "pw", Duration.ofMillis(millis)))
+                    .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("positive");
+            assertThatThrownBy(() -> RconClient.connect("127.0.0.1", server.port(), "pw", Duration.ofSeconds(5),
+                    Duration.ofMillis(millis))).isInstanceOf(IllegalArgumentException.class);
+        }
+    }
+
+    @Test
+    @Timeout(120)
+    void givesUpOnAServerThatNeverAnswersTheLogin() throws IOException {
+        // The listener's backlog completes the connection, but nothing ever reads or answers it.
+        try (ServerSocket silent = new ServerSocket(0, 10, InetAddress.getLoopbackAddress())) {
+            assertThatThrownBy(() -> RconClient.connect("127.0.0.1", silent.getLocalPort(), "pw",
+                    Duration.ofMillis(200))).isInstanceOf(SocketTimeoutException.class);
         }
     }
 }

@@ -19,6 +19,8 @@ dependencies {
     implementation(project(":msc-renderer"))
     implementation(project(":msc-bot"))
     implementation(project(":msc-process"))
+    // The fake RCON server shared with msc-bench (ADR 0032).
+    testImplementation(testFixtures(project(":msc-process")))
     implementation(libs.mcp.sdk)
     // Lifts the SDK's transitive Jackson 3 past known advisories; it parses every MCP message.
     implementation(platform(libs.jackson.bom))

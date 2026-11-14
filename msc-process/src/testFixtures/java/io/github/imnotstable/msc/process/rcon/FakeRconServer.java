@@ -1,4 +1,4 @@
-package io.github.imnotstable.msc.bench;
+package io.github.imnotstable.msc.process.rcon;
 
 import java.io.BufferedInputStream;
 import java.io.IOException;
