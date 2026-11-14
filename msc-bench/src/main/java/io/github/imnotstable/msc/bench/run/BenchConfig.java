@@ -8,6 +8,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -164,6 +165,19 @@ public record BenchConfig(
                     + String.join("\n  ", problems));
         }
         return full;
+    }
+
+    /**
+     * Refuses, in one line naming {@code file} and each key, a {@code paths} entry that {@code modes} use in their MCP
+     * config template or server plugins and that does not exist (#519), so {@code run} stops before its run folder
+     * instead of running every toolset attempt without its tools. Only {@code run} asks this, so {@code list},
+     * {@code check} and {@code report} work before the toolset is built.
+     */
+    public void requirePaths(Path file, Collection<String> modes) throws IOException {
+        List<String> problems = BenchConfigRules.missingPaths(this, modes);
+        if (!problems.isEmpty()) {
+            throw new IOException("Bad bench config " + file + ": " + String.join("; ", problems));
+        }
     }
 
     /**

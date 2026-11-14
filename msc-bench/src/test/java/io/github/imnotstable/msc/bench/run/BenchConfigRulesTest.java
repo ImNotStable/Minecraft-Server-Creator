@@ -321,6 +321,27 @@ class BenchConfigRulesTest {
         assertThat(config.corePort()).isEqualTo(25590);
     }
 
+    /** #519: run needs the paths its selected modes use; a mode not selected, or a path that exists, is no problem. */
+    @Test
+    void onlyTheSelectedModesNeedTheirPaths() throws IOException {
+        Path shipped = RepoFiles.path("shippedConfig", "msc-bench/bench.json");
+        BenchConfig loaded = BenchConfig.load(shipped, home());
+        BenchConfig unbuilt = new BenchConfig(loaded.agent(), loaded.modes(), loaded.server(),
+                loaded.gradleWrapperFrom(), Map.of("coreLib", dir.resolve("no-lib").toString(), "agentJar",
+                        dir.resolve("no.jar").toString()), loaded.corePort(), loaded.minecraftVersion());
+
+        assertThat(BenchConfigRules.missingPaths(unbuilt, List.of("baseline"))).isEmpty();
+        assertThat(BenchConfigRules.missingPaths(unbuilt, List.of("toolset", "baseline"))).containsExactly(
+                "paths.coreLib: no such file or folder " + dir.resolve("no-lib") + " (used by "
+                        + "modes.toolset.mcpConfigTemplate); run ./gradlew :msc-core:installDist first or fix the path",
+                "paths.agentJar: no such file or folder " + dir.resolve("no.jar") + " (used by "
+                        + "modes.toolset.mcpConfigTemplate); run ./gradlew :msc-agent-paper:shadowJar first or fix "
+                        + "the path");
+        Files.createDirectories(dir.resolve("no-lib"));
+        Files.writeString(dir.resolve("no.jar"), "jar");
+        assertThat(BenchConfigRules.missingPaths(unbuilt, List.of("toolset"))).isEmpty();
+    }
+
     @Test
     void theShippedConfigLoads() {
         Path shipped = RepoFiles.path("shippedConfig", "msc-bench/bench.json");

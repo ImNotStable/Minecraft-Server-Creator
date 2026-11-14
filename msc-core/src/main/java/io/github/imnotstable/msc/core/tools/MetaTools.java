@@ -24,7 +24,7 @@ public final class MetaTools {
                                 ToolLog log, ApiTools api) {
         registry.add("msc_status", "Where things stand: workspace, platform, server, agent, API index. stats=true: this "
                         + "session's calls, errors, time and result tokens per tool instead.",
-                Schema.of().opt("stats", "boolean", "Show call stats. Default false"), args -> {
+                Schema.of().opt("stats", "boolean", "Show call stats"), args -> {
                     if (args.bool("stats", false)) {
                         return log.summary();
                     }

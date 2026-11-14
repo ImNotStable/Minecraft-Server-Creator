@@ -13,6 +13,8 @@ public final class Budget {
 
     /** Largest cap a caller may ask for, about 6,000 tokens. */
     public static final int MAX_CHARS = 24000;
+    /** Smallest {@code maxChars} a caller may give. */
+    public static final int MIN_CHARS = 200;
 
     /** Length of the closing line without its hint: {@code "\n[truncated: "}, the words, ten-digit numbers. */
     private static final int MARK_CHARS = "\n[truncated:  more lines,  chars. ]".length() + 20;
@@ -33,9 +35,12 @@ public final class Budget {
     private Budget() {
     }
 
-    /** The caller's {@code maxChars} argument, clamped to a sane range. */
+    /**
+     * The caller's {@code maxChars} argument. {@link ArgCheck} refuses one outside {@link #MIN_CHARS} to {@link #MAX_CHARS}
+     * before the tool runs; the clamp only bounds the cap of that refusal itself.
+     */
     public static int of(Args args) {
-        return Math.max(200, Math.min(MAX_CHARS, args.integer("maxChars", DEFAULT_CHARS)));
+        return Math.max(MIN_CHARS, Math.min(MAX_CHARS, args.integer("maxChars", DEFAULT_CHARS)));
     }
 
     /**

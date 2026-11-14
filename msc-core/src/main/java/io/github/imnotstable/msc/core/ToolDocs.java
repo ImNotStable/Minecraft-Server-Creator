@@ -124,6 +124,9 @@ public final class ToolDocs {
                 type = "list of " + p.getAsJsonObject("items").get("type").getAsString();
             }
             String desc = p.has("description") ? p.get("description").getAsString() : "";
+            if (p.has("minimum")) {
+                type += ", " + io.github.imnotstable.msc.core.tool.ArgCheck.range(p);
+            }
             parts.add("`" + e.getKey() + "`" + (required.contains(e.getKey()) ? "" : "?") + " (" + type + ")"
                     + (desc.isEmpty() ? "" : ": " + cell(desc)));
         }

@@ -72,10 +72,10 @@ class TextureToolsTest {
     @Test
     void theLargestDrawingFitsTheCapWithItsClosingLine() {
         String noise = h.ok("texture", "name", "block/" + "n".repeat(200), "kind", "noise", "color", "#7f7f7f",
-                "accent", "#d4263a", "size", 64, "contrast", 1);
+                "size", 64, "contrast", 1);
         assertThat(noise).hasSizeLessThanOrEqualTo(6000).endsWith("\nnext: pack").doesNotContain("Narrow the call.");
         String loose = h.ok("texture", "name", "n".repeat(200) + ".png", "kind", "noise", "color", "#7f7f7f",
-                "accent", "#d4263a", "size", 64, "contrast", 1);
+                "size", 64, "contrast", 1);
         assertThat(loose).hasSizeLessThanOrEqualTo(6000).doesNotContain("Narrow the call.");
     }
 

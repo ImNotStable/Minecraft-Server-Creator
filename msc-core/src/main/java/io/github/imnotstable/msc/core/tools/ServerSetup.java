@@ -77,9 +77,12 @@ final class ServerSetup {
             if (chosen != null) {
                 steps.then(REMEMBER).ifFails(REMEMBER, rememberFails);
             }
-            steps.run(CREATE_FOLDER, () -> Files.createDirectories(dir));
+            // A server.jar another platform left (NeoForge's starter, a vanilla jar) is not this project: dev_cycle puts it.
+            String removed = steps.run(CREATE_FOLDER,
+                    () -> LoaderInstaller.claimSharedJar(Files.createDirectories(dir), MINESTOM_ID));
             remember(steps, chosen);
-            return (mode == null ? "" : "mode ignored: a Minestom server sets game mode and difficulty in its own code\n")
+            return LoaderInstaller.removedLine(removed, "dev_cycle deploys this project's jar there")
+                    + (mode == null ? "" : "mode ignored: a Minestom server sets game mode and difficulty in its own code\n")
                     + "minestom needs no server download and has no EULA step: the project's own jar is the server and "
                     + "the msc agent is built into it. Server directory: " + dir + "; next: dev_cycle";
         }
@@ -132,6 +135,8 @@ final class ServerSetup {
         return out.toString();
     }
 
+    /** The marker id of a Minestom folder; dev_cycle's Minestom deploy marks the folder with it too. */
+    public static final String MINESTOM_ID = "minestom";
     static final String CREATE_FOLDER = "create the server folder";
     static final String INSTALL = "download and install the server";
     static final String DEFAULTS = "write missing default config files";
@@ -186,6 +191,9 @@ final class ServerSetup {
         FabricDownloader.Download launcher = fabric.launcher(version, loader);
         FabricDownloader.Download apiJar = fabric.api(api);
         ServerFiles.place(launcher.jar(), dir, Platform.FABRIC.serverJar());
+        // The launcher starts server.jar as the vanilla server and downloads it only when it is missing (#513).
+        out.append(LoaderInstaller.removedLine(LoaderInstaller.claimSharedJar(dir, "fabric " + version),
+                "the launcher downloads the vanilla server on first start"));
         out.append("fabric launcher for ").append(version).append(", loader ").append(loader)
                 .append(launcher.cached() ? " (cached)" : " (downloaded)")
                 .append("; it downloads the Minecraft server on first start\n");

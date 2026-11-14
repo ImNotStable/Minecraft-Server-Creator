@@ -92,9 +92,17 @@ public final class Args {
         return rule.resolve(name, str(name, fallback));
     }
 
+    /** A one-value argument as text; an object or array is refused as not being {@code what}. */
+    private String scalar(String name, String what) {
+        if (has(name) && !json.get(name).isJsonPrimitive()) {
+            throw new ToolException("argument " + name + " must be " + what);
+        }
+        return str(name);
+    }
+
     public int integer(String name) {
+        String s = scalar(name, "an integer").trim();
         try {
-            String s = str(name).trim();
             double d = Double.parseDouble(s);
             if (d != Math.rint(d) || Math.abs(d) > Integer.MAX_VALUE) {
                 throw new NumberFormatException(s);
@@ -121,11 +129,29 @@ public final class Args {
         return value;
     }
 
+    /** A finite number; {@code "0.5"} is accepted like {@code 0.5}. */
+    public double number(String name) {
+        String s = scalar(name, "a number").trim();
+        try {
+            double d = Double.parseDouble(s);
+            if (!Double.isFinite(d)) {
+                throw new NumberFormatException(name);
+            }
+            return d;
+        } catch (NumberFormatException e) {
+            throw new ToolException("argument " + name + " must be a number");
+        }
+    }
+
+    public double number(String name, double fallback) {
+        return has(name) ? number(name) : fallback;
+    }
+
     public boolean bool(String name, boolean fallback) {
         if (!has(name)) {
             return fallback;
         }
-        String s = str(name);
+        String s = scalar(name, "true or false");
         if (s.equalsIgnoreCase("true")) {
             return true;
         }

@@ -43,7 +43,7 @@ final class ServerConsole {
         if (lines.isEmpty()) {
             return "log is empty" + (server.running() ? "" : " (server not running)");
         }
-        int count = Math.max(1, args.integer("lines", 30));
+        int count = args.integer("lines", 30);
         return switch (mode) {
             case "errors" -> LogCondenser.condense(lines, maxChars);
             case "tail" -> Budget.truncate(LogText.tail(lines, count), maxChars, "Ask for fewer lines.");
@@ -76,7 +76,7 @@ final class ServerConsole {
 
     String await(Args args) throws InterruptedException {
         Pattern pattern = pattern(args.str("until"));
-        int timeout = args.integer("timeoutSeconds", 60, 1, MAX_WAIT_SECONDS);
+        int timeout = args.integer("timeoutSeconds", 60);
         if (!server.running()) {
             throw new ToolException("server_wait reads the log of a server this session started, and none is running. "
                     + "Start it with server_start or dev_cycle.");

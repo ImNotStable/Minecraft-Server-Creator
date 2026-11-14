@@ -234,6 +234,7 @@ public final class Main {
         BenchConfig config = loadConfig(configFile, home);
         RunSelection selection = RunSelection.resolve(tasksDir, TaskLoader.loadAll(tasksDir), flags.get("--tasks"),
                 config.modes().keySet(), configFile, flags.get("--modes"));
+        config.requirePaths(configFile, selection.modes());
         // Attempts run in the run folder: inside this repository both modes would load its CLAUDE.md and sources.
         // The checked folder is the resolved one, and the run writes to that same folder (links, .. and all).
         Path runsDir = flags.containsKey("--out")

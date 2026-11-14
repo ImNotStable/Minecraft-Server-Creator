@@ -28,12 +28,16 @@ public record Ramp(List<Integer> colors) {
         return from(base, count, 1.0);
     }
 
+    /** The contrast range {@link #from} takes. */
+    public static final double MIN_CONTRAST = 0.2;
+    public static final double MAX_CONTRAST = 1.5;
+
     /**
      * @param contrast 0.2 to 1.5; 1 suits items, about 0.6 suits block textures such as stone
      */
     public static Ramp from(int base, int count, double contrast) {
-        if (contrast < 0.2 || contrast > 1.5) {
-            throw new TextureException("ramp contrast must be 0.2 to 1.5, not " + contrast);
+        if (contrast < MIN_CONTRAST || contrast > MAX_CONTRAST) {
+            throw new TextureException("ramp contrast must be " + MIN_CONTRAST + " to " + MAX_CONTRAST + ", not " + contrast);
         }
         if (count < 2 || count > 9) {
             throw new TextureException("ramp size must be 2 to 9, not " + count);
