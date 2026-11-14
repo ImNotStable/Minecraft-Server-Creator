@@ -1,16 +1,14 @@
 package io.github.imnotstable.msc.core.server;
 
+import io.github.imnotstable.msc.process.ServerPropertiesFile;
 import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 
 /**
- * Reads and edits a vanilla {@code server.properties} line by line, so comments and order survive. Values are taken
- * as written; the escapes {@link java.util.Properties} knows are not needed for the keys this core touches.
+ * The dev server play modes and the start report's mode line. The file itself is read and written only through
+ * msc-process's {@link ServerPropertiesFile} (ADR 0033).
  */
 public final class ServerProperties {
     /** Dev server play modes: what {@code server_setup mode=...} writes. */
@@ -54,53 +52,17 @@ public final class ServerProperties {
     private ServerProperties() {
     }
 
-    /** The file's keys and values, or an empty map when it does not exist. */
-    public static Map<String, String> read(Path file) throws IOException {
-        Map<String, String> out = new LinkedHashMap<>();
-        if (!Files.exists(file)) {
-            return out;
-        }
-        for (String line : Files.readAllLines(file)) {
-            int eq = line.indexOf('=');
-            if (eq > 0 && !line.startsWith("#")) {
-                out.put(line.substring(0, eq).strip(), line.substring(eq + 1).strip());
-            }
-        }
-        return out;
-    }
-
-    /** Set each key: replace its line where it exists, append it otherwise. Creates the file when missing. */
-    public static void set(Path file, Map<String, String> values) throws IOException {
-        List<String> lines = Files.exists(file) ? new ArrayList<>(Files.readAllLines(file)) : new ArrayList<>();
-        Map<String, String> left = new LinkedHashMap<>(values);
-        for (int i = 0; i < lines.size(); i++) {
-            String line = lines.get(i);
-            int eq = line.indexOf('=');
-            if (eq > 0 && !line.startsWith("#")) {
-                String key = line.substring(0, eq).strip();
-                String value = left.remove(key);
-                if (value != null) {
-                    lines.set(i, key + "=" + value);
-                }
-            }
-        }
-        left.forEach((k, v) -> lines.add(k + "=" + v));
-        Files.createDirectories(file.toAbsolutePath().getParent());
-        // "\n" on every OS, so the file and its tests do not depend on where MSC runs.
-        Files.writeString(file, String.join("\n", lines) + "\n");
-    }
-
     /**
      * One line for the start report: the game mode and difficulty the server starts with, and how to switch.
      * Null when the file does not say (Minestom has no server.properties).
      */
     public static String modeLine(Path file) throws IOException {
-        Map<String, String> p = read(file);
-        String gamemode = p.get("gamemode");
-        String difficulty = p.get("difficulty");
-        if (gamemode == null || difficulty == null) {
+        Map<String, String> p = ServerPropertiesFile.read(file);
+        if (p.get("gamemode") == null || p.get("difficulty") == null) {
             return null;
         }
+        String gamemode = p.get("gamemode").strip();
+        String difficulty = p.get("difficulty").strip();
         boolean game = !gamemode.equals("creative") && !difficulty.equals("peaceful");
         return "mode: " + gamemode + ", " + difficulty + " difficulty"
                 + (game ? " (server_setup mode=build for creative, peaceful)"

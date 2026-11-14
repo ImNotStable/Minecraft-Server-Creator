@@ -24,7 +24,7 @@ In toolset mode the runner checks Claude Code's init event: when the `msc` serve
 | `code-greet-command` | Plugin code | Builds; `/greet Steve` and `/greet` replies over RCON |
 | `code-config-motd` | Plugin code + config | Builds; default reply, `set`, new reply, saved `config.yml` |
 | `code-fix-startup` | Debugging | Builds; `/stats` replies `Loaded worlds: 3` (two planted bugs) |
-| `build-hut` | Building | 196 block positions: walls, door, windows, roof, empty inside |
+| `build-hut` | Building | 245 block positions: walls, door, windows, roof, empty inside |
 | `build-mirror-copy` | Building + seeing | Mirrored copy incl. stair facing; original untouched |
 | `world-find-block` | Seeing the world | `answer.txt` has the one gold block among decoys; world unchanged |
 | `texture-ruby-item` | Textures | 16x16, at most 8 colours, transparent background, mostly red |

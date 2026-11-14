@@ -10,16 +10,14 @@ import io.github.imnotstable.msc.core.tool.ToolException;
 import io.github.imnotstable.msc.core.tool.ToolRegistry;
 import io.github.imnotstable.msc.core.world.Walk;
 import io.github.imnotstable.msc.core.world.WorldService;
+import io.github.imnotstable.msc.process.ServerPropertiesFile;
 import io.github.imnotstable.msc.protocol.op.Ops;
 import io.github.imnotstable.msc.protocol.world.BlockPos;
 import io.github.imnotstable.msc.protocol.world.Region;
 import java.io.IOException;
-import java.io.Reader;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
-import java.util.Properties;
+import java.util.Map;
 import java.util.regex.Pattern;
 
 /** A headless test player, so the AI can play what it built: walk, jump gaps, press buttons, fight, and read back. */
@@ -197,15 +195,9 @@ public final class PlayerTools implements AutoCloseable {
 
     /** server-ip and server-port from the dev server's server.properties. */
     private String[] address() throws IOException {
-        Path file = config.serverDir().resolve("server.properties");
-        Properties p = new Properties();
-        if (Files.exists(file)) {
-            try (Reader in = Files.newBufferedReader(file)) {
-                p.load(in);
-            }
-        }
-        String ip = p.getProperty("server-ip", "").isBlank() ? "127.0.0.1" : p.getProperty("server-ip").strip();
-        return new String[] {ip, p.getProperty("server-port", "25565").strip()};
+        Map<String, String> p = ServerPropertiesFile.read(config.serverDir().resolve(ServerPropertiesFile.NAME));
+        String ip = p.getOrDefault("server-ip", "").isBlank() ? "127.0.0.1" : p.get("server-ip").strip();
+        return new String[] {ip, p.getOrDefault("server-port", "25565").strip()};
     }
 
     /** The joined test player, or null. */
