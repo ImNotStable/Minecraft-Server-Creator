@@ -7,7 +7,7 @@ import net.minecraft.world.item.ItemStack;
 
 /** The items a player gets on join and on {@code /game kit}. */
 public record Kit(List<Entry> items) {
-    /** The most of one item a kit entry gives: a full inventory, 36 stacks of 64. The same in every game template. */
+    /** The most of one item a kit entry gives: a full inventory, 36 stacks of 64. */
     public static final int MAX_AMOUNT = 36 * 64;
 
     /** One kit entry: {@code new Kit.Entry(Items.BREAD, 8)}. */

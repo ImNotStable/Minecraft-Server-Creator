@@ -10,6 +10,8 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
@@ -17,10 +19,23 @@ import org.junit.jupiter.api.Test;
  * Scaffolds each project template and runs its own {@code gradlew build}, which compiles it
  * against Paper, Fabric, NeoForge, Forge or Minestom and runs its tests. Only runs via
  * {@code ./gradlew :msc-templates:verifyTemplates}. The same run lists the project's tasks, and every
- * {@code ./gradlew <task>} its CLAUDE.md and README.md name must be among them.
+ * {@code ./gradlew <task>} its CLAUDE.md and README.md name must be among them. The builds of one test class share
+ * the Gradle user home and one daemon.
  */
 @Tag("template-build")
 class TemplateBuildTest {
+    private static Daemon daemon;
+
+    @BeforeAll
+    static void startDaemon() {
+        daemon = Daemon.forClass("builds");
+    }
+
+    @AfterAll
+    static void stopDaemon() throws IOException, InterruptedException {
+        daemon.stop();
+    }
+
     @Test
     void paperPluginBuildsAndPassesItsTests() throws IOException, InterruptedException {
         buildsAndPassesItsTests(Templates.PAPER_PLUGIN);
@@ -63,7 +78,7 @@ class TemplateBuildTest {
 
     private static void buildsAndPassesItsTests(String id) throws IOException, InterruptedException {
         ScaffoldResult r = scaffoldFresh(id, id);
-        String output = gradle(r.root(), "build", "tasks", "--all");
+        String output = daemon.run(r.root(), "build", "tasks", "--all");
 
         assertThat(r.root().resolve("build/libs/verify-me-0.1.0-SNAPSHOT.jar")).exists();
         // Every task the docs say to run is one this build really has (#371); TemplateDocsTest reads the build file.
@@ -80,24 +95,55 @@ class TemplateBuildTest {
         return Templates.scaffold(id, dir, TemplateVariables.of("Verify Me"));
     }
 
-    /** Runs the project's own wrapper with these tasks, asserts it passed and returns its output. */
-    static String gradle(Path dir, String... tasks) throws IOException, InterruptedException {
-        boolean windows = System.getProperty("os.name").toLowerCase().contains("win");
-        List<String> command = new ArrayList<>(windows
-                // Explicit .\\ path: cmd may not search the current directory (NoDefaultCurrentDirectoryInExePath).
-                ? List.of("cmd", "/c", ".\\gradlew.bat")
-                : List.of("./gradlew"));
-        command.addAll(List.of(tasks));
-        command.addAll(List.of("--no-daemon", "-q"));
-        Path log = dir.resolve("build-output.txt");
-        Process p = new ProcessBuilder(command).directory(dir.toFile()).redirectErrorStream(true)
-                .redirectOutput(log.toFile()).start();
-        boolean finished = p.waitFor(15, TimeUnit.MINUTES);
-        String output = Files.readString(log);
+    /**
+     * The Gradle daemon the scaffolded builds of one test class share. It is kept in its own registry under the verify
+     * directory, so {@link #stop()} stops it and no other daemon on the machine, and it exits on its own after ten
+     * idle minutes if the run is cut short.
+     */
+    static final class Daemon {
+        private final Path registry;
+        private Path lastProject;
 
-        assertThat(finished).as("build finished in time").isTrue();
-        assertThat(p.exitValue()).as(output).isZero();
-        return output;
+        private Daemon(Path registry) {
+            this.registry = registry;
+        }
+
+        static Daemon forClass(String name) {
+            return new Daemon(Path.of(System.getProperty("msc.templates.verifyDir")).resolve("daemons").resolve(name));
+        }
+
+        /** Runs the project's own wrapper with these tasks, asserts it passed and returns its output. */
+        String run(Path dir, String... tasks) throws IOException, InterruptedException {
+            lastProject = dir;
+            Path log = dir.resolve("build-output.txt");
+            Process p = start(dir, log, tasks);
+            boolean finished = p.waitFor(15, TimeUnit.MINUTES);
+            String output = Files.readString(log);
+
+            assertThat(finished).as("build finished in time").isTrue();
+            assertThat(p.exitValue()).as(output).isZero();
+            return output;
+        }
+
+        void stop() throws IOException, InterruptedException {
+            if (lastProject != null) {
+                Process p = start(lastProject, lastProject.resolve("stop-output.txt"), "--stop");
+                p.waitFor(2, TimeUnit.MINUTES);
+            }
+        }
+
+        private Process start(Path dir, Path log, String... tasks) throws IOException {
+            boolean windows = System.getProperty("os.name").toLowerCase().contains("win");
+            List<String> command = new ArrayList<>(windows
+                    // Explicit .\\ path: cmd may not search the current directory (NoDefaultCurrentDirectoryInExePath).
+                    ? List.of("cmd", "/c", ".\\gradlew.bat")
+                    : List.of("./gradlew"));
+            command.addAll(List.of(tasks));
+            command.addAll(List.of("-q", "-Dorg.gradle.daemon.registry.base=" + registry,
+                    "-Dorg.gradle.daemon.idletimeout=600000"));
+            return new ProcessBuilder(command).directory(dir.toFile()).redirectErrorStream(true)
+                    .redirectOutput(log.toFile()).start();
+        }
     }
 
     private static void deleteRecursively(Path dir) throws IOException {
