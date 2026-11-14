@@ -7,7 +7,6 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -18,12 +17,10 @@ import net.minestom.server.command.CommandManager;
 import net.minestom.server.command.ConsoleSender;
 import net.minestom.server.command.builder.CommandResult;
 import net.minestom.server.coordinate.Pos;
-import net.minestom.server.entity.GameMode;
 import net.minestom.server.entity.Player;
 import net.minestom.server.event.player.PlayerMoveEvent;
 import net.minestom.server.instance.Instance;
 import net.minestom.server.network.player.GameProfile;
-import net.minestom.server.world.Difficulty;
 import net.minestom.testing.Env;
 import net.minestom.testing.EnvTest;
 import org.junit.jupiter.api.Test;
@@ -57,8 +54,7 @@ class GameThreadsTest {
 
     private Game game(Env env, Runnable onProgressChange) {
         Instance world = {{name}}Server.createWorld(env.process().instance());
-        GameConfig config = new GameConfig(GameMode.ADVENTURE, Difficulty.NORMAL, 6000, Kit.of(),
-                List.of(START, ARENA, END), Set.of());
+        GameConfig config = TestGames.withStages(List.of(START, ARENA, END));
         for (Stage s : config.stages()) {
             world.loadChunk(s.spawn()).join();
         }
