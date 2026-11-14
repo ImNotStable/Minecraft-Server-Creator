@@ -23,6 +23,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.MethodSource;
 
 /**
@@ -37,6 +38,7 @@ class TaskTypesTest {
             {"category":"code","title":"t","platform":"paper","fixtures":[],
              "scaffold":{"template":"minestom-game","name":"N","package":"p"},
              "server":{"startBefore":false,"setup":["say hi"]},
+             "resetBeforeChecks":{"delete":["server/plugins/P/config.yml"]},
              "checks":[
               {"type":"file","name":"f","path":"a","contains":"x"},
               {"type":"command","run":["x"],"outputMatches":"y","addFiles":"hidden"},
@@ -70,6 +72,8 @@ class TaskTypesTest {
         KEYS.put("server", OBJECT);
         KEYS.put("server.startBefore", BOOL);
         strings("server.setup");
+        KEYS.put("resetBeforeChecks", OBJECT);
+        strings("resetBeforeChecks.delete");
         KEYS.put("checks", LIST);
         KEYS.put("checks[0]", OBJECT);
         for (String key : List.of("type", "name", "path", "contains")) {
@@ -142,6 +146,37 @@ class TaskTypesTest {
         JsonObject json = JsonParser.parseString(VALID).getAsJsonObject();
         set(json, "server.startBefore", JsonParser.parseString("true"));
         assertThat(load(json).server().startBefore()).isTrue();
+    }
+
+    @Test
+    void theResetPathsAreKeptNormalized() throws IOException {
+        JsonObject json = JsonParser.parseString(VALID).getAsJsonObject();
+        set(json, "resetBeforeChecks.delete", JsonParser.parseString("[\"server/./a/../config.yml\", \"b\\\\c\"]"));
+        assertThat(load(json).reset().delete()).containsExactly("server/config.yml", "b/c");
+    }
+
+    /**
+     * #495: a reset deletes files after the agent, so every path must name something inside the workspace, and a
+     * misspelt key, which would leave the reset out silently, is refused.
+     */
+    @ParameterizedTest(name = "{0} = {1}")
+    @CsvSource(delimiter = '|', quoteCharacter = '`', value = {
+            "resetBeforeChecks.delete[0] | `\"../x\"`        | resetBeforeChecks.delete[0]: \"../x\" is not inside the workspace",
+            "resetBeforeChecks.delete[0] | `\"a/../../x\"`   | resetBeforeChecks.delete[0]: \"a/../../x\" is not inside the workspace",
+            "resetBeforeChecks.delete[0] | `\"..\\\\x\"` | resetBeforeChecks.delete[0]: \"..\\x\" is not inside the workspace",
+            "resetBeforeChecks.delete[0] | `\".\"`           | resetBeforeChecks.delete[0]: \".\" is not inside the workspace",
+            "resetBeforeChecks.delete[0] | `\"a/..\"`        | resetBeforeChecks.delete[0]: \"a/..\" is not inside the workspace",
+            "resetBeforeChecks.delete[0] | `\"/etc/x\"`      | resetBeforeChecks.delete[0]: \"/etc/x\" is absolute",
+            "resetBeforeChecks.delete[0] | `\"C:/x\"`        | resetBeforeChecks.delete[0]: \"C:/x\" is absolute",
+            "resetBeforeChecks.delete[0] | `\" \"`           | resetBeforeChecks.delete[0]: \" \" is blank",
+            "resetBeforeChecks.restore   | `[\"a\"]`         | resetBeforeChecks.restore: unknown key",
+            "resetBeforeCheck            | `{}`                | resetBeforeCheck: unknown key"})
+    void aResetThatCouldMissOrLeaveTheWorkspaceIsRefused(String key, String value, String message) {
+        JsonObject json = JsonParser.parseString(VALID).getAsJsonObject();
+        set(json, key, JsonParser.parseString(value));
+        assertThatThrownBy(() -> load(json))
+                .isInstanceOf(IOException.class)
+                .hasMessageStartingWith("Task t: task.json " + message);
     }
 
     private TaskDef load(JsonElement json) throws IOException {

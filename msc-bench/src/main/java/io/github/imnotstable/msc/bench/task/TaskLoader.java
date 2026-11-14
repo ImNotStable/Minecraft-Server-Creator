@@ -21,6 +21,10 @@ import java.util.stream.Stream;
  */
 public final class TaskLoader {
 
+    /** The keys a task.json may have. */
+    static final List<String> KEYS = List.of("category", "title", "platform", "scaffold", "fixtures", "server",
+            "checks", "resetBeforeChecks", "timeoutSeconds");
+
     private TaskLoader() {
     }
 
@@ -56,6 +60,8 @@ public final class TaskLoader {
             throw new IOException("Task " + id + ": task.json is not a JSON object: " + e.getMessage(), e);
         }
         try {
+            // A misspelt key would be left out silently: a reset that never happens, a time limit never applied.
+            json.onlyKeys(KEYS);
             Path promptFile = taskDir.resolve("prompt.md");
             if (!Files.isRegularFile(promptFile)) {
                 throw new IllegalArgumentException("prompt.md is missing");
@@ -108,6 +114,7 @@ public final class TaskLoader {
                     fixtures,
                     server,
                     checks,
+                    Reset.parse(json.exactObject("resetBeforeChecks")),
                     json.wholeNumber("timeoutSeconds", JsonNumbers.SECONDS, 0));
         } catch (RuntimeException e) {
             throw new IOException("Task " + id + ": " + e.getMessage(), e);

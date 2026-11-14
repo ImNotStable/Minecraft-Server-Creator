@@ -317,6 +317,15 @@ public final class BenchRunner {
                     return children.start(builder);
                 }
             };
+            if (!task.reset().isEmpty()) {
+                if (server != null) {
+                    // A plugin holds what the reset deletes in memory: a server still running (the bench's, or one
+                    // the agent left) is stopped first, so the checks start one that loads the reset files.
+                    server.close();
+                    ServerManager.clearPorts(config.server());
+                }
+                task.reset().apply(workspace);
+            }
             for (Check check : task.checks()) {
                 results.add(check.run(context));
             }
