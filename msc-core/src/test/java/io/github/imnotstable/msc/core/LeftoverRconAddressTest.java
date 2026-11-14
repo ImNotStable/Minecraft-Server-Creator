@@ -9,11 +9,14 @@ import io.github.imnotstable.msc.process.rcon.FakeRconServer;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 
 /** server_stop asks a leftover server over RCON where player_test joins it: the same reading of server-ip (#448). */
+@Timeout(value = 5, unit = TimeUnit.MINUTES, threadMode = Timeout.ThreadMode.SEPARATE_THREAD) // a hang fails
 class LeftoverRconAddressTest {
     @TempDir
     Path workspace;
