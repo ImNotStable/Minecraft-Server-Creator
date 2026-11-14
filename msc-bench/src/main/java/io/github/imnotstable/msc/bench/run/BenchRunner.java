@@ -2,6 +2,7 @@ package io.github.imnotstable.msc.bench.run;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import io.github.imnotstable.msc.bench.RunSelection;
 import io.github.imnotstable.msc.bench.check.Check;
 import io.github.imnotstable.msc.bench.check.CheckContext;
 import io.github.imnotstable.msc.bench.check.CheckResult;
@@ -17,12 +18,10 @@ import java.nio.file.Path;
 import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -46,6 +45,7 @@ public final class BenchRunner {
     /** True while an attempt whose task has a Paper server is under way. */
     private volatile boolean serverTask;
     private String stoppedBy;
+    private IOException notRecorded;
 
     /** A runner whose Paper tasks get {@code preamble}. */
     public BenchRunner(BenchConfig config, Path runDir, String preamble, PrintStream log) {
@@ -78,26 +78,33 @@ public final class BenchRunner {
         return stoppedBy;
     }
 
-    public List<RunRecord> run(List<TaskDef> tasks, List<String> modes, int repeats) throws IOException {
+    /**
+     * Why the last {@link #run} stopped before the end because an attempt could not be written to
+     * {@code results.jsonl} (a full disk, a file another program holds), or null. That attempt and every later one are
+     * not recorded; the records returned are exactly the ones the file holds.
+     */
+    public IOException notRecorded() {
+        return notRecorded;
+    }
+
+    /**
+     * Runs {@code selection}, which {@link RunSelection#resolve} checked against this runner's config: its modes are
+     * modes of the config, and no task or mode is listed twice (a second attempt with the same task, mode and repeat
+     * number would run in the first one's folder, on its work).
+     */
+    public List<RunRecord> run(RunSelection selection, int repeats) throws IOException {
         if (repeats < 1) {
             throw new IllegalArgumentException("repeats is " + repeats + "; a run needs at least 1 attempt");
         }
-        for (String mode : modes) {
-            if (!config.modes().containsKey(mode)) {
-                throw new IOException("Unknown mode \"" + mode + "\"; bench.json defines " + config.modes().keySet());
-            }
-        }
-        // A second attempt with the same task, mode and repeat number would run in the first one's folder, on its work.
-        refuseRepeats("task", tasks.stream().map(TaskDef::id).toList());
-        refuseRepeats("mode", modes);
         Files.createDirectories(runDir);
         stoppedBy = null;
+        notRecorded = null;
         // Ctrl-C ends the bench JVM without running the finally blocks that stop the agent and the server: left
         // running, they would keep working unattended and the next run's setup and checks would reach their world.
         Thread hook = Thread.ofPlatform().name("msc-bench-abort").unstarted(this::abort);
         Runtime.getRuntime().addShutdownHook(hook);
         try {
-            return runAll(tasks, modes, repeats);
+            return runAll(selection.tasks(), selection.modes(), repeats);
         } finally {
             try {
                 Runtime.getRuntime().removeShutdownHook(hook);
@@ -116,16 +123,6 @@ public final class BenchRunner {
         children.killAll();
         if (serverTask) {
             ServerManager.sendStop(config.server());
-        }
-    }
-
-    private static void refuseRepeats(String kind, List<String> names) {
-        Set<String> seen = new HashSet<>();
-        for (String name : names) {
-            if (!seen.add(name)) {
-                throw new IllegalArgumentException(kind + " \"" + name + "\" is listed twice; use --repeat N for more "
-                        + "attempts of each task and mode");
-            }
         }
     }
 
@@ -156,8 +153,17 @@ public final class BenchRunner {
                         log.printf("[%s] %s #%d: stopped, the run was interrupted%n", mode, task.id(), repeat);
                         return records;
                     }
+                    try {
+                        ResultsFile.append(runDir.resolve(RESULTS_FILE), record);
+                    } catch (IOException e) {
+                        // The file system refused the write: later attempts would be lost the same way, so the run
+                        // stops with the records the file holds, and the caller still writes their report.
+                        notRecorded = e;
+                        log.printf("[%s] %s #%d: stopped, the attempt could not be written to %s (%s)%n",
+                                mode, task.id(), repeat, RESULTS_FILE, e);
+                        return records;
+                    }
                     records.add(record);
-                    ResultsFile.append(runDir.resolve(RESULTS_FILE), record);
                     log.printf("[%s] %s #%d %s in %ds, %d tokens, %d/%d checks%s%n",
                             mode, task.id(), repeat, record.passed() ? "PASS" : "FAIL",
                             record.wallMs() / 1000, record.agent().totalTokens(),

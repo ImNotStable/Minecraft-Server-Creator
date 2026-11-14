@@ -2,6 +2,7 @@ package io.github.imnotstable.msc.bench;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
+import static org.assertj.core.api.Assertions.tuple;
 
 import io.github.imnotstable.msc.bench.run.BenchConfig;
 import io.github.imnotstable.msc.bench.run.BenchRunner;
@@ -19,7 +20,6 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -28,8 +28,6 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.CsvSource;
 
 class BenchRunnerTest {
 
@@ -85,7 +83,7 @@ class BenchRunnerTest {
         Path runDir = dir.resolve("run");
         ByteArrayOutputStream log = new ByteArrayOutputStream();
         List<RunRecord> records = new BenchRunner(config, runDir, "Bench preamble.",
-                new PrintStream(log, true, StandardCharsets.UTF_8)).run(taskDefs, List.of("baseline", "toolset"), 1);
+                new PrintStream(log, true, StandardCharsets.UTF_8)).run(new RunSelection(taskDefs, List.of("baseline", "toolset")), 1);
 
         assertThat(records).hasSize(2).allSatisfy(r -> {
             assertThat(r.passed()).as(r.toString()).isTrue();
@@ -101,7 +99,9 @@ class BenchRunnerTest {
         assertThat(Files.readString(attempt.resolve("workspace/done.txt"))).startsWith("Bench preamble.\n\nWrite done.txt in");
         assertThat(Files.readString(attempt.resolve("mcp.json"))).contains("tool-calls.jsonl").doesNotContain("{workspace}");
 
-        List<RunRecord> reread = ResultsFile.read(runDir.resolve(BenchRunner.RESULTS_FILE));
+        List<RunRecord> reread = ResultsFile.read(runDir.resolve(BenchRunner.RESULTS_FILE), w -> {
+            throw new AssertionError(w);
+        });
         assertThat(reread).isEqualTo(records);
         assertThat(log.toString(StandardCharsets.UTF_8)).contains("[toolset] write-file #1 PASS");
     }
@@ -130,7 +130,7 @@ class BenchRunnerTest {
         BenchConfig config = BenchConfig.load(configFile, Files.createDirectories(dir.resolve("home")));
         List<RunRecord> records = new BenchRunner(config, dir.resolve("run"), "",
                 new PrintStream(log, true, StandardCharsets.UTF_8))
-                .run(TaskLoader.loadAll(dir.resolve("tasks")), List.of("baseline"), 1);
+                .run(new RunSelection(TaskLoader.loadAll(dir.resolve("tasks")), List.of("baseline")), 1);
 
         assertThat(config.server().acceptEula()).as("bench.json cannot accept the EULA").isFalse();
         assertThat(records).isEmpty();
@@ -149,7 +149,7 @@ class BenchRunnerTest {
 
         List<RunRecord> records = new BenchRunner(BenchConfig.load(configFile, dir.resolve("home")), dir.resolve("run"), "",
                 new PrintStream(new ByteArrayOutputStream(), true, StandardCharsets.UTF_8))
-                .run(TaskLoader.loadAll(dir.resolve("tasks")), List.of("baseline"), 1);
+                .run(new RunSelection(TaskLoader.loadAll(dir.resolve("tasks")), List.of("baseline")), 1);
 
         assertThat(records).singleElement().satisfies(r -> assertThat(r.passed()).isFalse());
         Path server = dir.resolve("run/attempts/world/baseline-1/workspace/server");
@@ -197,7 +197,7 @@ class BenchRunnerTest {
 
             List<RunRecord> records = new BenchRunner(BenchConfig.load(dir.resolve("bench.json"), dir.resolve("home")),
                     dir.resolve("run"), "", new PrintStream(new ByteArrayOutputStream(), true, StandardCharsets.UTF_8))
-                    .run(TaskLoader.loadAll(dir.resolve("tasks")), List.of("baseline"), 1);
+                    .run(new RunSelection(TaskLoader.loadAll(dir.resolve("tasks")), List.of("baseline")), 1);
 
             assertThat(orphan.commands()).as("the orphan gets only a stop, no setup").containsExactly("stop");
             assertThat(records).singleElement().satisfies(r -> assertThat(r.passed()).as(r.toString()).isTrue());
@@ -220,7 +220,7 @@ class BenchRunnerTest {
         BenchRunner runner = new BenchRunner(BenchConfig.load(configFile, dir), dir.resolve("run"), "",
                 new PrintStream(new ByteArrayOutputStream(), true, StandardCharsets.UTF_8));
 
-        List<RunRecord> records = runner.run(TaskLoader.loadAll(dir.resolve("tasks")), List.of("baseline"), 3);
+        List<RunRecord> records = runner.run(new RunSelection(TaskLoader.loadAll(dir.resolve("tasks")), List.of("baseline")), 3);
 
         assertThat(records).isEmpty();
         assertThat(runner.stoppedBy()).contains("429").contains("out of extra usage");
@@ -243,32 +243,74 @@ class BenchRunnerTest {
                 new PrintStream(new ByteArrayOutputStream(), true, StandardCharsets.UTF_8));
     }
 
-    @ParameterizedTest
-    @CsvSource(delimiter = '|', value = {"write,write | baseline | task \"write\" is listed twice",
-            "write | baseline,toolset,baseline | mode \"baseline\" is listed twice"})
-    void aTaskOrModeListedTwiceIsRefusedBeforeAnyAttempt(String taskIds, String modes, String message)
-            throws IOException {
-        // --tasks a,a ran the second attempt in the first one's folder, where its checks passed on the first's work.
+    /** Two tasks: a-emoji, whose command fails with an emoji at the 200-char cut of its output, then b-pass. */
+    private BenchRunner emojiThenPassRunner(Path runDir, ByteArrayOutputStream log) throws IOException {
+        Path emoji = Files.createDirectories(dir.resolve("tasks/a-emoji"));
+        Files.writeString(emoji.resolve("task.json"), """
+                {"category":"code","title":"x","checks":[{"type":"command",
+                 "run":["{java}","-cp","%s","io.github.imnotstable.msc.bench.PrintsEmoji","199"]}]}
+                """.formatted(CLASSPATH));
+        Files.writeString(emoji.resolve("prompt.md"), "Fail loudly.");
+        Path pass = Files.createDirectories(dir.resolve("tasks/b-pass"));
+        Files.writeString(pass.resolve("task.json"),
+                "{\"category\":\"code\",\"title\":\"x\",\"checks\":[{\"type\":\"file\",\"path\":\"done.txt\"}]}");
+        Files.writeString(pass.resolve("prompt.md"), "Write done.txt.");
+        Path configFile = dir.resolve("bench.json");
+        Files.writeString(configFile, """
+                {"agent":{"command":["%s","-cp","%s","io.github.imnotstable.msc.bench.FakeAgent","{prompt}"]},
+                 "modes":{"baseline":{}}}
+                """.formatted(JAVA, CLASSPATH));
+        return new BenchRunner(BenchConfig.load(configFile, dir), runDir, "",
+                new PrintStream(log, true, StandardCharsets.UTF_8));
+    }
+
+    @Test
+    void anEmojiAtTheCutOfACheckDetailIsRecordedAndTheRunGoesOn() throws IOException {
+        // #462: the cut left half the emoji, the UTF-8 writer refused the record and the whole run ended there.
         Path runDir = dir.resolve("run");
-        BenchRunner runner = fileTaskRunner(runDir);
-        TaskDef task = TaskLoader.loadAll(dir.resolve("tasks")).getFirst();
-        List<TaskDef> tasks = Arrays.stream(taskIds.split(",")).map(id -> task).toList();
+        BenchRunner runner = emojiThenPassRunner(runDir, new ByteArrayOutputStream());
 
-        Throwable refused = catchThrowable(() -> runner.run(tasks, List.of(modes.split(",")), 1));
+        List<RunRecord> records = runner.run(new RunSelection(TaskLoader.loadAll(dir.resolve("tasks")),
+                List.of("baseline")), 1);
 
-        assertThat(refused).isInstanceOf(IllegalArgumentException.class).hasMessageContaining(message)
-                .hasMessageContaining("--repeat");
-        assertThat(runDir).doesNotExist();
+        assertThat(records).extracting(RunRecord::task, RunRecord::passed)
+                .containsExactly(tuple("a-emoji", false), tuple("b-pass", true));
+        String detail = records.getFirst().checks().getFirst().detail();
+        assertThat(detail).startsWith("exit 1: ").endsWith("0".repeat(199));
+        assertThat(Text.hasLoneSurrogate(detail)).isFalse();
+        assertThat(ResultsFile.read(runDir.resolve(BenchRunner.RESULTS_FILE), w -> {
+            throw new AssertionError(w);
+        })).isEqualTo(records);
+        assertThat(runner.notRecorded()).isNull();
+    }
+
+    @Test
+    void anAttemptTheFileSystemWillNotRecordStopsTheRunWithWhatIsRecorded() throws IOException {
+        // A results.jsonl that cannot be written (here a folder in its place, as a full disk or a locked file):
+        // later attempts would be lost the same way, so the run stops and returns what the file holds.
+        Path runDir = dir.resolve("run");
+        Files.createDirectories(runDir.resolve(BenchRunner.RESULTS_FILE));
+        ByteArrayOutputStream log = new ByteArrayOutputStream();
+        BenchRunner runner = emojiThenPassRunner(runDir, log);
+
+        List<RunRecord> records = runner.run(new RunSelection(TaskLoader.loadAll(dir.resolve("tasks")),
+                List.of("baseline")), 1);
+
+        assertThat(records).isEmpty();
+        assertThat(runner.notRecorded()).isNotNull();
+        assertThat(log.toString(StandardCharsets.UTF_8))
+                .contains("[baseline] a-emoji #1: stopped, the attempt could not be written to results.jsonl");
+        assertThat(runDir.resolve("attempts/b-pass")).doesNotExist();
     }
 
     @Test
     void anAttemptNeverRunsInAFolderAnEarlierAttemptLeft() throws IOException {
         Path runDir = dir.resolve("run");
-        assertThat(fileTaskRunner(runDir).run(TaskLoader.loadAll(dir.resolve("tasks")), List.of("baseline"), 1))
+        assertThat(fileTaskRunner(runDir).run(new RunSelection(TaskLoader.loadAll(dir.resolve("tasks")), List.of("baseline")), 1))
                 .singleElement().satisfies(r -> assertThat(r.passed()).isTrue());
 
         Throwable refused = catchThrowable(() -> fileTaskRunner(runDir)
-                .run(TaskLoader.loadAll(dir.resolve("tasks")), List.of("baseline"), 1));
+                .run(new RunSelection(TaskLoader.loadAll(dir.resolve("tasks")), List.of("baseline")), 1));
 
         assertThat(refused).isInstanceOf(IOException.class).hasMessageContaining("already exists");
         assertThat(Files.readAllLines(runDir.resolve(BenchRunner.RESULTS_FILE))).hasSize(1);
@@ -292,7 +334,7 @@ class BenchRunnerTest {
         List<RunRecord> records = new BenchRunner(BenchConfig.load(configFile, dir), dir.resolve("run"),
                 Map.of(TaskDef.PAPER, "Paper preamble.", TaskDef.MINESTOM, "Minestom {scaffoldVersion} on {serverPort}."),
                 new PrintStream(new ByteArrayOutputStream(), true, StandardCharsets.UTF_8))
-                .run(TaskLoader.loadAll(dir.resolve("tasks")), List.of("baseline"), 1);
+                .run(new RunSelection(TaskLoader.loadAll(dir.resolve("tasks")), List.of("baseline")), 1);
 
         assertThat(records).singleElement().satisfies(r -> assertThat(r.passed()).as(r.toString()).isTrue());
         Path workspace = dir.resolve("run/attempts/game/baseline-1/workspace");
@@ -316,7 +358,7 @@ class BenchRunnerTest {
         List<RunRecord> records = new BenchRunner(BenchConfig.load(configFile, dir), dir.resolve("run"),
                 Map.of(TaskDef.PAPER, "Server in server/.", BenchRunner.PAPER_NO_SERVER, "No server."),
                 new PrintStream(new ByteArrayOutputStream(), true, StandardCharsets.UTF_8))
-                .run(TaskLoader.loadAll(dir.resolve("tasks")), List.of("baseline"), 1);
+                .run(new RunSelection(TaskLoader.loadAll(dir.resolve("tasks")), List.of("baseline")), 1);
 
         assertThat(records).singleElement().satisfies(r -> assertThat(r.passed()).as(r.toString()).isTrue());
         Path workspace = dir.resolve("run/attempts/texture/baseline-1/workspace");
@@ -333,7 +375,7 @@ class BenchRunnerTest {
         List<TaskDef> taskDefs = TaskLoader.loadAll(dir.resolve("tasks"));
         Thread thread = Thread.ofPlatform().start(() -> {
             try {
-                result.add(runner.run(taskDefs, List.of("baseline"), 2));
+                result.add(runner.run(new RunSelection(taskDefs, List.of("baseline")), 2));
             } catch (IOException e) {
                 throw new UncheckedIOException(e);
             }
@@ -414,21 +456,21 @@ class BenchRunnerTest {
                 new PrintStream(new ByteArrayOutputStream(), true, StandardCharsets.UTF_8));
         List<TaskDef> taskDefs = TaskLoader.loadAll(dir.resolve("tasks"));
 
-        RunRecord retried = runner.run(taskDefs, List.of("toolset"), 1).getFirst();
+        RunRecord retried = runner.run(new RunSelection(taskDefs, List.of("toolset")), 1).getFirst();
         assertThat(retried.passed()).isTrue();
         assertThat(retried.agent().mcpConnected()).containsExactly("msc");
         assertThat(dir.resolve("run/attempts/write-file/toolset-1-try2/workspace/done.txt")).exists();
 
-        RunRecord lateButUsed = runner.run(taskDefs, List.of("late"), 1).getFirst();
+        RunRecord lateButUsed = runner.run(new RunSelection(taskDefs, List.of("late")), 1).getFirst();
         assertThat(lateButUsed.passed()).as("init listed no server, but the tool log shows calls").isTrue();
         assertThat(dir.resolve("run/attempts/write-file/late-1-try2")).doesNotExist();
 
-        RunRecord gaveUp = runner.run(taskDefs, List.of("other"), 1).getFirst();
+        RunRecord gaveUp = runner.run(new RunSelection(taskDefs, List.of("other")), 1).getFirst();
         assertThat(gaveUp.passed()).isFalse();
         assertThat(gaveUp.error()).contains("MCP server missing was not connected").contains("3 tries");
         assertThat(dir.resolve("run/attempts/write-file/other-1-try3")).isDirectory();
 
-        RunRecord silent = runner.run(taskDefs, List.of("silent"), 1).getFirst();
+        RunRecord silent = runner.run(new RunSelection(taskDefs, List.of("silent")), 1).getFirst();
         assertThat(silent.agent().parsed()).isFalse();
         assertThat(silent.error()).as("no init event read, so nothing says MCP was missing").isNull();
         assertThat(dir.resolve("run/attempts/write-file/silent-1-try2")).doesNotExist();

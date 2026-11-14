@@ -43,8 +43,8 @@ public record PngRules(
     /** Reads the rules of a check or zip entry. */
     static PngRules parse(UserJson json) {
         HueRule hue = null;
-        if (json.has("hue")) {
-            UserJson h = json.object("hue");
+        UserJson h = json.exactObject("hue");
+        if (h != null) {
             for (String required : List.of("from", "to")) {
                 if (!h.has(required)) {
                     throw new IllegalArgumentException(json.key("hue") + ": missing \"" + required + "\"");

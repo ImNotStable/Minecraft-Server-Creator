@@ -28,24 +28,20 @@ record BlocksCheck(String name, List<Expectation> expectations, int maxFailuresS
 
     static BlocksCheck parse(String name, UserJson json) {
         List<Expectation> out = new ArrayList<>();
-        if (json.has("blocks")) {
-            for (UserJson o : json.objects("blocks")) {
-                int[] pos = pos(o, "pos");
-                out.add(new Expectation(pos[0], pos[1], pos[2], Checks.require(o, "block")));
-            }
+        for (UserJson o : json.exactObjects("blocks")) {
+            int[] pos = pos(o, "pos");
+            out.add(new Expectation(pos[0], pos[1], pos[2], Checks.require(o, "block")));
         }
-        if (json.has("regions")) {
-            for (UserJson o : json.objects("regions")) {
-                int[] a = pos(o, "from");
-                int[] b = pos(o, "to");
-                String block = Checks.require(o, "block");
-                for (int y = Math.min(a[1], b[1]); y <= Math.max(a[1], b[1]); y++) {
-                    for (int z = Math.min(a[2], b[2]); z <= Math.max(a[2], b[2]); z++) {
-                        for (int x = Math.min(a[0], b[0]); x <= Math.max(a[0], b[0]); x++) {
-                            out.add(new Expectation(x, y, z, block));
-                            if (out.size() > MAX_POSITIONS) {
-                                throw new IllegalArgumentException("blocks check covers more than " + MAX_POSITIONS + " positions");
-                            }
+        for (UserJson o : json.exactObjects("regions")) {
+            int[] a = pos(o, "from");
+            int[] b = pos(o, "to");
+            String block = Checks.require(o, "block");
+            for (int y = Math.min(a[1], b[1]); y <= Math.max(a[1], b[1]); y++) {
+                for (int z = Math.min(a[2], b[2]); z <= Math.max(a[2], b[2]); z++) {
+                    for (int x = Math.min(a[0], b[0]); x <= Math.max(a[0], b[0]); x++) {
+                        out.add(new Expectation(x, y, z, block));
+                        if (out.size() > MAX_POSITIONS) {
+                            throw new IllegalArgumentException("blocks check covers more than " + MAX_POSITIONS + " positions");
                         }
                     }
                 }
