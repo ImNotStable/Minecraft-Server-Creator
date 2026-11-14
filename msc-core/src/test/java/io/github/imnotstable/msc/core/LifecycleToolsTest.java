@@ -11,6 +11,7 @@ import io.github.imnotstable.msc.core.server.FakeLeftover;
 import io.github.imnotstable.msc.core.server.MachineEula;
 import io.github.imnotstable.msc.core.server.MachineEulaAccess;
 import io.github.imnotstable.msc.core.server.PidFile;
+import io.github.imnotstable.msc.core.server.PidFileAccess;
 import io.github.imnotstable.msc.core.tools.LifecycleToolsAccess;
 import io.github.imnotstable.msc.core.tools.StepsAccess;
 import io.github.imnotstable.msc.process.rcon.FakeRconServer;
@@ -876,7 +877,7 @@ class LifecycleToolsTest {
         try {
             Path pidFile = Files.createDirectories(workspace.resolve(".msc")).resolve("server.pid");
             // The other session's core stands as its own server: both alive, neither this JVM.
-            PidFile.write(pidFile, other.toHandle(), PidFile.Identity.of(other.toHandle()));
+            PidFileAccess.write(pidFile, other.toHandle(), PidFile.Identity.of(other.toHandle()));
             String written = Files.readString(pidFile);
             String pids = "(server pid " + other.pid() + ", MSC core pid " + other.pid() + ";";
             assertThat(h.ok("msc_status")).contains("server: running under another session that is still running " + pids);

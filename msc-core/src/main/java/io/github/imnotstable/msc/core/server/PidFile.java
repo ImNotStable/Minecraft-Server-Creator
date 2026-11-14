@@ -72,8 +72,11 @@ public final class PidFile {
         return entry != null && entry.resisting();
     }
 
-    /** Records in the file that its process survived a whole stop. The rest stays as it was. */
-    public static void markResisting(Path file) {
+    /**
+     * Records in the file that its process survived a whole stop. The rest stays as it was. For the server's file only
+     * through {@link ServerPidFile.Held}.
+     */
+    static void markResisting(Path file) {
         Entry entry = entry(file);
         if (entry == null || entry.resisting()) {
             return;
@@ -110,8 +113,11 @@ public final class PidFile {
         write(file, process, null);
     }
 
-    /** Best effort: only leftover detection depends on it. {@code owner} is the core that started it, or null. */
-    public static void write(Path file, ProcessHandle process, Identity owner) {
+    /**
+     * Best effort: only leftover detection depends on it. {@code owner} is the core that started it, or null. For the
+     * server's file only through {@link ServerPidFile.Held}, which holds the file's lock.
+     */
+    static void write(Path file, ProcessHandle process, Identity owner) {
         try {
             writeWhole(file, new Entry(Identity.of(process), owner, false).text());
         } catch (IOException e) {
