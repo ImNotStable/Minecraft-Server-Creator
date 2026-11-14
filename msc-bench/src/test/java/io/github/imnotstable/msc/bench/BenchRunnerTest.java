@@ -6,6 +6,8 @@ import static org.assertj.core.api.Assertions.tuple;
 
 import io.github.imnotstable.msc.bench.run.BenchConfig;
 import io.github.imnotstable.msc.bench.run.BenchRunner;
+import io.github.imnotstable.msc.bench.run.Disk;
+import io.github.imnotstable.msc.bench.run.FullDisk;
 import io.github.imnotstable.msc.bench.run.ResultsFile;
 import io.github.imnotstable.msc.bench.run.RunRecord;
 import io.github.imnotstable.msc.bench.task.TaskDef;
@@ -20,14 +22,18 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 class BenchRunnerTest {
 
@@ -230,6 +236,11 @@ class BenchRunnerTest {
     }
 
     private BenchRunner fileTaskRunner(Path runDir) throws IOException {
+        return fileTaskRunner(runDir, new PrintStream(new ByteArrayOutputStream(), true, StandardCharsets.UTF_8),
+                Disk.REAL);
+    }
+
+    private BenchRunner fileTaskRunner(Path runDir, PrintStream log, Disk disk) throws IOException {
         Path task = Files.createDirectories(dir.resolve("tasks/write"));
         Files.writeString(task.resolve("task.json"),
                 "{\"category\":\"code\",\"title\":\"x\",\"checks\":[{\"type\":\"file\",\"path\":\"done.txt\"}]}");
@@ -239,8 +250,7 @@ class BenchRunnerTest {
                 {"agent":{"command":["%s","-cp","%s","io.github.imnotstable.msc.bench.FakeAgent","{prompt}"]},
                  "modes":{"baseline":{},"toolset":{}}}
                 """.formatted(JAVA, CLASSPATH));
-        return new BenchRunner(BenchConfig.load(configFile, dir), runDir, "",
-                new PrintStream(new ByteArrayOutputStream(), true, StandardCharsets.UTF_8));
+        return new BenchRunner(BenchConfig.load(configFile, dir), runDir, Map.of(TaskDef.PAPER, ""), log, disk);
     }
 
     /** Two tasks: a-emoji, whose command fails with an emoji at the 200-char cut of its output, then b-pass. */
@@ -301,6 +311,68 @@ class BenchRunnerTest {
         assertThat(log.toString(StandardCharsets.UTF_8))
                 .contains("[baseline] a-emoji #1: stopped, the attempt could not be written to results.jsonl");
         assertThat(runDir.resolve("attempts/b-pass")).doesNotExist();
+    }
+
+    /**
+     * #476, #477: a disk that fills while a run writes. Each row: whether results.jsonl and report.md fill, and after how
+     * many writes results.jsonl does; the run's exit code, and how many of its two attempts results.jsonl holds.
+     */
+    @ParameterizedTest
+    @CsvSource({
+            "append fails first, true, false, 0, 5, 0",
+            "append fails second, true, false, 1, 5, 1",
+            "both fail, true, true, 1, 5, 1",
+            "report fails, false, true, 0, 0, 2"})
+    void aFullDiskEndsTheRunWithItsVerdictAndWholeLines(String name, boolean appendFails, boolean reportFails,
+            int room, int exit, int recorded) throws IOException {
+        Path runDir = dir.resolve("run");
+        Set<String> full = new HashSet<>();
+        if (appendFails) {
+            full.add(ResultsFile.NAME);
+        }
+        if (reportFails) {
+            full.add(Main.REPORT);
+        }
+        FullDisk disk = new FullDisk(full, room, false);
+        ByteArrayOutputStream log = new ByteArrayOutputStream();
+        PrintStream out = new PrintStream(log, true, StandardCharsets.UTF_8);
+        BenchRunner runner = fileTaskRunner(runDir, out, disk);
+        List<RunRecord> records = runner.run(new RunSelection(TaskLoader.loadAll(dir.resolve("tasks")),
+                List.of("baseline", "toolset")), 1);
+
+        int code = Main.endRun(records, runner.notRecorded(), runner.stoppedBy(), runDir, out, disk);
+
+        List<String> lines = log.toString(StandardCharsets.UTF_8).lines()
+                .filter(l -> !l.startsWith("[")).toList();
+        assertThat(code).as(name).isEqualTo(exit);
+        assertThat(records).hasSize(recorded);
+        Path results = runDir.resolve(ResultsFile.NAME);
+        if (recorded == 0) {
+            assertThat(results).isEmptyFile();
+        } else {
+            assertThat(ResultsFile.read(results, w -> {
+                throw new AssertionError(w);
+            })).isEqualTo(records);
+        }
+        // The stop comes first, then the report or the one warning that says how to rebuild it.
+        if (exit == Main.NOT_RECORDED) {
+            assertThat(lines.getFirst()).startsWith("Stopped early: an attempt could not be written to results.jsonl "
+                    + "(No space left on device); results.jsonl holds the " + recorded + " attempts recorded.");
+        }
+        String last = lines.getLast();
+        if (reportFails) {
+            assertThat(last).startsWith("warning: " + runDir.resolve(Main.REPORT).toAbsolutePath()
+                    + " could not be written (No space left on device); once that is fixed, `report "
+                    + runDir.toAbsolutePath() + "` writes it");
+            assertThat(runDir.resolve(Main.REPORT)).doesNotExist();
+        } else {
+            assertThat(last).startsWith("Report: ");
+            assertThat(Files.readString(runDir.resolve(Main.REPORT))).contains("# ");
+        }
+        assertThat(lines).hasSize(exit == Main.NOT_RECORDED ? 2 : 1);
+        try (var files = Files.list(runDir)) {
+            assertThat(files.map(f -> f.getFileName().toString())).noneMatch(f -> f.endsWith(".part"));
+        }
     }
 
     @Test

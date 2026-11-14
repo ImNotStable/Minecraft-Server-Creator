@@ -7,6 +7,7 @@ import io.github.imnotstable.msc.bench.report.ReportWriter;
 import io.github.imnotstable.msc.bench.run.BenchConfig;
 import io.github.imnotstable.msc.bench.run.BenchRunner;
 import io.github.imnotstable.msc.bench.run.ChildProcesses;
+import io.github.imnotstable.msc.bench.run.Disk;
 import io.github.imnotstable.msc.bench.run.RunIsolation;
 import io.github.imnotstable.msc.bench.run.ResultsFile;
 import io.github.imnotstable.msc.bench.run.RunRecord;
@@ -14,15 +15,20 @@ import io.github.imnotstable.msc.bench.run.ServerManager;
 import io.github.imnotstable.msc.bench.run.Workspaces;
 import io.github.imnotstable.msc.bench.task.TaskDef;
 import io.github.imnotstable.msc.bench.task.TaskLoader;
+import io.github.imnotstable.msc.process.AtomicFile;
 import io.github.imnotstable.msc.process.rcon.RconClient;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.io.UncheckedIOException;
+import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.AccessDeniedException;
 import java.nio.file.FileSystemException;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -54,6 +60,8 @@ import java.util.Set;
 public final class Main {
 
     private static final Set<String> FLAGS = Set.of("--tasks", "--modes", "--repeat", "--tasks-dir", "--config", "--out");
+    /** The report's name inside a run folder. */
+    static final String REPORT = "report.md";
     private static final Set<String> PATH_FLAGS = Set.of("--tasks-dir", "--config", "--out");
 
     /** Every attempt or check passed, or the command had nothing to judge ({@code list}, {@code report}). */
@@ -238,22 +246,54 @@ public final class Main {
 
         BenchRunner runner = new BenchRunner(config, runDir, preambles, out);
         List<RunRecord> records = runner.run(selection, repeat);
-        Path reportFile = runDir.resolve("report.md");
-        Files.writeString(reportFile, ReportWriter.render(records));
-        out.println("Report: " + reportFile.toAbsolutePath());
-        if (runner.notRecorded() != null) {
+        return endRun(records, runner.notRecorded(), runner.stoppedBy(), runDir, out, Disk.REAL);
+    }
+
+    /**
+     * The end of a run, in an order that cannot lose its verdict (#476): the exit code is decided and a stop is
+     * explained first, then {@code report.md} is written whole or not at all. A report that cannot be written (a full
+     * disk) is one warning line naming {@code report <runDir>}, which rebuilds it from {@code results.jsonl} once the
+     * cause is fixed, and never changes the exit code: {@link #NOT_RECORDED} stays, and a run that recorded every
+     * attempt keeps {@link #OK}, {@link #FAILED} or {@link #USAGE_LIMIT}, since those speak for the attempts and every
+     * one of them is in {@code results.jsonl}. The earlier {@code report.md}, if any, is left as it was.
+     */
+    static int endRun(List<RunRecord> records, IOException notRecorded, String stoppedBy, Path runDir,
+            PrintStream out, Disk disk) {
+        int exit;
+        if (notRecorded != null) {
             out.println("Stopped early: an attempt could not be written to " + ResultsFile.NAME + " ("
-                    + message(runner.notRecorded()) + "); the report covers the " + records.size() + " attempts "
+                    + message(notRecorded) + "); " + ResultsFile.NAME + " holds the " + records.size() + " attempts "
                     + "recorded. Fix the cause, run the rest into a new folder and put the results.jsonl files "
                     + "together before `report`.");
-            return NOT_RECORDED;
-        }
-        if (runner.stoppedBy() != null) {
-            out.println("Stopped early on a usage limit (" + runner.stoppedBy() + "). After it resets, run the rest into "
+            exit = NOT_RECORDED;
+        } else if (stoppedBy != null) {
+            out.println("Stopped early on a usage limit (" + stoppedBy + "). After it resets, run the rest into "
                     + "a new folder and put the results.jsonl files together before `report`.");
-            return USAGE_LIMIT;
+            exit = USAGE_LIMIT;
+        } else {
+            exit = records.stream().allMatch(RunRecord::passed) ? OK : FAILED;
         }
-        return records.stream().allMatch(RunRecord::passed) ? OK : FAILED;
+        Path reportFile = runDir.resolve(REPORT);
+        try {
+            writeReport(reportFile, records, disk);
+            out.println("Report: " + reportFile.toAbsolutePath());
+        } catch (IOException e) {
+            out.println("warning: " + reportFile.toAbsolutePath() + " could not be written (" + message(e)
+                    + "); once that is fixed, `report " + runDir.toAbsolutePath() + "` writes it from "
+                    + ResultsFile.NAME);
+        }
+        return exit;
+    }
+
+    /** Writes the report of {@code records} whole or not at all: a failed write leaves the file as it was. */
+    private static void writeReport(Path reportFile, List<RunRecord> records, Disk disk) throws IOException {
+        byte[] text = ReportWriter.render(records).getBytes(StandardCharsets.UTF_8);
+        AtomicFile.write(reportFile, to -> {
+            try (FileChannel channel = FileChannel.open(to, StandardOpenOption.WRITE,
+                    StandardOpenOption.TRUNCATE_EXISTING)) {
+                disk.write(reportFile, channel, ByteBuffer.wrap(text));
+            }
+        });
     }
 
     /** The {@code --repeat} value: a whole number of attempts per task and mode, at least 1. */
@@ -397,8 +437,8 @@ public final class Main {
                     + "/<timestamp>");
         }
         List<RunRecord> records = ResultsFile.read(results, out::println);
-        Path reportFile = runDir.resolve("report.md");
-        Files.writeString(reportFile, ReportWriter.render(records));
+        Path reportFile = runDir.resolve(REPORT);
+        writeReport(reportFile, records, Disk.REAL);
         out.println("Report: " + reportFile.toAbsolutePath());
         return OK;
     }
