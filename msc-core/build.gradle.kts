@@ -214,8 +214,9 @@ repoInputs.on(repoChecks).set("eulaWriters", rootProject.fileTree(rootDir) {
     include("msc-*/src/main/**/*.java", "msc-*/src/main/**/*.kt", "**/*.gradle.kts", "build-logic/src/main/**")
     exclude("**/build/**", "**/.gradle/**", "**/node_modules/**", "graphify-out/**")
 })
-// ServerPropertiesAccessTest: every module's production sources, checked for code that reads or writes a server's
-// server.properties without msc-process's ServerPropertiesFile (ADR 0033). Template sources are scaffolded, not run.
+// ServerPropertiesAccessTest: every module's production sources, checked that no string literal outside msc-process's
+// ServerPropertiesFile names server.properties (a literal rule, ADR 0033, ADR 0036). Template sources are scaffolded,
+// not run.
 repoInputs.on(repoChecks).set("productionSources", rootProject.fileTree(rootDir) {
     include("msc-*/src/main/**/*.java", "msc-*/src/main/**/*.kt")
     exclude("**/build/**", "msc-templates/src/main/templates/**")
