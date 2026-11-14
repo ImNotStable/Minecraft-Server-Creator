@@ -6,6 +6,7 @@ import io.github.imnotstable.msc.core.tool.ToolException;
 import io.github.imnotstable.msc.process.ServerJava;
 import io.github.imnotstable.msc.protocol.Limits;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -14,6 +15,7 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Properties;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -221,11 +223,16 @@ public final class ServerManager implements AutoCloseable {
                 + MachineEula.acceptCommand(config.installDir()));
     }
 
-    /** True when {@code eulaFile} exists and has an {@code eula=true} line. */
+    /**
+     * True when {@code eulaFile} says {@code eula=true} the way the server reads it: as a properties file, so
+     * {@code eula = true} and {@code eula=TRUE} count too (#551).
+     */
     public static boolean eulaAccepted(Path eulaFile) {
-        try {
-            return Files.readAllLines(eulaFile).stream().anyMatch(l -> l.strip().equals("eula=true"));
-        } catch (IOException e) {
+        try (InputStream in = Files.newInputStream(eulaFile)) {
+            Properties p = new Properties();
+            p.load(in);
+            return Boolean.parseBoolean(p.getProperty("eula", "false"));
+        } catch (IOException | IllegalArgumentException e) {
             return false;
         }
     }
