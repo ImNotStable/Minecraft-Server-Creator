@@ -12,7 +12,10 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
+import java.util.function.Function;
 
 /** Owns the dev server process: start it with the agent's connection details, watch its log, stop it. */
 public final class ServerManager implements AutoCloseable {
@@ -38,10 +41,33 @@ public final class ServerManager implements AutoCloseable {
     private boolean closed;
     /** Clock time just before the running server's process was launched: files written later are not loaded. */
     private java.time.Instant launchedAt;
+    private volatile Leftovers leftovers = Leftovers.REAL;
 
     public ServerManager(CoreConfig config, AgentHub hub) {
         this.config = config;
         this.hub = hub;
+    }
+
+    /**
+     * How a server an earlier core left running is found, killed and waited for. Tests swap in a fake process and
+     * short waits (#408); {@link #REAL} reads {@code .msc/server.pid} and kills the process tree (ADR 0031).
+     *
+     * @param find    the live process the pid file names, its start time matching (never a reused pid)
+     * @param kill    kills the process and every process proven to descend from it
+     * @param rcon    how long it may take to exit after a {@code stop} over RCON
+     * @param destroy how long it may take to exit after it is asked to end
+     * @param tree    how long it may take to exit after it is killed with its children
+     * @param again   how long a start waits after killing again a leftover that already survived all of that
+     */
+    record Leftovers(Function<Path, Optional<ProcessHandle>> find, Consumer<ProcessHandle> kill, Duration rcon,
+                     Duration destroy, Duration tree, Duration again) {
+        static final Leftovers REAL = new Leftovers(PidFile::peek, ProcessRunner::destroyTree, Duration.ofSeconds(60),
+                Duration.ofSeconds(20), Duration.ofSeconds(10), Duration.ofSeconds(5));
+    }
+
+    /** For tests: how leftovers are found, killed and waited for. */
+    void leftovers(Leftovers leftovers) {
+        this.leftovers = leftovers;
     }
 
     public LogBuffer log() {
@@ -122,6 +148,13 @@ public final class ServerManager implements AutoCloseable {
             }
             if (running()) {
                 throw new ToolException("server is already running. Use server_stop or dev_cycle.");
+            }
+            // A server an earlier core left running holds the world and the port: a new one would die on them, and
+            // its pid would overwrite the only record of the one still running (#408).
+            ProcessHandle left = leftovers.find().apply(pidFile()).orElse(null);
+            if (left != null) {
+                throw new ToolException(LeftoverServer.stillRunning(left.pid(), PidFile.resisting(pidFile())
+                        ? LeftoverServer.RESISTED : LeftoverServer.NOT_STOPPED));
             }
             List<String> command = new ArrayList<>(command());
             Files.createDirectories(config.serverDir());
@@ -210,7 +243,7 @@ public final class ServerManager implements AutoCloseable {
         if (running()) {
             return -1;
         }
-        return PidFile.peek(pidFile()).map(ProcessHandle::pid).orElse(-1L);
+        return leftovers.find().apply(pidFile()).map(ProcessHandle::pid).orElse(-1L);
     }
 
     /** Type a line into the server console. */
@@ -230,32 +263,54 @@ public final class ServerManager implements AutoCloseable {
 
     /**
      * Stop a server that an earlier core started and left running (on Windows a core killed with its Claude Code
-     * session cannot stop its server, which then holds the world lock). It is asked to stop over RCON so it saves
-     * the world, and killed only if that fails. The pid file's start time must match, so a reused pid is never
-     * touched. The pid file is kept until the server is known to be gone, and nothing thrown while asking it to stop
-     * skips the kill (#394). Returns a one-line note, or null when there was none.
+     * session cannot stop its server, which then holds the world lock), before a start or a deploy. It is asked to
+     * stop over RCON so it saves the world, and killed only if that fails. The pid file's start time must match, so a
+     * reused pid is never touched. The pid file is kept until the server is known to be gone, and nothing thrown
+     * while asking it to stop skips the kill (#394). Returns a one-line note, or null when there was none.
+     *
+     * <p>A leftover that survives the kill is a refusal ({@link ToolException}): nothing may start while it holds the
+     * world and the port (#408). The pid file then records that it resisted, so the next start only kills it again
+     * and waits {@link Leftovers#again} instead of the whole chain; {@link #stopLeftover(boolean)} with {@code true}
+     * (server_stop) tries the whole chain again.
      */
-    public synchronized String stopLeftover() throws InterruptedException {
+    public String stopLeftover() throws InterruptedException {
+        return stopLeftover(false);
+    }
+
+    /** {@link #stopLeftover()}; {@code whole} tries every way again, also on a leftover that resisted before. */
+    public synchronized String stopLeftover(boolean whole) throws InterruptedException {
         if (running()) {
             return null;
         }
-        ProcessHandle h = PidFile.peek(pidFile()).orElse(null);
+        Leftovers l = leftovers;
+        ProcessHandle h = l.find().apply(pidFile()).orElse(null);
         if (h == null) {
             PidFile.take(pidFile()); // a stale file: its process is gone or the pid was reused
             return null;
         }
         long pid = h.pid();
-        // Its console belonged to the dead core, so ask over RCON first: "stop" saves the world. Then kill.
-        boolean saved = askToStop() && exits(h, Duration.ofSeconds(60));
-        if (!saved) {
-            h.destroy();
-            if (!exits(h, Duration.ofSeconds(20))) {
-                ProcessRunner.destroyTree(h);
-                exits(h, Duration.ofSeconds(10));
+        boolean saved = false;
+        String tried;
+        if (PidFile.resisting(pidFile()) && !whole) {
+            // It already survived every way below: kill it once more, briefly, rather than wait it all out again.
+            l.kill().accept(h);
+            exits(h, l.again());
+            tried = LeftoverServer.RESISTED;
+        } else {
+            // Its console belonged to the dead core, so ask over RCON first: "stop" saves the world. Then kill.
+            saved = askToStop() && exits(h, l.rcon());
+            if (!saved) {
+                h.destroy();
+                if (!exits(h, l.destroy())) {
+                    l.kill().accept(h);
+                    exits(h, l.tree());
+                }
             }
+            tried = LeftoverServer.TRIED;
         }
         if (h.isAlive()) {
-            return "could not stop a server left running by an earlier session (pid " + pid + "); stop it by hand";
+            PidFile.markResisting(pidFile());
+            throw new ToolException(LeftoverServer.stillRunning(pid, tried));
         }
         PidFile.take(pidFile());
         return "stopped a server left running by an earlier session (pid " + pid + ", "

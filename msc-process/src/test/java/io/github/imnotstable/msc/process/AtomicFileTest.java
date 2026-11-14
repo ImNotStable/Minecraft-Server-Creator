@@ -1,4 +1,4 @@
-package io.github.imnotstable.msc.core.files;
+package io.github.imnotstable.msc.process;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
