@@ -10,8 +10,7 @@ import io.github.imnotstable.msc.core.tool.Args;
 import io.github.imnotstable.msc.core.tool.Budget;
 import io.github.imnotstable.msc.core.tool.ToolException;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
@@ -20,7 +19,6 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Properties;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.function.BiPredicate;
@@ -191,9 +189,11 @@ final class DevCycle {
             checkMirror(build.libs(), libs);
         }
         String shown = platform.addonDir() == null ? platform.serverJar() : platform.addonDir() + "/" + target.getFileName();
-        Path earlier = platform.addonDir() == null ? null : earlierDeploy(platform, project, target.getParent());
+        DeployRecords records = DeployRecords.read(deployedFile());
+        String unreadable = records.note(deployedFile());
+        Path earlier = platform.addonDir() == null ? null : earlierDeploy(platform, project, target.getParent(), records);
         boolean wasRunning = server.running();
-        StringBuilder out = new StringBuilder();
+        StringBuilder out = new StringBuilder(unreadable == null ? "" : unreadable + "\n");
         if (restart && wasRunning && loaded(build.jar(), target)
                 && (build.libs() == null || mirror(build.libs(), libs, true) == 0)) {
             return out.append("build ok in ").append(LogText.seconds(build.millis())).append(", jar unchanged: ")
@@ -382,27 +382,13 @@ final class DevCycle {
         return config.dataDir().resolve("deployed.properties");
     }
 
-    private Properties deployed() throws IOException {
-        Properties p = new Properties();
-        if (Files.exists(deployedFile())) {
-            try (InputStream in = Files.newInputStream(deployedFile())) {
-                p.load(in);
-            } catch (IllegalArgumentException malformed) {
-                // A malformed unicode escape: unreadable, so no record. The deploy writes a fresh one, which otherwise
-                // every dev_cycle would fail to read and to write (#405).
-                p.clear();
-            }
-        }
-        return p;
-    }
-
     /**
      * The jar an earlier dev_cycle deployed for this project, to delete after the deploy so the server never loads
      * two copies (Paper: ambiguous plugin name; Fabric: duplicate mod id). Without a record, the folder-named jar
      * that earlier cores deployed is the earlier one. Null when there is none to remove.
      */
-    private Path earlierDeploy(Platform platform, Path project, Path addons) throws IOException {
-        String recorded = deployed().getProperty(project.toAbsolutePath().normalize().toString());
+    private Path earlierDeploy(Platform platform, Path project, Path addons, DeployRecords records) {
+        String recorded = records.get(project.toAbsolutePath().normalize().toString());
         Path earlier;
         if (recorded != null) {
             earlier = config.serverDir().resolve(recorded).normalize();
@@ -490,15 +476,14 @@ final class DevCycle {
         return earlier + " is the new jar under another name on this volume, so it was kept";
     }
 
+    /**
+     * Records {@code target} for this project. Read again, not from the start of the call: only this project's line
+     * changes, every other line of the file stays as it is now, an unreadable one included (#418).
+     */
     private void rememberDeploy(Path project, Path target) throws IOException {
-        Properties p = deployed();
-        p.setProperty(project.toAbsolutePath().normalize().toString(),
+        String text = DeployRecords.read(deployedFile()).with(project.toAbsolutePath().normalize().toString(),
                 config.serverDir().relativize(target).toString().replace('\\', '/'));
-        OutputFile.write(deployedFile(), to -> {
-            try (OutputStream out = Files.newOutputStream(to)) {
-                p.store(out, "jar dev_cycle last deployed per project");
-            }
-        });
+        OutputFile.write(deployedFile(), to -> Files.writeString(to, text, StandardCharsets.ISO_8859_1));
     }
 
     /**
