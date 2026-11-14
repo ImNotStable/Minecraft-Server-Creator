@@ -7,6 +7,7 @@ import io.github.imnotstable.msc.core.fixture.FakeBuildMain;
 import io.github.imnotstable.msc.core.fixture.FakeServerMain;
 import io.github.imnotstable.msc.core.texture.PackProperties;
 import io.github.imnotstable.msc.core.tool.ToolRegistry;
+import io.github.imnotstable.msc.core.tools.LifecycleToolsAccess;
 import io.github.imnotstable.msc.core.tools.StepsAccess;
 import java.io.IOException;
 import java.net.InetSocketAddress;
@@ -34,7 +35,8 @@ import org.junit.jupiter.params.provider.MethodSource;
  * Every state-changing tool runs its side effects as named steps (#373, after #362 and #367). For each tool, a
  * successful call lists its steps; then a failure is injected at each step in turn, and the test checks that the call
  * says what was and was not done (never a bare internal error), that the state left behind is consistent, and that the
- * same call then succeeds.
+ * same call then succeeds. A scenario may also bring a state that makes a step fail by itself at every call (#405), not
+ * once: there too the call must end consistent and the same call then succeed.
  */
 class SideEffectStepsTest {
     private static HttpServer downloads;
@@ -116,6 +118,12 @@ class SideEffectStepsTest {
                         "remove the earlier deploy", "record the deploy", "remember the workspace platform",
                         "stop the server an earlier session left running", "take over the pack an earlier session served",
                         "update the installed agent jar", "start the server")),
+                Arguments.of("dev_cycle on a volume that hides one file under two names", new DevCycleAliasScenario(),
+                        List.of("stop a server an earlier session left holding the jar", "stop the server",
+                        "deploy the jar", "remove the earlier deploy", "record the deploy",
+                        "remember the workspace platform", "stop the server an earlier session left running",
+                        "take over the pack an earlier session served", "update the installed agent jar",
+                        "start the server")),
                 Arguments.of("server_detach", new DetachScenario(), List.of("detach the server",
                         "hand the pack to a standalone host", "offer the pack in server.properties")));
     }
@@ -514,7 +522,7 @@ class SideEffectStepsTest {
      * dev_cycle on a running server, for a project whose jar was renamed (the earlier deploy goes) in a workspace with
      * no platform yet (the deploy remembers it). The plugin folder never holds a half-written jar.
      */
-    static final class DevCycleScenario implements Scenario {
+    static class DevCycleScenario implements Scenario {
         @Override
         public CoreHarness open(Path ws) throws Exception {
             Path project = Files.createDirectories(ws.resolve("demo/src/main/resources"));
@@ -561,6 +569,52 @@ class SideEffectStepsTest {
         @Override
         public void close(CoreHarness h) {
             h.call("server_stop");
+        }
+    }
+
+    /**
+     * #405: dev_cycle where the record spells the deployed jar another way, on a volume that reports the two names as
+     * two files while removing one removes both (a linked folder, with the sameness check made to answer
+     * "different"). Every call ends with the new jar in place and, once it gets that far, recorded under its own name.
+     */
+    static final class DevCycleAliasScenario extends DevCycleScenario {
+        @Override
+        public CoreHarness open(Path ws) throws Exception {
+            CoreHarness h = super.open(ws);
+            Path plugins = ws.resolve("run/plugins");
+            Files.delete(plugins.resolve("demo.jar"));
+            Files.writeString(plugins.resolve("arena.jar"), "1.0");
+            Files.createSymbolicLink(plugins.resolve("same"), Path.of("."));
+            java.util.Properties record = new java.util.Properties();
+            record.setProperty(ws.resolve("demo").toAbsolutePath().normalize().toString(), "plugins/same/arena.jar");
+            Files.createDirectories(ws.resolve(".msc"));
+            try (java.io.OutputStream out = Files.newOutputStream(ws.resolve(".msc/deployed.properties"))) {
+                record.store(out, null);
+            }
+            LifecycleToolsAccess.sameFile((a, b) -> false);
+            return h;
+        }
+
+        @Override
+        public void consistent(CoreHarness h, Path ws, String step) throws Exception {
+            Path plugins = ws.resolve("run/plugins");
+            assertThat(plugins.resolve("arena.jar")).as("the new jar or the earlier one, never none")
+                    .content().isIn("1.0", "2.0");
+            try (Stream<Path> list = Files.list(plugins)) {
+                assertThat(list.map(p -> p.getFileName().toString()))
+                        .containsExactlyInAnyOrder("arena.jar", "same");
+            }
+            if (step == null) {
+                assertThat(plugins.resolve("arena.jar")).hasContent("2.0");
+                assertThat(ws.resolve(".msc/deployed.properties")).content().contains("=plugins/arena.jar");
+                assertThat(h.core.server().running()).isTrue();
+            }
+        }
+
+        @Override
+        public void close(CoreHarness h) {
+            LifecycleToolsAccess.sameFile(null);
+            super.close(h);
         }
     }
 
