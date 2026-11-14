@@ -201,9 +201,18 @@ public record GameConfig(String world, GameMode gameMode, Difficulty difficulty,
             return t;
         }
 
-        /** As {@link #get(Object, String)}, but a missing value takes {@code def}. */
+        /**
+         * As {@link #get(Object, String)}, but a missing value takes {@code def}. A default this reader refuses fails
+         * too, so a rule narrowed below a default in code shows up on the first config that leaves the key out.
+         */
         T get(@Nullable Object v, String key, T def) {
-            return v == null ? def : get(v, key);
+            if (v != null) {
+                return get(v, key);
+            }
+            if (read.apply(def) == null) {
+                throw new IllegalArgumentException(key + ": needs " + what + ", but its default in code is " + got(def));
+            }
+            return def;
         }
 
         /**

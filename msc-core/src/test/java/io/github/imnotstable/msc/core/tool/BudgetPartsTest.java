@@ -70,12 +70,12 @@ class BudgetPartsTest {
     }
 
     /**
-     * #487: server_command's shape from the issue, 64 commands of 72 characters each answered with 32. The command
-     * lines all fit; the outputs cannot all fit, so some are shown whole and the rest are left out and counted, instead
-     * of each being replaced by a cut line longer than itself and the safety cut dropping command lines.
+     * #487, #499: server_command's shape, 64 commands of 72 characters each answered with 32. Every command line is
+     * kept, the outputs are shown whole smallest first as many as fit beside the short summary line (34: 34 x 32 plus
+     * the 23-character line fit the 1,137 left; 35 do not), and the rest are counted.
      */
     @Test
-    void manySmallOutputsAreShownWholeOrLeftOutAndEveryCommandLineIsKept() {
+    void manySmallOutputsAreShownWholeOrCountedAndEveryCommandLineIsKept() {
         String output = "Successfully filled 726 block(s)";
         Budget.Parts parts = new Budget.Parts();
         List<String> commands = new ArrayList<>();
@@ -88,11 +88,27 @@ class BudgetPartsTest {
         String text = parts.text(Budget.DEFAULT_CHARS, null, "Run fewer commands per call.");
         assertThat(text).hasSizeLessThanOrEqualTo(Budget.DEFAULT_CHARS).doesNotContain("Output cut.]");
         assertThat(text.lines().filter(l -> l.startsWith("> "))).containsExactlyElementsOf(commands);
-        long shown = text.lines().filter(output::equals).count();
-        long cut = text.lines().filter(Budget.LEFT_OUT::equals).count();
-        assertThat(shown + cut).isEqualTo(64);
-        assertThat(shown).isGreaterThanOrEqualTo(25);
-        assertThat(text).endsWith("\n[" + cut + " of 64 outputs cut to fit. Run fewer commands per call.]");
+        assertThat(text.lines().filter(output::equals)).hasSize(34);
+        assertThat(text).endsWith("\n[30 of 64 outputs cut]");
+    }
+
+    /**
+     * #499: the issue's shape, 64 commands of 84 characters answered with 29 in 369 characters. Without the plan that
+     * dropped outputs to pay for markers it then could not show, 11 outputs fit whole (11 x 29 + 23 = 342),
+     * not 2. The summary line is short: the hint would cost more than the twelfth output.
+     */
+    @Test
+    void outputsDroppedForMarkersThatDoNotFitAreShown() {
+        Budget.Parts parts = new Budget.Parts();
+        for (int i = 0; i < 64; i++) {
+            String command = ("setblock %2d 64 0 minecraft:oak_sign[rotation=4]{front_text:{messages:['a','b']}} " + "x".repeat(20))
+                    .formatted(i).substring(0, 84);
+            String output = "Changed the block at %2d,64,0.".formatted(i);
+            parts.add((i == 0 ? "" : "\n") + "> " + command + "\n").cut(n -> Budget.truncate(output, n, "Output cut."));
+        }
+        String text = parts.text(Budget.DEFAULT_CHARS, null, "Run fewer commands per call.");
+        assertThat(text.lines().filter(l -> l.startsWith("Changed the block at "))).hasSize(11);
+        assertThat(text).hasSizeLessThanOrEqualTo(Budget.DEFAULT_CHARS).endsWith("\n[53 of 64 outputs cut]");
     }
 
     /** Two large parts in little room: one gets a useful share rather than both a share of little but cut lines. */
@@ -102,7 +118,7 @@ class BudgetPartsTest {
         String text = new Budget.Parts().add("head\n").cut(n -> Budget.truncate(big, n, "x")).add("\n")
                 .cut(n -> Budget.truncate(big, n, "y")).text(160, "last", "Narrow it.");
         assertThat(text).hasSizeLessThanOrEqualTo(160).startsWith("head\n").contains("big line of output")
-                .contains("\n[cut]\n[1 of 2 outputs cut to fit. Narrow it.]\nlast").endsWith("\nlast");
+                .contains("\n[cut]\n[2 of 2 outputs cut to fit. Narrow it.]\nlast").endsWith("\nlast");
     }
 
     /**

@@ -9,6 +9,7 @@ import io.github.imnotstable.msc.core.server.MachineEula;
 import io.github.imnotstable.msc.core.server.MachineEulaAccess;
 import io.github.imnotstable.msc.core.server.PidFile;
 import io.github.imnotstable.msc.core.server.PidFileAccess;
+import io.github.imnotstable.msc.core.server.ServerLockAccess;
 import io.github.imnotstable.msc.core.tool.ToolRegistry;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -205,6 +206,8 @@ class RefusalsChangeNothingTest {
                 .withBuildCommand(List.of(Path.of(System.getProperty("java.home"), "bin", "java").toString(),
                         "-cp", System.getProperty("java.class.path"), FakeBuildMain.class.getName()));
         try (CoreHarness h = new CoreHarness(ws, config)) {
+            // A row whose lock another core holds refuses whatever the wait: not the whole production one (#497).
+            ServerLockAccess.refuseQuickly(h.core.server());
             Map<String, String> before = state(ws, home);
             Object[] call = refusal.call();
             ToolRegistry.Result r = h.call((String) call[0], Arrays.copyOfRange(call, 1, call.length));
