@@ -55,7 +55,7 @@ public final class LifecycleTools {
         registry.add("server_stop", "Stop the dev server.", Schema.of(), run::stop);
         registry.add("server_detach",
                 "Keep the dev server and the pack host running after this session ends, so the user can play. "
-                        + "The next session's server_start, dev_cycle or server_stop stops them.",
+                        + "Once this session ends, the next session's server_start, dev_cycle or server_stop stops them.",
                 Schema.of(), run::detach);
         registry.add("dev_cycle",
                 "Build, deploy and restart in one call: the edit-test loop. Tests run during the restart; an unchanged "

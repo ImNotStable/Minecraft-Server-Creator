@@ -26,8 +26,110 @@ Fabric server mod for Minecraft {{mcVersion}}, Java {{javaVersion}}, Gradle Kotl
 - Text is `Component.literal(...)` / `Component.translatable(...)` with `.withStyle(ChatFormatting.X)`. Never use `§` codes.
 - Never block the server thread (no I/O, sleeps or network in callbacks or commands). Do slow work on another thread, then hop back with `server.execute(...)` before touching the world.
 - World, entity and inventory access only on the server thread.
-- Config files go in `FabricLoader.getInstance().getConfigDir()`.
+- Config files go in `FabricLoader.getInstance().getConfigDir()`. Fabric has no config API; the recipe below reads a properties file.
 - Prefer small final classes and records. Pass dependencies through constructors; avoid static state.
+
+## Recipes
+
+Built and tested against this project's pinned versions; copy them as they are.
+
+A command with an argument, `src/main/java/{{packagePath}}/CountdownCommand.java`:
+
+```java
+package {{packageName}};
+
+import com.mojang.brigadier.CommandDispatcher;
+import com.mojang.brigadier.arguments.IntegerArgumentType;
+import net.minecraft.commands.CommandSourceStack;
+import net.minecraft.commands.Commands;
+import net.minecraft.network.chat.Component;
+
+/** {@code /countdown <seconds>}: a command with a number argument, 1 to 600. */
+public final class CountdownCommand {
+    private CountdownCommand() {
+    }
+
+    public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
+        dispatcher.register(Commands.literal("countdown")
+                .then(Commands.argument("seconds", IntegerArgumentType.integer(1, 600)).executes(context -> {
+                    int seconds = IntegerArgumentType.getInteger(context, "seconds");
+                    context.getSource().sendSuccess(() -> Component.literal("Starting in " + seconds + "s"), false);
+                    return seconds;
+                })));
+    }
+}
+```
+
+A setting, `src/main/java/{{packagePath}}/Settings.java`:
+
+```java
+package {{packageName}};
+
+import java.io.IOException;
+import java.io.Reader;
+import java.io.UncheckedIOException;
+import java.io.Writer;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Properties;
+
+/** The mod's settings, in config/{{projectId}}.properties, written with the defaults on first start. */
+public record Settings(boolean protectBlocks) {
+    static Settings load(Path file) {
+        Properties p = new Properties();
+        p.setProperty("protect-blocks", "false");
+        try {
+            if (Files.exists(file)) {
+                try (Reader in = Files.newBufferedReader(file)) {
+                    p.load(in);
+                }
+            } else {
+                try (Writer out = Files.newBufferedWriter(file)) {
+                    p.store(out, "{{name}} settings");
+                }
+            }
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+        return new Settings(Boolean.parseBoolean(p.getProperty("protect-blocks")));
+    }
+}
+```
+
+The entry point with both wired in, and a block-break listener that reads the setting:
+
+```java
+package {{packageName}};
+
+import net.fabricmc.api.DedicatedServerModInitializer;
+import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
+import net.fabricmc.fabric.api.event.player.PlayerBlockBreakEvents;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
+import net.fabricmc.loader.api.FabricLoader;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+/** Mod entry point: reads settings, registers commands and event handlers, and holds no game logic itself. */
+public final class {{mainClass}} implements DedicatedServerModInitializer {
+    public static final Logger LOG = LoggerFactory.getLogger("{{projectId}}");
+
+    @Override
+    public void onInitializeServer() {
+        Greeter greeter = new Greeter(Greeter.DEFAULT_JOIN, Greeter.DEFAULT_HELLO);
+        Settings settings = Settings.load(FabricLoader.getInstance().getConfigDir().resolve("{{projectId}}.properties"));
+
+        CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
+            HelloCommand.register(dispatcher, greeter);
+            CountdownCommand.register(dispatcher);
+        });
+        ServerPlayConnectionEvents.JOIN.register((handler, sender, server) ->
+                handler.getPlayer().sendSystemMessage(greeter.join(handler.getPlayer().getPlainTextName())));
+        // Returning false stops the break.
+        PlayerBlockBreakEvents.BEFORE.register((level, player, pos, state, blockEntity) -> !settings.protectBlocks());
+        LOG.info("{{name}} loaded");
+    }
+}
+```
 
 ## Tests
 

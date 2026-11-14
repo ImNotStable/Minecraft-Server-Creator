@@ -80,6 +80,7 @@ final class ServerRun {
         if (server.running()) {
             throw new ToolException("server is already running. Use server_stop or dev_cycle.");
         }
+        server.checkNoOtherSession();
         Platform platform = server.platform();
         boolean accepting = args.bool("acceptEula", false) && platform.needsEula();
         checkStart(platform, accepting);
@@ -125,6 +126,8 @@ final class ServerRun {
     }
 
     String stop(Args args) throws InterruptedException {
+        // Checked first: another live session's server and its pack host are that session's (ADR 0037).
+        server.checkNoOtherSession();
         String host = pack.stopLeftoverHost();
         if (server.stop(Duration.ofSeconds(30))) {
             // Detached earlier in this session: its pack host goes with it, as server_detach promises.

@@ -32,16 +32,17 @@ The base every game needs, so you only write the game itself. All of it is set i
 - `gradle/libs.versions.toml`: every dependency version. Add versions there, never inline in `build.gradle.kts`.
 - `run/`: dev server. `server.properties` and `eula.txt` are committed; the world, logs and jars are not.
 
-## Rules every game template shares
+## Rules for names and values
 
-paper-game, fabric-game and minestom-game check names and values the same way, and `SharedRulesTest` holds the same table of cases in each (the same inputs, the same outcome). Change a rule in all three or in none.
+The game checks names and values on start. `SharedRulesTest` lists each rule as a table of inputs and whether the game takes them.
 
 - Stage names: one word of visible characters, so `/game stage <name>` can select it and chat can type it. No whitespace (not even a no-break space), no control or invisible formatting character, no `§`. A whole number is allowed: `/game stage 2` picks the stage named `2` first, then the second stage. Two names may not differ only in case (`arena` and `ARENA`), because `/game stage` ignores case (`Stage.sameName`).
-- `/game` arguments are split on runs of whitespace, so `game  stage  arena  Steve` works; tab completion (paper-game, fabric-game) completes the word being typed. Player names are matched exactly, ignoring case. Subcommands ignore case.
+- `/game` arguments are split on runs of whitespace, so `game  stage  arena  Steve` works, and tab completion completes the word being typed. Player names are matched exactly, ignoring case. Subcommands ignore case.
 - Values: `time` 0 to 23999; a kit amount 1 to 2304 (a full inventory); spawns finite, x and z within 30000000, y -2032 to 2031, yaw within 360, pitch within 90; goal corners whole numbers inside the same limits, in any order.
 - A bad value stops the game on start with one message naming it and the rule it broke; there is no fallback.
+- To change a rule for this game, change its check and its rows in `SharedRulesTest` together; the messages the test expects come from the same constants. The checks: `GameConfig.MAX_TIME`, `Kit.MAX_AMOUNT`, `Stage.isName`, the limits in `Box`. For example, a game that only allows daytime: set `MAX_TIME = 12000` in `GameConfig`, and in `SharedRulesTest.TIMES` replace `ok(23999L), no(24000L)` with `ok(12000L), no(12001L)`.
 
-Where this template differs, and why: the game is set in Java (`GameConfig.game()`), so the compiler checks names and types, and there are no config keys; a message names the rule and the value (`stage name must be one word of visible characters (no spaces, no §), got 'boss room'`). paper-game reads `config.yml` and names the key path instead.
+The game is set in Java (`GameConfig.game()`), so the compiler checks names and types, and there are no config keys; a message names the rule and the value (`stage name must be one word of visible characters (no spaces, no §), got 'boss room'`).
 
 ## Building the game
 

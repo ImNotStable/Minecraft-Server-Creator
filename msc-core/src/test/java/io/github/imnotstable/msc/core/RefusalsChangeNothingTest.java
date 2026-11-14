@@ -3,8 +3,10 @@ package io.github.imnotstable.msc.core;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.imnotstable.msc.core.fixture.FakeBuildMain;
+import io.github.imnotstable.msc.core.fixture.SleepMain;
 import io.github.imnotstable.msc.core.server.MachineEula;
 import io.github.imnotstable.msc.core.server.MachineEulaAccess;
+import io.github.imnotstable.msc.core.server.PidFile;
 import io.github.imnotstable.msc.core.tool.ToolRegistry;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -14,6 +16,7 @@ import java.util.Map;
 import java.util.TreeMap;
 import java.util.function.UnaryOperator;
 import java.util.stream.Stream;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
@@ -62,8 +65,51 @@ class RefusalsChangeNothingTest {
         };
     }
 
+    /**
+     * Another session's core, still running, standing as its own server too (ADR 0037): a live server whose live
+     * owner is not this JVM. One process for every row, so the refusals of both runs name the same pids.
+     */
+    private static Process otherSession;
+
+    private static synchronized Process otherSession() throws Exception {
+        if (otherSession == null) {
+            otherSession = new ProcessBuilder(Path.of(System.getProperty("java.home"), "bin", "java").toString(), "-cp",
+                    System.getProperty("java.class.path"), SleepMain.class.getName(), "3600").start();
+        }
+        return otherSession;
+    }
+
+    @AfterAll
+    static void endOtherSession() {
+        if (otherSession != null) {
+            otherSession.destroyForcibly();
+        }
+    }
+
+    /** {@code prepare}, then a pid file naming {@link #otherSession()}'s server and core. */
+    private static Prepare underOtherSession(Prepare prepare) {
+        return ws -> {
+            prepare.into(ws);
+            Process other = otherSession();
+            PidFile.write(Files.createDirectories(ws.resolve(".msc")).resolve("server.pid"), other.toHandle(),
+                    PidFile.Identity.of(other.toHandle()));
+        };
+    }
+
+    private static final String OTHER_SESSION = "belongs to another session that is still running";
+
     static Stream<Arguments> refusals() {
         return Stream.of(
+                refusal("server_start under another live session", underOtherSession(PAPER_JAR), OTHER_SESSION,
+                        "server_start", "acceptEula", true),
+                refusal("server_stop under another live session", underOtherSession(NOTHING), OTHER_SESSION,
+                        "server_stop"),
+                refusal("server_setup under another live session", underOtherSession(NOTHING), OTHER_SESSION,
+                        "server_setup", "platform", "paper"),
+                refusal("dev_cycle under another live session", underOtherSession(project("arena")), OTHER_SESSION,
+                        "dev_cycle", "project", "demo"),
+                refusal("dev_cycle restart=false under another live session", underOtherSession(project("arena")),
+                        OTHER_SESSION, "dev_cycle", "project", "demo", "restart", false),
                 refusal("server_start without a server", NOTHING, "no paper server in ", "server_start"),
                 refusal("server_start acceptEula=true without a server", NOTHING, "no paper server in ",
                         "server_start", "acceptEula", true),
@@ -112,6 +158,9 @@ class RefusalsChangeNothingTest {
         String leftovers = refuse(refusal, "leftovers", true);
         assertThat(clean).contains(refusal.says()).doesNotContain("\n").doesNotContain("internal");
         assertThat(leftovers).isEqualTo(clean);
+        if (refusal.says().equals(OTHER_SESSION)) {
+            assertThat(otherSession().isAlive()).as("the other session's server").isTrue();
+        }
     }
 
     /** The refusal in a fresh workspace, its own path replaced by {@code <ws>}, after checking it changed nothing. */

@@ -22,14 +22,14 @@ public record Stage(String name, Pos spawn, Box goal) {
         }
     }
 
-    /** What a stage name must be, as the error for a bad one says it. Every game template has this rule. */
+    /** What a stage name must be, as the error for a bad one says it. */
     static final String NAME_RULE = "one word of visible characters (no spaces, no §)";
 
     /**
      * Whether {@code name} can be a stage name: one word that {@code /game stage <name>} can select and chat can type.
      * Commands split on spaces, so no whitespace (nor a no-break space); no control or invisible formatting character,
-     * which chat cannot type and which make two names look the same; no {@code §}, which chat refuses. Every game
-     * template has this rule and tests it with the same table of names.
+     * which chat cannot type and which make two names look the same; no {@code §}, which chat refuses.
+     * SharedRulesTest.STAGE_NAMES lists names it takes and refuses.
      */
     static boolean isName(String name) {
         return !name.isEmpty() && name.codePoints().allMatch(c -> !Character.isWhitespace(c) && !Character.isSpaceChar(c)

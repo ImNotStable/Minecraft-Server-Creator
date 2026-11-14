@@ -50,6 +50,8 @@ final class ServerSetup {
         if (server.running()) {
             throw new ToolException("stop the server before server_setup");
         }
+        // The setup would replace the files of another live session's server (ADR 0037).
+        server.checkNoOtherSession();
         String version = args.str("version", config.minecraft()).strip();
         if (!VERSION.matcher(version).matches()) {
             throw new ToolException("version must look like " + config.minecraft()

@@ -21,7 +21,7 @@ import net.minecraft.world.level.GameType;
  */
 public record GameConfig(GameType gameMode, Difficulty difficulty, long time, boolean naturalSpawns,
                          boolean keepInventory, Kit kit, List<Stage> stages) {
-    /** The last tick of a day: {@code time} is 0 to this, as in every game template. */
+    /** The last tick of a day: {@code time} is 0 to this. */
     public static final long MAX_TIME = 23999;
 
     public GameConfig {

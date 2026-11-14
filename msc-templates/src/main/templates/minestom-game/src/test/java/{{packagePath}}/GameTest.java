@@ -105,7 +105,7 @@ class GameTest {
         assertThat(missing).containsExactly(new GameCommand.Reply(false, "name a player: next <player>"));
     }
 
-    /** Words are split on runs of spaces, as in every game template: empty words do not count. */
+    /** Words are split on runs of spaces: empty words do not count. */
     @Test
     void extraSpacesBetweenWordsAreIgnored(Env env) {
         Game game = game(env);
