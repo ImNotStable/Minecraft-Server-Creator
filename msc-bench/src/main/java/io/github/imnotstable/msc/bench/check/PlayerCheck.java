@@ -209,7 +209,7 @@ record PlayerCheck(
     }
 
     private static String read(Path log) throws IOException {
-        return Files.isRegularFile(log) ? new String(Files.readAllBytes(log), StandardCharsets.UTF_8) : "";
+        return Files.isRegularFile(log) ? Text.read(log) : "";
     }
 
     private static String tail(String text) {

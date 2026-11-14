@@ -3,6 +3,7 @@ package io.github.imnotstable.msc.bench.run;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import io.github.imnotstable.msc.bench.RunSelection;
+import io.github.imnotstable.msc.bench.Text;
 import io.github.imnotstable.msc.bench.check.Check;
 import io.github.imnotstable.msc.bench.check.CheckContext;
 import io.github.imnotstable.msc.bench.check.CheckResult;
@@ -12,7 +13,6 @@ import io.github.imnotstable.msc.process.rcon.RconClient;
 import io.github.imnotstable.msc.templates.Templates;
 import java.io.IOException;
 import java.io.PrintStream;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.SecureRandom;
@@ -284,8 +284,8 @@ public final class BenchRunner {
                 throw new IOException("interrupted", e);
             }
             wallMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
-            // Lenient UTF-8: one stray byte in the agent's output must not cost the whole attempt.
-            String stdout = new String(Files.readAllBytes(attemptDir.resolve("agent-stdout.json")), StandardCharsets.UTF_8);
+            // Lenient UTF-8 (Text.read): one stray byte in the agent's output must not cost the whole attempt.
+            String stdout = Text.read(attemptDir.resolve("agent-stdout.json"));
             String limit = ClaudeResultParser.usageLimit(stdout);
             if (limit != null) {
                 throw new UsageLimitReached(limit);
@@ -338,7 +338,7 @@ public final class BenchRunner {
             serverTask = false;
         }
 
-        ToolStats tools = ToolLogReader.read(attemptDir.resolve("tool-calls.jsonl"));
+        ToolStats tools = ToolLogReader.read(attemptDir.resolve("tool-calls.jsonl"), log::println);
         boolean passed = error == null && !timedOut && !results.isEmpty()
                 && results.size() == task.checks().size()
                 && results.stream().allMatch(CheckResult::passed);

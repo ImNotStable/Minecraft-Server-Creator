@@ -1,5 +1,6 @@
 package io.github.imnotstable.msc.bench.run;
 
+import io.github.imnotstable.msc.bench.Text;
 import io.github.imnotstable.msc.process.rcon.RconClient;
 import io.github.imnotstable.msc.process.rcon.RconRefusedException;
 import java.io.IOException;
@@ -107,7 +108,7 @@ public final class ServerManager implements AutoCloseable {
             throw new IOException("no server/paper.jar in the workspace");
         }
         Path eula = serverDir.resolve("eula.txt");
-        if (!Files.isRegularFile(eula) || !Files.readString(eula).contains("eula=true")) {
+        if (!Files.isRegularFile(eula) || !Text.read(eula).contains("eula=true")) {
             throw new IOException("Minecraft EULA not accepted on this machine ("
                     + MachineEula.location(Path.of(System.getProperty("user.home"))) + ")");
         }
