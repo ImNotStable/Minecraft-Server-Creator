@@ -86,11 +86,11 @@ class ResultParsingTest {
                 {"v":2,"tool":"future","resultTokens":999}
                 """);
 
-        ToolStats stats = ToolLogReader.read(log);
+        ToolStats stats = ToolLogReader.read(log, w -> { });
         assertThat(stats).isEqualTo(new ToolStats(3, 1, 111, 1500, 441, 3012, Map.of(
                 "server.start", new ToolStats.PerTool(1, 1, 11, 3000),
                 "world.slice", new ToolStats.PerTool(1, 0, 100, 12),
                 "world_render", new ToolStats.PerTool(1, 0, 1500, 0))));
-        assertThat(ToolLogReader.read(dir.resolve("missing.jsonl"))).isEqualTo(ToolStats.NONE);
+        assertThat(ToolLogReader.read(dir.resolve("missing.jsonl"), w -> { })).isEqualTo(ToolStats.NONE);
     }
 }

@@ -5,7 +5,6 @@ import io.github.imnotstable.msc.bench.run.ChildProcesses;
 import io.github.imnotstable.msc.bench.run.Workspaces;
 import io.github.imnotstable.msc.process.ServerJava;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -46,9 +45,9 @@ record CommandCheck(String name, List<String> run, int timeoutSeconds, int expec
                 ChildProcesses.killTree(process);
                 return CheckResult.fail(name, "timed out after " + timeoutSeconds + "s");
             }
-            // Lenient UTF-8: tools write in the console charset (Cp1252 on Windows), and a stray byte must not fail
-            // a command that passed.
-            String output = new String(Files.readAllBytes(log), StandardCharsets.UTF_8);
+            // Lenient UTF-8 (Text.read): tools write in the console charset (Cp1252 on Windows), and a stray byte must
+            // not fail a command that passed.
+            String output = Text.read(log);
             if (process.exitValue() != expectExit) {
                 return CheckResult.fail(name, "exit " + process.exitValue() + ": " + tail(output));
             }

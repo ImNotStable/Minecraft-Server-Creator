@@ -61,7 +61,7 @@ repoInputs.set("eulaFixtures", root.dir("msc-core/src/test/resources/eula-fixtur
 // Docs that name the default run folder, checked against RunIsolation so they cannot drift.
 repoInputs.set("runFolderDocs", file("README.md"), root.file("docs/wiki/Benchmark.md"),
     root.file("msc-docs/docs/adr/0004-bench.md"))
-// The bundled tasks TaskLoaderTest loads.
+// The bundled tasks TaskLoaderTest loads (and OutsideTextTest, for the shipped world-find-block check).
 repoInputs.set("bundledTasks", fileTree("tasks"))
 // The README whose Tasks table TaskLoaderTest checks against the bundled tasks (#395).
 repoInputs.set("benchReadme", file("README.md"))

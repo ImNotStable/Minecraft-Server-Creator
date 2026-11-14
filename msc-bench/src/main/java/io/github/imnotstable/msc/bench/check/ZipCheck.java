@@ -1,7 +1,7 @@
 package io.github.imnotstable.msc.bench.check;
 
+import io.github.imnotstable.msc.bench.Text;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -58,7 +58,7 @@ record ZipCheck(String name, String path, List<String> entries, List<PngEntry> p
                 if (entry == null) {
                     problems.add("missing " + text.entry());
                 } else if (!text.contains().matcher(
-                        new String(zip.getInputStream(entry).readAllBytes(), StandardCharsets.UTF_8)).find()) {
+                        Text.decode(zip.getInputStream(entry).readAllBytes())).find()) {
                     problems.add(text.entry() + " has no match for /" + text.contains().pattern() + "/");
                 }
             }
