@@ -5,11 +5,17 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.imnotstable.msc.bench.task.TaskDef;
 import io.github.imnotstable.msc.bench.task.TaskLoader;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import io.github.imnotstable.msc.buildlogic.RepoFiles;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -39,6 +45,46 @@ class TaskLoaderTest {
                 .allMatch(t -> t.server().startBefore() && t.needsServer());
         TaskDef fix = tasks.stream().filter(t -> t.id().equals("code-fix-startup")).findFirst().orElseThrow();
         assertThat(fix.fixtures().getLast()).endsWith(Path.of("code-fix-startup", "fixture"));
+    }
+
+    @Test
+    void theReadmeCountsTheBlockPositionsEachTaskChecks() throws IOException {
+        // #395: the README said 196 for build-hut, which checks 245.
+        String readme = Files.readString(RepoFiles.path("benchReadme", "msc-bench/README.md"));
+        Matcher row = Pattern.compile("(?m)^\\| `([a-z0-9-]+)` \\|[^|]*\\| (\\d+) block positions").matcher(readme);
+        int rows = 0;
+        while (row.find()) {
+            rows++;
+            assertThat(Integer.parseInt(row.group(2))).as(row.group(1))
+                    .isEqualTo(blockPositions(BUNDLED.resolve(row.group(1)).resolve("task.json")));
+        }
+        assertThat(rows).isPositive();
+    }
+
+    /** Every position the task's blocks checks test: single blocks plus the volume of each region. */
+    private static int blockPositions(Path taskJson) throws IOException {
+        int count = 0;
+        for (JsonElement c : JsonParser.parseString(Files.readString(taskJson)).getAsJsonObject().getAsJsonArray("checks")) {
+            JsonObject check = c.getAsJsonObject();
+            if (!check.get("type").getAsString().equals("blocks")) {
+                continue;
+            }
+            if (check.has("blocks")) {
+                count += check.getAsJsonArray("blocks").size();
+            }
+            if (check.has("regions")) {
+                for (JsonElement r : check.getAsJsonArray("regions")) {
+                    JsonArray from = r.getAsJsonObject().getAsJsonArray("from");
+                    JsonArray to = r.getAsJsonObject().getAsJsonArray("to");
+                    int volume = 1;
+                    for (int i = 0; i < 3; i++) {
+                        volume *= Math.abs(to.get(i).getAsInt() - from.get(i).getAsInt()) + 1;
+                    }
+                    count += volume;
+                }
+            }
+        }
+        return count;
     }
 
     @Test

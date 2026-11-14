@@ -31,11 +31,18 @@ and the client saw only a closed connection.
    build files, every import and ADR 0031 for no change in what the module is for.
 2. **msc-core keeps only what is its own.** `RconTarget` (in `core.server`) reads host, port and password from
    `server.properties` and asks to stop through `RconClient`. Treating a connection closed by a stopping server as
-   "asked" stays a choice of that caller.
+   "asked" stays a choice of that caller. It reads them as the 26.3 server does (#391, #394, #396; the file through
+   `ServerPropertiesFile`, ADR 0033): `enable-rcon` in any case, a password that is not empty, `rcon.port` 25575 when
+   it is not a number and no RCON at all outside 1 to 65535, and the host `server-ip` (loopback when it is empty or
+   a wildcard), the address the server binds RCON to. Asking never throws, and `ServerManager.stopLeftover` keeps
+   the pid file until the leftover is gone, so a failed ask always falls back to the kill.
 3. **The rules of the client.**
    - Every body, the password included, is UTF-8.
    - A command or password over `RconClient.MAX_BODY` bytes (1460 minus 14 = 1446 bytes of UTF-8) is refused before
      anything is sent, with an `IOException` that names the limit. The connection stays usable.
+   - A refused login, and a password over the limit, throw `RconRefusedException` (an `IOException`), so a caller
+     tells "the server answered but will not let us in" from "nothing answers yet" (#393). The bench fails a start
+     at once on it instead of waiting out its start timeout.
    - Timeouts are bounded: connecting and every read wait at most the caller's timeout, and a timeout that is not
      positive (a socket would wait forever on 0) is refused with `IllegalArgumentException`.
    - Replies are read as #379 settled: no end marker for a reply under one full packet, the end marker never sent
@@ -48,7 +55,8 @@ and the client saw only a closed connection.
 ## Consequences
 
 - A fix to the RCON client reaches both the core and the bench.
-- The core can now stop and save a leftover server whose RCON password is not ASCII.
+- The core can now stop and save a leftover server whose RCON password is not ASCII, written raw in UTF-8 as the
+  server stores it or `\u`-escaped (#391 completed this; #380 alone read the file as ISO-8859-1).
 - A bench task whose command is too long fails its check with a message naming the limit instead of a closed
   connection.
 - `msc-process` has two packages, `process` (the tree kill) and `process.rcon`. It still depends on nothing.

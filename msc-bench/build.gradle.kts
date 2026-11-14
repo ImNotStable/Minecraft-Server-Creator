@@ -63,5 +63,7 @@ repoInputs.set("runFolderDocs", file("README.md"), root.file("docs/wiki/Benchmar
     root.file("msc-docs/docs/adr/0004-bench.md"))
 // The bundled tasks TaskLoaderTest loads.
 repoInputs.set("bundledTasks", fileTree("tasks"))
+// The README whose Tasks table TaskLoaderTest checks against the bundled tasks (#395).
+repoInputs.set("benchReadme", file("README.md"))
 // The repository's CLAUDE.md, which a run folder inside the repository would sit under (RunIsolationTest).
 repoInputs.set("repoClaudeMd", root.file("CLAUDE.md"))

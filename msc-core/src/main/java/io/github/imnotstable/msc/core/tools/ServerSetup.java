@@ -11,6 +11,7 @@ import io.github.imnotstable.msc.core.server.ServerFiles;
 import io.github.imnotstable.msc.core.server.ServerProperties;
 import io.github.imnotstable.msc.core.tool.Args;
 import io.github.imnotstable.msc.core.tool.ToolException;
+import io.github.imnotstable.msc.process.ServerPropertiesFile;
 import io.github.imnotstable.msc.templates.ScaffoldResult;
 import io.github.imnotstable.msc.templates.TemplateVariables;
 import io.github.imnotstable.msc.templates.Templates;
@@ -109,7 +110,7 @@ final class ServerSetup {
             }
         }
         if (mode != null) {
-            steps.run(MODE, () -> ServerProperties.set(dir.resolve("server.properties"), mode.settings()));
+            steps.run(MODE, () -> ServerPropertiesFile.set(dir.resolve(ServerPropertiesFile.NAME), mode.settings()));
             out.append("mode ").append(mode.id()).append(": ").append(mode.settings().get("gamemode")).append(", ")
                     .append(mode.settings().get("difficulty")).append(" difficulty from the next start\n");
         }

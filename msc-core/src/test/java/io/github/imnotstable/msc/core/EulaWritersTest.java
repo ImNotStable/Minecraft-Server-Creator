@@ -41,13 +41,26 @@ class EulaWritersTest {
     /** A call or method reference to EulaPrompts.recordForMachine, not its declaration. */
     private static final Pattern RECORD_CALL =
             Pattern.compile("(?<![\\w#]|String\\s)recordForMachine\\s*\\(|::\\s*recordForMachine\\b");
-    /** "eula.json" as a string literal, not in a comment. */
-    private static final Pattern EULA_JSON_LITERAL = Pattern.compile("\"[^\"\\n]*eula\\.json[^\"\\n]*\"");
-    /** A file write in a file that names eula.json in a literal, or a write whose target is an eulaFile. */
-    private static final Pattern FILE_WRITE = Pattern.compile(
-            "\\b(?:writeText|writeBytes|writeString|newBufferedWriter|newOutputStream|FileWriter|Files\\.write)\\b");
-    private static final Pattern WRITE_TO_EULA_FILE = Pattern.compile(
-            "\\b(?:writeText|writeString|Files\\.write|newBufferedWriter|newOutputStream)\\s*\\([^;]*eulaFile");
+    /** Any string literal. */
+    private static final Pattern LITERAL = Pattern.compile("\"(?:[^\"\\\\\\n]|\\\\.)*\"");
+    /** A call whose first argument is the file it writes. */
+    private static final Pattern WRITE_TO_ARGUMENT = Pattern.compile("\\b(?:Files\\s*\\.\\s*(?:writeString|write"
+            + "|newBufferedWriter|newOutputStream)|new\\s+(?:FileWriter|FileOutputStream|PrintWriter"
+            + "|RandomAccessFile))\\s*\\(");
+    /** A Kotlin call whose receiver is the file it writes. */
+    private static final Pattern WRITE_TO_RECEIVER = Pattern.compile(
+            "\\.\\s*(?:writeText|writeBytes|appendText|appendBytes|outputStream|bufferedWriter|printWriter|writer)\\s*\\(");
+    /** Code that names the machine EULA file: its helpers, or the file name. */
+    private static final Pattern NAMES_EULA_FILE = Pattern.compile(
+            "\\beulaFile\\s*\\(|\\bdefaultFile\\s*\\(|\\bMachineEula\\s*\\.\\s*file\\s*\\(|eula\\.json");
+    /** A local or field assigned from code that names the machine EULA file. */
+    private static final Pattern TAINTED = Pattern.compile("\\b(\\w+)\\s*=(?!=)([^;\\n]*)");
+    /** The one write MachineEula.write may do, whitespace removed: the acceptance JSON into its file argument. */
+    private static final String MACHINE_EULA_WRITE_BODY = "JsonObjecto=newJsonObject();o.addProperty(\"eula\",EULA_URL);"
+            + "o.addProperty(\"accepted\",true);o.addProperty(\"acceptedBy\",a.user());"
+            + "o.addProperty(\"host\",a.host());o.addProperty(\"acceptedAt\",a.acceptedAt().toString());"
+            + "o.addProperty(\"how\",how);Files.createDirectories(file.toAbsolutePath().getParent());"
+            + "Files.writeString(file,GSON.toJson(o)+\"\\n\");";
 
     @Test
     void scansEveryModulesProductionCodeAndBuildScripts() {
@@ -71,6 +84,13 @@ class EulaWritersTest {
     }
 
     @Test
+    void machineEulaWriteDoesOnlyWhatItDid() throws IOException {
+        // #397: MachineEula.write is the one place every documented opt-in goes through; its body is pinned.
+        assertThat(body(withoutComments(Files.readString(RepoFiles.path(SET, MACHINE_EULA))), "void write(")
+                .replaceAll("\\s+", "")).isEqualTo(MACHINE_EULA_WRITE_BODY);
+    }
+
+    @Test
     void detectorFindsEachKindOfWriter() {
         assertThat(writers("a/X.java", "MachineEula.write(f, a, how);\nRunnable r = MachineEula::write;"))
                 .containsExactly("a/X.java: MachineEula.write", "a/X.java: MachineEula.write");
@@ -84,6 +104,22 @@ class EulaWritersTest {
                 .containsExactly("a/X.java: writes eula.json");
         assertThat(writers(MACHINE_EULA, "public static void write(Path file) {}\nvoid other() { write(f, a, h); }"))
                 .containsExactly(MACHINE_EULA + ": write");
+        // #397: each write counts, not each file; a write in MachineEula outside write(); a path held in a variable
+        // or built by a helper.
+        assertThat(writers("a/b.gradle.kts", "val f = home.resolve(\".msc/eula.json\")\nf.writeText(json)\n"
+                + "rootDir.resolve(\"eula-accept.txt\").writeText(cmd)\nf.writeText(again)"))
+                .containsExactly("a/b.gradle.kts: writes eula.json", "a/b.gradle.kts: writes eula.json");
+        assertThat(writers(MACHINE_EULA, "static Optional<Acceptance> read(Path file) {\n"
+                + "if (!Files.exists(file)) { Files.writeString(file, \"{accepted:true}\"); }\n}"))
+                .containsExactly(MACHINE_EULA + ": writes eula.json");
+        assertThat(writers("a/X.java", "Path f = config.eulaFile();\nFiles.writeString(f, json);"))
+                .containsExactly("a/X.java: writes eula.json");
+        assertThat(writers("a/X.java", "Files.writeString(MachineEula.defaultFile(home), json);"))
+                .containsExactly("a/X.java: writes eula.json");
+        assertThat(writers("a/X.java", "Path p = MachineEula.file(home);\ntry (var w = Files.newBufferedWriter(p)) {}"))
+                .containsExactly("a/X.java: writes eula.json");
+        assertThat(writers("a/X.java", "String name = \"eula.json\";\nFiles.write(dir.resolve(name), bytes);"))
+                .containsExactly("a/X.java: writes eula.json");
     }
 
     @Test
@@ -91,22 +127,156 @@ class EulaWritersTest {
         assertThat(writers("a/X.java", "MachineEula.read(file); MachineEula.writer(); // reads eula.json")).isEmpty();
         assertThat(writers("a/b.gradle.kts", "// eula.json cases shared with msc-core\nf.writeText(\"x\")")).isEmpty();
         assertThat(writers(MACHINE_EULA, "public static void write(Path file, Acceptance a, String how) {\n"
-                + "Files.writeString(eulaTxt, \"eula=true\");")).isEmpty();
+                + "Files.writeString(file, json);\n}\nstatic void applyTo(Path file, Path eulaTxt) {\n"
+                + "Files.writeString(eulaTxt, \"eula=true\");\n}")).isEmpty();
         assertThat(writers("a/X.java", "Files.writeString(eulaTxt, \"eula=true\"); Path p = config.eulaFile();"))
                 .isEmpty();
+        assertThat(writers("a/b.gradle.kts", "val f = home.resolve(\".msc/eula.json\")\n"
+                + "rootDir.resolve(\"eula-accept.txt\").writeText(cmd)\nmarker.get().asFile.writeText(\"ok\")")).isEmpty();
+        assertThat(writers("a/X.java", "if (MachineEula.read(config.eulaFile()).isPresent()) {}\n"
+                + "Files.writeString(file, Files.readString(file).replace(\"eula=false\", \"eula=true\"));")).isEmpty();
     }
 
     /** The writers of the machine EULA file in {@code text}, the source of {@code file}, one entry per site. */
     private static List<String> writers(String file, String text) {
+        String code = withoutComments(text);
         List<String> out = new ArrayList<>();
-        WRITE_CALL.matcher(text).results().forEach(m -> out.add(file + ": MachineEula.write"));
-        RECORD_CALL.matcher(text).results().forEach(m -> out.add(file + ": recordForMachine"));
+        WRITE_CALL.matcher(code).results().forEach(m -> out.add(file + ": MachineEula.write"));
+        RECORD_CALL.matcher(code).results().forEach(m -> out.add(file + ": recordForMachine"));
+        String writeBody = "";
         if (file.equals(MACHINE_EULA)) {
-            SELF_WRITE.matcher(text).results().forEach(m -> out.add(file + ": write"));
-        } else if ((EULA_JSON_LITERAL.matcher(text).find() && FILE_WRITE.matcher(text).find())
-                || WRITE_TO_EULA_FILE.matcher(text).find()) {
-            out.add(file + ": writes eula.json");
+            SELF_WRITE.matcher(code).results().forEach(m -> out.add(file + ": write"));
+            writeBody = body(code, "void write(");
+        }
+        List<String> tainted = new ArrayList<>();
+        TAINTED.matcher(code).results().filter(m -> NAMES_EULA_FILE.matcher(m.group(2)).find())
+                .forEach(m -> tainted.add(m.group(1)));
+        for (String target : writeTargets(code, writeBody)) {
+            boolean otherFile = LITERAL.matcher(target).results().map(m -> m.group())
+                    .anyMatch(l -> !l.contains("eula.json"));
+            boolean eulaTxt = file.equals(MACHINE_EULA) && target.strip().equals("eulaTxt");
+            boolean named = NAMES_EULA_FILE.matcher(target).find()
+                    || tainted.stream().anyMatch(v -> Pattern.compile("\\b" + v + "\\b").matcher(target).find());
+            // In a MachineEula class, the owner of the file, any write is taken to be to it unless it names another.
+            boolean owner = file.endsWith("/MachineEula.java");
+            if (named || owner && !otherFile && !eulaTxt) {
+                out.add(file + ": writes eula.json");
+            }
         }
         return out;
+    }
+
+    /** The file each write call in {@code code} writes to, as source text; writes inside {@code skip} are left out. */
+    private static List<String> writeTargets(String code, String skip) {
+        int skipFrom = skip.isEmpty() ? -1 : code.indexOf(skip);
+        int skipTo = skipFrom < 0 ? -1 : skipFrom + skip.length();
+        List<String> out = new ArrayList<>();
+        WRITE_TO_ARGUMENT.matcher(code).results().filter(m -> m.start() < skipFrom || m.start() >= skipTo)
+                .forEach(m -> out.add(firstArgument(code, m.end())));
+        WRITE_TO_RECEIVER.matcher(code).results().filter(m -> m.start() < skipFrom || m.start() >= skipTo)
+                .forEach(m -> out.add(receiver(code, m.start())));
+        return out;
+    }
+
+    /** The text from {@code from} to the first comma or closing parenthesis outside brackets and literals. */
+    private static String firstArgument(String code, int from) {
+        int depth = 0;
+        for (int i = from; i < code.length(); i++) {
+            char c = code.charAt(i);
+            if (c == '"') {
+                i = closingQuote(code, i);
+            } else if (c == '(' || c == '[' || c == '{') {
+                depth++;
+            } else if ((c == ')' || c == ']' || c == '}') && depth-- == 0 || c == ',' && depth == 0) {
+                return code.substring(from, i);
+            }
+        }
+        return code.substring(from);
+    }
+
+    /** The receiver expression that ends just before {@code dot}: names, dots, calls and literals. */
+    private static String receiver(String code, int dot) {
+        int i = dot - 1;
+        while (i >= 0) {
+            char c = code.charAt(i);
+            if (c == ')') {
+                int depth = 0;
+                for (; i >= 0; i--) {
+                    char d = code.charAt(i);
+                    depth += d == ')' ? 1 : d == '(' ? -1 : 0;
+                    if (depth == 0) {
+                        break;
+                    }
+                }
+                i--;
+            } else if (Character.isJavaIdentifierPart(c) || c == '.') {
+                i--;
+            } else {
+                break;
+            }
+        }
+        return code.substring(i + 1, dot);
+    }
+
+    private static int closingQuote(String code, int open) {
+        for (int i = open + 1; i < code.length(); i++) {
+            if (code.charAt(i) == '\\') {
+                i++;
+            } else if (code.charAt(i) == '"' || code.charAt(i) == '\n') {
+                return i;
+            }
+        }
+        return code.length();
+    }
+
+    /** The body of the method whose declaration contains {@code declaration}, braces excluded, or "". */
+    private static String body(String code, String declaration) {
+        int at = code.indexOf(declaration);
+        int open = at < 0 ? -1 : code.indexOf('{', at);
+        if (open < 0) {
+            return "";
+        }
+        int depth = 0;
+        for (int i = open; i < code.length(); i++) {
+            char c = code.charAt(i);
+            if (c == '"') {
+                i = closingQuote(code, i);
+            } else if (c == '{') {
+                depth++;
+            } else if (c == '}' && --depth == 0) {
+                return code.substring(open + 1, i);
+            }
+        }
+        return code.substring(open + 1);
+    }
+
+    /** {@code code} with its line and block comments blanked out, literals kept. */
+    private static String withoutComments(String code) {
+        StringBuilder sb = new StringBuilder(code.length());
+        for (int i = 0; i < code.length(); i++) {
+            char c = code.charAt(i);
+            if (c == '"') {
+                int end = Math.min(closingQuote(code, i), code.length() - 1);
+                sb.append(code, i, end + 1);
+                i = end;
+            } else if (c == '\'' && i + 1 < code.length() && code.charAt(i + 1) == '\\') {
+                int end = code.indexOf('\'', i + 3); // an escaped char literal such as '\"'
+                end = end < 0 ? code.length() - 1 : end;
+                sb.append(code, i, end + 1);
+                i = end;
+            } else if (c == '\'' && i + 2 < code.length() && code.charAt(i + 2) == '\'') {
+                sb.append(code, i, i + 3); // a char literal such as '"' must not open a string
+                i += 2;
+            } else if (code.startsWith("//", i)) {
+                int end = code.indexOf('\n', i);
+                i = (end < 0 ? code.length() : end) - 1;
+            } else if (code.startsWith("/*", i)) {
+                int end = code.indexOf("*/", i + 2);
+                i = end < 0 ? code.length() : end + 1;
+            } else {
+                sb.append(c);
+            }
+        }
+        return sb.toString();
     }
 }

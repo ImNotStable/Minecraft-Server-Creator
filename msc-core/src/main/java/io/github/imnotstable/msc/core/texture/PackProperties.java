@@ -1,20 +1,18 @@
 package io.github.imnotstable.msc.core.texture;
 
+import io.github.imnotstable.msc.process.ServerPropertiesFile;
 import java.io.IOException;
-import java.io.Reader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
-import java.util.Properties;
 import java.util.UUID;
 
 /**
  * The resource pack lines of a server's {@code server.properties}, so a server restarted outside MSC still sends the
  * pack. Other lines and their order are kept. Nothing is written when the file does not exist (Minestom has none).
+ * The file is read and written through msc-process's {@link ServerPropertiesFile} (ADR 0033).
  */
 public final class PackProperties {
     private static final String URL = "resource-pack";
@@ -27,25 +25,24 @@ public final class PackProperties {
 
     /** The {@code resource-pack} URL, or null when the file or the value is missing. */
     public static String url(Path file) {
-        String url = load(file).getProperty(URL, "").strip();
+        String url = load(file).getOrDefault(URL, "").strip();
         return url.isEmpty() ? null : url;
     }
 
     /** Whether {@code require-resource-pack} is true. */
     public static boolean required(Path file) {
-        return load(file).getProperty(REQUIRED, "").strip().equals("true");
+        return load(file).getOrDefault(REQUIRED, "").strip().equals("true");
     }
 
-    private static Properties load(Path file) {
-        Properties p = new Properties();
+    private static Map<String, String> load(Path file) {
         if (Files.isRegularFile(file)) {
-            try (Reader in = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
-                p.load(in);
-            } catch (IOException | IllegalArgumentException e) {
+            try {
+                return ServerPropertiesFile.read(file);
+            } catch (IOException e) {
                 // Unreadable: treat as empty.
             }
         }
-        return p;
+        return Map.of();
     }
 
     /** Offer this pack to every player who joins. Returns false when there is no such file. */
@@ -73,45 +70,7 @@ public final class PackProperties {
         if (!Files.isRegularFile(file)) {
             return false;
         }
-        Map<String, String> left = new LinkedHashMap<>(values);
-        List<String> out = new ArrayList<>();
-        for (String line : Files.readAllLines(file, StandardCharsets.UTF_8)) {
-            String key = key(line);
-            if (key != null && values.containsKey(key)) {
-                if (left.remove(key) != null) {
-                    out.add(key + "=" + escape(values.get(key)));
-                }
-            } else {
-                out.add(line);
-            }
-        }
-        left.forEach((k, v) -> out.add(k + "=" + escape(v)));
-        // "\n" on every OS, so the file and its tests do not depend on where MSC runs.
-        Files.writeString(file, String.join("\n", out) + "\n", StandardCharsets.UTF_8);
+        ServerPropertiesFile.set(file, values);
         return true;
-    }
-
-    private static String key(String line) {
-        String t = line.stripLeading();
-        if (t.isEmpty() || t.startsWith("#") || t.startsWith("!")) {
-            return null;
-        }
-        int end = 0;
-        while (end < t.length() && "=: \t".indexOf(t.charAt(end)) < 0) {
-            end++;
-        }
-        return t.substring(0, end);
-    }
-
-    /** As {@link Properties#store} writes a value: vanilla writes the URL as {@code http\://...}. */
-    static String escape(String value) {
-        StringBuilder sb = new StringBuilder();
-        for (char c : value.toCharArray()) {
-            if (c == '\\' || c == ':' || c == '=' || c == '#' || c == '!') {
-                sb.append('\\');
-            }
-            sb.append(c);
-        }
-        return sb.toString();
     }
 }

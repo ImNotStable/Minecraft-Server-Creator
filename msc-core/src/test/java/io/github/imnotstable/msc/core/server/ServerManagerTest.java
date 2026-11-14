@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.imnotstable.msc.core.CoreConfig;
 import io.github.imnotstable.msc.core.agent.AgentHub;
+import io.github.imnotstable.msc.process.rcon.FakeRconServer;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
@@ -14,6 +15,8 @@ import java.util.List;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class ServerManagerTest {
     @TempDir
@@ -21,8 +24,11 @@ class ServerManagerTest {
     private AgentHub hub;
     private ServerManager server;
 
+    private final List<Process> leftovers = new java.util.ArrayList<>();
+
     @AfterEach
     void close() throws Exception {
+        leftovers.forEach(Process::destroyForcibly);
         if (server != null) {
             server.close();
         }
@@ -80,6 +86,49 @@ class ServerManagerTest {
         assertThat(m.pidFile()).exists();
         assertThat(m.stop(Duration.ofSeconds(30))).isTrue();
         assertThat(m.pidFile()).doesNotExist();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"rcon.port=70000", "rcon.port=-1", "rcon.password=\\uZZZZ", "enable-rcon=false"})
+    void aLeftoverWithoutUsableRconIsKilledAndForgotten(String line) throws Exception {
+        // #394: rcon.port=70000 threw out of stopLeftover after the pid file was gone, and the server kept running.
+        ServerManager m = manager(QuietServer.class);
+        Process leftover = leftover(m);
+        Files.createDirectories(m.serverDir());
+        Files.writeString(m.serverDir().resolve("server.properties"),
+                "enable-rcon=true\nrcon.password=pw\n" + line + "\n");
+        assertThat(m.stopLeftover()).contains("pid " + leftover.pid(), "killed");
+        assertThat(leftover.isAlive()).isFalse();
+        assertThat(m.pidFile()).doesNotExist();
+        assertThat(m.stopLeftover()).isNull();
+    }
+
+    @Test
+    void aLeftoverIsAskedOverRconWhereTheServerBindsIt() throws Exception {
+        // #396: enable-rcon is read in any case and the host is server-ip, as the server does.
+        ServerManager m = manager(QuietServer.class);
+        Process leftover = leftover(m);
+        try (FakeRconServer rcon = new FakeRconServer("pässwörd", cmd -> {
+            leftover.destroy(); // stands in for the server saving and exiting
+            return "Stopping the server";
+        })) {
+            Files.createDirectories(m.serverDir());
+            Files.writeString(m.serverDir().resolve("server.properties"), "enable-rcon=TRUE\nserver-ip=127.0.0.1\n"
+                    + "rcon.port=" + rcon.port() + "\nrcon.password=pässwörd\n", StandardCharsets.UTF_8);
+            assertThat(m.stopLeftover()).contains("pid " + leftover.pid(), "saved over RCON");
+            assertThat(rcon.commands()).containsExactly("stop");
+        }
+        assertThat(m.pidFile()).doesNotExist();
+    }
+
+    /** A running process recorded in the manager's pid file, as an earlier core leaves it. */
+    private Process leftover(ServerManager m) throws Exception {
+        Process p = new ProcessBuilder(Path.of(System.getProperty("java.home"), "bin", "java").toString(),
+                "-cp", System.getProperty("java.class.path"), QuietServer.class.getName()).start();
+        leftovers.add(p);
+        PidFile.write(m.pidFile(), p.toHandle());
+        assertThat(m.leftoverPid()).isEqualTo(p.pid());
+        return p;
     }
 
     /** Prints a long trace to stderr during start-up and exits 1. */
