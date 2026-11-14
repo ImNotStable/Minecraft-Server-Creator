@@ -43,6 +43,32 @@ class RconClientTest {
         }
     }
 
+    @ParameterizedTest
+    @CsvSource({
+        "x, 1",
+        "x, 4095",
+        "x, 4096",
+        "x, 12295",
+        "é, 4097", // two bytes each: the first packet is 8206 bytes
+        "€, 9000", // three bytes each, so the halves of a body cut characters in two
+    })
+    void readsAReplyWhosePacketsArriveInPieces(String unit, int count) throws IOException {
+        // #442: a real server's long reply reaches the client in several TCP reads; reading each packet with one
+        // read() took part of it as the whole and read body bytes as the next length.
+        String reply = unit.repeat(count - 1) + "!";
+        try (FakeRconServer server = new FakeRconServer("pässwort", cmd -> cmd.equals("long") ? reply : "ran " + cmd,
+                        new Quirks(false, Other.ANSWER, true));
+                // A generous end wait: the pieces after the first packet arrive while the client waits it.
+                RconClient client = RconClient.connect("127.0.0.1", server.port(), "pässwort",
+                        Duration.ofSeconds(30), Duration.ofSeconds(30))) {
+            assertThat(client.command("long")).isEqualTo(reply);
+            assertThat(client.command("next")).as("the stream is still in step").isEqualTo("ran next");
+            assertThat(client.command("long")).isEqualTo(reply);
+            assertThat(server.commands()).containsExactly("long", "next", "long");
+            assertThat(server.connections()).isEqualTo(1);
+        }
+    }
+
     @Test
     void readsAnEmptyReply() throws IOException {
         try (FakeRconServer server = new FakeRconServer("secret", cmd -> "");
