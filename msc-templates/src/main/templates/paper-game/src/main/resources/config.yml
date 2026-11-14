@@ -7,7 +7,7 @@ world: world
 game-mode: adventure
 # World difficulty: peaceful, easy, normal or hard. The dev server starts peaceful, so set it here.
 difficulty: normal
-# Time is frozen at this tick (0 sunrise, 6000 noon, 13000 night, 18000 midnight). Weather stays clear.
+# Time is frozen at this tick, 0 to 23999 (0 sunrise, 6000 noon, 13000 night, 18000 midnight). Weather stays clear.
 time: 6000
 # Natural mob spawning is off. Mobs your code, commands and spawner blocks spawn still appear.
 natural-spawns: false
@@ -20,7 +20,7 @@ kit:
   - bread:8
 
 # Stages in play order. A player starts at the first one, respawns at their current one, and advances when
-# they step into its goal box (optional: corners x1 y1 z1 x2 y2 z2). Progress is saved in progress.yml.
+# they step into its goal box (optional: block corners x1 y1 z1 x2 y2 z2, whole numbers). Progress is saved in progress.yml.
 stages:
   - name: start
     spawn: [0.5, -60, 0.5, 0, 0]   # x y z yaw pitch
