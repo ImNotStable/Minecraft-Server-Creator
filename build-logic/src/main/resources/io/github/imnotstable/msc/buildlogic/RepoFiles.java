@@ -11,11 +11,13 @@ import java.util.Map;
 
 /**
  * The repository files outside this module's sources that the tests may read: exactly the named sets the build
- * declares with {@code repoInputs.set(...)} (msc.repo-inputs), which are also the test task's inputs, so a change to
- * any of them reruns the tests (#129, #355). Generated from build-logic; do not edit the copy under build/.
+ * declares for the running Test task with {@code repoInputs.set(...)} or {@code repoInputs.on(task).set(...)}
+ * (msc.repo-inputs), which are also that task's inputs, so a change to any of them reruns the tests (#129, #355, #370).
+ * Generated from build-logic; do not edit the copy under build/.
  */
 public final class RepoFiles {
     private static final Map<String, List<String>> SETS = new LinkedHashMap<>();
+    private static String task = "?";
     private static final Path ROOT = load();
 
     private RepoFiles() {
@@ -25,7 +27,8 @@ public final class RepoFiles {
     public static List<String> list(String name) {
         List<String> files = SETS.get(name);
         if (files == null || files.isEmpty()) {
-            throw new IllegalArgumentException("no repoInputs set '" + name + "' with files; declared: " + SETS.keySet());
+            throw new IllegalArgumentException("no repoInputs set '" + name + "' with files for task " + task
+                    + "; declared: " + SETS.keySet());
         }
         return files;
     }
@@ -38,9 +41,12 @@ public final class RepoFiles {
         return ROOT.resolve(relative);
     }
 
-    /** The folder {@code relative} (repository-relative), under which set {@code name} must declare files. */
+    /**
+     * The folder {@code relative} (repository-relative, {@code ""} for the root), under which set {@code name} must
+     * declare files.
+     */
     public static Path dir(String name, String relative) {
-        String prefix = relative.endsWith("/") ? relative : relative + "/";
+        String prefix = relative.isEmpty() || relative.endsWith("/") ? relative : relative + "/";
         if (list(name).stream().noneMatch(f -> f.startsWith(prefix))) {
             throw new IllegalArgumentException(relative + " has no files in repoInputs set '" + name + "'");
         }
@@ -60,6 +66,8 @@ public final class RepoFiles {
                 String value = line.substring(tab + 1);
                 if (key.equals("root")) {
                     root = Path.of(value);
+                } else if (key.equals("task")) {
+                    task = value;
                 } else {
                     SETS.computeIfAbsent(key, k -> new ArrayList<>()).add(value);
                 }

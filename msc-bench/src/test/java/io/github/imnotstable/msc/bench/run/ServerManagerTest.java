@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
 
 import io.github.imnotstable.msc.bench.ClosedPort;
+import io.github.imnotstable.msc.bench.FakeRconMain;
 import io.github.imnotstable.msc.bench.FakeRconServer;
 import java.io.IOException;
 import java.net.InetAddress;
@@ -130,6 +131,30 @@ class ServerManagerTest {
             assertThat(Duration.ofNanos(System.nanoTime() - start)).as("close() returns once the port is free")
                     .isLessThan(Duration.ofSeconds(10));
         }
+    }
+
+    @Test
+    void closeStopsAServerItStartedAndDisconnectedFrom() throws IOException {
+        // After the setup the runner disconnects; when no check reconnects (the agent could not start, a usage limit)
+        // close() sent no stop, waited 60 s for a server never told to go, and killed it.
+        Files.writeString(serverDir.resolve("paper.jar"), "stands in for paper");
+        Files.writeString(serverDir.resolve("eula.txt"), "eula=true");
+        int port;
+        try (ServerSocket free = new ServerSocket(0, 1, InetAddress.getLoopbackAddress())) {
+            port = free.getLocalPort();
+        }
+        List<String> command = List.of(JAVA, "-Dmarker=" + serverDir, "-cp", System.getProperty("java.class.path"),
+                FakeRconMain.class.getName(), Integer.toString(port), "pw");
+        BenchConfig.Server config = new BenchConfig.Server(command, null, List.of(), null, true, gamePort.port(), port,
+                "pw", 60);
+        ServerManager server = new ServerManager(serverDir, config, Map.of());
+        server.rcon().command("setup");
+        server.disconnect();
+
+        server.close();
+
+        assertThat(serverDir.resolve(FakeRconMain.STOPPED)).as("the server was told to stop, not killed").exists();
+        assertThat(liveServers()).isZero();
     }
 
     @Test

@@ -205,6 +205,11 @@ public final class ServerManager implements AutoCloseable {
      */
     @Override
     public synchronized void close() {
+        if (rcon == null && process != null && process.isAlive()) {
+            // Disconnected after the setup and never reached again (the agent did not start, a usage limit): the
+            // server still needs its stop, or it is only killed after the wait below.
+            rcon = tryConnect(LOGIN_TIMEOUT);
+        }
         boolean stopSent = rcon != null;
         if (rcon != null) {
             try {

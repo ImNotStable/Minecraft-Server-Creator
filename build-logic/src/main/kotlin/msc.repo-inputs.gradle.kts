@@ -1,9 +1,9 @@
 // Tests that read files outside their module's sources (docs, other modules, shared fixtures) get them only from the
-// named sets declared with `repoInputs.set(...)`: the same sets are the test task's inputs, so what the tests read
-// and what Gradle tracks cannot drift apart (#129, #355). The tests read them through the generated class
-// io.github.imnotstable.msc.buildlogic.RepoFiles, which refuses a path no set declares.
+// named sets declared with `repoInputs.set(...)` (or `repoInputs.on(task).set(...)` for another Test task): the same
+// sets are that task's inputs, so what the tests read and what Gradle tracks cannot drift apart (#129, #355). The
+// tests read them through the generated class io.github.imnotstable.msc.buildlogic.RepoFiles, which refuses a path
+// no set of the running task declares. A set every file of the repository is in belongs on its own task (#370).
 import io.github.imnotstable.msc.buildlogic.RepoInputs
-import io.github.imnotstable.msc.buildlogic.repoFilesManifest
 
 plugins {
     java
@@ -27,14 +27,3 @@ val repoFilesSource = tasks.register("repoFilesSource") {
     }
 }
 sourceSets.test { java.srcDir(repoFilesSource) }
-
-tasks.test {
-    val manifest = temporaryDir.resolve("repo-files.txt")
-    val sets = repoInputs.sets
-    val root = repoInputs.root
-    doFirst {
-        manifest.writeText(repoFilesManifest(sets, root))
-    }
-    // The manifest's path through an argument provider, so the checkout's location stays out of the cache key.
-    jvmArgumentProviders.add(CommandLineArgumentProvider { listOf("-Dmsc.repoFiles=" + manifest.absolutePath) })
-}

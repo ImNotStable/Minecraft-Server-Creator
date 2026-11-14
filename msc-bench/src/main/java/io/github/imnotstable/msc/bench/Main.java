@@ -146,7 +146,7 @@ public final class Main {
         BenchConfig config = BenchConfig.load(Path.of(flags.getOrDefault("--config", "bench.json")));
         List<TaskDef> tasks = select(TaskLoader.loadAll(tasksDir), flags.get("--tasks"));
         List<String> modes = flags.containsKey("--modes")
-                ? Arrays.asList(flags.get("--modes").split(","))
+                ? names(flags.get("--modes"))
                 : List.copyOf(config.modes().keySet()).stream().sorted().toList();
         int repeat = Integer.parseInt(flags.getOrDefault("--repeat", "1"));
         Path runDir = runsDir.resolve(LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss")));
@@ -169,6 +169,11 @@ public final class Main {
             return 4;
         }
         return records.stream().allMatch(RunRecord::passed) ? 0 : 3;
+    }
+
+    /** The comma-separated names of a {@code --tasks} or {@code --modes} value, without surrounding spaces. */
+    static List<String> names(String value) {
+        return Arrays.stream(value.split(",")).map(String::strip).toList();
     }
 
     private static String readIfPresent(Path file) throws IOException {
@@ -282,8 +287,8 @@ public final class Main {
             return all;
         }
         List<TaskDef> picked = new ArrayList<>();
-        for (String id : ids.split(",")) {
-            picked.add(all.stream().filter(t -> t.id().equals(id.strip())).findFirst()
+        for (String id : names(ids)) {
+            picked.add(all.stream().filter(t -> t.id().equals(id)).findFirst()
                     .orElseThrow(() -> new IllegalArgumentException("no task " + id)));
         }
         return picked;
