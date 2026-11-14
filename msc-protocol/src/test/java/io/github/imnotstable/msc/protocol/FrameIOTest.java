@@ -8,10 +8,13 @@ import io.github.imnotstable.msc.protocol.transport.FrameWriter;
 import java.io.BufferedInputStream;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.FilterInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class FrameIOTest {
     @Test
@@ -74,6 +77,25 @@ class FrameIOTest {
         FrameReader small = new FrameReader(new ByteArrayInputStream(bytes), 199_999);
         assertThat(small.read()).isEqualTo("a");
         assertThatThrownBy(small::read).isInstanceOf(ProtocolException.class);
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {1, 2, 3, 7, 64})
+    void readsFramesThatArriveInPieces(int piece) throws IOException {
+        // #442: a socket hands over what has arrived, which may end inside a frame, a character or right at a newline.
+        String bytes = "{\"a\":\"héllo ✓\"}\n\n" + "z".repeat(200) + "€\nlast\n";
+        InputStream trickle = new FilterInputStream(new ByteArrayInputStream(bytes.getBytes(StandardCharsets.UTF_8))) {
+            @Override
+            public int read(byte[] b, int off, int len) throws IOException {
+                return super.read(b, off, Math.min(len, piece));
+            }
+        };
+        FrameReader reader = new FrameReader(trickle, 1024);
+        assertThat(reader.read()).isEqualTo("{\"a\":\"héllo ✓\"}");
+        assertThat(reader.read()).isEmpty();
+        assertThat(reader.read()).isEqualTo("z".repeat(200) + "€");
+        assertThat(reader.read()).isEqualTo("last");
+        assertThat(reader.read()).isNull();
     }
 
     @Test

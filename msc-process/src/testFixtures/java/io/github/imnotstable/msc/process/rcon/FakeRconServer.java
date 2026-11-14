@@ -4,6 +4,7 @@ import java.io.BufferedInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InterruptedIOException;
 import java.io.OutputStream;
 import java.io.PushbackInputStream;
 import java.net.InetAddress;
@@ -12,6 +13,7 @@ import java.net.Socket;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -24,7 +26,8 @@ import java.util.function.UnaryOperator;
  * <p>It reads requests like the vanilla connection loop too: one read of up to {@link #READ} bytes per request, and
  * the connection is closed, without running anything, when that read is under 10 bytes or does not hold exactly the
  * one packet its length field announces (two packets that arrived together, for example). {@link Quirks} make it come
- * to that read late, as a busy server does, or treat packets of other types like other servers might.
+ * to that read late, as a busy server does, send replies in pieces, as a real network does, or treat packets of other
+ * types like other servers might.
  */
 public final class FakeRconServer implements AutoCloseable {
 
@@ -39,12 +42,19 @@ public final class FakeRconServer implements AutoCloseable {
     /**
      * Deviations from the plain vanilla behaviour. {@code lateReads} makes the server wait a moment after the first
      * byte of a request arrives before it reads, so whatever the client sent right behind it lands in the same read.
+     * {@code pieces} sends the login answer and each command reply in pieces, so the client's reads see a packet in
+     * parts, the way a long reply from a real server arrives over the network (see {@link #sendInPieces}).
      */
-    public record Quirks(boolean lateReads, Other other) {
+    public record Quirks(boolean lateReads, Other other, boolean pieces) {
         public static final Quirks VANILLA = new Quirks(false, Other.ANSWER);
+
+        public Quirks(boolean lateReads, Other other) {
+            this(lateReads, other, false);
+        }
     }
 
     private static final long LATE_READ_MILLIS = 50;
+    private static final long PIECE_PAUSE_MILLIS = 20;
 
     private final ServerSocket socket;
     private final String password;
@@ -105,6 +115,9 @@ public final class FakeRconServer implements AutoCloseable {
         try (client) {
             PushbackInputStream in = new PushbackInputStream(client.getInputStream());
             OutputStream out = client.getOutputStream();
+            if (quirks.pieces()) {
+                client.setTcpNoDelay(true); // each piece goes out when written, not held back for the one before
+            }
             byte[] data = new byte[READ];
             while (true) {
                 int read = readRequest(in, data);
@@ -120,21 +133,19 @@ public final class FakeRconServer implements AutoCloseable {
                 int type = buffer.getInt();
                 String body = new String(data, 12, length - 10, StandardCharsets.UTF_8);
                 if (type == 3) {
-                    write(out, body.equals(password) ? id : -1, 2, "");
+                    send(in, out, List.of(packet(body.equals(password) ? id : -1, 2, "")));
                 } else if (type == 2) {
                     commands.add(body);
                     // Like the vanilla server: a long reply goes out in packets of 4096 characters, no end marker.
-                    // All in one write, so a client's short end wait (#427) never runs out between two packets.
                     String reply = replies.apply(body);
-                    ByteArrayOutputStream packets = new ByteArrayOutputStream();
+                    List<byte[]> packets = new ArrayList<>();
                     int offset = 0;
                     do {
                         int end = Math.min(reply.length(), offset + CHUNK);
-                        write(packets, id, 0, reply.substring(offset, end));
+                        packets.add(packet(id, 0, reply.substring(offset, end)));
                         offset = end;
                     } while (offset < reply.length());
-                    packets.writeTo(out);
-                    out.flush();
+                    send(in, out, packets);
                 } else if (quirks.other() == Other.ANSWER) {
                     write(out, id, 0, "Unknown request " + Integer.toHexString(type));
                 } else if (quirks.other() == Other.CLOSE) {
@@ -165,12 +176,78 @@ public final class FakeRconServer implements AutoCloseable {
         return buffered.read(data, 0, READ);
     }
 
+    /**
+     * Sends a reply's packets: all in one write, so a client's short end wait (#427) never runs out between two
+     * packets, or with {@code pieces} as {@link #sendInPieces} says.
+     */
+    private void send(PushbackInputStream in, OutputStream out, List<byte[]> packets) throws IOException {
+        if (quirks.pieces()) {
+            sendInPieces(in, out, packets);
+            return;
+        }
+        ByteArrayOutputStream all = new ByteArrayOutputStream();
+        for (byte[] packet : packets) {
+            all.write(packet);
+        }
+        all.writeTo(out);
+        out.flush();
+    }
+
+    /**
+     * Sends each packet in four pieces, each written and flushed on its own: two bytes of the length, the rest of the
+     * header, then the body in two halves. So a client sees a split inside the length, inside the body, and (for a
+     * multi-packet reply) between packets.
+     *
+     * <p>Which pauses are safe. The client reads the first packet with its full timeout, so the pieces of the first
+     * packet are each followed by a short pause: the client reads before the rest has arrived. After the first packet
+     * of a long reply the client sends its end marker and waits only its end wait (200 ms in the #427 test) for each
+     * further byte; a timed pause there could run it out on a loaded machine and cut the reply. So between the first
+     * and the second packet the server waits for an event instead: the end marker's first byte, which proves the
+     * client has read the whole first packet and nothing of the second. The remaining pieces then follow at once,
+     * still flushed one by one. Even that is a round trip on the end wait, so a test using pieces with a reply over
+     * one packet gives the client a generous end wait. The answer to the end marker itself goes out whole.
+     */
+    private static void sendInPieces(PushbackInputStream in, OutputStream out, List<byte[]> packets)
+            throws IOException {
+        for (int p = 0; p < packets.size(); p++) {
+            byte[] packet = packets.get(p);
+            if (p == 1) {
+                int next = in.read(); // the end marker's first byte; it stays for the next request read
+                if (next < 0) {
+                    return;
+                }
+                in.unread(next);
+            }
+            int[] cuts = {0, 2, 12, 12 + (packet.length - 12) / 2, packet.length};
+            for (int c = 0; c + 1 < cuts.length; c++) {
+                out.write(packet, cuts[c], cuts[c + 1] - cuts[c]);
+                out.flush();
+                if (p == 0 && c + 2 < cuts.length) {
+                    pause();
+                }
+            }
+        }
+    }
+
+    private static void pause() throws IOException {
+        try {
+            Thread.sleep(PIECE_PAUSE_MILLIS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new InterruptedIOException("interrupted between two pieces");
+        }
+    }
+
     private static void write(OutputStream out, int id, int type, String body) throws IOException {
+        out.write(packet(id, type, body));
+        out.flush();
+    }
+
+    private static byte[] packet(int id, int type, String body) {
         byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
         ByteBuffer buffer = ByteBuffer.allocate(14 + bytes.length).order(ByteOrder.LITTLE_ENDIAN);
         buffer.putInt(10 + bytes.length).putInt(id).putInt(type).put(bytes).put((byte) 0).put((byte) 0);
-        out.write(buffer.array());
-        out.flush();
+        return buffer.array();
     }
 
     /**
