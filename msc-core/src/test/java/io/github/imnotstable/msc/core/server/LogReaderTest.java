@@ -95,4 +95,39 @@ class LogReaderTest {
         assertThat(log.all()).containsExactly("x".repeat(50));
         assertThat(log.mark()).isEqualTo(4);
     }
+
+    /** Each platform's real ready line, as the server prints it (also coloured), through the pump's own detection. */
+    @Test
+    void thePumpSeesEveryPlatformsReadyLineAndNothingElse() throws IOException {
+        List<String> ready = List.of(
+                "[12:00:04 INFO]: Done (3.204s)! For help, type \"help\"", // Paper, Purpur
+                "[12:00:04] [Server thread/INFO]: Done (3.204s)! For help, type \"help\"", // Fabric, Quilt
+                "[12:00:04] [Server thread/INFO] [minecraft/DedicatedServer]: Done (3.2s)! For help, type \"help\"", // NeoForge, Forge
+                "Done (0.512s)! Listening on 0.0.0.0:25565. Type stop to stop.", // Minestom template
+                "\u001b[0m[12:00:04 INFO]: Done (3.204s)! For help, type \"help\"\u001b[m",
+                "\u001b[32m[12:00:04] [Server thread/INFO]: \u001b[0mDone (3.204s)! For help, type \"help\"\u001b[0m\r");
+        List<String> other = List.of("[12:00:04 INFO]: Steve issued server command: /say Done",
+                "[main] INFO com.example.Lobby - Loading done", "[12:00:04 INFO]: Done preparing level \"world\"");
+        List<String> failures = new ArrayList<>();
+        for (int chunk : ChunkedInput.CHUNKS) {
+            for (String line : ready) {
+                if (readyCalls(line, chunk) != 1) {
+                    failures.add("not ready at chunk " + chunk + ": " + line);
+                }
+            }
+            for (String line : other) {
+                if (readyCalls(line, chunk) != 0) {
+                    failures.add("ready at chunk " + chunk + ": " + line);
+                }
+            }
+        }
+        assertThat(failures).isEmpty();
+    }
+
+    private static int readyCalls(String line, int chunk) throws IOException {
+        int[] calls = {0};
+        LogReader.pump(new ChunkedInput((line + "\n").getBytes(StandardCharsets.UTF_8), chunk), new LogBuffer(10, Long.MAX_VALUE),
+                () -> calls[0]++);
+        return calls[0];
+    }
 }

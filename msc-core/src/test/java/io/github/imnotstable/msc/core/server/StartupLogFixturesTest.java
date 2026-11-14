@@ -134,7 +134,7 @@ class StartupLogFixturesTest {
             for (boolean ansi : new boolean[] {false, true}) {
                 String text = String.join("\n", ansi ? lines.stream().map(StartupLogFixturesTest::colour).toList() : lines) + "\n";
                 for (int chunk : ChunkedInput.CHUNKS) {
-                    LogBuffer log = new LogBuffer(20_000);
+                    LogBuffer log = new LogBuffer(20_000, Long.MAX_VALUE);
                     boolean[] ready = {false};
                     LogReader.pump(new ChunkedInput(text.getBytes(StandardCharsets.UTF_8), chunk), log, () -> ready[0] = true);
                     LogCondenser.Condensed c = LogCondenser.analyze(log.all(), 6000);
