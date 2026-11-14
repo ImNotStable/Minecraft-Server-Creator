@@ -98,11 +98,20 @@ public record Reset(List<String> delete) {
     }
 
     private static void deleteTree(Path target) throws IOException {
-        if (!Files.isDirectory(target, LinkOption.NOFOLLOW_LINKS)) {
+        if (leadsElsewhere(target) || !Files.isDirectory(target, LinkOption.NOFOLLOW_LINKS)) {
             Files.deleteIfExists(target);
             return;
         }
         Files.walkFileTree(target, new SimpleFileVisitor<>() {
+            @Override
+            public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) throws IOException {
+                if (leadsElsewhere(dir)) {
+                    Files.delete(dir);
+                    return FileVisitResult.SKIP_SUBTREE;
+                }
+                return FileVisitResult.CONTINUE;
+            }
+
             @Override
             public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
                 Files.delete(file);
@@ -118,5 +127,26 @@ public record Reset(List<String> delete) {
                 return FileVisitResult.CONTINUE;
             }
         });
+    }
+
+    /**
+     * Whether {@code path}, whose parent is a real path, is a link of any kind: one the real path does not name. That
+     * covers a Windows directory junction too, which Java reports as a plain directory and {@code walkFileTree} would
+     * enter, deleting what it points to.
+     */
+    private static boolean leadsElsewhere(Path path) throws IOException {
+        if (Files.isSymbolicLink(path)) {
+            return true;
+        }
+        return !sameEntry(path, path.toRealPath());
+    }
+
+    /**
+     * Whether {@code real} names the entry {@code expected} itself: the same folder, and the same name up to case, as
+     * the file systems that ignore case (Windows, macOS) give it back.
+     */
+    static boolean sameEntry(Path expected, Path real) {
+        return real.getParent() != null && real.getParent().equals(expected.getParent())
+                && real.getFileName().toString().equalsIgnoreCase(expected.getFileName().toString());
     }
 }
