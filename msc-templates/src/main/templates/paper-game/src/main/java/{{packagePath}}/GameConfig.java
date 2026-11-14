@@ -260,8 +260,9 @@ public record GameConfig(String world, GameMode gameMode, Difficulty difficulty,
 
     // ---- End of typed readers. ----
 
-    private static String plainNumber(double d) {
-        return d == Math.rint(d) ? Long.toString((long) d) : Double.toString(d);
+    /** The number as the messages show it: {@code 5}, {@code 0.5}, {@code 0.0001}. */
+    static String plainNumber(double d) {
+        return BigDecimal.valueOf(d).stripTrailingZeros().toPlainString();
     }
 
     /** The text as YAML reads it without quotes ({@code "6000"} is 6000, {@code "09"} stays text), or the text itself. */
