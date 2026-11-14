@@ -18,10 +18,12 @@ import java.nio.file.StandardOpenOption;
 import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -83,6 +85,9 @@ public final class BenchRunner {
                 throw new IOException("Unknown mode \"" + mode + "\"; bench.json defines " + config.modes().keySet());
             }
         }
+        // A second attempt with the same task, mode and repeat number would run in the first one's folder, on its work.
+        refuseRepeats("task", tasks.stream().map(TaskDef::id).toList());
+        refuseRepeats("mode", modes);
         Files.createDirectories(runDir);
         stoppedBy = null;
         // Ctrl-C ends the bench JVM without running the finally blocks that stop the agent and the server: left
@@ -109,6 +114,16 @@ public final class BenchRunner {
         children.killAll();
         if (serverTask) {
             ServerManager.sendStop(config.server());
+        }
+    }
+
+    private static void refuseRepeats(String kind, List<String> names) {
+        Set<String> seen = new HashSet<>();
+        for (String name : names) {
+            if (!seen.add(name)) {
+                throw new IllegalArgumentException(kind + " \"" + name + "\" is listed twice; use --repeat N for more "
+                        + "attempts of each task and mode");
+            }
         }
     }
 
@@ -177,6 +192,10 @@ public final class BenchRunner {
         BenchConfig.Mode mode = config.modes().get(modeName);
         String name = modeName + "-" + repeat + (attempt > 1 ? "-try" + attempt : "");
         Path attemptDir = runDir.resolve("attempts").resolve(task.id()).resolve(name).toAbsolutePath();
+        if (Files.exists(attemptDir)) {
+            // Its workspace and tool log hold an earlier attempt's work, which this attempt's checks would score.
+            throw new IOException("attempt folder " + attemptDir + " already exists");
+        }
         Path workspace = attemptDir.resolve("workspace");
         String startedAt = Instant.now().toString();
         Map<String, String> values = placeholders(attemptDir, workspace);
