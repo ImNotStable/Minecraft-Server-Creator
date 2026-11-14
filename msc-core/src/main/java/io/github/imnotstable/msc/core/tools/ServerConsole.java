@@ -46,10 +46,10 @@ final class ServerConsole {
         List<String> lines = all ? server.log().all() : server.log().since(marks.start);
         if (mode.equals("triage")) {
             // Crash files from before the last start are old news, unless all=true or this core never started one.
-            List<CrashTriage.Finding> findings = CrashTriage.triage(lines, server.serverDir(),
-                    all ? null : server.lastLaunch());
+            CrashTriage.Result triage = CrashTriage.triage(lines, server.serverDir(),
+                    all ? null : server.lastLaunch(), server.platform());
             String state = server.running() ? "server running" : "server not running";
-            return Budget.truncate(CrashTriage.render(findings, lines.size(), state), maxChars,
+            return Budget.truncate(triage.render(state), maxChars,
                     "Use server_logs mode=errors.");
         }
         if (lines.isEmpty()) {

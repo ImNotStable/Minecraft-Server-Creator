@@ -52,6 +52,8 @@ class CrashTriageTest {
                   at com.example.myplugin.ChunkCache.put(ChunkCache.java:30)
                   fix: the dev server has -Xmx2G (Minestom 1G): find what keeps growing (caches, loaded chunks, \
                 entities, a leak) or load less at once""");
+        // Minestom's lines carry no time: its repeats count the same (#561).
+        assertThat(triage("minestom-oom")).startsWith("out of memory (x2) [log]\n");
     }
 
     @Test
@@ -111,8 +113,8 @@ class CrashTriageTest {
                   culprit: com.example.lobby.Main.main
                   cause: java.net.BindException: Address already in use
                   at com.example.lobby.Main.main(Main.java:21)
-                  fix: another process holds the port: server_stop stops a leftover server, else change server-port \
-                in server.properties""");
+                  fix: another process holds the port: server_stop stops a leftover server, else change the port in \
+                the main class's server.start(...)""");
         assertThat(triage("minestom-listener")).isEqualTo("""
                 last logged exception (not fatal) in plugin or mod code [log]
                   culprit: com.example.lobby.Lobby.spread
@@ -125,26 +127,46 @@ class CrashTriageTest {
     @Test
     void aJvmCrashNamesItsFrame() throws IOException {
         Path file = copy("hs_err", "hs_err_pid41234.log");
-        assertThat(CrashTriage.render(CrashTriage.triage(List.of("[12:00:00 INFO]: Done (1.0s)!"), dir, null), 1, null))
+        assertThat(CrashTriage.triage(List.of("[12:00:00 INFO]: Done (1.0s)!"), dir, null, Platform.PAPER).render(null))
                 .startsWith("JVM crash (SIGSEGV) [hs_err_pid41234.log (")
                 .contains("\n  culprit: [libnoise.so+0x1c3d]  fbm_sample+0x2d\n  fix: a native library crashed");
         // Older than the start being triaged: not this crash.
         Files.setLastModifiedTime(file, FileTime.from(Instant.parse("2026-01-01T00:00:00Z")));
-        assertThat(CrashTriage.triage(List.of(), dir, Instant.parse("2026-02-01T00:00:00Z"))).isEmpty();
+        assertThat(CrashTriage.triage(List.of(), dir, Instant.parse("2026-02-01T00:00:00Z"), Platform.PAPER).findings())
+                .isEmpty();
     }
 
     @Test
     void withoutLinesItReadsLatestLog() throws IOException {
         copy("paper-eula", "logs/latest.log");
-        assertThat(CrashTriage.render(CrashTriage.triage(List.of(), dir, null), 0, null))
+        assertThat(CrashTriage.triage(List.of(), dir, null, Platform.PAPER).render(null))
                 .startsWith("EULA not accepted [logs/latest.log 12:00:01]");
+        // A clean one: the all-clear counts the lines it read there, not the empty buffer's (#559).
+        Files.writeString(dir.resolve("logs/latest.log"), "[12:00:00 INFO]: Starting minecraft server version 26.3\n"
+                + "[12:00:03 INFO]: Done (3.1s)! For help, type \"help\"\n");
+        assertThat(CrashTriage.triage(List.of(), dir, null, Platform.PAPER).render("server not running"))
+                .isEqualTo("no crash or startup failure found in 2 lines of logs/latest.log and no new crash report; "
+                        + "server not running");
+    }
+
+    @Test
+    void aPortThePluginItselfBindsIsItsOwnProblemNotTheServerPort() {
+        // #560: the game port is fine; the plugin's web server's port is taken.
+        assertThat(triage("paper-plugin-socket")).isEqualTo("""
+                last logged exception (not fatal) in plugin or mod code [log 12:00:05]
+                  culprit: com.example.web.WebServer.start
+                  cause: java.net.BindException: Address already in use
+                  at com.example.web.WebServer.start(WebServer.java:20)
+                  at com.example.web.WebPlugin.onEnable(WebPlugin.java:12)
+                  fix: the port this code binds is taken: pick another port, or stop what holds it""");
+        assertThat(triage("paper-port")).endsWith("else change server-port in server.properties");
     }
 
     @Test
     void cleanStartupLogsHaveNothingToTriage() {
         for (String platform : List.of("paper", "purpur", "fabric", "quilt", "neoforge", "forge", "minestom")) {
             List<String> lines = lines("startup-logs/" + platform + ".txt");
-            assertThat(CrashTriage.render(CrashTriage.triage(lines, dir, null), lines.size(), "server running"))
+            assertThat(CrashTriage.triage(lines, dir, null, Platform.of(platform)).render("server running"))
                     .as(platform).isEqualTo("no crash or startup failure found in " + lines.size()
                             + " log lines and no new crash report; server running");
         }
@@ -158,13 +180,14 @@ class CrashTriageTest {
                 "[12:00:03 ERROR]: Error occurred while enabling A v1",
                 "[12:00:04 ERROR]: Error occurred while enabling B v1",
                 "[12:00:05 ERROR]: Error occurred while enabling C v1");
-        assertThat(CrashTriage.render(CrashTriage.triage(lines, dir, null), lines.size(), null))
+        assertThat(CrashTriage.triage(lines, dir, null, Platform.PAPER).render(null))
                 .endsWith("\n+2 more: server_logs mode=errors").contains("plugin A failed").doesNotContain("plugin B");
     }
 
     private String triage(String fixture) {
         List<String> lines = lines("crash-logs/" + fixture + ".txt");
-        return CrashTriage.render(CrashTriage.triage(lines, dir, null), lines.size(), null);
+        Platform platform = Platform.of(fixture.substring(0, fixture.indexOf('-')));
+        return CrashTriage.triage(lines, dir, null, platform).render(null);
     }
 
     private Path copy(String fixture, String to) throws IOException {

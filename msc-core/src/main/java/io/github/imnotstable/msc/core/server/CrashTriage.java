@@ -11,12 +11,15 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.function.Function;
+import java.util.function.Predicate;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 /**
  * Why the server crashed or did not start, in a few lines (ADR 0040): what died, the culprit, the key frames and a
@@ -68,13 +71,12 @@ public final class CrashTriage {
             this(what, culprit, cause, frames, fix, source, 1);
         }
 
-        /** The same finding seen again at {@code more}: a log entry counts, another file is named. */
+        /**
+         * The same finding said again by another log entry at {@code more} (counted, whether or not the log has
+         * times), or read from another file (named). One entry gives a finding once ({@link #match}).
+         */
         Finding seenAt(String more) {
-            // Lines of the same second say one thing twice (Paper's port message, a cause and its wrapper).
-            if (source.startsWith(more)) {
-                return this;
-            }
-            if (fromLog(more) && fromLog(source)) {
+            if (fromLog(more) && List.of(source.split(", ")).stream().anyMatch(Finding::fromLog)) {
                 return new Finding(what, culprit, cause, frames, fix, source, times + 1);
             }
             return source.contains(more) ? this : new Finding(what, culprit, cause, frames, fix, source + ", " + more,
@@ -82,19 +84,52 @@ public final class CrashTriage {
         }
 
         private static boolean fromLog(String source) {
-            return source.startsWith(LOG) || source.startsWith(LATEST_LOG);
+            return source.startsWith(LOG);
+        }
+    }
+
+    /**
+     * What a triage found and what it read.
+     *
+     * @param lines  the log lines read
+     * @param source where they came from: the server's output since the start ({@code log}) or {@code logs/latest.log}
+     */
+    public record Result(List<Finding> findings, int lines, String source) {
+        public boolean isEmpty() {
+            return findings.isEmpty();
+        }
+
+        /** The findings as a few lines, or a one-line all-clear ending in {@code hint} when it is not null. */
+        public String render(String hint) {
+            if (findings.isEmpty()) {
+                return "no crash or startup failure found in " + lines
+                        + (source.equals(LOG) ? " log lines" : " lines of " + source) + " and no new crash report"
+                        + (hint == null ? "" : "; " + hint);
+            }
+            return CrashTriage.render(findings);
         }
     }
 
     private static final String LOG = "log";
     private static final String LATEST_LOG = "logs/latest.log";
 
-    /** A known cause: {@code what} and {@code fix} from the match (null fix: from the exception), culprit {@code who}. */
-    private record Rule(Pattern pattern, Function<Matcher, String> what, Function<Matcher, String> fix) {
+    /**
+     * A known cause: {@code what} and {@code fix} from the match (null fix: from the exception), culprit {@code who},
+     * when the entry's trace passes {@code when}.
+     */
+    private record Rule(Pattern pattern, Function<Matcher, String> what, Function<Matcher, String> fix,
+                        Predicate<Trace> when) {
         static Rule of(String regex, Function<Matcher, String> what, Function<Matcher, String> fix) {
-            return new Rule(Pattern.compile(regex), what, fix);
+            return new Rule(Pattern.compile(regex), what, fix, t -> true);
+        }
+
+        Rule when(Predicate<Trace> condition) {
+            return new Rule(pattern, what, fix, condition);
         }
     }
+
+    private static final String PORT_IN_USE = "server port already in use";
+    private static final List<String> JDK = List.of("java.", "javax.", "jdk.", "sun.", "com.sun.");
 
     private static final String DEP_FIX = "install it into plugins/ or mods/, or make the dependency optional";
 
@@ -102,9 +137,12 @@ public final class CrashTriage {
     private static final List<Rule> RULES = List.of(
             Rule.of("You need to agree to the EULA", m -> "EULA not accepted",
                     m -> "ask the user to accept the Minecraft EULA, then server_start acceptEula=true"),
-            Rule.of("FAILED TO BIND TO PORT|Address already in use", m -> "server port already in use",
-                    m -> "another process holds the port: server_stop stops a leftover server, else change "
-                            + "server-port in " + ServerPropertiesFile.NAME),
+            // The server's own port (the fix depends on the platform: portInUse). Vanilla and every loader on it
+            // say FAILED TO BIND; elsewhere (Minestom) a bind whose first frame past the JDK is the server's. A bind
+            // under plugin or mod frames is that code's own socket: the exception finding.
+            Rule.of("FAILED TO BIND TO PORT", m -> PORT_IN_USE, m -> ""),
+            Rule.of("BindException|Address already in use", m -> PORT_IN_USE, m -> "")
+                    .when(t -> t.bindingCode() != null && LogCondenser.framework(t.bindingCode())),
             Rule.of("(?<who>[\\w/$]+) has been compiled by a more recent version of the Java Runtime \\(class file "
                             + "version (?<cls>\\d+)\\.\\d+\\), this version of the Java Runtime only recognizes class "
                             + "file versions up to (?<run>\\d+)",
@@ -166,8 +204,11 @@ public final class CrashTriage {
                     m -> "something blocks the server thread (an endless loop, blocking I/O, a sleep): see "
                             + "server_logs mode=errors for the thread dump"));
 
-    /** The triage of {@code lines} and the crash files in {@code serverDir} written at or after {@code since}. */
-    public static List<Finding> triage(List<String> lines, Path serverDir, Instant since) {
+    /**
+     * The triage of {@code lines} (when empty: {@code logs/latest.log}) and the crash files in {@code serverDir}
+     * written at or after {@code since}, for a server of {@code platform}.
+     */
+    public static Result triage(List<String> lines, Path serverDir, Instant since, Platform platform) {
         String logSource = LOG;
         if (lines.isEmpty()) {
             lines = latestLog(serverDir);
@@ -194,10 +235,7 @@ public final class CrashTriage {
             List<Finding> matched = match(String.join("\n", all), all, source);
             if (!matched.isEmpty()) {
                 for (Finding f : matched) {
-                    add(found, port != null && f.what().equals("server port already in use")
-                            ? new Finding("server port " + port + " already in use", f.culprit(), f.cause(),
-                                    f.frames(), f.fix(), f.source())
-                            : f);
+                    add(found, f.what().equals(PORT_IN_USE) ? portInUse(f, port, platform) : f);
                 }
             } else if (FATAL.matcher(e.text()).matches() || e.level().equals("FATAL")) {
                 fatal.add(e);
@@ -230,15 +268,23 @@ public final class CrashTriage {
             add(found, new Finding(what + (t.inProject() ? " in plugin or mod code" : " in server code"),
                     t.culprit(), t.cause().isEmpty() ? e.text() : t.cause(), t.frames(), exceptionFix(t), source));
         }
-        return found;
+        return new Result(found, lines.size(), logSource);
     }
 
-    /** The findings as a few lines, or a one-line all-clear with {@code lineCount} and {@code hint}. */
-    public static String render(List<Finding> findings, int lineCount, String hint) {
-        if (findings.isEmpty()) {
-            return "no crash or startup failure found in " + lineCount + " log lines and no new crash report"
-                    + (hint == null ? "" : "; " + hint);
-        }
+    /**
+     * The server's own port is taken: the port from the log's start line when it has one, and where the port is set,
+     * which on Minestom is the server's main class, as it has no server.properties.
+     */
+    private static Finding portInUse(Finding f, String port, Platform platform) {
+        String setIn = platform == Platform.MINESTOM ? "the port in the main class's server.start(...)"
+                : "server-port in " + ServerPropertiesFile.NAME;
+        return new Finding(port == null ? PORT_IN_USE : "server port " + port + " already in use", f.culprit(),
+                f.cause(), f.frames(), "another process holds the port: server_stop stops a leftover server, else "
+                        + "change " + setIn, f.source());
+    }
+
+    /** Some findings as a few lines each. */
+    private static String render(List<Finding> findings) {
         StringBuilder out = new StringBuilder();
         for (Finding f : findings.subList(0, Math.min(MAX_FINDINGS, findings.size()))) {
             if (!out.isEmpty()) {
@@ -279,10 +325,13 @@ public final class CrashTriage {
     }
 
     private static List<Finding> match(String text, List<String> lines, String source) {
+        Trace t = Trace.of(lines);
         for (Rule rule : RULES) {
+            if (!rule.when().test(t)) {
+                continue;
+            }
             Matcher m = rule.pattern().matcher(text);
             List<Finding> out = new ArrayList<>();
-            Trace t = Trace.of(lines);
             boolean names = rule.pattern().pattern().contains("(?<who>");
             while (m.find()) {
                 // The plugin or mod a rule names is in its what; the culprit adds the frame to blame.
@@ -297,6 +346,9 @@ public final class CrashTriage {
                 String cause = t.cause().isEmpty() ? clip(lineAt(text, m.start())) : t.cause();
                 out.add(new Finding(rule.what().apply(m), culprit, cause, t.frames(), fix, source));
             }
+            // An entry says each thing once: a wrapper and its cause quoting one message are one finding.
+            out = new ArrayList<>(out.stream().collect(Collectors.toMap(Finding::what, f -> f, (a, b) -> a,
+                    LinkedHashMap::new)).values());
             if (!out.isEmpty()) {
                 return out;
             }
@@ -328,6 +380,10 @@ public final class CrashTriage {
         if (c.contains("Mixin") || c.contains("InvalidInjectionException")) {
             return "the mixin does not fit this Minecraft version: check its target class, method and descriptor";
         }
+        if (c.contains("BindException") || c.contains("Address already in use")) {
+            // Not the server's port: that is a rule. A port this code opens itself.
+            return "the port this code binds is taken: pick another port, or stop what holds it";
+        }
         if (c.contains("StackOverflowError")) {
             return "endless recursion" + (t.at().isEmpty() ? "" : " around " + t.at());
         }
@@ -343,9 +399,12 @@ public final class CrashTriage {
      *
      * @param culprit   the first frame outside framework packages, or {@code server or loader code}, or empty
      * @param at        that frame as {@code File.java:42 (Class.method)}, or empty
-     * @param inProject whether a frame outside framework packages was found
+     * @param inProject   whether a frame outside framework packages was found
+     * @param bindingCode the first frame past the JDK, from the root cause out (whose code called the failing JDK
+     *                    method, such as a socket bind), or null when there are only JDK frames
      */
-    record Trace(String cause, List<String> frames, String culprit, String at, boolean inProject) {
+    record Trace(String cause, List<String> frames, String culprit, String at, boolean inProject,
+                 String bindingCode) {
         static Trace of(List<String> lines) {
             List<String> causes = new ArrayList<>();
             List<List<Matcher>> blocks = new ArrayList<>();
@@ -369,7 +428,7 @@ public final class CrashTriage {
                 }
             }
             if (causes.isEmpty()) {
-                return new Trace("", List.of(), "", "", false);
+                return new Trace("", List.of(), "", "", false, null);
             }
             List<Matcher> root = blocks.getLast();
             List<Matcher> own = new ArrayList<>();
@@ -387,13 +446,24 @@ public final class CrashTriage {
                 }
             }
             String cause = clip(causes.getLast());
+            String bindingCode = null;
+            for (int i = blocks.size() - 1; i >= 0 && bindingCode == null; i--) {
+                bindingCode = blocks.get(i).stream().map(f -> f.group(1)).filter(w -> !jdk(w)).findFirst()
+                        .orElse(null);
+            }
             if (own.isEmpty()) {
-                return new Trace(cause, List.copyOf(frames), root.isEmpty() ? "" : "server or loader code", "", false);
+                return new Trace(cause, List.copyOf(frames), root.isEmpty() ? "" : "server or loader code", "",
+                        false, bindingCode);
             }
             Matcher first = own.getFirst();
             String where = first.group(1);
             String culprit = where.startsWith(AGENT_PACKAGE) ? where + " (the msc agent, not your code)" : where;
-            return new Trace(cause, List.copyOf(frames), culprit, first.group(2) + " (" + where + ")", true);
+            return new Trace(cause, List.copyOf(frames), culprit, first.group(2) + " (" + where + ")", true,
+                    bindingCode);
+        }
+
+        private static boolean jdk(String where) {
+            return JDK.stream().anyMatch(where::startsWith);
         }
 
         /** The throwable a line starts, without {@code Caused by:} or the thread name, or null. */

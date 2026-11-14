@@ -1,0 +1,6 @@
+[main] INFO net.minestom.server.MinecraftServer - Starting Minestom
+Done (0.512s)! Listening on 0.0.0.0:25565. Type stop to stop.
+java.lang.OutOfMemoryError: Java heap space
+	at com.example.lobby.Cache.put(Cache.java:30)
+java.lang.OutOfMemoryError: Java heap space
+	at com.example.lobby.Cache.put(Cache.java:30)
