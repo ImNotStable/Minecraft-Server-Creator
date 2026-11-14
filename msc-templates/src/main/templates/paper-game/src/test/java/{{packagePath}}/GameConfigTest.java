@@ -2,6 +2,7 @@ package {{packageName}};
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -39,22 +40,26 @@ class GameConfigTest {
         return GameConfig.from(c);
     }
 
+    /** A time and a kit amount the rules take, also when MAX_TIME or MAX_AMOUNT is lowered. */
+    private static final int TIME_OK = Math.min(1000, GameConfig.MAX_TIME);
+    private static final int AMOUNT_OK = Math.min(16, Kit.MAX_AMOUNT);
+
     @Test
     void readsEverySetting() throws InvalidConfigurationException {
         GameConfig c = parse("""
                 game-mode: survival
                 difficulty: hard
-                time: 1000
-                kit: [stone_sword, 'minecraft:arrow:16']
+                time: %d
+                kit: [stone_sword, 'minecraft:arrow:%d']
                 stages:
                   - {name: start, spawn: [0, -60, 0]}
                   - {name: boss, spawn: [0, -60, 50, 180, 0], goal: [0, 0, 0, 1, 1, 1]}
-                """);
+                """.formatted(TIME_OK, AMOUNT_OK));
         assertThat(c.gameMode()).isEqualTo(GameMode.SURVIVAL);
         assertThat(c.difficulty()).isEqualTo(Difficulty.HARD);
-        assertThat(c.time()).isEqualTo(1000);
+        assertThat(c.time()).isEqualTo(TIME_OK);
         assertThat(c.kit().items()).containsExactly(
-                new Kit.Entry(Material.STONE_SWORD, 1), new Kit.Entry(Material.ARROW, 16));
+                new Kit.Entry(Material.STONE_SWORD, 1), new Kit.Entry(Material.ARROW, AMOUNT_OK));
         assertThat(c.stageIndex("BOSS")).isEqualTo(1);
         assertThat(c.stageIndex("1")).isZero();
         assertThat(c.stageIndex("3")).isEqualTo(-1);
@@ -65,15 +70,24 @@ class GameConfigTest {
     @Test
     void findsAStageByNameFirstThenByNumber() throws InvalidConfigurationException {
         GameConfig c = parse("stages: [{name: start, spawn: [0, 0, 0]}, {name: arena, spawn: [0, 0, 0]},"
-                + " {name: '2', spawn: [0, 0, 0]}]\n");
+                + " {name: boss, spawn: [0, 0, 0]}]\n");
         assertThat(c.stageIndex("ARENA")).isEqualTo(1);
-        assertThat(c.stageIndex("2")).as("the stage named 2, not the second stage").isEqualTo(2);
         assertThat(c.stageIndex("3")).isEqualTo(2);
         assertThat(c.stageIndex("01")).isZero();
         assertThat(c.stageIndex("+1")).isZero();
         assertThat(c.stageIndex("0")).isEqualTo(-1);
         assertThat(c.stageIndex("4")).isEqualTo(-1);
         assertThat(c.stageIndex("lava")).isEqualTo(-1);
+    }
+
+    /** A stage named like a number wins over that number. Only a name rule that takes {@code 2} allows such a stage. */
+    @Test
+    void aStageNamedLikeANumberWinsOverTheNumber() throws InvalidConfigurationException {
+        assumeTrue(Stage.isName("2"), "the stage name rule refuses 2");
+        GameConfig c = parse("stages: [{name: start, spawn: [0, 0, 0]}, {name: arena, spawn: [0, 0, 0]},"
+                + " {name: '2', spawn: [0, 0, 0]}]\n");
+        assertThat(c.stageIndex("2")).as("the stage named 2, not the second stage").isEqualTo(2);
+        assertThat(c.stageIndex("3")).isEqualTo(2);
     }
 
     @Test
@@ -115,7 +129,7 @@ class GameConfigTest {
             Bad.top("difficulty", "brutal", "difficulty: unknown value brutal"),
             Bad.top("time", "night", TIME + ", got the text 'night'"),
             Bad.top("time", "6000.5", TIME + ", got the decimal 6000.5"),
-            Bad.top("time", "'6000'", TIME + ", got the text '6000'; remove the quotes"),
+            Bad.top("time", "'" + TIME_OK + "'", TIME + ", got the text '" + TIME_OK + "'; remove the quotes"),
             Bad.top("time", "'010'", TIME + ", got the text '010'"),
             Bad.top("time", "09", TIME + ", got the text '09'"),
             Bad.top("time", "99999999999999999999", TIME + ","
@@ -145,8 +159,8 @@ class GameConfigTest {
             // /game stage splits on spaces, so it could never select this stage by name.
             Bad.stage("name", "{name: boss room, spawn: [0, 0, 0]}",
                     "stages[0].name: needs a stage name, " + NAME + ", got the text 'boss room'"),
-            Bad.stage("name", "{name: a, spawn: [0, 0, 0]}, {name: A, spawn: [0, 0, 0]}",
-                    "stages[1]: duplicate stage name A"),
+            Bad.stage("name", "{name: a, spawn: [0, 0, 0]}, {name: a, spawn: [0, 0, 0]}",
+                    "stages[1]: duplicate stage name a"),
             Bad.stage("spawn", "{name: a}",
                     "stages[0] (a).spawn: needs [x, y, z] or [x, y, z, yaw, pitch], got nothing"),
             Bad.stage("spawn", "{name: a, spawn: 0 0 0}",

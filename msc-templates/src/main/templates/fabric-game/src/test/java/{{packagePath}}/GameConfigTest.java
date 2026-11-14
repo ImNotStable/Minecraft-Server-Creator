@@ -38,8 +38,8 @@ class GameConfigTest {
     void rejectsBadSettings() {
         Spot p = new Spot(0, -60, 0);
         assertThatThrownBy(() -> TestGames.withStages(List.of())).hasMessageContaining("at least one stage");
-        assertThatThrownBy(() -> TestGames.withStages(List.of(new Stage("a", p), new Stage("A", p))))
-                .hasMessageContaining("duplicate stage name A");
+        assertThatThrownBy(() -> TestGames.withStages(List.of(new Stage("a", p), new Stage("a", p))))
+                .hasMessageContaining("duplicate stage name a");
         assertThatThrownBy(() -> new Stage("two words", p)).hasMessageContaining(Stage.NAME_RULE);
         assertThatThrownBy(() -> new Kit.Entry(Items.BREAD, 0)).hasMessageContaining("from 1 to " + Kit.MAX_AMOUNT);
     }

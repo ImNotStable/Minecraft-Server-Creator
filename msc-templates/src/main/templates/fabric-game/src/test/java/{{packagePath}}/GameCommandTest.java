@@ -86,7 +86,7 @@ class GameCommandTest {
 
         assertThat(result).isEqualTo(1);
         // Only the start of the line: state you add to the status does not break it.
-        assertThat(console.messages).first().asString().startsWith("game: 2 stages, time 6000, normal, 0 online");
+        assertThat(console.messages).first().asString().startsWith("game: 2 stages, time " + TestGames.TIME + ", normal, 0 online");
     }
 
     @Test
