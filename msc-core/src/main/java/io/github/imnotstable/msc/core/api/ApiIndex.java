@@ -189,9 +189,10 @@ public final class ApiIndex {
     /**
      * Search class and member names. Every word must match; classes rank above members.
      *
-     * @param kind null, or one of class, interface, enum, record, annotation, event
+     * @param kind     null, or one of class, interface, enum, record, annotation, event
+     * @param maxLimit the largest limit a caller may ask for; at it, the cut line no longer says to raise the limit
      */
-    public String search(String query, String kind, int limit) {
+    public String search(String query, String kind, int limit, int maxLimit) {
         String[] words = query.toLowerCase(Locale.ROOT).trim().split("[\\s.#(),]+");
         List<Hit> hits = new ArrayList<>();
         for (ClassInfo c : classes.values()) {
@@ -233,7 +234,9 @@ public final class ApiIndex {
             out.append(hits.get(i).text()).append('\n');
         }
         if (hits.size() > limit) {
-            out.append("[").append(hits.size() - limit).append(" more; add words or raise limit]");
+            out.append("[").append(hits.size() - limit).append(" more; add words")
+                    .append(limit < maxLimit ? " or raise limit (at most " + maxLimit + ")" : " to narrow the search")
+                    .append(']');
         }
         return out.toString().stripTrailing();
     }
@@ -260,8 +263,12 @@ public final class ApiIndex {
         return total;
     }
 
-    /** One class: its header, enum constants and members, optionally filtered and with inherited members. */
-    public String describe(String name, String filter, boolean inherited, int limit) {
+    /**
+     * One class: its header, enum constants and members, optionally filtered and with inherited members.
+     *
+     * @param maxLimit the largest limit a caller may ask for; at it, the cut line no longer says to raise the limit
+     */
+    public String describe(String name, String filter, boolean inherited, int limit, int maxLimit) {
         ClassInfo c = find(name);
         String f = filter == null ? null : filter.toLowerCase(Locale.ROOT);
         StringBuilder out = new StringBuilder();
@@ -304,7 +311,9 @@ public final class ApiIndex {
             out.append(lines.get(i)).append('\n');
         }
         if (lines.size() > limit) {
-            out.append('[').append(lines.size() - limit).append(" more members; use filter or raise limit]");
+            out.append('[').append(lines.size() - limit).append(" more members; use filter")
+                    .append(limit < maxLimit ? " or raise limit (at most " + maxLimit + ")" : " to narrow the list")
+                    .append(']');
         } else if (lines.isEmpty() && constants.isEmpty()) {
             out.append(f == null ? "[no public members]" : "[no members match \"" + filter + "\""
                     + (inherited ? "" : "; try inherited=true") + "]");

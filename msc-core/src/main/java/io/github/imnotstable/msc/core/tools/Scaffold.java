@@ -45,7 +45,7 @@ final class Scaffold {
      */
     String run(Args args) throws IOException, InterruptedException {
         String name = args.str("name");
-        Path dir = OutputFile.checkFolder(config.resolve(args.str("dir", ".")), "dir");
+        Path dir = OutputFile.checkFolder(args.path("dir", ".", config.inWorkspace()), "dir");
         String template = args.str("template", Templates.PAPER_PLUGIN);
         if (!Templates.ids().contains(template)) {
             throw new ToolException("unknown template " + template + ". Available: " + String.join(", ", Templates.ids()));

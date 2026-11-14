@@ -9,6 +9,7 @@ import io.github.imnotstable.msc.core.server.ProjectBuilder;
 import io.github.imnotstable.msc.core.server.ServerManager;
 import io.github.imnotstable.msc.core.texture.ResourcePack;
 import io.github.imnotstable.msc.core.tool.Args;
+import io.github.imnotstable.msc.core.tool.PathArg;
 import io.github.imnotstable.msc.core.tool.Schema;
 import io.github.imnotstable.msc.core.tool.Tool;
 import io.github.imnotstable.msc.core.tool.ToolException;
@@ -323,7 +324,7 @@ public final class Core implements AutoCloseable {
         if (!args.has("path")) {
             return "workspace: " + current.workspace();
         }
-        Path target = current.resolve(args.str("path").strip());
+        Path target = PathArg.anywhere(current.workspace()).resolve("path", args.str("path").strip());
         if (!Files.isDirectory(target)) {
             if (Files.exists(target)) {
                 throw new ToolException(target + " is a file, not a folder");
@@ -331,7 +332,7 @@ public final class Core implements AutoCloseable {
             if (!args.bool("create", false)) {
                 throw new ToolException("no folder " + target + ". Check the path, or pass create=true to make it.");
             }
-            Files.createDirectories(target);
+            PathArg.createFolders(target, "folder");
         }
         target = target.toRealPath();
         if (target.equals(realOrSelf(current.workspace()))) {

@@ -439,6 +439,19 @@ class LifecycleToolsTest {
                 .doesNotContain("* Try").doesNotContain("--info");
         assertThat(h.core.server().running()).isTrue();
         assertThat(h.error("dev_cycle", "project", "nowhere")).contains("no project at");
+        // #457: a project outside the workspace is refused; MSC builds only what is in it.
+        assertThat(h.error("dev_cycle", "project", "/etc")).contains("must be inside the workspace");
+        assertThat(h.error("dev_cycle", "project", "..")).contains("must be inside the workspace");
+    }
+
+    /** A start timeout below one second is refused with the range, not taken as an instant timeout. */
+    @Test
+    void serverStartRefusesATimeoutOutsideItsRange() {
+        for (int timeout : new int[] {0, -5, 3601}) {
+            assertThat(h.error("server_start", "timeoutSeconds", timeout))
+                    .isEqualTo("error: argument timeoutSeconds must be 1 to 3600, not " + timeout);
+        }
+        assertThat(h.core.server().running()).isFalse();
     }
 
     @Test

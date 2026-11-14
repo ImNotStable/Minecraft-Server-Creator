@@ -44,7 +44,7 @@ class ApiIndexTest {
     @Test
     void describesAClassWithSignaturesAndParameterNames() {
         assertThat(index.size()).isEqualTo(3);
-        assertThat(index.describe("Gadget", null, false, 40)).isEqualTo("""
+        assertThat(index.describe("Gadget", null, false, 40, 300)).isEqualTo("""
                 class io.github.imnotstable.msc.core.fixture.Gadget : Widget
                 static final int MAX_SIZE
                 String label
@@ -58,30 +58,32 @@ class ApiIndexTest {
 
     @Test
     void filtersInheritsAndListsEnumConstants() {
-        assertThat(index.describe("Gadget", "labelled", true, 40))
+        assertThat(index.describe("Gadget", "labelled", true, 40, 300))
                 .endsWith("default boolean isLabelled()  <- Widget");
-        assertThat(index.describe("Gadget", "labelled", false, 40)).contains("try inherited=true");
-        assertThat(index.describe("Gadget.Mode", null, false, 40))
+        assertThat(index.describe("Gadget", "labelled", false, 40, 300)).contains("try inherited=true");
+        assertThat(index.describe("Gadget.Mode", null, false, 40, 300))
                 .isEqualTo("enum io.github.imnotstable.msc.core.fixture.Gadget.Mode\nconstants: FAST SAFE");
-        assertThat(index.describe("Gadget", null, false, 2)).endsWith("[6 more members; use filter or raise limit]");
+        assertThat(index.describe("Gadget", null, false, 2, 300)).endsWith("[6 more members; use filter or raise limit (at most 300)]");
+        // At the most a caller may ask for, the hint names only what still helps.
+        assertThat(index.describe("Gadget", null, false, 2, 2)).endsWith("[6 more members; use filter to narrow the list]");
         assertThatThrownBy(() -> index.find("Gizmo")).isInstanceOf(ToolException.class).hasMessageContaining("api_search");
     }
 
     @Test
     void showsConstantsInheritedFromInterfacesWithoutInherited() {
-        assertThat(index.describe("Gadget", "width", false, 40))
+        assertThat(index.describe("Gadget", "width", false, 40, 300))
                 .isEqualTo("class io.github.imnotstable.msc.core.fixture.Gadget : Widget\nstatic final int MAX_WIDTH  <- Widget");
-        assertThat(index.describe("Gadget", "width", true, 40)).containsOnlyOnce("MAX_WIDTH");
+        assertThat(index.describe("Gadget", "width", true, 40, 300)).containsOnlyOnce("MAX_WIDTH");
     }
 
     @Test
     void searchRanksClassesFirstAndFindsMembersAndConstants() {
-        assertThat(index.search("gadget", null, 2)).startsWith("class io.github.imnotstable.msc.core.fixture.Gadget\n");
-        assertThat(index.search("gadget create", null, 5))
+        assertThat(index.search("gadget", null, 2, 100)).startsWith("class io.github.imnotstable.msc.core.fixture.Gadget\n");
+        assertThat(index.search("gadget create", null, 5, 100))
                 .isEqualTo("Gadget#static Gadget create(String label, Gadget.Mode mode)");
-        assertThat(index.search("safe", null, 5)).isEqualTo("Gadget.Mode.SAFE");
-        assertThat(index.search("label", "interface", 5)).isEqualTo("Widget#String label()\nWidget#default boolean isLabelled()");
-        assertThat(index.search("nothing here", null, 5)).isEqualTo("no matches for \"nothing here\"");
+        assertThat(index.search("safe", null, 5, 100)).isEqualTo("Gadget.Mode.SAFE");
+        assertThat(index.search("label", "interface", 5, 100)).isEqualTo("Widget#String label()\nWidget#default boolean isLabelled()");
+        assertThat(index.search("nothing here", null, 5, 100)).isEqualTo("no matches for \"nothing here\"");
     }
 
     @Test
@@ -98,7 +100,7 @@ class ApiIndexTest {
             synthetic(zip, "net.fabricmc.fabric.api.event.player.JoinCallback", "java.lang.Object", null);
             synthetic(zip, "x.JoinHelper", "java.lang.Object", null);
         }
-        String found = ApiIndex.load(List.of(events)).search("join", "event", 20);
+        String found = ApiIndex.load(List.of(events)).search("join", "event", 20, 100);
         assertThat(found.lines().map(l -> l.substring(l.lastIndexOf(' ') + 1))).containsExactlyInAnyOrder(
                 "a.BukkitJoinEvent", "b.NeoJoinEvent", "c.ForgeJoinEvent", "c.ForgeJoinMutable",
                 "c.ForgeJoinInheritable", "d.MinestomJoinEvent", "net.fabricmc.fabric.api.networking.v1.JoinEvents",
@@ -123,6 +125,12 @@ class ApiIndexTest {
             assertThat(h.ok("api_class", "name", "Widget")).startsWith("interface io.github.imnotstable.msc.core.fixture.Widget");
             assertThat(h.ok("api_search", "query", "sortInto")).contains("sortInto(List<T> items, int[] order)");
             assertThat(h.error("api_search", "query", "x", "kind", "blob")).contains("kind must be");
+            // A limit past the most each tool lists is refused with the range, not clamped silently (#459).
+            assertThat(h.error("api_search", "query", "x", "limit", 101))
+                    .isEqualTo("error: argument limit must be 1 to 100, not 101");
+            assertThat(h.error("api_class", "name", "Widget", "limit", 301))
+                    .isEqualTo("error: argument limit must be 1 to 300, not 301");
+            assertThat(h.error("api_class", "name", "Widget", "limit", 0)).contains("must be 1 to 300");
             assertThat(h.ok("msc_status")).contains("api index: 3 classes").contains("agent: not connected");
         }
     }

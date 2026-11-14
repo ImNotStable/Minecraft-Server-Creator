@@ -49,6 +49,21 @@ public final class ToolRegistry {
         return tools.values();
     }
 
+    /**
+     * The one cap rule for every result ({@link Budget#cap}). A tool cuts its own result first with a hint of its own;
+     * this cut only catches a result that came out longer anyway.
+     */
+    private static String capped(Tool tool, Args args, String text) {
+        int cap;
+        try {
+            cap = Budget.cap(tool, args);
+        } catch (ToolException e) {
+            cap = Budget.DEFAULT_CHARS;
+        }
+        return Budget.truncate(text, cap, Budget.takesMaxChars(tool) && cap < Budget.MAX_CHARS
+                ? "Raise maxChars or narrow the call." : "Narrow the call.");
+    }
+
     public Result call(String name, JsonObject arguments) {
         long start = System.nanoTime();
         JsonObject args = arguments == null ? new JsonObject() : arguments;
@@ -73,6 +88,7 @@ public final class ToolRegistry {
             } catch (Exception e) {
                 text = "error: internal: " + e;
             }
+            text = capped(tool, new Args(args), text);
         }
         String pending = notice;
         if (pending != null) {

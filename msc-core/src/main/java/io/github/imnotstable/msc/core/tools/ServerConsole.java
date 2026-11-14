@@ -76,10 +76,7 @@ final class ServerConsole {
 
     String await(Args args) throws InterruptedException {
         Pattern pattern = pattern(args.str("until"));
-        int timeout = args.integer("timeoutSeconds", 60);
-        if (timeout < 1 || timeout > MAX_WAIT_SECONDS) {
-            throw new ToolException("timeoutSeconds must be 1 to " + MAX_WAIT_SECONDS);
-        }
+        int timeout = args.integer("timeoutSeconds", 60, 1, MAX_WAIT_SECONDS);
         if (!server.running()) {
             throw new ToolException("server_wait reads the log of a server this session started, and none is running. "
                     + "Start it with server_start or dev_cycle.");
@@ -104,7 +101,7 @@ final class ServerConsole {
 
     /** One command, or several (one per line) run in order, each output under its command, in one tool call. */
     String command(Args args) throws IOException, InterruptedException {
-        List<String> commands = args.str("command").lines().map(String::strip).filter(c -> !c.isEmpty()).toList();
+        List<String> commands = args.text("command").lines().map(String::strip).filter(c -> !c.isEmpty()).toList();
         if (commands.size() > MAX_COMMANDS) {
             throw new ToolException("at most " + MAX_COMMANDS + " commands per call; got " + commands.size());
         }
