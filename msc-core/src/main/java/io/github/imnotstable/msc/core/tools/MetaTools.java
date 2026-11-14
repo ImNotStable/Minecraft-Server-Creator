@@ -56,6 +56,11 @@ public final class MetaTools {
         if (server.running()) {
             return server.detached() ? "running, detached" : "running";
         }
+        var other = server.otherSession();
+        if (other.isPresent()) {
+            return "running under another session that is still running (server pid " + other.get().serverPid()
+                    + ", MSC core pid " + other.get().corePid() + "; use that session, or end it)";
+        }
         long leftover = server.leftoverPid();
         if (leftover >= 0) {
             return "running, left by an earlier session (pid " + leftover + "; server_start or dev_cycle restarts it "
