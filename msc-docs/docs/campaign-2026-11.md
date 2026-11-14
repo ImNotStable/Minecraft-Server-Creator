@@ -108,42 +108,49 @@ If time runs short, cut from the bottom: `sev:3` fixes, then `kind:docs`, then r
 
 ## State
 
-Updated at each milestone. The tracking issue (#74) has the per-round log. Rounds run is the highest round number
-logged for the piece; agent-paper, agent-mods and agent-minestom also had one combined re-confirm round (round 8,
-clean) after the shared agent code changed.
+Final state at the end of the campaign (2026-11-14 23:00 UTC). The tracking issue (#74) has the per-round log.
+A piece is done when two fresh audits in a row confirmed nothing new.
 
-| Piece | Rounds run | Clean in a row | Issues filed | Closed | Status |
-|---|---|---|---|---|---|
-| core-tools | 8 | 0 | 20 | 17 | round 8 found #338, #339, #340 (open) |
-| core-server | 9 | 0 | 19 | 17 | round 9 found #336, #337 (open) |
-| core-world | 10 | 2 | 16 | 16 | done (rounds 9 and 10 clean) |
-| textures | 6 | 2 | 13 | 13 | done (two clean rounds) |
-| protocol | 10 | 0 | 12 | 11 | round 9 clean, round 10 found #341 (open) |
-| agent-paper | 4 + combined | 4 | 4 | 4 | done (two clean rounds; re-confirmed in rounds 4 and combined 8) |
-| agent-mods | 5 + combined | 4 | 5 | 5 | done (two clean rounds; re-confirmed in rounds 5 and combined 8) |
-| agent-minestom | 6 + combined | 3 | 10 | 10 | done (two clean rounds; re-confirmed in combined 8) |
-| bot | 9 | 1 | 18 | 18 | round 9 clean, one more clean round to go |
-| renderer | 9 | 0 | 15 | 12 | round 9 found #342, #343, #344 (open) |
-| templates | 9 | 1 | 8 | 8 | round 9 clean, one more clean round to go |
-| bench | 9 | 0 | 18 | 17 | round 9 found #335 (open) |
-| build | 8 | 2 | 14 | 14 | done (rounds 7 and 8 clean) |
-| cross | 9 | 0 | 19 | 17 | round 9 found #333, #334 (fix in review) |
+| Piece | Issues filed | Closed | Status |
+|---|---|---|---|
+| core-tools | 46 | 46 | not done: round 28 still found #534 (fixed, not audited again) |
+| core-server | 42 | 42 | not done: round 28 clean, round 29 found #533 (fixed, not audited again) |
+| core-world | 16 | 16 | done |
+| textures | 14 | 13 | done; #539 (a timing limit in one test) was filed afterwards and is open |
+| protocol | 13 | 13 | done |
+| agent-paper | 4 | 4 | done |
+| agent-mods | 5 | 5 | done |
+| agent-minestom | 10 | 10 | done |
+| bot | 21 | 21 | done |
+| renderer | 15 | 15 | done |
+| templates | 22 | 22 | done (rounds 23 and 24 clean) |
+| bench | 42 | 42 | not done: round 29 clean, rounds 30 to 32 found #525, #529, #535 (fixed, not audited again) |
+| build | 14 | 14 | done |
+| cross | 40 | 40 | done (rounds 21 and 22 clean) |
 
-Done (two clean rounds in a row): agent-paper, agent-mods, agent-minestom, textures, build, and core-world (its round
-10 came back clean at 20:08 UTC, after protocol and core-world had each been clean once in round 9). Clean once:
-bot, templates. The round 8 sweep still found 15 confirmed defects in eight pieces (core-tools' round 8, logged
-later, found three more), so the 8-round cap was lifted
-(ADR 0029 amendment): the remaining pieces get confirm rounds until they are clean twice in a row or the campaign
-ends.
+Eleven of the fourteen pieces are done. The three that are not (core-tools, core-server, bench) are the largest
+and the ones each fix kept changing: every confirm round there read the code the last fix had just added and found
+the next, smaller defect in it. In the last ninety minutes these three had fourteen more rounds and ten more fix
+PRs (#520 to #538); every finding was sev 2 or sev 3 and every one was fixed, but none of the three reached two
+clean rounds in a row, and the last fix of each was not audited again. Their next step is one fresh round each.
+An issue can carry two piece labels, so the rows add up to more than the total.
 
-Totals: 191 campaign issues filed, 179 closed, 12 open (#333 to #344); 74 campaign fix PRs merged (plus the two
-platform matrix reports, #170 and #255). Updated 2026-11-13 20:12 UTC, on main dd5724d.
+Totals: 305 campaign issues filed, 304 closed, 1 open (#539); 157 campaign fix PRs merged (plus the two
+platform matrix reports, #170 and #255). Updated 2026-11-14 23:00 UTC.
+
+From 2026-11-14 11:50 UTC the campaign ran in the cloud only (the PC was out of use) and with about five agents
+at a time. GitHub Actions has been billing-blocked since 2026-11-12, so every merge was checked with a full local
+build by the integrator thread, and main was rebuilt independently several times.
+
+Left for a PC session: a third platform matrix run, RunIsolation with Windows paths (#328), the Windows process
+tree kill, the pid and lock files and AtomicFile replace-over-open on Windows, Reset on a Windows junction, RCON
+against a real Paper server, the full bench and Sky Sprint rerun, and the v0.6.0 release build.
 
 Platform matrix (PC): baseline run merged in #170 (all 7 platforms, 14 cells pass). Second run at 113058b merged in
 #255: every cell passes the baseline steps and the earlier fixes hold; it filed #253 (Paper and Purpur: a `/kill`
 in the nether reports no death or respawn) and #254 (Forge and Quilt still warn on a clean start), both since fixed (#264, #269). `gradlew build`
 and `:msc-core:e2eTest` pass on Windows.
-Bench: rerun pending.
+Bench: rerun pending (needs the PC). Last valid full run: full-after-r9/20261112-091046.
 
 ## Lessons
 
@@ -155,3 +162,15 @@ Bench: rerun pending.
 - **Timing tests flake under load**: a test that passes alone can fail while other agents build. New tests
   use no fixed sleeps, tight deadlines or fixed ports, assert on state rather than timing, and are run 50 times in a
   loop with a CPU-burning process before the fix is called done.
+- **Fix the class, not the case**: in core-tools, bench, templates and core-server, a fix for one finding was the
+  next round's finding more than once (result cuts #473, #487, #499; the rule-change doc #481, #491, #498; server
+  ownership #482, #490). The rounds stopped finding things when the fix made the design smaller: one helper or
+  entry point that every caller must use, and a property or table test over every caller.
+- **Docs promise only what a test proves**: a scaffold's CLAUDE.md is followed word for word by its reader. Every
+  universal sentence in it ("no other test needs a change") was false for some input until a test applied the
+  doc's own steps at awkward values.
+- **Test through the real transport**: the bad-input tests called the tool registry directly, and the MCP SDK was
+  answering those calls itself before the registry saw them (#510). An audit that drove every tool over MCP found
+  it in one round.
+- **A fast "merged" answer deserves a second build**: main was rebuilt from a clean worktree at intervals,
+  independently of the integrator, and passed each time.
