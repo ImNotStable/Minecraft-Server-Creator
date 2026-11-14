@@ -98,7 +98,10 @@ class RconClientTest {
         String longReply = "w".repeat(FakeRconServer.CHUNK) + "é".repeat(FakeRconServer.CHUNK + 3) + "!";
         try (FakeRconServer server = new FakeRconServer("pw", cmd -> cmd.equals("long") ? longReply : "ran " + cmd,
                         new Quirks(false, other));
-                RconClient client = RconClient.connect("127.0.0.1", server.port(), "pw", Duration.ofSeconds(30))) {
+                // A short end wait: IGNORE is waited out once per long reply (#427). The fake writes a reply's
+                // packets in one write, so they are all read before the wait starts and it cannot cut the reply.
+                RconClient client = RconClient.connect("127.0.0.1", server.port(), "pw", Duration.ofSeconds(30),
+                        Duration.ofMillis(200))) {
             assertThat(client.command("long")).isEqualTo(longReply);
             assertThat(client.command("next")).isEqualTo("ran next");
             assertThat(client.command("long")).isEqualTo(longReply);

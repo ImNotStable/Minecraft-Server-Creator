@@ -1,6 +1,7 @@
 package io.github.imnotstable.msc.process.rcon;
 
 import java.io.BufferedInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -123,13 +124,17 @@ public final class FakeRconServer implements AutoCloseable {
                 } else if (type == 2) {
                     commands.add(body);
                     // Like the vanilla server: a long reply goes out in packets of 4096 characters, no end marker.
+                    // All in one write, so a client's short end wait (#427) never runs out between two packets.
                     String reply = replies.apply(body);
+                    ByteArrayOutputStream packets = new ByteArrayOutputStream();
                     int offset = 0;
                     do {
                         int end = Math.min(reply.length(), offset + CHUNK);
-                        write(out, id, 0, reply.substring(offset, end));
+                        write(packets, id, 0, reply.substring(offset, end));
                         offset = end;
                     } while (offset < reply.length());
+                    packets.writeTo(out);
+                    out.flush();
                 } else if (quirks.other() == Other.ANSWER) {
                     write(out, id, 0, "Unknown request " + Integer.toHexString(type));
                 } else if (quirks.other() == Other.CLOSE) {
