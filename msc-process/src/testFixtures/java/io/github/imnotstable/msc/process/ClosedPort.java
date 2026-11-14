@@ -19,9 +19,17 @@ public final class ClosedPort implements AutoCloseable {
     }
 
     public static ClosedPort reserve() throws IOException {
+        return reserve(0);
+    }
+
+    /**
+     * Holds {@code port} on loopback closed, for a test of a server's default port (25565, 25575) that must not reach
+     * a server running on this machine. Throws a {@link java.net.BindException} when something already uses it.
+     */
+    public static ClosedPort reserve(int port) throws IOException {
         Socket socket = new Socket();
         try {
-            socket.bind(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0));
+            socket.bind(new InetSocketAddress(InetAddress.getLoopbackAddress(), port));
         } catch (IOException e) {
             socket.close();
             throw e;

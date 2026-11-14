@@ -47,7 +47,20 @@ Check types: `file` (exists, optional `contains` regex), `command` (exit code, o
 
 A leading `~` in a path argument (`check`'s workspace, `report`'s run folder, `--out`, `--config`, `--tasks-dir`) is your home folder: the bench expands it itself, because neither Gradle's `--args` nor a quoted shell argument does. The path `run` prints after `Report:` works too.
 
-`--repeat` is a whole number from 1. A bad argument, such as `--repeat 0`, or a `report` folder without a `results.jsonl` ends with a message and exit code 2. `run` exits 0 when every attempt passed, 3 when one failed, and 4 when it stopped on a usage limit; when every selected task was skipped (Paper tasks without the EULA), it says that nothing ran and writes an empty report.
+`--repeat` is a whole number from 1. Before it creates anything, `run` resolves and checks what it will run: a tasks folder with no task in it (an empty folder, or `--tasks-dir` naming another folder such as `msc-bench` itself), a `--tasks` or `--modes` list that names nothing or has an empty name (`--tasks ,`, `--modes a,,b`), a name that is no task or mode, a name listed twice and a `--config` file that does not exist are refused with exit code 2, without a run folder or report. `check` refuses a task list that is not exactly one task, a workspace folder that does not exist and a `--config` file that does not exist (without `--config`, it runs without `bench.json` when there is none, and then its RCON checks fail). When every selected task was skipped (Paper tasks without the EULA), `run` says that nothing ran and writes an empty report.
+
+| Exit code | Meaning |
+| --- | --- |
+| 0 | `run` or `check`: every attempt or check passed (or every task was skipped); `list` and `report`: done |
+| 1 | no command given: the usage is printed |
+| 2 | a bad argument or input file, refused with one `msc-bench:` line naming it, before anything is created |
+| 3 | `run` or `check`: an attempt or check failed |
+| 4 | `run` stopped early on a usage limit |
+| 70 | an error the bench did not expect: one `msc-bench: internal error` line; please report it |
+
+No exit prints a stack trace.
+
+`report` reads `results.jsonl` strictly and refuses, with the file, the line number and what is wrong (exit 2), every line it cannot take as a run: text that is not UTF-8, a line that is not one JSON object (`null`, a list, a truncated line), an unknown key, a missing `task`, `category`, `mode`, `repeat` or `passed`, a value of the wrong type, a list entry that is `null`, and a number out of range (counts and tokens are whole numbers from 0; `repeat` from 1). Keys a record from an older bench lacks take their empty value. A file holding no run is refused too. A byte-order mark is accepted: UTF-8 with one, and UTF-16 with one, which Windows PowerShell 5.1's `>` writes; so is one at the start of each joined file. To put the files of two runs together after a usage-limit stop, use `cat a/results.jsonl b/results.jsonl > results.jsonl`, or in Windows PowerShell `Get-Content -Encoding UTF8 a\results.jsonl, b\results.jsonl | Set-Content -Encoding UTF8 results.jsonl` (without `-Encoding UTF8`, Windows PowerShell 5.1 reads and writes the legacy code page and garbles non-ASCII text).
 
 `check` runs one task's checks on a workspace. Its RCON checks use a server already answering on the RCON port and leave it running; when none does and the EULA is accepted on the machine, it starts the workspace's own `server/` for the checks and stops it after them.
 

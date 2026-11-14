@@ -10,6 +10,7 @@ import io.github.imnotstable.msc.core.tool.ToolException;
 import io.github.imnotstable.msc.core.tool.ToolRegistry;
 import io.github.imnotstable.msc.core.world.Walk;
 import io.github.imnotstable.msc.core.world.WorldService;
+import io.github.imnotstable.msc.process.ServerAddress;
 import io.github.imnotstable.msc.process.ServerPropertiesFile;
 import io.github.imnotstable.msc.protocol.op.Ops;
 import io.github.imnotstable.msc.protocol.world.BlockPos;
@@ -94,9 +95,9 @@ public final class PlayerTools implements AutoCloseable {
         }
         if (bot == null) {
             // Bots pings the server and picks the client for its version, or says which versions it speaks.
-            String[] address = address();
+            ServerAddress address = address();
             try {
-                bot = adopt(Bots.join(name, address[0], Integer.parseInt(address[1]),
+                bot = adopt(Bots.join(name, address.host(), address.port(),
                         region -> hub.call(Ops.WORLD_READ, new Ops.ReadParams(region, false)).grid(), this::route,
                         (who, at) -> worldOf(hub.call(Ops.SERVER_INFO, new Ops.Empty()).worlds(), who, at,
                                 region -> hub.call(Ops.WORLD_ENTITIES, new Ops.EntitiesParams(region, PLAYER, 0))
@@ -193,11 +194,24 @@ public final class PlayerTools implements AutoCloseable {
         return result.success() || !(text.contains("unknown") && text.contains("command"));
     }
 
-    /** server-ip and server-port from the dev server's server.properties. */
-    private String[] address() throws IOException {
-        Map<String, String> p = ServerPropertiesFile.read(config.serverDir().resolve(ServerPropertiesFile.NAME));
-        String ip = p.getOrDefault("server-ip", "").isBlank() ? "127.0.0.1" : p.get("server-ip").strip();
-        return new String[] {ip, p.getOrDefault("server-port", "25565").strip()};
+    /**
+     * Where the dev server takes players: server-ip and server-port from its server.properties, read as the server
+     * reads them and as server_stop's RCON reads them ({@link ServerAddress}).
+     */
+    private ServerAddress address() throws ToolException {
+        Map<String, String> p;
+        try {
+            p = ServerPropertiesFile.read(config.serverDir().resolve(ServerPropertiesFile.NAME));
+        } catch (IOException e) {
+            throw new ToolException("cannot read " + ServerPropertiesFile.NAME + ": " + e.getMessage());
+        }
+        ServerAddress address = ServerAddress.game(p);
+        if (address == null) {
+            throw new ToolException(ServerAddress.GAME_PORT_KEY + "=" + p.get(ServerAddress.GAME_PORT_KEY) + " in "
+                    + ServerPropertiesFile.NAME + " is not a port from 1 to 65535, so the server takes no players."
+                    + " Set it to the port to join on and restart the server");
+        }
+        return address;
     }
 
     /** The joined test player, or null. */
