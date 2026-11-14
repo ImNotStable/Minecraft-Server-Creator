@@ -9,6 +9,7 @@ import io.github.imnotstable.msc.core.server.ServerManager;
 import io.github.imnotstable.msc.core.texture.ResourcePack;
 import io.github.imnotstable.msc.core.tool.Schema;
 import io.github.imnotstable.msc.core.tool.ToolRegistry;
+import io.github.imnotstable.msc.core.world.WorldService;
 
 /**
  * Project and server lifecycle tools: scaffold ({@link Scaffold}), set up ({@link ServerSetup}), start, stop and
@@ -22,9 +23,10 @@ public final class LifecycleTools {
     private LifecycleTools() {
     }
 
-    public static void register(ToolRegistry registry, CoreConfig config, AgentHub hub, ServerManager server,
-                                ResourcePack pack, ProjectBuilder builder, PaperDownloader downloader,
-                                FabricDownloader fabric, BackgroundWork background) {
+    /** Declares the tools; returns the world backups, which share the server start ({@code build_undo backup=}). */
+    public static WorldBackups register(ToolRegistry registry, CoreConfig config, AgentHub hub, ServerManager server,
+                                        ResourcePack pack, ProjectBuilder builder, PaperDownloader downloader,
+                                        FabricDownloader fabric, BackgroundWork background, WorldService world) {
         EulaPrompts eula = new EulaPrompts(config);
         LogMarks marks = new LogMarks();
         BuildWarmup warmup = new BuildWarmup(builder, background);
@@ -36,7 +38,7 @@ public final class LifecycleTools {
         registry.add("project_scaffold",
                 "Create a new project from a template (Gradle KTS, tests wired in). Target directory must be empty.",
                 Schema.of().req("name", "string", "Project name, for example MyPlugin")
-                        .opt("dir", "string", "Target directory in the workspace. Default: the workspace itself")
+                        .opt("dir", "string", "Target directory in the workspace. Default: the workspace")
                         .opt("template", "string", "paper-plugin (default), fabric-mod (also Quilt), neoforge-mod, forge-mod, minestom-server, or a minigame base (kit, stages, saved progress, /game debug "
                                 + "commands): paper-game, fabric-game, minestom-game")
                         .opt("package", "string", "Java package. Default com.example.<name>")
@@ -54,8 +56,8 @@ public final class LifecycleTools {
                 run::start);
         registry.add("server_stop", "Stop the dev server.", Schema.of(), run::stop);
         registry.add("server_detach",
-                "Keep the dev server and the pack host running after this session ends, so the user can play. "
-                        + "Once this session ends, the next session's server_start, dev_cycle or server_stop stops them.",
+                "Keep the dev server and pack host running after this session ends, so the user can play, until the "
+                        + "next session's server_start, dev_cycle or server_stop.",
                 Schema.of(), run::detach);
         registry.add("dev_cycle",
                 "Build, deploy and restart in one call: the edit-test loop. Tests run during the restart; an unchanged "
@@ -65,8 +67,8 @@ public final class LifecycleTools {
                         .maxChars(),
                 cycle::run);
         registry.add("server_logs",
-                "Read the server log cheaply. mode=errors: warnings and errors with trimmed stack traces, repeats collapsed. "
-                        + "mode=tail: last lines. mode=grep: lines matching a regex.",
+                "Read the server log cheaply. errors: warnings and errors, stack traces trimmed, repeats collapsed. "
+                        + "tail: last lines. grep: lines matching a regex.",
                 Schema.of().opt("mode", "string", "errors (default), tail or grep")
                         .opt("pattern", "string", "Regex for mode=grep")
                         .range("lines", 1, Integer.MAX_VALUE, "For tail and grep. Default 30")
@@ -79,5 +81,6 @@ public final class LifecycleTools {
         registry.add("server_wait", "Wait until a log or chat line matches a regex, instead of polling.",
                 Schema.of().req("until", "string", "Regex, case-insensitive")
                         .range("timeoutSeconds", 1, ServerConsole.MAX_WAIT_SECONDS, "Default 60"), console::await);
+        return new WorldBackups(config, hub, server, run, world, java.time.Clock.systemDefaultZone());
     }
 }

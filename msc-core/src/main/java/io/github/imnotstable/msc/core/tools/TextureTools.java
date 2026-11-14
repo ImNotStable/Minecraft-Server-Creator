@@ -112,7 +112,7 @@ public final class TextureTools {
                 }));
         registry.add("pack",
                 "Zip the project's resource pack, serve it over HTTP, send it to the server's players and list "
-                        + "its problems. check=true: only list problems.",
+                        + "its problems.",
                 Schema.of().opt("check", "boolean", "Only check the pack, do not build it")
                         .range("limit", 0, Integer.MAX_VALUE, "Problems to list. Default 30 with check, 5 on a build")
                         .opt("description", "string", "Pack description, up to two lines")

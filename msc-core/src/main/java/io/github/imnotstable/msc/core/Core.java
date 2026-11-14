@@ -22,6 +22,7 @@ import io.github.imnotstable.msc.core.tools.MetaTools;
 import io.github.imnotstable.msc.core.tools.PlayerTools;
 import io.github.imnotstable.msc.core.tools.TextureTools;
 import io.github.imnotstable.msc.core.tools.WorldTools;
+import io.github.imnotstable.msc.core.tools.WorldBackups;
 import io.github.imnotstable.msc.core.world.WorldService;
 import java.io.IOException;
 import java.io.InputStream;
@@ -143,14 +144,14 @@ public final class Core implements AutoCloseable {
             WorldService world = new WorldService(hub);
             ApiTools api = new ApiTools(config);
             MetaTools.register(tools, config, hub, server, log, api);
-            LifecycleTools.register(tools, config, hub, server, pack, new ProjectBuilder(config),
+            WorldBackups backups = LifecycleTools.register(tools, config, hub, server, pack, new ProjectBuilder(config),
                     new PaperDownloader(config.downloadsUrl(), config.dataDir().resolve("cache"),
                             config.downloadStore()),
                     new FabricDownloader(config.fabricMetaUrl(), config.fabricMavenUrl(),
-                            config.dataDir().resolve("cache")), background);
+                            config.dataDir().resolve("cache")), background, world);
             api.register(tools);
-            WorldTools.register(tools, config, world);
-            BuildTools.register(tools, config, world, new Builder(hub, world));
+            WorldTools.register(tools, config, world, backups);
+            BuildTools.register(tools, config, world, new Builder(hub, world, backups::beforeBigEdit));
             TextureTools.register(tools, hub, pack, config);
             PlayerTools players = PlayerTools.register(tools, config, hub, world);
             return new Bench(config, hub, server, pack, players, tools, background, new AtomicBoolean());
