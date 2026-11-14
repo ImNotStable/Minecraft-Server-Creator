@@ -81,7 +81,7 @@ class TextureUnreadArgsTest {
         }
         assertThat(workspace.resolve("out")).doesNotExist();
         // The ways still take what they read.
-        h.ok("texture", plus(GEM, "accent", "#ffffff", "contrast", 1, "frames", 4, "animate", "pulse").toArray());
+        h.ok("texture", plus(GEM, "contrast", 1, "frames", 4, "animate", "pulse").toArray());
         h.ok("texture", plus(COPY, "model", "item").toArray());
         h.ok("texture", plus(ANIMATE, "frametime", 3).toArray());
         h.ok("pack", "check", true, "limit", 3);

@@ -394,18 +394,16 @@ public final class TextureTools {
     }
 
     /** The texture of {@code kind}: a 16x16 shape or a tiling pattern. */
-    private static Texture generated(Args args) {
+    static Texture generated(Args args) {
         String kind = args.str("kind");
         boolean shape = Shapes.NAMES.contains(kind);
         if (!shape && !Patterns.NAMES.contains(kind)) {
             throw new ToolException("kind must be noise, ore, planks, bricks, gem, ingot, orb, sword, pickaxe or food");
         }
+        KindArgs.check(args, kind);
         Ramp ramp = Ramp.from(color(args), 5, args.number("contrast", shape ? 1.0 : 0.6));
         Integer accent = args.has("accent") ? Colors.parse(args.str("accent")) : null;
         if (shape) {
-            if (args.integer("size", 16) != 16) {
-                throw new ToolException("shapes are 16x16; leave out size");
-            }
             return Shapes.draw(kind, ramp, accent, null);
         }
         return Patterns.generate(kind, args.integer("size", 16), ramp,
