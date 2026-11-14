@@ -153,17 +153,26 @@ class LoaderInstallerTest {
     }
 
     @Test
-    void aSharedJarIsKeptOnlyForThePlatformTheFolderIsMarkedFor() throws Exception {
+    void aSharedJarIsKeptOnlyWhenTheMarkerNamesTheCallerAndItsHash() throws Exception {
         Path server = Files.createDirectories(dir.resolve("server"));
         Files.writeString(server.resolve("server.jar"), "vanilla");
-        LoaderInstaller.mark(server, "fabric 26.3");
+        LoaderInstaller.markSharedJar(server, "fabric 26.3");
         assertThat(LoaderInstaller.claimSharedJar(server, "fabric 26.3")).isNull();
         assertThat(server.resolve("server.jar")).hasContent("vanilla");
-        assertThat(LoaderInstaller.claimSharedJar(server, "minestom")).isEqualTo("fabric 26.3");
+        assertThat(LoaderInstaller.claimSharedJar(server, "minestom")).isEqualTo(", which the folder held for fabric 26.3");
         assertThat(server.resolve("server.jar")).doesNotExist();
+        // The claim marked the folder Minestom's without a hash: the next jar there is unknown until a deploy records it.
         Files.writeString(server.resolve("server.jar"), "project");
-        assertThat(LoaderInstaller.claimSharedJar(server, "fabric 26.4")).isEqualTo("minestom");
+        assertThat(LoaderInstaller.claimSharedJar(server, "minestom")).contains("records no matching hash");
+        Files.writeString(server.resolve("server.jar"), "project");
+        LoaderInstaller.markSharedJar(server, "minestom");
+        Files.writeString(server.resolve("server.jar"), "changed");
+        assertThat(LoaderInstaller.claimSharedJar(server, "minestom")).contains("records no matching hash");
+        Files.delete(server.resolve(LoaderInstaller.MARKER));
+        Files.writeString(server.resolve("server.jar"), "unmarked");
+        assertThat(LoaderInstaller.claimSharedJar(server, "fabric 26.4")).isEqualTo(": no marker says which platform it belongs to");
         assertThat(server.resolve("server.jar")).doesNotExist();
+        assertThat(LoaderInstaller.claimSharedJar(server, "fabric 26.4")).as("nothing to remove").isNull();
     }
 
     @Test
