@@ -101,9 +101,11 @@ class GameConfigTest {
         }
     }
 
-    private static final String NAME = "one word of visible characters (no spaces, no §)";
+    private static final String NAME = Stage.NAME_RULE;
     private static final String TIME = "time: needs a whole number from 0 to " + GameConfig.MAX_TIME;
     private static final String AMOUNT = "kit[0] amount: needs a whole number from 1 to " + Kit.MAX_AMOUNT;
+    private static final String SPAWN_Y = "stages[0] (a).spawn[1]: needs a number from " + Box.MIN_Y + " to " + Box.MAX_Y;
+    private static final String GOAL_XZ = "needs a whole number from " + -Box.MAX_XZ + " to " + Box.MAX_XZ;
 
     private static final List<Bad> BAD = List.of(
             Bad.top("world", "5", "world: needs text, got the whole number 5"),
@@ -151,20 +153,19 @@ class GameConfigTest {
                     "stages[0] (a).spawn: needs [x, y, z] or [x, y, z, yaw, pitch], got the text '0 0 0'"),
             Bad.stage("spawn", "{name: a, spawn: [0, 0]}",
                     "stages[0] (a).spawn: needs [x, y, z] or [x, y, z, yaw, pitch], got the list [0, 0]"),
-            Bad.stage("spawn", "{name: a, spawn: [0, '-60.5', 0]}", "stages[0] (a).spawn[1]: needs a number from"
-                    + " -2032 to 2031, got the text '-60.5'; remove the quotes"),
-            Bad.stage("spawn", "{name: a, spawn: [0, .nan, 0]}",
-                    "stages[0] (a).spawn[1]: needs a number from -2032 to 2031, got not a number (.nan)"),
+            Bad.stage("spawn", "{name: a, spawn: [0, '-60.5', 0]}",
+                    SPAWN_Y + ", got the text '-60.5'; remove the quotes"),
+            Bad.stage("spawn", "{name: a, spawn: [0, .nan, 0]}", SPAWN_Y + ", got not a number (.nan)"),
             Bad.stage("goal", "{name: a, spawn: [0, 0, 0], goal: 1 2 3 4 5 6}",
                     "stages[0] (a).goal: needs [x1, y1, z1, x2, y2, z2], got the text '1 2 3 4 5 6'"),
             Bad.stage("goal", "{name: a, spawn: [0, 0, 0], goal: {from: [0, 0, 0], to: [1, 1, 1]}}",
                     "stages[0] (a).goal: needs [x1, y1, z1, x2, y2, z2], got the map {from=[0, 0, 0], to=[1, 1, 1]}"),
             Bad.stage("goal", "{name: a, spawn: [0, 0, 0], goal: [0, 0, x, 1, 1, 1]}",
-                    "stages[0] (a).goal[2]: needs a whole number from -30000000 to 30000000, got the text 'x'"),
-            Bad.stage("goal", "{name: a, spawn: [0, 0, 0], goal: [-12.7, -61, 10, 2, -58, 12]}", "stages[0] (a).goal[0]:"
-                    + " needs a whole number from -30000000 to 30000000, got the decimal -12.7"),
-            Bad.stage("goal", "{name: a, spawn: [0, 0, 0], goal: [0, 0, 0, 1, 1, 99999999999]}", "stages[0] (a).goal[5]:"
-                    + " needs a whole number from -30000000 to 30000000, got the whole number 99999999999"));
+                    "stages[0] (a).goal[2]: " + GOAL_XZ + ", got the text 'x'"),
+            Bad.stage("goal", "{name: a, spawn: [0, 0, 0], goal: [-12.7, -61, 10, 2, -58, 12]}",
+                    "stages[0] (a).goal[0]: " + GOAL_XZ + ", got the decimal -12.7"),
+            Bad.stage("goal", "{name: a, spawn: [0, 0, 0], goal: [0, 0, 0, 1, 1, 99999999999]}",
+                    "stages[0] (a).goal[5]: " + GOAL_XZ + ", got the whole number 99999999999"));
 
     @TestFactory
     Stream<DynamicTest> badValuesNameTheKey() {
