@@ -1,6 +1,8 @@
 package io.github.imnotstable.msc.bench.run;
 
+import io.github.imnotstable.msc.bench.Text;
 import io.github.imnotstable.msc.bench.check.CheckResult;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -12,7 +14,7 @@ import java.util.List;
  * @param repeat    attempt number, from 1
  * @param startedAt ISO-8601 start time
  * @param passed    every check passed and the run had no error
- * @param wallMs    wall-clock time of the agent process
+ * @param wallMs    wall-clock time of the agent process; 0 when the agent never started
  * @param timedOut  the agent hit its time limit
  * @param exitCode  agent exit code, or -1 if it did not exit on its own
  * @param error     bench-side problem (setup, server), or null
@@ -45,6 +47,46 @@ public record RunRecord(
     public RunRecord failed(String reason) {
         return new RunRecord(task, category, mode, repeat, startedAt, false, wallMs, timedOut, exitCode, reason,
                 agent, tools, checks);
+    }
+
+    /**
+     * Why this attempt failed, or null when it passed: the one text the terminal's progress line and the report's
+     * Failures section both show, so they cannot differ. Lists the bench error, the timeout, how the agent ended
+     * (non-zero exit, an error it reported, output the bench could not read, said only when it ran) and every failed
+     * check. Each part is one line and at most {@link #MAX_REASON_PART} chars, so the terminal line stays one line.
+     */
+    public String failureReason() {
+        if (passed) {
+            return null;
+        }
+        List<String> reasons = new ArrayList<>();
+        if (error != null) {
+            reasons.add(error);
+        }
+        if (timedOut) {
+            reasons.add("timed out after " + wallMs / 1000 + "s");
+        }
+        if (exitCode > 0) {
+            reasons.add("agent exited with code " + exitCode);
+        }
+        if (agent.isError()) {
+            reasons.add("agent reported an error");
+        }
+        if (!agent.parsed() && agentRan()) {
+            reasons.add("agent output not parsed");
+        }
+        checks.stream().filter(c -> !c.passed()).forEach(c -> reasons.add(c.name() + ": " + c.detail()));
+        return reasons.isEmpty()
+                ? "no checks ran"
+                : String.join("; ", reasons.stream().map(r -> Text.singleLine(r, MAX_REASON_PART)).toList());
+    }
+
+    /** The most chars one part of {@link #failureReason()} keeps; a check's full detail stays in results.jsonl. */
+    static final int MAX_REASON_PART = 300;
+
+    /** Whether the agent process was started: a setup failure before it leaves {@code wallMs} at 0. */
+    public boolean agentRan() {
+        return wallMs > 0;
     }
 
     public long checksPassed() {

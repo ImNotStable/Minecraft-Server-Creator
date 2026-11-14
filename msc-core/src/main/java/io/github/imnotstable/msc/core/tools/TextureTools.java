@@ -69,7 +69,7 @@ public final class TextureTools {
                         .opt("seed", "integer", "Pattern seed. Default 1")
                         .range("contrast", Ramp.MIN_CONTRAST, Ramp.MAX_CONTRAST, "Default 1 for shapes, 0.6 for patterns")
                         .opt("animate", "string", "scroll (flows down), \"scroll dx,dy\" or pulse (glows)")
-                        .range("frames", MIN_FRAMES, Animation.MAX_FRAMES, "Default: one full loop for scroll, 8 for pulse")
+                        .range("frames", MIN_FRAMES, Animation.MAX_FRAMES, "Default: one full loop for scroll (refused if over 64), 8 for pulse")
                         .opt("frametime", "integer", "Ticks per frame. Default 2")
                         .opt("model", "string", "Also write a model and item definition: item (flat), handheld (tools), "
                                 + "block (cube) or none. Default block for patterns, handheld for sword and pickaxe, none for minecraft:, else item"),
@@ -412,32 +412,16 @@ public final class TextureTools {
 
     /** The animation {@code animate} asks for, made from {@code base}; refuses a bad spec without writing anything. */
     private static Animation animation(Args args, Texture base) {
-        String[] mode = args.str("animate").trim().split("\\s+", 2);
+        AnimateSpec spec = AnimateSpec.parse(args.str("animate"));
         int frametime = args.integer("frametime", 2);
-        return switch (mode[0]) {
-            case "scroll" -> {
-                int dx = 0;
-                int dy = 1;
-                if (mode.length > 1) {
-                    String[] d = mode[1].split(",");
-                    try {
-                        dx = Integer.parseInt(d[0].trim());
-                        dy = d.length > 1 ? Integer.parseInt(d[1].trim()) : 0;
-                    } catch (NumberFormatException e) {
-                        throw new ToolException("animate: write scroll dx,dy, for example \"scroll 0,1\"");
-                    }
-                }
-                int step = Math.max(1, Math.max(Math.abs(dx), Math.abs(dy)));
-                int loop = Math.clamp(base.width() / step, 2, Animation.MAX_FRAMES);
-                yield Animation.scroll(base, dx, dy, args.integer("frames", loop), frametime);
-            }
-            case "pulse" -> {
-                List<Integer> shades = new ArrayList<>(base.colors());
-                shades.sort(Comparator.comparingDouble(Colors::luminance));
-                yield Animation.pulse(base, new Ramp(shades), args.integer("frames", 8), frametime);
-            }
-            default -> throw new ToolException("animate must be scroll, \"scroll dx,dy\" or pulse");
-        };
+        if (spec.pulse()) {
+            List<Integer> shades = new ArrayList<>(base.colors());
+            shades.sort(Comparator.comparingDouble(Colors::luminance));
+            return Animation.pulse(base, new Ramp(shades), args.integer("frames", 8), frametime);
+        }
+        return args.has("frames")
+                ? Animation.scroll(base, spec.dx(), spec.dy(), args.integer("frames"), frametime)
+                : Animation.scroll(base, spec.dx(), spec.dy(), frametime);
     }
 
     /** A pack texture, or the first frame when it is already animated, so it can be animated or copied again. */
