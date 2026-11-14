@@ -177,17 +177,30 @@ tasks.test {
     systemProperty("msc.expectedVersion", project.version.toString())
 }
 
-// Files outside msc-core the tests read (msc.repo-inputs): each set is both what the test reads and a test input.
+// repoChecks: the tests whose inputs are the whole repository (#370). They read sets every module's files are in, so
+// they run on their own task, part of `check`: an edit elsewhere reruns these few seconds, not all of msc-core:test,
+// whose own inputs stay msc-core's. Each set is both what the tests read and that task's input (msc.repo-inputs).
+val repoCheckClasses = listOf("io.github.imnotstable.msc.core.DocumentedCommandsTest",
+    "io.github.imnotstable.msc.core.RepoInputsTest")
+val repoChecks = tasks.register<Test>("repoChecks") {
+    description = "Runs the tests that scan the whole repository (documented commands, test-source reads)."
+    group = "verification"
+    testClassesDirs = sourceSets.test.get().output.classesDirs
+    classpath = sourceSets.test.get().runtimeClasspath
+    filter { repoCheckClasses.forEach { includeTestsMatching(it) } }
+}
+tasks.test { filter { repoCheckClasses.forEach { excludeTestsMatching(it) } } }
+tasks.check { dependsOn(repoChecks) }
 // DocumentedCommandsTest: every text file of the repository outside build output, server and IDE run folders (at
 // the root or a module's root, so source packages named run stay in), test sources and dot folders. A `**/.*/**`
 // pattern would also drop dot files such as msc-plugin/.mcp.json, so dot folders are matched by their contents.
-repoInputs.set("documentedCommands", rootProject.fileTree(rootDir) {
+repoInputs.on(repoChecks).set("documentedCommands", rootProject.fileTree(rootDir) {
     include("**/*.md", "**/*.java", "**/*.kts", "**/*.txt", "**/*.json", "**/*.yml", "**/*.properties")
     exclude("**/build/**", "run/**", "*/run/**", "out/**", "*/out/**", "**/node_modules/**", "**/test/**",
         "**/testFixtures/**", "graphify-out/**", "**/.*/*/**")
 })
 // RepoInputsTest: every module's test sources, checked for reads that bypass these sets.
-repoInputs.set("testSources", rootProject.fileTree(rootDir) {
+repoInputs.on(repoChecks).set("testSources", rootProject.fileTree(rootDir) {
     include("msc-*/src/test/**/*.java", "msc-*/src/test/**/*.kt")
 })
 

@@ -135,7 +135,7 @@ class RunIsolationTest {
     void theOldDefaultInsideThisRepositoryIsRefused() {
         // The old default was msc-bench/runs, which put every attempt under the repository's CLAUDE.md. The walk stops
         // at the repository, so folders above the checkout cannot change the result.
-        Path repo = RepoFiles.path("repoClaudeMd", "CLAUDE.md").getParent();
+        Path repo = RepoFiles.dir("repoClaudeMd", "");
 
         assertThat(RunIsolation.leaks(repo.resolve("msc-bench/runs"), dir, repo))
                 .contains(RunIsolation.resolve(repo.resolve("CLAUDE.md")));
