@@ -339,8 +339,9 @@ final class ServerRun {
         if (agent == null || !Files.exists(installed) || Files.mismatch(agent, installed) == -1) {
             return false;
         }
-        // Whole or not at all: a failed copy leaves the earlier agent jar working, which the next start updates.
-        OutputFile.copy(agent, installed);
+        // Whole or not at all: a failed copy leaves the earlier agent jar working, which the next start updates. The
+        // temp file is outside the addon folder, where a loader could load it (#417).
+        ScanFolders.copy(agent, installed, config.serverDir());
         return true;
     }
 }

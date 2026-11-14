@@ -17,14 +17,14 @@ class DevCycleMirrorTest {
         Path dest = dir.resolve("dest");
         Files.writeString(src.resolve("a.jar"), "a");
         Files.writeString(src.resolve("b.jar"), "b");
-        assertThat(DevCycle.mirror(src, dest, true)).isEqualTo(2);
+        assertThat(DevCycle.mirror(src, dest, dir, true)).isEqualTo(2);
         assertThat(dest).doesNotExist();
-        assertThat(DevCycle.mirror(src, dest, false)).isEqualTo(2);
-        assertThat(DevCycle.mirror(src, dest, true)).isZero();
+        assertThat(DevCycle.mirror(src, dest, dir, false)).isEqualTo(2);
+        assertThat(DevCycle.mirror(src, dest, dir, true)).isZero();
 
         Files.writeString(src.resolve("b.jar"), "B");
         Files.writeString(dest.resolve("gone.jar"), "x");
-        assertThat(DevCycle.mirror(src, dest, false)).isEqualTo(2);
+        assertThat(DevCycle.mirror(src, dest, dir, false)).isEqualTo(2);
         assertThat(dest.resolve("b.jar")).hasContent("B");
         assertThat(dest.resolve("gone.jar")).doesNotExist();
     }

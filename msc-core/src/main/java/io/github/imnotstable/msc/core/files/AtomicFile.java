@@ -15,6 +15,7 @@ import java.nio.file.attribute.PosixFileAttributeView;
 import java.nio.file.attribute.PosixFileAttributes;
 import java.security.SecureRandom;
 import java.util.Random;
+import java.util.regex.Pattern;
 
 /**
  * The one way msc-core writes a file whole or not at all: into a temp file beside it, moved into place once complete.
@@ -41,7 +42,7 @@ public final class AtomicFile {
      * replaced, the link stays. Returns {@code target}.
      */
     public static Path write(Path target, Writer writer) throws IOException {
-        put(resolveLinks(target.toAbsolutePath()), writer);
+        put(resolveLinks(target.toAbsolutePath()), writer, null);
         return target;
     }
 
@@ -50,9 +51,27 @@ public final class AtomicFile {
      * link included, is replaced by the new file (a file that was there keeps its permissions). Returns {@code target}.
      */
     public static Path replace(Path target, Writer writer) throws IOException {
-        put(target.toAbsolutePath(), writer);
+        put(target.toAbsolutePath(), writer, null);
         return target;
     }
+
+    /**
+     * Like {@link #replace}, but the temp file is made in {@code tempDir}, not beside {@code target}: for a folder a
+     * server scans, where not even a temp file may sit (#417). It is then renamed into place, which needs both on one
+     * volume. Where they are not ({@link AtomicMoveNotSupportedException}), the write is made again through a temp file
+     * beside the target, never by a move that copies across volumes and could leave half a file at the target.
+     */
+    public static Path replace(Path target, Writer writer, Path tempDir) throws IOException {
+        put(target.toAbsolutePath(), writer, tempDir.toAbsolutePath());
+        return target;
+    }
+
+    /** True for the name of a temp file this class makes: {@code .<target name>.<random>.part}. */
+    public static boolean isTempName(String name) {
+        return TEMP_NAME.matcher(name).matches();
+    }
+
+    private static final Pattern TEMP_NAME = Pattern.compile("\\..+\\.[0-9a-z]{1,13}\\.part");
 
     /** Copies {@code source} to {@code target} as {@link #replace} writes. */
     public static Path copy(Path source, Path target) throws IOException {
@@ -85,9 +104,11 @@ public final class AtomicFile {
         }
     }
 
-    private static void put(Path file, Writer writer) throws IOException {
+    /** Writes {@code file} through a temp file in {@code tempDir}, or beside {@code file} when that is null. */
+    private static void put(Path file, Writer writer, Path tempDir) throws IOException {
         Path dir = Files.createDirectories(file.getParent());
-        Path temp = createTemp(dir, file.getFileName().toString());
+        boolean beside = tempDir == null || tempDir.equals(dir);
+        Path temp = createTemp(beside ? dir : Files.createDirectories(tempDir), file.getFileName().toString());
         try {
             writer.write(temp);
             // After the writer: one that recreates the file (Files.copy, ImageIO) would drop what was set before.
@@ -95,6 +116,12 @@ public final class AtomicFile {
             try {
                 Files.move(temp, file, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
             } catch (AtomicMoveNotSupportedException e) {
+                if (!beside) {
+                    // Another volume: a plain move would copy into the target itself. Write beside it instead.
+                    Files.deleteIfExists(temp);
+                    put(file, writer, null);
+                    return;
+                }
                 Files.move(temp, file, StandardCopyOption.REPLACE_EXISTING);
             }
         } finally {

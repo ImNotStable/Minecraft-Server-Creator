@@ -11,6 +11,7 @@ import io.github.imnotstable.msc.core.tool.Budget;
 import io.github.imnotstable.msc.core.tool.ToolException;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
@@ -157,6 +158,7 @@ final class DevCycle {
 
     static final String STOP_LEFTOVER = "stop a server an earlier session left holding the jar";
     static final String STOP = "stop the server";
+    static final String SWEEP = "remove what an interrupted earlier call left";
     static final String DEPLOY = "deploy the jar";
     static final String REMOVE_EARLIER = "remove the earlier deploy";
     static final String LIBS = "mirror the libraries into libs/";
@@ -195,7 +197,12 @@ final class DevCycle {
         boolean wasRunning = server.running();
         StringBuilder out = new StringBuilder(unreadable == null ? "" : unreadable + "\n");
         if (restart && wasRunning && loaded(build.jar(), target)
-                && (build.libs() == null || mirror(build.libs(), libs, true) == 0)) {
+                && (build.libs() == null || mirror(build.libs(), libs, server(), true) == 0)) {
+            try {
+                ScanFolders.sweep(server(), scanFolders());
+            } catch (IOException e) {
+                // Best effort: the next dev_cycle that deploys sweeps again, as a step that reports a failure.
+            }
             return out.append("build ok in ").append(LogText.seconds(build.millis())).append(", jar unchanged: ")
                     .append(shown).append(" kept, server not restarted (server_stop then server_start restarts it)")
                     .append(run.resendPack()).toString();
@@ -205,7 +212,7 @@ final class DevCycle {
         if (stopping) {
             steps.then(STOP);
         }
-        steps.then(DEPLOY);
+        steps.then(SWEEP).then(DEPLOY);
         if (earlier != null) {
             steps.then(REMOVE_EARLIER);
         }
@@ -241,11 +248,18 @@ final class DevCycle {
             steps.run(STOP, () -> server.stop(Duration.ofSeconds(30)));
             time.add("stop", millisSince(t));
         }
-        steps.run(DEPLOY, () -> copy(build.jar(), target));
+        // Before deploying: a leftover aside copy of a jar is a second copy of the mod on Quilt (#417).
+        List<Path> swept = new ArrayList<>();
+        String unswept = steps.optional(SWEEP, () -> {
+            swept.addAll(ScanFolders.sweep(server(), scanFolders()));
+            swept.addAll(ScanFolders.sweepTemps(deployedFile().getParent(), deployedFile().getFileName().toString()));
+        });
+        steps.run(DEPLOY, () -> copy(build.jar(), target, server()));
         String kept = earlier == null ? null
-                : steps.note(REMOVE_EARLIER, () -> removeEarlier(earlier, target, sameFile(), () -> copy(build.jar(), target)));
+                : steps.note(REMOVE_EARLIER, () -> removeEarlier(earlier, target, server(), sameFile(),
+                        () -> copy(build.jar(), target, server())));
         if (build.libs() != null) {
-            steps.run(LIBS, () -> mirror(build.libs(), libs, false));
+            steps.run(LIBS, () -> mirror(build.libs(), libs, server(), false));
         }
         steps.run(RECORD, () -> rememberDeploy(project, target));
         if (remember) {
@@ -255,6 +269,11 @@ final class DevCycle {
         if (kept != null && !kept.isEmpty()) {
             out.append(" (").append(kept).append(')');
         }
+        if (!swept.isEmpty()) {
+            out.append("; removed ").append(swept.size()).append(swept.size() == 1 ? " file" : " files")
+                    .append(" an interrupted earlier call left");
+        }
+        out.append(unswept);
         if (!restart) {
             return out.append(wasRunning ? "; server still running the old jar until restarted" : "").toString();
         }
@@ -267,6 +286,22 @@ final class DevCycle {
             time.add("agent", report.result().agentMillis());
         }
         return out.append('\n').append(report.text()).toString();
+    }
+
+    private Path server() {
+        return config.serverDir();
+    }
+
+    /** Every folder a server of any platform scans, so a leftover from before a platform change goes too. */
+    private List<Path> scanFolders() {
+        java.util.Set<Path> folders = new java.util.LinkedHashSet<>();
+        for (Platform p : Platform.values()) {
+            if (p.addonDir() != null) {
+                folders.add(server().resolve(p.addonDir()));
+            }
+        }
+        folders.add(server().resolve("libs"));
+        return List.copyOf(folders);
     }
 
     private static long millisSince(long nanos) {
@@ -307,7 +342,7 @@ final class DevCycle {
      * Make {@code dest} hold exactly the jars in {@code src}, copying only the ones that differ. Returns how many
      * files were (or with {@code dryRun}, would be) written or deleted.
      */
-    static int mirror(Path src, Path dest, boolean dryRun) throws IOException {
+    static int mirror(Path src, Path dest, Path serverDir, boolean dryRun) throws IOException {
         int changed = 0;
         java.util.Set<String> keep = new java.util.HashSet<>();
         try (var files = Files.list(src)) {
@@ -321,7 +356,7 @@ final class DevCycle {
                 changed++;
                 if (!dryRun) {
                     Files.createDirectories(dest);
-                    copy(from, to);
+                    copy(from, to, serverDir);
                 }
             }
         }
@@ -368,9 +403,10 @@ final class DevCycle {
         return keep.stream().anyMatch(name -> AtomicFile.sameFile(old, dest.resolve(name)));
     }
 
-    private static void copy(Path from, Path to) {
+    /** Through a temp file outside the scan folders ({@link ScanFolders#copy}): even a temp file there may load. */
+    private static void copy(Path from, Path to, Path serverDir) {
         try {
-            OutputFile.copy(from, to);
+            ScanFolders.copy(from, to, serverDir);
         } catch (IOException e) {
             throw new ToolException("cannot replace " + to + " (" + e.getMessage()
                     + "). A running server holds the jar open: call server_stop, then dev_cycle.");
@@ -425,55 +461,78 @@ final class DevCycle {
         void run() throws IOException;
     }
 
-    /** The suffix {@code earlier} gets while it is set aside: not {@code .jar}, so no server loads it. */
-    static final String ASIDE = ".msc-removing";
-
     /**
      * Removes {@code earlier} unless it is {@code target}'s file, and never loses {@code target} (#398, #405). The file
      * system's sameness answer ({@code sameFile}) is the quick check; where it is wrong (a volume that reports two
      * names of one file as two files), the removal itself is safe: {@code earlier} is first renamed aside, and if
-     * {@code target} went with it they were one file, which is renamed back. Only then is the aside name deleted.
-     * Returns null when nothing was there to remove, "" when it was removed, and a note when it was the new jar.
-     * The call carries on in every case where the new jar is in place, so the deploy is recorded under
+     * {@code target} went with it they were one file, which is renamed back. Only then is the aside file deleted. The
+     * aside place is the server folder's staging folder, which no server scans (#417: Quilt loads any name in
+     * {@code mods/} that does not start with a dot); a crash there leaves nothing that loads, and the next dev_cycle
+     * sweeps it. Returns null when nothing was there to remove, "" when it was removed, and a note when it was the new
+     * jar. The call carries on in every case where the new jar is in place, so the deploy is recorded under
      * {@code target}'s name and the next dev_cycle does not meet {@code earlier} again.
      */
-    static String removeEarlier(Path earlier, Path target, BiPredicate<Path, Path> sameFile, Redeploy redeploy)
-            throws IOException {
+    static String removeEarlier(Path earlier, Path target, Path serverDir, BiPredicate<Path, Path> sameFile,
+                                Redeploy redeploy) throws IOException {
         if (earlier.equals(target) || !Files.isRegularFile(earlier) || sameFile.test(earlier, target)) {
             return null;
         }
-        Path aside = earlier.resolveSibling(earlier.getFileName() + ASIDE);
-        try {
-            Files.move(earlier, aside, StandardCopyOption.REPLACE_EXISTING);
-        } catch (IOException e) {
-            throw new ToolException("cannot remove the earlier deploy " + earlier + " (" + Steps.reason(e)
-                    + "). A running server holds the jar open: call server_stop, then dev_cycle.");
-        }
+        Path aside = setAside(earlier, serverDir);
+        Steps.killPoint("set aside " + earlier.getFileName());
         if (Files.isRegularFile(target)) {
             try {
                 Files.delete(aside);
             } catch (IOException e) {
-                throw new ToolException("the earlier deploy " + earlier + " is renamed to " + aside
-                        + ", which no server loads, but cannot be deleted (" + Steps.reason(e) + "): delete it by hand");
+                throw new ToolException("the earlier deploy " + earlier + " is moved to " + aside
+                        + ", where no server loads it, but cannot be deleted (" + Steps.reason(e)
+                        + "); the next dev_cycle removes it");
             }
+            Steps.killPoint("deleted " + aside.getFileName());
             return "";
         }
         // Renaming the earlier name took the new jar with it: one file under two names.
         try {
-            Files.move(aside, target);
+            move(aside, target);
         } catch (IOException e) {
             redeploy.run();
             try {
                 Files.deleteIfExists(aside);
             } catch (IOException ignored) {
-                // Left as a name no server loads; the jar itself is in place again.
+                // Left where no server loads it; the next dev_cycle sweeps it. The jar itself is in place again.
             }
         }
+        Steps.killPoint("put back " + target.getFileName());
         if (!Files.isRegularFile(target)) {
             throw new ToolException("removing the earlier deploy " + earlier + " also took the jar just deployed as "
                     + target + ", and it could not be put back: dev_cycle deploys it again");
         }
         return earlier + " is the new jar under another name on this volume, so it was kept";
+    }
+
+    /**
+     * Renames {@code earlier} into the staging folder; where that is on another volume, to a dot name beside it that
+     * no loader loads ({@link ScanFolders.Loader}). Returns where it went.
+     */
+    private static Path setAside(Path earlier, Path serverDir) {
+        Path aside = ScanFolders.aside(earlier, serverDir, false);
+        try {
+            try {
+                Files.createDirectories(aside.getParent());
+                Files.deleteIfExists(aside);
+                return move(earlier, aside);
+            } catch (AtomicMoveNotSupportedException e) {
+                aside = ScanFolders.aside(earlier, serverDir, true);
+                return Files.move(earlier, aside, StandardCopyOption.REPLACE_EXISTING);
+            }
+        } catch (IOException e) {
+            throw new ToolException("cannot remove the earlier deploy " + earlier + " (" + Steps.reason(e)
+                    + "). A running server holds the jar open: call server_stop, then dev_cycle.");
+        }
+    }
+
+    /** A rename, never a copy: across volumes it fails ({@link AtomicMoveNotSupportedException}) instead. */
+    private static Path move(Path from, Path to) throws IOException {
+        return Files.move(from, to, StandardCopyOption.ATOMIC_MOVE);
     }
 
     /**
@@ -483,7 +542,12 @@ final class DevCycle {
     private void rememberDeploy(Path project, Path target) throws IOException {
         String text = DeployRecords.read(deployedFile()).with(project.toAbsolutePath().normalize().toString(),
                 config.serverDir().relativize(target).toString().replace('\\', '/'));
-        OutputFile.write(deployedFile(), to -> Files.writeString(to, text, StandardCharsets.ISO_8859_1));
+        OutputFile.write(deployedFile(), to -> {
+            Steps.killPoint("record temp created");
+            Files.writeString(to, text, StandardCharsets.ISO_8859_1);
+            Steps.killPoint("record temp written");
+        });
+        Steps.killPoint("record moved into place");
     }
 
     /**
