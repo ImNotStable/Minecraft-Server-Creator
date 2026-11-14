@@ -40,6 +40,12 @@ neoForge {
     }
 }
 
+// The dev server reads console commands (try `stop`) from this terminal. ModDevGradle's run tasks leave standard
+// input empty, so without this the server's console sees end of input at once and ignores what you type.
+tasks.named<JavaExec>("runServer") {
+    standardInput = System.`in`
+}
+
 dependencies {
     testImplementation(platform(libs.junit.bom))
     testImplementation(libs.junit.jupiter)
