@@ -62,17 +62,23 @@ final class ServerRun {
     static final String KEEP_SERVING = "hand the pack to a standalone host";
     static final String OFFER_PACK = "offer the pack in " + ServerPropertiesFile.NAME;
 
-    /** Checked first: not running, eula.txt writable. Then: accept the EULA, then {@link #startAndReport}. */
+    /**
+     * Checked first ({@link #checkStart}): not running, a server to start, the EULA accepted or accepted now, eula.txt
+     * writable. Then: accept the EULA, then {@link #startAndReport}.
+     */
     String start(Args args) throws IOException, InterruptedException {
         if (server.running()) {
             throw new ToolException("server is already running. Use server_stop or dev_cycle.");
         }
+        Platform platform = server.platform();
+        boolean accepting = args.bool("acceptEula", false) && platform.needsEula();
+        checkStart(platform, accepting);
         Steps steps = new Steps("server_start");
         String accepted = "";
-        if (args.bool("acceptEula", false) && server.platform().needsEula()) {
-            Path file = OutputFile.check(config.serverDir().resolve("eula.txt"), "eula.txt");
+        if (accepting) {
+            Path file = OutputFile.check(server.eulaFile(), "eula.txt");
             steps.then(ACCEPT_EULA);
-            plan(steps, true);
+            plan(steps);
             accepted = steps.run(ACCEPT_EULA, () -> {
                 if (!ServerManager.eulaAccepted(file)) {
                     Files.createDirectories(config.serverDir());
@@ -81,19 +87,25 @@ final class ServerRun {
                 return eula.recordForMachine();
             });
         }
-        return accepted + startAndReport(steps, args.integer("timeoutSeconds", 180), Budget.DEFAULT_CHARS).text();
+        return accepted + startAndReport(steps, true, args.integer("timeoutSeconds", 180), Budget.DEFAULT_CHARS).text();
     }
 
     /**
-     * Declares the steps of {@link #startAndReport}, with what a failure of each leaves. {@code sweep}: also remove
-     * what interrupted calls left in the scan folders (dev_cycle does that itself, before it deploys).
+     * The refusals of a start of {@code platform}, decided before anything changes (the Steps rule "check first"), so
+     * each is the plain one-line answer and nothing was touched: no server jar, the EULA neither accepted nor
+     * {@code accepting} on this call, eula.txt not writable where the machine acceptance is to be written into it.
      */
-    static Steps plan(Steps steps, boolean sweep) {
-        steps.then(LEFTOVER_SERVER);
-        if (sweep) {
-            steps.then(SWEEP);
+    void checkStart(Platform platform, boolean accepting) {
+        server.checkStartable(platform, accepting);
+        if (config.serverCommand() == null && platform.needsEula() && !accepting
+                && !ServerManager.eulaAccepted(server.eulaFile())) {
+            OutputFile.check(server.eulaFile(), "eula.txt");
         }
-        return steps.then(TAKE_OVER_PACK).then(REFRESH_AGENT).then(START)
+    }
+
+    /** Declares the steps of {@link #startAndReport}, with what a failure of each leaves. */
+    static Steps plan(Steps steps) {
+        return steps.then(LEFTOVER_SERVER).then(TAKE_OVER_PACK).then(REFRESH_AGENT).then(START)
                 .ifFails(TAKE_OVER_PACK, "the server is not started; if the earlier session's pack host was stopped, "
                         + ServerPropertiesFile.NAME + " may offer a pack no one serves: server_start again serves it")
                 .ifFails(REFRESH_AGENT, "the server is not started; the installed agent jar is still the earlier "
@@ -166,17 +178,16 @@ final class ServerRun {
     /**
      * The start, as steps of {@code steps}: stop a leftover server, take over a leftover pack host (serving the pack
      * again and pointing server.properties at it before the server reads the file), update the agent jar, start.
+     * The caller has run {@link #checkStart}. {@code sweep}: just before the start, remove what interrupted calls left
+     * in the scan folders, as housekeeping ({@link Steps#optional}) that changes no result unless it fails (dev_cycle
+     * does that itself, before it deploys).
      */
-    Report startAndReport(Steps steps, int timeoutSeconds, int maxChars) throws IOException, InterruptedException {
+    Report startAndReport(Steps steps, boolean sweep, int timeoutSeconds, int maxChars)
+            throws IOException, InterruptedException {
         if (!steps.planned(START)) {
-            plan(steps, true);
+            plan(steps);
         }
         String leftoverServer = steps.note(LEFTOVER_SERVER, server::stopLeftover);
-        // After the leftover stop, which may hold them open: an aside copy (x.jar.msc-removing, from cores before
-        // #430) is a second copy of the mod on Quilt, which loads any file in mods/ (#434).
-        List<Path> swept = new ArrayList<>();
-        String unswept = !steps.planned(SWEEP) ? "" : steps.optionalRan(SWEEP,
-                () -> swept.addAll(ScanFolders.sweep(config.serverDir(), ScanFolders.all(config.serverDir()))));
         String[] packNotes = new String[2];
         steps.note(TAKE_OVER_PACK, () -> {
             packNotes[0] = pack.stopLeftoverHost();
@@ -187,6 +198,11 @@ final class ServerRun {
         String leftover = LogText.join(leftoverServer, packNotes[0]);
         String packNote = packNotes[1];
         boolean agentUpdated = steps.ran(REFRESH_AGENT, this::refreshAgent);
+        // After the leftover stop, which may hold them open: an aside copy (x.jar.msc-removing, from cores before
+        // #430) is a second copy of the mod on Quilt, which loads any file in mods/ (#434).
+        List<Path> swept = new ArrayList<>();
+        String unswept = !sweep ? "" : steps.optional(SWEEP,
+                () -> swept.addAll(ScanFolders.sweep(config.serverDir(), ScanFolders.all(config.serverDir()))));
         ServerManager.StartResult r = steps.run(START, () -> server.start(Duration.ofSeconds(timeoutSeconds)));
         marks.started(r.logMark());
         List<String> lines = server.log().since(r.logMark());

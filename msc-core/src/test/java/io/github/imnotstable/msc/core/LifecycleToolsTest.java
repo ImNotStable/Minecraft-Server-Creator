@@ -11,6 +11,7 @@ import io.github.imnotstable.msc.core.server.FakeLeftover;
 import io.github.imnotstable.msc.core.server.MachineEula;
 import io.github.imnotstable.msc.core.server.MachineEulaAccess;
 import io.github.imnotstable.msc.core.tools.LifecycleToolsAccess;
+import io.github.imnotstable.msc.core.tools.StepsAccess;
 import io.github.imnotstable.msc.process.rcon.FakeRconServer;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
@@ -384,8 +385,10 @@ class LifecycleToolsTest {
         Path started = slow.resolve("check-started");
         Files.createDirectories(ws.resolve("run"));
         Files.writeString(ws.resolve("run/paper.jar"), "not a jar");
+        Files.writeString(ws.resolve("run/eula.txt"), "eula=true\n");
         // The deploy first stops a server an earlier core left running, over RCON. Its fake RCON lets that server
-        // exit only once the check has started, so the deploy fails (no EULA) while the check is surely running.
+        // exit only once the check has started, so the deploy, made to fail, fails while the check is surely running.
+        // (A refusal such as a missing EULA comes before the build, so it never runs beside the tests: #445.)
         Process leftover = new ProcessBuilder(java(io.github.imnotstable.msc.core.fixture.SleepMain.class)).start();
         try (FakeRconServer rcon = new FakeRconServer("pw", command -> {
             if (command.equals("stop")) {
@@ -399,7 +402,12 @@ class LifecycleToolsTest {
             Files.writeString(ws.resolve(".msc/server.pid"),
                     leftover.pid() + " " + leftover.info().startInstant().orElseThrow().toEpochMilli() + "\n");
             try (CoreHarness s = new CoreHarness(ws, c -> c.withBuildCommand(java(FakeBuildMain.class)))) {
-                assertThat(s.error("dev_cycle", "project", "slow")).contains("EULA");
+                StepsAccess.failAt("deploy the jar");
+                try {
+                    assertThat(s.error("dev_cycle", "project", "slow")).contains("injected failure");
+                } finally {
+                    StepsAccess.failAt(null);
+                }
             }
             ProcessHandle check = ProcessHandle.of(Long.parseLong(Files.readString(started).strip())).orElse(null);
             if (check != null) {

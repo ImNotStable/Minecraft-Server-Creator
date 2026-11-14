@@ -105,7 +105,7 @@ public final class WorldTools {
                     BlockGrid grid = world.readAll(region, MAX_RENDER_BLOCKS, "world_render", entities, signs);
                     RenderResult r = renderer.render(grid, view, options, markers(entities, signs));
                     // The image is the result; its saved copy and the pruning are extras that only add a note when they fail.
-                    Steps steps = new Steps("world_render").then(SAVE_RENDER).then(PRUNE_RENDERS);
+                    Steps steps = new Steps("world_render");
                     Path[] file = new Path[1];
                     String saved = steps.optional(SAVE_RENDER, () -> file[0] = saveRender(dir, r.png()));
                     String pruned = file[0] == null ? "" : steps.optional(PRUNE_RENDERS,
