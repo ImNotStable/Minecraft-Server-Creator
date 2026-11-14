@@ -1,0 +1,34 @@
+---- Minecraft Crash Report ----
+// Don't do that.
+
+Time: 2026-11-14 12:00:04
+Description: Mod loading failures have occurred; consult the issue messages for more details
+
+net.neoforged.neoforge.logging.CrashReportExtender$ModLoadingCrashException: Mod loading has failed
+
+
+A detailed walkthrough of the error, its code path and all known details is as follows:
+---------------------------------------------------------------------------------------
+
+-- Head --
+Thread: main
+Stacktrace:
+	at TRANSFORMER/neoforge@21.11.1/net.neoforged.neoforge.logging.CrashReportExtender.dumpModLoadingCrashReport(CrashReportExtender.java:58) ~[neoforge-21.11.1.jar%23190!/:?]
+
+-- Mod loading issue for: mymod --
+Details:
+	Caused by 0: java.lang.reflect.InvocationTargetException
+		at java.base/jdk.internal.reflect.DirectConstructorHandleAccessor.newInstance(DirectConstructorHandleAccessor.java:74) ~[?:?]
+	Caused by 1: java.lang.IllegalStateException: Registry is already frozen
+		at TRANSFORMER/neoforge@21.11.1/net.neoforged.neoforge.registries.DeferredRegister.register(DeferredRegister.java:300) ~[neoforge-21.11.1.jar%23190!/:?]
+		at TRANSFORMER/mymod@1.0/com.example.mymod.ModItems.<clinit>(ModItems.java:14) ~[mymod-1.0.jar%23191!/:?]
+	Mod file: /run/mods/mymod-1.0.jar
+	Failure message: My Mod (mymod) has failed to load correctly
+		java.lang.reflect.InvocationTargetException: null
+	Mod version: 1.0
+	Mod issues URL: NOT PROVIDED
+
+-- System Details --
+Details:
+	Minecraft Version: 26.3
+	Java Version: 25, Eclipse Adoptium

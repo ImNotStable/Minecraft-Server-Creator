@@ -1,0 +1,9 @@
+[12:00:00 INFO]: Starting minecraft server version 26.3
+[12:00:01 ERROR]: [ModernPluginLoadingStrategy] Could not load 'plugins/MyPlugin-1.0.jar' in 'plugins'
+org.bukkit.plugin.InvalidPluginException: java.lang.UnsupportedClassVersionError: com/example/myplugin/MyPlugin has been compiled by a more recent version of the Java Runtime (class file version 69.0), this version of the Java Runtime only recognizes class file versions up to 65.0
+	at org.bukkit.plugin.java.JavaPluginLoader.loadPlugin(JavaPluginLoader.java:145) ~[purpur-api-26.3.jar:?]
+	at io.papermc.paper.plugin.entrypoint.strategy.modern.ModernPluginLoadingStrategy.loadProviders(ModernPluginLoadingStrategy.java:121) ~[purpur-26.3.jar:26.3-2410]
+Caused by: java.lang.UnsupportedClassVersionError: com/example/myplugin/MyPlugin has been compiled by a more recent version of the Java Runtime (class file version 69.0), this version of the Java Runtime only recognizes class file versions up to 65.0
+	at java.base/java.lang.ClassLoader.defineClass1(Native Method) ~[?:?]
+	... 12 more
+[12:00:03 INFO]: Done (3.004s)! For help, type "help"

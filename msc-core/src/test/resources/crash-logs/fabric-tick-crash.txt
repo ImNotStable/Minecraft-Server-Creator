@@ -1,0 +1,29 @@
+---- Minecraft Crash Report ----
+// Who set us up the TNT?
+
+Time: 2026-11-14 12:02:10
+Description: Ticking entity
+
+java.lang.NullPointerException: Cannot invoke "com.example.mymod.Arena.owner()" because "arena" is null
+	at com.example.mymod.entity.Guard.tick(Guard.java:57)
+	at net.minecraft.world.entity.Entity.tick(Entity.java:450)
+	at net.minecraft.server.level.ServerLevel.tickNonPassenger(ServerLevel.java:800)
+
+
+A detailed walkthrough of the error, its code path and all known details is as follows:
+---------------------------------------------------------------------------------------
+
+-- Head --
+Thread: Server thread
+Stacktrace:
+	at com.example.mymod.entity.Guard.tick(Guard.java:57)
+
+-- Entity being ticked --
+Details:
+	Entity Type: mymod:guard (com.example.mymod.entity.Guard)
+
+-- System Details --
+Details:
+	Minecraft Version: 26.3
+	Fabric Mods:
+		mymod: My Mod 1.0.0

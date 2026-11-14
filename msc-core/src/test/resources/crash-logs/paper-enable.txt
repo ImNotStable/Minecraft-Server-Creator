@@ -1,0 +1,14 @@
+[12:00:00 INFO]: Starting minecraft server version 26.3
+[12:00:00 INFO]: Loading properties
+[12:00:01 INFO]: Starting Minecraft server on *:25565
+[12:00:02 INFO]: [MyPlugin] Enabling MyPlugin v1.0
+[12:00:02 ERROR]: Error occurred while enabling MyPlugin v1.0 (Is it up to date?)
+java.lang.IllegalStateException: Arena 'spawn' has no world
+	at MyPlugin-1.0.jar//com.example.myplugin.Arena.load(Arena.java:42) ~[MyPlugin-1.0.jar:?]
+	at MyPlugin-1.0.jar//com.example.myplugin.MyPlugin.onEnable(MyPlugin.java:17) ~[MyPlugin-1.0.jar:?]
+	at org.bukkit.plugin.java.JavaPlugin.setEnabled(JavaPlugin.java:280) ~[paper-api-26.3.jar:?]
+	at io.papermc.paper.plugin.manager.PaperPluginInstanceManager.enablePlugin(PaperPluginInstanceManager.java:202) ~[paper-26.3.jar:26.3-249]
+	at net.minecraft.server.MinecraftServer.runServer(MinecraftServer.java:1180) ~[paper-26.3.jar:26.3-249]
+	at java.base/java.lang.Thread.run(Thread.java:1583) ~[?:?]
+[12:00:02 INFO]: [MyPlugin] Disabling MyPlugin v1.0
+[12:00:03 INFO]: Done (3.112s)! For help, type "help"

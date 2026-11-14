@@ -55,22 +55,23 @@ public final class LifecycleTools {
         registry.add("server_stop", "Stop the dev server.", Schema.of(), run::stop);
         registry.add("server_detach",
                 "Keep the dev server and the pack host running after this session ends, so the user can play. "
-                        + "Once this session ends, the next session's server_start, dev_cycle or server_stop stops them.",
+                        + "The next session's server_start, dev_cycle or server_stop stops them.",
                 Schema.of(), run::detach);
         registry.add("dev_cycle",
-                "Build, deploy and restart in one call: the edit-test loop. Tests run during the restart; an unchanged "
+                "Build, deploy and restart in one call. Tests run during the restart; an unchanged "
                         + "jar skips it. Returns build, test and startup errors, and phase times.",
                 Schema.of().opt("project", "string", "Project directory in the workspace. Default: the workspace")
                         .opt("restart", "boolean", "Restart the server after deploying. Default true")
                         .maxChars(),
                 cycle::run);
         registry.add("server_logs",
-                "Read the server log cheaply. mode=errors: warnings and errors with trimmed stack traces, repeats collapsed. "
-                        + "mode=tail: last lines. mode=grep: lines matching a regex.",
-                Schema.of().opt("mode", "string", "errors (default), tail or grep")
+                "Read the server log. mode=errors (default): warnings and errors, traces trimmed, repeats "
+                        + "collapsed. mode=tail: last lines. mode=grep: regex matches. mode=triage: why it crashed or "
+                        + "failed to start, and a fix.",
+                Schema.of().opt("mode", "string", "errors, tail, grep or triage")
                         .opt("pattern", "string", "Regex for mode=grep")
                         .range("lines", 1, Integer.MAX_VALUE, "For tail and grep. Default 30")
-                        .opt("all", "boolean", "Look at the whole log, not only since the last start")
+                        .opt("all", "boolean", "Whole log, not only since the last start")
                         .maxChars(),
                 console::logs);
         registry.add("server_command", "Run console commands on the server and return their output.",

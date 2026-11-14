@@ -2,6 +2,7 @@ package io.github.imnotstable.msc.core.tools;
 
 import io.github.imnotstable.msc.core.CoreConfig;
 import io.github.imnotstable.msc.core.agent.AgentHub;
+import io.github.imnotstable.msc.core.server.CrashTriage;
 import io.github.imnotstable.msc.core.server.LogCondenser;
 import io.github.imnotstable.msc.core.server.MachineEula;
 import io.github.imnotstable.msc.core.server.Platform;
@@ -265,6 +266,11 @@ final class ServerRun {
         } else if (r.exited()) {
             out.append(r.sawDone() ? "server exited right after it was ready, " : "server exited during startup ")
                     .append("after ").append(LogText.seconds(r.millis())).append('\n');
+            // What died and the likely fix first (ADR 0040), then the condensed errors.
+            List<CrashTriage.Finding> triage = CrashTriage.triage(lines, config.serverDir(), server.lastLaunch());
+            if (!triage.isEmpty()) {
+                out.append(CrashTriage.render(triage, lines.size(), null)).append('\n');
+            }
             parts.add(out.toString()).cut(condensed);
             out.setLength(0);
             if (analysis.clean()) {

@@ -1,0 +1,11 @@
+[12:00:03] [Server thread/INFO]: Done (2.981s)! For help, type "help"
+[12:02:10] [Server thread/ERROR]: Encountered an unexpected exception
+net.minecraft.ReportedException: Ticking entity
+	at net.minecraft.server.MinecraftServer.tickChildren(MinecraftServer.java:1620) ~[server-intermediary.jar:?]
+	at net.minecraft.server.MinecraftServer.runServer(MinecraftServer.java:1201) ~[server-intermediary.jar:?]
+Caused by: java.lang.NullPointerException: Cannot invoke "com.example.mymod.Arena.owner()" because "arena" is null
+	at com.example.mymod.entity.Guard.tick(Guard.java:57) ~[mymod.jar:?]
+	at net.minecraft.world.entity.Entity.tick(Entity.java:450) ~[server-intermediary.jar:?]
+	... 9 more
+[12:02:10] [Server thread/ERROR]: This crash report has been saved to: /run/crash-reports/crash-2026-11-14_12.02.10-server.txt
+[12:02:10] [Server thread/INFO]: Stopping server
