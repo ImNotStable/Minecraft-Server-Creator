@@ -12,8 +12,10 @@ dependencies {
     // Minestom tasks start from a scaffolded template, and their player checks join with the test player.
     implementation(project(":msc-templates"))
     implementation(project(":msc-bot"))
-    // The tree kill shared with msc-core; its own module, since the bench must not depend on core (ADR 0004).
+    // The tree kill and the RCON client shared with msc-core; their own module, since the bench must not depend on
+    // core (ADR 0004, ADR 0031, ADR 0032). Its test fixtures hold the fake RCON server.
     implementation(project(":msc-process"))
+    testImplementation(testFixtures(project(":msc-process")))
 }
 
 application {

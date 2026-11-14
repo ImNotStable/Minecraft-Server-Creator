@@ -1,6 +1,6 @@
 package io.github.imnotstable.msc.bench.run;
 
-import io.github.imnotstable.msc.bench.rcon.RconClient;
+import io.github.imnotstable.msc.process.rcon.RconClient;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;

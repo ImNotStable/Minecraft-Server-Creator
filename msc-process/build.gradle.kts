@@ -1,5 +1,7 @@
 plugins {
     id("msc.java-conventions")
+    // FakeRconServer, the vanilla-like RCON server the RCON tests of msc-process, msc-core and msc-bench share.
+    `java-test-fixtures`
 }
 
-description = "Kills a process tree without touching a process it cannot prove is a descendant; shared by msc-core and msc-bench."
+description = "Server process control shared by msc-core and msc-bench: the process tree kill and the RCON client."
