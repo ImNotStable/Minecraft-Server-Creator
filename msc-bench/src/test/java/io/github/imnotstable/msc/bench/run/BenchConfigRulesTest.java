@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
@@ -31,7 +32,7 @@ import org.junit.jupiter.params.provider.MethodSource;
 /** #406: every value of bench.json that can never work is refused at load, naming its key. */
 class BenchConfigRulesTest {
 
-    /** Fields with no impossible value: the EULA choice is never read from the file (MachineEula). */
+    /** Fields with no impossible value of their own type: the EULA choice is never taken from the file (MachineEula). */
     private static final Set<String> NO_IMPOSSIBLE_VALUE = Set.of("server.acceptEula");
 
     private static final String VALID = """
@@ -161,6 +162,72 @@ class BenchConfigRulesTest {
                 .hasMessageContaining(key.replace("*", "m"));
     }
 
+    /**
+     * #462: each key of bench.json with a value of every other JSON type, and each list and map with an entry of the
+     * wrong type; then the type the key takes, as the refusal says it. Number keys have their own cases above.
+     */
+    static Stream<Arguments> wrongTypes() {
+        Map<String, String> keys = new LinkedHashMap<>();
+        keys.put("agent", "an object");
+        keys.put("server", "an object");
+        keys.put("modes.*", "an object");
+        for (String field : fields(BenchConfig.class, "")) {
+            Class<?> type = componentType(field);
+            if (type == String.class) {
+                keys.put(field, "a string");
+            } else if (type == boolean.class) {
+                keys.put(field, "true or false");
+            } else if (type == List.class) {
+                keys.put(field, "a list");
+                keys.put(field + "[0]", "a string");
+            } else if (type == Map.class) {
+                keys.put(field, "an object");
+                if (!field.equals("modes")) {
+                    keys.put(field + ".K", "a string");
+                }
+            }
+        }
+        Map<String, String> values = Map.of("a string", "\"yes\"", "true or false", "true", "a list", "[]",
+                "an object", "{}", "a number", "5");
+        List<Arguments> cases = new ArrayList<>();
+        keys.forEach((key, type) -> values.forEach((valueType, value) -> {
+            if (!valueType.equals(type)) {
+                cases.add(Arguments.of(key, type, value));
+            }
+        }));
+        return cases.stream();
+    }
+
+    @ParameterizedTest(name = "{0} = {2}")
+    @MethodSource("wrongTypes")
+    void aValueOfAnotherTypeIsRefusedNamingTheKeyAndTheTypeItTakes(String key, String type, String value)
+            throws IOException {
+        JsonObject json = JsonParser.parseString(VALID).getAsJsonObject();
+        String path = key.replace("*", "m");
+        if (path.endsWith("[0]")) {
+            JsonArray list = new JsonArray();
+            list.add(JsonParser.parseString(value));
+            json = with(path.substring(0, path.length() - 3), list);
+        } else if (path.endsWith(".K")) {
+            JsonObject map = new JsonObject();
+            map.add("K", JsonParser.parseString(value));
+            json = with(path.substring(0, path.length() - 2), map);
+        } else {
+            json = with(path, JsonParser.parseString(value));
+        }
+        Path config = write(json);
+        assertThatThrownBy(() -> BenchConfig.load(config, home()))
+                .isInstanceOf(IOException.class)
+                .hasMessageContaining(path + ": " + value + " is not " + type);
+    }
+
+    @Test
+    void oneProblemIsOneLine() throws IOException {
+        Path config = write(with("server.acceptEula", new JsonPrimitive("yes")));
+        assertThatThrownBy(() -> BenchConfig.load(config, home()))
+                .hasMessage("Bad bench config " + config + ": server.acceptEula: \"yes\" is not true or false");
+    }
+
     @Test
     void theEmptyRconPasswordSaysWhyBeforeAnyServerStarts() throws IOException {
         // #406: an empty password made the server turn RCON off, and each attempt waited 180 s for it.
@@ -218,15 +285,19 @@ class BenchConfigRulesTest {
         return fields;
     }
 
-    /** The Java type of the config field at {@code key}. */
+    /** The Java type of the config field at {@code key}; {@code *} steps into a map's record values. */
     private static Class<?> componentType(String key) {
-        Class<?> type = BenchConfig.class;
+        Type type = BenchConfig.class;
         for (String part : key.split("\\.")) {
-            Class<?> owner = type;
+            if (part.equals("*") && type instanceof ParameterizedType map) {
+                type = map.getActualTypeArguments()[1];
+                continue;
+            }
+            Class<?> owner = type instanceof Class<?> c ? c : Object.class;
             type = !owner.isRecord() ? Object.class : Stream.of(owner.getRecordComponents()).filter(c -> c.getName().equals(part))
-                    .findFirst().map(RecordComponent::getType).orElse(Object.class);
+                    .findFirst().map(RecordComponent::getGenericType).orElse(Object.class);
         }
-        return type;
+        return type instanceof ParameterizedType p ? (Class<?>) p.getRawType() : (Class<?>) type;
     }
 
     private JsonObject with(String key, JsonElement value) {

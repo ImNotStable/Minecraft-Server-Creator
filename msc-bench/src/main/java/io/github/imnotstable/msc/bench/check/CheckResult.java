@@ -1,5 +1,7 @@
 package io.github.imnotstable.msc.bench.check;
 
+import io.github.imnotstable.msc.bench.Text;
+
 /**
  * Outcome of one check.
  *
@@ -13,9 +15,7 @@ public record CheckResult(String name, boolean passed, String detail) {
 
     public CheckResult {
         detail = detail == null ? "" : detail.strip();
-        if (detail.length() > MAX_DETAIL) {
-            detail = detail.substring(0, MAX_DETAIL) + "...";
-        }
+        detail = Text.headWithEllipsis(detail, MAX_DETAIL);
     }
 
     public static CheckResult pass(String name, String detail) {

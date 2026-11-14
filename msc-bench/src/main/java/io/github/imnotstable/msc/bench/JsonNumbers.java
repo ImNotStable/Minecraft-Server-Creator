@@ -114,7 +114,7 @@ public final class JsonNumbers {
         String text = value instanceof JsonPrimitive primitive && primitive.isNumber()
                 ? primitive.getAsString()
                 : String.valueOf(value);
-        return text.length() <= 60 ? text : text.substring(0, 57) + "...";
+        return Text.headWithEllipsis(text, 60);
     }
 
     private static Range whole(int min, int max, String text) {
