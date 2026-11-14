@@ -16,9 +16,13 @@ import java.util.Locale;
  * {@code file.encoding}, already UTF-8 by default since Java 18, for a server run on an older Java (Log4j's console
  * output, used by every platform but Minestom, is UTF-8 on its own).
  *
- * <p>Flags go only into a command whose program is a Java launcher, right after it, and a flag the command already
- * sets is left as it is. A configured server command that starts something else (a script, a wrapper) is passed
- * unchanged: it must start its Java with {@link #ENCODING_FLAGS} itself.
+ * <p>{@link #processBuilder} is the one way MSC builds the command line of a child process whose output it reads
+ * (a server, a loader installer, a Gradle build, a bench check, the standalone pack host): the flagged command list
+ * is made only inside this class. Flags go into a command whose program is a Java launcher, right after it, and a
+ * flag the command already sets is left as it is. A command that starts something else (a script such as
+ * {@code gradlew} or a server's {@code start.sh}, a wrapper) is passed unchanged, and the flags go into its
+ * {@code JAVA_OPTS} instead, which {@code gradlew} and every Gradle-made start script pass to their Java; a script
+ * that ignores {@code JAVA_OPTS} must start its Java with {@link #ENCODING_FLAGS} itself.
  */
 public final class ServerJava {
     /** The system properties a server's Java is started with. */
@@ -28,8 +32,35 @@ public final class ServerJava {
     private ServerJava() {
     }
 
+    /** The JAVA_OPTS variable a script started by {@link #processBuilder} finds the flags in. */
+    static final String JAVA_OPTS = "JAVA_OPTS";
+
+    /**
+     * A process builder for {@code command} that speaks UTF-8 on its console: the flags after the program when it
+     * is a Java launcher, else in {@code JAVA_OPTS} (see the class comment). The caller adds its directory,
+     * redirects and environment.
+     */
+    public static ProcessBuilder processBuilder(List<String> command) {
+        ProcessBuilder builder = new ProcessBuilder(withEncoding(command));
+        if (!command.isEmpty() && !isJava(command.getFirst())) {
+            builder.environment().compute(JAVA_OPTS, (k, opts) -> withFlags(opts == null ? "" : opts));
+        }
+        return builder;
+    }
+
+    /** {@code opts} with every flag it does not set itself appended. */
+    static String withFlags(String opts) {
+        StringBuilder out = new StringBuilder(opts.strip());
+        for (String flag : ENCODING_FLAGS) {
+            if (!opts.contains(flag.substring(0, flag.indexOf('=') + 1))) {
+                out.append(out.isEmpty() ? "" : " ").append(flag);
+            }
+        }
+        return out.toString();
+    }
+
     /** {@code command} with {@link #ENCODING_FLAGS} after its program when that is a Java launcher, else as it is. */
-    public static List<String> withEncoding(List<String> command) {
+    static List<String> withEncoding(List<String> command) {
         if (command.isEmpty() || !isJava(command.getFirst())) {
             return List.copyOf(command);
         }

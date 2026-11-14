@@ -1,6 +1,7 @@
 package io.github.imnotstable.msc.core.server;
 
 import io.github.imnotstable.msc.process.ProcessTree;
+import io.github.imnotstable.msc.process.ServerJava;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.Reader;
@@ -23,7 +24,8 @@ public final class ProcessRunner {
 
     public static Result run(List<String> command, Path dir, Duration timeout) throws IOException, InterruptedException {
         long start = System.nanoTime();
-        ProcessBuilder pb = new ProcessBuilder(command).directory(dir.toFile()).redirectErrorStream(true);
+        // Read as UTF-8, so a Java installer or a Gradle build is started to write UTF-8 (#478).
+        ProcessBuilder pb = ServerJava.processBuilder(command).directory(dir.toFile()).redirectErrorStream(true);
         Process process = pb.start();
         process.getOutputStream().close();
         StringBuilder out = new StringBuilder();
