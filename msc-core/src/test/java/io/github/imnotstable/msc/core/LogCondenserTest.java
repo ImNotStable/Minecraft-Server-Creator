@@ -399,17 +399,4 @@ class LogCondenserTest {
         assertThat(c.errors()).isEqualTo(1);
         assertThat(c.warnings()).isEqualTo(1);
     }
-
-    @Test
-    void everyPlatformsReadyLineIsRecognised() {
-        assertThat(List.of(
-                "[12:00:04 INFO]: Done (3.204s)! For help, type \"help\"", // Paper, Purpur
-                "[12:00:04] [Server thread/INFO]: Done (3.204s)! For help, type \"help\"", // Fabric, Quilt
-                "[12:00:04] [Server thread/INFO] [minecraft/DedicatedServer]: Done (3.2s)! For help, type \"help\"", // NeoForge, Forge
-                "Done (0.512s)! Listening on 0.0.0.0:25565. Type stop to stop.", // Minestom template
-                "\u001b[0m[12:00:04 INFO]: Done (3.204s)! For help, type \"help\"\u001b[m"))
-                .allMatch(LogCondenser::readyLine);
-        assertThat(List.of("[12:00:04 INFO]: Steve issued server command: /say Done",
-                "[main] INFO com.example.Lobby - Loading done")).noneMatch(LogCondenser::readyLine);
-    }
 }

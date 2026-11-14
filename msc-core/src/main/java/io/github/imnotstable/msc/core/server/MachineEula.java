@@ -62,9 +62,8 @@ public final class MachineEula {
         }
     }
 
-    /** How the owner agreed, stored in the file. */
+    /** How the owner agreed, stored in the file. installMsc (msc-core/build.gradle.kts) writes its own value. */
     public static final String VIA_TERMINAL = "typed yes to 'Main eula accept' in an interactive terminal";
-    public static final String VIA_INSTALL = "ran installMsc with -Pmsc.acceptEula=true";
     public static final String VIA_TOOL = "the user's own yes, passed as acceptEula=true";
 
     /** Records the owner's explicit agreement; callers must only pass one the owner gave (ADR 0020). */

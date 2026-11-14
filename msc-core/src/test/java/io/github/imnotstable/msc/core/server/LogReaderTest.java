@@ -7,6 +7,8 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Random;
+import java.util.regex.Pattern;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DynamicTest;
 import org.junit.jupiter.api.Test;
@@ -94,5 +96,83 @@ class LogReaderTest {
         log.add("x".repeat(50));
         assertThat(log.all()).containsExactly("x".repeat(50));
         assertThat(log.mark()).isEqualTo(4);
+    }
+
+    /** Each platform's real ready line, as the server prints it (also coloured), through the pump's own detection. */
+    @Test
+    void thePumpSeesEveryPlatformsReadyLineAndNothingElse() throws IOException {
+        List<String> ready = List.of(
+                "[12:00:04 INFO]: Done (3.204s)! For help, type \"help\"", // Paper, Purpur
+                "[12:00:04] [Server thread/INFO]: Done (3.204s)! For help, type \"help\"", // Fabric, Quilt
+                "[12:00:04] [Server thread/INFO] [minecraft/DedicatedServer]: Done (3.2s)! For help, type \"help\"", // NeoForge, Forge
+                "Done (0.512s)! Listening on 0.0.0.0:25565. Type stop to stop.", // Minestom template
+                "\u001b[0m[12:00:04 INFO]: Done (3.204s)! For help, type \"help\"\u001b[m",
+                "\u001b[32m[12:00:04] [Server thread/INFO]: \u001b[0mDone (3.204s)! For help, type \"help\"\u001b[0m\r");
+        List<String> other = List.of("[12:00:04 INFO]: Steve issued server command: /say Done",
+                "[main] INFO com.example.Lobby - Loading done", "[12:00:04 INFO]: Done preparing level \"world\"");
+        List<String> failures = new ArrayList<>();
+        for (int chunk : ChunkedInput.CHUNKS) {
+            for (String line : ready) {
+                if (readyCalls(line, chunk) != 1) {
+                    failures.add("not ready at chunk " + chunk + ": " + line);
+                }
+            }
+            for (String line : other) {
+                if (readyCalls(line, chunk) != 0) {
+                    failures.add("ready at chunk " + chunk + ": " + line);
+                }
+            }
+        }
+        assertThat(failures).isEmpty();
+    }
+
+    private static int readyCalls(String line, int chunk) throws IOException {
+        int[] calls = {0};
+        LogReader.pump(new ChunkedInput((line + "\n").getBytes(StandardCharsets.UTF_8), chunk), new LogBuffer(10, Long.MAX_VALUE),
+                () -> calls[0]++);
+        return calls[0];
+    }
+
+    /** The regex the throwable header scan replaced; it recursed once per segment and overflowed the stack. */
+    private static final Pattern OLD_THROWABLE =
+            Pattern.compile("^[\\w$]+(?:\\.[\\w$]+)*\\.[\\w$]*(?:Exception|Error|Throwable)(?:: .*)?$");
+
+    @Test
+    void theThrowableScanMatchesExactlyWhatTheRegexDid() {
+        List<String> table = List.of("java.lang.Exception: msg", "java.lang.IllegalStateException", "a.Error",
+                "a.Throwable: ", "Exception", "a..BException", ".a.BException", "a.BException:", "a.BException: x\ny",
+                "a.BException\n", "a.BException: x\r\n", "a.BException\n\n", "a.BExceptions", "a.$_9Error: (x)",
+                "a.BException : x", "a.b.", "", "a.é.BException", "a.BError\u2028");
+        String[] tokens = {"a", "B", "$", "_", "7", ".", ".", ":", " ", ": ", "Exception", "Error", "Throwable", "\n",
+            "\r", "\u0085", "é", "x"};
+        Random random = new Random(376);
+        List<String> mismatches = new ArrayList<>();
+        for (int n = 0; n < 200_000; n++) {
+            String line;
+            if (n < table.size()) {
+                line = table.get(n);
+            } else {
+                StringBuilder b = new StringBuilder();
+                for (int t = random.nextInt(9); t > 0; t--) {
+                    b.append(tokens[random.nextInt(tokens.length)]);
+                }
+                line = b.toString();
+            }
+            if (LogReader.throwable(line) != OLD_THROWABLE.matcher(line).matches()) {
+                mismatches.add(line);
+            }
+        }
+        assertThat(mismatches).isEmpty();
+    }
+
+    @Test
+    void aLineOfAHundredThousandDottedSegmentsIsReadInLinearTime() {
+        String dots = "a.".repeat(100_000);
+        assertThat(LogReader.throwable(dots + "BException: boom")).isTrue();
+        assertThat(LogReader.throwable(dots + "b")).isFalse();
+        List<String> log = List.of("[12:00:00 ERROR]: failed", dots + "BException: boom", dots + "b",
+                "[12:00:01 INFO]: " + dots + "BException");
+        assertThat(LogReader.entries(log)).hasSize(2);
+        assertThat(LogCondenser.analyze(log, 6000).errors()).isEqualTo(1);
     }
 }

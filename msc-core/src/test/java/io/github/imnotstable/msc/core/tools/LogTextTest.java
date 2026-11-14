@@ -14,7 +14,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 /** The lifecycle tools show log lines as the server's log buffer holds them: the reader already removed escapes. */
 class LogTextTest {
     private static List<String> pumped(String output) throws Exception {
-        LogBuffer log = new LogBuffer(100);
+        LogBuffer log = new LogBuffer(100, Long.MAX_VALUE);
         LogReader.pump(new ByteArrayInputStream(output.getBytes(StandardCharsets.UTF_8)), log, () -> {
         });
         return log.all();
