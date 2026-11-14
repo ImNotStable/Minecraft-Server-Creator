@@ -111,7 +111,9 @@ class SideEffectStepsTest {
                 Arguments.of("server_setup minestom", new MinestomSetupScenario(), List.of("create the server folder",
                         "remember the workspace platform")),
                 Arguments.of("server_start", new StartScenario(), List.of(
-                        "stop the server an earlier session left running", "take over the pack an earlier session served",
+                        "stop the server an earlier session left running",
+                        "remove what an interrupted earlier call left in plugins/, mods/ and libs/",
+                        "take over the pack an earlier session served",
                         "update the installed agent jar", "start the server")),
                 Arguments.of("dev_cycle", new DevCycleScenario(), List.of(
                         "stop a server an earlier session left holding the jar", "stop the server",
@@ -505,11 +507,16 @@ class SideEffectStepsTest {
         }
 
         @Override
+        public List<String> optional() {
+            return List.of("remove what an interrupted earlier call left in plugins/, mods/ and libs/");
+        }
+
+        @Override
         public void consistent(CoreHarness h, Path ws, String step) throws Exception {
-            assertThat(h.core.server().running()).isEqualTo(step == null);
+            assertThat(h.core.server().running()).isEqualTo(step == null || optional().contains(step));
             assertThat(ws.resolve("run/plugins/msc-agent-paper.jar")).content().startsWith("agent paper ");
             noPartFiles(ws);
-            if (step == null) {
+            if (h.core.server().running()) {
                 h.ok("server_stop");
             }
         }

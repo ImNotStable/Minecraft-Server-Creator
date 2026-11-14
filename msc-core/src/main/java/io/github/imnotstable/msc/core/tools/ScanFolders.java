@@ -1,12 +1,15 @@
 package io.github.imnotstable.msc.core.tools;
 
+import io.github.imnotstable.msc.core.server.Platform;
 import io.github.imnotstable.msc.process.AtomicFile;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Stream;
 
 /**
@@ -15,8 +18,8 @@ import java.util.stream.Stream;
  * by a call that ended halfway. So a jar is written to a temp file in {@link #staging}, outside every scan folder but
  * on the server folder's volume, and renamed into place; a jar being removed is first renamed into {@link #staging}
  * too. Only where the staging folder is on another volume does a temp or aside file sit in the scan folder, under a
- * name no loader loads ({@link Loader}); dev_cycle removes what an interrupted call left, in both places
- * ({@link #sweep}).
+ * name no loader loads ({@link Loader}); dev_cycle and server_start remove what an interrupted call left, in both
+ * places ({@link #sweep}).
  */
 final class ScanFolders {
     /** The suffix of a jar set aside while it is removed. */
@@ -60,6 +63,21 @@ final class ScanFolders {
                 case QUILT -> !name.startsWith(".") && !name.endsWith(".disabled");
             };
         }
+    }
+
+    /**
+     * The scan folders of every platform in {@code serverDir}, and Minestom's {@code libs/}: a workspace that switched
+     * platform still has the others' folders, and what is left there loads once it switches back.
+     */
+    static List<Path> all(Path serverDir) {
+        Set<Path> folders = new LinkedHashSet<>();
+        for (Platform p : Platform.values()) {
+            if (p.addonDir() != null) {
+                folders.add(serverDir.resolve(p.addonDir()));
+            }
+        }
+        folders.add(serverDir.resolve("libs"));
+        return List.copyOf(folders);
     }
 
     /** Where temp and aside files go: the server folder's own {@code .msc/staging}, which no server scans. */

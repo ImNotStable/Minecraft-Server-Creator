@@ -78,6 +78,23 @@ class LifecycleToolsTest {
     }
 
     @Test
+    void startRemovesTheAsideCopiesOlderCoresLeftInTheScanFolders() throws Exception {
+        // #434: cores before #430 set a jar aside as x.jar.msc-removing in mods/, which Quilt loads as a second copy.
+        Path mods = Files.createDirectories(workspace.resolve("run/mods"));
+        Path plugins = Files.createDirectories(workspace.resolve("run/plugins"));
+        Files.writeString(mods.resolve("lobby.jar.msc-removing"), "old");
+        Files.writeString(plugins.resolve("arena.jar.msc-removing"), "old");
+        Files.writeString(mods.resolve("lobby.jar"), "kept");
+        assertThat(h.ok("server_start", "timeoutSeconds", 30))
+                .startsWith("removed 2 files an interrupted earlier call left\nserver ready in ");
+        assertThat(mods.resolve("lobby.jar.msc-removing")).doesNotExist();
+        assertThat(plugins.resolve("arena.jar.msc-removing")).doesNotExist();
+        assertThat(mods.resolve("lobby.jar")).hasContent("kept");
+        h.ok("server_stop");
+        assertThat(h.ok("server_start", "timeoutSeconds", 30)).startsWith("server ready in ");
+    }
+
+    @Test
     void waitReturnsTheFirstMatchingLineAndNeverMatchesTheSameLineTwice() throws Exception {
         assertThat(h.error("server_wait", "until", "x")).contains("none is running");
         h.ok("server_start", "timeoutSeconds", 30);
