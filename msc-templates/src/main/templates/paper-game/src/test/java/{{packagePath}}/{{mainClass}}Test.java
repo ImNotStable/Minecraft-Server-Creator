@@ -13,6 +13,8 @@ import org.bukkit.GameRules;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.command.CommandSender;
+import org.bukkit.configuration.InvalidConfigurationException;
+import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.EntityType;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.event.EventHandler;
@@ -30,17 +32,35 @@ import org.mockbukkit.mockbukkit.ServerMock;
 import org.mockbukkit.mockbukkit.entity.PlayerMock;
 import org.mockbukkit.mockbukkit.world.WorldMock;
 
-/** Loads the real plugin on a MockBukkit server: use this kind of test for events, commands and players. */
+/**
+ * Loads the real plugin on a MockBukkit server: use this kind of test for events, commands and players. The plugin
+ * reads {@link #CONFIG}, not your config.yml, so changing your game's stages, kit or rules does not break these tests.
+ */
 class {{mainClass}}Test {
+    /** The game these tests play. A key it leaves out takes GameConfig's default. */
+    static final String CONFIG = """
+            game-mode: adventure
+            difficulty: normal
+            time: 6000
+            natural-spawns: false
+            keep-inventory: true
+            kit: [wooden_sword, 'bread:8']
+            stages:
+              - {name: start, spawn: [0.5, -60, 0.5, 0, 0], goal: [-2, -61, 10, 2, -58, 12]}
+              - {name: arena, spawn: [0.5, -60, 40.5, 0, 0]}
+            """;
+
     private ServerMock server;
     private WorldMock world;
     private {{mainClass}} plugin;
 
     @BeforeEach
-    void setUp() {
+    void setUp() throws InvalidConfigurationException {
         server = MockBukkit.mock();
         world = server.addSimpleWorld("world");
-        plugin = MockBukkit.load({{mainClass}}.class);
+        YamlConfiguration config = new YamlConfiguration();
+        config.loadFromString(CONFIG);
+        plugin = MockBukkit.loadWithConfig({{mainClass}}.class, config);
     }
 
     @AfterEach

@@ -149,12 +149,14 @@ class GameConfigTest {
         assertThat(BAD.stream().map(Bad::key).distinct().toList()).containsExactlyInAnyOrderElementsOf(keys);
     }
 
+    /** The message names the typo'd key and lists the known ones, read from the lists so a new key needs no change here. */
     @Test
     void unknownKeysAreNamed() {
         assertThatThrownBy(() -> parse("keep-inventry: false\n" + STAGE)).hasMessage(
-                "unknown key keep-inventry (known: world, game-mode, difficulty, time, natural-spawns, keep-inventory,"
-                        + " kit, stages)");
+                "unknown key keep-inventry (known: " + String.join(", ", GameConfig.KEYS) + ")");
         assertThatThrownBy(() -> parse("stages: [{name: a, spawn: [0, 0, 0], goals: [0, 0, 0, 1, 1, 1]}]"))
-                .hasMessage("stages[0] (a): unknown key goals (known: name, spawn, goal)");
+                .hasMessage("stages[0] (a): unknown key goals (known: " + String.join(", ", GameConfig.STAGE_KEYS) + ")");
+        assertThat(GameConfig.KEYS).contains("keep-inventory", "stages");
+        assertThat(GameConfig.STAGE_KEYS).contains("goal");
     }
 }

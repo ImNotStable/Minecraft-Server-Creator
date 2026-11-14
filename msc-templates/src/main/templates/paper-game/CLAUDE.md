@@ -23,11 +23,11 @@ The base every game needs, so you only write the game itself. All of it is set i
 ## Layout
 
 - `{{mainClass}}.java`: entry point. Only wiring here.
-- `GameConfig.java`: reads and checks `config.yml`. Add new settings here: the key to `KEYS` (or `STAGE_KEYS`), a default in `config.yml`, and a bad-value case in `GameConfigTest` (its `everyKeyHasABadValueCase` fails until you do).
+- `GameConfig.java`: reads and checks `config.yml`. To add a setting: its key to `KEYS`, a record component read in `from` (`wholeNumber(c, "rounds", 3)`; `text`, `bool` and `list` read the other types), its default in `config.yml` and in `GameConfigTest.theShippedConfigLoadsAndMissingKeysTakeDefaults`, and a bad-value case in `GameConfigTest.BAD` (`everyKeyHasABadValueCase` fails until you do). A stage setting is the same with `STAGE_KEYS`, a `Stage` component read in `stages` (`wholeNumber(s.get("waves"), where + ".waves", 1)`) and a `Bad.stage` case.
 - `Game.java`: game state and rules (stages, joining, advancing). Put game logic here or in classes it calls.
 - `GameListener.java`: hands Bukkit events to `Game`. `GameCommand.java`: `/game`.
 - `Stage`, `Spot`, `Box`, `Kit`: config values. `Progress`: saved progress. `WorldRules`: world-wide rules.
-- `src/test/java/`: plain unit tests (`BoxTest`, `ProgressTest`) and MockBukkit tests (`GameConfigTest`, `{{mainClass}}Test`).
+- `src/test/java/`: plain unit tests (`BoxTest`, `ProgressTest`) and MockBukkit tests (`GameConfigTest`, `{{mainClass}}Test`). `{{mainClass}}Test` plays its own two-stage game (`CONFIG`), not your `config.yml`, so editing your stages, kit or rules does not break it.
 - `gradle/libs.versions.toml`: every dependency version. `run/`: dev server config.
 
 ## Building the game
@@ -50,7 +50,7 @@ The base every game needs, so you only write the game itself. All of it is set i
 ## Tests
 
 - Every change comes with a test. Pure logic: plain JUnit + AssertJ. Events, commands, players: MockBukkit.
-- MockBukkit pattern (see `{{mainClass}}Test`): `MockBukkit.mock()`, `server.addSimpleWorld("world")`, then `MockBukkit.load({{mainClass}}.class)`; `server.addPlayer("Steve")` fires a join; `server.dispatchCommand(server.getConsoleSender(), "game status")` runs a console command; fire events with `server.getPluginManager().callEvent(...)`.
+- MockBukkit pattern (see `{{mainClass}}Test`): `MockBukkit.mock()`, `server.addSimpleWorld("world")`, then `MockBukkit.loadWithConfig({{mainClass}}.class, config)` with the test's own config; `server.addPlayer("Steve")` fires a join; `server.dispatchCommand(server.getConsoleSender(), "game status")` runs a console command; fire events with `server.getPluginManager().callEvent(...)`.
 - Compare messages as plain text (`PlainTextComponentSerializer`), not by component equality.
 
 ## Dev server
