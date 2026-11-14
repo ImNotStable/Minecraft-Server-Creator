@@ -1,0 +1,7 @@
+[12:00:01 INFO]: Starting Minecraft server on *:25565
+[12:00:04 INFO]: Done (3.0s)! For help, type "help"
+[12:00:05 ERROR]: [WebPlugin] Could not start web server
+java.net.BindException: Address already in use
+	at java.base/sun.nio.ch.Net.bind0(Native Method)
+	at com.example.web.WebServer.start(WebServer.java:20)
+	at com.example.web.WebPlugin.onEnable(WebPlugin.java:12)
