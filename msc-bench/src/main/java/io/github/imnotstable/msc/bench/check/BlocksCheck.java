@@ -3,6 +3,7 @@ package io.github.imnotstable.msc.bench.check;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import io.github.imnotstable.msc.bench.JsonNumbers;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
@@ -27,20 +28,22 @@ record BlocksCheck(String name, List<Expectation> expectations, int maxFailuresS
         expectations = List.copyOf(expectations);
     }
 
-    static BlocksCheck parse(String name, JsonObject json) {
+    static BlocksCheck parse(String name, JsonObject json, String at) {
         List<Expectation> out = new ArrayList<>();
         if (json.has("blocks")) {
-            for (JsonElement e : json.getAsJsonArray("blocks")) {
-                JsonObject o = e.getAsJsonObject();
-                int[] pos = pos(o.getAsJsonArray("pos"));
+            JsonArray blocks = json.getAsJsonArray("blocks");
+            for (int i = 0; i < blocks.size(); i++) {
+                JsonObject o = blocks.get(i).getAsJsonObject();
+                int[] pos = pos(o, "pos", at + ".blocks[" + i + "]");
                 out.add(new Expectation(pos[0], pos[1], pos[2], Checks.require(o, "block")));
             }
         }
         if (json.has("regions")) {
-            for (JsonElement e : json.getAsJsonArray("regions")) {
-                JsonObject o = e.getAsJsonObject();
-                int[] a = pos(o.getAsJsonArray("from"));
-                int[] b = pos(o.getAsJsonArray("to"));
+            JsonArray regions = json.getAsJsonArray("regions");
+            for (int i = 0; i < regions.size(); i++) {
+                JsonObject o = regions.get(i).getAsJsonObject();
+                int[] a = pos(o, "from", at + ".regions[" + i + "]");
+                int[] b = pos(o, "to", at + ".regions[" + i + "]");
                 String block = Checks.require(o, "block");
                 for (int y = Math.min(a[1], b[1]); y <= Math.max(a[1], b[1]); y++) {
                     for (int z = Math.min(a[2], b[2]); z <= Math.max(a[2], b[2]); z++) {
@@ -60,11 +63,18 @@ record BlocksCheck(String name, List<Expectation> expectations, int maxFailuresS
         return new BlocksCheck(name, out, 3);
     }
 
-    private static int[] pos(JsonArray array) {
-        if (array == null || array.size() != 3) {
-            throw new IllegalArgumentException("a position is [x, y, z]");
+    /** The block position {@code holder.field}, {@code [x, y, z]} inside Minecraft's world limits. */
+    private static int[] pos(JsonObject holder, String field, String at) {
+        String key = at + "." + field;
+        JsonElement value = holder.get(field);
+        if (value == null || !value.isJsonArray() || value.getAsJsonArray().size() != 3) {
+            throw new IllegalArgumentException(key + ": a position is [x, y, z]");
         }
-        return new int[] {array.get(0).getAsInt(), array.get(1).getAsInt(), array.get(2).getAsInt()};
+        JsonArray array = value.getAsJsonArray();
+        return new int[] {
+                JsonNumbers.wholeNumber(array.get(0), key + "[0]", JsonNumbers.BLOCK_XZ),
+                JsonNumbers.wholeNumber(array.get(1), key + "[1]", JsonNumbers.BLOCK_Y),
+                JsonNumbers.wholeNumber(array.get(2), key + "[2]", JsonNumbers.BLOCK_XZ)};
     }
 
     @Override
