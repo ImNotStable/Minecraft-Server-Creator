@@ -66,8 +66,9 @@ public final class LifecycleTools {
                 cycle::run);
         registry.add("server_logs",
                 "Read the server log cheaply. mode=errors: warnings and errors with trimmed stack traces, repeats collapsed. "
-                        + "mode=tail: last lines. mode=grep: lines matching a regex.",
-                Schema.of().opt("mode", "string", "errors (default), tail or grep")
+                        + "mode=tail: last lines. mode=grep: lines matching a regex. mode=triage: why it crashed or "
+                        + "failed to start, and a fix.",
+                Schema.of().opt("mode", "string", "errors (default), tail, grep, triage")
                         .opt("pattern", "string", "Regex for mode=grep")
                         .range("lines", 1, Integer.MAX_VALUE, "For tail and grep. Default 30")
                         .opt("all", "boolean", "Look at the whole log, not only since the last start")

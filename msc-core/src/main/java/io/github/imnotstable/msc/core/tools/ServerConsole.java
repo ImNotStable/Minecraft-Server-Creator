@@ -1,6 +1,7 @@
 package io.github.imnotstable.msc.core.tools;
 
 import io.github.imnotstable.msc.core.agent.AgentHub;
+import io.github.imnotstable.msc.core.server.CrashTriage;
 import io.github.imnotstable.msc.core.server.LogBuffer;
 import io.github.imnotstable.msc.core.server.LogCondenser;
 import io.github.imnotstable.msc.core.server.ServerManager;
@@ -36,10 +37,19 @@ final class ServerConsole {
     String logs(Args args) {
         int maxChars = Budget.of(args);
         String mode = args.str("mode", "errors");
-        if (!List.of("errors", "tail", "grep").contains(mode)) {
-            throw new ToolException("mode must be errors, tail or grep");
+        if (!List.of("errors", "tail", "grep", "triage").contains(mode)) {
+            throw new ToolException("mode must be errors, tail, grep or triage");
         }
-        List<String> lines = args.bool("all", false) ? server.log().all() : server.log().since(marks.start);
+        boolean all = args.bool("all", false);
+        List<String> lines = all ? server.log().all() : server.log().since(marks.start);
+        if (mode.equals("triage")) {
+            // Crash files from before the last start are old news, unless all=true or this core never started one.
+            List<CrashTriage.Finding> findings = CrashTriage.triage(lines, server.serverDir(),
+                    all ? null : server.lastLaunch());
+            String state = server.running() ? "server running" : "server not running";
+            return Budget.truncate(CrashTriage.render(findings, lines.size(), state), maxChars,
+                    "Use server_logs mode=errors.");
+        }
         if (lines.isEmpty()) {
             return "log is empty" + (server.running() ? "" : " (server not running)");
         }

@@ -341,6 +341,11 @@ public final class ServerManager implements AutoCloseable {
         return running() ? launchedAt : null;
     }
 
+    /** Clock time just before this core last launched a server, running or not, or null when it never did. */
+    public synchronized java.time.Instant lastLaunch() {
+        return launchedAt;
+    }
+
     /**
      * The pid of a server an earlier core left running (detached, or orphaned by a killed core), without stopping
      * it, or -1. {@link #stopLeftover()} stops it. A server whose core still runs is no leftover ({@link #otherSession}).
