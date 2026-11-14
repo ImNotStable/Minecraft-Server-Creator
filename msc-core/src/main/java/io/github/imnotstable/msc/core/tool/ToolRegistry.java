@@ -50,8 +50,10 @@ public final class ToolRegistry {
     }
 
     /**
-     * The one cap rule for every result ({@link Budget#cap}). A tool cuts its own result first with a hint of its own;
-     * this cut only catches a result that came out longer anyway.
+     * The one cap rule for every result ({@link Budget#cap}). A tool spends the cap as one budget ({@link Budget.Parts}
+     * for a result of several parts), so its own cuts keep their hints and closing lines; this cut is only the safety
+     * net for a result that came out longer anyway. Its hint never says to raise maxChars: a result that outgrew its
+     * cap would outgrow a larger one too (#473).
      */
     private static String capped(Tool tool, Args args, String text) {
         int cap;
@@ -60,8 +62,7 @@ public final class ToolRegistry {
         } catch (ToolException e) {
             cap = Budget.DEFAULT_CHARS;
         }
-        return Budget.truncate(text, cap, Budget.takesMaxChars(tool) && cap < Budget.MAX_CHARS
-                ? "Raise maxChars or narrow the call." : "Narrow the call.");
+        return Budget.truncate(text, cap, "Narrow the call.");
     }
 
     public Result call(String name, JsonObject arguments) {
