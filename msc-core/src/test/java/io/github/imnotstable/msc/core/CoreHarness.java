@@ -99,6 +99,20 @@ final class CoreHarness implements AutoCloseable {
         return port;
     }
 
+    /**
+     * Holds a server's default port (25565, 25575) closed on loopback, for a test of the fallback to it; the test is
+     * aborted, not failed, when something on this machine uses the port, since it would reach that instead. The rule
+     * itself is tested without the network in msc-process's ServerAddressTest.
+     */
+    static ClosedPort holdDefaultPort(int port) throws IOException {
+        try {
+            return ClosedPort.reserve(port);
+        } catch (java.net.BindException e) {
+            org.junit.jupiter.api.Assumptions.abort("port " + port + " is in use on this machine");
+            throw e;
+        }
+    }
+
     @Override
     public void close() throws java.io.IOException {
         if (session != null) {

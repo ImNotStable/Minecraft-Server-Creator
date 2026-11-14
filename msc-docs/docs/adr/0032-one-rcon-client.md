@@ -34,8 +34,10 @@ and the client saw only a closed connection.
    "asked" stays a choice of that caller. It reads them as the 26.3 server does (#391, #394, #396; the file through
    `ServerPropertiesFile`, ADR 0033): `enable-rcon` in any case, a password that is not empty, `rcon.port` 25575 when
    it is not a number and no RCON at all outside 1 to 65535, and the host `server-ip` (loopback when it is empty or
-   a wildcard), the address the server binds RCON to. Asking never throws, and `ServerManager.stopLeftover` keeps
-   the pid file until the leftover is gone, so a failed ask always falls back to the kill.
+   a wildcard), the address the server binds RCON to. Host and port come from msc-process's `ServerAddress`, the
+   one reading of `server-ip` and a port key, which player_test also dials the game port by (#448). Asking never
+   throws, and `ServerManager.stopLeftover` keeps the pid file until the leftover is gone, so a failed ask always
+   falls back to the kill.
 3. **The rules of the client.**
    - Every body, the password included, is UTF-8.
    - A command or password over `RconClient.MAX_BODY` bytes (1460 minus 14 = 1446 bytes of UTF-8) is refused before
