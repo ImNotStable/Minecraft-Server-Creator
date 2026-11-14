@@ -3,6 +3,8 @@ package io.github.imnotstable.msc.bench.run;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import io.github.imnotstable.msc.process.AtomicFile;
+import io.github.imnotstable.msc.process.HttpStall;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
@@ -11,7 +13,6 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
@@ -25,7 +26,8 @@ import java.util.stream.Stream;
  * Finds the Paper jar for a run without the user naming one: first the jar caches (msc-core keeps
  * {@code paper-<version>-<build>.jar} in {@code <workspace>/.msc/cache}), then a download of the
  * newest stable build from PaperMC's downloads service into the first cache folder, checked against the
- * build's sha256 as msc-core's {@code PaperDownloader} does (a copy by design: ADR 0004).
+ * build's sha256 as msc-core's {@code PaperDownloader} does (a copy by design: ADR 0004). Requests go through
+ * {@link HttpStall}, so a server that goes silent fails the run after the stall limit instead of hanging it (#454).
  */
 public final class PaperJars {
 
@@ -58,6 +60,13 @@ public final class PaperJars {
 
     /** Uses a cached jar or downloads the newest build (stable preferred) into {@code cacheDirs.get(0)}. */
     public static Path resolve(List<Path> cacheDirs, String version, String downloadsUrl) throws IOException {
+        return resolve(cacheDirs, version, downloadsUrl, HttpStall.LIMIT);
+    }
+
+    /** As {@link #resolve(List, String, String)}, with another stall limit, for tests. */
+    static Path resolve(List<Path> cacheDirs, String version, String downloadsUrl, Duration stall)
+            throws IOException {
+        String retry = "run the bench again";
         Path cached = newestCached(cacheDirs, version);
         if (cached != null) {
             return cached;
@@ -66,7 +75,8 @@ public final class PaperJars {
                 .connectTimeout(Duration.ofSeconds(15)).build();
         try {
             URI builds = URI.create(downloadsUrl + "/v3/projects/paper/versions/" + version + "/builds");
-            HttpResponse<String> list = http.send(request(builds), HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> list = HttpStall.send(http, request(builds), HttpResponse.BodyHandlers.ofString(),
+                    stall, retry);
             if (list.statusCode() != 200) {
                 throw new IOException("PaperMC answered " + list.statusCode() + " for " + builds);
             }
@@ -86,18 +96,23 @@ public final class PaperJars {
             Path dir = cacheDirs.getFirst();
             Files.createDirectories(dir);
             Path jar = dir.resolve("paper-" + version + "-" + best.get("id").getAsInt() + ".jar");
-            Path part = dir.resolve(jar.getFileName() + ".part");
-            HttpResponse<Path> got = http.send(request(URI.create(url)), HttpResponse.BodyHandlers.ofFile(part));
-            if (got.statusCode() != 200) {
-                Files.deleteIfExists(part);
-                throw new IOException("download of " + url + " answered " + got.statusCode());
-            }
-            // As msc-core's PaperDownloader: a jar that does not match PaperMC's checksum is never kept.
-            if (sha256 != null && !sha256.equalsIgnoreCase(sha256(part))) {
-                Files.deleteIfExists(part);
-                throw new IOException("checksum mismatch for " + url);
-            }
-            Files.move(part, jar, StandardCopyOption.REPLACE_EXISTING);
+            AtomicFile.replace(jar, part -> {
+                HttpResponse<Path> got;
+                try {
+                    got = HttpStall.send(http, request(URI.create(url)), HttpResponse.BodyHandlers.ofFile(part),
+                            stall, retry);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    throw new IOException("interrupted while downloading Paper", e);
+                }
+                if (got.statusCode() != 200) {
+                    throw new IOException("download of " + url + " answered " + got.statusCode());
+                }
+                // As msc-core's PaperDownloader: a jar that does not match PaperMC's checksum is never kept.
+                if (sha256 != null && !sha256.equalsIgnoreCase(sha256(part))) {
+                    throw new IOException("checksum mismatch for " + url);
+                }
+            });
             return jar;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();

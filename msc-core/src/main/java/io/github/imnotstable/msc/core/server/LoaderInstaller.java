@@ -55,6 +55,7 @@ public final class LoaderInstaller {
     public Result purpur(String minecraft, Path dir) throws IOException, InterruptedException {
         URI latest = URI.create(urls.purpurApi() + "/v2/purpur/" + minecraft + "/latest");
         String build;
+        String md5;
         try {
             HttpResponse<String> response = downloads.text(latest);
             if (response.statusCode() == 404) {
@@ -64,6 +65,7 @@ public final class LoaderInstaller {
                 throw new ToolException("Purpur answered " + response.statusCode() + " for " + latest);
             }
             build = latestBuild(response.body());
+            md5 = md5(response.body());
         } catch (IOException e) {
             CachedBuild offline = CachedBuild.newest(cacheDir, "purpur", minecraft);
             if (offline == null) {
@@ -75,8 +77,8 @@ public final class LoaderInstaller {
         Path jar = cacheDir.resolve("purpur-" + minecraft + "-" + build + ".jar");
         boolean cached = Files.exists(jar);
         if (!cached) {
-            fetch(URI.create(urls.purpurApi() + "/v2/purpur/" + minecraft + "/" + build + "/download"), jar,
-                    "Purpur has no build " + build + " of " + minecraft);
+            downloads.fetch(URI.create(urls.purpurApi() + "/v2/purpur/" + minecraft + "/" + build + "/download"), jar,
+                    "Purpur has no build " + build + " of " + minecraft, Downloads.Checksum.of("MD5", md5));
         }
         ServerFiles.place(jar, dir, Platform.PURPUR.serverJar());
         return new Result(minecraft + " build " + build, cached);
@@ -88,6 +90,12 @@ public final class LoaderInstaller {
             throw new ToolException("Purpur's answer names no build");
         }
         return o.get("build").getAsString();
+    }
+
+    /** The MD5 of the build's jar that Purpur's answer names, or null when it names none. */
+    static String md5(String json) {
+        JsonObject o = JsonParser.parseString(json).getAsJsonObject();
+        return o.has("md5") && o.get("md5").isJsonPrimitive() ? o.get("md5").getAsString() : null;
     }
 
     /** NeoForge's server, with its server starter jar as {@code server.jar}. */

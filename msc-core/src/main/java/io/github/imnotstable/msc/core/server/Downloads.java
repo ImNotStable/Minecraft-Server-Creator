@@ -2,6 +2,7 @@ package io.github.imnotstable.msc.core.server;
 
 import io.github.imnotstable.msc.core.tool.ToolException;
 import io.github.imnotstable.msc.process.AtomicFile;
+import io.github.imnotstable.msc.process.HttpStall;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
@@ -15,12 +16,34 @@ import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.util.HexFormat;
 
-/** The HTTP side of the server downloaders: one client, one User-Agent, and download-to-cache with clean-up. */
+/**
+ * The HTTP side of the server downloaders: one client, one User-Agent, and download-to-cache with clean-up. Every
+ * request goes through {@link HttpStall}, so a server that goes silent fails it after the stall limit (#454).
+ */
 final class Downloads {
     private static final String USER_AGENT = "msc-core/0.1 (Minecraft Server Creator dev tooling)";
+    private static final String RETRY = "run server_setup again";
+
+    /** A checksum a download must match: a {@link MessageDigest} algorithm and the expected digest in hex. */
+    record Checksum(String algorithm, String hex) {
+        /** The checksum, or null when the source gave none. */
+        static Checksum of(String algorithm, String hex) {
+            return hex == null ? null : new Checksum(algorithm, hex);
+        }
+    }
 
     private final HttpClient http = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NORMAL)
             .connectTimeout(Duration.ofSeconds(15)).build();
+    private final Duration stall;
+
+    Downloads() {
+        this(HttpStall.LIMIT);
+    }
+
+    /** With another stall limit, for tests. */
+    Downloads(Duration stall) {
+        this.stall = stall;
+    }
 
     /** A base URL without its trailing slash. */
     static String trim(String url) {
@@ -29,22 +52,25 @@ final class Downloads {
 
     /** A GET of a small text answer; an unreachable host throws the {@link IOException}, for an offline fallback. */
     HttpResponse<String> text(URI uri) throws IOException, InterruptedException {
-        return http.send(request(uri), HttpResponse.BodyHandlers.ofString());
+        return HttpStall.send(http, request(uri), HttpResponse.BodyHandlers.ofString(), stall, RETRY);
     }
 
     /**
      * Download {@code uri} to {@code target} through a {@code .part} file beside it ({@link AtomicFile}), so a failed
      * download leaves nothing behind and a replaced file keeps its permissions. A 404 throws {@code notFound}; a
-     * non-null {@code sha256} must match the downloaded bytes.
+     * non-null {@code checksum} must match the downloaded bytes. A download that stalls fails with a one-line error
+     * that names the host.
      */
-    void fetch(URI uri, Path target, String notFound, String sha256) throws IOException, InterruptedException {
+    void fetch(URI uri, Path target, String notFound, Checksum checksum) throws IOException, InterruptedException {
         try {
             AtomicFile.replace(target, tmp -> {
                 HttpResponse<Path> got;
                 try {
-                    got = http.send(request(uri), HttpResponse.BodyHandlers.ofFile(tmp));
+                    got = HttpStall.send(http, request(uri), HttpResponse.BodyHandlers.ofFile(tmp), stall, RETRY);
                 } catch (InterruptedException e) {
                     throw new Interrupted(e);
+                } catch (HttpStall.StalledException e) {
+                    throw new ToolException(e.getMessage());
                 } catch (IOException e) {
                     throw new ToolException("cannot reach " + uri + ": " + e.getMessage());
                 }
@@ -52,7 +78,7 @@ final class Downloads {
                     throw new ToolException(got.statusCode() == 404 ? notFound
                             : "download of " + uri + " answered " + got.statusCode());
                 }
-                if (sha256 != null && !sha256.equalsIgnoreCase(sha256(tmp))) {
+                if (checksum != null && !checksum.hex().equalsIgnoreCase(digest(tmp, checksum.algorithm()))) {
                     throw new ToolException("checksum mismatch for " + uri);
                 }
             });
@@ -77,8 +103,12 @@ final class Downloads {
     }
 
     static String sha256(Path file) throws IOException {
+        return digest(file, "SHA-256");
+    }
+
+    static String digest(Path file, String algorithm) throws IOException {
         try (InputStream in = Files.newInputStream(file)) {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            MessageDigest digest = MessageDigest.getInstance(algorithm);
             byte[] buf = new byte[65536];
             int n;
             while ((n = in.read(buf)) > 0) {

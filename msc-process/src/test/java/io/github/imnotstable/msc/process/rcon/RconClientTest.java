@@ -3,6 +3,7 @@ package io.github.imnotstable.msc.process.rcon;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.github.imnotstable.msc.process.rcon.FakeRconServer.Fault;
 import io.github.imnotstable.msc.process.rcon.FakeRconServer.Other;
 import io.github.imnotstable.msc.process.rcon.FakeRconServer.Quirks;
 import java.io.IOException;
@@ -221,5 +222,41 @@ class RconClientTest {
                     Duration.ofMillis(200))).isInstanceOf(SocketTimeoutException.class)
                     .isNotInstanceOf(RconRefusedException.class);
         }
+    }
+
+    /**
+     * #455: one bad reply must not poison later commands. The failed command ends within its timeout (plus a margin
+     * for a loaded machine) with a message, the next command connects afresh and succeeds, and the broken connection
+     * is closed, so the server's thread for it ends.
+     */
+    @ParameterizedTest
+    @EnumSource(Fault.class)
+    void aBadReplyClosesTheConnectionAndTheNextCommandWorks(Fault fault) throws Exception {
+        String longReply = "x".repeat(FakeRconServer.CHUNK + 10);
+        Duration timeout = Duration.ofSeconds(1);
+        try (FakeRconServer server = new FakeRconServer("secret", cmd -> cmd.equals("bad") ? longReply : "ran " + cmd);
+                RconClient client = RconClient.connect("127.0.0.1", server.port(), "secret", timeout, timeout)) {
+            server.fault("bad", fault);
+            long start = System.nanoTime();
+            switch (fault) {
+                case JUNK_AFTER_END_ANSWER -> assertThat(client.command("bad")).isEqualTo(longReply);
+                case CLOSE_MID_PACKET -> assertThatThrownBy(() -> client.command("bad"))
+                        .isInstanceOf(IOException.class).hasMessage("server closed the RCON connection");
+                case STALL_MID_PACKET, ENDLESS_OTHER_IDS -> assertThatThrownBy(() -> client.command("bad"))
+                        .isInstanceOf(SocketTimeoutException.class).hasMessage("no RCON reply within 1000 ms");
+            }
+            assertThat(Duration.ofNanos(System.nanoTime() - start)).isLessThan(timeout.plusSeconds(5));
+            assertThat(client.command("good")).isEqualTo("ran good");
+            assertThat(server.connections()).isEqualTo(2);
+            awaitOpen(server, 1);
+        }
+    }
+
+    private static void awaitOpen(FakeRconServer server, int open) throws InterruptedException {
+        long deadline = System.nanoTime() + Duration.ofSeconds(30).toNanos();
+        while (server.openConnections() != open && System.nanoTime() < deadline) {
+            Thread.sleep(10);
+        }
+        assertThat(server.openConnections()).as("connections still open").isEqualTo(open);
     }
 }

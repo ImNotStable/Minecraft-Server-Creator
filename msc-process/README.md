@@ -1,9 +1,10 @@
 # msc-process
 
-Server process control that msc-core and msc-bench share: the process tree kill
+Server process control that msc-core and msc-bench share (msc-bot uses its HTTP stall rule too): the process tree kill
 ([ADR 0031](../msc-docs/docs/adr/0031-process-tree-kill.md)), the RCON client
 ([ADR 0032](../msc-docs/docs/adr/0032-one-rcon-client.md)), the `server.properties` reader and writer
-([ADR 0033](../msc-docs/docs/adr/0033-one-server-properties-file.md)) and the atomic file writer
+([ADR 0033](../msc-docs/docs/adr/0033-one-server-properties-file.md)) with the server address read from it, the HTTP
+stall rule, and the atomic file writer
 ([ADR 0034](../msc-docs/docs/adr/0034-one-atomic-file-writer.md)). It depends on nothing, so the bench can use it without
 depending on msc-core (ADR 0004).
 
@@ -20,6 +21,16 @@ that is not up yet.
 ISO-8859-1, `Properties.load` rules), and `ServerPropertiesFile.set(file, values)` sets keys, keeping every other line,
 comment and their order, escaped so the server reads back exactly what was set. No other code in the repository reads
 or writes that file (msc-core's `repoChecks` checks that no other code names it).
+
+`ServerAddress.game(properties)` and `ServerAddress.rcon(properties)` turn the keys of a read `server.properties` into
+the address to dial for the game port and the RCON port: `server-ip` with loopback in place of an empty or wildcard
+value, and the port key as the server reads it (its default when it is not a number, no address when it is outside 1 to
+65535). It is the one place that does so, so a test player and an RCON client reach the same server.
+
+`HttpStall.send(http, request, handler, limit, retry)` sends an HTTP request and gives it up once no byte has come for
+the stall limit (`HttpStall.LIMIT`, 30 s, for downloads), with a one-line error that names the host and what to retry.
+`HttpRequest.timeout` cannot do this: the JDK applies it only until the response headers arrive. Every HTTP read in
+the product goes through it (#454).
 
 `AtomicFile.write(target, writer)` and `AtomicFile.replace(target, writer)` write a temp file beside the target and
 move it into place, so a failed write never leaves half a file; `AtomicFile.copy(source, target)` does the same for a
@@ -38,5 +49,8 @@ repository's one temp-then-move writer: use it rather than writing another.
 | `rcon.RconClient` | The RCON client: login, commands, replies split over several packets |
 | `rcon.RconRefusedException` | A login the server refused, or a password too long to send: retrying will not help |
 | `ServerPropertiesFile` | The one reader and writer of `server.properties` |
+| `ServerAddress` | The one place that turns `server-ip` and a port key into the address to dial, game or RCON port |
+| `HttpStall` | The one stall rule for HTTP reads: no byte for the limit and the request is given up |
 | `AtomicFile` | The one atomic file writer: write, replace and copy through a temp file, permissions of the replaced file kept |
-| `rcon.FakeRconServer` (test fixtures) | A vanilla-like RCON server for the RCON tests of this module, msc-core and msc-bench |
+| `rcon.FakeRconServer` (test fixtures) | A vanilla-like RCON server for the RCON tests of this module, msc-core and msc-bench, with faults for broken replies |
+| `StallingHttpServer` (test fixtures) | An HTTP server that sends its headers and some bytes, then stalls or trickles, for the stall tests |
