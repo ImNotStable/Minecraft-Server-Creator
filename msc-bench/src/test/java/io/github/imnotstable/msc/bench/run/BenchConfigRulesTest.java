@@ -29,6 +29,7 @@ import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /** #406: every value of bench.json that can never work is refused at load, naming its key. */
 class BenchConfigRulesTest {
@@ -220,6 +221,30 @@ class BenchConfigRulesTest {
         assertThatThrownBy(() -> BenchConfig.load(config, home()))
                 .isInstanceOf(IOException.class)
                 .hasMessageContaining(path + ": " + value + " is not " + type);
+    }
+
+    /**
+     * #508: a path key holding a string that is no path on this system is refused in one line naming its key path,
+     * where Path.of's own InvalidPathException escaped the load naming no key.
+     */
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = {"modes.m.mcpConfigTemplate", "modes.m.serverPlugins[0]", "modes.m.paperCacheSeed",
+            "server.paperJar", "server.paperCacheDirs[0]", "gradleWrapperFrom", "paths.agentJar"})
+    void aStringThatIsNoPathIsRefusedInOneLineNamingItsKey(String key) throws IOException {
+        JsonPrimitive noPath = new JsonPrimitive("a\0b");
+        JsonElement value = noPath;
+        String holder = key;
+        if (key.endsWith("[0]")) {
+            JsonArray list = new JsonArray();
+            list.add(noPath);
+            value = list;
+            holder = key.substring(0, key.length() - 3);
+        }
+        Path config = write(with(holder, value));
+        assertThatThrownBy(() -> BenchConfig.load(config, home()))
+                .isInstanceOf(IOException.class)
+                .hasMessage("Bad bench config " + config + ": " + key + ": \"a\\u0000b\" is not a path: "
+                        + "Nul character not allowed");
     }
 
     /** Each object of bench.json, by its path in {@link #VALID} ({@code ""} is the file itself), with its keys. */

@@ -5,6 +5,8 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonNull;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonPrimitive;
+import java.nio.file.InvalidPathException;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -12,6 +14,8 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Pattern;
+import java.util.regex.PatternSyntaxException;
 
 /**
  * A JSON object from a file a user writes ({@code bench.json}, each {@code task.json}), as the readers of those files
@@ -220,6 +224,94 @@ public final class UserJson {
             out.add(requireString(array.get(i), key(field) + "[" + i + "]"));
         }
         return out;
+    }
+
+    // Reads that convert a string (#508): each turns the library's refusal, such as PatternSyntaxException's
+    // three-line message or InvalidPathException's, into the one-line refusal every other read gives, naming the key
+    // path, the value and what the key takes. No reader compiles or parses a user string itself.
+
+    /** The regex {@code field} compiled with {@code flags}, or null when absent; a string that is no regex is refused. */
+    public Pattern pattern(String field, int flags) {
+        String regex = exactString(field, null);
+        return regex == null ? null : compile(regex, key(field), flags);
+    }
+
+    /** The list of regexes {@code field} compiled with {@code flags}, empty when absent; entry {@code i} is {@code field[i]}. */
+    public List<Pattern> patterns(String field, int flags) {
+        List<String> regexes = exactStrings(field);
+        List<Pattern> out = new ArrayList<>();
+        for (int i = 0; i < regexes.size(); i++) {
+            out.add(compile(regexes.get(i), key(field) + "[" + i + "]", flags));
+        }
+        return out;
+    }
+
+    /** The path {@code field} as written, or {@code absent}; a string that is no path on this system is refused. */
+    public String path(String field, String absent) {
+        String path = exactString(field, absent);
+        return path == null ? null : checkPath(path, key(field));
+    }
+
+    /** The list of paths {@code field}, empty when absent; entry {@code i} is {@code field[i]}. */
+    public List<String> paths(String field) {
+        List<String> paths = exactStrings(field);
+        for (int i = 0; i < paths.size(); i++) {
+            checkPath(paths.get(i), key(field) + "[" + i + "]");
+        }
+        return paths;
+    }
+
+    /** {@link #stringsOrNulls} whose entries are paths. */
+    public List<String> pathsOrNulls(String field) {
+        List<String> paths = stringsOrNulls(field);
+        for (int i = 0; paths != null && i < paths.size(); i++) {
+            if (paths.get(i) != null) {
+                checkPath(paths.get(i), key(field) + "[" + i + "]");
+            }
+        }
+        return paths;
+    }
+
+    /** {@link #stringMapOrNulls} whose values are paths. */
+    public Map<String, String> pathMapOrNulls(String field) {
+        Map<String, String> paths = stringMapOrNulls(field);
+        if (paths != null) {
+            paths.forEach((name, path) -> {
+                if (path != null) {
+                    checkPath(path, key(field) + "." + name);
+                }
+            });
+        }
+        return paths;
+    }
+
+    private static Pattern compile(String regex, String key, int flags) {
+        try {
+            return Pattern.compile(regex, flags);
+        } catch (PatternSyntaxException e) {
+            throw new IllegalArgumentException(key + ": " + quoted(regex)
+                    + " is not a regex: " + firstLine(e.getDescription())
+                    + (e.getIndex() >= 0 ? " at index " + e.getIndex() : ""));
+        }
+    }
+
+    private static String checkPath(String path, String key) {
+        try {
+            Path.of(path);
+            return path;
+        } catch (InvalidPathException e) {
+            throw new IllegalArgumentException(key + ": " + quoted(path)
+                    + " is not a path: " + firstLine(e.getReason()));
+        }
+    }
+
+    /** {@code text} as a refusal shows a string value: in JSON quotes and escapes, so on one line, and cut when long. */
+    public static String quoted(String text) {
+        return JsonNumbers.written(new JsonPrimitive(text));
+    }
+
+    private static String firstLine(String text) {
+        return text == null ? "" : text.strip().lines().findFirst().orElse("");
     }
 
     /**
