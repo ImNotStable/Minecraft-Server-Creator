@@ -154,6 +154,7 @@ public record Animation(List<Texture> frames, int frametime, boolean interpolate
         }
         checkCounts(frames, frametime);
         List<Texture> out = new ArrayList<>();
+        boolean changed = false;
         for (int f = 0; f < frames; f++) {
             Texture t = base.copy();
             for (int y = 0; y < base.height(); y++) {
@@ -163,10 +164,17 @@ public record Animation(List<Texture> frames, int frametime, boolean interpolate
                         continue;
                     }
                     double phase = 2 * Math.PI * ((double) f / frames + (x + y) / (2.0 * base.width()));
-                    t.set(x, y, ramp.get(i + (int) Math.round(Math.sin(phase))));
+                    int shade = ramp.get(i + (int) Math.round(Math.sin(phase)));
+                    changed |= shade != base.get(x, y);
+                    t.set(x, y, shade);
                 }
             }
             out.add(t);
+        }
+        if (!changed) {
+            // Every frame would equal the base: an animation that shows nothing (#545), as a scroll step of 0 (#534).
+            throw new TextureException("pulse changes no pixel: the texture needs pixels in at least two shades of "
+                    + "the ramp (one flat colour cannot glow)");
         }
         return new Animation(out, frametime, true);
     }

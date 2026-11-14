@@ -37,6 +37,21 @@ class AnimationTest {
     }
 
     @Test
+    void pulseRefusesATextureItCannotChange() {
+        // #545: one flat colour (or no pixel in the ramp) gave 8 identical frames and no glow.
+        Texture flat = Texture.square(16);
+        for (int y = 0; y < 16; y++) {
+            for (int x = 0; x < 16; x++) {
+                flat.set(x, y, 0xFF30D060);
+            }
+        }
+        assertThatThrownBy(() -> Animation.pulse(flat, new Ramp(java.util.List.of(0xFF30D060)), 8, 2))
+                .isInstanceOf(TextureException.class).hasMessageContaining("pulse changes no pixel");
+        assertThatThrownBy(() -> Animation.pulse(flat, Ramp.from(0xFF3060E0, 4), 8, 2))
+                .hasMessageContaining("pulse changes no pixel");
+    }
+
+    @Test
     void rejectsBadCountsBeforeBuildingFrames() {
         Texture big = Texture.square(512);
         Ramp ramp = Ramp.from(0xFF3060E0, 4);
