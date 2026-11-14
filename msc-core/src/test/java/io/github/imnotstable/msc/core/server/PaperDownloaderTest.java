@@ -38,7 +38,9 @@ class PaperDownloaderTest {
             PaperDownloader paper = new PaperDownloader("http://127.0.0.1:" + http.getAddress().getPort() + "/", cache);
             assertThatThrownBy(() -> paper.download("26.3")).isInstanceOf(ToolException.class)
                     .hasMessageStartingWith("cannot reach " + jarUrl);
-            assertThat(cache.resolve("paper-26.3-7.jar.part")).doesNotExist();
+            try (var left = java.nio.file.Files.walk(cache)) {
+                assertThat(left.map(p -> p.getFileName().toString())).noneMatch(n -> n.endsWith(".part"));
+            }
         } finally {
             http.stop(0);
         }

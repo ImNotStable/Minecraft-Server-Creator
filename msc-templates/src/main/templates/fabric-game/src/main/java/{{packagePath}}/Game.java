@@ -97,7 +97,6 @@ public final class Game {
     /** Forgets the player's progress and starts them again from the first stage with a fresh kit. */
     public void reset(ServerPlayer player) {
         progress.clear(player.getUUID());
-        onProgressChange.run();
         config.kit().give(player);
         moveTo(player, 0, "reset");
     }

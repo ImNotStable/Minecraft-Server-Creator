@@ -19,13 +19,22 @@ public record Kit(List<Entry> items) {
             if (material == null || !material.isItem()) {
                 throw new IllegalArgumentException("kit: unknown item " + parts[0]);
             }
-            int amount = parts.length > 1 ? Integer.parseInt(parts[1]) : 1;
-            if (amount < 1) {
-                throw new IllegalArgumentException("kit: amount must be at least 1 in " + line);
-            }
+            int amount = parts.length > 1 ? amount(parts[1], line) : 1;
             items.add(new Entry(material, amount));
         }
         return new Kit(List.copyOf(items));
+    }
+
+    private static int amount(String text, String line) {
+        try {
+            int amount = Integer.parseInt(text);
+            if (amount >= 1) {
+                return amount;
+            }
+        } catch (NumberFormatException e) {
+            // too big for an int
+        }
+        throw new IllegalArgumentException("kit: amount must be between 1 and " + Integer.MAX_VALUE + " in " + line);
     }
 
     /** Clears the player's inventory and gives the kit. */
