@@ -12,6 +12,7 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 class RunIsolationTest {
@@ -111,6 +112,28 @@ class RunIsolationTest {
                 .isInstanceOf(IOException.class);
         Files.createDirectories(out.resolve("20261113"));
         assertThat(out.resolve("20261113").toRealPath()).isEqualTo(resolved.resolve("20261113"));
+    }
+
+    @ParameterizedTest
+    @CsvSource({"missing/../link/runs, repo/sub/runs", "missing/../link/../runs, repo/runs",
+            "missing/deeper/../../link/x/../runs, repo/sub/runs", "missing/./../link, repo/sub"})
+    void aSymbolicLinkAfterDotDotOutOfAMissingFolderIsStillResolved(String tail, String expected) throws IOException {
+        // other/link -> repo/sub. other/missing/../link/runs was resolved as the text other/link/runs, link and all,
+        // because other/missing does not exist yet: the walk never saw repo/CLAUDE.md, and the run went into repo.
+        Path repo = Files.createDirectories(dir.resolve("repo/sub"));
+        Files.writeString(dir.resolve("repo/CLAUDE.md"), "project");
+        Path other = Files.createDirectories(dir.resolve("other"));
+        try {
+            Files.createSymbolicLink(other.resolve("link"), repo);
+        } catch (IOException | UnsupportedOperationException e) {
+            assumeTrue(false, "no symbolic links here");
+        }
+        Path out = other.resolve(tail);
+
+        assertThat(RunIsolation.resolve(out)).isEqualTo(dir.toRealPath().resolve(expected));
+        assertThat(RunIsolation.leaks(out, dir.resolve("home"), dir)).contains(dir.toRealPath().resolve("repo/CLAUDE.md"));
+        assertThat(catchThrowable(() -> RunIsolation.requireIsolated(out, dir.resolve("home"), dir.resolve("tmp"), dir)))
+                .isInstanceOf(IOException.class).hasMessageContaining("CLAUDE.md");
     }
 
     @Test
