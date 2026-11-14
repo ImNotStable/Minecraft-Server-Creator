@@ -1,6 +1,7 @@
 package io.github.imnotstable.msc.bench;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.catchThrowable;
 
 import io.github.imnotstable.msc.bench.report.ReportWriter;
 import io.github.imnotstable.msc.bench.run.BenchConfig;
@@ -16,6 +17,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -24,6 +26,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 class BenchRunnerTest {
 
@@ -220,6 +224,51 @@ class BenchRunnerTest {
         assertThat(dir.resolve("run/attempts/first/baseline-2")).doesNotExist();
         assertThat(dir.resolve("run/attempts/second")).doesNotExist();
         assertThat(dir.resolve("run").resolve(BenchRunner.RESULTS_FILE)).doesNotExist();
+    }
+
+    private BenchRunner fileTaskRunner(Path runDir) throws IOException {
+        Path task = Files.createDirectories(dir.resolve("tasks/write"));
+        Files.writeString(task.resolve("task.json"),
+                "{\"category\":\"code\",\"title\":\"x\",\"checks\":[{\"type\":\"file\",\"path\":\"done.txt\"}]}");
+        Files.writeString(task.resolve("prompt.md"), "Write done.txt.");
+        Path configFile = dir.resolve("bench.json");
+        Files.writeString(configFile, """
+                {"agent":{"command":["%s","-cp","%s","io.github.imnotstable.msc.bench.FakeAgent","{prompt}"]},
+                 "modes":{"baseline":{},"toolset":{}}}
+                """.formatted(JAVA, CLASSPATH));
+        return new BenchRunner(BenchConfig.load(configFile, dir), runDir, "",
+                new PrintStream(new ByteArrayOutputStream(), true, StandardCharsets.UTF_8));
+    }
+
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', value = {"write,write | baseline | task \"write\" is listed twice",
+            "write | baseline,toolset,baseline | mode \"baseline\" is listed twice"})
+    void aTaskOrModeListedTwiceIsRefusedBeforeAnyAttempt(String taskIds, String modes, String message)
+            throws IOException {
+        // --tasks a,a ran the second attempt in the first one's folder, where its checks passed on the first's work.
+        Path runDir = dir.resolve("run");
+        BenchRunner runner = fileTaskRunner(runDir);
+        TaskDef task = TaskLoader.loadAll(dir.resolve("tasks")).getFirst();
+        List<TaskDef> tasks = Arrays.stream(taskIds.split(",")).map(id -> task).toList();
+
+        Throwable refused = catchThrowable(() -> runner.run(tasks, List.of(modes.split(",")), 1));
+
+        assertThat(refused).isInstanceOf(IllegalArgumentException.class).hasMessageContaining(message)
+                .hasMessageContaining("--repeat");
+        assertThat(runDir).doesNotExist();
+    }
+
+    @Test
+    void anAttemptNeverRunsInAFolderAnEarlierAttemptLeft() throws IOException {
+        Path runDir = dir.resolve("run");
+        assertThat(fileTaskRunner(runDir).run(TaskLoader.loadAll(dir.resolve("tasks")), List.of("baseline"), 1))
+                .singleElement().satisfies(r -> assertThat(r.passed()).isTrue());
+
+        Throwable refused = catchThrowable(() -> fileTaskRunner(runDir)
+                .run(TaskLoader.loadAll(dir.resolve("tasks")), List.of("baseline"), 1));
+
+        assertThat(refused).isInstanceOf(IOException.class).hasMessageContaining("already exists");
+        assertThat(Files.readAllLines(runDir.resolve(BenchRunner.RESULTS_FILE))).hasSize(1);
     }
 
     @Test

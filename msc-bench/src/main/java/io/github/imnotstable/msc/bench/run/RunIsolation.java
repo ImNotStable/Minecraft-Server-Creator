@@ -130,7 +130,8 @@ public final class RunIsolation {
     /**
      * The absolute path as the file system sees it: symbolic links and {@code ..} resolved in the order the system
      * resolves them (a {@code link/..} is the link target's parent), the case of existing folders as stored, and a
-     * missing tail (folders the run creates) appended normalized.
+     * missing tail (folders the run creates) resolved name by name, as it will be once those folders exist: a
+     * {@code missing/../link} is the link's target, not a folder named {@code link}.
      */
     public static Path resolve(Path path) {
         Path absolute = path.toAbsolutePath();
@@ -143,11 +144,36 @@ public final class RunIsolation {
             }
             try {
                 Path real = prefix.toRealPath();
-                return i == names ? real : real.resolve(absolute.subpath(i, names)).normalize();
+                return i == names ? real : resolveTail(real, absolute.subpath(i, names));
             } catch (IOException e) {
                 // gone or unreadable meanwhile: try a shorter prefix
             }
         }
         return absolute.normalize();
+    }
+
+    /**
+     * {@code tail} below the resolved folder {@code real}, one name at a time: {@code ..} goes to the parent of what
+     * the names so far resolved to, and a name that exists (after a {@code ..} out of a missing folder) is resolved
+     * with its links.
+     */
+    private static Path resolveTail(Path real, Path tail) {
+        Path current = real;
+        for (Path name : tail) {
+            String text = name.toString();
+            if (text.equals("..")) {
+                current = current.getParent() == null ? current : current.getParent();
+            } else if (!text.equals(".")) {
+                current = current.resolve(name);
+                if (Files.exists(current)) {
+                    try {
+                        current = current.toRealPath();
+                    } catch (IOException e) {
+                        // gone or unreadable meanwhile: kept as named
+                    }
+                }
+            }
+        }
+        return current;
     }
 }

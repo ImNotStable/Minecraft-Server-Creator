@@ -25,7 +25,7 @@ import org.junit.jupiter.api.io.TempDir;
 /** The plugin's files as Claude Code reads them, and the launcher starting the real core over MCP stdio. */
 class PluginTest {
     private static final String FILES = "pluginFiles";
-    private static final Path PLUGIN = RepoFiles.path(FILES, "msc-plugin/.mcp.json").getParent();
+    private static final Path PLUGIN = RepoFiles.dir(FILES, "msc-plugin");
     private static final Path CORE_INSTALL = Path.of(System.getProperty("msc.coreInstall"));
     private static final String ROOT_VAR = "${CLAUDE_PLUGIN_ROOT}/";
 
@@ -39,7 +39,7 @@ class PluginTest {
         JsonObject entry = market.getAsJsonArray("plugins").get(0).getAsJsonObject();
 
         assertThat(plugin.get("name").getAsString()).isEqualTo("msc").isEqualTo(entry.get("name").getAsString());
-        assertThat(PLUGIN.getParent().resolve(entry.get("source").getAsString()).normalize()).isEqualTo(PLUGIN);
+        assertThat(RepoFiles.dir(FILES, "").resolve(entry.get("source").getAsString()).normalize()).isEqualTo(PLUGIN);
     }
 
     @Test
