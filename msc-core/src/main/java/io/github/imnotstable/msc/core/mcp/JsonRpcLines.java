@@ -4,6 +4,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonParseException;
 import com.google.gson.JsonParser;
+import io.github.imnotstable.msc.protocol.Limits;
 import io.modelcontextprotocol.json.McpJsonDefaults;
 import io.modelcontextprotocol.json.McpJsonMapper;
 import io.modelcontextprotocol.spec.McpSchema;
@@ -140,7 +141,7 @@ final class JsonRpcLines extends InputStream {
     }
 
     private void note(String dropped) {
-        String shown = dropped.length() > 120 ? dropped.substring(0, 120) + "..." : dropped;
+        String shown = Limits.shorten(dropped, 123);
         notes.println("msc-core: ignored stdin input that is not a JSON-RPC message: " + shown);
     }
 }

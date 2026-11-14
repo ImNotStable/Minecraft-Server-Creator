@@ -66,11 +66,41 @@ public final class Limits {
             return text;
         }
         // Size the marker for the largest count it can show; a smaller count only leaves the result shorter.
-        int keep = maxChars - cutMarker(text.length()).length();
-        if (Character.isHighSurrogate(text.charAt(keep - 1))) {
-            keep--;
+        String kept = head(text, maxChars - cutMarker(text.length()).length());
+        return kept + cutMarker(text.length() - kept.length());
+    }
+
+    /**
+     * The start of {@code text} with at most {@code maxChars} characters, one shorter when the cut would fall inside
+     * a surrogate pair (an emoji), so the result never holds half a pair, which no encoder can write. Every cut of
+     * text that came from outside (tool results, process output, exception messages, chat, file content) goes through
+     * this, {@link #cut} or {@link #shorten}. Null stays null.
+     */
+    public static String head(String text, int maxChars) {
+        if (maxChars < 0) {
+            throw new IllegalArgumentException("maxChars must not be negative, got " + maxChars);
         }
-        return text.substring(0, keep) + cutMarker(text.length() - keep);
+        if (text == null || text.length() <= maxChars) {
+            return text;
+        }
+        int keep = maxChars > 0 && Character.isHighSurrogate(text.charAt(maxChars - 1)) ? maxChars - 1 : maxChars;
+        return text.substring(0, keep);
+    }
+
+    /**
+     * {@code text} as a short preview of at most {@code maxChars} characters, ending in {@code "..."} when anything
+     * was left out; never splits a surrogate pair (see {@link #head}). Null stays null.
+     *
+     * @param maxChars at least 4, so something is left besides the dots
+     */
+    public static String shorten(String text, int maxChars) {
+        if (maxChars < 4) {
+            throw new IllegalArgumentException("maxChars must be at least 4, got " + maxChars);
+        }
+        if (text == null || text.length() <= maxChars) {
+            return text;
+        }
+        return head(text, maxChars - 3) + "...";
     }
 
     private static String cutMarker(int removed) {

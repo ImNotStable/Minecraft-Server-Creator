@@ -4,6 +4,7 @@ import io.github.imnotstable.msc.core.tool.ToolException;
 import io.github.imnotstable.msc.core.world.BlockNames;
 import io.github.imnotstable.msc.core.world.Coords;
 import io.github.imnotstable.msc.core.world.TextGrid;
+import io.github.imnotstable.msc.protocol.Limits;
 import io.github.imnotstable.msc.protocol.world.BlockGrid;
 import io.github.imnotstable.msc.protocol.world.BlockPos;
 import io.github.imnotstable.msc.protocol.world.Region;
@@ -115,7 +116,7 @@ public final class BuildScript {
     }
 
     private static String abbreviate(String line) {
-        return line.length() <= 60 ? line : line.substring(0, 57) + "...";
+        return Limits.shorten(line, 60);
     }
 
     public static Parts split(String line) {
