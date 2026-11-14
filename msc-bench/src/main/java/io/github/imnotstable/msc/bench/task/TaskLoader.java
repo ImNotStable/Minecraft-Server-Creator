@@ -111,6 +111,11 @@ public final class TaskLoader {
             UserJson spec = json.exactObject("server", SERVER);
             if (spec != null) {
                 server = new ServerSpec(spec.exactBool("startBefore", false), spec.exactStrings("setup"));
+                // The runner sends the setup commands only to the server it starts before the agent (#564).
+                if (!server.startBefore() && !server.setup().isEmpty()) {
+                    throw new IllegalArgumentException(spec.key("setup") + ": runs only before the agent, so it needs "
+                            + "\"startBefore\": true");
+                }
             }
 
             List<Check> checks = new ArrayList<>();
