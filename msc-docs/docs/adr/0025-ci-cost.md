@@ -19,3 +19,10 @@ The repository is private, so GitHub Actions minutes are billed, and Windows min
 - A Windows-only or e2e-only break can reach `main` and is then caught by `main`'s own run or the nightly run, not by the PR. The integrator fixes it in a follow-up PR the same way as any red `main`.
 - While Actions cannot run at all, the integrator verifies each PR with a local build and tests on top of current `main` (and on the PC for Windows or Paper when it matters) before merging.
 - The GitHub-managed "Automatic Dependency Submission" workflow is not in this repository and is not changed here.
+
+## Addendum 2026-11-14: Actions only by hand
+
+The owner's PC is out of use for a while and Actions must be used sparingly. CI no longer runs on pushes to main,
+on ordinary pull request events or nightly. It runs only by hand (`workflow_dispatch`) or when a pull request is
+labelled `full-ci`. Every pull request is still built locally (full `./gradlew build`, plus e2eTest or
+verifyTemplates where it touches those paths) on top of current main before it is merged.
