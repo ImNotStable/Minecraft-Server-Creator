@@ -187,6 +187,23 @@ class ServerManagerTest {
         assertThat(PidFile.resisting(m.pidFile())).isFalse();
     }
 
+    @Test
+    void nonAsciiTextSurvivesBothWaysUnderACLocale() throws Exception {
+        ServerManager m = manager(EchoServer.class);
+        // US-ASCII is the native encoding here, as Cp1252 is on Windows: only the flags keep the text whole (#466).
+        m.childEnvironment(java.util.Map.of("LC_ALL", "C", "LANG", "C"));
+        ServerManager.StartResult r = m.start(Duration.ofSeconds(120));
+        assertThat(r.ready()).isTrue();
+        assertThat(m.log().since(r.logMark())).contains("[12:00:01 INFO]: " + EchoServer.TEXT);
+        m.console("say " + EchoServer.TEXT);
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(120);
+        while (System.nanoTime() < deadline && !m.log().since(r.logMark()).contains("got: say " + EchoServer.TEXT)
+                && m.running()) {
+            Thread.sleep(20);
+        }
+        assertThat(m.log().since(r.logMark())).contains("got: say " + EchoServer.TEXT);
+    }
+
     /** A running process recorded in the manager's pid file, as an earlier core leaves it. */
     private Process leftover(ServerManager m) throws Exception {
         Process p = new ProcessBuilder(Path.of(System.getProperty("java.home"), "bin", "java").toString(),
@@ -227,6 +244,24 @@ class ServerManagerTest {
             }
             System.out.flush();
             System.exit(1);
+        }
+    }
+
+    /** Prints non-ASCII text on System.out, as Minestom's slf4j-simple does, and echoes console lines. */
+    public static final class EchoServer {
+        static final String TEXT = "\u00e9 \u00a7 \u4f60 \uD83D\uDE00";
+
+        public static void main(String[] args) throws Exception {
+            System.out.println("[12:00:01 INFO]: " + TEXT);
+            System.out.println("[12:00:02 INFO]: Done (0.1s)! For help, type \"help\"");
+            System.out.flush();
+            // Decodes the console as a JLine reader does: in the JVM's stdin encoding.
+            BufferedReader in = new BufferedReader(new InputStreamReader(System.in,
+                    java.nio.charset.Charset.forName(System.getProperty("stdin.encoding"))));
+            for (String line = in.readLine(); line != null && !line.equals("stop"); line = in.readLine()) {
+                System.out.println("got: " + line);
+                System.out.flush();
+            }
         }
     }
 

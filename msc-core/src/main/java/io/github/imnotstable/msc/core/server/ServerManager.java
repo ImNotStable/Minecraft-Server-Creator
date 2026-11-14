@@ -3,6 +3,7 @@ package io.github.imnotstable.msc.core.server;
 import io.github.imnotstable.msc.core.CoreConfig;
 import io.github.imnotstable.msc.core.agent.AgentHub;
 import io.github.imnotstable.msc.core.tool.ToolException;
+import io.github.imnotstable.msc.process.ServerJava;
 import io.github.imnotstable.msc.protocol.Limits;
 import java.io.IOException;
 import java.io.OutputStream;
@@ -12,6 +13,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
@@ -39,6 +41,8 @@ public final class ServerManager implements AutoCloseable {
     private volatile boolean detached;
     /** Set by {@link #close()} under this monitor; {@link #start} checks it under the same monitor (#282). */
     private boolean closed;
+    /** Extra environment for the server process: tests set a locale here. */
+    private Map<String, String> childEnvironment = Map.of();
     /** Clock time just before the running server's process was launched: files written later are not loaded. */
     private java.time.Instant launchedAt;
     private volatile Leftovers leftovers = Leftovers.REAL;
@@ -181,12 +185,14 @@ public final class ServerManager implements AutoCloseable {
                 throw new ToolException(LeftoverServer.stillRunning(left.pid(), PidFile.resisting(pidFile())
                         ? LeftoverServer.RESISTED : LeftoverServer.NOT_STOPPED));
             }
-            List<String> command = new ArrayList<>(command());
+            // MSC reads the output and writes commands as UTF-8; so must the server's Java (#466).
+            List<String> command = new ArrayList<>(ServerJava.withEncoding(command()));
             Files.createDirectories(config.serverDir());
             ProcessBuilder pb = new ProcessBuilder(command).directory(config.serverDir().toFile())
                     .redirectErrorStream(true);
             pb.environment().put(Limits.ENV_CORE_ADDRESS, address);
             pb.environment().put(Limits.ENV_TOKEN, token);
+            pb.environment().putAll(childEnvironment);
             mark = log.mark();
             sawDone = false;
             // Surviving the session is asked for per server (ADR 0014): a detached server that exited on its own
@@ -269,6 +275,11 @@ public final class ServerManager implements AutoCloseable {
             return -1;
         }
         return leftovers.find().apply(pidFile()).map(ProcessHandle::pid).orElse(-1L);
+    }
+
+    /** Adds {@code env} to the environment of servers started from now on (tests: a C locale). */
+    synchronized void childEnvironment(Map<String, String> env) {
+        childEnvironment = Map.copyOf(env);
     }
 
     /** Type a line into the server console. */
