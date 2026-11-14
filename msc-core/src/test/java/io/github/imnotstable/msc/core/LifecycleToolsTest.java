@@ -450,6 +450,19 @@ class LifecycleToolsTest {
     }
 
     @Test
+    void scaffoldAcceptEulaIsNotKeptForTheMachine() throws Exception {
+        // tools.md: only server_setup and server_start record acceptEula=true in ~/.msc/eula.json (#376).
+        Path machineEula = workspace.resolve("home/.msc/eula.json");
+        Path ws = Files.createDirectories(workspace.resolve("ws8"));
+        try (CoreHarness s = new CoreHarness(ws, c -> c.withEulaFile(machineEula))) {
+            s.ok("project_scaffold", "name", "Srv", "dir", "srv", "template", "paper-server", "acceptEula", true);
+            s.ok("project_scaffold", "name", "Plug", "dir", "plug", "acceptEula", true);
+        }
+        assertThat(ws.resolve("srv/eula.txt")).content().contains("eula=true");
+        assertThat(machineEula).doesNotExist();
+    }
+
+    @Test
     void scaffoldAndStartUseTheMachineWideAcceptance() throws Exception {
         Path machineEula = MachineEulaAccess.accepted(workspace.resolve("home/.msc/eula.json"));
         Path ws = Files.createDirectories(workspace.resolve("ws5"));

@@ -26,7 +26,7 @@
    ./gradlew :msc-core:installDist :msc-agent-paper:shadowJar
    ```
 
-2. Accept the EULA, if you agree. Read the [Minecraft EULA](https://aka.ms/MinecraftEULA). The benchmark never accepts it for you, and no config file can: it reads the acceptance msc keeps in `~/.msc/eula.json`, which only you write: run the line in `~/.msc/core/eula-accept.txt` in a terminal and type `yes`, or install with `./gradlew :msc-core:installMsc -Pmsc.acceptEula=true`. Without it, tasks that run a Paper server are skipped with a message and the rest run. Minestom tasks never need it.
+2. Accept the EULA, if you agree. Read the [Minecraft EULA](https://aka.ms/MinecraftEULA). The benchmark never accepts it for you, and no config file can: it reads the acceptance msc keeps in `~/.msc/eula.json`, which only you write: run the line in `~/.msc/core/eula-accept.txt` in a terminal and type `yes`, install with `./gradlew :msc-core:installMsc -Pmsc.acceptEula=true`, or tell Claude yes so it runs `server_setup` or `server_start` with `acceptEula=true`. Without it, tasks that run a Paper server are skipped with a message and the rest run. Minestom tasks never need it.
 
 3. List the tasks:
 

@@ -9,7 +9,11 @@ import java.time.Instant;
 
 /** The EULA question and the one-time, per-machine acceptance (ADR 0020), shared by scaffold, setup and start. */
 final class EulaPrompts {
+    /** server_setup and server_start: their acceptEula=true is also recorded for the machine ({@link #recordForMachine}). */
     static final String EULA_ARG = "Only on the user's yes to https://aka.ms/MinecraftEULA; kept for this machine";
+    /** project_scaffold: acceptEula=true only fills the paper-server template's eula.txt and is not kept. */
+    static final String SCAFFOLD_EULA_ARG = "Only on the user's yes to https://aka.ms/MinecraftEULA; "
+            + "used only by the paper-server template's eula.txt, not kept for this machine";
     /**
      * The exact question to put to the user, so their answer reads as an agreement and not as a reply to something
      * vaguer.

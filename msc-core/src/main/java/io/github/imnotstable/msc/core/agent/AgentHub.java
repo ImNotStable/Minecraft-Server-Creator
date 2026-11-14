@@ -34,7 +34,6 @@ public final class AgentHub implements AutoCloseable {
     private final CoreServer server;
     private final String token;
     private CoreServer.AgentSession session;
-    private long connectCount;
     private long readyCount;
     /** Set by {@link #close()} under {@link #lock}: no agent can arrive after it, so nobody waits for one. */
     private boolean closed;
@@ -53,7 +52,6 @@ public final class AgentHub implements AutoCloseable {
                     late = closed;
                     if (!late) {
                         session = s;
-                        connectCount++;
                         changed.signalAll();
                     }
                 } finally {

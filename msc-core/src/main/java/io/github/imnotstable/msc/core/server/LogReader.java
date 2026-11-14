@@ -83,13 +83,6 @@ public final class LogReader {
     private static final Pattern SIMPLE = Pattern.compile("^\\[[^\\]]+\\] (TRACE|DEBUG|INFO|WARN|ERROR) \\S+ - (.*)$");
     /** The JVM's report of an uncaught exception: printed to stderr without a prefix, never part of the line before. */
     private static final Pattern UNCAUGHT = Pattern.compile("^Exception in thread \".*");
-    /**
-     * The first line of a printed throwable, unindented and without a log prefix: {@code java.lang.Exception: msg},
-     * {@code java.lang.IllegalStateException}. Minestom's default exception handler prints exceptions this way
-     * (#294); the last name segment may be the suffix itself (#322).
-     */
-    private static final Pattern THROWABLE =
-            Pattern.compile("^[\\w$]+(?:\\.[\\w$]+)*\\.[\\w$]*(?:Exception|Error|Throwable)(?:: .*)?$");
     /** Forge and NeoForge put the logger after the level: {@code [ne.mi.fm.Foo/CORE]: msg}. */
     private static final Pattern LOGGER = Pattern.compile("^\\[([\\w.$]+)/[^\\]]*\\]: (.*)$");
     /** OSHI, the system-report library, under its own name or Forge's shortened one: kept to recognise its noise. */
@@ -176,7 +169,7 @@ public final class LogReader {
             if (FRAME.matcher(line).matches()) {
                 frames = true;
                 trace = true;
-            } else if (THROWABLE.matcher(line).matches() || CAUSE.matcher(line).matches()) {
+            } else if (throwable(line) || CAUSE.matcher(line).matches()) {
                 trace = true;
             }
             if (extra.size() < MAX_ENTRY_LINES) {
@@ -326,7 +319,7 @@ public final class LogReader {
         }
 
         Entry entry() {
-            if (THROWABLE.matcher(payload).matches()) {
+            if (throwable(payload)) {
                 String text = name == null ? payload : "[" + name + "] " + payload;
                 return new Entry(time, level, text, !stream.isEmpty(), true);
             }
@@ -375,7 +368,7 @@ public final class LogReader {
         if (line.isBlank() || QUILT_TIMING.matcher(line).matches()) {
             return null;
         }
-        boolean throwable = THROWABLE.matcher(line).matches();
+        boolean throwable = throwable(line);
         boolean uncaught = UNCAUGHT.matcher(line).matches();
         if (current == null || READY.matcher(line).matches() || uncaught
                 || (throwable && (!current.warnOrError() || current.frames))) {
@@ -386,6 +379,55 @@ public final class LogReader {
 
     private static boolean traceLine(String line) {
         return FRAME.matcher(line).matches() || MORE.matcher(line).matches() || CAUSE.matcher(line).matches();
+    }
+
+    /**
+     * The first line of a printed throwable, unindented and without a log prefix: {@code java.lang.Exception: msg},
+     * {@code java.lang.IllegalStateException}. Minestom's default exception handler prints exceptions this way
+     * (#294); the last name segment may be the suffix itself (#322). A hand-written scan, not a regex: a repeated
+     * regex group recurses once per name segment and overflowed the stack on a line of a few thousand segments.
+     *
+     * <p>That is: two or more non-empty segments of {@code [A-Za-z0-9_$]} joined by dots, the last ending in
+     * {@code Exception}, {@code Error} or {@code Throwable}, then nothing or {@code ": "} and the rest of the line.
+     */
+    static boolean throwable(String line) {
+        int end = line.length();
+        int i = 0;
+        int segmentStart = 0;
+        int dots = 0;
+        while (i < end && (nameChar(line.charAt(i)) || line.charAt(i) == '.')) {
+            if (line.charAt(i) == '.') {
+                if (i == segmentStart) {
+                    return false;
+                }
+                dots++;
+                segmentStart = i + 1;
+            }
+            i++;
+        }
+        if (dots == 0 || i == segmentStart) {
+            return false;
+        }
+        String name = line.substring(segmentStart, i);
+        if (!name.endsWith("Exception") && !name.endsWith("Error") && !name.endsWith("Throwable")) {
+            return false;
+        }
+        return i == end || line.startsWith(": ", i) && noLineBreak(line, i + 2, end);
+    }
+
+    private static boolean nameChar(char c) {
+        return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '_' || c == '$';
+    }
+
+    /** True when {@code line} has no line break from {@code from} to {@code end}, as a regex {@code .*} needs. */
+    private static boolean noLineBreak(String line, int from, int end) {
+        for (int i = from; i < end; i++) {
+            char c = line.charAt(i);
+            if (c == '\n' || c == '\r' || c == '\u0085' || c == '\u2028' || c == '\u2029') {
+                return false;
+            }
+        }
+        return true;
     }
 
     /** The line without ANSI colour codes. */
