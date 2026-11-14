@@ -9,6 +9,7 @@ import io.github.imnotstable.msc.bench.task.TaskDef;
 import io.github.imnotstable.msc.bench.task.TaskLoader;
 import io.github.imnotstable.msc.buildlogic.RepoFiles;
 import io.github.imnotstable.msc.process.ClosedPort;
+import io.github.imnotstable.msc.process.rcon.FakeRconServer;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.PrintStream;
@@ -70,6 +71,62 @@ class MainTest {
         assertThat(exit).isZero();
         assertThat(ProcessHandle.current().descendants().filter(ProcessHandle::isAlive)
                 .filter(p -> p.info().commandLine().orElse("").contains("FakeRconMain"))).isEmpty();
+    }
+
+    @Test
+    void checkResetsWhatTheTaskDeclaresAfterStoppingTheServerThatHoldsIt() throws IOException {
+        // #495: re-checking an attempt's workspace, whose saved motd is the one its last checks set, with that
+        // server still running: check stops it, deletes the config, and starts the workspace's server on the default.
+        Files.createDirectories(dir.resolve("tasks/motd"));
+        Files.writeString(dir.resolve("tasks/motd/task.json"), """
+                {"category":"code","title":"motd","resetBeforeChecks":{"delete":["server/%s"]},
+                 "checks":[{"type":"rcon","command":"benchmotd","expect":"^Welcome to MSC$"}]}
+                """.formatted(FakeMotdMain.CONFIG));
+        Files.writeString(dir.resolve("tasks/motd/prompt.md"), "motd");
+        TaskDef task = TaskLoader.loadAll(dir.resolve("tasks")).getFirst();
+        Path server = Files.createDirectories(dir.resolve("workspace/server"));
+        Files.writeString(server.resolve("paper.jar"), "stands in for paper");
+        Files.writeString(server.resolve("eula.txt"), "eula=true");
+        Path saved = server.resolve(FakeMotdMain.CONFIG);
+        Files.createDirectories(saved.getParent());
+        Files.writeString(saved, "motd: Hello builders\n");
+        Path home = Files.createDirectories(dir.resolve("home/.msc"));
+        Files.writeString(home.resolve("eula.json"), """
+                {"accepted":true,"eula":"https://aka.ms/MinecraftEULA","acceptedBy":"owner","acceptedAt":"2026-11-12T00:00:00Z"}
+                """);
+        String[] inMemory = {"Hello builders"};
+        FakeRconServer[] holder = new FakeRconServer[1];
+        holder[0] = new FakeRconServer("pw", command -> {
+            if (!command.equals("stop")) {
+                return FakeMotdMain.reply(command, inMemory, dir.resolve("running-config.yml"));
+            }
+            try {
+                holder[0].close();
+            } catch (IOException e) {
+                // test ends either way
+            }
+            return "Stopping the server";
+        });
+        String java = ProcessHandle.current().info().command().orElse("java").replace("\\", "\\\\");
+        String classpath = System.getProperty("java.class.path").replace("\\", "\\\\");
+        try (FakeRconServer running = holder[0]; ClosedPort gamePort = ClosedPort.reserve()) {
+            Files.writeString(dir.resolve("bench.json"), """
+                    {"server":{"command":["%s","-cp","%s","io.github.imnotstable.msc.bench.FakeMotdMain","%d","pw"],
+                     "rconPort":%d,"serverPort":%d,"rconPassword":"pw","startTimeoutSeconds":60}}
+                    """.formatted(java, classpath, running.port(), running.port(), gamePort.port()));
+            BenchConfig config = BenchConfig.load(dir.resolve("bench.json"), home.getParent());
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+
+            int exit = Main.check(task, dir.resolve("workspace"), config, new PrintStream(out, true, StandardCharsets.UTF_8));
+
+            assertThat(out.toString(StandardCharsets.UTF_8)).startsWith("reset before checks: deleted server/"
+                    + FakeMotdMain.CONFIG).contains("PASS");
+            assertThat(exit).isZero();
+            assertThat(running.commands()).containsExactly("stop");
+            assertThat(saved).content().contains("Welcome to MSC");
+        }
+        assertThat(ProcessHandle.current().descendants().filter(ProcessHandle::isAlive)
+                .filter(p -> p.info().commandLine().orElse("").contains("FakeMotdMain"))).isEmpty();
     }
 
     @Test

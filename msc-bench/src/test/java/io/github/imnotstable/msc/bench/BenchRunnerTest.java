@@ -210,6 +210,79 @@ class BenchRunnerTest {
         }
     }
 
+    /**
+     * #495: the agent tried {@code benchmotd set} while testing its correct plugin, and the saved config (and, when it
+     * left its server running, the plugin's memory) still held that value when the checks asked for the default. Each
+     * row: whether the task declares the reset of that config, and whether the agent's server is still running. A
+     * correct plugin passes exactly when the bench resets the config, whichever server the checks then reach.
+     */
+    @ParameterizedTest(name = "reset {0}, agent server running {1}")
+    @CsvSource({"true, false", "true, true", "false, false", "false, true"})
+    void aDeclaredResetPutsBackWhatTheAgentsTestingChanged(boolean reset, boolean agentServerRunning)
+            throws IOException {
+        Path config = Path.of("server").resolve(FakeMotdMain.CONFIG);
+        String[] inMemory = {"left by testing"};
+        FakeRconServer[] holder = new FakeRconServer[1];
+        holder[0] = new FakeRconServer("pw", command -> {
+            if (!command.equals("stop")) {
+                return FakeMotdMain.reply(command, inMemory, dir.resolve("agent-server-config.yml"));
+            }
+            try {
+                holder[0].close(); // a real server lets go of its port on stop
+            } catch (IOException e) {
+                // test ends either way
+            }
+            return "Stopping the server";
+        });
+        try (FakeRconServer agentServer = holder[0]) {
+            int port = agentServer.port();
+            if (!agentServerRunning) {
+                holder[0].close(); // the agent stopped its server
+            }
+            Files.createDirectories(dir.resolve("tasks/motd/fixture/server"));
+            Files.writeString(dir.resolve("tasks/motd/task.json"), """
+                    {"category":"code","title":"motd",%s
+                     "checks":[
+                      {"type":"rcon","name":"default message","command":"benchmotd","expect":"^Welcome to MSC$"},
+                      {"type":"rcon","name":"set message","command":"benchmotd set Hello builders","expect":".*"},
+                      {"type":"rcon","name":"new message","command":"benchmotd","expect":"^Hello builders$"},
+                      {"type":"file","name":"saved to config","path":"%s","contains":"Hello builders"}]}
+                    """.formatted(reset ? "\"resetBeforeChecks\":{\"delete\":[\"" + slashes(config) + "\"]}," : "",
+                    slashes(config)));
+            Files.writeString(dir.resolve("tasks/motd/prompt.md"), "Add /benchmotd.");
+            Files.writeString(Files.createDirectories(dir.resolve("cache")).resolve("paper-26.3-248.jar"), "paper");
+            Files.writeString(Files.createDirectories(dir.resolve("home/.msc")).resolve("eula.json"), """
+                    {"accepted":true,"eula":"https://aka.ms/MinecraftEULA","acceptedBy":"owner","acceptedAt":"2026-11-12T00:00:00Z"}
+                    """);
+            Files.writeString(dir.resolve("bench.json"), """
+                    {"agent":{"command":["%s","-cp","%s","io.github.imnotstable.msc.bench.FakeAgent","{prompt}"]},
+                     "modes":{"baseline":{"env":{"FAKE_LEAVE":"%s=motd: left by testing"}}},
+                     "server":{"command":["%s","-cp","%s","io.github.imnotstable.msc.bench.FakeMotdMain","%d","pw"],
+                               "rconPort":%d,"serverPort":%d,"rconPassword":"pw","paperCacheDirs":["cache"],
+                               "startTimeoutSeconds":60}}
+                    """.formatted(JAVA, CLASSPATH, slashes(config), JAVA, CLASSPATH, port, port, gamePort.port()));
+
+            List<RunRecord> records = new BenchRunner(BenchConfig.load(dir.resolve("bench.json"), dir.resolve("home")),
+                    dir.resolve("run"), "", new PrintStream(new ByteArrayOutputStream(), true, StandardCharsets.UTF_8))
+                    .run(new RunSelection(TaskLoader.loadAll(dir.resolve("tasks")), List.of("baseline")), 1);
+
+            assertThat(records).singleElement().satisfies(r -> {
+                assertThat(r.error()).as(r.toString()).isNull();
+                assertThat(r.checks().getFirst().passed()).as(r.checks().getFirst().toString()).isEqualTo(reset);
+                assertThat(r.passed()).isEqualTo(reset);
+            });
+            if (agentServerRunning) {
+                assertThat(agentServer.commands()).as("the agent's server is stopped either way").endsWith("stop");
+            }
+        }
+        assertThat(ProcessHandle.current().descendants().filter(ProcessHandle::isAlive)
+                .filter(p -> p.info().commandLine().orElse("").contains("FakeMotdMain"))).isEmpty();
+    }
+
+    private static String slashes(Path path) {
+        return path.toString().replace('\\', '/');
+    }
+
     @Test
     void stopsAtTheFirstUsageLimitWithoutRecordingIt() throws IOException {
         for (String id : List.of("first", "second")) {

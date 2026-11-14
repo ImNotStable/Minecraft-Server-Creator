@@ -8,7 +8,7 @@ import java.nio.file.Path;
 
 /**
  * Stands in for Claude Code in runner tests: writes the prompt to {@code done.txt}, logs one tool
- * call when {@code MSC_TOOL_LOG} is set, and prints a Claude-style JSON result (a usage-limit error when
+ * call when {@code MSC_TOOL_LOG} is set, leaves the file {@code FAKE_LEAVE} names, and prints a Claude-style JSON result (a usage-limit error when
  * {@code FAKE_USAGE_LIMIT} is set, nothing when {@code FAKE_SILENT} is set). With {@code FAKE_HANG} set it starts a
  * child that sleeps (as Claude Code starts msc-core) and sleeps itself, like an agent still at work.
  */
@@ -25,6 +25,13 @@ public final class FakeAgent {
             Thread.sleep(Long.MAX_VALUE);
         }
         Files.writeString(Path.of("done.txt"), args[0]);
+        // FAKE_LEAVE "path=text": state the agent's own testing left in the workspace, such as a saved plugin config.
+        String leave = System.getenv("FAKE_LEAVE");
+        if (leave != null) {
+            Path file = Path.of(leave.substring(0, leave.indexOf('=')));
+            Files.createDirectories(file.toAbsolutePath().getParent());
+            Files.writeString(file, leave.substring(leave.indexOf('=') + 1));
+        }
         if (System.getenv("FAKE_HANG") != null) {
             // The marker comes first: the OS cuts long command lines.
             new ProcessBuilder(ProcessHandle.current().info().command().orElse("java"),
