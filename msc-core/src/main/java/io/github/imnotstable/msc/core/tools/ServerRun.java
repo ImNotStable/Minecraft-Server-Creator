@@ -98,7 +98,13 @@ final class ServerRun {
             // Detached earlier in this session: its pack host goes with it, as server_detach promises.
             return pack.stopOwnHost() ? "server stopped, and the pack host it kept running" : "server stopped";
         }
-        String leftover = server.stopLeftover();
+        String leftover;
+        try {
+            // The whole stop again, also on a leftover that resisted before: the user asked for exactly this (#408).
+            leftover = server.stopLeftover(true);
+        } catch (ToolException e) {
+            throw host != null ? new ToolException(host + "\n" + e.getMessage()) : e;
+        }
         return leftover != null ? leftover : host != null ? host : "server was not running";
     }
 

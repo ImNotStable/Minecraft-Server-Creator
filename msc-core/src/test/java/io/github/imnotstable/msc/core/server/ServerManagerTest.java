@@ -1,9 +1,11 @@
 package io.github.imnotstable.msc.core.server;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.imnotstable.msc.core.CoreConfig;
 import io.github.imnotstable.msc.core.agent.AgentHub;
+import io.github.imnotstable.msc.core.tool.ToolException;
 import io.github.imnotstable.msc.process.rcon.FakeRconServer;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
@@ -12,8 +14,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -119,6 +123,63 @@ class ServerManagerTest {
             assertThat(rcon.commands()).containsExactly("stop");
         }
         assertThat(m.pidFile()).doesNotExist();
+    }
+
+    @Test
+    @Timeout(value = 5, unit = TimeUnit.MINUTES) // a hang guard: the long waits below must never be waited out
+    void aLeftoverThatSurvivesTheKillStopsEveryStartAndIsNotWaitedOutTwice() throws Exception {
+        // #408: the start went on, its server died on the world lock, and its pid replaced the leftover's.
+        ServerManager m = manager(QuietServer.class);
+        FakeLeftover leftover = FakeLeftover.install(m, Duration.ofMillis(1));
+        String pid = "pid " + leftover.pid();
+        assertThatThrownBy(m::stopLeftover).isInstanceOf(ToolException.class)
+                .hasMessageContaining(pid).hasMessageContaining("over RCON").hasMessageContaining("is still running")
+                .hasMessageContaining("Nothing was started").hasMessageContaining("taskkill /F /PID " + leftover.pid())
+                .hasMessageContaining("kill -9 " + leftover.pid()).hasMessageContaining("server_stop");
+        assertThat(leftover.destroys).hasValue(1);
+        assertThat(leftover.kills).hasValue(1);
+        assertThat(Files.readString(m.pidFile())).isEqualTo(leftover.pid() + " 1 resisting\n");
+
+        // No start launches while it runs, and its pid file stays.
+        assertThatThrownBy(() -> m.start(Duration.ofSeconds(60))).isInstanceOf(ToolException.class)
+                .hasMessageContaining(pid).hasMessageContaining("survived a whole stop before");
+        assertThat(m.process()).isNull();
+        assertThat(m.leftoverPid()).isEqualTo(leftover.pid());
+
+        // The next start's stop only kills it again: none of the hour-long waits of the whole stop.
+        leftover.waitFor(m, Duration.ofHours(1));
+        int waits = leftover.waits.get();
+        assertThatThrownBy(m::stopLeftover).isInstanceOf(ToolException.class).hasMessageContaining(pid)
+                .hasMessageContaining("survived a whole stop before");
+        assertThat(leftover.destroys).hasValue(1);
+        assertThat(leftover.kills).hasValue(2);
+        assertThat(leftover.waits.get() - waits).as("waits: the short one only").isEqualTo(1);
+
+        // server_stop tries the whole stop again, and says it failed.
+        leftover.waitFor(m, Duration.ofMillis(1));
+        assertThatThrownBy(() -> m.stopLeftover(true)).isInstanceOf(ToolException.class).hasMessageContaining(pid)
+                .hasMessageContaining("over RCON");
+        assertThat(leftover.destroys).hasValue(2);
+        assertThat(leftover.kills).hasValue(3);
+        assertThat(Files.readString(m.pidFile())).isEqualTo(leftover.pid() + " 1 resisting\n");
+
+        // Once a kill works it is gone, and so is its record.
+        leftover.diesWhenKilled();
+        assertThat(m.stopLeftover()).contains(pid, "killed");
+        assertThat(m.pidFile()).doesNotExist();
+        assertThat(m.stopLeftover()).isNull();
+    }
+
+    @Test
+    void aStartNeverOverwritesThePidFileOfALiveLeftover() throws Exception {
+        ServerManager m = manager(QuietServer.class);
+        Process leftover = leftover(m);
+        String before = Files.readString(m.pidFile());
+        assertThatThrownBy(() -> m.start(Duration.ofSeconds(60))).isInstanceOf(ToolException.class)
+                .hasMessageContaining("pid " + leftover.pid());
+        assertThat(m.process()).isNull();
+        assertThat(Files.readString(m.pidFile())).isEqualTo(before);
+        assertThat(PidFile.resisting(m.pidFile())).isFalse();
     }
 
     /** A running process recorded in the manager's pid file, as an earlier core leaves it. */
