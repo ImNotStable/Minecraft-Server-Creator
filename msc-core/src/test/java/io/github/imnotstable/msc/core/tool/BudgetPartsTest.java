@@ -2,7 +2,9 @@ package io.github.imnotstable.msc.core.tool;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Random;
 import org.junit.jupiter.api.Test;
 
@@ -65,5 +67,83 @@ class BudgetPartsTest {
         }
         assertThat(new Budget.Parts().add("a\n").cut(n -> "b").text(200, "c", "x")).isEqualTo("a\nb\nc");
         assertThat(new Budget.Parts().text(200, "only", "x")).isEqualTo("only");
+    }
+
+    /**
+     * #487: server_command's shape from the issue, 64 commands of 72 characters each answered with 32. The command
+     * lines all fit; the outputs cannot all fit, so some are shown whole and the rest are left out and counted, instead
+     * of each being replaced by a cut line longer than itself and the safety cut dropping command lines.
+     */
+    @Test
+    void manySmallOutputsAreShownWholeOrLeftOutAndEveryCommandLineIsKept() {
+        String output = "Successfully filled 726 block(s)";
+        Budget.Parts parts = new Budget.Parts();
+        List<String> commands = new ArrayList<>();
+        for (int i = 0; i < 64; i++) {
+            String command = "fill 0 64 " + i + " 10 70 10 minecraft:stone_bricks replace minecraft:air" + " ".repeat(8);
+            commands.add("> " + command.substring(0, 72));
+            parts.add((i == 0 ? "" : "\n") + "> " + command.substring(0, 72) + "\n")
+                    .cut(n -> Budget.truncate(output, n, "Output cut."));
+        }
+        String text = parts.text(Budget.DEFAULT_CHARS, null, "Run fewer commands per call.");
+        assertThat(text).hasSizeLessThanOrEqualTo(Budget.DEFAULT_CHARS).doesNotContain("Output cut.]");
+        assertThat(text.lines().filter(l -> l.startsWith("> "))).containsExactlyElementsOf(commands);
+        long shown = text.lines().filter(output::equals).count();
+        long cut = text.lines().filter(Budget.LEFT_OUT::equals).count();
+        assertThat(shown + cut).isEqualTo(64);
+        assertThat(shown).isGreaterThanOrEqualTo(25);
+        assertThat(text).endsWith("\n[" + cut + " of 64 outputs cut to fit. Run fewer commands per call.]");
+    }
+
+    /** Two large parts in little room: one gets a useful share rather than both a share of little but cut lines. */
+    @Test
+    void aShareTooSmallToBeUsefulGoesToAnotherPart() {
+        String big = lines("big", 100);
+        String text = new Budget.Parts().add("head\n").cut(n -> Budget.truncate(big, n, "x")).add("\n")
+                .cut(n -> Budget.truncate(big, n, "y")).text(160, "last", "Narrow it.");
+        assertThat(text).hasSizeLessThanOrEqualTo(160).startsWith("head\n").contains("big line of output")
+                .contains("\n[cut]\n[1 of 2 outputs cut to fit. Narrow it.]\nlast").endsWith("\nlast");
+    }
+
+    /**
+     * #487: for random fixed text, parts (some rendering longer than their share) and caps from 0 up: the result never
+     * exceeds the cap, and when the fixed text and closing line fit, every fixed piece is kept in order and the
+     * closing line is last.
+     */
+    @Test
+    void theResultFitsEveryCapAndKeepsTheFixedTextWhenItFits() {
+        Random random = new Random(487);
+        for (int round = 0; round < 3000; round++) {
+            Budget.Parts parts = new Budget.Parts();
+            List<String> fixed = new ArrayList<>();
+            int count = 1 + random.nextInt(round % 3 == 0 ? 70 : 6);
+            for (int i = 0; i < count; i++) {
+                if (random.nextBoolean()) {
+                    String piece = "\n> fixed " + i + " " + "f".repeat(random.nextInt(40)) + "\n";
+                    fixed.add(piece);
+                    parts.add(piece);
+                }
+                String part = lines("part" + i, random.nextInt(random.nextBoolean() ? 3 : 200));
+                boolean rude = random.nextInt(10) == 0;
+                parts.cut(n -> rude ? part : Budget.truncate(part, n, "Cut " + "h".repeat(random.nextInt(3) * 30)));
+            }
+            String last = random.nextInt(4) == 0 ? null : "last line " + round;
+            int cap = random.nextInt(round % 2 == 0 ? 400 : 24_001);
+            String text = parts.text(cap, last, "Narrow it.");
+            String as = "round " + round + ", cap " + cap;
+            assertThat(text.length()).as(as).isLessThanOrEqualTo(cap);
+            int fixedChars = fixed.stream().mapToInt(String::length).sum() + (last == null ? 0 : last.length() + 1);
+            if (fixedChars <= cap) {
+                int at = 0;
+                for (String piece : fixed) {
+                    at = text.indexOf(piece, at);
+                    assertThat(at).as(as).isNotNegative();
+                    at += piece.length();
+                }
+                if (last != null) {
+                    assertThat(text).as(as).endsWith(last);
+                }
+            }
+        }
     }
 }
