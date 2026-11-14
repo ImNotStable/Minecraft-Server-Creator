@@ -72,18 +72,13 @@ class ServerPidFileLockTest {
     }
 
     /** A core's server manager on the shared workspace; its server binds {@code port}, as a real one does. */
-    private ServerManager core(int port, Duration lockWait) throws Exception {
+    private ServerManager core(int port) throws Exception {
         AgentHub hub = new AgentHub(0, "token");
         ServerManager m = new ServerManager(CoreConfig.forWorkspace(workspace).withServerCommand(List.of(java(), "-cp",
-                System.getProperty("java.class.path"), PortServer.class.getName(), Integer.toString(port))), hub,
-                lockWait);
+                System.getProperty("java.class.path"), PortServer.class.getName(), Integer.toString(port))), hub);
         closing.add(hub);
         closing.add(m);
         return m;
-    }
-
-    private ServerManager core(int port) throws Exception {
-        return core(port, ServerPidFile.WAIT);
     }
 
     private static int freePort() throws Exception {
@@ -174,7 +169,8 @@ class ServerPidFileLockTest {
 
     @Test
     void anotherProcessHoldingTheLockMakesEveryChangeRefuseAndNothingChanges() throws Exception {
-        ServerManager m = core(freePort(), Duration.ofSeconds(1));
+        ServerManager m = core(freePort());
+        ServerLockAccess.refuseQuickly(m);
         Process holder = LockHoldMain.hold(workspace.resolve(".msc/server.lock"));
         processes.add(holder);
         Process server = new ProcessBuilder(java(), "-cp", System.getProperty("java.class.path"),

@@ -35,11 +35,15 @@ final class ServerPidFile {
 
     private final Path file;
     private final Path lockFile;
-    private final Duration wait;
+    private volatile Duration wait = WAIT;
 
-    ServerPidFile(Path dataDir, Duration wait) {
+    ServerPidFile(Path dataDir) {
         this.file = dataDir.resolve("server.pid");
         this.lockFile = dataDir.resolve("server.lock");
+    }
+
+    /** For tests: how long a call waits for another core's critical section before it refuses ({@link #WAIT}). */
+    void waitLimit(Duration wait) {
         this.wait = wait;
     }
 

@@ -51,14 +51,17 @@ public final class ServerManager implements AutoCloseable {
     private final ServerPidFile record;
 
     public ServerManager(CoreConfig config, AgentHub hub) {
-        this(config, hub, ServerPidFile.WAIT);
-    }
-
-    /** {@code lockWait}: how long a call waits for another core's start or stop of the server before it refuses. */
-    ServerManager(CoreConfig config, AgentHub hub, Duration lockWait) {
         this.config = config;
         this.hub = hub;
-        this.record = new ServerPidFile(config.dataDir(), lockWait);
+        this.record = new ServerPidFile(config.dataDir());
+    }
+
+    /**
+     * For tests: how long a call waits for another core's start or stop of the server before it refuses, instead of
+     * {@link ServerPidFile#WAIT} ({@code ServerLockAccess} outside this package).
+     */
+    void lockWait(Duration wait) {
+        record.waitLimit(wait);
     }
 
     /**
