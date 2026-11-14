@@ -1,4 +1,4 @@
-package io.github.imnotstable.msc.core.files;
+package io.github.imnotstable.msc.process;
 
 import java.io.IOException;
 import java.nio.file.AtomicMoveNotSupportedException;
@@ -18,8 +18,8 @@ import java.util.Random;
 import java.util.regex.Pattern;
 
 /**
- * The one way msc-core writes a file whole or not at all: into a temp file beside it, moved into place once complete.
- * The result has the attributes a plain write would have given it: a file that was there keeps its permissions (POSIX
+ * The one way this repository writes a file whole or not at all (ADR 0034): into a temp file beside it, moved into
+ * place once complete. msc-core and msc-bench both use it, so it lives in msc-process, which both depend on. The result has the attributes a plain write would have given it: a file that was there keeps its permissions (POSIX
  * mode and group, or its ACL), and a new file gets the default ones ({@code 0666} minus the umask), never the
  * {@code 0600} of {@link Files#createTempFile} (#399).
  */

@@ -1,6 +1,6 @@
 package io.github.imnotstable.msc.core.server;
 
-import io.github.imnotstable.msc.core.files.AtomicFile;
+import io.github.imnotstable.msc.process.AtomicFile;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;

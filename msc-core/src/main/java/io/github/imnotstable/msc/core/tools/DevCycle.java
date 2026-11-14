@@ -1,7 +1,7 @@
 package io.github.imnotstable.msc.core.tools;
 
 import io.github.imnotstable.msc.core.CoreConfig;
-import io.github.imnotstable.msc.core.files.AtomicFile;
+import io.github.imnotstable.msc.process.AtomicFile;
 import io.github.imnotstable.msc.core.server.LogCondenser;
 import io.github.imnotstable.msc.core.server.Platform;
 import io.github.imnotstable.msc.core.server.ProjectBuilder;
