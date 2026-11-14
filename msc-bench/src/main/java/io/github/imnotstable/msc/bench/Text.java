@@ -80,6 +80,14 @@ public final class Text {
     }
 
     /**
+     * {@code text} as one bounded line: every run of line breaks, tabs and other control characters becomes one space,
+     * the ends are stripped, and text over {@code max} chars is cut with a visible {@code "..."} within the limit.
+     */
+    public static String singleLine(String text, int max) {
+        return headWithEllipsis(text.replaceAll("[\\p{Cntrl}\\u0085\\u2028\\u2029\\s]+", " ").strip(), max);
+    }
+
+    /**
      * {@code bytes} as UTF-8, every malformed byte as {@link #REPLACEMENT}, and a byte-order mark at the start of the
      * text or of a line dropped (see the class comment).
      */
