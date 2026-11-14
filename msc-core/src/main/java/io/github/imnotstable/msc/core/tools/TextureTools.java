@@ -107,7 +107,7 @@ public final class TextureTools {
                         + "its problems. check=true: only list problems.",
                 Schema.of().opt("check", "boolean", "Only check the pack, do not build it. Default false")
                         .opt("limit", "integer", "Most problems to list. Default 30 with check, 5 on a build")
-                        .opt("description", "string", "Pack description")
+                        .opt("description", "string", "Pack description, up to two lines")
                         .opt("file", "string", "Also save the zip here, such as ruby-pack.zip")
                         .opt("apply", "boolean", "Send to the running server. Default true")
                         .opt("required", "boolean", "Kick players who decline. Default false"),
@@ -136,7 +136,7 @@ public final class TextureTools {
     private static String pack(Args args, AgentHub hub, ResourcePack pack, CoreConfig config, Path properties)
             throws IOException, InterruptedException {
         int limit = Math.max(0, args.integer("limit", 5));
-        String description = args.str("description", LifecycleTools.DEFAULT_PACK_DESCRIPTION);
+        String description = args.lines("description", LifecycleTools.DEFAULT_PACK_DESCRIPTION, 2);
         boolean required = args.bool("required", false);
         Path copy = args.has("file") ? OutputFile.check(args.path("file", config.inWorkspace()), "file") : null;
         boolean offered = pack.ours(PackProperties.url(properties));

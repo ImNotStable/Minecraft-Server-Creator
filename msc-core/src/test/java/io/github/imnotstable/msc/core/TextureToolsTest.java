@@ -68,6 +68,18 @@ class TextureToolsTest {
         assertThat(h.ok("texture_view", "name", "block/big", "maxChars", 400)).hasSizeLessThanOrEqualTo(400);
     }
 
+    /** #474: a pack description is shown on two lines, so one line break is taken; more, or a tab, is refused. */
+    @Test
+    void aPackDescriptionMayHaveTwoLines() throws Exception {
+        h.ok("texture", "name", "item/ruby", "kind", "gem", "color", "#d4263a");
+        h.ok("pack", "apply", false, "description", "Ruby pack\r\nby the team");
+        assertThat(workspace.resolve(".msc/pack/pack.mcmeta")).content().contains("Ruby pack\\nby the team");
+        assertThat(h.error("pack", "apply", false, "description", "a\nb\nc"))
+                .isEqualTo("error: argument description has 3 lines; at most 2 are shown");
+        assertThat(h.error("pack", "apply", false, "description", "a\tb")).isEqualTo("error: argument description has a"
+                + " control character (U+0009); only a line break may be in it");
+    }
+
     /** #457: a texture name too long for the file system is refused before any folder is made. */
     @Test
     void aTextureNameTooLongForTheFileSystemLeavesNothingBehind() throws Exception {

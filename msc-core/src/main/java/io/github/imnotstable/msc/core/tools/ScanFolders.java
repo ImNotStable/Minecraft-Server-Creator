@@ -154,7 +154,7 @@ final class ScanFolders {
         }
         for (Path p : list(dir)) {
             String n = p.getFileName().toString();
-            if (n.startsWith("." + name + ".") && AtomicFile.isTempName(n)
+            if (AtomicFile.isTempFor(name, n)
                     && Files.isRegularFile(p, LinkOption.NOFOLLOW_LINKS)) {
                 Steps.killPoint("sweep " + n);
                 Files.deleteIfExists(p);
