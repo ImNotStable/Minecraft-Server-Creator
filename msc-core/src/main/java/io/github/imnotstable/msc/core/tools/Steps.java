@@ -140,10 +140,20 @@ final class Steps {
 
     /** A step whose failure does not undo the call's purpose: it adds a note line instead of failing the call. */
     String optional(String step, Action action) throws InterruptedException {
+        return optionalRan(step, () -> {
+            action.run();
+            return true;
+        });
+    }
+
+    /**
+     * Like {@link #optional}, for a step that may find nothing to do: {@code action} returns whether it did something,
+     * and only then is the step counted as done, so a refusal in a later step is still the whole answer.
+     */
+    String optionalRan(String step, Result<Boolean> action) throws InterruptedException {
         try {
             begin(step);
-            action.run();
-            markDone(step);
+            (action.get() ? done : idle).add(step);
             return "";
         } catch (InterruptedException e) {
             throw e;

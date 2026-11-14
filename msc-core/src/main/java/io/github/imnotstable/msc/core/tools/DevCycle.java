@@ -199,7 +199,7 @@ final class DevCycle {
         if (restart && wasRunning && loaded(build.jar(), target)
                 && (build.libs() == null || mirror(build.libs(), libs, server(), true) == 0)) {
             try {
-                ScanFolders.sweep(server(), scanFolders());
+                ScanFolders.sweep(server(), ScanFolders.all(server()));
             } catch (IOException e) {
                 // Best effort: the next dev_cycle that deploys sweeps again, as a step that reports a failure.
             }
@@ -224,7 +224,7 @@ final class DevCycle {
             steps.then(REMEMBER);
         }
         if (restart) {
-            ServerRun.plan(steps);
+            ServerRun.plan(steps, false);
         }
         String stopped = stopping ? "; the server is stopped: server_start starts it with what is deployed" : "";
         steps.ifFails(DEPLOY, "the earlier jar is still deployed" + stopped)
@@ -251,7 +251,7 @@ final class DevCycle {
         // Before deploying: a leftover aside copy of a jar is a second copy of the mod on Quilt (#417).
         List<Path> swept = new ArrayList<>();
         String unswept = steps.optional(SWEEP, () -> {
-            swept.addAll(ScanFolders.sweep(server(), scanFolders()));
+            swept.addAll(ScanFolders.sweep(server(), ScanFolders.all(server())));
             swept.addAll(ScanFolders.sweepTemps(deployedFile().getParent(), deployedFile().getFileName().toString()));
         });
         steps.run(DEPLOY, () -> copy(build.jar(), target, server()));
@@ -293,17 +293,6 @@ final class DevCycle {
     }
 
     /** Every folder a server of any platform scans, so a leftover from before a platform change goes too. */
-    private List<Path> scanFolders() {
-        java.util.Set<Path> folders = new java.util.LinkedHashSet<>();
-        for (Platform p : Platform.values()) {
-            if (p.addonDir() != null) {
-                folders.add(server().resolve(p.addonDir()));
-            }
-        }
-        folders.add(server().resolve("libs"));
-        return List.copyOf(folders);
-    }
-
     private static long millisSince(long nanos) {
         return (System.nanoTime() - nanos) / 1_000_000;
     }
