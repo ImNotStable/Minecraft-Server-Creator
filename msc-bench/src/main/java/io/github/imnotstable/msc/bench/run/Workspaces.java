@@ -3,6 +3,7 @@ package io.github.imnotstable.msc.bench.run;
 import io.github.imnotstable.msc.bench.check.Placeholders;
 import io.github.imnotstable.msc.bench.task.Scaffold;
 import io.github.imnotstable.msc.bench.task.TaskDef;
+import io.github.imnotstable.msc.process.ServerPropertiesFile;
 import io.github.imnotstable.msc.templates.TemplateVariables;
 import io.github.imnotstable.msc.templates.Templates;
 import java.io.IOException;
@@ -10,7 +11,6 @@ import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -84,7 +84,7 @@ public final class Workspaces {
                 || Files.isRegularFile(workspace.resolve("build.gradle.kts"));
     }
 
-    private static void prepareServer(
+    static void prepareServer(
             Path server, BenchConfig.Server config, BenchConfig.Mode mode, Path paperJar, Map<String, String> values)
             throws IOException {
         if (paperJar != null) {
@@ -99,7 +99,8 @@ public final class Workspaces {
         props.put("rcon.port", Integer.toString(config.rconPort()));
         props.put("rcon.password", config.rconPassword());
         props.put("broadcast-rcon-to-ops", "false");
-        setProperties(server.resolve("server.properties"), props);
+        // Escaped as the server reads it, so it logs in with the configured password even with a backslash (#392).
+        ServerPropertiesFile.set(server.resolve(ServerPropertiesFile.NAME), props);
         if (!mode.serverPlugins().isEmpty()) {
             Path plugins = server.resolve("plugins");
             Files.createDirectories(plugins);
@@ -120,24 +121,6 @@ public final class Workspaces {
      */
     static String pluginName(Path jar) {
         return jar.getFileName().toString().replaceFirst("-\\d[^-]*(-[A-Za-z0-9.]+)?\\.jar$", ".jar");
-    }
-
-    /** Sets keys in a {@code .properties} file, keeping other lines and their order. */
-    static void setProperties(Path file, Map<String, String> values) throws IOException {
-        List<String> lines = Files.isRegularFile(file) ? new ArrayList<>(Files.readAllLines(file)) : new ArrayList<>();
-        Map<String, String> remaining = new LinkedHashMap<>(values);
-        for (int i = 0; i < lines.size(); i++) {
-            String line = lines.get(i);
-            int eq = line.indexOf('=');
-            if (eq > 0 && !line.startsWith("#")) {
-                String key = line.substring(0, eq).strip();
-                if (remaining.containsKey(key)) {
-                    lines.set(i, key + "=" + remaining.remove(key));
-                }
-            }
-        }
-        remaining.forEach((k, v) -> lines.add(k + "=" + v));
-        Files.write(file, lines);
     }
 
     /** Copies a folder's contents into another, replacing files that exist. */

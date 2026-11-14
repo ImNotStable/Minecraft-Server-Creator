@@ -1,12 +1,11 @@
 package io.github.imnotstable.msc.core.server;
 
+import io.github.imnotstable.msc.process.ServerPropertiesFile;
 import io.github.imnotstable.msc.process.rcon.RconClient;
 import java.io.IOException;
-import java.io.InputStream;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
-import java.util.Properties;
+import java.util.Map;
 
 /**
  * Where a dev server answers RCON, from its {@code server.properties}. Used to stop a server whose console belongs to a
@@ -17,45 +16,63 @@ public record RconTarget(String host, int port, String password) {
 
     /** How long connecting, logging in and waiting for the reply to {@code stop} may each take. */
     static final Duration TIMEOUT = Duration.ofSeconds(3);
+    /** The server's {@code rcon.port} when the file has none or not a number. */
+    static final int DEFAULT_PORT = 25575;
 
-    /** RCON settings from a server directory's {@code server.properties}, or null when RCON is off or unset. */
+    /**
+     * RCON settings from a server directory's {@code server.properties}, read as the 26.3 server reads them, or null
+     * when the server runs no RCON: {@code enable-rcon} not true (any case, as {@link Boolean#parseBoolean}), no
+     * password, or a port outside 1 to 65535 (the server logs "rcon disabled"). A port that is not a number is the
+     * default 25575, as for the server. The host is {@code server-ip}, the address the server binds RCON to, or
+     * loopback when that is empty or a wildcard address.
+     */
     public static RconTarget of(Path serverDir) {
-        Path file = serverDir.resolve("server.properties");
-        if (!Files.isRegularFile(file)) {
-            return null;
-        }
-        Properties p = new Properties();
-        try (InputStream in = Files.newInputStream(file)) {
-            p.load(in);
-        } catch (IOException | IllegalArgumentException e) {
-            return null;
-        }
-        String password = p.getProperty("rcon.password", "");
-        if (!"true".equals(p.getProperty("enable-rcon", "false").strip()) || password.isBlank()) {
-            return null;
-        }
+        Map<String, String> p;
         try {
-            return new RconTarget("127.0.0.1", Integer.parseInt(p.getProperty("rcon.port", "25575").strip()), password);
-        } catch (NumberFormatException e) {
+            p = ServerPropertiesFile.read(serverDir.resolve(ServerPropertiesFile.NAME));
+        } catch (IOException e) {
             return null;
         }
+        String password = p.getOrDefault("rcon.password", "");
+        if (!Boolean.parseBoolean(p.get("enable-rcon")) || password.isEmpty()) {
+            return null;
+        }
+        int port;
+        try {
+            port = Integer.parseInt(p.getOrDefault("rcon.port", ""));
+        } catch (NumberFormatException e) {
+            port = DEFAULT_PORT;
+        }
+        if (port <= 0 || port > 65535) {
+            return null;
+        }
+        return new RconTarget(host(p.getOrDefault("server-ip", "")), port, password);
+    }
+
+    /** Where to reach a server bound to {@code serverIp}: that address, or loopback for none or a wildcard. */
+    static String host(String serverIp) {
+        return switch (serverIp) {
+            case "", "0.0.0.0" -> "127.0.0.1";
+            case "::", "[::]", "::0" -> "::1";
+            default -> serverIp;
+        };
     }
 
     /**
-     * Logs in and sends {@code stop}. Returns false when the server could not be reached or refused the login; true
-     * once the command went out, even when the server closed the connection before answering, as a stopping server
-     * may.
+     * Logs in and sends {@code stop}. Returns false when the server could not be reached or refused the login, and
+     * never throws, so a caller's fallback (kill) always runs (#394); true once the command went out, even when the
+     * server closed the connection before answering, as a stopping server may.
      */
     public boolean askToStop() {
         RconClient client;
         try {
             client = RconClient.connect(host, port, password, TIMEOUT);
-        } catch (IOException e) {
+        } catch (IOException | RuntimeException e) {
             return false;
         }
         try (client) {
             client.command("stop");
-        } catch (IOException e) {
+        } catch (IOException | RuntimeException e) {
             // "stop" may close the connection before answering; the command was still received.
         }
         return true;
