@@ -38,8 +38,19 @@ class LogPumpTest {
     @Test
     void aPipeAChildHoldsOpenStillEndsTheWait() throws Exception {
         // The shell exits, its background child keeps stdout open: the pump never reaches the end of the output.
+        // When the pump is not inside a read at the exit, the JDK drains and closes the pipe itself, so a run may
+        // end the ordinary way; retry until one held the pipe. Every run must end.
+        boolean held = false;
+        for (int run = 0; run < 5 && !held; run++) {
+            held = childHoldsThePipe();
+        }
+        assertThat(held).isTrue();
+    }
+
+    private static boolean childHoldsThePipe() throws Exception {
         LogBuffer log = new LogBuffer(100, Long.MAX_VALUE);
-        Process p = fake("sleep 600 & echo \"child $!\"; exit 0");
+        // The pause lets the pump read the line and block in the next read before the shell exits.
+        Process p = fake("sleep 600 & echo \"child $!\"; sleep 1; exit 0");
         LogPump pump = LogPump.start(p, log, () -> { }, Duration.ofSeconds(1));
         long child = -1;
         try {
@@ -47,9 +58,9 @@ class LogPumpTest {
             child = Long.parseLong(first.line().substring("child ".length()));
             assertThat(pump.await(log, 0, "never printed"::equals, GENEROUS)).isNull();
             assertThat(log.all()).containsExactly(first.line());
-            assertThat(pump.finished()).isFalse();
             // Bounded once per process: a later reader finds the log as complete as it gets.
             assertThat(pump.awaitEnd()).isTrue();
+            return !pump.finished();
         } finally {
             if (child > 0) {
                 ProcessHandle.of(child).ifPresent(ProcessHandle::destroyForcibly);
