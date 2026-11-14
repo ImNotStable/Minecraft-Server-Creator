@@ -25,7 +25,8 @@ process killer.
 ## Decision
 
 1. A new leaf module, `msc-process` (package `io.github.imnotstable.msc.process`, no dependencies), holds the only
-   tree kill. msc-core and msc-bench depend on it. Its public API is `ProcessTree.destroy(ProcessHandle)`.
+   tree kill. msc-core and msc-bench depend on it (msc-bot too since #464, for the HTTP stall rule). Its public API
+   is `ProcessTree.destroy(ProcessHandle)`.
 2. **The kill rule.** A process is signalled only when it is proven to descend from the root. A process is proven
    when all of these hold:
    - its recorded parent pid is the pid of a proven process;
