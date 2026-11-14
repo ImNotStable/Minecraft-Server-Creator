@@ -25,8 +25,102 @@ Minestom server for Minecraft {{minestomMcVersion}}, Java {{javaVersion}}, Gradl
 - Commands: subclass `Command`, add syntaxes with `ArgumentType`, register with `MinecraftServer.getCommandManager().register(...)`. They run with the console as sender in tests and from `Console`.
 - Blocks: `Block.STONE`, `Block.OAK_STAIRS.withProperty("facing", "north")`, `instance.setBlock(x, y, z, block)`. Chunks must be loaded first (`instance.loadChunk(cx, cz)`).
 - Text is Adventure `Component`s (`Component.text("Hi", NamedTextColor.GREEN)`). Never use `§` codes.
-- Threads: world and server state is touched only on the tick thread. Event listeners and player commands run there, and so do console commands: `Console` and msc's `server_command` hand each command to the scheduler, which runs it at the start of the next tick. Code on any other thread (a virtual thread, a `CompletableFuture` callback, an `Async...` event) hops back first with `MinecraftServer.getSchedulerManager().execute(() -> ...)`; then plain collections are safe.
+- Threads: world and server state is touched only on the tick thread. Event listeners and player commands run there, and so do console commands: `Console` and msc's `server_command` hand each command to the scheduler, which runs it at the start of the next tick. Code on any other thread (a virtual thread, a `CompletableFuture` callback, an async event such as `AsyncPlayerConfigurationEvent`) hops back first with `MinecraftServer.getSchedulerManager().execute(() -> ...)`; then plain collections are safe.
 - Do not block the tick thread (no files, network or sleeps in listeners or commands): do slow work on a virtual thread, then hop back with its result.
+
+## Recipes
+
+Built and tested against this project's pinned versions; copy them as they are.
+
+A command with an argument, `src/main/java/{{packagePath}}/CountdownCommand.java`:
+
+```java
+package {{packageName}};
+
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
+import net.minestom.server.command.builder.Command;
+import net.minestom.server.command.builder.arguments.ArgumentType;
+import net.minestom.server.command.builder.arguments.number.ArgumentInteger;
+
+/** {@code /countdown <seconds>}: a command with a number argument, 1 to 600. */
+public final class CountdownCommand extends Command {
+    public CountdownCommand() {
+        super("countdown");
+        ArgumentInteger seconds = ArgumentType.Integer("seconds");
+        seconds.between(1, 600);
+        setDefaultExecutor((sender, context) -> sender.sendMessage(Component.text("Usage: /countdown <seconds>")));
+        addSyntax((sender, context) -> sender.sendMessage(
+                Component.text("Starting in " + context.get(seconds) + "s", NamedTextColor.YELLOW)), seconds);
+    }
+}
+```
+
+A block-break listener on its own event node, `src/main/java/{{packagePath}}/BlockGuard.java`:
+
+```java
+package {{packageName}};
+
+import net.minestom.server.event.EventFilter;
+import net.minestom.server.event.EventNode;
+import net.minestom.server.event.player.PlayerBlockBreakEvent;
+import net.minestom.server.event.trait.InstanceEvent;
+import net.minestom.server.instance.Instance;
+
+/** Stops players breaking blocks in one instance. Add it with {@code events.addChild(BlockGuard.node(world))}. */
+public final class BlockGuard {
+    private BlockGuard() {
+    }
+
+    public static EventNode<InstanceEvent> node(Instance world) {
+        EventNode<InstanceEvent> node = EventNode.value("block-guard", EventFilter.INSTANCE, world::equals);
+        node.addListener(PlayerBlockBreakEvent.class, event -> event.setCancelled(true));
+        return node;
+    }
+}
+```
+
+Their test, `src/test/java/{{packagePath}}/CountdownCommandTest.java`:
+
+```java
+package {{packageName}};
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import net.minestom.server.command.builder.CommandResult;
+import net.minestom.server.coordinate.BlockVec;
+import net.minestom.server.event.player.PlayerBlockBreakEvent;
+import net.minestom.server.instance.Instance;
+import net.minestom.server.instance.block.Block;
+import net.minestom.server.instance.block.BlockFace;
+import net.minestom.testing.Env;
+import net.minestom.testing.EnvTest;
+import org.junit.jupiter.api.Test;
+
+@EnvTest
+class CountdownCommandTest {
+    @Test
+    void countdownTakesSeconds(Env env) {
+        env.process().command().register(new CountdownCommand());
+
+        assertThat(env.process().command().executeServerCommand("countdown 5").getType())
+                .isEqualTo(CommandResult.Type.SUCCESS);
+    }
+
+    @Test
+    void blockGuardCancelsBreaks(Env env) {
+        Instance world = {{name}}Server.createWorld(env.process().instance());
+        env.process().eventHandler().addChild(BlockGuard.node(world));
+        var player = env.createPlayer(world, {{name}}Server.SPAWN);
+        var event = new PlayerBlockBreakEvent(player, world, Block.GRASS_BLOCK, Block.AIR, new BlockVec(0, -61, 0),
+                BlockFace.TOP);
+
+        env.process().eventHandler().call(event);
+
+        assertThat(event.isCancelled()).isTrue();
+    }
+}
+```
 
 ## Tests
 

@@ -26,6 +26,133 @@ Paper plugin for Minecraft {{mcVersion}}, Java {{javaVersion}}, Gradle Kotlin DS
 - Read settings from `getConfig()`; add every new key with a default to `config.yml`.
 - Prefer small final classes and records, except the main plugin class: MockBukkit must subclass it, so never make it final. Pass dependencies through constructors; avoid static state so MockBukkit tests stay isolated.
 
+## Recipes
+
+Built and tested against this project's pinned versions; copy them as they are.
+
+A command with an argument, `src/main/java/{{packagePath}}/CountdownCommand.java`:
+
+```java
+package {{packageName}};
+
+import com.mojang.brigadier.Command;
+import com.mojang.brigadier.arguments.IntegerArgumentType;
+import com.mojang.brigadier.tree.LiteralCommandNode;
+import io.papermc.paper.command.brigadier.CommandSourceStack;
+import io.papermc.paper.command.brigadier.Commands;
+import net.kyori.adventure.text.minimessage.MiniMessage;
+import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
+
+/** {@code /countdown <seconds>}: a command with a number argument, 1 to 600. */
+public final class CountdownCommand {
+    private CountdownCommand() {
+    }
+
+    public static LiteralCommandNode<CommandSourceStack> node() {
+        return Commands.literal("countdown")
+                .then(Commands.argument("seconds", IntegerArgumentType.integer(1, 600)).executes(context -> {
+                    int seconds = IntegerArgumentType.getInteger(context, "seconds");
+                    context.getSource().getSender().sendMessage(MiniMessage.miniMessage().deserialize(
+                            "<yellow>Starting in <seconds>s", Placeholder.unparsed("seconds", String.valueOf(seconds))));
+                    return Command.SINGLE_SUCCESS;
+                }))
+                .build();
+    }
+}
+```
+
+A block-break listener, `src/main/java/{{packagePath}}/BlockGuard.java`:
+
+```java
+package {{packageName}};
+
+import org.bukkit.event.EventHandler;
+import org.bukkit.event.Listener;
+import org.bukkit.event.block.BlockBreakEvent;
+
+/** Stops players breaking blocks. */
+public final class BlockGuard implements Listener {
+    @EventHandler
+    public void onBreak(BlockBreakEvent event) {
+        event.setCancelled(true);
+    }
+}
+```
+
+The entry point with both wired in, the listener only while the setting `protect-blocks` is on (add `protect-blocks: false` to `config.yml`):
+
+```java
+package {{packageName}};
+
+import io.papermc.paper.plugin.lifecycle.event.types.LifecycleEvents;
+import org.bukkit.plugin.java.JavaPlugin;
+
+/**
+ * Plugin entry point: wires config, listeners and commands, and holds no game logic itself.
+ * Not final: MockBukkit subclasses the main class when loading it in tests.
+ */
+public class {{mainClass}} extends JavaPlugin {
+    @Override
+    public void onEnable() {
+        saveDefaultConfig();
+        Greeter greeter = new Greeter(
+                getConfig().getString("join-message", Greeter.DEFAULT_JOIN),
+                getConfig().getString("hello-message", Greeter.DEFAULT_HELLO));
+
+        getServer().getPluginManager().registerEvents(new JoinListener(greeter), this);
+        if (getConfig().getBoolean("protect-blocks", false)) {
+            getServer().getPluginManager().registerEvents(new BlockGuard(), this);
+        }
+        getLifecycleManager().registerEventHandler(LifecycleEvents.COMMANDS, event -> {
+            event.registrar().register("hello", "Says hello to you.", new HelloCommand(greeter));
+            event.registrar().register(CountdownCommand.node(), "Counts down.");
+        });
+    }
+}
+```
+
+Its test, `src/test/java/{{packagePath}}/CountdownCommandTest.java`:
+
+```java
+package {{packageName}};
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.mockbukkit.mockbukkit.MockBukkit;
+import org.mockbukkit.mockbukkit.ServerMock;
+import org.mockbukkit.mockbukkit.entity.PlayerMock;
+
+class CountdownCommandTest {
+    private ServerMock server;
+
+    @BeforeEach
+    void setUp() {
+        server = MockBukkit.mock();
+        MockBukkit.load({{mainClass}}.class);
+    }
+
+    @AfterEach
+    void tearDown() {
+        MockBukkit.unmock();
+    }
+
+    @Test
+    void countdownRepliesWithTheSeconds() {
+        PlayerMock alex = server.addPlayer("Alex");
+        alex.nextComponentMessage(); // the join greeting
+
+        alex.performCommand("countdown 5");
+
+        assertThat(PlainTextComponentSerializer.plainText().serialize(alex.nextComponentMessage()))
+                .isEqualTo("Starting in 5s");
+    }
+}
+```
+
 ## Tests
 
 - Every change comes with a test. Pure logic: plain JUnit + AssertJ. Events, commands, players: MockBukkit.

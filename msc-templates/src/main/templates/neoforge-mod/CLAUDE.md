@@ -21,13 +21,107 @@ NeoForge server mod for Minecraft {{mcVersion}}, Java {{javaVersion}}, Gradle Ko
 
 - Names are Mojang's official names (Minecraft 26.x is not obfuscated): `ServerPlayer`, `ServerLevel`, `BlockPos`, `Component`. Don't use SRG names (`m_12345_`) or names from old tutorials.
 - This is a server-side mod: never reference client classes (`net.minecraft.client`).
-- Listen on `NeoForge.EVENT_BUS` with `addListener(EventClass.class, e -> ...)`: `RegisterCommandsEvent`, `PlayerEvent.PlayerLoggedInEvent`, `ServerStartingEvent`, `ServerTickEvent.Post`, `BlockEvent.BreakEvent`, `PlayerInteractEvent.RightClickBlock`. Add a mixin only when no event exists.
+- Listen on `NeoForge.EVENT_BUS` with `addListener(EventClass.class, e -> ...)`: `RegisterCommandsEvent`, `PlayerEvent.PlayerLoggedInEvent`, `ServerStartingEvent`, `ServerTickEvent.Post`, `BreakBlockEvent` (`net.neoforged.neoforge.event.level.block`), `PlayerInteractEvent.RightClickBlock`. Add a mixin only when no event exists.
 - Commands are Brigadier trees built with `Commands.literal(...)` and `Commands.argument(...)`; reply with `source.sendSuccess(() -> component, false)` or `source.sendFailure(component)`.
 - Text is `Component.literal(...)` / `Component.translatable(...)` with `.withStyle(ChatFormatting.X)`. Never use `§` codes.
 - Never block the server thread (no I/O, sleeps or network in listeners or commands). Do slow work on another thread, then hop back with `server.execute(...)` before touching the world.
 - World, entity and inventory access only on the server thread.
-- Config goes through `ModConfigSpec`, registered in the constructor with `ModContainer.registerConfig`.
+- Config goes through `ModConfigSpec`: take `ModContainer container` in the constructor and call `container.registerConfig(ModConfig.Type.LOCAL, spec)`. `LOCAL` is the type for a server-side mod's settings (`config/{{modId}}-local.toml`, not synced); NeoForge 26.x has no `COMMON` or `SERVER` type, and `SYNCED` is sent to clients, which do not have this mod. Read a value (`value.getAsBoolean()`) in listeners and commands, not in the constructor: only `STARTUP` configs are loaded that early.
 - Prefer small final classes and records. Pass dependencies through constructors; avoid static state.
+
+## Recipes
+
+Built and tested against this project's pinned versions; copy them as they are.
+
+A command with an argument, `src/main/java/{{packagePath}}/CountdownCommand.java`:
+
+```java
+package {{packageName}};
+
+import com.mojang.brigadier.CommandDispatcher;
+import com.mojang.brigadier.arguments.IntegerArgumentType;
+import net.minecraft.commands.CommandSourceStack;
+import net.minecraft.commands.Commands;
+import net.minecraft.network.chat.Component;
+
+/** {@code /countdown <seconds>}: a command with a number argument, 1 to 600. */
+public final class CountdownCommand {
+    private CountdownCommand() {
+    }
+
+    public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
+        dispatcher.register(Commands.literal("countdown")
+                .then(Commands.argument("seconds", IntegerArgumentType.integer(1, 600)).executes(context -> {
+                    int seconds = IntegerArgumentType.getInteger(context, "seconds");
+                    context.getSource().sendSuccess(() -> Component.literal("Starting in " + seconds + "s"), false);
+                    return seconds;
+                })));
+    }
+}
+```
+
+A setting, `src/main/java/{{packagePath}}/Settings.java`:
+
+```java
+package {{packageName}};
+
+import net.neoforged.neoforge.common.ModConfigSpec;
+
+/** The mod's settings, in config/{{modId}}-local.toml. */
+public final class Settings {
+    final ModConfigSpec.BooleanValue protectBlocks;
+    final ModConfigSpec spec;
+
+    Settings() {
+        ModConfigSpec.Builder builder = new ModConfigSpec.Builder();
+        protectBlocks = builder.comment("Stop players breaking blocks.").define("protectBlocks", false);
+        spec = builder.build();
+    }
+}
+```
+
+The entry point with both wired in, and a block-break listener that reads the setting:
+
+```java
+package {{packageName}};
+
+import net.neoforged.api.distmarker.Dist;
+import net.neoforged.fml.ModContainer;
+import net.neoforged.fml.common.Mod;
+import net.neoforged.fml.config.ModConfig;
+import net.neoforged.neoforge.common.NeoForge;
+import net.neoforged.neoforge.event.RegisterCommandsEvent;
+import net.neoforged.neoforge.event.entity.player.PlayerEvent;
+import net.neoforged.neoforge.event.level.block.BreakBlockEvent;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+/** Mod entry point: registers settings, commands and event handlers, and holds no game logic itself. */
+@Mod(value = {{mainClass}}.MOD_ID, dist = Dist.DEDICATED_SERVER)
+public final class {{mainClass}} {
+    public static final String MOD_ID = "{{modId}}";
+    public static final Logger LOG = LoggerFactory.getLogger(MOD_ID);
+
+    public {{mainClass}}(ModContainer container) {
+        Greeter greeter = new Greeter(Greeter.DEFAULT_JOIN, Greeter.DEFAULT_HELLO);
+        Settings settings = new Settings();
+        container.registerConfig(ModConfig.Type.LOCAL, settings.spec);
+
+        NeoForge.EVENT_BUS.addListener(RegisterCommandsEvent.class, e -> {
+            HelloCommand.register(e.getDispatcher(), greeter);
+            CountdownCommand.register(e.getDispatcher());
+        });
+        NeoForge.EVENT_BUS.addListener(PlayerEvent.PlayerLoggedInEvent.class, e ->
+                e.getEntity().sendSystemMessage(greeter.join(e.getEntity().getPlainTextName())));
+        NeoForge.EVENT_BUS.addListener(BreakBlockEvent.class, e -> {
+            if (settings.protectBlocks.getAsBoolean()) {
+                e.setCanceled(true);
+            }
+        });
+        LOG.info("{{name}} loaded");
+    }
+}
+```
 
 ## Tests
 
