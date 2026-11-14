@@ -92,6 +92,8 @@ class CommandLineTest {
         good("utf16be-bom", bom(new byte[] {(byte) 0xFE, (byte) 0xFF}, RUN + "\n", StandardCharsets.UTF_16BE));
         good("joined-with-boms", ("\uFEFF" + RUN + "\n\uFEFF" + RUN + "\n").getBytes(StandardCharsets.UTF_8));
         good("half-written-last", (RUN + "\n" + RUN.substring(0, 20)).getBytes(StandardCharsets.UTF_8));
+        // #477: `cat a b` where a ends on a half line: the half runs straight into b's first run.
+        good("half-written-joined", (RUN + "\n" + RUN.substring(0, 20) + RUN + "\n").getBytes(StandardCharsets.UTF_8));
         good("non-ascii", RUN.replace("code", "caf\u00e9 \u2014").getBytes(StandardCharsets.UTF_8));
     }
 
@@ -288,6 +290,9 @@ class CommandLineTest {
         List<String> warnings = outcome.out().lines().filter(l -> l.startsWith("warning: ")).toList();
         if (name.equals("half-written-last")) {
             assertThat(warnings).singleElement().asString().contains("results.jsonl line 2 is half-written");
+        } else if (name.equals("half-written-joined")) {
+            assertThat(warnings).singleElement().asString().contains("results.jsonl line 2 starts with a half-written");
+            assertThat(report).contains("Runs: 2.");
         } else {
             assertThat(warnings).isEmpty();
         }

@@ -11,6 +11,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -91,6 +92,88 @@ class ResultsFileTest {
             assertThatThrownBy(() -> ResultsFile.read(file, w -> {
                 throw new AssertionError(w);
             })).as(text).isInstanceOf(IOException.class).hasMessageContaining(" line ");
+        }
+    }
+
+    private static final RunRecord A = new RunRecord("a", "code", "baseline", 1, "", true, 0, false, 0, null, null,
+            null, null);
+    private static final RunRecord B = new RunRecord("b", "code", "toolset", 2, "", false, 5, false, 1, "x", null,
+            new ToolStats(1, 0, 0, 0, 0, 0, Map.of("view", new ToolStats.PerTool(1, 0, 0, 0))),
+            List.of(CheckResult.fail("file", "{\"task\":\"b\"}")));
+
+    @Test
+    void anAppendAFullDiskCutsShortLeavesTheFileAsItWas() throws IOException {
+        // #477: the disk took part of the line and refused the rest, leaving a half line with no line break.
+        Path file = dir.resolve(ResultsFile.NAME);
+        ResultsFile.append(file, A);
+        byte[] before = Files.readAllBytes(file);
+
+        assertThatThrownBy(() -> ResultsFile.append(file, B, new FullDisk(Set.of(ResultsFile.NAME), 0, false)))
+                .isInstanceOf(IOException.class).hasMessage("No space left on device");
+
+        assertThat(Files.readAllBytes(file)).isEqualTo(before);
+    }
+
+    @Test
+    void anAppendThatCannotBeCutBackSaysSo() throws IOException {
+        Path file = dir.resolve(ResultsFile.NAME);
+        ResultsFile.append(file, A);
+
+        assertThatThrownBy(() -> ResultsFile.append(file, B, new FullDisk(Set.of(ResultsFile.NAME), 0, true)))
+                .isInstanceOf(IOException.class)
+                .hasMessage("No space left on device; " + file + " could not be cut back to its last whole line either "
+                        + "(Input/output error), so its last line is half-written");
+
+        List<String> warnings = new ArrayList<>();
+        assertThat(ResultsFile.read(file, warnings::add)).containsExactly(A);
+        assertThat(warnings).singleElement().asString().contains("line 2 is half-written");
+    }
+
+    @Test
+    void aLineAlwaysStartsOnANewLine() throws IOException {
+        // A file a kill cut mid-line does not end with a line break: the next line still starts on its own.
+        Path file = dir.resolve(ResultsFile.NAME);
+        ResultsFile.append(file, A);
+        String whole = Files.readString(file);
+        Files.writeString(file, whole + "{\"task\":\"cut");
+
+        ResultsFile.append(file, A);
+
+        assertThat(Files.readString(file)).isEqualTo(whole + "{\"task\":\"cut\n" + whole);
+    }
+
+    @Test
+    void aHalfLineJoinedStraightToTheNextFilesFirstRunIsLeftOutWithAWarning() throws IOException {
+        // #477: `cat a b` of a file that ends on a half line glues it to b's first run; every cut of a line, with and
+        // without b's byte-order mark, and with B's check detail holding JSON text of its own.
+        Path file = dir.resolve(ResultsFile.NAME);
+        ResultsFile.append(file, A);
+        String first = Files.readString(file);
+        Files.delete(file);
+        ResultsFile.append(file, B);
+        String line = Files.readString(file).strip();
+        for (String bom : List.of("", "\uFEFF")) {
+            for (int cut = 1; cut < line.length(); cut++) {
+                Files.writeString(file, first + line.substring(0, cut) + bom + line + "\n" + line + "\n");
+                List<String> warnings = new ArrayList<>();
+
+                assertThat(ResultsFile.read(file, warnings::add)).as("cut %d", cut).containsExactly(A, B, B);
+                assertThat(warnings).as("cut %d", cut).singleElement().asString()
+                        .contains(file + " line 2 starts with a half-written run");
+            }
+        }
+    }
+
+    @Test
+    void twoWholeRunsOnOneLineAreStillRefused() throws IOException {
+        Path file = dir.resolve(ResultsFile.NAME);
+        ResultsFile.append(file, B);
+        String line = Files.readString(file).strip();
+        for (String text : List.of(line + line, line + "\uFEFF" + line, "[" + line, "x" + line)) {
+            Files.writeString(file, text + "\n");
+            assertThatThrownBy(() -> ResultsFile.read(file, w -> {
+                throw new AssertionError(w);
+            })).as(text).isInstanceOf(IOException.class).hasMessageContaining("line 1: is not valid JSON");
         }
     }
 }
