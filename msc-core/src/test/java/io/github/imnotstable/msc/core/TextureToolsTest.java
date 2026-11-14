@@ -308,4 +308,28 @@ class TextureToolsTest {
                 .contains("saved: " + workspace.resolve("out/ruby-pack.zip"));
         assertThat(workspace.resolve("out/ruby-pack.zip")).isRegularFile();
     }
+
+    /**
+     * A file= that cannot be written (a folder with files in it, a path through a file) is refused before the pack is
+     * built or sent, so server.properties, the pack host and the players keep the same pack (#373).
+     */
+    @Test
+    void anUnwritableFileIsRefusedBeforeThePackIsSent() throws Exception {
+        h.ok("texture", "name", "item/ruby", "kind", "gem", "color", "#d4263a");
+        String url = h.ok("pack").lines().filter(l -> l.startsWith("url: ")).findFirst().orElseThrow().substring(5);
+        Files.createDirectories(workspace.resolve("run"));
+        Files.writeString(workspace.resolve("run/server.properties"), "resource-pack=" + url + "\n");
+        Files.createDirectories(workspace.resolve("packs/old"));
+        Files.writeString(workspace.resolve("notes.txt"), "a file");
+        h.ok("texture", "name", "item/ruby", "kind", "gem", "color", "#2655d4");
+        int sent = h.agent.packs.size();
+        assertThat(h.error("pack", "file", "packs")).isEqualTo("error: file " + workspace.resolve("packs")
+                + " is a folder; give a file path");
+        assertThat(h.error("pack", "file", "notes.txt/pack.zip")).contains("is a file, not a folder");
+        assertThat(h.agent.packs).hasSize(sent);
+        assertThat(workspace.resolve("run/server.properties")).hasContent("resource-pack=" + url);
+        HttpResponse<Void> served = HttpClient.newHttpClient().send(HttpRequest.newBuilder(URI.create(url)).build(),
+                HttpResponse.BodyHandlers.discarding());
+        assertThat(served.statusCode()).isEqualTo(200);
+    }
 }

@@ -270,7 +270,9 @@ class WorkspaceOwnershipTest {
         @Test
         void aWarmupAfterCloseBeganDoesNotStart() throws Exception {
             assertThat(afterCloseBegan("project_scaffold", "name", "Mod", "dir", "mod", "template", "forge-mod"))
-                    .isEqualTo(CLOSED + "msc-build-warmup did not start");
+                    // The files were written before the close: the error says so, and that dev_cycle builds it.
+                    .startsWith(CLOSED + "msc-build-warmup did not start\n")
+                    .contains("done: write the project files").contains("dev_cycle runs the first build");
             Thread.sleep(1000);
             assertThat(workspace.resolve("mod/check-started")).doesNotExist();
         }

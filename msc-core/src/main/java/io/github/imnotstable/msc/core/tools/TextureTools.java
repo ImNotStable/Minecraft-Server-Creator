@@ -88,8 +88,11 @@ public final class TextureTools {
                         slots.put(eq < 0 ? "*" : entry.substring(0, eq).trim(),
                                 ResourceId.parse(entry.substring(eq + 1)));
                     }
-                    String item = source.writeModel(model, Models.Kind.parse(args.str("kind")), slots,
-                            args.bool("item", true));
+                    Models.Kind kind = Models.Kind.parse(args.str("kind"));
+                    boolean withItem = args.bool("item", true);
+                    OutputFile.check(source.modelPath(model), "model");
+                    String item = new Steps("model_create").then(WRITE_MODEL).run(WRITE_MODEL,
+                            () -> source.writeModel(model, kind, slots, withItem));
                     return "wrote model " + model + (item == null ? "" : "; item_model " + item) + "\nnext: pack";
                 }));
         registry.add("pack",
@@ -108,43 +111,120 @@ public final class TextureTools {
                         }
                         return check(pack, Math.max(0, args.integer("limit", 30)));
                     }
-                    int limit = Math.max(0, args.integer("limit", 5));
-                    String description = args.str("description", LifecycleTools.DEFAULT_PACK_DESCRIPTION);
-                    ResourcePack.Built built = pack.build(description);
-                    StringBuilder out = new StringBuilder();
-                    out.append("pack built: ").append(built.files()).append(" files, ").append(built.bytes())
-                            .append(" bytes, pack_format ").append(pack.packFormat()).append("\nurl: ").append(built.url())
-                            .append("\nsha1: ").append(built.sha1());
-                    if (args.bool("apply", true)) {
-                        if (hub.current() == null) {
-                            out.append("\nnot applied: no server agent connected");
-                        } else {
-                            Ops.PackResult r = hub.call(Ops.PACK_APPLY,
-                                    new Ops.PackParams(built.url(), built.sha1(), args.bool("required", false)));
-                            pack.applied(new ResourcePack.Applied(description, args.bool("required", false)));
-                            out.append("\napplied: sent to ").append(r.playersSent())
-                                    .append(" players; players who join later get it too, also after a restart");
-                        }
-                    }
-                    // Saved only once the apply went through: a failed pack call writes no file into the workspace.
-                    if (args.has("file")) {
-                        Path copy = config.resolve(args.str("file"));
-                        Files.createDirectories(copy.toAbsolutePath().getParent());
-                        Files.copy(built.zip(), copy, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-                        out.append("\nsaved: ").append(copy);
-                    }
-                    // A detached session made server.properties offer the pack: keep it pointing at this build.
-                    Path properties = serverDir.resolve("server.properties");
-                    if (pack.ours(PackProperties.url(properties)) && PackProperties.write(properties, built.url(),
-                            built.sha1(), args.bool("required", false))) {
-                        out.append("\nserver.properties updated to offer this build");
-                    }
-                    return out.append('\n').append(check(pack, limit)).toString();
+                    return pack(args, hub, pack, config, serverDir.resolve("server.properties"));
                 });
     }
 
+    static final String BUILD = "build the pack and serve it";
+    static final String OFFER = "point server.properties at this build";
+    static final String APPLY = "send it to the server's players";
+    static final String SAVE = "save the zip";
+
+    /**
+     * The pack build. Checked first: the arguments, the file= target and server.properties. Then, in this order:
+     * build and serve (the pack host then serves only this build), point server.properties at it (so what the file
+     * offers is always what is served), send it to the players, save the zip copy (last: it is the least important,
+     * and a failed apply then writes nothing into the workspace).
+     */
+    private static String pack(Args args, AgentHub hub, ResourcePack pack, CoreConfig config, Path properties)
+            throws IOException, InterruptedException {
+        int limit = Math.max(0, args.integer("limit", 5));
+        String description = args.str("description", LifecycleTools.DEFAULT_PACK_DESCRIPTION);
+        boolean required = args.bool("required", false);
+        Path copy = args.has("file") ? OutputFile.check(config.resolve(args.str("file")), "file") : null;
+        boolean offered = pack.ours(PackProperties.url(properties));
+        if (offered) {
+            OutputFile.check(properties, "server.properties");
+        }
+        boolean apply = args.bool("apply", true);
+        boolean connected = apply && hub.current() != null;
+        Steps steps = new Steps("pack").then(BUILD);
+        if (offered) {
+            steps.then(OFFER);
+        }
+        if (connected) {
+            steps.then(APPLY);
+        }
+        if (copy != null) {
+            steps.then(SAVE).ifFails(SAVE, "no file was written at " + copy + "; run pack file=... again to save it");
+        }
+        ResourcePack.Snapshot before = pack.snapshot();
+        byte[] offeredBefore = offered ? Files.readAllBytes(properties) : null;
+        ResourcePack.Built built = steps.run(BUILD, () -> pack.build(description));
+        StringBuilder out = new StringBuilder();
+        out.append("pack built: ").append(built.files()).append(" files, ").append(built.bytes())
+                .append(" bytes, pack_format ").append(pack.packFormat()).append("\nurl: ").append(built.url())
+                .append("\nsha1: ").append(built.sha1());
+        // Until the players have it, a failure takes the build back: what they were sent, what the host serves and
+        // what server.properties offers then agree again.
+        try {
+            if (offered && steps.run(OFFER, () -> PackProperties.write(properties, built.url(), built.sha1(), required))) {
+                out.append("\nserver.properties updated to offer this build");
+            }
+            if (connected) {
+                Ops.PackResult r = steps.run(APPLY, () -> {
+                    Ops.PackResult sent = hub.call(Ops.PACK_APPLY,
+                            new Ops.PackParams(built.url(), built.sha1(), required));
+                    pack.applied(new ResourcePack.Applied(description, required));
+                    return sent;
+                });
+                out.append("\napplied: sent to ").append(r.playersSent())
+                        .append(" players; players who join later get it too, also after a restart");
+            } else if (apply) {
+                out.append("\nnot applied: no server agent connected");
+            }
+        } catch (ToolException e) {
+            throw new ToolException(e.getMessage() + "\n" + takeBack(pack, before, properties, offeredBefore));
+        }
+        if (copy != null) {
+            steps.run(SAVE, () -> OutputFile.copy(built.zip(), copy));
+            out.append("\nsaved: ").append(copy);
+        }
+        try {
+            return out.append('\n').append(check(pack, limit)).toString();
+        } catch (IOException e) {
+            return out.append("\nproblems not listed (").append(Steps.reason(e)).append("); pack check=true lists them")
+                    .toString();
+        }
+    }
+
+    /**
+     * After a build whose send failed: serve the earlier build again and put server.properties back, so the URL the
+     * agent hands joining players, the pack host and server.properties agree again. Returns what it did.
+     */
+    static String takeBack(ResourcePack pack, ResourcePack.Snapshot before, Path properties, byte[] offeredBefore) {
+        try {
+            pack.restore(before);
+            if (offeredBefore != null) {
+                OutputFile.write(properties, to -> Files.write(to, offeredBefore));
+            }
+            return "taken back: the pack host serves the earlier build again"
+                    + (offeredBefore == null ? "" : " and server.properties offers it again")
+                    + ", as the players have it; run pack again to send this one";
+        } catch (IOException | RuntimeException e) {
+            return "taking it back failed too (" + Steps.reason(e) + "): the pack host serves the new build, which the "
+                    + "players were not sent; run pack again";
+        }
+    }
+
+    /**
+     * After any build that changed what the pack host serves: keep a server.properties that offers our pack pointing
+     * at that build. Returns true when it did.
+     */
+    static boolean keepOffered(ResourcePack pack, Path properties, ResourcePack.Built built, boolean required)
+            throws IOException {
+        return pack.ours(PackProperties.url(properties)) && PackProperties.write(properties, built.url(), built.sha1(),
+                required);
+    }
+
     /** The texture tool: one of draw, generate or recolor, then an optional animation; or only animate. */
-    private static String texture(Args args, ResourcePack pack, PackSource source, CoreConfig config) throws IOException {
+    static final String WRITE_TEXTURE = "write the texture and its model";
+    static final String ANIMATE = "write the animation";
+    static final String WRITE_PNG = "write the png";
+    static final String WRITE_MODEL = "write the model and item definition";
+
+    private static String texture(Args args, ResourcePack pack, PackSource source, CoreConfig config)
+            throws IOException, InterruptedException {
         if (args.str("name").toLowerCase(Locale.ROOT).endsWith(".png")) {
             return looseFile(args, source, config.resolve(args.str("name")));
         }
@@ -185,9 +265,20 @@ public final class TextureTools {
             model = model(args, id, "item");
         }
         Animation animation = args.has("animate") ? animation(args, t == null ? firstFrame(source, id) : t) : null;
+        OutputFile.check(source.texturePath(id), "texture");
+        Steps steps = new Steps("texture");
+        if (t != null) {
+            steps.then(WRITE_TEXTURE);
+        }
+        if (animation != null) {
+            steps.then(ANIMATE).ifFails(ANIMATE, t == null ? "the texture is as it was"
+                    : "the texture is written as a still image; texture name=" + id + " animate=... animates it");
+        }
         StringBuilder out = new StringBuilder();
         if (t != null) {
-            String itemModel = pack.writeTexture(id, t, model);
+            Texture written = t;
+            String finalModel = model;
+            String itemModel = steps.run(WRITE_TEXTURE, () -> pack.writeTexture(id, written, finalModel));
             if (ways.contains("rows")) {
                 out.append("wrote ").append(id).append(' ').append(t.width()).append('x').append(t.height());
             } else {
@@ -204,7 +295,7 @@ public final class TextureTools {
             }
         }
         if (animation != null) {
-            source.writeAnimation(id, animation);
+            steps.run(ANIMATE, () -> source.writeAnimation(id, animation));
             out.append(out.isEmpty() ? "" : "\n").append("animated ").append(id).append(": ")
                     .append(animation.frames().size()).append(" frames, ").append(args.integer("frametime", 2))
                     .append(" ticks each");
@@ -216,10 +307,11 @@ public final class TextureTools {
      * A texture written as a plain PNG at a workspace path, outside the pack: no model, no animation. Saves the
      * write-then-copy round trip when a task wants the image itself.
      */
-    private static String looseFile(Args args, PackSource source, Path file) throws IOException {
+    private static String looseFile(Args args, PackSource source, Path file) throws IOException, InterruptedException {
         if (args.has("animate")) {
             throw new ToolException("animate needs a pack texture name such as item/ruby, not a .png path");
         }
+        OutputFile.check(file, "png");
         Texture t;
         List<String> warnings = List.of();
         if (args.has("rows")) {
@@ -235,8 +327,12 @@ public final class TextureTools {
         } else {
             throw new ToolException("give rows and palette to draw, kind and color to generate, or copy and color to recolor");
         }
-        Files.createDirectories(file.toAbsolutePath().getParent());
-        javax.imageio.ImageIO.write(t.toImage(), "png", file.toFile());
+        Texture image = t;
+        new Steps("texture").then(WRITE_PNG).run(WRITE_PNG, () -> OutputFile.write(file, to -> {
+            if (!javax.imageio.ImageIO.write(image.toImage(), "png", to.toFile())) {
+                throw new IOException("no png writer");
+            }
+        }));
         StringBuilder out = new StringBuilder("wrote ").append(file).append(": ").append(Stats.of(t));
         warnings.forEach(w -> out.append("\nwarning: ").append(w));
         if (args.has("kind")) {

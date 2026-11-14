@@ -1,0 +1,208 @@
+package io.github.imnotstable.msc.core.tools;
+
+import io.github.imnotstable.msc.core.tool.ToolException;
+import io.github.imnotstable.msc.protocol.transport.OpException;
+import io.github.imnotstable.msc.textures.TextureException;
+import java.io.IOException;
+import java.nio.file.AccessDeniedException;
+import java.nio.file.DirectoryNotEmptyException;
+import java.nio.file.FileAlreadyExistsException;
+import java.nio.file.FileSystemException;
+import java.nio.file.NoSuchFileException;
+import java.nio.file.NotDirectoryException;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * The side effects of one state-changing tool call, in the order they run. The rule every such tool follows:
+ * <ol>
+ *   <li>check everything that can be checked (arguments, and that every file the call writes can be written) before
+ *       the first step;</li>
+ *   <li>run the steps in an order where no later step can fail for a reason an earlier check could have caught;</li>
+ *   <li>a step that still fails ends the call with a message that names the step, the reason, what was done, what
+ *       was not, and what that leaves ({@link #ifFails}), never a bare {@code internal:} error.</li>
+ * </ol>
+ * A refusal ({@link ToolException}) in the first step, before anything changed, is passed on as it is. An interrupt
+ * is passed on too: the session is ending. Tests make any step fail ({@link #failAt}) and read which ran ({@link #trace}).
+ */
+final class Steps {
+    /** A step. */
+    @FunctionalInterface
+    interface Action {
+        void run() throws Exception;
+    }
+
+    /** A step that hands a value to the later ones. */
+    @FunctionalInterface
+    interface Result<T> {
+        T get() throws Exception;
+    }
+
+    private static final ThreadLocal<String> FAIL_AT = new ThreadLocal<>();
+    private static final ThreadLocal<List<String>> TRACE = new ThreadLocal<>();
+
+    private final String tool;
+    private final List<String> plan = new ArrayList<>();
+    private final Map<String, String> consequences = new HashMap<>();
+    private final List<String> done = new ArrayList<>();
+    /** Steps that ran and found nothing to do: neither done nor still to do. */
+    private final List<String> idle = new ArrayList<>();
+
+    Steps(String tool) {
+        this.tool = tool;
+    }
+
+    /** Declare the next step, so a failure before it lists it as not done. */
+    Steps then(String step) {
+        plan.add(step);
+        return this;
+    }
+
+    /** What a failure of {@code step} leaves behind and how to recover, added to its message. */
+    Steps ifFails(String step, String consequence) {
+        consequences.put(step, consequence);
+        return this;
+    }
+
+    /** True when {@code step} was declared. */
+    boolean planned(String step) {
+        return plan.contains(step);
+    }
+
+    void run(String step, Action action) throws InterruptedException {
+        run(step, () -> {
+            action.run();
+            return null;
+        });
+    }
+
+    <T> T run(String step, Result<T> action) throws InterruptedException {
+        return execute(step, action, true);
+    }
+
+    /**
+     * A step that may find nothing to do: {@code action} returns a note of what it did, or null when it did nothing,
+     * and only then is the step counted as done.
+     */
+    String note(String step, Result<String> action) throws InterruptedException {
+        String note = execute(step, action, false);
+        (note != null ? done : idle).add(step);
+        return note;
+    }
+
+    /** Like {@link #note}, for a step that returns whether it did something. */
+    boolean ran(String step, Result<Boolean> action) throws InterruptedException {
+        boolean ran = execute(step, action, false);
+        (ran ? done : idle).add(step);
+        return ran;
+    }
+
+    private <T> T execute(String step, Result<T> action, boolean countAsDone) throws InterruptedException {
+        try {
+            begin(step);
+            T value = action.get();
+            if (countAsDone) {
+                markDone(step);
+            }
+            return value;
+        } catch (InterruptedException e) {
+            throw e;
+        } catch (ToolException | TextureException e) {
+            // A refusal: before anything changed, it is the whole answer.
+            ToolException refusal = e instanceof ToolException t ? t : new ToolException(e.getMessage());
+            throw done.isEmpty() ? refusal : failed(step, refusal);
+        } catch (Exception e) {
+            throw failed(step, e);
+        }
+    }
+
+    private void markDone(String step) {
+        done.add(step);
+    }
+
+    /** Declares {@code step} if it was not, records it for {@link #trace}, and fails it when a test asks. */
+    private void begin(String step) throws IOException {
+        if (!plan.contains(step)) {
+            plan.add(step);
+        }
+        List<String> trace = TRACE.get();
+        if (trace != null) {
+            trace.add(tool + ": " + step);
+        }
+        if (step.equals(FAIL_AT.get())) {
+            throw new IOException("injected failure");
+        }
+    }
+
+    /** A step whose failure does not undo the call's purpose: it adds a note line instead of failing the call. */
+    String optional(String step, Action action) throws InterruptedException {
+        try {
+            begin(step);
+            action.run();
+            markDone(step);
+            return "";
+        } catch (InterruptedException e) {
+            throw e;
+        } catch (Exception e) {
+            return "\nnot done: " + step + " (" + reason(e) + ")";
+        }
+    }
+
+    private ToolException failed(String step, Exception e) {
+        List<String> notDone = new ArrayList<>();
+        for (String s : plan) {
+            if (!done.contains(s) && !idle.contains(s)) {
+                notDone.add(s);
+            }
+        }
+        StringBuilder text = new StringBuilder(reason(e)).append('\n').append(tool).append(" stopped at: ")
+                .append(step).append('\n');
+        text.append("done: ").append(done.isEmpty() ? "nothing" : String.join("; ", done)).append('\n');
+        text.append("not done: ").append(String.join("; ", notDone));
+        String consequence = consequences.get(step);
+        if (consequence != null) {
+            text.append('\n').append(consequence);
+        }
+        return new ToolException(text.toString());
+    }
+
+    /** One readable line for why a step failed. */
+    static String reason(Exception e) {
+        return switch (e) {
+            case ToolException t -> t.getMessage();
+            case TextureException t -> t.getMessage();
+            case OpException op -> "agent answered " + op.code() + ": " + op.detail();
+            case DirectoryNotEmptyException d -> "a folder that is not empty is in the way: " + d.getFile();
+            case NoSuchFileException n -> "no such file or folder: " + n.getFile();
+            case NotDirectoryException n -> "not a folder: " + n.getFile();
+            case FileAlreadyExistsException f -> "already exists: " + f.getFile();
+            case AccessDeniedException a -> "access denied: " + a.getFile();
+            case FileSystemException f -> f.getMessage();
+            case IOException io -> io.getMessage() == null ? io.getClass().getSimpleName() : io.getMessage();
+            default -> e.getClass().getSimpleName() + (e.getMessage() == null ? "" : ": " + e.getMessage());
+        };
+    }
+
+    /** For tests: make {@code step} of the calls on this thread fail before it runs; null: none. */
+    static void failAt(String step) {
+        if (step == null) {
+            FAIL_AT.remove();
+        } else {
+            FAIL_AT.set(step);
+        }
+    }
+
+    /** For tests: record the steps that run on this thread, as {@code tool: step}, until closed. */
+    static List<String> trace() {
+        List<String> trace = new ArrayList<>();
+        TRACE.set(trace);
+        return trace;
+    }
+
+    /** For tests: stop recording. */
+    static void stopTrace() {
+        TRACE.remove();
+    }
+}

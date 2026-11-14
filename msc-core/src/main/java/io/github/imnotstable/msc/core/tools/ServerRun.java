@@ -51,17 +51,45 @@ final class ServerRun {
         this.marks = marks;
     }
 
+    static final String ACCEPT_EULA = "write the user's EULA acceptance";
+    static final String LEFTOVER_SERVER = "stop the server an earlier session left running";
+    static final String TAKE_OVER_PACK = "take over the pack an earlier session served";
+    static final String REFRESH_AGENT = "update the installed agent jar";
+    static final String START = "start the server";
+    static final String DETACH = "detach the server";
+    static final String KEEP_SERVING = "hand the pack to a standalone host";
+    static final String OFFER_PACK = "offer the pack in server.properties";
+
+    /** Checked first: not running, eula.txt writable. Then: accept the EULA, then {@link #startAndReport}. */
     String start(Args args) throws IOException, InterruptedException {
+        if (server.running()) {
+            throw new ToolException("server is already running. Use server_stop or dev_cycle.");
+        }
+        Steps steps = new Steps("server_start");
         String accepted = "";
         if (args.bool("acceptEula", false) && server.platform().needsEula()) {
-            Path file = config.serverDir().resolve("eula.txt");
-            if (!ServerManager.eulaAccepted(file)) {
-                Files.createDirectories(config.serverDir());
-                Files.writeString(file, "# Minecraft EULA (" + MachineEula.EULA_URL + ") accepted by the user\neula=true\n");
-            }
-            accepted = eula.recordForMachine();
+            Path file = OutputFile.check(config.serverDir().resolve("eula.txt"), "eula.txt");
+            steps.then(ACCEPT_EULA);
+            plan(steps);
+            accepted = steps.run(ACCEPT_EULA, () -> {
+                if (!ServerManager.eulaAccepted(file)) {
+                    Files.createDirectories(config.serverDir());
+                    Files.writeString(file, "# Minecraft EULA (" + MachineEula.EULA_URL + ") accepted by the user\neula=true\n");
+                }
+                return eula.recordForMachine();
+            });
         }
-        return accepted + startAndReport(args.integer("timeoutSeconds", 180), Budget.DEFAULT_CHARS).text();
+        return accepted + startAndReport(steps, args.integer("timeoutSeconds", 180), Budget.DEFAULT_CHARS).text();
+    }
+
+    /** Declares the steps of {@link #startAndReport}, with what a failure of each leaves. */
+    static Steps plan(Steps steps) {
+        return steps.then(LEFTOVER_SERVER).then(TAKE_OVER_PACK).then(REFRESH_AGENT).then(START)
+                .ifFails(TAKE_OVER_PACK, "the server is not started; if the earlier session's pack host was stopped, "
+                        + "server.properties may offer a pack no one serves: server_start again serves it")
+                .ifFails(REFRESH_AGENT, "the server is not started; the installed agent jar is the earlier one, or "
+                        + "half copied: server_setup installs it again")
+                .ifFails(START, "the server is not running; server_start starts it");
     }
 
     String stop(Args args) throws InterruptedException {
@@ -74,22 +102,44 @@ final class ServerRun {
         return leftover != null ? leftover : host != null ? host : "server was not running";
     }
 
+    /**
+     * Checked first: running, server.properties writable when a pack was built. Then: detach the server, hand the
+     * pack to a standalone host, offer it in server.properties. A host that does not come up leaves the pack served
+     * by this session, which the message says; the call still detaches.
+     */
     String detach(Args args) throws IOException, InterruptedException {
-        if (!server.detach()) {
+        if (!server.running()) {
+            throw new ToolException("the server is not running. Start it with server_start first.");
+        }
+        ResourcePack.Built built = pack.lastBuilt();
+        if (built != null && Files.exists(serverProperties())) {
+            OutputFile.check(serverProperties(), "server.properties");
+        }
+        Steps steps = new Steps("server_detach").then(DETACH).then(KEEP_SERVING).then(OFFER_PACK)
+                .ifFails(KEEP_SERVING, "the server is detached, but the pack is served by this session only, until it "
+                        + "ends; server_stop then server_start and server_detach again keeps it up")
+                .ifFails(OFFER_PACK, "the server and the pack host run on, but a restart outside MSC offers no pack");
+        if (!steps.run(DETACH, server::detach)) {
             throw new ToolException("the server is not running. Start it with server_start first.");
         }
         String java = ProcessHandle.current().info().command().orElse(config.javaCommand());
-        boolean hosting;
-        try {
-            hosting = pack.keepServing(java, System.getProperty("java.class.path"));
-        } catch (ToolException e) {
-            return "server detached: it keeps running after this session ends\n" + e.getMessage();
+        // A host that does not come up is an answer, not a failure: this session keeps serving the pack.
+        String[] noHost = new String[1];
+        boolean hosting = steps.run(KEEP_SERVING, () -> {
+            try {
+                return pack.keepServing(java, System.getProperty("java.class.path"));
+            } catch (ToolException e) {
+                noHost[0] = e.getMessage();
+                return false;
+            }
+        });
+        if (noHost[0] != null) {
+            return "server detached: it keeps running after this session ends\n" + noHost[0];
         }
         String properties = "";
-        ResourcePack.Built built = pack.lastBuilt();
         ResourcePack.Applied applied = pack.applied();
-        if (hosting && built != null && PackProperties.write(serverProperties(), built.url(), built.sha1(),
-                applied != null && applied.required())) {
+        if (hosting && built != null && steps.run(OFFER_PACK, () -> PackProperties.write(serverProperties(),
+                built.url(), built.sha1(), applied != null && applied.required()))) {
             properties = "\nserver.properties now offers the pack too, so a restart outside MSC keeps it.";
         }
         return "server detached: it keeps running after this session ends"
@@ -98,11 +148,26 @@ final class ServerRun {
                 + "server_start, dev_cycle or server_stop stops the server (world saved) and the pack host.";
     }
 
-    Report startAndReport(int timeoutSeconds, int maxChars) throws IOException, InterruptedException {
-        String leftover = LogText.join(server.stopLeftover(), pack.stopLeftoverHost());
-        String packNote = syncPackProperties();
-        boolean agentUpdated = refreshAgent();
-        ServerManager.StartResult r = server.start(Duration.ofSeconds(timeoutSeconds));
+    /**
+     * The start, as steps of {@code steps}: stop a leftover server, take over a leftover pack host (serving the pack
+     * again and pointing server.properties at it before the server reads the file), update the agent jar, start.
+     */
+    Report startAndReport(Steps steps, int timeoutSeconds, int maxChars) throws IOException, InterruptedException {
+        if (!steps.planned(START)) {
+            plan(steps);
+        }
+        String leftoverServer = steps.note(LEFTOVER_SERVER, server::stopLeftover);
+        String[] packNotes = new String[2];
+        steps.note(TAKE_OVER_PACK, () -> {
+            packNotes[0] = pack.stopLeftoverHost();
+            boolean offered = pack.ours(PackProperties.url(serverProperties()));
+            packNotes[1] = syncPackProperties();
+            return packNotes[0] != null || offered ? "" : null;
+        });
+        String leftover = LogText.join(leftoverServer, packNotes[0]);
+        String packNote = packNotes[1];
+        boolean agentUpdated = steps.ran(REFRESH_AGENT, this::refreshAgent);
+        ServerManager.StartResult r = steps.run(START, () -> server.start(Duration.ofSeconds(timeoutSeconds)));
         marks.started(r.logMark());
         List<String> lines = server.log().since(r.logMark());
         LogCondenser.Condensed analysis = LogCondenser.analyze(lines, maxChars);
@@ -201,8 +266,18 @@ final class ServerRun {
             return "";
         }
         try {
+            ResourcePack.Snapshot before = pack.snapshot();
+            Path file = serverProperties();
+            byte[] offeredBefore = pack.ours(PackProperties.url(file)) ? Files.readAllBytes(file) : null;
             ResourcePack.Built built = pack.build(applied.description());
-            hub.call(Ops.PACK_APPLY, new Ops.PackParams(built.url(), built.sha1(), applied.required()));
+            // The host now serves only this build: a server.properties that offers our pack follows it first.
+            TextureTools.keepOffered(pack, file, built, applied.required());
+            try {
+                hub.call(Ops.PACK_APPLY, new Ops.PackParams(built.url(), built.sha1(), applied.required()));
+            } catch (RuntimeException e) {
+                return "\nresource pack not sent again (" + Steps.reason(e) + "); "
+                        + TextureTools.takeBack(pack, before, file, offeredBefore);
+            }
             return "\nresource pack sent again: players who join get it";
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
