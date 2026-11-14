@@ -27,7 +27,9 @@ GitHub Actions is billing-blocked (ADR 0025 addendum), so CI caching does not he
 2. **The mirror goes first and replaces Maven Central.** The init script puts Google's Maven Central mirror first in
    plugin management and dependency resolution management and rewrites every repository on `repo.maven.apache.org`
    to it. Rewriting alone was not enough: the Plugin Portal redirects artifacts it does not host (Loom's
-   `org.cadixdev:lorenz`) to Maven Central itself. It lives outside the repository's build files because only the
+   `org.cadixdev:lorenz`) to Maven Central itself. The Plugin Portal is then added after the mirror, because a settings file without its own
+   plugin repositories would otherwise lose Gradle's default Portal and fail on Portal-only plugins (foojay in the
+   scaffolded projects of `:msc-core:e2eTest`). It lives outside the repository's build files because only the
    cloud needs it.
 3. **The hook warms Gradle once per change of the build.** It runs `./gradlew testClasses` (every dependency, the
    Gradle distribution, Loom's and ModDevGradle's/ForgeGradle's Minecraft setup, and the build cache), then records
