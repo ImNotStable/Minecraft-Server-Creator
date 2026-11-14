@@ -3,12 +3,14 @@ package io.github.imnotstable.msc.bench.run;
 import io.github.imnotstable.msc.bench.JsonNumbers;
 import io.github.imnotstable.msc.bench.Text;
 import io.github.imnotstable.msc.process.rcon.RconClient;
+import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -134,6 +136,57 @@ final class BenchConfigRules {
                     + "would get no wrapper");
         }
         return problems;
+    }
+
+    /** What builds the {@code paths} entries of the shipped {@code bench.json}, named when one is missing. */
+    private static final Map<String, String> BUILT_BY = Map.of(
+            "coreLib", "./gradlew :msc-core:installDist",
+            "agentJar", "./gradlew :msc-agent-paper:shadowJar");
+
+    /**
+     * #519: the {@code paths} entries the selected modes use, in their MCP config template or server plugins, that do
+     * not exist. Checked by {@code run} only, before the run folder is made, so {@code list}, {@code check} and
+     * {@code report} still load a config whose toolset parts are not built yet; with such a path every toolset attempt
+     * would run the agent without its tools.
+     */
+    static List<String> missingPaths(BenchConfig full, Collection<String> modes) throws IOException {
+        List<String> problems = new ArrayList<>();
+        for (String name : modes) {
+            BenchConfig.Mode mode = full.modes().get(name);
+            if (mode == null) {
+                continue;
+            }
+            Map<String, String> uses = new LinkedHashMap<>();
+            if (mode.mcpConfigTemplate() != null) {
+                for (String key : placeholders(Files.readString(Path.of(mode.mcpConfigTemplate())))) {
+                    uses.putIfAbsent(key, "modes." + name + ".mcpConfigTemplate");
+                }
+            }
+            for (String plugin : mode.serverPlugins()) {
+                for (String key : placeholders(plugin)) {
+                    uses.putIfAbsent(key, "modes." + name + ".serverPlugins");
+                }
+            }
+            uses.forEach((key, usedBy) -> {
+                String path = full.paths().get(key);
+                String problem = "paths." + key + ": no such file or folder " + path + " (used by " + usedBy + "); "
+                        + (BUILT_BY.containsKey(key) ? "run " + BUILT_BY.get(key) + " first" : "build it first")
+                        + " or fix the path";
+                if (path != null && !Files.exists(Path.of(path)) && problems.stream().noneMatch(p -> p.startsWith("paths." + key + ":"))) {
+                    problems.add(problem);
+                }
+            });
+        }
+        return problems;
+    }
+
+    private static List<String> placeholders(String text) {
+        List<String> keys = new ArrayList<>();
+        Matcher placeholder = PLACEHOLDER.matcher(text);
+        while (placeholder.find()) {
+            keys.add(placeholder.group(1));
+        }
+        return keys;
     }
 
     /**
