@@ -7,13 +7,17 @@ import com.google.gson.JsonParser;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 /**
  * Bench settings, read from {@code bench.json}. Relative paths are resolved against the folder
- * that holds the config file. Missing fields get the defaults below.
+ * that holds the config file. Missing fields get the defaults below; a value that can never work (an empty RCON
+ * password, a port out of range or shared, a timeout that is not positive, a missing file...) is refused when the
+ * config loads, naming its key ({@link BenchConfigRules}).
  *
  * @param agent             how to start the AI agent
  * @param modes             named ways to run each task, such as {@code baseline} and {@code toolset}
@@ -62,11 +66,14 @@ public record BenchConfig(
             String paperCacheSeed,
             String requireMcp) {
 
+        /** Keeps null entries, so that loading reports them by key ({@link BenchConfigRules}) instead of failing. */
         public Mode {
-            extraArgs = extraArgs == null ? List.of() : List.copyOf(extraArgs);
-            env = env == null ? Map.of() : Map.copyOf(env);
-            serverEnv = serverEnv == null ? Map.of() : Map.copyOf(serverEnv);
-            serverPlugins = serverPlugins == null ? List.of() : List.copyOf(serverPlugins);
+            extraArgs = extraArgs == null ? List.of() : Collections.unmodifiableList(new ArrayList<>(extraArgs));
+            env = env == null ? Map.of() : Collections.unmodifiableMap(new LinkedHashMap<>(env));
+            serverEnv = serverEnv == null ? Map.of() : Collections.unmodifiableMap(new LinkedHashMap<>(serverEnv));
+            serverPlugins = serverPlugins == null
+                    ? List.of()
+                    : Collections.unmodifiableList(new ArrayList<>(serverPlugins));
         }
     }
 
@@ -82,7 +89,8 @@ public record BenchConfig(
      *                            EULA through msc ({@code ~/.msc/eula.json}), whatever the config file says
      * @param serverPort          game port, kept off 25565 so a normal server can keep running
      * @param rconPort            RCON port used by checks and setup
-     * @param rconPassword        RCON password written into {@code server.properties}
+     * @param rconPassword        RCON password written into {@code server.properties}; never empty or blank, since
+     *                            the server then turns RCON off
      * @param startTimeoutSeconds how long to wait for RCON after starting the server
      */
     public record Server(
@@ -104,12 +112,14 @@ public record BenchConfig(
 
     /**
      * Reads the config, taking {@code server.acceptEula} from {@code <home>/.msc/eula.json} (see {@link MachineEula})
-     * and never from the file, so no config can accept the EULA for anyone.
+     * and never from the file, so no config can accept the EULA for anyone. Refuses, naming each key and why, every
+     * value that can never work ({@link BenchConfigRules}), so a run fails here and not after a server's start timeout.
      */
     public static BenchConfig load(Path file, Path home) throws IOException {
         BenchConfig raw;
+        JsonObject json;
         try {
-            JsonObject json = JsonParser.parseString(Files.readString(file)).getAsJsonObject();
+            json = JsonParser.parseString(Files.readString(file)).getAsJsonObject();
             raw = new Gson().fromJson(json, BenchConfig.class);
         } catch (JsonParseException | IllegalStateException e) {
             throw new IOException("Bad bench config " + file + ": " + e.getMessage(), e);
@@ -117,7 +127,16 @@ public record BenchConfig(
         if (raw == null) {
             throw new IOException("Empty bench config " + file);
         }
-        return raw.withDefaults(file.toAbsolutePath().getParent(), MachineEula.accepted(home));
+        List<String> problems = BenchConfigRules.beforeDefaults(raw, json);
+        BenchConfig full = null;
+        if (problems.isEmpty()) {
+            full = raw.withDefaults(file.toAbsolutePath().getParent(), MachineEula.accepted(home));
+            problems = BenchConfigRules.afterDefaults(full);
+        }
+        if (!problems.isEmpty()) {
+            throw new IOException("Bad bench config " + file + ":\n  " + String.join("\n  ", problems));
+        }
+        return full;
     }
 
     /** Fills defaults and turns relative paths into absolute ones. */
