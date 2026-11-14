@@ -82,6 +82,12 @@ class MainTest {
         assertThat(runs).doesNotExist();
     }
 
+    @Test
+    void modeAndTaskNamesAreReadWithoutSurroundingSpaces() {
+        // "--modes baseline, baseline" passed the repeat check as two different names.
+        assertThat(Main.names("baseline, baseline ,toolset")).containsExactly("baseline", "baseline", "toolset");
+    }
+
     private static int freePort() throws IOException {
         try (ServerSocket socket = new ServerSocket(0, 1, InetAddress.getLoopbackAddress())) {
             return socket.getLocalPort();
