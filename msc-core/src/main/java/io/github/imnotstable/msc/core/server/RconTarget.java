@@ -1,5 +1,6 @@
 package io.github.imnotstable.msc.core.server;
 
+import io.github.imnotstable.msc.process.ServerAddress;
 import io.github.imnotstable.msc.process.ServerPropertiesFile;
 import io.github.imnotstable.msc.process.rcon.RconClient;
 import java.io.IOException;
@@ -16,15 +17,13 @@ public record RconTarget(String host, int port, String password) {
 
     /** How long connecting, logging in and waiting for the reply to {@code stop} may each take. */
     static final Duration TIMEOUT = Duration.ofSeconds(3);
-    /** The server's {@code rcon.port} when the file has none or not a number. */
-    static final int DEFAULT_PORT = 25575;
 
     /**
      * RCON settings from a server directory's {@code server.properties}, read as the 26.3 server reads them, or null
      * when the server runs no RCON: {@code enable-rcon} not true (any case, as {@link Boolean#parseBoolean}), no
-     * password, or a port outside 1 to 65535 (the server logs "rcon disabled"). A port that is not a number is the
-     * default 25575, as for the server. The host is {@code server-ip}, the address the server binds RCON to, or
-     * loopback when that is empty or a wildcard address.
+     * password, or a port outside 1 to 65535 (the server logs "rcon disabled"). Host and port are
+     * {@link ServerAddress#rcon}'s, the reading player_test's game address shares: a port that is not a number is the
+     * default 25575, and the host is {@code server-ip} or loopback when that is empty or a wildcard address.
      */
     public static RconTarget of(Path serverDir) {
         Map<String, String> p;
@@ -37,25 +36,8 @@ public record RconTarget(String host, int port, String password) {
         if (!Boolean.parseBoolean(p.get("enable-rcon")) || password.isEmpty()) {
             return null;
         }
-        int port;
-        try {
-            port = Integer.parseInt(p.getOrDefault("rcon.port", ""));
-        } catch (NumberFormatException e) {
-            port = DEFAULT_PORT;
-        }
-        if (port <= 0 || port > 65535) {
-            return null;
-        }
-        return new RconTarget(host(p.getOrDefault("server-ip", "")), port, password);
-    }
-
-    /** Where to reach a server bound to {@code serverIp}: that address, or loopback for none or a wildcard. */
-    static String host(String serverIp) {
-        return switch (serverIp) {
-            case "", "0.0.0.0" -> "127.0.0.1";
-            case "::", "[::]", "::0" -> "::1";
-            default -> serverIp;
-        };
+        ServerAddress address = ServerAddress.rcon(p);
+        return address == null ? null : new RconTarget(address.host(), address.port(), password);
     }
 
     /**
