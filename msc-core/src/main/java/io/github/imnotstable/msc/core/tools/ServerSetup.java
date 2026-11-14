@@ -7,6 +7,7 @@ import io.github.imnotstable.msc.core.server.MachineEula;
 import io.github.imnotstable.msc.core.server.PaperDownloader;
 import io.github.imnotstable.msc.core.server.Platform;
 import io.github.imnotstable.msc.core.server.ServerManager;
+import io.github.imnotstable.msc.core.server.ServerFiles;
 import io.github.imnotstable.msc.core.server.ServerProperties;
 import io.github.imnotstable.msc.core.tool.Args;
 import io.github.imnotstable.msc.core.tool.ToolException;
@@ -16,7 +17,6 @@ import io.github.imnotstable.msc.templates.Templates;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
@@ -37,7 +37,7 @@ final class ServerSetup {
         this.server = server;
         this.paper = paper;
         this.fabric = fabric;
-        this.loaders = new LoaderInstaller(LoaderInstaller.Urls.DEFAULT, config.dataDir().resolve("cache"),
+        this.loaders = new LoaderInstaller(config.loaderUrls(), config.dataDir().resolve("cache"),
                 config.javaCommand());
         this.eula = eula;
     }
@@ -89,6 +89,7 @@ final class ServerSetup {
                     .append(mode.settings().get("difficulty")).append(" difficulty from the next start\n");
         }
         out.append(installed);
+        // The addon folder exists after setup even without an agent, for the deploys that follow.
         installAgent(platform, Files.createDirectories(dir.resolve(platform.addonDir())), out);
         eulaStep(dir.resolve("eula.txt"), acceptEula, out);
         remember(chosen);
@@ -129,8 +130,7 @@ final class ServerSetup {
 
     private void paper(String version, Path dir, StringBuilder out) throws IOException, InterruptedException {
         PaperDownloader.Download d = paper.download(version);
-        Files.createDirectories(dir);
-        Files.copy(d.jar(), dir.resolve(Platform.PAPER.serverJar()), StandardCopyOption.REPLACE_EXISTING);
+        ServerFiles.place(d.jar(), dir, Platform.PAPER.serverJar());
         out.append("paper ").append(d.version()).append(" build ").append(d.build())
                 .append(d.cached() ? " (cached)" : " (downloaded)").append('\n');
     }
@@ -141,8 +141,7 @@ final class ServerSetup {
         String api = fabricApi(version);
         FabricDownloader.Download launcher = fabric.launcher(version, loader);
         FabricDownloader.Download apiJar = fabric.api(api);
-        Files.createDirectories(dir);
-        Files.copy(launcher.jar(), dir.resolve(Platform.FABRIC.serverJar()), StandardCopyOption.REPLACE_EXISTING);
+        ServerFiles.place(launcher.jar(), dir, Platform.FABRIC.serverJar());
         out.append("fabric launcher for ").append(version).append(", loader ").append(loader)
                 .append(launcher.cached() ? " (cached)" : " (downloaded)")
                 .append("; it downloads the Minecraft server on first start\n");
@@ -160,7 +159,7 @@ final class ServerSetup {
 
     private static void installFabricApi(String api, FabricDownloader.Download apiJar, Path mods, StringBuilder out)
             throws IOException {
-        Files.copy(apiJar.jar(), Files.createDirectories(mods).resolve("fabric-api.jar"), StandardCopyOption.REPLACE_EXISTING);
+        ServerFiles.place(apiJar.jar(), mods, "fabric-api.jar");
         out.append("fabric api ").append(api).append(apiJar.cached() ? " (cached)" : " (downloaded)").append('\n');
     }
 
@@ -207,7 +206,7 @@ final class ServerSetup {
     private void installAgent(Platform platform, Path addons, StringBuilder out) throws IOException {
         Path agent = findAgentJar(platform);
         if (agent != null) {
-            Files.copy(agent, addons.resolve(platform.agentJar()), StandardCopyOption.REPLACE_EXISTING);
+            ServerFiles.place(agent, addons, platform.agentJar());
             out.append("agent installed in ").append(platform.addonDir()).append("/\n");
         } else {
             out.append("warning: msc ").append(platform.id()).append(" agent not found, so world and build tools will "
