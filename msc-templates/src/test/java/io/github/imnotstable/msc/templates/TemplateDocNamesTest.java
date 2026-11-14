@@ -86,7 +86,8 @@ class TemplateDocNamesTest {
         if (docNames != null) {
             known.addAll(DocCode.projectWords(docNames));
         }
-        for (TemplateRecipesTest.Edit e : TemplateRecipesTest.edits(id)) {
+        for (TemplateRecipesTest.Edit e : Stream.concat(TemplateRecipesTest.edits(id).stream(),
+                TemplateRecipesTest.ruleChanges(id).stream()).toList()) {
             known.addAll(DocCode.words(e.replacement()));
         }
         known.addAll(PLACEHOLDERS);

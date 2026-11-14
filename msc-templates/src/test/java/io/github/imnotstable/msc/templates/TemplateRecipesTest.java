@@ -6,6 +6,7 @@ import java.io.IOException;
 import java.net.URISyntaxException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
@@ -14,15 +15,18 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /**
  * Follows each template's CLAUDE.md on a scaffolded project the way the doc words it, and runs the project's tests:
  * code a doc shows must compile against the template's pinned versions, and a documented change must not turn an
  * unrelated test red (#401, #480). Each {@code java} block of a doc is a whole file and goes in as written; the
  * template's {@code doc-names} test files, which use every name the docs list, go in too. For the game templates the
- * "add a setting" and "add a stage" steps and a rule change with its SharedRulesTest rows (#481) are edits; for
- * paper-game also settings with three kinds of range, a range open on one side, an unranged decimal (#450), a
- * {@code /game} subcommand that parses its own number and a score in {@code Progress} (#431, #432). Only runs via
+ * "add a setting" and "add a stage" steps are edits; for paper-game also settings with three kinds of range, a range
+ * open on one side, an unranged decimal (#450), a {@code /game} subcommand that parses its own number and a score in
+ * {@code Progress} (#431, #432). Each game template's "To change a rule" examples, one per rule its doc calls
+ * changeable, are applied together in a build of their own (#481, #491): they touch different constants and rows, so
+ * one build per template proves them all. Only runs via
  * {@code ./gradlew :msc-templates:verifyTemplates}. When a template's text changes, an edit below that no longer
  * matches fails with the file and the text it looked for.
  */
@@ -60,7 +64,7 @@ class TemplateRecipesTest {
     }
 
     private static List<Edit> paperGameEdits() {
-        return Stream.concat(ruleChange("src/main/resources/config.yml").stream(), Stream.of(
+        return Stream.of(
                 // Settings: each key in KEYS, a record component read in from, its default in config.yml and in the
                 // defaults test, and a bad-value case. One plain whole number, and three with their own range (a Need
                 // and its row in ConfigNumbersTest): 1 to 10, 1 to 3 (which leaves out 5) and a decimal 0 to 1.
@@ -178,7 +182,7 @@ class TemplateRecipesTest {
 
                         @Test
                         void flushWithoutChangesWritesNothing() throws IOException {
-                        """.indent(4)))).toList();
+                        """.indent(4))).toList();
     }
 
     private static List<Edit> fabricGameEdits() {
@@ -215,19 +219,47 @@ class TemplateRecipesTest {
                 new Edit(MAIN + "GameConfig.java", START_GOAL + "),", START_GOAL + ", 1),"),
                 new Edit(MAIN + "GameConfig.java", ARENA_GOAL + "),", ARENA_GOAL + ", 1),"),
                 new Edit(TEST + "TestGames.java", START_GOAL + "),", START_GOAL + ", 1),"));
-        return Stream.of(stage, List.of(config), ruleChange(null)).flatMap(List::stream).toList();
+        return Stream.of(stage, List.of(config)).flatMap(List::stream).toList();
     }
 
     /**
-     * "To change a rule for this game": a daytime-only game, its check and its rows in SharedRulesTest together (#481),
-     * and in paper-game the range in config.yml's comment.
+     * A game template's "To change a rule for this game" examples as its CLAUDE.md words them, each a check and its rows
+     * in SharedRulesTest: a daytime-only game (and in paper-game the range in config.yml's comment), a kit of at most one
+     * stack, an arena within 100 blocks of 0 0 0 and y -64 to 64, and ASCII-only stage names. None for other templates.
      */
-    private static List<Edit> ruleChange(String configYml) {
-        List<Edit> edits = List.of(
+    static List<Edit> ruleChanges(String id) {
+        if (!List.of(Templates.PAPER_GAME, Templates.FABRIC_GAME, Templates.MINESTOM_GAME).contains(id)) {
+            return List.of();
+        }
+        String rules = TEST + "SharedRulesTest.java";
+        List<Edit> edits = new ArrayList<>(List.of(
                 new Edit(MAIN + "GameConfig.java", "MAX_TIME = 23999;", "MAX_TIME = 12000;"),
-                new Edit(TEST + "SharedRulesTest.java", "ok(23999L), no(24000L)", "ok(12000L), no(12001L)"));
-        return configYml == null ? edits : Stream.concat(edits.stream(),
-                Stream.of(new Edit(configYml, "0 to 23999 (", "0 to 12000 ("))).toList();
+                new Edit(rules, "ok(23999L), no(24000L)", "ok(12000L), no(12001L)"),
+                new Edit(MAIN + "Kit.java", "MAX_AMOUNT = 36 * 64;", "MAX_AMOUNT = 64;"),
+                new Edit(rules, "ok(2304), no(2305)", "no(65)"),
+                new Edit(MAIN + "Box.java", "MAX_XZ = 30_000_000;", "MAX_XZ = 100;"),
+                new Edit(MAIN + "Box.java", "MIN_Y = -2032;", "MIN_Y = -64;"),
+                new Edit(MAIN + "Box.java", "MAX_Y = 2031;", "MAX_Y = 64;"),
+                new Edit(rules, "{30000000, 2031, -30000000, 360, 90}", "{100, 64, -100, 360, 90}"),
+                new Edit(rules, "{-30000000, -2032, 30000000, -360, -90}", "{-100, -64, 100, -360, -90}"),
+                new Edit(rules, "{30000000.5, 0, 0, 0, 0}", "{100.5, 0, 0, 0, 0}"),
+                new Edit(rules, "{0, 0, -30000001, 0, 0}", "{0, 0, -101, 0, 0}"),
+                new Edit(rules, "{0, 2031.5, 0, 0, 0}", "{0, 64.5, 0, 0, 0}"),
+                new Edit(rules, "{0, -2033, 0, 0, 0}", "{0, -65, 0, 0, 0}"),
+                new Edit(rules, "{30000000, 2031, 30000000, -30000000, -2032, -30000000}", "{100, 64, 100, -100, -64, -100}"),
+                new Edit(rules, "{30000001, 0, 0, 0, 0, 0}", "{101, 0, 0, 0, 0, 0}"),
+                new Edit(rules, "{0, 0, 0, 0, 0, -30000001}", "{0, 0, 0, 0, 0, -101}"),
+                new Edit(rules, "{0, 2032, 0, 0, 0, 0}", "{0, 65, 0, 0, 0, 0}"),
+                new Edit(rules, "{0, 0, 0, 0, -2033, 0}", "{0, 0, 0, 0, -65, 0}"),
+                new Edit(MAIN + "Stage.java", "c != '§');", "c != '§' && c < 0x80);"),
+                new Edit(MAIN + "Stage.java", "NAME_RULE = \"one word of visible characters (no spaces, no §)\";",
+                        "NAME_RULE = \"one word of ASCII letters, digits and symbols (no spaces)\";"),
+                new Edit(rules, "ok(\"été\"), ok(\"竜\")", "no(\"été\"), no(\"竜\")"),
+                new Edit(rules, ", no(List.of(\"I\", \"ı\"))", "")));
+        if (id.equals(Templates.PAPER_GAME)) {
+            edits.add(new Edit("src/main/resources/config.yml", "0 to 23999 (", "0 to 12000 ("));
+        }
+        return edits;
     }
 
     @ParameterizedTest
@@ -251,12 +283,25 @@ class TemplateRecipesTest {
                 }
             }
         }
-        for (Edit e : edits(id)) {
-            Path file = r.root().resolve(e.file());
+        apply(r.root(), edits(id));
+        daemon.run(r.root(), "test");
+    }
+
+    /** Each documented rule change, applied the way the doc says, leaves the game's own tests green (#491). */
+    @ParameterizedTest
+    @ValueSource(strings = {Templates.PAPER_GAME, Templates.FABRIC_GAME, Templates.MINESTOM_GAME})
+    void documentedRuleChangesBuildAndPass(String id) throws IOException, InterruptedException {
+        ScaffoldResult r = TemplateBuildTest.scaffoldFresh(id, id + "-rules");
+        apply(r.root(), ruleChanges(id));
+        daemon.run(r.root(), "test");
+    }
+
+    private static void apply(Path root, List<Edit> edits) throws IOException {
+        for (Edit e : edits) {
+            Path file = root.resolve(e.file());
             String text = Files.readString(file);
             assertThat(text.split(Pattern.quote(e.old()), -1)).as(e.file() + ": " + e.old()).hasSize(2);
             Files.writeString(file, text.replace(e.old(), e.replacement()));
         }
-        daemon.run(r.root(), "test");
     }
 }

@@ -17,11 +17,12 @@ import org.junit.jupiter.api.TestFactory;
 
 /**
  * This game's rules for names and values: stage names, command words, time, kit amounts, spawns and goal boxes. The
- * adapters at the top build a value the way the game does (here every value is set in code (GameConfig.game())); the tables at the bottom list
- * inputs and whether the game takes them. To change a rule, change its check ({@code GameConfig.MAX_TIME},
- * {@code Kit.MAX_AMOUNT}, {@code Stage.isName}, the {@code Box} limits) and its rows here together: the expected
- * messages come from the same constants.
- */class SharedRulesTest {
+ * adapters at the top build a value the way the game does (here every value is set in code, in GameConfig.game()); the tables at the bottom
+ * list inputs and whether the game takes them. To change a rule, change its check ({@code GameConfig.MAX_TIME},
+ * {@code Kit.MAX_AMOUNT}, {@code Stage.isName} with {@code Stage.NAME_RULE}, {@code Box.MAX_XZ}, {@code Box.MIN_Y},
+ * {@code Box.MAX_Y}) and its rows here together: every test takes its limits and messages from those constants.
+ */
+class SharedRulesTest {
     private static final Pos AT = new Pos(0.5, -60, 0.5);
 
     private void stageNamed(String name) {
