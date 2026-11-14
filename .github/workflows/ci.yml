@@ -1,30 +1,13 @@
-# Builds and tests every module. Pull requests run the Ubuntu build only; the Windows build and the
-# Minestom end-to-end job run on pushes to main, nightly, by hand, or on a PR labelled "full-ci"
-# (ADR 0025: Actions minutes on a private repo, Windows costs 2x). See ADR 0012 and ADR 0022.
+# Builds and tests every module. Runs only by hand (Ubuntu + Windows + e2e) or on a PR labelled "full-ci"
+# (ADR 0025 and its 2026-11-14 addendum: Actions used sparingly, every PR is built locally before merge).
+# See ADR 0012 and ADR 0022.
 name: CI
 
 on:
-  push:
-    branches: [main]
-    paths-ignore:
-      - "docs/**"
-      - "msc-docs/**"
-      - "*.md"
-      - "msc-*/README.md"
-      - "msc-*/PLAN.md"
+  # Cloud-only, sparing Actions use (ADR 0025 addendum 2026-11-14): no runs on push, on ordinary PR events or nightly.
+  # Every PR is built locally before it is merged. A run starts only by hand or when a PR is labelled "full-ci".
   pull_request:
-    # "labeled" lets the full-ci label start a full run; other labels skip every job (see the job ifs) and get a
-    # concurrency group of their own, so they cannot cancel the PR's running build.
-    types: [opened, synchronize, reopened, ready_for_review, labeled]
-    paths-ignore:
-      - "docs/**"
-      - "msc-docs/**"
-      - "*.md"
-      - "msc-*/README.md"
-      - "msc-*/PLAN.md"
-  schedule:
-    # Nightly full run (Windows + e2e) on main.
-    - cron: "17 3 * * *"
+    types: [labeled]
   workflow_dispatch:
 
 # A newer push to the same branch or PR cancels the older run (saves Actions minutes). Concurrency applies before
