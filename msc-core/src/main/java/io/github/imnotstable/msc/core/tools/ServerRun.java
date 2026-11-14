@@ -18,7 +18,6 @@ import io.github.imnotstable.msc.protocol.world.BlockPos;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
@@ -87,8 +86,8 @@ final class ServerRun {
         return steps.then(LEFTOVER_SERVER).then(TAKE_OVER_PACK).then(REFRESH_AGENT).then(START)
                 .ifFails(TAKE_OVER_PACK, "the server is not started; if the earlier session's pack host was stopped, "
                         + "server.properties may offer a pack no one serves: server_start again serves it")
-                .ifFails(REFRESH_AGENT, "the server is not started; the installed agent jar is the earlier one, or "
-                        + "half copied: server_setup installs it again")
+                .ifFails(REFRESH_AGENT, "the server is not started; the installed agent jar is still the earlier "
+                        + "one: server_start again updates it")
                 .ifFails(START, "the server is not running; server_start starts it");
     }
 
@@ -346,7 +345,8 @@ final class ServerRun {
         if (agent == null || !Files.exists(installed) || Files.mismatch(agent, installed) == -1) {
             return false;
         }
-        Files.copy(agent, installed, StandardCopyOption.REPLACE_EXISTING);
+        // Whole or not at all: a failed copy leaves the earlier agent jar working, which the next start updates.
+        OutputFile.copy(agent, installed);
         return true;
     }
 }

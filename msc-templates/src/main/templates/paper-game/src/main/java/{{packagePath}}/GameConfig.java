@@ -1,11 +1,14 @@
 package {{packageName}};
 
+import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Pattern;
 import org.bukkit.Difficulty;
 import org.bukkit.GameMode;
 import org.bukkit.configuration.ConfigurationSection;
@@ -13,8 +16,9 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * Everything in config.yml, checked once on start. A missing key takes its default; a value of the wrong type, a bad
- * value or an unknown key fails with a message naming the key. To add a setting, add its key to {@link #KEYS} (or
- * {@link #STAGE_KEYS}), read it here, give it a default in config.yml and a bad-value case in GameConfigTest.
+ * value or an unknown key fails with a message naming the key and the type the value has. To add a setting, add its
+ * key to {@link #KEYS} (or {@link #STAGE_KEYS}), a record component (or a {@link Stage} one) read here, its default in
+ * config.yml and in GameConfigTest's defaults test, and a bad-value case in GameConfigTest.
  */
 public record GameConfig(String world, GameMode gameMode, Difficulty difficulty, long time, boolean naturalSpawns,
                          boolean keepInventory, Kit kit, List<Stage> stages) {
@@ -28,9 +32,9 @@ public record GameConfig(String world, GameMode gameMode, Difficulty difficulty,
     static GameConfig from(ConfigurationSection c) {
         unknownKeys(c.getKeys(false), KEYS, "");
         return new GameConfig(
-                string(c, "world", "world"),
-                parse(GameMode.class, "game-mode", string(c, "game-mode", "adventure")),
-                parse(Difficulty.class, "difficulty", string(c, "difficulty", "normal")),
+                text(c, "world", "world"),
+                parse(GameMode.class, "game-mode", text(c, "game-mode", "adventure")),
+                parse(Difficulty.class, "difficulty", text(c, "difficulty", "normal")),
                 wholeNumber(c, "time", 6000),
                 bool(c, "natural-spawns", false),
                 bool(c, "keep-inventory", true),
@@ -44,10 +48,13 @@ public record GameConfig(String world, GameMode gameMode, Difficulty difficulty,
         for (int i = 0; i < raw.size(); i++) {
             String where = "stages[" + i + "]";
             if (!(raw.get(i) instanceof Map<?, ?> s)) {
-                throw new IllegalArgumentException(where + " needs {name: ..., spawn: [x, y, z]}, got " + raw.get(i));
+                throw new IllegalArgumentException(
+                        where + " needs {name: ..., spawn: [x, y, z]}, got " + got(raw.get(i)));
             }
-            if (!(s.get("name") instanceof String name) || name.isBlank()) {
-                throw new IllegalArgumentException(where + " needs a name");
+            Object rawName = s.get("name");
+            if (!(rawName instanceof String name) || name.isBlank()) {
+                throw new IllegalArgumentException(
+                        where + " needs a name" + (rawName == null ? "" : ", got " + got(rawName)));
             }
             where += " (" + name + ")";
             unknownKeys(s.keySet(), STAGE_KEYS, where + ": ");
@@ -85,35 +92,49 @@ public record GameConfig(String world, GameMode gameMode, Difficulty difficulty,
         return c.get(key);
     }
 
-    private static String string(ConfigurationSection c, String key, String def) {
-        Object v = value(c, key);
+    /*
+     * Readers: each takes the section and key, or a raw value (a stage's s.get("key")) and the name to show in the
+     * error. A missing value (null) takes the default; a value of another type fails, naming the type it has.
+     */
+
+    private static String text(ConfigurationSection c, String key, String def) {
+        return text(value(c, key), key, def);
+    }
+
+    private static String text(@Nullable Object v, String key, String def) {
         if (v == null) {
             return def;
         }
         if (!(v instanceof String s) || s.isBlank()) {
-            throw new IllegalArgumentException(key + ": needs text, got " + v);
+            throw new IllegalArgumentException(key + ": needs text, got " + got(v));
         }
         return s;
     }
 
     private static long wholeNumber(ConfigurationSection c, String key, long def) {
-        Object v = value(c, key);
+        return wholeNumber(value(c, key), key, def);
+    }
+
+    private static long wholeNumber(@Nullable Object v, String key, long def) {
         if (v == null) {
             return def;
         }
         if (!(v instanceof Integer || v instanceof Long)) {
-            throw new IllegalArgumentException(key + ": needs a whole number, got " + v);
+            throw new IllegalArgumentException(key + ": needs a whole number, got " + got(v, WHOLE_NUMBER));
         }
         return ((Number) v).longValue();
     }
 
     private static boolean bool(ConfigurationSection c, String key, boolean def) {
-        Object v = value(c, key);
+        return bool(value(c, key), key, def);
+    }
+
+    private static boolean bool(@Nullable Object v, String key, boolean def) {
         if (v == null) {
             return def;
         }
         if (!(v instanceof Boolean b)) {
-            throw new IllegalArgumentException(key + ": needs true or false, got " + v);
+            throw new IllegalArgumentException(key + ": needs true or false, got " + got(v, TRUE_OR_FALSE));
         }
         return b;
     }
@@ -124,7 +145,7 @@ public record GameConfig(String world, GameMode gameMode, Difficulty difficulty,
             return List.of();
         }
         if (!(v instanceof List<?> l)) {
-            throw new IllegalArgumentException(key + ": needs a list, got " + v);
+            throw new IllegalArgumentException(key + ": needs a list, got " + got(v));
         }
         return l;
     }
@@ -133,7 +154,7 @@ public record GameConfig(String world, GameMode gameMode, Difficulty difficulty,
         List<String> out = new ArrayList<>();
         for (Object v : values) {
             if (!(v instanceof String s)) {
-                throw new IllegalArgumentException(key + ": needs item or item:amount, got " + v);
+                throw new IllegalArgumentException(key + ": needs item or item:amount, got " + got(v));
             }
             out.add(s);
         }
@@ -142,9 +163,55 @@ public record GameConfig(String world, GameMode gameMode, Difficulty difficulty,
 
     private static List<?> numbers(Object value, String where, String shape) {
         if (!(value instanceof List<?> l)) {
-            throw new IllegalArgumentException(where + " needs " + shape + ", got " + value);
+            throw new IllegalArgumentException(where + " needs " + shape + ", got " + got(value));
         }
         return l;
+    }
+
+    private static final Pattern WHOLE_NUMBER = Pattern.compile("[-+]?\\d+");
+    static final Pattern NUMBER = Pattern.compile("[-+]?(\\d+\\.?\\d*|\\.\\d+)([eE][-+]?\\d+)?");
+    private static final Pattern TRUE_OR_FALSE = Pattern.compile("(?i)true|false");
+
+    /**
+     * A config value as an error shows it: its YAML type and value, so a quoted {@code '6000'} does not read as the
+     * number it looks like ({@code the text '6000'}, {@code the whole number 6000}, {@code the list [6000]}).
+     */
+    static String got(@Nullable Object v) {
+        return switch (v) {
+            case null -> "nothing";
+            case String s when s.isBlank() -> "empty text";
+            case String s -> "the text '" + s + "'";
+            case Boolean b -> "the true/false value " + b;
+            case Integer i -> "the whole number " + i;
+            case Long l -> "the whole number " + l;
+            case BigInteger b -> "the whole number " + b + ", which is too big";
+            case Number n -> "the decimal " + n;
+            case List<?> l -> "the list " + plain(l);
+            case Map<?, ?> m -> "the map " + plain(m);
+            case ConfigurationSection s -> "the map " + plain(s);
+            default -> String.valueOf(v);
+        };
+    }
+
+    /** As {@link #got(Object)}, and says to remove the quotes when the text would fit without them. */
+    static String got(@Nullable Object v, Pattern fitsUnquoted) {
+        String got = got(v);
+        return v instanceof String s && fitsUnquoted.matcher(s.strip()).matches() ? got + "; remove the quotes" : got;
+    }
+
+    /** The value with every nested config section turned into a plain map, so it prints as YAML-like text. */
+    private static Object plain(@Nullable Object v) {
+        return switch (v) {
+            case null -> "null";
+            case ConfigurationSection s -> plain(s.getValues(false));
+            case Map<?, ?> m -> {
+                Map<Object, Object> out = new LinkedHashMap<>();
+                m.forEach((k, value) -> out.put(k, plain(value)));
+                yield out;
+            }
+            case List<?> l -> l.stream().map(GameConfig::plain).toList();
+            default -> v;
+        };
     }
 
     private static <E extends Enum<E>> E parse(Class<E> type, String key, String value) {

@@ -28,7 +28,7 @@ class DevCycleRemoveEarlierTest {
         return Files.createDirectories(dir.resolve("plugins"));
     }
 
-    private boolean remove(Path earlier, Path target) throws IOException {
+    private String remove(Path earlier, Path target) throws IOException {
         return DevCycle.removeEarlier(earlier, target, AtomicFile::sameFile, redeploys::incrementAndGet);
     }
 
@@ -44,14 +44,14 @@ class DevCycleRemoveEarlierTest {
     @Test
     void theSameNameIsKept() throws IOException {
         Path jar = Files.writeString(plugins().resolve("lobby.jar"), "new");
-        assertThat(remove(jar, jar)).isFalse();
+        assertThat(remove(jar, jar)).isNull();
         assertThat(jar).hasContent("new");
     }
 
     @Test
     void anotherSpellingOfTheDeployedJarIsKept() throws IOException {
         Path jar = Files.writeString(plugins().resolve("lobby.jar"), "new");
-        assertThat(remove(alias(plugins()).resolve("lobby.jar"), jar)).isFalse();
+        assertThat(remove(alias(plugins()).resolve("lobby.jar"), jar)).isNull();
         assertThat(jar).hasContent("new");
         assertThat(redeploys).hasValue(0);
     }
@@ -65,7 +65,7 @@ class DevCycleRemoveEarlierTest {
             Files.writeString(earlier, "old");
         }
         // Case-sensitive: two jars, the earlier goes. Case-insensitive: one file, which stays.
-        assertThat(remove(earlier, jar)).isEqualTo(!caseInsensitive);
+        assertThat(remove(earlier, jar)).isEqualTo(caseInsensitive ? null : "");
         assertThat(jar).hasContent("new");
         assertThat(redeploys).hasValue(0);
     }
@@ -74,10 +74,11 @@ class DevCycleRemoveEarlierTest {
     void anotherNameIsRemoved() throws IOException {
         Path jar = Files.writeString(plugins().resolve("arena.jar"), "new");
         Path earlier = Files.writeString(plugins().resolve("demo.jar"), "old");
-        assertThat(remove(earlier, jar)).isTrue();
+        assertThat(remove(earlier, jar)).isEmpty();
         assertThat(earlier).doesNotExist();
         assertThat(jar).hasContent("new");
-        assertThat(remove(plugins().resolve("gone.jar"), jar)).as("nothing there").isFalse();
+        assertThat(remove(plugins().resolve("gone.jar"), jar)).as("nothing there").isNull();
+        assertThat(entries()).containsExactly("arena.jar");
     }
 
     @Test
@@ -90,24 +91,58 @@ class DevCycleRemoveEarlierTest {
             assumeTrue(false, "symbolic links: " + e.getMessage());
             return;
         }
-        assertThat(remove(link, jar)).isTrue();
+        assertThat(remove(link, jar)).isEmpty();
         assertThat(Files.exists(link, java.nio.file.LinkOption.NOFOLLOW_LINKS)).isFalse();
         assertThat(jar).hasContent("new");
     }
 
+    /**
+     * #405: a volume whose sameness answer is wrong, where removing one name removes the other too (here a linked
+     * folder makes that real). The new jar stays, in place and never redeployed, and the call carries on with a note.
+     */
     @Test
-    void aDeleteThatTookTheNewJarAnywayRedeploysItAndFailsLoudly() throws IOException {
+    void aWrongSamenessAnswerNeverLosesTheNewJarAndDoesNotFail() throws IOException {
         Path jar = Files.writeString(plugins().resolve("lobby.jar"), "new");
         Path earlier = alias(plugins()).resolve("lobby.jar");
-        // A sameness check that is wrong, as a path comparison is on a case-insensitive volume.
-        assertThatThrownBy(() -> DevCycle.removeEarlier(earlier, jar, (a, b) -> false, () -> {
-            redeploys.incrementAndGet();
-            Files.writeString(jar, "new");
-        })).isInstanceOf(ToolException.class)
-                .hasMessageContaining("also removed the jar just deployed as " + jar)
-                .hasMessageContaining("deployed again");
-        assertThat(redeploys).hasValue(1);
+        String note = DevCycle.removeEarlier(earlier, jar, (a, b) -> false, redeploys::incrementAndGet);
+        assertThat(note).isEqualTo(earlier + " is the new jar under another name on this volume, so it was kept");
         assertThat(jar).hasContent("new");
+        assertThat(redeploys).hasValue(0);
+        assertThat(entries()).containsExactlyInAnyOrder("lobby.jar", "same");
+    }
+
+    @Test
+    void aMoveThatFailsLeavesTheEarlierJarAndSaysHowToRecover() throws IOException {
+        Path jar = Files.writeString(plugins().resolve("arena.jar"), "new");
+        Path earlier = Files.writeString(plugins().resolve("demo.jar"), "old");
+        // The aside name is taken by a folder that is not empty: the rename fails, nothing changes.
+        Files.writeString(Files.createDirectories(plugins().resolve("demo.jar" + DevCycle.ASIDE)).resolve("x"), "x");
+        assertThatThrownBy(() -> remove(earlier, jar)).isInstanceOf(ToolException.class)
+                .hasMessageStartingWith("cannot remove the earlier deploy " + earlier);
+        assertThat(earlier).hasContent("old");
+        assertThat(jar).hasContent("new");
+    }
+
+    private java.util.List<String> entries() throws IOException {
+        try (var list = Files.list(plugins())) {
+            return list.map(p -> p.getFileName().toString()).toList();
+        }
+    }
+
+    @Test
+    void aFolderInLibsIsLeftAloneAndOneWhereALibraryGoesIsRefusedFirst() throws IOException {
+        Path src = Files.createDirectories(dir.resolve("src"));
+        Path dest = Files.createDirectories(dir.resolve("libs"));
+        Files.writeString(src.resolve("dep.jar"), "dep");
+        Files.writeString(Files.createDirectories(dest.resolve("notes")).resolve("readme.txt"), "kept");
+        DevCycle.checkMirror(src, dest);
+        assertThat(DevCycle.mirror(src, dest, false)).isEqualTo(1);
+        assertThat(DevCycle.mirror(src, dest, true)).as("nothing left to do, so no retry loop").isZero();
+        assertThat(dest.resolve("notes/readme.txt")).hasContent("kept");
+        Files.delete(dest.resolve("dep.jar"));
+        Files.createDirectories(dest.resolve("dep.jar"));
+        assertThatThrownBy(() -> DevCycle.checkMirror(src, dest)).isInstanceOf(ToolException.class)
+                .hasMessageContaining("is a folder where the library dep.jar goes. Remove it, then dev_cycle.");
     }
 
     @Test
