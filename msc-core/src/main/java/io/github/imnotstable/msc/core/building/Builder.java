@@ -26,12 +26,25 @@ public final class Builder {
     /** Largest box one build may cover. */
     public static final long MAX_VOLUME = WorldService.MAX_BULK_VOLUME;
 
+    /** Runs before a build's first block is written; returns a line for the result, or "". */
+    @FunctionalInterface
+    public interface BeforeWrite {
+        String before(long blocks) throws InterruptedException;
+    }
+
     private final AgentHub hub;
     private final WorldService world;
+    private final BeforeWrite beforeWrite;
 
     public Builder(AgentHub hub, WorldService world) {
+        this(hub, world, blocks -> "");
+    }
+
+    /** {@code beforeWrite}: the world backup a big build takes first (ADR 0041). */
+    public Builder(AgentHub hub, WorldService world, BeforeWrite beforeWrite) {
         this.hub = hub;
         this.world = world;
+        this.beforeWrite = beforeWrite;
     }
 
     public String run(String worldName, List<Step> steps, boolean physics, boolean dryRun, String tool)
@@ -67,6 +80,7 @@ public final class Builder {
                     + used.sizeX() + "x" + used.sizeY() + "x" + used.sizeZ() + "\n" + counts + "\n" + check;
         }
         check(canvas, used);
+        String backup = beforeWrite.before(canvas.placed());
         List<String> ids = new ArrayList<>();
         long changed = 0;
         try {
@@ -88,7 +102,8 @@ public final class Builder {
         // One kind of block, or nothing left unchanged: the extra numbers say nothing new.
         return "edit " + id + ": " + changed + " blocks changed"
                 + (changed == canvas.placed() ? "" : " (" + canvas.placed() + " placed)") + ", region "
-                + Coords.show(used) + (canvas.counts().size() > 1 ? "\n" + counts : "");
+                + Coords.show(used) + (canvas.counts().size() > 1 ? "\n" + counts : "")
+                + (backup.isEmpty() ? "" : "\n" + backup);
     }
 
     /**
