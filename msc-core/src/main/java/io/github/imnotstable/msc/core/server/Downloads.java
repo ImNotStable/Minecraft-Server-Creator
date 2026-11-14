@@ -1,7 +1,7 @@
 package io.github.imnotstable.msc.core.server;
 
-import io.github.imnotstable.msc.core.files.AtomicFile;
 import io.github.imnotstable.msc.core.tool.ToolException;
+import io.github.imnotstable.msc.process.AtomicFile;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;

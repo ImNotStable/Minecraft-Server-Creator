@@ -8,10 +8,40 @@ import java.util.Optional;
 
 /**
  * A file holding a process's pid and start time, so a later core can find a process an earlier one left running.
- * The start time must match, so a reused pid is never taken for it.
+ * The start time must match, so a reused pid is never taken for it. A third word, {@value #RESISTING}, records that
+ * the process survived a whole stop (#408), so the next start does not wait it all out again.
  */
 public final class PidFile {
+    static final String RESISTING = "resisting";
+
     private PidFile() {
+    }
+
+    /** True when the file records that its process survived a whole stop ({@link #markResisting}). */
+    public static boolean resisting(Path file) {
+        String[] parts = words(file);
+        return parts != null && parts.length == 3 && parts[2].equals(RESISTING);
+    }
+
+    /** Records in the file that its process survived a whole stop. The pid and start time stay as they were. */
+    public static void markResisting(Path file) {
+        String[] parts = words(file);
+        if (parts == null || parts.length != 2) {
+            return;
+        }
+        try {
+            Files.writeString(file, parts[0] + " " + parts[1] + " " + RESISTING + "\n");
+        } catch (IOException e) {
+            // Best effort: the next start then tries the whole stop again.
+        }
+    }
+
+    private static String[] words(Path file) {
+        try {
+            return Files.readString(file).strip().split(" ");
+        } catch (IOException e) {
+            return null;
+        }
     }
 
     /** Best effort: only leftover detection depends on it. */
@@ -48,7 +78,7 @@ public final class PidFile {
         } catch (IOException e) {
             return Optional.empty();
         }
-        if (parts.length != 2) {
+        if (parts.length != 2 && !(parts.length == 3 && parts[2].equals(RESISTING))) {
             return Optional.empty();
         }
         long pid;
