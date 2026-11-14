@@ -8,6 +8,7 @@ import com.sun.net.httpserver.HttpServer;
 import io.github.imnotstable.msc.core.fixture.FakeBuildMain;
 import io.github.imnotstable.msc.core.fixture.FakeServerMain;
 import io.github.imnotstable.msc.core.server.FakeLeftover;
+import io.github.imnotstable.msc.core.server.MachineEula;
 import io.github.imnotstable.msc.core.server.MachineEulaAccess;
 import io.github.imnotstable.msc.core.tools.LifecycleToolsAccess;
 import io.github.imnotstable.msc.process.rcon.FakeRconServer;
@@ -480,7 +481,7 @@ class LifecycleToolsTest {
         // tools.md: only server_setup and server_start record acceptEula=true in ~/.msc/eula.json (#376).
         Path machineEula = workspace.resolve("home/.msc/eula.json");
         Path ws = Files.createDirectories(workspace.resolve("ws8"));
-        try (CoreHarness s = new CoreHarness(ws, c -> c.withEulaFile(machineEula))) {
+        try (CoreHarness s = new CoreHarness(ws, c -> c.withMachineEula(MachineEula.forHome(workspace.resolve("home"))))) {
             s.ok("project_scaffold", "name", "Srv", "dir", "srv", "template", "paper-server", "acceptEula", true);
             s.ok("project_scaffold", "name", "Plug", "dir", "plug", "acceptEula", true);
         }
@@ -490,9 +491,9 @@ class LifecycleToolsTest {
 
     @Test
     void scaffoldAndStartUseTheMachineWideAcceptance() throws Exception {
-        Path machineEula = MachineEulaAccess.accepted(workspace.resolve("home/.msc/eula.json"));
+        Path machineEula = MachineEulaAccess.accepted(workspace.resolve("home"));
         Path ws = Files.createDirectories(workspace.resolve("ws5"));
-        try (CoreHarness s = new CoreHarness(ws, c -> c.withEulaFile(machineEula))) {
+        try (CoreHarness s = new CoreHarness(ws, c -> c.withMachineEula(MachineEula.forHome(workspace.resolve("home"))))) {
             assertThat(s.ok("project_scaffold", "name", "MyPlugin")).doesNotContain("ask the user")
                     .endsWith("next: server_setup (the Minecraft EULA is accepted for this machine by owner on pc, "
                             + "2026-11-12), then edit the code and dev_cycle");
@@ -509,7 +510,7 @@ class LifecycleToolsTest {
         Path machineEula = workspace.resolve("home/.msc/eula.json");
         Path ws = Files.createDirectories(workspace.resolve("ws6/run")).getParent();
         Files.writeString(ws.resolve("run/paper.jar"), "not a jar");
-        try (CoreHarness s = new CoreHarness(ws, c -> c.withEulaFile(machineEula))) {
+        try (CoreHarness s = new CoreHarness(ws, c -> c.withMachineEula(MachineEula.forHome(workspace.resolve("home"))))) {
             assertThat(s.error("server_start")).contains("EULA is not accepted");
             assertThat(machineEula).doesNotExist();
             assertThat(s.call("server_start", "acceptEula", true, "timeoutSeconds", 20).text())
@@ -522,7 +523,7 @@ class LifecycleToolsTest {
         }
         Path other = Files.createDirectories(workspace.resolve("ws7/run")).getParent();
         Files.writeString(other.resolve("run/paper.jar"), "not a jar");
-        try (CoreHarness s = new CoreHarness(other, c -> c.withEulaFile(machineEula))) {
+        try (CoreHarness s = new CoreHarness(other, c -> c.withMachineEula(MachineEula.forHome(workspace.resolve("home"))))) {
             assertThat(s.call("server_start", "timeoutSeconds", 20).text()).doesNotContain("EULA");
             assertThat(other.resolve("run/eula.txt")).content().contains("eula=true");
         }
@@ -597,9 +598,9 @@ class LifecycleToolsTest {
         Files.writeString(install.resolve("agents/msc-agent-fabric-0.1.0.jar"), "fabric");
         Files.writeString(install.resolve("agents/msc-agent-paper-0.1.0.jar"), "bundled");
         // The owner's one-time acceptance for this machine (ADR 0020) stands in for acceptEula=true.
-        Path machineEula = MachineEulaAccess.accepted(workspace.resolve("home/.msc/eula.json"));
+        Path machineEula = MachineEulaAccess.accepted(workspace.resolve("home"));
         try (CoreHarness s = new CoreHarness(workspace.resolve("ws4"), c -> c.withDownloadsUrl(base).withInstallDir(install)
-                .withEulaFile(machineEula))) {
+                .withMachineEula(MachineEula.forHome(workspace.resolve("home"))))) {
             assertThat(s.ok("server_setup")).contains("agent installed in plugins/")
                     .contains("eula.txt has eula=true from the owner's one-time acceptance for this machine (owner on pc, 2026-11-12)")
                     .doesNotContain("ask the user");

@@ -137,7 +137,7 @@ public final class BenchRunner {
             if (task.needsServer() && !config.server().acceptEula()) {
                 skipped++;
                 log.printf("skipped %s: it runs a Paper server, and the Minecraft EULA is not accepted on this machine "
-                        + "(%s)%n", task.id(), MachineEula.file(Path.of(System.getProperty("user.home"))));
+                        + "(%s)%n", task.id(), MachineEula.location(Path.of(System.getProperty("user.home"))));
                 continue;
             }
             for (int repeat = 1; repeat <= repeats; repeat++) {

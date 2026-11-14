@@ -10,6 +10,7 @@ import io.github.imnotstable.msc.core.tool.Schema;
 import io.github.imnotstable.msc.core.tool.Tool;
 import io.github.imnotstable.msc.core.tool.ToolException;
 import io.github.imnotstable.msc.core.tool.ToolRegistry;
+import io.github.imnotstable.msc.process.ServerPropertiesFile;
 import io.github.imnotstable.msc.protocol.op.Ops;
 import io.github.imnotstable.msc.textures.Animation;
 import io.github.imnotstable.msc.textures.Colors;
@@ -111,12 +112,12 @@ public final class TextureTools {
                         }
                         return check(pack, Math.max(0, args.integer("limit", 30)));
                     }
-                    return pack(args, hub, pack, config, serverDir.resolve("server.properties"));
+                    return pack(args, hub, pack, config, serverDir.resolve(ServerPropertiesFile.NAME));
                 });
     }
 
     static final String BUILD = "build the pack and serve it";
-    static final String OFFER = "point server.properties at this build";
+    static final String OFFER = "point " + ServerPropertiesFile.NAME + " at this build";
     static final String APPLY = "send it to the server's players";
     static final String SAVE = "save the zip";
 
@@ -134,7 +135,7 @@ public final class TextureTools {
         Path copy = args.has("file") ? OutputFile.check(config.resolve(args.str("file")), "file") : null;
         boolean offered = pack.ours(PackProperties.url(properties));
         if (offered) {
-            OutputFile.check(properties, "server.properties");
+            OutputFile.check(properties, ServerPropertiesFile.NAME);
         }
         boolean apply = args.bool("apply", true);
         boolean connected = apply && hub.current() != null;
@@ -159,7 +160,7 @@ public final class TextureTools {
         // what server.properties offers then agree again.
         try {
             if (offered && steps.run(OFFER, () -> PackProperties.write(properties, built.url(), built.sha1(), required))) {
-                out.append("\nserver.properties updated to offer this build");
+                out.append("\n").append(ServerPropertiesFile.NAME).append(" updated to offer this build");
             }
             if (connected) {
                 Ops.PackResult r = steps.run(APPLY, () -> {
@@ -199,7 +200,7 @@ public final class TextureTools {
                 OutputFile.write(properties, to -> Files.write(to, offeredBefore));
             }
             return "taken back: the pack host serves the earlier build again"
-                    + (offeredBefore == null ? "" : " and server.properties offers it again")
+                    + (offeredBefore == null ? "" : " and " + ServerPropertiesFile.NAME + " offers it again")
                     + ", as the players have it; run pack again to send this one";
         } catch (IOException | RuntimeException e) {
             return "taking it back failed too (" + Steps.reason(e) + "): the pack host serves the new build, which the "
