@@ -1,7 +1,7 @@
 package io.github.imnotstable.msc.bench.check;
 
-import com.google.gson.JsonObject;
 import io.github.imnotstable.msc.bench.JsonNumbers;
+import io.github.imnotstable.msc.bench.UserJson;
 import io.github.imnotstable.msc.bench.run.ChildProcesses;
 import io.github.imnotstable.msc.bot.BlockSource;
 import io.github.imnotstable.msc.bot.Bot;
@@ -58,7 +58,7 @@ record PlayerCheck(
         }
     }
 
-    static PlayerCheck parse(String name, JsonObject json, String at) {
+    static PlayerCheck parse(String name, UserJson json) {
         List<Pattern> expect = new ArrayList<>();
         for (String regex : Checks.strings(json, "expect")) {
             expect.add(Pattern.compile(regex, Pattern.MULTILINE));
@@ -73,7 +73,7 @@ record PlayerCheck(
                 json.has("console") ? Checks.strings(json, "console") : List.of(),
                 Pattern.compile(Checks.string(json, "ready", "Done \\(")),
                 expect,
-                JsonNumbers.wholeNumber(json, "timeoutSeconds", at + ".timeoutSeconds", JsonNumbers.SECONDS, 180));
+                json.wholeNumber("timeoutSeconds", JsonNumbers.SECONDS, 180));
     }
 
     @Override

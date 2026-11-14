@@ -2,6 +2,7 @@ package io.github.imnotstable.msc.core.server;
 
 import io.github.imnotstable.msc.core.CoreConfig;
 import io.github.imnotstable.msc.core.tool.ToolException;
+import io.github.imnotstable.msc.process.AtomicFile;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -116,8 +117,7 @@ public enum Platform {
     }
 
     public static void remember(CoreConfig config, Platform platform) throws IOException {
-        Files.createDirectories(config.dataDir());
-        Files.writeString(file(config), platform.id() + "\n");
+        AtomicFile.write(file(config), to -> Files.writeString(to, platform.id() + "\n"));
     }
 
     /** The remembered platform, else what the workspace's project files say, else Paper. */
