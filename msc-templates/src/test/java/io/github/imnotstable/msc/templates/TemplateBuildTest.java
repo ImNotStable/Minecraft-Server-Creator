@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
@@ -61,28 +62,42 @@ class TemplateBuildTest {
     }
 
     private static void buildsAndPassesItsTests(String id) throws IOException, InterruptedException {
-        Path dir = Path.of(System.getProperty("msc.templates.verifyDir")).resolve(id);
-        deleteRecursively(dir);
-        ScaffoldResult r = Templates.scaffold(id, dir, TemplateVariables.of("Verify Me"));
+        ScaffoldResult r = scaffoldFresh(id, id);
+        String output = gradle(r.root(), "build", "tasks", "--all");
 
-        boolean windows = System.getProperty("os.name").toLowerCase().contains("win");
-        List<String> command = windows
-                // Explicit .\\ path: cmd may not search the current directory (NoDefaultCurrentDirectoryInExePath).
-                ? List.of("cmd", "/c", ".\\gradlew.bat", "build", "tasks", "--all", "--no-daemon", "-q")
-                : List.of("./gradlew", "build", "tasks", "--all", "--no-daemon", "-q");
-        Process p = new ProcessBuilder(command).directory(dir.toFile()).redirectErrorStream(true)
-                .redirectOutput(dir.resolve("build-output.txt").toFile()).start();
-        boolean finished = p.waitFor(15, TimeUnit.MINUTES);
-        String output = Files.readString(dir.resolve("build-output.txt"));
-
-        assertThat(finished).as("build finished in time").isTrue();
-        assertThat(p.exitValue()).as(output).isZero();
         assertThat(r.root().resolve("build/libs/verify-me-0.1.0-SNAPSHOT.jar")).exists();
         // Every task the docs say to run is one this build really has (#371); TemplateDocsTest reads the build file.
         List<String> tasks = output.lines().map(l -> l.split(" ", 2)[0]).toList();
         for (TemplateDocs.Command c : TemplateDocs.commands(r.root())) {
             assertThat(tasks).as(c.doc() + ": " + c.line()).contains(c.task());
         }
+    }
+
+    /** Scaffolds template {@code id} for "Verify Me" into a fresh {@code <verifyDir>/<dirName>}. */
+    static ScaffoldResult scaffoldFresh(String id, String dirName) throws IOException {
+        Path dir = Path.of(System.getProperty("msc.templates.verifyDir")).resolve(dirName);
+        deleteRecursively(dir);
+        return Templates.scaffold(id, dir, TemplateVariables.of("Verify Me"));
+    }
+
+    /** Runs the project's own wrapper with these tasks, asserts it passed and returns its output. */
+    static String gradle(Path dir, String... tasks) throws IOException, InterruptedException {
+        boolean windows = System.getProperty("os.name").toLowerCase().contains("win");
+        List<String> command = new ArrayList<>(windows
+                // Explicit .\\ path: cmd may not search the current directory (NoDefaultCurrentDirectoryInExePath).
+                ? List.of("cmd", "/c", ".\\gradlew.bat")
+                : List.of("./gradlew"));
+        command.addAll(List.of(tasks));
+        command.addAll(List.of("--no-daemon", "-q"));
+        Path log = dir.resolve("build-output.txt");
+        Process p = new ProcessBuilder(command).directory(dir.toFile()).redirectErrorStream(true)
+                .redirectOutput(log.toFile()).start();
+        boolean finished = p.waitFor(15, TimeUnit.MINUTES);
+        String output = Files.readString(log);
+
+        assertThat(finished).as("build finished in time").isTrue();
+        assertThat(p.exitValue()).as(output).isZero();
+        return output;
     }
 
     private static void deleteRecursively(Path dir) throws IOException {

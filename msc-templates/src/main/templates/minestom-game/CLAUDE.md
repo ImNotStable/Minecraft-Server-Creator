@@ -23,16 +23,16 @@ The base every game needs, so you only write the game itself. All of it is set i
 ## Layout
 
 - `{{name}}Server.java`: entry point. Only wiring here (world, game, events, commands).
-- `GameConfig.java`: the game's settings; `game()` is where you set kit, stages and admins. Add new settings here.
+- `GameConfig.java`: the game's settings; `game()` is where you set kit, stages and admins. Add new settings here: a record component with a check in the constructor if it can be wrong, its value in `game()` and in the tests' `TestGames` (the compiler points at both).
 - `Game.java`: game state and rules (stages, joining, advancing). Put game logic here or in classes it calls.
 - `GameEvents.java`: hands Minestom events to `Game`. `GameCommand.java`: `/game`; `handle(...)` returns the reply, so tests call it directly.
 - `Stage`, `Box`, `Kit`: settings values. `Progress`: saved progress. `Console`: reads `stop` and commands from standard input, and runs commands on the tick thread.
-- `src/test/java/`: plain unit tests (`BoxTest`, `GameConfigTest`, `ProgressTest`) and test-environment tests (`GameTest`, `GameThreadsTest`, `{{name}}ServerTest`).
+- `src/test/java/`: plain unit tests (`BoxTest`, `GameConfigTest`, `ProgressTest`) and test-environment tests (`GameTest`, `GameThreadsTest`, `{{name}}ServerTest`). Tests play `TestGames`, a fixed two-stage game, not `GameConfig.game()`, so editing your stages, kit or admins does not break them; `GameConfigTest.theGameIsValid` checks that your `game()` passes its checks.
 - `gradle/libs.versions.toml`: every dependency version. `libs/msc-agent-minestom.jar`: Minecraft Server Creator's agent; keep it, do not edit it.
 
 ## Building the game
 
-- New stage types, waves, timers, scores: add the field to `Stage` (or `GameConfig`), the logic to `Game` (or a new class), and a test.
+- New stage types, waves, timers, scores: add the field to `Stage` (or `GameConfig`), the logic to `Game` (or a new class), and a test. A new field needs a value in every `new Stage(...)` (or `new GameConfig(...)`): the compiler lists them, in `game()` and the tests.
 - Every piece of state you will want to check or skip to while testing gets a `/game` subcommand in `GameCommand.handle`: `game wave 5`, `game boss`, `game score Steve`. Return replies; never broadcast, so console callers see them.
 - Log every state change on one line (`Game.moveTo` logs `Steve -> stage 2/3 arena (goal)`), so tests and tools can wait for it in the log.
 - Build the stages in the world first, then copy their coordinates into `GameConfig.game()`. The flat world's standing height is y -60.

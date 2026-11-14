@@ -43,7 +43,7 @@ class GameCommandTest {
     @BeforeEach
     void register() {
         dispatcher = new CommandDispatcher<>();
-        Game game = new Game(GameConfig.game(), new Progress(dir.resolve("progress.properties")), () -> {
+        Game game = new Game(TestGames.twoStages(), new Progress(dir.resolve("progress.properties")), () -> {
         });
         new GameCommand(game).register(dispatcher);
     }

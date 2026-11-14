@@ -33,13 +33,14 @@ class GameTest {
 
     private Game game(Env env) {
         Instance world = {{name}}Server.createWorld(env.process().instance());
+        GameConfig config = TestGames.twoStages();
         // Load the chunks every stage spawn is in, so teleports land at once.
-        for (Stage s : GameConfig.game().stages()) {
+        for (Stage s : config.stages()) {
             world.loadChunk(s.spawn()).join();
         }
         // The test thread stands in for the tick thread: it fires events and runs commands. Anything else throws.
         Thread test = Thread.currentThread();
-        Game game = new Game(GameConfig.game(), world, new Progress(dir.resolve("progress.properties")), saves::incrementAndGet)
+        Game game = new Game(config, world, new Progress(dir.resolve("progress.properties")), saves::incrementAndGet)
                 .confineTo(t -> t == test || Game.isTickThread(t));
         game.applyWorldRules();
         GameEvents.register(env.process().eventHandler(), game);

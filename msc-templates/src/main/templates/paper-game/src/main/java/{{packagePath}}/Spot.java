@@ -8,12 +8,14 @@ import org.bukkit.World;
 public record Spot(double x, double y, double z, float yaw, float pitch) {
     static Spot parse(List<?> numbers, String where) {
         if (numbers.size() != 3 && numbers.size() != 5) {
-            throw new IllegalArgumentException(where + " needs [x, y, z] or [x, y, z, yaw, pitch], got " + numbers);
+            throw new IllegalArgumentException(
+                    where + " needs [x, y, z] or [x, y, z, yaw, pitch], got " + GameConfig.got(numbers));
         }
         double[] v = new double[5];
         for (int i = 0; i < numbers.size(); i++) {
             if (!(numbers.get(i) instanceof Number n)) {
-                throw new IllegalArgumentException(where + " has a non-number: " + numbers.get(i));
+                throw new IllegalArgumentException(
+                        where + " has a non-number: " + GameConfig.got(numbers.get(i), GameConfig.NUMBER));
             }
             v[i] = n.doubleValue();
         }
