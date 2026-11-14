@@ -84,7 +84,7 @@ The workspace has one platform: `paper` (default), `purpur`, `fabric`, `quilt`, 
 | `forge` | Forge's installer run in the server directory (its runnable shim jar copied to `forge-server.jar`, plus `libraries/`), agent in `mods/` | `java -Xmx2G -jar forge-server.jar nogui` | `mods/<jar name without version>.jar` | yes |
 | `minestom` | nothing (the agent is built into the project) | `java -Xmx1G -jar server.jar` | `server.jar` (thin: its manifest points at `libs/`, which `dev_cycle` keeps in step) in the server directory | no |
 
-Installers and downloads are cached in `.msc/cache`; an installer runs only when the server directory lacks that loader version. NeoForge, Forge and Quilt take the versions pinned in this build and `server_setup` refuses a Minecraft version they do not target.
+Installers and downloads are cached in `.msc/cache`; Paper and Purpur jars, which come with a checksum, are also kept in the machine's store (`~/.msc/downloads`, `MSC_DOWNLOAD_STORE`), so another workspace copies them instead of downloading them and `server_setup` says `(cached)`; an installer runs only when the server directory lacks that loader version. NeoForge, Forge and Quilt take the versions pinned in this build and `server_setup` refuses a Minecraft version they do not target.
 
 EULA step: installing or using MSC never accepts the Minecraft EULA. `server_setup` and `server_start` write `eula=true` into the server's `eula.txt` only on the owner's own yes: either `acceptEula=true` on that call, passed after the owner said yes, or the owner's one-time acceptance for the machine in `~/.msc/eula.json` ([ADR 0020](adr/0020-machine-eula.md)), and they say so. That file is written only on an explicit opt-in: `Main eula accept` run by the owner in their own terminal (the line in `~/.msc/core/eula-accept.txt`) with a typed `yes`, installing with `installMsc -Pmsc.acceptEula=true`, or the first `acceptEula=true` on `server_setup` or `server_start`; that first time the result says the acceptance now covers the machine. `project_scaffold acceptEula=true` does not write it.
 
@@ -213,4 +213,5 @@ One JSON line per call, appended to `MSC_TOOL_LOG` (default `<workspace>/.msc/to
 | `MSC_FABRIC_META_URL`, `MSC_FABRIC_MAVEN_URL` | Fabric's meta service (server launcher) and Maven repository (Fabric API) | `https://meta.fabricmc.net`, `https://maven.fabricmc.net` |
 | `MSC_PACK_HOST`, `MSC_PACK_FORMAT` | Resource pack server address and pack format number | `127.0.0.1`, 97 (26.3) |
 | `MSC_PACK_PORT` | Resource pack server port | the port this workspace used last (`.msc/pack-port`), else a free one |
+| `MSC_DOWNLOAD_STORE` | The machine's store of checksummed server jars (Paper, Purpur), shared by every workspace; `none` turns it off ([ADR 0038](adr/0038-cloud-session-caches.md)) | `~/.msc/downloads` |
 

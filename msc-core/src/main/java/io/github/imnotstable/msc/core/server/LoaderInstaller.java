@@ -53,12 +53,18 @@ public final class LoaderInstaller {
     private final Urls urls;
     private final Path cacheDir;
     private final String java;
-    private final Downloads downloads = new Downloads();
+    private final Downloads downloads;
 
+    /** Without the machine's store, for tests. */
     public LoaderInstaller(Urls urls, Path cacheDir, String java) {
+        this(urls, cacheDir, java, DownloadStore.NONE);
+    }
+
+    public LoaderInstaller(Urls urls, Path cacheDir, String java, DownloadStore store) {
         this.urls = urls;
         this.cacheDir = cacheDir;
         this.java = java;
+        this.downloads = new Downloads(store);
     }
 
     /** The newest Purpur build for a Minecraft version, as {@code purpur.jar}. */
@@ -87,7 +93,7 @@ public final class LoaderInstaller {
         Path jar = cacheDir.resolve("purpur-" + minecraft + "-" + build + ".jar");
         boolean cached = Files.exists(jar);
         if (!cached) {
-            downloads.fetch(URI.create(urls.purpurApi() + "/v2/purpur/" + minecraft + "/" + build + "/download"), jar,
+            cached = downloads.fetch(URI.create(urls.purpurApi() + "/v2/purpur/" + minecraft + "/" + build + "/download"), jar,
                     "Purpur has no build " + build + " of " + minecraft, Downloads.Checksum.of("MD5", md5));
         }
         ServerFiles.place(jar, dir, Platform.PURPUR.serverJar());
