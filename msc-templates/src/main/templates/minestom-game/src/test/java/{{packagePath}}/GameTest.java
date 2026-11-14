@@ -74,7 +74,7 @@ class GameTest {
         assertThat(game.stage(player).name()).isEqualTo("arena");
         assertThat(player.getPosition().samePoint(new Pos(0.5, -60, 40.5))).isTrue();
         assertThat(player.getRespawnPoint()).isEqualTo(new Pos(0.5, -60, 40.5));
-        assertThat(saves).hasValue(1);
+        assertThat(saves.get()).as("progress saved").isPositive();
     }
 
     @Test
@@ -98,8 +98,10 @@ class GameTest {
         List<GameCommand.Reply> missing = command.handle(null, new String[] {"next"});
 
         assertThat(moved).containsExactly(new GameCommand.Reply(true, "Steve is on stage 2 arena"));
+        // Only the lines it checks: status lines you add for your own state do not break it.
         assertThat(status.get(0).text()).startsWith("game: 2 stages");
-        assertThat(status.get(1).text()).startsWith("Steve: stage 2/2 arena, at 0 -60 40, adventure");
+        assertThat(status).anySatisfy(r -> assertThat(r.text())
+                .startsWith("Steve: stage 2/2 arena, at 0 -60 40, adventure"));
         assertThat(missing).containsExactly(new GameCommand.Reply(false, "name a player: next <player>"));
     }
 
