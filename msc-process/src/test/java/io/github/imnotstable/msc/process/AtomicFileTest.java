@@ -57,6 +57,28 @@ class AtomicFileTest {
         };
     }
 
+    /** #417: a write into a folder a server scans makes its temp file in another folder, never beside the target. */
+    @Test
+    void aTempFolderKeepsTheTempFileOutOfTheTargetsFolder() throws IOException {
+        Path mods = Files.createDirectories(dir.resolve("mods"));
+        Path staging = dir.resolve(".msc/staging");
+        Path target = Files.writeString(mods.resolve("lobby.jar"), "old");
+        AtomicFile.replace(target, to -> {
+            assertThat(to.getParent()).isEqualTo(staging.toAbsolutePath());
+            assertThat(AtomicFile.isTempName(to.getFileName().toString())).isTrue();
+            try (var list = Files.list(mods)) {
+                assertThat(list.map(p -> p.getFileName().toString()))
+                        .containsExactly("lobby.jar");
+            }
+            Files.writeString(to, "new");
+        }, staging);
+        assertThat(target).hasContent("new");
+        try (var list = Files.list(staging)) {
+            assertThat(list).isEmpty();
+        }
+        assertThat(AtomicFile.isTempName("lobby.jar")).isFalse();
+    }
+
     @Test
     void anExistingFileKeepsItsPermissionsWhateverTheWriterDoes() throws IOException {
         assumePosix();

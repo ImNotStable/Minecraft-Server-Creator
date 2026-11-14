@@ -194,7 +194,7 @@ final class ServerSetup {
 
     private static void installFabricApi(String api, FabricDownloader.Download apiJar, Path mods, StringBuilder out)
             throws IOException {
-        ServerFiles.place(apiJar.jar(), mods, "fabric-api.jar");
+        ScanFolders.copy(apiJar.jar(), mods.resolve("fabric-api.jar"), mods.getParent());
         out.append("fabric api ").append(api).append(apiJar.cached() ? " (cached)" : " (downloaded)").append('\n');
     }
 
@@ -241,7 +241,8 @@ final class ServerSetup {
     private void installAgent(Platform platform, Path addons, StringBuilder out) throws IOException {
         Path agent = findAgentJar(platform);
         if (agent != null) {
-            ServerFiles.place(agent, addons, platform.agentJar());
+            // Through a temp file outside the addon folder, where a loader could load it (#417).
+            ScanFolders.copy(agent, addons.resolve(platform.agentJar()), addons.getParent());
             out.append("agent installed in ").append(platform.addonDir()).append("/\n");
         } else {
             out.append("warning: msc ").append(platform.id()).append(" agent not found, so world and build tools will "
