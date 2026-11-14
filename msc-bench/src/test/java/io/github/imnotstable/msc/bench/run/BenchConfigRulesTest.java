@@ -50,7 +50,7 @@ class BenchConfigRulesTest {
 
     static {
         cases("agent.command", "[]", "[\"\"]", "[null]", "[\"claude\",\"-p\"]");
-        cases("agent.timeoutSeconds", "0", "-1");
+        cases("agent.timeoutSeconds", number("0", "-1"));
         cases("modes", "{}", "{\"m\":null}", "{\"a/b\":{}}", "{\"a,b\":{}}");
         cases("modes.*.extraArgs", "[null]");
         cases("modes.*.env", "{\"A=B\":\"1\"}", "{\"A\":null}", "{\"A\":\"x\\u0000y\"}");
@@ -63,15 +63,15 @@ class BenchConfigRulesTest {
         cases("server.paperJar", "\"\"", "\"missing.jar\"");
         cases("server.paperCacheDirs", "[]", "[null]", "[\"\"]");
         cases("server.downloadsUrl", "\"\"", "\"ftp://host/x\"", "\"not a url\"", "\"https:///nohost\"");
-        cases("server.serverPort", "0", "-5", "65536", "25576");
-        cases("server.rconPort", "0", "70000", "25566");
+        cases("server.serverPort", number("0", "-5", "65536", "25576"));
+        cases("server.rconPort", number("0", "70000", "25566"));
         cases("server.rconPassword", "\"\"", "\"   \"", json("x".repeat(1447)), json("é".repeat(724)),
                 json("a\0b"), json("a\ud800b"), json("\udc00"));
-        cases("server.startTimeoutSeconds", "0", "-1");
+        cases("server.startTimeoutSeconds", number("0", "-1"));
         cases("gradleWrapperFrom", "\"\"", "\"no-wrapper\"");
         cases("paths", "{\"agentJar\":\"\"}", "{\"agentJar\":null}", "{\"prompt\":\"x\",\"agentJar\":\"a\"}",
                 "{\"a b\":\"x\",\"agentJar\":\"a\"}");
-        cases("corePort", "0", "65536", "25576", "25566");
+        cases("corePort", number("0", "65536", "25576", "25566"));
         cases("minecraftVersion", "\"\"", "\"26.3/../x\"");
     }
 
@@ -85,6 +85,60 @@ class BenchConfigRulesTest {
         needed.removeAll(NO_IMPOSSIBLE_VALUE);
         assertThat(CASES.keySet()).as("a new field needs its impossible values here").containsAll(needed);
         assertThat(fields).as("cases for fields that no longer exist").containsAll(CASES.keySet());
+    }
+
+    @Test
+    void everyNumberKeyIsReadThroughTheStrictPass() {
+        // #416: an int key bound by Gson alone is read with getAsInt, which cuts decimals and wraps big numbers.
+        Set<String> ints = new TreeSet<>();
+        for (String field : fields(BenchConfig.class, "")) {
+            if (componentType(field) == int.class) {
+                ints.add(field);
+            }
+        }
+        assertThat(BenchConfigRules.NUMBERS.keySet()).containsExactlyInAnyOrderElementsOf(ints);
+        assertThat(CASES.keySet()).containsAll(ints);
+    }
+
+    static Stream<Arguments> numbersAsWritten() {
+        return Stream.of(
+                Arguments.of("server.rconPort", "4294992872", "server.rconPort: 4294992872 is not a TCP port"),
+                Arguments.of("server.serverPort", "99999999999", "server.serverPort: 99999999999 is not a TCP port"),
+                Arguments.of("agent.timeoutSeconds", "1800.9",
+                        "agent.timeoutSeconds: 1800.9 is not a whole number of seconds above 0"),
+                Arguments.of("server.startTimeoutSeconds", "0.5",
+                        "server.startTimeoutSeconds: 0.5 is not a whole number of seconds above 0"),
+                Arguments.of("corePort", "\"25590\"", "corePort: \"25590\" is not a TCP port"),
+                Arguments.of("server.rconPort", "null", "server.rconPort: null is not a TCP port"));
+    }
+
+    @ParameterizedTest(name = "{0} = {1}")
+    @MethodSource("numbersAsWritten")
+    void aRefusedNumberIsShownAsTheFileWritesIt(String key, String value, String message) throws IOException {
+        Path config = write(with(key, JsonParser.parseString(value)));
+        assertThatThrownBy(() -> BenchConfig.load(config, home())).hasMessageContaining(message);
+    }
+
+    @Test
+    void theBoundNumbersAreTheCheckedOnes() throws IOException {
+        // Whole numbers written as 1.0 or 1e3 are the same numbers, and bind as such; nothing is cut or wrapped.
+        JsonObject json = with("server.rconPort", JsonParser.parseString("25577.0"));
+        json.getAsJsonObject("agent").add("timeoutSeconds", JsonParser.parseString("1.2e3"));
+        json.getAsJsonObject("server").add("startTimeoutSeconds", JsonParser.parseString("2147483647"));
+        BenchConfig config = BenchConfig.load(write(json), home());
+        assertThat(config.server().rconPort()).isEqualTo(25577);
+        assertThat(config.agent().timeoutSeconds()).isEqualTo(1200);
+        assertThat(config.server().startTimeoutSeconds()).isEqualTo(Integer.MAX_VALUE);
+    }
+
+    @Test
+    void aRefusedNumberStillLetsTheOtherRulesReport() throws IOException {
+        JsonObject json = with("server.rconPort", JsonParser.parseString("4294992872"));
+        json.getAsJsonObject("server").add("paperJar", new JsonPrimitive(""));
+        Path config = write(json);
+        assertThatThrownBy(() -> BenchConfig.load(config, home()))
+                .hasMessageContaining("server.rconPort: 4294992872")
+                .hasMessageContaining("server.paperJar: is blank");
     }
 
     @Test
@@ -164,6 +218,17 @@ class BenchConfigRulesTest {
         return fields;
     }
 
+    /** The Java type of the config field at {@code key}. */
+    private static Class<?> componentType(String key) {
+        Class<?> type = BenchConfig.class;
+        for (String part : key.split("\\.")) {
+            Class<?> owner = type;
+            type = !owner.isRecord() ? Object.class : Stream.of(owner.getRecordComponents()).filter(c -> c.getName().equals(part))
+                    .findFirst().map(RecordComponent::getType).orElse(Object.class);
+        }
+        return type;
+    }
+
     private JsonObject with(String key, JsonElement value) {
         JsonObject root = JsonParser.parseString(VALID).getAsJsonObject();
         String[] parts = key.replace("*", "m").split("\\.");
@@ -195,6 +260,16 @@ class BenchConfigRulesTest {
 
     private Path home() throws IOException {
         return Files.createDirectories(dir.resolve("home"));
+    }
+
+    /**
+     * The impossible values of a number key (#416): its own, plus a decimal, a number past {@code int} (which
+     * getAsInt wrapped into a valid port), a string and null.
+     */
+    private static Object[] number(String... own) {
+        List<Object> values = new ArrayList<>(List.of((Object[]) own));
+        values.addAll(List.of("0.5", "1800.9", "4294992872", "99999999999", "1e999", "\"60\"", "null", "true", "[1]"));
+        return values.toArray();
     }
 
     private static void cases(String key, Object... values) {

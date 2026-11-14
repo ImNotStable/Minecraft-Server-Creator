@@ -33,7 +33,7 @@ In toolset mode the runner checks Claude Code's init event: when the `msc` serve
 
 A task is a folder in `tasks/` with `task.json` (category, title, platform, scaffold, fixtures, server, checks, timeout) and `prompt.md`; an optional `fixture/` folder is copied over the shared fixtures in `tasks/_fixtures/`. `platform` is `paper` (default) or `minestom`; `scaffold` (`template`, `name`, `package`) writes an msc-templates project into the workspace first, at version `{scaffoldVersion}` (1.0.0) and on the bench's game port. `tasks/_preamble.md` is put in front of Paper prompts, `tasks/_preamble-no-server.md` in front of Paper tasks that need no server (no `server/` folder, such as the texture tasks), and `tasks/_preamble-minestom.md` in front of Minestom ones. Other folders in a task, such as `hidden/`, stay out of the workspace. Placeholders such as `{workspace}`, `{rconPort}`, `{minecraftVersion}` and `{minestomMinecraftVersion}` are filled per run.
 
-Check types: `file` (exists, optional `contains` regex), `command` (exit code, optional `outputMatches`; `{gradlew}` is the workspace wrapper), `png` (`width`, `height`, `maxColors`, `minOpaqueFraction`, `maxOpaqueFraction`, `hue`), `zip` (`entries`, `textEntries`, `pngEntries`), `rcon` (`command`, `expect` regex), `blocks` (`blocks` and `regions`, checked with `execute if block`; partial states such as `minecraft:oak_door[half=lower]` match any other properties). A `command` check with `addFiles` copies that task folder into the workspace first: tests the agent never saw. `player` starts the server `jar` the workspace built in a fresh folder, waits for `ready` (default `Done \(`), lets msc-bot's test player join as `player` and play `script`, sends `console` commands on standard input, stops the server, and passes when every `expect` regex is found in what the player saw plus the console. The player walks on a flat world (ground at y -61), and speaks the server's version when it is the current or previous one, so it works on Minestom, which lags Paper.
+Check types: `file` (exists, optional `contains` regex), `command` (exit code, optional `outputMatches`; `{gradlew}` is the workspace wrapper), `png` (`width`, `height`, `maxColors`, `minOpaqueFraction`, `maxOpaqueFraction`, `hue`), `zip` (`entries`, `textEntries`, `pngEntries`), `rcon` (`command`, `expect` regex), `blocks` (`blocks` and `regions`, checked with `execute if block`; partial states such as `minecraft:oak_door[half=lower]` match any other properties). Numbers in `task.json` are read exactly as written and refused with the file and key path (such as `task.json checks[2].timeoutSeconds`) when they are not numbers or out of range: `timeoutSeconds` (of the task and of `command` and `player` checks) is a whole number above 0, `expectExit` a whole number, `width`, `height` and `maxColors` whole numbers above 0, the fractions and `hue.minSaturation` from 0 to 1, `hue.from` and `hue.to` from 0 to 360, and block positions whole numbers inside a Minecraft world (x and z from -30000000 to 29999999, y from -2032 to 2031). A `command` check with `addFiles` copies that task folder into the workspace first: tests the agent never saw. `player` starts the server `jar` the workspace built in a fresh folder, waits for `ready` (default `Done \(`), lets msc-bot's test player join as `player` and play `script`, sends `console` commands on standard input, stops the server, and passes when every `expect` regex is found in what the player saw plus the console. The player walks on a flat world (ground at y -61), and speaks the server's version when it is the current or previous one, so it works on Minestom, which lags Paper.
 
 ## Running
 
@@ -61,12 +61,12 @@ The agent command runs Claude Code with `--setting-sources project,local`, so yo
 
 ## Config
 
-`bench.json` (`--config` picks another file). Relative paths resolve against the config file's folder, and a missing key gets its default. A value that can never work is refused when the config loads, before any server or agent starts, with each key and the reason, so a bad config fails at once instead of after a server's start timeout.
+`bench.json` (`--config` picks another file). Relative paths resolve against the config file's folder, and a missing key gets its default. A value that can never work is refused when the config loads, before any server or agent starts, with each key and the reason, so a bad config fails at once instead of after a server's start timeout. A number key takes a JSON number exactly as written: a decimal, a number past the key's range, a string or `null` is refused and shown as written, never cut or wrapped into another number.
 
 | Key | Default | Refused |
 | --- | --- | --- |
 | `agent.command` | `claude -p {prompt} --output-format json` | empty list, empty entries, no `{prompt}` here or in each mode's `extraArgs` or `env` |
-| `agent.timeoutSeconds` | 1800 | 0 or less |
+| `agent.timeoutSeconds` | 1800 | 0 or less, a decimal |
 | `modes` | `{"baseline": {}}` | empty, a `null` mode, a name other than letters, digits, `.`, `_`, `-` |
 | `modes.<name>.extraArgs` | none | `null` entries |
 | `modes.<name>.env` | none | names with `=` or NUL, empty names, `null` values, NUL in values |
@@ -83,7 +83,7 @@ The agent command runs Claude Code with `--setting-sources project,local`, so yo
 | `server.serverPort` | 25566 | outside 1 to 65535, the same as `server.rconPort` or `corePort` |
 | `server.rconPort` | 25576 | outside 1 to 65535, the same as `server.serverPort` or `corePort` |
 | `server.rconPassword` | `msc-bench` | empty or blank (the server turns RCON off), over 1446 bytes in UTF-8 (the server drops the login), a NUL or a lone surrogate (the server would read another password) |
-| `server.startTimeoutSeconds` | 180 | 0 or less |
+| `server.startTimeoutSeconds` | 180 | 0 or less, a decimal |
 | `gradleWrapperFrom` | none | blank, a folder without `gradlew` |
 | `paths` | none | blank or `null` paths, names other than letters, digits, `.`, `_`, `-`, names the runner fills itself (`workspace`, `rconPort`, `prompt`...) |
 | `corePort` | 25590 | outside 1 to 65535, the same as a server port |

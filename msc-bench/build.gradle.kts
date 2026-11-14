@@ -69,3 +69,5 @@ repoInputs.set("benchReadme", file("README.md"))
 repoInputs.set("shippedConfig", file("bench.json"), file("mcp-toolset.template.json"), root.file("gradlew"))
 // The repository's CLAUDE.md, which a run folder inside the repository would sit under (RunIsolationTest).
 repoInputs.set("repoClaudeMd", root.file("CLAUDE.md"))
+// msc-bench's own production sources, which JsonNumbersGuardTest scans for numbers read past JsonNumbers (#416).
+repoInputs.set("benchSources", fileTree("src/main/java"))

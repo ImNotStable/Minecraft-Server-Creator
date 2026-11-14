@@ -2,6 +2,8 @@ package io.github.imnotstable.msc.bench.run;
 
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import com.google.gson.JsonPrimitive;
+import io.github.imnotstable.msc.bench.JsonNumbers;
 import io.github.imnotstable.msc.process.rcon.RconClient;
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -9,6 +11,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -32,19 +36,63 @@ final class BenchConfigRules {
     private static final Pattern NAME = Pattern.compile("[A-Za-z0-9._-]+");
     private static final Pattern PLACEHOLDER = Pattern.compile("\\{([^{}]*)}");
 
+    /** The number keys of {@code bench.json}, each with the values it takes. */
+    static final Map<String, JsonNumbers.Range> NUMBERS = numbers();
+
     private BenchConfigRules() {
     }
 
+    private static Map<String, JsonNumbers.Range> numbers() {
+        Map<String, JsonNumbers.Range> numbers = new LinkedHashMap<>();
+        numbers.put("agent.timeoutSeconds", JsonNumbers.SECONDS);
+        numbers.put("server.serverPort", JsonNumbers.PORT);
+        numbers.put("server.rconPort", JsonNumbers.PORT);
+        numbers.put("server.startTimeoutSeconds", JsonNumbers.SECONDS);
+        numbers.put("corePort", JsonNumbers.PORT);
+        return Collections.unmodifiableMap(numbers);
+    }
+
     /**
-     * Problems visible before defaults are filled in: null or blank entries, lists and maps given empty, and numbers
-     * given out of range. {@code json} tells a number given as 0 from a missing one, which Gson reads as 0 too.
+     * The first pass, on the file's JSON before it is bound (#416): each number key the file gives is read with
+     * {@link JsonNumbers}, exactly as written, and written back into {@code json} as the checked {@code int}, so the
+     * config binds the very number checked and never a cut or wrapped one. A refused key is reported and removed, so
+     * the other rules still run on the rest of the file.
      */
-    static List<String> beforeDefaults(BenchConfig raw, JsonObject json) {
+    static List<String> numbers(JsonObject json) {
+        List<String> problems = new ArrayList<>();
+        NUMBERS.forEach((key, range) -> {
+            int dot = key.indexOf('.');
+            JsonObject holder = json;
+            if (dot >= 0) {
+                JsonElement inner = json.get(key.substring(0, dot));
+                if (inner == null || !inner.isJsonObject()) {
+                    return;
+                }
+                holder = inner.getAsJsonObject();
+            }
+            String field = key.substring(dot + 1);
+            if (!holder.has(field)) {
+                return;
+            }
+            try {
+                holder.add(field, new JsonPrimitive(JsonNumbers.wholeNumber(holder.get(field), key, range)));
+            } catch (IllegalArgumentException e) {
+                problems.add(e.getMessage());
+                holder.remove(field);
+            }
+        });
+        return problems;
+    }
+
+    /**
+     * Problems visible before defaults are filled in: null or blank entries and lists and maps given empty. Numbers
+     * are checked before binding, by {@link #numbers(JsonObject)}.
+     */
+    static List<String> beforeDefaults(BenchConfig raw) {
         List<String> problems = new ArrayList<>();
         if (raw.agent() != null) {
             BenchConfig.Agent agent = raw.agent();
             command(problems, "agent.command", agent.command());
-            positive(problems, json, "agent", "timeoutSeconds", agent.timeoutSeconds(), "seconds");
         }
         if (raw.modes() != null) {
             if (raw.modes().isEmpty()) {
@@ -64,9 +112,6 @@ final class BenchConfigRules {
                 entries(problems, "server.paperCacheDirs", server.paperCacheDirs());
             }
             notBlank(problems, "server.downloadsUrl", server.downloadsUrl());
-            port(problems, json, "serverPort", server.serverPort());
-            port(problems, json, "rconPort", server.rconPort());
-            positive(problems, json, "server", "startTimeoutSeconds", server.startTimeoutSeconds(), "seconds");
         }
         notBlank(problems, "gradleWrapperFrom", raw.gradleWrapperFrom());
         if (raw.paths() != null) {
@@ -80,9 +125,6 @@ final class BenchConfigRules {
                 }
                 notBlank(problems, "paths." + name, path, true);
             });
-        }
-        if (present(json, null, "corePort") && !inPortRange(raw.corePort())) {
-            problems.add("corePort: " + raw.corePort() + " is no TCP port; use 1 to 65535");
         }
         if (raw.minecraftVersion() != null && !NAME.matcher(raw.minecraftVersion()).matches()) {
             problems.add("minecraftVersion: \"" + raw.minecraftVersion() + "\" is no Minecraft version, such as 26.3");
@@ -264,39 +306,9 @@ final class BenchConfigRules {
         }
     }
 
-    private static void positive(List<String> problems, JsonObject json, String object, String field, int value,
-            String unit) {
-        if (present(json, object, field) && value <= 0) {
-            problems.add(object + "." + field + ": must be a positive number of " + unit + ", was " + value);
-        }
-    }
-
-    private static void port(List<String> problems, JsonObject json, String field, int value) {
-        if (present(json, "server", field) && !inPortRange(value)) {
-            problems.add("server." + field + ": " + value + " is no TCP port; use 1 to 65535");
-        }
-    }
-
-    private static boolean inPortRange(int port) {
-        return port >= 1 && port <= 65535;
-    }
-
     private static void distinct(List<String> problems, String key, int port, String otherKey, int otherPort) {
         if (port == otherPort) {
             problems.add(key + ": " + port + " is also " + otherKey + "; each needs its own port");
         }
-    }
-
-    private static boolean present(JsonObject json, String object, String field) {
-        JsonObject holder = json;
-        if (object != null) {
-            JsonElement inner = json.get(object);
-            if (inner == null || !inner.isJsonObject()) {
-                return false;
-            }
-            holder = inner.getAsJsonObject();
-        }
-        JsonElement value = holder.get(field);
-        return value != null && !value.isJsonNull();
     }
 }
