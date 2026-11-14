@@ -46,6 +46,8 @@ public final class ServerManager implements AutoCloseable {
     /** Clock time just before the running server's process was launched: files written later are not loaded. */
     private java.time.Instant launchedAt;
     private volatile Leftovers leftovers = Leftovers.REAL;
+    /** This core, as its pid file records it ({@link PidFile.Identity}); tests stand in another core here. */
+    private volatile PidFile.Identity self = PidFile.Identity.current();
 
     public ServerManager(CoreConfig config, AgentHub hub) {
         this.config = config;
@@ -67,6 +69,50 @@ public final class ServerManager implements AutoCloseable {
                      Duration destroy, Duration tree, Duration again) {
         static final Leftovers REAL = new Leftovers(PidFile::peek, ProcessRunner::destroyTree, Duration.ofSeconds(60),
                 Duration.ofSeconds(20), Duration.ofSeconds(10), Duration.ofSeconds(5));
+    }
+
+    /** For tests: which core this manager stands for, so two managers can be two cores on one workspace. */
+    void self(PidFile.Identity self) {
+        this.self = self;
+    }
+
+    /**
+     * A server another session's core started on this workspace and still runs (ADR 0037): its pid and that core's.
+     * It belongs to that session while the core lives, so this one neither stops nor replaces it.
+     */
+    public record OtherSession(long serverPid, long corePid) {
+        /** The refusal of a call that would stop or replace it: whose it is, what to do, and that nothing changed. */
+        public String refusal() {
+            return "the server (pid " + serverPid + ") belongs to another session that is still running (MSC core "
+                    + "pid " + corePid + "): use that session, or end it (a server it detached then becomes this "
+                    + "session's to stop or restart). Nothing was changed.";
+        }
+    }
+
+    /**
+     * The server another live core started on this workspace, or empty: also when this core's own server runs, when
+     * the pid file names no live server, and when it names no owner or a dead one (a leftover, ADR 0013 point 8).
+     * Owners are matched by pid and start time like the server, never by pid alone.
+     */
+    public synchronized Optional<OtherSession> otherSession() {
+        if (running()) {
+            return Optional.empty();
+        }
+        ProcessHandle server = leftovers.find().apply(pidFile()).orElse(null);
+        if (server == null) {
+            return Optional.empty();
+        }
+        PidFile.Identity me = self;
+        return PidFile.owner(pidFile()).filter(o -> !o.equals(me) && o.live().isPresent())
+                .map(o -> new OtherSession(server.pid(), o.pid()));
+    }
+
+    /** Refuses ({@link OtherSession#refusal()}) while another live session's server runs on this workspace. */
+    public void checkNoOtherSession() {
+        Optional<OtherSession> other = otherSession();
+        if (other.isPresent()) {
+            throw new ToolException(other.get().refusal());
+        }
     }
 
     /** For tests: how leftovers are found, killed and waited for. */
@@ -178,6 +224,7 @@ public final class ServerManager implements AutoCloseable {
             if (running()) {
                 throw new ToolException("server is already running. Use server_stop or dev_cycle.");
             }
+            checkNoOtherSession();
             // A server an earlier core left running holds the world and the port: a new one would die on them, and
             // its pid would overwrite the only record of the one still running (#408).
             ProcessHandle left = leftovers.find().apply(pidFile()).orElse(null);
@@ -201,7 +248,7 @@ public final class ServerManager implements AutoCloseable {
             launchedAt = java.time.Instant.now();
             started = pb.start();
             process = started;
-            PidFile.write(pidFile(), started.toHandle());
+            PidFile.write(pidFile(), started.toHandle(), self);
             pump = Thread.ofVirtual().name("msc-server-log").start(() -> pump(started));
         }
         long deadline = begin + timeout.toNanos();
@@ -268,10 +315,10 @@ public final class ServerManager implements AutoCloseable {
 
     /**
      * The pid of a server an earlier core left running (detached, or orphaned by a killed core), without stopping
-     * it, or -1. {@link #stopLeftover()} stops it.
+     * it, or -1. {@link #stopLeftover()} stops it. A server whose core still runs is no leftover ({@link #otherSession}).
      */
     public synchronized long leftoverPid() {
-        if (running()) {
+        if (running() || otherSession().isPresent()) {
             return -1;
         }
         return leftovers.find().apply(pidFile()).map(ProcessHandle::pid).orElse(-1L);
@@ -292,7 +339,10 @@ public final class ServerManager implements AutoCloseable {
         in.flush();
     }
 
-    /** {@code .msc/server.pid}: the running server's pid and start time, so a later core can find it. */
+    /**
+     * {@code .msc/server.pid}: the running server's pid and start time, and the starting core's, so a later core can
+     * find it and tell whether it is a leftover (ADR 0037).
+     */
     Path pidFile() {
         return config.dataDir().resolve("server.pid");
     }
@@ -308,6 +358,9 @@ public final class ServerManager implements AutoCloseable {
      * world and the port (#408). The pid file then records that it resisted, so the next start only kills it again
      * and waits {@link Leftovers#again} instead of the whole chain; {@link #stopLeftover(boolean)} with {@code true}
      * (server_stop) tries the whole chain again.
+     *
+     * <p>A server whose core still runs is not a leftover: that is a refusal too, before anything is touched
+     * ({@link #checkNoOtherSession}, ADR 0037).
      */
     public String stopLeftover() throws InterruptedException {
         return stopLeftover(false);
@@ -318,6 +371,7 @@ public final class ServerManager implements AutoCloseable {
         if (running()) {
             return null;
         }
+        checkNoOtherSession();
         Leftovers l = leftovers;
         ProcessHandle h = l.find().apply(pidFile()).orElse(null);
         if (h == null) {
@@ -397,10 +451,11 @@ public final class ServerManager implements AutoCloseable {
 
     /**
      * Delete the pid file of {@code p}, which has exited, unless a newer server already replaced it: a start that ran
-     * while a stop waited for the old process writes its own pid file, which must stay (#323).
+     * while a stop waited for the old process writes its own pid file, which must stay (#323), also when another
+     * core's start wrote it (ADR 0037).
      */
     synchronized void released(Process p) {
-        if (process != p) {
+        if (process != p || !PidFile.names(pidFile(), p.pid())) {
             return;
         }
         try {
@@ -417,7 +472,9 @@ public final class ServerManager implements AutoCloseable {
 
     /**
      * Leave the running server up when this core exits, so the user can keep playing. The pid file stays, so the
-     * next core's start, dev_cycle or server_stop stops it (saved over RCON) before doing anything else.
+     * next core's start, dev_cycle or server_stop stops it (saved over RCON) before doing anything else. Its owner
+     * stays this core: while this core runs, other sessions refuse to touch it; once it ends, it is a leftover
+     * (ADR 0037).
      */
     public synchronized boolean detach() {
         if (closed) {

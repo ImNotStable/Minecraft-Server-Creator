@@ -1,6 +1,6 @@
 # ADR 0014: Detach the dev server so the user can play
 
-Status: accepted, 2026-11-12. Decided by Claude under Jeremiah's hand-over of build decisions.
+Status: accepted, 2026-11-12. Decided by Claude under Jeremiah's hand-over of build decisions. Amended by [ADR 0037](0037-server-belongs-to-its-live-core.md): a detached server keeps the detaching session as its owner, so other sessions refuse to touch it until that session ends.
 
 ## Context
 

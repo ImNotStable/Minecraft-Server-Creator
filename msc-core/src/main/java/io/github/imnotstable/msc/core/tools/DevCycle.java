@@ -72,6 +72,8 @@ final class DevCycle {
             // Checked first: a missing project is refused before the build's init script is written.
             throw new ToolException("no project at " + project + ". Give the project folder, relative to the workspace.");
         }
+        // Checked first: the deploy would replace the jars under another live session's server (ADR 0037).
+        server.checkNoOtherSession();
         boolean restart = args.bool("restart", true);
         Timings time = new Timings();
         Platform platform = platform(project);

@@ -10,6 +10,7 @@ import io.github.imnotstable.msc.core.fixture.FakeServerMain;
 import io.github.imnotstable.msc.core.server.FakeLeftover;
 import io.github.imnotstable.msc.core.server.MachineEula;
 import io.github.imnotstable.msc.core.server.MachineEulaAccess;
+import io.github.imnotstable.msc.core.server.PidFile;
 import io.github.imnotstable.msc.core.tools.LifecycleToolsAccess;
 import io.github.imnotstable.msc.core.tools.StepsAccess;
 import io.github.imnotstable.msc.process.rcon.FakeRconServer;
@@ -301,7 +302,7 @@ class LifecycleToolsTest {
     @Test
     void startRemembersTheServerPidAndStopForgetsIt() {
         h.ok("server_start", "timeoutSeconds", 30);
-        assertThat(workspace.resolve(".msc/server.pid")).content().matches("\\d+ \\d+\n");
+        assertThat(workspace.resolve(".msc/server.pid")).content().matches("\\d+ \\d+ " + ProcessHandle.current().pid() + " \\d+\n");
         h.ok("server_stop");
         assertThat(workspace.resolve(".msc/server.pid")).doesNotExist();
     }
@@ -817,6 +818,31 @@ class LifecycleToolsTest {
         h.ok("server_detach");
         assertThat(h.ok("msc_status")).contains("server: running, detached");
         h.ok("server_stop");
+    }
+
+    @Test
+    void aServerAnotherLiveSessionRunsIsNeitherStoppedNorReplaced() throws Exception {
+        // #482: a second session on the workspace took the first one's live server for a leftover and killed it.
+        Process other = new ProcessBuilder(java(io.github.imnotstable.msc.core.fixture.SleepMain.class)).start();
+        try {
+            Path pidFile = Files.createDirectories(workspace.resolve(".msc")).resolve("server.pid");
+            // The other session's core stands as its own server: both alive, neither this JVM.
+            PidFile.write(pidFile, other.toHandle(), PidFile.Identity.of(other.toHandle()));
+            String written = Files.readString(pidFile);
+            String pids = "(server pid " + other.pid() + ", MSC core pid " + other.pid() + ";";
+            assertThat(h.ok("msc_status")).contains("server: running under another session that is still running " + pids);
+            for (String tool : List.of("server_start", "server_stop", "server_setup")) {
+                assertThat(h.call(tool).text()).as(tool).contains("belongs to another session that is still running "
+                        + "(MSC core pid " + other.pid() + "): use that session, or end it");
+            }
+            assertThat(other.isAlive()).isTrue();
+            assertThat(pidFile).content().isEqualTo(written);
+            // Its core killed: the server is a leftover, as before (ADR 0013 point 8).
+            other.destroyForcibly().waitFor();
+            assertThat(h.ok("msc_status")).doesNotContain("another session");
+        } finally {
+            other.destroyForcibly();
+        }
     }
 
     @Test
