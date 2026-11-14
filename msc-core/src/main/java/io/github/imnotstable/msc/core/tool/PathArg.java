@@ -1,5 +1,6 @@
 package io.github.imnotstable.msc.core.tool;
 
+import io.github.imnotstable.msc.protocol.Limits;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.AccessDeniedException;
@@ -75,8 +76,9 @@ public record PathArg(Path base, boolean inside) {
             String text = part.toString();
             int bytes = text.getBytes(StandardCharsets.UTF_8).length;
             if (bytes > MAX_NAME_BYTES) {
-                throw new ToolException(what + " has a name of " + bytes + " bytes (" + text.substring(0, 24)
-                        + "...); file systems hold at most " + MAX_NAME_BYTES + ". Use a shorter name.");
+                throw new ToolException(what + " has a name of " + bytes + " bytes ("
+                        + Limits.shorten(text, 27) + "); file systems hold at most " + MAX_NAME_BYTES
+                        + ". Use a shorter name.");
             }
         }
         return path;

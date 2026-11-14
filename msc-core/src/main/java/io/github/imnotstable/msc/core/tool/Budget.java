@@ -1,5 +1,7 @@
 package io.github.imnotstable.msc.core.tool;
 
+import io.github.imnotstable.msc.protocol.Limits;
+
 /** Size limits for tool results. One token is roughly four characters. */
 public final class Budget {
     /** Default cap for a tool result, about 1,500 tokens. */
@@ -44,7 +46,7 @@ public final class Budget {
         int keep = Math.max(0, maxChars - (MARK_CHARS + hint.length()));
         int cut = text.lastIndexOf('\n', keep);
         if (cut <= 0) {
-            cut = keep;
+            cut = Limits.head(text, keep).length(); // never half an emoji
         }
         int droppedLines = 0;
         for (int i = cut; i < text.length(); i++) {

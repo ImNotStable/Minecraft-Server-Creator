@@ -1,5 +1,6 @@
 package io.github.imnotstable.msc.bot;
 
+import io.github.imnotstable.msc.protocol.Limits;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
@@ -71,7 +72,7 @@ final class Items {
         if (lore != null && !lore.isEmpty()) {
             String text = String.join(" / ", lore.stream().map(Text::plain).filter(s -> !s.isEmpty()).toList());
             if (!text.isEmpty()) {
-                out.append(" lore \"").append(text.length() > 80 ? text.substring(0, 77) + "..." : text).append('"');
+                out.append(" lore \"").append(Limits.shorten(text, 80)).append('"');
             }
         }
         return out.toString();

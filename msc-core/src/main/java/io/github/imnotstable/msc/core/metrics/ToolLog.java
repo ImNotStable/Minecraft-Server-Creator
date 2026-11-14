@@ -2,7 +2,9 @@ package io.github.imnotstable.msc.core.metrics;
 
 import com.google.gson.JsonObject;
 import io.github.imnotstable.msc.core.tool.Budget;
+import io.github.imnotstable.msc.protocol.Limits;
 import java.io.IOException;
+import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -23,12 +25,23 @@ public final class ToolLog {
         }
     }
 
+    /** Longest error text a line keeps, cut with {@link Limits#cut}. */
+    static final int MAX_ERROR_CHARS = 200;
+
     private Path file;
     private final Map<String, Totals> totals = new TreeMap<>();
+    private final PrintStream errors;
+    private boolean warned;
 
     /** @param file where to append, or null to keep totals only */
     public ToolLog(Path file) {
+        this(file, System.err);
+    }
+
+    /** @param errors where a failed write is reported, once */
+    ToolLog(Path file, PrintStream errors) {
         this.file = file;
+        this.errors = errors;
     }
 
     /** Appends to {@code file} from now on (a workspace switch); the session's totals are kept. */
@@ -56,16 +69,30 @@ public final class ToolLog {
             line.addProperty("imageTokens", imageTokens);
         }
         if (error != null) {
-            line.addProperty("error", error.length() > 200 ? error.substring(0, 200) : error);
+            line.addProperty("error", Limits.cut(error, MAX_ERROR_CHARS));
         }
+        append(line + "\n");
+    }
+
+    /**
+     * Writes one line. Its content can never drop it: {@link String#getBytes} replaces what UTF-8 cannot encode (half
+     * a surrogate pair) instead of throwing. A failed write must not fail the tool call either, but it is not
+     * silent: the first one is reported on stderr (stdout carries the MCP messages), so a bench report that misses
+     * lines says why.
+     */
+    private void append(String text) {
         try {
             if (file.getParent() != null) {
                 Files.createDirectories(file.getParent());
             }
-            Files.writeString(file, line + "\n", StandardCharsets.UTF_8,
-                    StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+            Files.write(file, text.getBytes(StandardCharsets.UTF_8), StandardOpenOption.CREATE,
+                    StandardOpenOption.APPEND);
         } catch (IOException e) {
-            // Logging must never fail a tool call.
+            if (!warned) {
+                warned = true;
+                errors.println("msc-core: could not write the tool log " + file + ": " + e
+                        + " (later failures are not reported)");
+            }
         }
     }
 

@@ -1,11 +1,11 @@
 # msc-process
 
-Server process control that msc-core and msc-bench share (msc-bot uses its HTTP stall rule too): the process tree kill
+Server process control that msc-core, msc-bench and msc-bot share (msc-bot uses the HTTP stall rule): the process tree kill
 ([ADR 0031](../msc-docs/docs/adr/0031-process-tree-kill.md)), the RCON client
 ([ADR 0032](../msc-docs/docs/adr/0032-one-rcon-client.md)), the `server.properties` reader and writer
 ([ADR 0033](../msc-docs/docs/adr/0033-one-server-properties-file.md)) with the server address read from it, the HTTP
-stall rule, and the atomic file writer
-([ADR 0034](../msc-docs/docs/adr/0034-one-atomic-file-writer.md)). It depends on nothing, so the bench can use it without
+stall rule, the atomic file writer
+([ADR 0034](../msc-docs/docs/adr/0034-one-atomic-file-writer.md)), and the UTF-8 console flags of a server's Java. It depends on nothing, so the bench can use it without
 depending on msc-core (ADR 0004).
 
 `ProcessTree.destroy(handle)` kills a command and every process it can prove descends from it, including a child
@@ -51,6 +51,7 @@ repository's one temp-then-move writer: use it rather than writing another.
 | `ServerPropertiesFile` | The one reader and writer of `server.properties` |
 | `ServerAddress` | The one place that turns `server-ip` and a port key into the address to dial, game or RCON port |
 | `HttpStall` | The one stall rule for HTTP reads: no byte for the limit and the request is given up |
+| `ServerJava` | The one place that adds the UTF-8 console flags (`stdout`, `stderr`, `stdin`, `file.encoding`) to a server's Java command; any other program is left alone |
 | `AtomicFile` | The one atomic file writer: write, replace and copy through a temp file, permissions of the replaced file kept |
 | `rcon.FakeRconServer` (test fixtures) | A vanilla-like RCON server for the RCON tests of this module, msc-core and msc-bench, with faults for broken replies |
 | `StallingHttpServer` (test fixtures) | An HTTP server that sends its headers and some bytes, then stalls or trickles, for the stall tests |
