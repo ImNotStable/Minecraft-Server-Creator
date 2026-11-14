@@ -37,7 +37,10 @@ class GameTest {
         for (Stage s : GameConfig.game().stages()) {
             world.loadChunk(s.spawn()).join();
         }
-        Game game = new Game(GameConfig.game(), world, new Progress(dir.resolve("progress.properties")), saves::incrementAndGet);
+        // The test thread stands in for the tick thread: it fires events and runs commands. Anything else throws.
+        Thread test = Thread.currentThread();
+        Game game = new Game(GameConfig.game(), world, new Progress(dir.resolve("progress.properties")), saves::incrementAndGet)
+                .confineTo(t -> t == test || Game.isTickThread(t));
         game.applyWorldRules();
         GameEvents.register(env.process().eventHandler(), game);
         return game;

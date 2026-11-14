@@ -26,8 +26,8 @@ The base every game needs, so you only write the game itself. All of it is set i
 - `GameConfig.java`: the game's settings; `game()` is where you set kit, stages and admins. Add new settings here.
 - `Game.java`: game state and rules (stages, joining, advancing). Put game logic here or in classes it calls.
 - `GameEvents.java`: hands Minestom events to `Game`. `GameCommand.java`: `/game`; `handle(...)` returns the reply, so tests call it directly.
-- `Stage`, `Box`, `Kit`: settings values. `Progress`: saved progress. `Console`: reads `stop` and commands from standard input.
-- `src/test/java/`: plain unit tests (`BoxTest`, `GameConfigTest`, `ProgressTest`) and test-environment tests (`GameTest`, `{{name}}ServerTest`).
+- `Stage`, `Box`, `Kit`: settings values. `Progress`: saved progress. `Console`: reads `stop` and commands from standard input, and runs commands on the tick thread.
+- `src/test/java/`: plain unit tests (`BoxTest`, `GameConfigTest`, `ProgressTest`) and test-environment tests (`GameTest`, `GameThreadsTest`, `{{name}}ServerTest`).
 - `gradle/libs.versions.toml`: every dependency version. `libs/msc-agent-minestom.jar`: Minecraft Server Creator's agent; keep it, do not edit it.
 
 ## Building the game
@@ -46,7 +46,9 @@ The base every game needs, so you only write the game itself. All of it is set i
 - Commands: subclass `Command`, add syntaxes with `ArgumentType`, register with `MinecraftServer.getCommandManager().register(...)`.
 - Blocks: `Block.STONE`, `Block.OAK_STAIRS.withProperty("facing", "north")`, `instance.setBlock(x, y, z, block)`. Chunks must be loaded first (`instance.loadChunk(cx, cz)`).
 - Text is Adventure `Component`s (`Component.text("Hi", NamedTextColor.GREEN)`). Never use `§` codes.
-- Instances tick on their own threads. Do not block in event listeners or commands; use `MinecraftServer.getSchedulerManager()` or a virtual thread for slow work (`Progress` is flushed on a virtual thread). Console commands (`Console`, msc's `server_command`) run on their own thread, not the tick thread: state they share with listeners goes in concurrent collections, as in `Game` and `Progress`.
+- Threads: game state is touched only on the tick thread. Event listeners and player commands run there, and so do console commands: `Console` and msc's `server_command` hand each command to the scheduler, which runs it at the start of the next tick. So `Game` uses plain collections, and a step like "read the stage, then advance" never interleaves with a `/game` command. A concurrent collection would not give that: it protects one call, not the steps between calls.
+- Code on any other thread (a virtual thread, a `CompletableFuture` callback, an `Async...` event) hops back before it touches game state: `MinecraftServer.getSchedulerManager().execute(() -> ...)` or `world.scheduleNextTick(w -> ...)`. `Game.confineTo` makes a change from another thread throw; `main` turns it on for the tick threads and `GameTest` for the test thread. `Progress` is the one exception: it is written to disk on a virtual thread, so it is thread-safe.
+- Do not block the tick thread (no files, network or sleeps in listeners or commands): do slow work on a virtual thread, then hop back with its result.
 
 ## Tests
 
