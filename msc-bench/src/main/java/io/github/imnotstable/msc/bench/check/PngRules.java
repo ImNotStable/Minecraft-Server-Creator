@@ -1,7 +1,7 @@
 package io.github.imnotstable.msc.bench.check;
 
-import com.google.gson.JsonObject;
 import io.github.imnotstable.msc.bench.JsonNumbers;
+import io.github.imnotstable.msc.bench.UserJson;
 import java.awt.Color;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
@@ -40,29 +40,28 @@ public record PngRules(
         }
     }
 
-    /** Reads the rules of a check or zip entry; {@code at} names it in errors, such as {@code task.json checks[0]}. */
-    static PngRules parse(JsonObject json, String at) {
+    /** Reads the rules of a check or zip entry. */
+    static PngRules parse(UserJson json) {
         HueRule hue = null;
         if (json.has("hue")) {
-            JsonObject h = json.getAsJsonObject("hue");
-            String key = at + ".hue";
+            UserJson h = json.object("hue");
             for (String required : List.of("from", "to")) {
                 if (!h.has(required)) {
-                    throw new IllegalArgumentException(key + ": missing \"" + required + "\"");
+                    throw new IllegalArgumentException(json.key("hue") + ": missing \"" + required + "\"");
                 }
             }
             hue = new HueRule(
-                    JsonNumbers.number(h, "from", key + ".from", JsonNumbers.HUE, 0),
-                    JsonNumbers.number(h, "to", key + ".to", JsonNumbers.HUE, 0),
-                    JsonNumbers.number(h, "minFraction", key + ".minFraction", JsonNumbers.FRACTION, 0.5),
-                    JsonNumbers.number(h, "minSaturation", key + ".minSaturation", JsonNumbers.FRACTION, 0.25));
+                    h.number("from", JsonNumbers.HUE, 0),
+                    h.number("to", JsonNumbers.HUE, 0),
+                    h.number("minFraction", JsonNumbers.FRACTION, 0.5),
+                    h.number("minSaturation", JsonNumbers.FRACTION, 0.25));
         }
         return new PngRules(
-                JsonNumbers.wholeNumber(json, "width", at + ".width", JsonNumbers.POSITIVE, 0),
-                JsonNumbers.wholeNumber(json, "height", at + ".height", JsonNumbers.POSITIVE, 0),
-                JsonNumbers.wholeNumber(json, "maxColors", at + ".maxColors", JsonNumbers.POSITIVE, 0),
-                JsonNumbers.number(json, "minOpaqueFraction", at + ".minOpaqueFraction", JsonNumbers.FRACTION, 0),
-                JsonNumbers.number(json, "maxOpaqueFraction", at + ".maxOpaqueFraction", JsonNumbers.FRACTION, 0),
+                json.wholeNumber("width", JsonNumbers.POSITIVE, 0),
+                json.wholeNumber("height", JsonNumbers.POSITIVE, 0),
+                json.wholeNumber("maxColors", JsonNumbers.POSITIVE, 0),
+                json.number("minOpaqueFraction", JsonNumbers.FRACTION, 0),
+                json.number("maxOpaqueFraction", JsonNumbers.FRACTION, 0),
                 hue);
     }
 
