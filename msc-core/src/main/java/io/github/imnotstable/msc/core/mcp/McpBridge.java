@@ -24,6 +24,8 @@ import java.util.Map;
 /** The only class that touches the MCP SDK: exposes the tool registry over stdio. */
 public final class McpBridge {
     private static final Gson GSON = new Gson();
+    /** Arguments as the client sent them: a number no double holds (1e400) arrives as Infinity and must not throw here. */
+    private static final Gson ARGS = new com.google.gson.GsonBuilder().serializeSpecialFloatingPointValues().create();
     private static final String INSTRUCTIONS = "Tools for developing a Minecraft server ("
             + Platform.names(p -> true, "or") + "). "
             + "Start: project_scaffold (template <platform>-game for a minigame base), then read the project's CLAUDE.md. "
@@ -58,7 +60,7 @@ public final class McpBridge {
                     .description(tool.description()).build();
             specs.add(new McpServerFeatures.SyncToolSpecification(definition, (exchange, request) -> {
                 JsonObject args = request.arguments() == null ? new JsonObject()
-                        : GSON.toJsonTree(request.arguments()).getAsJsonObject();
+                        : ARGS.toJsonTree(request.arguments()).getAsJsonObject();
                 ToolRegistry.Result result = registry.call(tool.name(), args);
                 McpSchema.CallToolResult.Builder reply = McpSchema.CallToolResult.builder();
                 if (result.png() != null) {
@@ -74,6 +76,9 @@ public final class McpBridge {
                 .serverInfo("msc-core", Core.VERSION)
                 .instructions(INSTRUCTIONS)
                 .capabilities(McpSchema.ServerCapabilities.builder().tools(false).build())
+                // Off, so every call reaches ToolRegistry.call, which checks the arguments (ArgCheck), answers in MSC's
+                // one-line "error: ..." form and logs the call; the SDK's check would answer for it, unlogged (#510).
+                .validateToolInputs(false)
                 .tools(specs)
                 .build();
     }

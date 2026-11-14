@@ -57,7 +57,7 @@ public final class PlayerTools implements AutoCloseable {
                                 + "slot 1-9, say text, /command, tp x,y,z, entities, inventory, hud, close")
                         .opt("name", "string", "Default MscTester")
                         .opt("gamemode", "string", "survival, adventure, creative. Default: the game's")
-                        .opt("leave", "boolean", "Disconnect after. Default false"),
+                        .opt("leave", "boolean", "Disconnect after"),
                 t::run);
         return t;
     }

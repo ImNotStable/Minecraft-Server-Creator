@@ -271,6 +271,39 @@ class WorldToolsTest {
                 .contains("not both");
     }
 
+    /**
+     * #509: one rule for structure files. structure_save takes only a .schem name (any case); every reader goes by
+     * the content, so whatever it saved reads back through world_summary diff= and build_batch file=, a text
+     * structure reads under any name, and a file that is neither is refused in one line naming it.
+     */
+    @Test
+    void structureFilesFollowOneRuleForEveryWriterAndReader() throws Exception {
+        String region = "0,63,0 2,65,2";
+        h.ok("build_batch", "steps", "fill 0,64,0 2,64,2 stone");
+        for (String name : List.of("snap", "snap.txt", "snap.schem.txt")) {
+            assertThat(h.error("structure_save", "region", region, "file", name))
+                    .isEqualTo("error: file must end in .schem (a Sponge schematic), such as structures/house.schem, not "
+                            + workspace.resolve(name));
+            assertThat(workspace.resolve(name)).doesNotExist();
+        }
+        for (String name : List.of("snap.SCHEM", "snap.schem", "d/Snap.Schem")) {
+            h.ok("structure_save", "region", region, "file", name);
+            assertThat(h.ok("world_summary", "region", region, "diff", name)).startsWith("no change since");
+            assertThat(h.ok("build_batch", "steps", "structure 10,64,10 file=" + name, "dryRun", true)).contains("27");
+        }
+        // A schematic renamed, and a text structure under any name, read by their content.
+        Files.copy(workspace.resolve("snap.schem"), workspace.resolve("renamed.txt"));
+        Files.writeString(workspace.resolve("post"), "legend: #=stone\ny=0\n#\n");
+        assertThat(h.ok("world_summary", "region", region, "diff", "renamed.txt")).startsWith("no change since");
+        assertThat(h.ok("build_batch", "steps", "structure 10,64,10 file=post", "dryRun", true)).contains("1");
+        Files.write(workspace.resolve("junk.bin"), new byte[] {(byte) 0xff, (byte) 0xfe, 0, 1});
+        String neither = "error: " + workspace.resolve("junk.bin") + " is neither a Sponge schematic (as "
+                + "structure_save writes) nor a UTF-8 text structure; save a snapshot with structure_save";
+        assertThat(h.error("world_summary", "region", region, "diff", "junk.bin")).isEqualTo(neither);
+        assertThat(h.error("build_batch", "steps", "structure 10,64,10 file=junk.bin", "dryRun", true))
+                .isEqualTo("error: line 1 (structure 10,64,10 file=junk.bin): " + neither.substring("error: ".length()));
+    }
+
     @Test
     void heightmapIsCompact() {
         h.ok("build_batch", "steps", "fill 1,64,1 2,66,2 stone");

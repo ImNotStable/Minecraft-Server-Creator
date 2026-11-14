@@ -76,6 +76,7 @@ public final class ToolRegistry {
             text = "error: unknown tool " + name;
         } else {
             try {
+                ArgCheck.check(tool, args);
                 output = tool.handler().output(new Args(args));
                 text = output.text();
                 ok = true;
@@ -83,6 +84,10 @@ public final class ToolRegistry {
                 text = "error: " + e.getMessage();
             } catch (OpException e) {
                 text = "error: agent answered " + e.code() + ": " + e.detail();
+            } catch (java.nio.file.FileSystemException e) {
+                // A file the call named or needs could not be read or written (access denied, a folder in the way):
+                // the caller can act on that, so it is not an internal error.
+                text = "error: " + PathArg.reason(e);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 text = "error: interrupted";

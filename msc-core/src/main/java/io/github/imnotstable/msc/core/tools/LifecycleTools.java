@@ -50,7 +50,7 @@ public final class LifecycleTools {
                         .opt("acceptEula", "boolean", EulaPrompts.EULA_ARG),
                 setup::run);
         registry.add("server_start", "Start the dev server and wait until it is ready. Returns startup errors only.",
-                Schema.of().opt("timeoutSeconds", "integer", "Default 180, 1 to " + ServerRun.MAX_START_SECONDS).opt("acceptEula", "boolean", EulaPrompts.EULA_ARG),
+                Schema.of().range("timeoutSeconds", 1, ServerRun.MAX_START_SECONDS, "Default 180").opt("acceptEula", "boolean", EulaPrompts.EULA_ARG),
                 run::start);
         registry.add("server_stop", "Stop the dev server.", Schema.of(), run::stop);
         registry.add("server_detach",
@@ -62,22 +62,22 @@ public final class LifecycleTools {
                         + "jar skips it. Returns build, test and startup errors, and phase times.",
                 Schema.of().opt("project", "string", "Project directory in the workspace. Default: the workspace")
                         .opt("restart", "boolean", "Restart the server after deploying. Default true")
-                        .opt("maxChars", "integer", "Result size cap. Default 6000"),
+                        .maxChars(),
                 cycle::run);
         registry.add("server_logs",
                 "Read the server log cheaply. mode=errors: warnings and errors with trimmed stack traces, repeats collapsed. "
                         + "mode=tail: last lines. mode=grep: lines matching a regex.",
                 Schema.of().opt("mode", "string", "errors (default), tail or grep")
                         .opt("pattern", "string", "Regex for mode=grep")
-                        .opt("lines", "integer", "Line count for tail and grep. Default 30")
-                        .opt("all", "boolean", "Look at the whole log, not only since the last start. Default false")
-                        .opt("maxChars", "integer", "Result size cap. Default 6000"),
+                        .range("lines", 1, Integer.MAX_VALUE, "For tail and grep. Default 30")
+                        .opt("all", "boolean", "Look at the whole log, not only since the last start")
+                        .maxChars(),
                 console::logs);
         registry.add("server_command", "Run console commands on the server and return their output.",
                 Schema.of().req("command", "string", "Command without the leading slash; several: one per line"),
                 console::command);
         registry.add("server_wait", "Wait until a log or chat line matches a regex, instead of polling.",
                 Schema.of().req("until", "string", "Regex, case-insensitive")
-                        .opt("timeoutSeconds", "integer", "Default 60, 1 to " + ServerConsole.MAX_WAIT_SECONDS), console::await);
+                        .range("timeoutSeconds", 1, ServerConsole.MAX_WAIT_SECONDS, "Default 60"), console::await);
     }
 }

@@ -84,7 +84,8 @@ class DocumentedResultLinesTest {
             for (Tool tool : h.core.registry().tools()) {
                 Matcher row = Pattern.compile("(?m)^\\| `" + tool.name() + "` \\|.*$").matcher(doc);
                 assertThat(row.find()).as("tools.md has a row for " + tool.name()).isTrue();
-                boolean documented = row.group().contains("`maxChars`? (integer)");
+                boolean documented = row.group().contains("`maxChars`? (integer, " + Budget.MIN_CHARS + " to "
+                        + Budget.MAX_CHARS + ")");
                 assertThat(Budget.takesMaxChars(tool)).as(tool.name() + " takes maxChars as tools.md says")
                         .isEqualTo(documented);
                 assertThat(Budget.cap(tool, new Args(huge))).as(tool.name() + "'s largest result")

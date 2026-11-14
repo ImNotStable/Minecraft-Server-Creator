@@ -78,14 +78,14 @@ public final class ApiTools {
                         + "one line per match with full signature.",
                 Schema.of().req("query", "string", "Words that must all match, for example \"player teleport\"")
                         .opt("kind", "string", "class, interface, enum, record, annotation or event")
-                        .opt("limit", "integer", "Default 15, at most " + MAX_SEARCH)
-                        .opt("maxChars", "integer", "Result size cap. Default 6000"),
+                        .range("limit", 1, MAX_SEARCH, "Default 15")
+                        .maxChars(),
                 args -> {
                     String kind = args.str("kind", null);
                     if (kind != null && !List.of("class", "interface", "enum", "record", "annotation", "event").contains(kind)) {
                         throw new ToolException("kind must be class, interface, enum, record, annotation or event");
                     }
-                    int limit = args.integer("limit", 15, 1, MAX_SEARCH);
+                    int limit = args.integer("limit", 15);
                     return Budget.truncate(index().search(args.str("query"), kind, limit, MAX_SEARCH), Budget.of(args),
                             "Add words or lower limit.");
                 });
@@ -94,10 +94,10 @@ public final class ApiTools {
                 Schema.of().req("name", "string", "Simple or full class name, for example Player or org.bukkit.entity.Player")
                         .opt("filter", "string", "Only members whose name contains this")
                         .opt("inherited", "boolean", "Include members of supertypes")
-                        .opt("limit", "integer", "Default 40, at most " + MAX_MEMBERS)
-                        .opt("maxChars", "integer", "Result size cap. Default 6000"),
+                        .range("limit", 1, MAX_MEMBERS, "Default 40")
+                        .maxChars(),
                 args -> Budget.truncate(index().describe(args.str("name"), args.str("filter", null),
-                        args.bool("inherited", false), args.integer("limit", 40, 1, MAX_MEMBERS), MAX_MEMBERS),
+                        args.bool("inherited", false), args.integer("limit", 40), MAX_MEMBERS),
                         Budget.of(args), "Use filter."));
     }
 }
