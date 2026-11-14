@@ -3,17 +3,13 @@ package io.github.imnotstable.msc.process;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import java.io.ByteArrayInputStream;
 import java.io.IOException;
-import java.io.InputStreamReader;
-import java.io.Reader;
 import java.io.StringWriter;
 import java.io.Writer;
-import java.nio.charset.CharacterCodingException;
-import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Properties;
@@ -36,9 +32,9 @@ class ServerPropertiesFileTest {
         Files.writeString(file, "# Minecraft server properties\nmotd=A Server\n", StandardCharsets.UTF_8);
         ServerPropertiesFile.set(file, Map.of("rcon.password", value));
         assertThat(ServerPropertiesFile.read(file)).containsEntry("rcon.password", value).containsEntry("motd", "A Server");
-        assertThat(serverReads(Files.readAllBytes(file))).containsEntry("rcon.password", value);
+        assertThat(ServerReads.load(Files.readAllBytes(file))).containsEntry("rcon.password", value);
         // After its first start the server stores the file again, raw UTF-8 (#391): still the same value.
-        byte[] rewritten = serverStores(serverReads(Files.readAllBytes(file)));
+        byte[] rewritten = serverStores(ServerReads.load(Files.readAllBytes(file)));
         assertThat(ServerPropertiesFile.read(write(rewritten))).containsEntry("rcon.password", value);
     }
 
@@ -48,7 +44,7 @@ class ServerPropertiesFileTest {
         Path file = dir.resolve(ServerPropertiesFile.NAME);
         ServerPropertiesFile.set(file, Map.of(key, "v"));
         ServerPropertiesFile.set(file, Map.of(key, "w"));
-        assertThat(serverReads(Files.readAllBytes(file))).containsExactly(Map.entry(key, "w"));
+        assertThat(ServerReads.load(Files.readAllBytes(file))).containsExactly(Map.entry(key, "w"));
     }
 
     @Test
@@ -64,7 +60,7 @@ class ServerPropertiesFileTest {
     void fallsBackToIso88591WhenTheBytesAreNotUtf8() throws IOException {
         Path file = write("rcon.password=p\u00e4ss\nmotd=\\u00e9\n".getBytes(StandardCharsets.ISO_8859_1));
         assertThat(ServerPropertiesFile.read(file)).containsEntry("rcon.password", "päss").containsEntry("motd", "é");
-        assertThat(serverReads(Files.readAllBytes(file))).containsEntry("rcon.password", "päss");
+        assertThat(ServerReads.load(Files.readAllBytes(file))).containsEntry("rcon.password", "päss");
     }
 
     @Test
@@ -85,8 +81,10 @@ class ServerPropertiesFileTest {
         values.put("long", "x");
         values.put("force-gamemode", "true");
         ServerPropertiesFile.set(file, values);
-        assertThat(Files.readString(file)).isEqualTo("#Minecraft server properties\n#Sat Nov 14\n\nmotd=Hello\n"
-                + "gamemode=creative\n! old comment\nlong=x\ndifficulty=peaceful\nmax-players 20\nforce-gamemode=true\n");
+        // Line ends stay as they were; an added line ends in \n.
+        assertThat(Files.readString(file)).isEqualTo("#Minecraft server properties\r\n#Sat Nov 14\r\n\r\nmotd=Hello\r\n"
+                + "gamemode=creative\r\n! old comment\r\nlong=x\r\ndifficulty=peaceful\r\nmax-players 20\r\n"
+                + "force-gamemode=true\n");
     }
 
     @Test
@@ -106,25 +104,37 @@ class ServerPropertiesFileTest {
         assertThat(Files.readString(file)).isEqualTo("# a path C:\\\nrcon.port=2\n");
     }
 
+    @Test
+    void aLastLineEndingInABackslashDoesNotSwallowAnAddedKey() throws IOException {
+        // #407: hand-edited after the server's last start, so no final line end; the server drops the backslash.
+        Path file = write("gamemode=survival\nmotd=Shared at C:\\games\\".getBytes(StandardCharsets.UTF_8));
+        assertThat(ServerPropertiesFile.read(file)).containsEntry("motd", "Shared at C:games");
+        ServerPropertiesFile.set(file, Map.of("difficulty", "peaceful"));
+        assertThat(ServerPropertiesFile.read(file)).containsEntry("motd", "Shared at C:games")
+                .containsEntry("difficulty", "peaceful").containsEntry("gamemode", "survival").hasSize(3);
+    }
+
+    @Test
+    void setReplacesTheFileWholeAndKeepsItsPermissions() throws IOException {
+        Path file = write("motd=A Server\n".getBytes(StandardCharsets.UTF_8));
+        boolean posix = file.getFileSystem().supportedFileAttributeViews().contains("posix");
+        if (posix) {
+            Files.setPosixFilePermissions(file, PosixFilePermissions.fromString("rw-r-----"));
+        }
+        ServerPropertiesFile.set(file, Map.of("gamemode", "creative"));
+        assertThat(Files.readString(file)).isEqualTo("motd=A Server\ngamemode=creative\n");
+        if (posix) {
+            assertThat(PosixFilePermissions.toString(Files.getPosixFilePermissions(file))).isEqualTo("rw-r-----");
+        }
+        try (var left = Files.list(dir)) {
+            assertThat(left).as("no temp file left").containsExactly(file);
+        }
+    }
+
     private Path write(byte[] bytes) throws IOException {
         Path file = Files.createTempFile(dir, "server", ".properties");
         Files.write(file, bytes);
         return file;
-    }
-
-    /** Settings.loadFromFile of the 26.3 server: a strict UTF-8 reader, then ISO-8859-1. */
-    private static Properties serverReads(byte[] bytes) throws IOException {
-        Properties p = new Properties();
-        try (Reader in = new InputStreamReader(new ByteArrayInputStream(bytes), StandardCharsets.UTF_8.newDecoder()
-                .onMalformedInput(CodingErrorAction.REPORT).onUnmappableCharacter(CodingErrorAction.REPORT))) {
-            p.load(in);
-        } catch (CharacterCodingException e) {
-            p = new Properties();
-            try (Reader in = new InputStreamReader(new ByteArrayInputStream(bytes), StandardCharsets.ISO_8859_1)) {
-                p.load(in);
-            }
-        }
-        return p;
     }
 
     /** Settings.store of the 26.3 server: Properties.store over a UTF-8 writer, so non-ASCII stays raw. */

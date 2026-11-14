@@ -1,7 +1,6 @@
 package io.github.imnotstable.msc.core.tools;
 
 import io.github.imnotstable.msc.core.CoreConfig;
-import io.github.imnotstable.msc.core.files.AtomicFile;
 import io.github.imnotstable.msc.core.tool.Budget;
 import io.github.imnotstable.msc.core.tool.Schema;
 import io.github.imnotstable.msc.core.tool.Tool;
@@ -14,6 +13,7 @@ import io.github.imnotstable.msc.core.world.Schematic;
 import io.github.imnotstable.msc.core.world.TextGrid;
 import io.github.imnotstable.msc.core.world.Walk;
 import io.github.imnotstable.msc.core.world.WorldService;
+import io.github.imnotstable.msc.process.AtomicFile;
 import io.github.imnotstable.msc.protocol.op.Ops;
 import io.github.imnotstable.msc.protocol.world.BlockGrid;
 import io.github.imnotstable.msc.protocol.world.Region;

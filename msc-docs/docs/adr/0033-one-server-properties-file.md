@@ -40,8 +40,16 @@ RCON login failed (#392).
    appended, and comments, other lines (continuations included) and their order stay. Keys and values are escaped
    as `Properties.store(OutputStream)` escapes them: backslash, a leading space (every space in a key), `#`, `!`,
    `=`, `:`, tab, newline, carriage return, form feed, and every character outside printable ASCII as `\uXXXX`.
-   So a written line means the same whether the file is read as UTF-8 or ISO-8859-1. The file is UTF-8 with `\n`
-   line ends. A null or empty key, or a null value, is refused before the file is touched.
+   So a written line means the same whether the file is read as UTF-8 or ISO-8859-1. The file is UTF-8; its line
+   ends stay as they were and added lines end in `\n`. A null or empty key, or a null value, is refused before the
+   file is touched.
+   The lines are found as JDK 25's `Properties.LineReader` finds them, step for step (`ServerPropertiesFile.entries`),
+   and a line the end of the file closes (a dangling backslash, an open continuation) is written out again before
+   anything follows it, so an appended key never runs into it (#407). Before writing, `set` checks that the new text
+   reads back as the old keys plus the set ones, and writes nothing if not. A seeded property test runs it on random
+   files built from continuations, CR, CRLF and LF, a BOM, `#` and `!` comments, escaped separators, missing final
+   line ends, trailing backslashes, duplicates, empty keys, non-ASCII text and ISO-8859-1 files. The file is replaced
+   whole through `AtomicFile`, keeping its permissions ([ADR 0034](0034-one-atomic-file-writer.md)).
 4. **Callers.** msc-core `ServerProperties` keeps only the play modes and the start report's mode line;
    `ServerSetup`, `PackProperties`, `RconTarget` and `PlayerTools` use `ServerPropertiesFile`, and so does the
    bench's `Workspaces`. `PackProperties` still writes nothing when the file does not exist, and the byte snapshot

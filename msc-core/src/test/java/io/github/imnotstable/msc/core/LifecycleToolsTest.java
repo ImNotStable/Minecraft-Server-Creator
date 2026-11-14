@@ -7,6 +7,7 @@ import com.google.gson.JsonParser;
 import com.sun.net.httpserver.HttpServer;
 import io.github.imnotstable.msc.core.fixture.FakeBuildMain;
 import io.github.imnotstable.msc.core.fixture.FakeServerMain;
+import io.github.imnotstable.msc.core.server.FakeLeftover;
 import io.github.imnotstable.msc.core.server.MachineEulaAccess;
 import io.github.imnotstable.msc.core.tools.LifecycleToolsAccess;
 import io.github.imnotstable.msc.process.rcon.FakeRconServer;
@@ -231,6 +232,36 @@ class LifecycleToolsTest {
             assertThat(leftover.isAlive()).isFalse();
         } finally {
             leftover.destroyForcibly();
+            h.ok("server_stop");
+        }
+    }
+
+    @Test
+    void noStartOrDeployRunsWhileALeftoverThatCannotBeStoppedRuns() throws Exception {
+        // #408: server_start went on after "stop it by hand", and the new server's pid replaced the leftover's.
+        FakeLeftover leftover = FakeLeftover.install(h.core.server(), java.time.Duration.ofMillis(1));
+        Path pidFile = FakeLeftover.pidFile(h.core.server());
+        String pid = "pid " + leftover.pid();
+        assertThat(h.error("server_start", "timeoutSeconds", 30)).contains(pid, "could not be stopped", "over RCON",
+                "Nothing was started", "kill -9 " + leftover.pid());
+        assertThat(h.core.server().running()).isFalse();
+        assertThat(Files.readString(pidFile)).startsWith(leftover.pid() + " ");
+
+        assertThat(h.error("server_start", "timeoutSeconds", 30)).contains(pid, "survived a whole stop before");
+        assertThat(h.error("dev_cycle", "project", "demo")).contains(pid, "survived a whole stop before");
+        assertThat(workspace.resolve("run/plugins/demo.jar")).doesNotExist();
+        assertThat(h.core.server().running()).isFalse();
+        int destroys = leftover.destroys.get();
+        assertThat(h.error("server_stop")).contains(pid, "over RCON", "is still running");
+        assertThat(leftover.destroys.get()).as("server_stop tries the whole stop again").isEqualTo(destroys + 1);
+        assertThat(Files.readString(pidFile)).startsWith(leftover.pid() + " ");
+
+        leftover.diesWhenKilled();
+        assertThat(h.ok("server_stop")).startsWith("stopped a server left running by an earlier session (" + pid);
+        assertThat(pidFile).doesNotExist();
+        try {
+            assertThat(h.ok("server_start", "timeoutSeconds", 30)).startsWith("server ready in ");
+        } finally {
             h.ok("server_stop");
         }
     }
