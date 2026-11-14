@@ -40,6 +40,39 @@ class OverlayTest {
                 + "1 zombie at 4.5,65,4.5; 2 player \"Alex\" at 11.5,65,11.5.");
     }
 
+    /**
+     * World text cut for the legend (40 chars) and for the image (20 chars) with an emoji at every position around
+     * either cut: the caption the render tool returns and the drawn lines never hold half of it (#479).
+     */
+    @Test
+    void cutWorldTextNeverHoldsHalfAnEmoji() {
+        String emoji = "\uD83C\uDFC6";
+        for (int at = 10; at <= 45; at++) {
+            String words = "x".repeat(at) + emoji + "y".repeat(60 - at);
+            RenderResult result = renderer.render(floor().grid(), View.parse("top"), PLAIN, List.of(
+                    Marker.entity("minecraft:cow", words, 4.5, 65, 4.5),
+                    Marker.entity("minecraft:text_display", words, 8, 66, 4),
+                    Marker.sign(8, 65, 12, List.of(words)),
+                    Marker.text(12, 66, 12, words)));
+            assertThat(loneSurrogates(result.caption())).as("caption, emoji at %d", at).isZero();
+            assertThat(result.caption()).as("caption, emoji at %d", at).contains("xxx");
+            assertThat(WorldRenderer.textLines(List.of(words, words, words, words, words)))
+                    .as("image lines, emoji at %d", at).allSatisfy(l -> assertThat(loneSurrogates(l)).isZero());
+        }
+    }
+
+    private static long loneSurrogates(String s) {
+        long n = 0;
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (Character.isHighSurrogate(c) && (i + 1 == s.length() || !Character.isLowSurrogate(s.charAt(i + 1)))
+                    || Character.isLowSurrogate(c) && (i == 0 || !Character.isHighSurrogate(s.charAt(i - 1)))) {
+                n++;
+            }
+        }
+        return n;
+    }
+
     @Test
     void hologramsAndSignsShowTheirWords() {
         RenderResult result = renderer.render(floor().grid(), View.parse("top"), PLAIN, List.of(
