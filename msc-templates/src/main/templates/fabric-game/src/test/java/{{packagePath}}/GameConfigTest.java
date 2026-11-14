@@ -40,7 +40,7 @@ class GameConfigTest {
         assertThatThrownBy(() -> TestGames.withStages(List.of())).hasMessageContaining("at least one stage");
         assertThatThrownBy(() -> TestGames.withStages(List.of(new Stage("a", p), new Stage("A", p))))
                 .hasMessageContaining("duplicate stage name A");
-        assertThatThrownBy(() -> new Stage("two words", p)).hasMessageContaining("one word");
+        assertThatThrownBy(() -> new Stage("two words", p)).hasMessageContaining(Stage.NAME_RULE);
         assertThatThrownBy(() -> new Kit.Entry(Items.BREAD, 0)).hasMessageContaining("from 1 to " + Kit.MAX_AMOUNT);
     }
 }

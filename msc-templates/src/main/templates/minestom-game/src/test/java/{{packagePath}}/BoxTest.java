@@ -29,24 +29,27 @@ class BoxTest {
     void boxesMustBeInOrderAndInsideTheWorld() {
         assertThatThrownBy(() -> new Box(2, 0, 0, -2, 0, 0)).hasMessageContaining("use Box.of");
         assertThatThrownBy(() -> new Box(0, 5, 0, 0, 4, 0)).hasMessageContaining("use Box.of");
-        assertThatThrownBy(() -> Box.of(0, 0, 0, 0, 2032, 0)).hasMessageContaining("outside the world");
-        assertThatThrownBy(() -> Box.of(0, -2033, 0, 0, 0, 0)).hasMessageContaining("outside the world");
-        assertThatThrownBy(() -> Box.of(-30_000_001, 0, 0, 0, 0, 0)).hasMessageContaining("outside the world");
+        assertThatThrownBy(() -> Box.of(0, 0, 0, 0, Box.MAX_Y + 1, 0)).hasMessageContaining("outside the world");
+        assertThatThrownBy(() -> Box.of(0, Box.MIN_Y - 1, 0, 0, 0, 0)).hasMessageContaining("outside the world");
+        assertThatThrownBy(() -> Box.of(-Box.MAX_XZ - 1, 0, 0, 0, 0, 0)).hasMessageContaining("outside the world");
+        assertThatThrownBy(() -> Box.of(0, 0, 0, 0, 0, Box.MAX_XZ + 1)).hasMessageContaining("outside the world");
         assertThatThrownBy(() -> Box.of(0, 0, 0, 0, 0, Integer.MAX_VALUE)).hasMessageContaining("outside the world");
-        assertThat(Box.of(-30_000_000, -2032, -30_000_000, 30_000_000, 2031, 30_000_000)).isNotNull();
+        assertThat(Box.of(-Box.MAX_XZ, Box.MIN_Y, -Box.MAX_XZ, Box.MAX_XZ, Box.MAX_Y, Box.MAX_XZ)).isNotNull();
     }
 
     @Test
     void spawnsMustBeFiniteAndInsideTheWorld() {
-        for (double bad : new double[] {Double.NaN, Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY, 3e7 + 1}) {
+        for (double bad : new double[] {Double.NaN, Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY}) {
             assertThatThrownBy(() -> stageAt(bad, 0, 0, 0, 0)).hasMessageContaining("not finite or outside");
             assertThatThrownBy(() -> stageAt(0, bad, 0, 0, 0)).hasMessageContaining("not finite or outside");
             assertThatThrownBy(() -> stageAt(0, 0, bad, 0, 0)).hasMessageContaining("not finite or outside");
-            if (!Double.isFinite(bad)) { // Pos itself wraps a finite yaw into -180 to 180
-                assertThatThrownBy(() -> stageAt(0, 0, 0, (float) bad, 0)).hasMessageContaining("not finite or outside");
-            }
+            assertThatThrownBy(() -> stageAt(0, 0, 0, (float) bad, 0)).hasMessageContaining("not finite or outside");
         }
-        // Pos clamps pitch into -90 to 90 itself; only NaN gets through to the check.
+        assertThatThrownBy(() -> stageAt(Box.MAX_XZ + 0.5, 0, 0, 0, 0)).hasMessageContaining("not finite or outside");
+        assertThatThrownBy(() -> stageAt(0, Box.MAX_Y + 0.5, 0, 0, 0)).hasMessageContaining("not finite or outside");
+        assertThatThrownBy(() -> stageAt(0, Box.MIN_Y - 0.5, 0, 0, 0)).hasMessageContaining("not finite or outside");
+        assertThatThrownBy(() -> stageAt(0, 0, -Box.MAX_XZ - 0.5, 0, 0)).hasMessageContaining("not finite or outside");
+        // Pos wraps a finite yaw into -180 to 180 and clamps pitch into -90 to 90 itself; only NaN gets through.
         assertThatThrownBy(() -> stageAt(0, 0, 0, 0, Float.NaN)).hasMessageContaining("not finite or outside");
         assertThat(stageAt(0.5, -60, 0.5, 180, -90)).isNotNull();
     }
