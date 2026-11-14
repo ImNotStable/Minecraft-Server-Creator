@@ -2,6 +2,8 @@ package io.github.imnotstable.msc.bench;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.imnotstable.msc.bench.run.FullDisk;
+import io.github.imnotstable.msc.bench.run.RunRecord;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.PrintStream;
@@ -12,6 +14,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
@@ -20,6 +23,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.MethodSource;
 
 /**
@@ -300,6 +304,48 @@ class CommandLineTest {
 
     static Stream<String> goodResults() {
         return GOOD_RESULTS.keySet().stream();
+    }
+
+    /**
+     * #476: the end of a run on a disk that may refuse report.md. Each row: the attempts' verdict (pass, fail, a usage
+     * limit, an attempt not recorded) and whether report.md can be written; the exit code, which a refused report never
+     * changes, and the stop line, which comes before the report line or the one warning. A refused report leaves the
+     * earlier report.md as it was, never a 0-byte file.
+     */
+    @ParameterizedTest
+    @CsvSource({
+            "pass, false, 0, ''",
+            "pass, true, 0, ''",
+            "fail, false, 3, ''",
+            "fail, true, 3, ''",
+            "limit, false, 4, Stopped early on a usage limit (out of usage)",
+            "limit, true, 4, Stopped early on a usage limit (out of usage)",
+            "unrecorded, false, 5, Stopped early: an attempt could not be written to results.jsonl (No space left",
+            "unrecorded, true, 5, Stopped early: an attempt could not be written to results.jsonl (No space left"})
+    void theEndOfARunKeepsItsExitCodeWhenTheReportCannotBeWritten(String verdict, boolean reportFails, int exit,
+            String stop) throws IOException {
+        Path runDir = Files.createDirectories(dir.resolve("run"));
+        Files.writeString(runDir.resolve(Main.REPORT), "earlier report");
+        List<RunRecord> records = List.of(new RunRecord("t1", "code", "baseline", 1, "", !verdict.equals("fail"), 0,
+                false, 0, null, null, null, null));
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+
+        int code = Main.endRun(records, verdict.equals("unrecorded") ? new IOException("No space left on device") : null,
+                verdict.equals("limit") ? "out of usage" : null, runDir, new PrintStream(out, true, StandardCharsets.UTF_8),
+                new FullDisk(reportFails ? Set.of(Main.REPORT) : Set.of(), 0, false));
+
+        assertThat(code).isEqualTo(exit);
+        List<String> lines = out.toString(StandardCharsets.UTF_8).lines().toList();
+        assertThat(lines).hasSize(stop.isEmpty() ? 1 : 2);
+        if (!stop.isEmpty()) {
+            assertThat(lines.getFirst()).startsWith(stop);
+        }
+        assertThat(lines.getLast()).startsWith(reportFails ? "warning: " : "Report: ");
+        assertThat(Files.readString(runDir.resolve(Main.REPORT)))
+                .startsWith(reportFails ? "earlier report" : "# Benchmark report");
+        try (Stream<Path> files = Files.list(runDir)) {
+            assertThat(files.map(f -> f.getFileName().toString())).containsExactly(Main.REPORT);
+        }
     }
 
     @Test
