@@ -1,6 +1,6 @@
 # ADR 0011: Fabric and Minestom in the core's lifecycle tools
 
-Status: accepted, 2026-11-11. Decided by Claude under Jeremiah's hand-over of build decisions.
+Status: accepted, 2026-11-11. Decided by Claude under Jeremiah's hand-over of build decisions. Amended 2026-11-14 (see the end).
 
 ## Context
 
@@ -27,3 +27,10 @@ The Fabric agent ([ADR 0009](0009-fabric-agent.md)) and the Minestom agent ([ADR
 - A fourth platform is one enum constant plus its setup branch.
 - A workspace with projects for two platforms needs `server_setup platform=...` to switch; one dev server at a time stays the rule.
 - Fabric versions move with `msc-templates`' pins, not with what the user asks for.
+
+## Amendment, 2026-11-14: statements later changes made untrue (#383)
+
+Found by reading every ADR against the code during the campaign. The original text above is kept as decided; what is true now:
+
+- Decision 1: `Platform` has seven constants since [ADR 0027](0027-more-platforms.md) (`paper`, `purpur`, `fabric`, `quilt`, `neoforge`, `forge`, `minestom`), and detection also reads `quilt.mod.json`, `META-INF/neoforge.mods.toml` and `META-INF/mods.toml`.
+- Decision 5 is superseded in part by [ADR 0020](0020-machine-eula.md): `server_start` refuses only when neither `eula.txt`, `acceptEula=true` on that call nor the owner's acceptance in `~/.msc/eula.json` says yes. The core still never accepts the EULA on its own.

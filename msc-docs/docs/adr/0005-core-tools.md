@@ -1,6 +1,6 @@
 # ADR 0005: msc-core tool design
 
-Date: 2026-11-10. Status: accepted. Decided by Claude under Jeremiah's instruction to build autonomously.
+Date: 2026-11-10. Status: accepted. Decided by Claude under Jeremiah's instruction to build autonomously. Amended 2026-11-14 (see the end).
 
 ## Context
 
@@ -55,3 +55,12 @@ On Fabric, `project_scaffold fabric-mod`, `server_setup`, `api_search` (6,792 cl
 
 - Adding a tool means one `registry.add(...)` call and a row in `tools.md`; the size test keeps the list honest.
 - World tools depend on an agent. Without one they answer with a one-line instruction instead of failing obscurely.
+
+## Amendment, 2026-11-14: statements later changes made untrue (#383)
+
+Found by reading every ADR against the code during the campaign. The original text above is kept as decided; what is true now:
+
+- Decision 1: the SDK is imported only in the `core.mcp` package, by `McpBridge` and `JsonRpcLines` (#283: it checks each stdin line the way the SDK will read it, because the SDK stops reading for good at the first line it cannot take). An SDK upgrade touches that package, not one class.
+- Decisions 3 and 4 and the first consequence: `build_structure` and the other single-purpose build tools were removed ([ADR 0019](0019-smaller-tool-surface.md)); the text structure format is the `structure` step of `build_batch`. The tool count is 26 since [ADR 0023](0023-texture-tools.md). The tool tables in `tools.md` are generated ([ADR 0026](0026-generated-tool-docs.md)), so a new tool needs a place in a `tools.md` marker and a row on the wiki tool page, not a hand-written row.
+- Decision 12 is superseded in part by [ADR 0020](0020-machine-eula.md): `server_start` takes `acceptEula` too, and with the owner's acceptance in `~/.msc/eula.json` `server_setup` and `server_start` write `eula=true` instead of refusing. The core still passes no EULA flag, and installing or using MSC alone never accepts the EULA.
+- The texture addendum: `PaletteTexture` is gone; the core uses msc-textures' `PaletteText`, `ResourceId` and `PackSource` (#140). The texture tools are now `texture`, `pack`, `model_create` and `texture_view` ([ADR 0023](0023-texture-tools.md)).

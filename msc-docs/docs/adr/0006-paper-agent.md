@@ -1,6 +1,6 @@
 # ADR 0006: Paper agent
 
-Status: accepted, 2026-11-10. Decided by Claude under Jeremiah's hand-over of build decisions.
+Status: accepted, 2026-11-10. Decided by Claude under Jeremiah's hand-over of build decisions. Amended 2026-11-14 (see the end).
 
 ## Context
 
@@ -22,3 +22,11 @@ Status: accepted, 2026-11-10. Decided by Claude under Jeremiah's hand-over of bu
 
 - The core must split jobs larger than one call and should expect `changed` to be lower than the region volume.
 - Undo history is lost when the server restarts. Persistent history is a post-MVP option.
+
+## Amendment, 2026-11-14: statements later changes made untrue (#383)
+
+Found by reading every ADR against the code during the campaign. The original text above is kept as decided; what is true now:
+
+- Decisions 1 and 2: the operations, sliced jobs and undo live in msc-agent-common since [ADR 0024](0024-agent-common.md); the Paper agent supplies adapters. The Bukkit scheduler steps every job through the shared `JobQueue` from one task per tick, so all jobs in flight share one 20 ms budget (#247), not 20 ms each.
+- Decision 5: `world.fill` and `world.setBlocks` were removed ([ADR 0019](0019-smaller-tool-surface.md), addendum). `world.write` is the only block-writing op and follows `updatePhysics`, which `build_batch` sends only with `physics=true` (off by default).
+- Decision 9: the shaded jar bundles msc-agent-common as well as msc-protocol.

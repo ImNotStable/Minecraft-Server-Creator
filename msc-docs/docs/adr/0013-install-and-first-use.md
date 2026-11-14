@@ -1,6 +1,6 @@
 # ADR 0013: One-command install and first-use fixes
 
-Status: accepted, 2026-11-12. Decided by Claude under Jeremiah's hand-over of build decisions.
+Status: accepted, 2026-11-12. Decided by Claude under Jeremiah's hand-over of build decisions. Amended 2026-11-14 (see the end).
 
 ## Context
 
@@ -30,3 +30,10 @@ Status: accepted, 2026-11-12. Decided by Claude under Jeremiah's hand-over of bu
 
 - Updating is `git pull` plus `installMsc` again, with Claude Code closed on Windows (the running core locks its jars).
 - With `--scope user` every folder Claude Code starts in gets a `.msc/tool-calls.jsonl` once a tool is called.
+
+## Amendment, 2026-11-14: statements later changes made untrue (#383)
+
+Found by reading every ADR against the code during the campaign. The original text above is kept as decided; what is true now:
+
+- Decision 1 is superseded by [ADR 0021](0021-plugin-install.md): every `installMsc` makes a new folder `~/.msc/core/msc-core-<version>-<time>` and keeps the newest two, and MSC is registered through the `msc` plugin. The task no longer prints a `claude mcp add` line; `claude-mcp-add.txt` is written only to keep an old flat install working (ADR 0021, decision 8). So the first consequence's "with Claude Code closed on Windows" no longer applies.
+- Decision 2: `agents/` holds the Paper, Fabric, NeoForge and Forge agents; Purpur runs the Paper agent and Quilt the Fabric one ([ADR 0027](0027-more-platforms.md)).

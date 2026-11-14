@@ -1,6 +1,6 @@
 # ADR 0017: Switch workspace at runtime, keep the pack offered past the session, small playtest fixes
 
-Status: accepted, 2026-11-12. Decided by Claude under Jeremiah's hand-over of build decisions. Follows the playtest findings (`playtest-findings.md`, items 12, 14, 17, 18, 19 and 20).
+Status: accepted, 2026-11-12. Decided by Claude under Jeremiah's hand-over of build decisions. Follows the playtest findings (`playtest-findings.md`, items 12, 14, 17, 18, 19 and 20). Amended 2026-11-14 (see the end).
 
 ## Context
 
@@ -21,3 +21,10 @@ Both playtests started Claude Code in the wrong folder and wrote a private stdio
 - `server_command` is up to about 0.4 s slower when the console keeps printing; usually about 60 ms.
 - Players on another machine still cannot fetch a pack served on `127.0.0.1`; `MSC_PACK_HOST` remains the fix.
 - Not done: non-ASCII replies breaking a Windows console client were in the playtest's own bridge, not in MSC, which writes UTF-8 JSON.
+
+## Amendment, 2026-11-14: statements later changes made untrue (#383)
+
+Found by reading every ADR against the code during the campaign. The original text above is kept as decided; what is true now:
+
+- Decision 1: `msc_stats` is now `msc_status stats=true` ([ADR 0019](0019-smaller-tool-surface.md)); it still covers the whole session.
+- Decision 5: `texture_create`, `texture_generate` and `texture_recolor` are one `texture` tool, which takes `model=handheld` ([ADR 0023](0023-texture-tools.md)). The EULA question is unchanged, but with the owner's acceptance for the machine the tools no longer ask ([ADR 0020](0020-machine-eula.md)).
