@@ -30,8 +30,9 @@ import java.util.UUID;
  * @param installDir    where this core is installed, or null when unknown; its {@code agents/} folder holds the
  *                      agent jars shipped with the core, the last place {@code server_setup} looks
  * @param packPort      port the resource pack server binds; 0 reuses the port this workspace used last
- * @param eulaFile      the owner's one-time, per-machine EULA acceptance ({@code ~/.msc/eula.json}), only ever read;
- *                      null (tests) means there is none
+ * @param eulaFile      the owner's one-time, per-machine EULA acceptance ({@code ~/.msc/eula.json}); read by
+ *                      {@code server_setup} and {@code server_start}, written only on the owner's explicit opt-in
+ *                      (see {@link io.github.imnotstable.msc.core.server.MachineEula}); null (tests) means there is none
  * @param loaderUrls    where the NeoForge, Forge and Quilt installers and the Purpur jars are downloaded from
  */
 public record CoreConfig(Path workspace, Path serverDir, int agentPort, String token, Path toolLog,

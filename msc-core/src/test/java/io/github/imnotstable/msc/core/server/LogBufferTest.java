@@ -11,7 +11,7 @@ import org.junit.jupiter.api.Test;
 class LogBufferTest {
     @Test
     void awaitFindsALineAddedLater() throws Exception {
-        LogBuffer log = new LogBuffer(10);
+        LogBuffer log = new LogBuffer(10, Long.MAX_VALUE);
         log.add("old done");
         long mark = log.mark();
         Thread.ofVirtual().start(() -> {
@@ -24,7 +24,7 @@ class LogBufferTest {
 
     @Test
     void awaitStopsWhenNotAlive() throws Exception {
-        LogBuffer log = new LogBuffer(10);
+        LogBuffer log = new LogBuffer(10, Long.MAX_VALUE);
         assertThat(log.await(0, l -> true, Duration.ofSeconds(10), () -> false)).isNull();
     }
 
@@ -32,7 +32,7 @@ class LogBufferTest {
     void awaitChecksAliveWithoutHoldingTheBuffer() throws Exception {
         // server_wait passes server::running, which takes the ServerManager monitor, while ServerManager.start
         // holds that monitor and calls log.mark(): alive must not run under the buffer's monitor (#242).
-        LogBuffer log = new LogBuffer(10);
+        LogBuffer log = new LogBuffer(10, Long.MAX_VALUE);
         AtomicBoolean markedWhileChecking = new AtomicBoolean();
         LogBuffer.Match m = log.await(0, l -> false, Duration.ofMillis(300), () -> {
             try {

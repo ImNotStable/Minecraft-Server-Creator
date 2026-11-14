@@ -246,9 +246,4 @@ public final class LogCondenser {
         }
         return Budget.truncate(out.toString(), maxChars, "Fix the first errors and build again.");
     }
-
-    /** True for the line a server prints when it has started, with or without ANSI colour codes. */
-    public static boolean readyLine(String line) {
-        return LogReader.READY.matcher(LogReader.stripAnsi(line)).matches();
-    }
 }
