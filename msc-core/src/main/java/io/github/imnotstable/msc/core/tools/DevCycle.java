@@ -184,10 +184,10 @@ final class DevCycle {
 
     /**
      * Checked first: where the jar goes (never over the agent jar) and that every file the deploy writes can be
-     * written; the start's own refusals were checked before the build ({@link #checkStart}). Then: stop a leftover server, stop the server, remove what
-     * interrupted calls left (housekeeping), deploy the new jar (whole, through a temp file), remove an earlier deploy
-     * under another name (after the deploy, so a failed deploy leaves the earlier jar working), mirror libs/, record
-     * the deploy, remember the platform, then the start's own steps.
+     * written; the start's own refusals were checked before the build ({@link #checkStart}). Then: stop a leftover
+     * server, stop the server, remove what interrupted calls left (housekeeping), deploy the new jar (whole, through a
+     * temp file), remove an earlier deploy under another name (after the deploy, so a failed deploy leaves the earlier
+     * jar working), mirror libs/, record the deploy, remember the platform, then the start's own steps.
      */
     private String deployAndRestart(Path project, Platform platform, ProjectBuilder.BuildResult build, boolean restart,
                                     int maxChars, Timings time) throws IOException, InterruptedException {
