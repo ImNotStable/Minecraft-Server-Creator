@@ -71,7 +71,13 @@ class RepoInputsTest {
             "Path.of(\"build\", \"tmp\").toAbsolutePath().getParent().getParent().resolveSibling(\"msc-docs\")",
             "new File(\"build\").getAbsoluteFile().getParentFile().getParentFile()",
             "Path.of(\"src/../..\")",
-            "class T { static final Path HERE = Path.of(\"\").toAbsolutePath(); Path m() { return HERE.getParent(); } }"})
+            "class T { static final Path HERE = Path.of(\"\").toAbsolutePath(); Path m() { return HERE.getParent(); } }",
+            // #425: the repository-root search, and fully qualified names.
+            "Path p = Path.of(\"\").toAbsolutePath(); while (!Files.exists(p.resolve(\"settings.gradle.kts\"))) p = p.getParent();",
+            "void m() { for (Path here = Path.of(\"\").toAbsolutePath(); here != null; here = here.getParent()) { read(here); } }",
+            "Files.readString(java.nio.file.Path.of(\"..\", \"README.md\"))",
+            "new java.io.File(\"../msc-docs/docs/tools.md\")",
+            "java.nio.file.Paths.get(\"\").toAbsolutePath().getParent()"})
     void recognisesABypass(String code) {
         assertThat(bypasses(code.replace("RF.", "RepoFiles."))).isNotEmpty();
     }
@@ -111,7 +117,11 @@ class RepoInputsTest {
             "void m() { Path here = Path.of(\"\").toAbsolutePath(); String s = here.toString(); }",
             "void m() { Path p = Path.of(name).toAbsolutePath(); read(p.getParent()); }",
             "void m() { Path p = Path.of(\"\").toAbsolutePath(); } void n(Path p) { read(p.getParent()); }",
-            "void m() { Path f = Path.of(\"build/x.txt\"); Files.createDirectories(f.getParent()); }"})
+            "void m() { Path f = Path.of(\"build/x.txt\"); Files.createDirectories(f.getParent()); }",
+            // #425: reassignments that do not climb.
+            "void m() { Path p = Path.of(\"build\"); p = p.resolve(\"tmp\"); read(p.getParent()); }",
+            "void m() { Path p = Path.of(\"\").toAbsolutePath(); p = other(p); read(p.getParent()); }",
+            "java.nio.file.Path.of(\"src/test/resources/x\")"})
     void allowsModuleLocalPaths(String code) {
         assertThat(bypasses(code.replace("RF.", "RepoFiles."))).isEmpty();
     }

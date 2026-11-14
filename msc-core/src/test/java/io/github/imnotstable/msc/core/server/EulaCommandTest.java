@@ -54,7 +54,7 @@ class EulaCommandTest {
     }
 
     private int run(FakeTerminal t, String... args) throws Exception {
-        return EulaCommand.run(List.of(args), dir.resolve(".msc/eula.json"), dir, t, CLOCK, "owner", "pc");
+        return EulaCommand.run(List.of(args), MachineEula.forHome(dir), dir, t, CLOCK, "owner", "pc");
     }
 
     @Test
@@ -108,7 +108,7 @@ class EulaCommandTest {
         assertThat(run(t, "status")).isEqualTo(1);
         assertThat(run(t, "revoke")).isZero();
         assertThat(t.text()).contains("not accepted for this machine").contains("Nothing to revoke");
-        MachineEulaAccess.accepted(dir.resolve(".msc/eula.json"));
+        MachineEulaAccess.accepted(dir);
         assertThat(run(t, "status")).isZero();
         assertThat(run(t, "revoke")).isZero();
         assertThat(dir.resolve(".msc/eula.json")).doesNotExist();

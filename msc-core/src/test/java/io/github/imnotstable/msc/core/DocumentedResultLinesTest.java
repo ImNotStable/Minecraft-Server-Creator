@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.github.imnotstable.msc.buildlogic.RepoFiles;
 import io.github.imnotstable.msc.core.fixture.FakeBuildMain;
 import io.github.imnotstable.msc.core.fixture.FakeServerMain;
+import io.github.imnotstable.msc.core.server.MachineEula;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -109,7 +110,7 @@ class DocumentedResultLinesTest {
         Files.createDirectories(root.resolve("other"));
         Files.createDirectories(root.resolve("third"));
         try (CoreHarness h = new CoreHarness(ws, c -> c.withServerCommand(java(FakeServerMain.class))
-                .withEulaFile(root.resolve("home/.msc/eula.json")))) {
+                .withMachineEula(MachineEula.forHome(root.resolve("home"))))) {
             String current = h.ok("msc_workspace");
             String same = h.ok("msc_workspace", "path", ws.toString());
             String quiet = h.ok("msc_workspace", "path", root.resolve("other").toString());
@@ -123,7 +124,7 @@ class DocumentedResultLinesTest {
     void projectScaffold() throws Exception {
         Path ws = Files.createDirectories(root.resolve("ws"));
         try (CoreHarness h = new CoreHarness(ws, c -> c.withBuildCommand(java(FakeBuildMain.class))
-                .withEulaFile(root.resolve("home/.msc/eula.json")))) {
+                .withMachineEula(MachineEula.forHome(root.resolve("home"))))) {
             matches("project_scaffold", List.of(
                     h.ok("project_scaffold", "name", "Lobby", "dir", "lobby", "template", "minestom-server"),
                     h.ok("project_scaffold", "name", "Arena", "dir", "arena"),
@@ -140,7 +141,7 @@ class DocumentedResultLinesTest {
         // A server folder has one; server_detach offers the pack there.
         Files.writeString(ws.resolve("run/server.properties"), "motd=test\n");
         try (CoreHarness h = new CoreHarness(ws, c -> c.withServerCommand(java(FakeServerMain.class))
-                .withEulaFile(root.resolve("home/.msc/eula.json")))) {
+                .withMachineEula(MachineEula.forHome(root.resolve("home"))))) {
             List<String> stops = new ArrayList<>(List.of(h.ok("server_stop")));
             h.ok("server_start", "timeoutSeconds", 60);
             String matched = h.ok("server_wait", "until", "Starting minecraft server", "timeoutSeconds", 60);
@@ -202,10 +203,10 @@ class DocumentedResultLinesTest {
         assertThat(m.find()).as("tools.md has a server_setup entry").isTrue();
         String entry = m.group(1);
         List<String> results = new ArrayList<>();
-        Path machineEula = root.resolve("home/.msc/eula.json");
+        MachineEula machineEula = MachineEula.forHome(root.resolve("home"));
         try (FakeDownloads downloads = FakeDownloads.start()) {
             Path paper = Files.createDirectories(root.resolve("paper"));
-            try (CoreHarness h = new CoreHarness(paper, c -> downloads.configure(c).withEulaFile(machineEula))) {
+            try (CoreHarness h = new CoreHarness(paper, c -> downloads.apply(c).withMachineEula(machineEula))) {
                 results.add(h.ok("server_setup", "platform", "paper"));
                 agents(paper);
                 // The user's yes, in this test's own temp home only: later setups get the machine acceptance line.
@@ -214,13 +215,13 @@ class DocumentedResultLinesTest {
             Path purpur = agents(Files.createDirectories(root.resolve("purpur")));
             Files.createDirectories(purpur.resolve("run"));
             Files.writeString(purpur.resolve("run/eula.txt"), "eula=true\n");
-            try (CoreHarness h = new CoreHarness(purpur, c -> downloads.configure(c)
-                    .withEulaFile(root.resolve("nobody/.msc/eula.json")))) {
+            try (CoreHarness h = new CoreHarness(purpur, c -> downloads.apply(c)
+                    .withMachineEula(MachineEula.forHome(root.resolve("nobody"))))) {
                 results.add(h.ok("server_setup", "platform", "purpur"));
             }
             for (String platform : List.of("fabric", "quilt", "neoforge", "forge")) {
                 Path ws = agents(Files.createDirectories(root.resolve(platform)));
-                try (CoreHarness h = new CoreHarness(ws, c -> downloads.configure(c).withEulaFile(machineEula))) {
+                try (CoreHarness h = new CoreHarness(ws, c -> downloads.apply(c).withMachineEula(machineEula))) {
                     results.add(h.ok("server_setup", "platform", platform));
                 }
             }

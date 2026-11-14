@@ -2,6 +2,7 @@ package io.github.imnotstable.msc.core;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.imnotstable.msc.core.server.MachineEula;
 import java.net.URI;
 import java.nio.file.Path;
 import java.security.CodeSource;
@@ -28,10 +29,11 @@ class MainTest {
 
     @Test
     void theMachineEulaFileIsInTheUsersHomeAndNeverInATestConfig() {
-        Path expected = Path.of(System.getProperty("user.home"), ".msc", "eula.json");
-        assertThat(CoreConfig.fromEnvironment(Map.of()).eulaFile()).isEqualTo(expected);
-        assertThat(CoreConfig.fromEnvironment(Map.of()).withWorkspace(dir).eulaFile()).isEqualTo(expected);
-        assertThat(CoreConfig.forWorkspace(dir).eulaFile()).isNull();
+        MachineEula expected = MachineEula.forHome(Path.of(System.getProperty("user.home")));
+        assertThat(expected).hasToString(Path.of(System.getProperty("user.home"), ".msc", "eula.json").toString());
+        assertThat(CoreConfig.fromEnvironment(Map.of()).machineEula()).isEqualTo(expected);
+        assertThat(CoreConfig.fromEnvironment(Map.of()).withWorkspace(dir).machineEula()).isEqualTo(expected);
+        assertThat(CoreConfig.forWorkspace(dir).machineEula()).isEqualTo(MachineEula.none());
     }
 
     private static CodeSource source(URI uri) throws Exception {

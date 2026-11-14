@@ -12,6 +12,7 @@ import io.github.imnotstable.msc.core.texture.ResourcePack;
 import io.github.imnotstable.msc.core.tool.Args;
 import io.github.imnotstable.msc.core.tool.Budget;
 import io.github.imnotstable.msc.core.tool.ToolException;
+import io.github.imnotstable.msc.process.ServerPropertiesFile;
 import io.github.imnotstable.msc.protocol.op.Ops;
 import io.github.imnotstable.msc.protocol.transport.CoreServer;
 import io.github.imnotstable.msc.protocol.world.BlockPos;
@@ -59,7 +60,7 @@ final class ServerRun {
     static final String START = "start the server";
     static final String DETACH = "detach the server";
     static final String KEEP_SERVING = "hand the pack to a standalone host";
-    static final String OFFER_PACK = "offer the pack in server.properties";
+    static final String OFFER_PACK = "offer the pack in " + ServerPropertiesFile.NAME;
 
     /** Checked first: not running, eula.txt writable. Then: accept the EULA, then {@link #startAndReport}. */
     String start(Args args) throws IOException, InterruptedException {
@@ -94,7 +95,7 @@ final class ServerRun {
         }
         return steps.then(TAKE_OVER_PACK).then(REFRESH_AGENT).then(START)
                 .ifFails(TAKE_OVER_PACK, "the server is not started; if the earlier session's pack host was stopped, "
-                        + "server.properties may offer a pack no one serves: server_start again serves it")
+                        + ServerPropertiesFile.NAME + " may offer a pack no one serves: server_start again serves it")
                 .ifFails(REFRESH_AGENT, "the server is not started; the installed agent jar is still the earlier "
                         + "one: server_start again updates it")
                 .ifFails(START, "the server is not running; server_start starts it");
@@ -127,7 +128,7 @@ final class ServerRun {
         }
         ResourcePack.Built built = pack.lastBuilt();
         if (built != null && Files.exists(serverProperties())) {
-            OutputFile.check(serverProperties(), "server.properties");
+            OutputFile.check(serverProperties(), ServerPropertiesFile.NAME);
         }
         Steps steps = new Steps("server_detach").then(DETACH).then(KEEP_SERVING).then(OFFER_PACK)
                 .ifFails(KEEP_SERVING, "the server is detached, but the pack is served by this session only, until it "
@@ -154,7 +155,7 @@ final class ServerRun {
         ResourcePack.Applied applied = pack.applied();
         if (hosting && built != null && steps.run(OFFER_PACK, () -> PackProperties.write(serverProperties(),
                 built.url(), built.sha1(), applied != null && applied.required()))) {
-            properties = "\nserver.properties now offers the pack too, so a restart outside MSC keeps it.";
+            properties = "\n" + ServerPropertiesFile.NAME + " now offers the pack too, so a restart outside MSC keeps it.";
         }
         return "server detached: it keeps running after this session ends"
                 + (hosting ? ", and so does the resource pack host" : " (no pack built yet, so no pack host)")
@@ -322,7 +323,7 @@ final class ServerRun {
     }
 
     private Path serverProperties() {
-        return config.serverDir().resolve("server.properties");
+        return config.serverDir().resolve(ServerPropertiesFile.NAME);
     }
 
     /**
@@ -348,7 +349,7 @@ final class ServerRun {
             } catch (IOException ignored) {
                 // Best effort: the server then shows players a failed pack download.
             }
-            return "server.properties no longer offers the resource pack (" + e.getMessage() + ")";
+            return ServerPropertiesFile.NAME + " no longer offers the resource pack (" + e.getMessage() + ")";
         }
     }
 

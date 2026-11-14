@@ -3,7 +3,6 @@ package io.github.imnotstable.msc.core.server;
 import java.io.Console;
 import java.io.IOException;
 import java.net.InetAddress;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Clock;
 import java.util.List;
@@ -65,12 +64,12 @@ public final class EulaCommand {
      * @param args the arguments after {@code eula}
      * @return the process exit code: 0 done, 1 not accepted, 2 usage or refused
      */
-    public static int run(List<String> args, Path file, Path installDir, Terminal t, Clock clock, String user,
+    public static int run(List<String> args, MachineEula file, Path installDir, Terminal t, Clock clock, String user,
                           String host) throws IOException {
         String sub = args.isEmpty() ? "" : args.getFirst();
         switch (sub) {
             case "status" -> {
-                Optional<MachineEula.Acceptance> a = MachineEula.read(file);
+                Optional<MachineEula.Acceptance> a = file.read();
                 t.println(a.map(x -> "Minecraft EULA accepted for this machine by " + x.describe() + " (" + file + ")")
                         .orElse("Minecraft EULA not accepted for this machine (" + file + " missing). Each "
                                 + Platform.names(Platform::needsEula, "or") + " server then needs your yes. To accept "
@@ -78,7 +77,7 @@ public final class EulaCommand {
                 return a.isPresent() ? 0 : 1;
             }
             case "revoke" -> {
-                boolean had = Files.deleteIfExists(file);
+                boolean had = file.revoke();
                 t.println(had ? "Removed " + file + ". New dev servers will need your yes again; servers that already "
                         + "have eula=true in their eula.txt keep it." : "Nothing to revoke: " + file + " does not exist.");
                 return 0;
@@ -93,9 +92,9 @@ public final class EulaCommand {
         }
     }
 
-    private static int accept(Path file, Path installDir, Terminal t, Clock clock, String user, String host)
+    private static int accept(MachineEula file, Path installDir, Terminal t, Clock clock, String user, String host)
             throws IOException {
-        Optional<MachineEula.Acceptance> already = MachineEula.read(file);
+        Optional<MachineEula.Acceptance> already = file.read();
         if (already.isPresent()) {
             t.println("Already accepted for this machine by " + already.get().describe() + " (" + file + ").");
             return 0;
@@ -117,7 +116,7 @@ public final class EulaCommand {
             t.println("Not accepted; nothing was written.");
             return 1;
         }
-        MachineEula.write(file, new MachineEula.Acceptance(user, host, clock.instant()), MachineEula.VIA_TERMINAL);
+        file.recordAcceptance(new MachineEula.Acceptance(user, host, clock.instant()), MachineEula.VIA_TERMINAL);
         t.println("Accepted. Saved to " + file + ".");
         return 0;
     }

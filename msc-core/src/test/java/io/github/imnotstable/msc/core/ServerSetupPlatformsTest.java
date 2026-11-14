@@ -15,8 +15,7 @@ import org.junit.jupiter.params.provider.EnumSource;
 
 /**
  * server_setup runs through for every platform, on a workspace without run/ and on one that has it, against local
- * fake download services and fake installers ({@link FakeDownloads}) (#367: Purpur failed on a fresh workspace
- * because nothing created run/).
+ * fake download services and fake installers (#367: Purpur failed on a fresh workspace because nothing created run/).
  * No real download, no real server, and the EULA is never accepted.
  */
 class ServerSetupPlatformsTest {
@@ -68,7 +67,7 @@ class ServerSetupPlatformsTest {
     }
 
     private static CoreHarness harness(Path ws) throws Exception {
-        return new CoreHarness(ws, downloads::configure);
+        return new CoreHarness(ws, downloads::apply);
     }
 
     private static void assertReady(Platform platform, Path ws, String out) throws IOException {

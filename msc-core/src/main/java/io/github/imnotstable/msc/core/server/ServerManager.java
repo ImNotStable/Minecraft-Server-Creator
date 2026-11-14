@@ -108,7 +108,7 @@ public final class ServerManager implements AutoCloseable {
             // one-time acceptance for this machine (ADR 0020), never a flag set here.
             Path eula = config.serverDir().resolve("eula.txt");
             try {
-                MachineEula.applyTo(config.eulaFile(), eula);
+                config.machineEula().applyTo(eula);
             } catch (IOException e) {
                 throw new ToolException("could not write " + eula + ": " + e.getMessage());
             }
