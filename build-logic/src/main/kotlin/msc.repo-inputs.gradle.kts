@@ -3,6 +3,8 @@
 // sets are that task's inputs, so what the tests read and what Gradle tracks cannot drift apart (#129, #355). The
 // tests read them through the generated class io.github.imnotstable.msc.buildlogic.RepoFiles, which refuses a path
 // no set of the running task declares. A set every file of the repository is in belongs on its own task (#370).
+// msc-core's RepoInputsTest scans every test source for reads around the sets (a `..` path, user.dir, msc.repoRoot,
+// or a walk up from a RepoFiles path in scope) and names the line and the change to make (#381).
 import io.github.imnotstable.msc.buildlogic.RepoInputs
 
 plugins {
