@@ -1,5 +1,6 @@
 package io.github.imnotstable.msc.core.server;
 
+import io.github.imnotstable.msc.process.AtomicFile;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -30,7 +31,7 @@ public final class PidFile {
             return;
         }
         try {
-            Files.writeString(file, parts[0] + " " + parts[1] + " " + RESISTING + "\n");
+            writeWhole(file, parts[0] + " " + parts[1] + " " + RESISTING + "\n");
         } catch (IOException e) {
             // Best effort: the next start then tries the whole stop again.
         }
@@ -48,11 +49,15 @@ public final class PidFile {
     public static void write(Path file, ProcessHandle process) {
         try {
             long started = process.info().startInstant().map(Instant::toEpochMilli).orElse(0L);
-            Files.createDirectories(file.getParent());
-            Files.writeString(file, process.pid() + " " + started + "\n");
+            writeWhole(file, process.pid() + " " + started + "\n");
         } catch (IOException e) {
             // Without it a leftover is not found; nothing else breaks.
         }
+    }
+
+    /** Whole or not at all ({@link AtomicFile}): a core reading it meanwhile never sees half a pid. */
+    private static void writeWhole(Path file, String text) throws IOException {
+        AtomicFile.write(file, to -> Files.writeString(to, text));
     }
 
     /** The live process the file names, or empty. The file is deleted either way. */

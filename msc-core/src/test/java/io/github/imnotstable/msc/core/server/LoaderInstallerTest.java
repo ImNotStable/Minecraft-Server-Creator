@@ -8,6 +8,7 @@ import io.github.imnotstable.msc.core.tool.ToolException;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
+import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -22,6 +23,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 class LoaderInstallerTest {
     @TempDir
@@ -68,6 +71,29 @@ class LoaderInstallerTest {
         assertThat(requests).containsOnlyOnce("/purpur/v2/purpur/26.3/2658/download");
         assertThatThrownBy(() -> installer.purpur("1.0", server)).isInstanceOf(ToolException.class)
                 .hasMessage("Purpur has no version 1.0");
+    }
+
+    /** #428: with Purpur's API unreachable, the cached build with the highest number, digits counted. */
+    @ParameterizedTest
+    @CsvSource({"9 10, 10", "999 1000, 1000", "9999 10000, 10000"})
+    void offlinePurpurIsTheNewestCachedBuild(String builds, int newest) throws Exception {
+        Path cache = Files.createDirectories(dir.resolve("cache"));
+        for (String build : builds.split(" ")) {
+            Files.writeString(cache.resolve("purpur-26.3-" + build + ".jar"), "build " + build);
+        }
+        Path server = dir.resolve("server");
+        // Bound but not listening: every connection is refused, and no other process can take the port meanwhile.
+        try (Socket unreachable = new Socket()) {
+            unreachable.bind(new InetSocketAddress("127.0.0.1", 0));
+            String base = "http://127.0.0.1:" + unreachable.getLocalPort();
+            LoaderInstaller offline = new LoaderInstaller(new LoaderInstaller.Urls(base, base, base, base), cache,
+                    "java");
+            assertThat(offline.purpur("26.3", server))
+                    .isEqualTo(new LoaderInstaller.Result("26.3 build " + newest, true));
+            assertThat(server.resolve("purpur.jar")).hasContent("build " + newest);
+            assertThatThrownBy(() -> offline.purpur("1.0", server)).isInstanceOf(ToolException.class)
+                    .hasMessageStartingWith("cannot reach ");
+        }
     }
 
     @Test
