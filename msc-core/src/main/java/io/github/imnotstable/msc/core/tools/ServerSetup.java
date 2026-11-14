@@ -58,48 +58,82 @@ final class ServerSetup {
         // (unsupported version, download error) leaves the workspace as it was, its working server included.
         Platform chosen = args.str("platform", null) == null ? null : Platform.of(args.str("platform"));
         Platform platform = chosen == null ? server.platform() : chosen;
-        Path dir = config.serverDir();
+        Path dir = OutputFile.checkFolder(config.serverDir(), "server folder");
+        Steps steps = new Steps("server_setup");
+        String rememberFails = "the server folder is set up, but the workspace platform is still "
+                + Platform.current(config).id() + ": run server_setup again";
         if (platform == Platform.MINESTOM) {
-            Files.createDirectories(dir);
-            remember(chosen);
+            steps.then(CREATE_FOLDER);
+            if (chosen != null) {
+                steps.then(REMEMBER).ifFails(REMEMBER, rememberFails);
+            }
+            steps.run(CREATE_FOLDER, () -> Files.createDirectories(dir));
+            remember(steps, chosen);
             return (mode == null ? "" : "mode ignored: a Minestom server sets game mode and difficulty in its own code\n")
                     + "minestom needs no server download and has no EULA step: the project's own jar is the server and "
                     + "the msc agent is built into it. Server directory: " + dir + "; next: dev_cycle";
         }
-        // The fallible part first (version checks, downloads, installers); run/ is only written once it is through.
-        StringBuilder installed = new StringBuilder();
-        switch (platform) {
-            case FABRIC -> fabric(version, dir, installed);
-            case QUILT -> quilt(version, dir, installed);
-            case NEOFORGE -> neoforge(version, dir, installed);
-            case FORGE -> forge(version, dir, installed);
-            case PURPUR -> report("purpur", loaders.purpur(version, dir), installed);
-            default -> paper(version, dir, installed);
+        // The fallible part first (version checks, downloads, installers); the rest of run/ only once it is through.
+        boolean defaults = Templates.ids().contains(Templates.PAPER_SERVER);
+        steps.then(INSTALL);
+        if (defaults) {
+            steps.then(DEFAULTS);
         }
+        if (mode != null) {
+            steps.then(MODE);
+        }
+        steps.then(AGENT).then(EULA);
+        if (chosen != null) {
+            steps.then(REMEMBER).ifFails(REMEMBER, rememberFails);
+        }
+        String partly = "server_setup again finishes it";
+        for (String step : List.of(DEFAULTS, MODE, AGENT, EULA)) {
+            steps.ifFails(step, "the server is installed but not fully set up; " + partly);
+        }
+        StringBuilder installed = new StringBuilder();
+        steps.run(INSTALL, () -> {
+            switch (platform) {
+                case FABRIC -> fabric(version, dir, installed);
+                case QUILT -> quilt(version, dir, installed);
+                case NEOFORGE -> neoforge(version, dir, installed);
+                case FORGE -> forge(version, dir, installed);
+                case PURPUR -> report("purpur", loaders.purpur(version, dir), installed);
+                default -> paper(version, dir, installed);
+            }
+        });
         StringBuilder out = new StringBuilder();
-        if (Templates.ids().contains(Templates.PAPER_SERVER)) {
-            int written = writeMissingDefaults(dir, acceptEula);
+        if (defaults) {
+            int written = steps.run(DEFAULTS, () -> writeMissingDefaults(dir, acceptEula));
             if (written > 0) {
                 out.append("wrote ").append(written).append(" default config files\n");
             }
         }
         if (mode != null) {
-            ServerProperties.set(dir.resolve("server.properties"), mode.settings());
+            steps.run(MODE, () -> ServerProperties.set(dir.resolve("server.properties"), mode.settings()));
             out.append("mode ").append(mode.id()).append(": ").append(mode.settings().get("gamemode")).append(", ")
                     .append(mode.settings().get("difficulty")).append(" difficulty from the next start\n");
         }
         out.append(installed);
         // The addon folder exists after setup even without an agent, for the deploys that follow.
-        installAgent(platform, Files.createDirectories(dir.resolve(platform.addonDir())), out);
-        eulaStep(dir.resolve("eula.txt"), acceptEula, out);
-        remember(chosen);
+        steps.run(AGENT, () -> installAgent(platform, Files.createDirectories(dir.resolve(platform.addonDir())), out));
+        steps.run(EULA, () -> eulaStep(dir.resolve("eula.txt"), acceptEula, out));
+        remember(steps, chosen);
         out.append(platform.id()).append(" server ready in ").append(dir).append("; next: server_start or dev_cycle");
         return out.toString();
     }
 
-    private void remember(Platform chosen) throws IOException {
+    static final String CREATE_FOLDER = "create the server folder";
+    static final String INSTALL = "download and install the server";
+    static final String DEFAULTS = "write missing default config files";
+    static final String MODE = "set the game mode in server.properties";
+    static final String AGENT = "install the msc agent";
+    static final String EULA = "apply the EULA answer";
+    static final String REMEMBER = "remember the workspace platform";
+
+    /** Last: a refused or failed setup leaves the workspace's platform, and with it its working server, as it was. */
+    private void remember(Steps steps, Platform chosen) throws InterruptedException {
         if (chosen != null) {
-            Platform.remember(config, chosen);
+            steps.run(REMEMBER, () -> Platform.remember(config, chosen));
         }
     }
 

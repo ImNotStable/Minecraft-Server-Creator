@@ -35,27 +35,49 @@ final class Scaffold {
         this.warmup = warmup;
     }
 
-    String run(Args args) throws IOException {
+    static final String WRITE_FILES = "write the project files";
+    static final String REMEMBER = "remember the workspace platform";
+    static final String WARMUP = "start the first build";
+
+    /**
+     * Checked first: the template, the name and package, and that the folder can be written. Then: write the files
+     * (through a staging folder beside tool files), remember the platform, start the first build.
+     */
+    String run(Args args) throws IOException, InterruptedException {
         String name = args.str("name");
-        Path dir = config.resolve(args.str("dir", "."));
+        Path dir = OutputFile.checkFolder(config.resolve(args.str("dir", ".")), "dir");
         String template = args.str("template", Templates.PAPER_PLUGIN);
         if (!Templates.ids().contains(template)) {
             throw new ToolException("unknown template " + template + ". Available: " + String.join(", ", Templates.ids()));
         }
-        ScaffoldResult result;
+        TemplateVariables vars;
         try {
-            TemplateVariables vars = TemplateVariables.of(name).withAcceptEula(args.bool("acceptEula", false));
-            if (args.has("package")) {
-                vars = vars.withPackageName(args.str("package").strip());
-            }
-            result = onlyToolFiles(dir) ? besideToolFiles(template, dir, vars) : Templates.scaffold(template, dir, vars);
+            TemplateVariables v = TemplateVariables.of(name).withAcceptEula(args.bool("acceptEula", false));
+            vars = args.has("package") ? v.withPackageName(args.str("package").strip()) : v;
         } catch (IllegalArgumentException | IllegalStateException e) {
             throw new ToolException(String.valueOf(e.getMessage()));
         }
         String platformId = Templates.info(template).get("platform");
-        if (platformId != null && !template.equals(Templates.PAPER_SERVER)
-                && (dir.equals(config.workspace()) || !Files.exists(Platform.file(config)))) {
-            Platform.remember(config, Platform.of(platformId));
+        boolean remember = platformId != null && !template.equals(Templates.PAPER_SERVER)
+                && (dir.equals(config.workspace()) || !Files.exists(Platform.file(config)));
+        boolean warm = Boolean.parseBoolean(Templates.info(template).get("warmup"));
+        Steps steps = new Steps("project_scaffold").then(WRITE_FILES);
+        if (remember) {
+            steps.then(REMEMBER).ifFails(REMEMBER, "the project is created, but the workspace platform is still "
+                    + Platform.current(config).id() + ": server_setup platform=" + platformId + " sets it");
+        }
+        if (warm) {
+            steps.then(WARMUP).ifFails(WARMUP, "the project is created; dev_cycle runs the first build");
+        }
+        ScaffoldResult result = steps.run(WRITE_FILES, () -> {
+            try {
+                return onlyToolFiles(dir) ? besideToolFiles(template, dir, vars) : Templates.scaffold(template, dir, vars);
+            } catch (IllegalArgumentException | IllegalStateException e) {
+                throw new ToolException(String.valueOf(e.getMessage()));
+            }
+        });
+        if (remember) {
+            steps.run(REMEMBER, () -> Platform.remember(config, Platform.of(platformId)));
         }
         StringBuilder out = new StringBuilder();
         out.append("created ").append(template).append(" project in ").append(dir).append(" (")
@@ -66,8 +88,8 @@ final class Scaffold {
                 out.append('\n').append(key).append(": ").append(result.values().get(key));
             }
         }
-        if (Boolean.parseBoolean(Templates.info(template).get("warmup"))) {
-            warmup.start(dir);
+        if (warm) {
+            steps.run(WARMUP, () -> warmup.start(dir));
             out.append("\nfirst build started in the background (the loader sets up Minecraft once, which takes "
                     + "minutes); dev_cycle waits for it");
         }

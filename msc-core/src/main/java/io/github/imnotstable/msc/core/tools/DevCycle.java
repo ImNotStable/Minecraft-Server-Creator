@@ -13,7 +13,6 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -138,7 +137,7 @@ final class DevCycle {
     }
 
     /**
-     * The project's platform when the workspace has none yet ({@link #rememberPlatform} keeps it once deployed); else
+     * The project's platform when the workspace has none yet (the deploy remembers it); else
      * the workspace's. A workspace set up as a platform that runs the same projects (Quilt for a Fabric mod, Purpur
      * for a Paper plugin) keeps its own.
      */
@@ -154,44 +153,96 @@ final class DevCycle {
         return workspace.agent().equals(platform.agent()) ? workspace : platform;
     }
 
+    static final String STOP_LEFTOVER = "stop a server an earlier session left holding the jar";
+    static final String STOP = "stop the server";
+    static final String DEPLOY = "deploy the jar";
+    static final String REMOVE_EARLIER = "remove the earlier deploy";
+    static final String LIBS = "mirror the libraries into libs/";
+    static final String RECORD = "record the deploy";
+    static final String REMEMBER = "remember the workspace platform";
+
+    /**
+     * Checked first: where the jar goes (never over the agent jar) and that every file the deploy writes can be
+     * written. Then: stop a leftover server, stop the server, deploy the new jar (whole, through a temp file), remove
+     * an earlier deploy under another name (after the deploy, so a failed deploy leaves the earlier jar working),
+     * mirror libs/, record the deploy, remember the platform, then the start's own steps.
+     */
     private String deployAndRestart(Path project, Platform platform, ProjectBuilder.BuildResult build, boolean restart,
                                     int maxChars, Timings time) throws IOException, InterruptedException {
         if (build.jar() == null) {
             return "build ok in " + LogText.seconds(build.millis()) + " but no jar in " + project.resolve("build/libs")
                     + "; nothing deployed";
         }
+        Path target = OutputFile.check(target(platform, build.jar(), project), "deploy target");
+        Path libs = config.serverDir().resolve("libs");
+        if (build.libs() != null) {
+            OutputFile.checkFolder(libs, "libs folder");
+        }
+        OutputFile.check(deployedFile(), "deploy record");
+        boolean remember = Platform.detect(project) != null && !Files.exists(Platform.file(config));
+        if (remember) {
+            OutputFile.check(Platform.file(config), "platform file");
+        }
+        String shown = platform.addonDir() == null ? platform.serverJar() : platform.addonDir() + "/" + target.getFileName();
+        boolean wasRunning = server.running();
         StringBuilder out = new StringBuilder();
+        if (restart && wasRunning && loaded(build.jar(), target)
+                && (build.libs() == null || mirror(build.libs(), libs, true) == 0)) {
+            return out.append("build ok in ").append(LogText.seconds(build.millis())).append(", jar unchanged: ")
+                    .append(shown).append(" kept, server not restarted (server_stop then server_start restarts it)")
+                    .append(run.resendPack()).toString();
+        }
+        Steps steps = new Steps("dev_cycle").then(STOP_LEFTOVER);
+        boolean stopping = wasRunning && restart;
+        if (stopping) {
+            steps.then(STOP);
+        }
+        steps.then(DEPLOY);
+        if (platform.addonDir() != null) {
+            steps.then(REMOVE_EARLIER);
+        }
+        if (build.libs() != null) {
+            steps.then(LIBS);
+        }
+        steps.then(RECORD);
+        if (remember) {
+            steps.then(REMEMBER);
+        }
+        if (restart) {
+            ServerRun.plan(steps);
+        }
+        String stopped = stopping ? "; the server is stopped: server_start starts it with what is deployed" : "";
+        steps.ifFails(DEPLOY, "the earlier jar is still deployed" + stopped)
+                .ifFails(REMOVE_EARLIER, "the new jar is deployed as " + shown + ", but the earlier one is still beside "
+                        + "it: delete it, or dev_cycle again" + stopped)
+                .ifFails(LIBS, "the jar is deployed, libs/ is partly updated: dev_cycle again mirrors it" + stopped)
+                .ifFails(RECORD, "the jar is deployed; dev_cycle again records it" + stopped)
+                .ifFails(REMEMBER, "the jar is deployed; the workspace platform is still " + server.platform().id()
+                        + stopped);
         // Before deploying: a server an earlier core left running holds the old jar open.
         long t = System.nanoTime();
-        String leftover = server.stopLeftover();
+        String leftover = steps.note(STOP_LEFTOVER, server::stopLeftover);
         if (leftover != null) {
             out.append(leftover).append('\n');
             time.add("leftover stop", millisSince(t));
         }
         out.append("build ok in ").append(LogText.seconds(build.millis()));
-        Path target = target(platform, build.jar(), project);
-        String shown = platform.addonDir() == null ? platform.serverJar() : platform.addonDir() + "/" + target.getFileName();
-        boolean wasRunning = server.running();
-        Path libs = config.serverDir().resolve("libs");
-        if (restart && wasRunning && loaded(build.jar(), target)
-                && (build.libs() == null || mirror(build.libs(), libs, true) == 0)) {
-            return out.append(", jar unchanged: ").append(shown).append(" kept, server not restarted (server_stop then "
-                    + "server_start restarts it)").append(run.resendPack()).toString();
-        }
-        if (wasRunning && restart) {
+        if (stopping) {
             t = System.nanoTime();
-            server.stop(Duration.ofSeconds(30));
+            steps.run(STOP, () -> server.stop(Duration.ofSeconds(30)));
             time.add("stop", millisSince(t));
         }
+        steps.run(DEPLOY, () -> copy(build.jar(), target));
         if (platform.addonDir() != null) {
-            removeEarlierDeploy(platform, project, target.getParent(), target);
+            steps.ran(REMOVE_EARLIER, () -> removeEarlierDeploy(platform, project, target.getParent(), target));
         }
-        copy(build.jar(), target);
         if (build.libs() != null) {
-            mirror(build.libs(), libs, false);
+            steps.run(LIBS, () -> mirror(build.libs(), libs, false));
         }
-        rememberDeploy(project, target);
-        rememberPlatform(project, platform);
+        steps.run(RECORD, () -> rememberDeploy(project, target));
+        if (remember) {
+            steps.run(REMEMBER, () -> Platform.remember(config, platform));
+        }
         out.append(", deployed ").append(build.jar().getFileName()).append(" as ").append(shown);
         if (!restart) {
             return out.append(wasRunning ? "; server still running the old jar until restarted" : "").toString();
@@ -199,7 +250,7 @@ final class DevCycle {
         if (server.serverJar() == null && config.serverCommand() == null) {
             return out.append("\nserver not set up, so nothing was started. Run server_setup, then dev_cycle.").toString();
         }
-        ServerRun.Report report = run.startAndReport(180, maxChars);
+        ServerRun.Report report = run.startAndReport(steps, 180, maxChars);
         time.add("start", report.result().millis());
         if (report.result().agentMillis() >= 0) {
             time.add("agent", report.result().agentMillis());
@@ -207,24 +258,13 @@ final class DevCycle {
         return out.append('\n').append(report.text()).toString();
     }
 
-    /**
-     * A workspace with no platform yet takes the deployed project's, but only once the jar is deployed: a failed build
-     * or a refused deploy leaves the workspace as it was.
-     */
-    private void rememberPlatform(Path project, Platform platform) throws IOException {
-        if (Platform.detect(project) != null && !Files.exists(Platform.file(config))) {
-            Platform.remember(config, platform);
-        }
-    }
-
     private static long millisSince(long nanos) {
         return (System.nanoTime() - nanos) / 1_000_000;
     }
 
     /** Where the jar goes: the addon folder, or for Minestom the server jar itself (the project is the server). */
-    private Path target(Platform platform, Path jar, Path project) throws IOException {
+    private Path target(Platform platform, Path jar, Path project) {
         if (platform.addonDir() == null) {
-            Files.createDirectories(config.serverDir());
             return config.serverDir().resolve(platform.serverJar());
         }
         String name = deployName(jar, project) + ".jar";
@@ -233,8 +273,7 @@ final class DevCycle {
                     + ", which is MSC's agent jar on " + platform.displayName() + ": deploying it would replace the agent."
                     + " Rename the project (rootProject.name in settings.gradle.kts), then dev_cycle.");
         }
-        Path addons = Files.createDirectories(config.serverDir().resolve(platform.addonDir()));
-        return addons.resolve(name);
+        return config.serverDir().resolve(platform.addonDir()).resolve(name);
     }
 
     /** Ignoring case, as Windows and macOS file names do: {@code MSC-Agent-Paper.jar} is the agent jar there too. */
@@ -292,7 +331,7 @@ final class DevCycle {
 
     private static void copy(Path from, Path to) {
         try {
-            Files.copy(from, to, StandardCopyOption.REPLACE_EXISTING);
+            OutputFile.copy(from, to);
         } catch (IOException e) {
             throw new ToolException("cannot replace " + to + " (" + e.getMessage()
                     + "). A running server holds the jar open: call server_stop, then dev_cycle.");
@@ -319,7 +358,7 @@ final class DevCycle {
      * two copies (Paper: ambiguous plugin name; Fabric: duplicate mod id). Without a record, the folder-named jar
      * that earlier cores deployed is the earlier one.
      */
-    private void removeEarlierDeploy(Platform platform, Path project, Path addons, Path target) throws IOException {
+    private boolean removeEarlierDeploy(Platform platform, Path project, Path addons, Path target) throws IOException {
         String recorded = deployed().getProperty(project.toAbsolutePath().normalize().toString());
         Path earlier;
         if (recorded != null) {
@@ -333,21 +372,24 @@ final class DevCycle {
                 && !isAgentJar(platform, earlier.getFileName().toString())) {
             try {
                 Files.delete(earlier);
+                return true;
             } catch (IOException e) {
                 throw new ToolException("cannot remove the earlier deploy " + earlier + " (" + e.getMessage()
                         + "). A running server holds the jar open: call server_stop, then dev_cycle.");
             }
         }
+        return false;
     }
 
     private void rememberDeploy(Path project, Path target) throws IOException {
         Properties p = deployed();
         p.setProperty(project.toAbsolutePath().normalize().toString(),
                 config.serverDir().relativize(target).toString().replace('\\', '/'));
-        Files.createDirectories(config.dataDir());
-        try (OutputStream out = Files.newOutputStream(deployedFile())) {
-            p.store(out, "jar dev_cycle last deployed per project");
-        }
+        OutputFile.write(deployedFile(), to -> {
+            try (OutputStream out = Files.newOutputStream(to)) {
+                p.store(out, "jar dev_cycle last deployed per project");
+            }
+        });
     }
 
     /**

@@ -41,7 +41,22 @@ public final class WorldTools {
     /** Saved renders kept in {@code .msc/renders}: a fallback for clients that drop images, so only recent ones matter. */
     static final int KEPT_RENDERS = 20;
 
+    static final String SAVE_RENDER = "save a copy of the image";
+    static final String PRUNE_RENDERS = "delete old saved images";
+    static final String SAVE_STRUCTURE = "write the schematic";
+
     private WorldTools() {
+    }
+
+    /** A new {@code render-*.png} in {@code dir}, written whole. */
+    private static Path saveRender(Path dir, byte[] png) throws IOException {
+        Path file = Files.createTempFile(Files.createDirectories(dir), "render-", ".png");
+        try {
+            return Files.write(file, png);
+        } catch (IOException | RuntimeException e) {
+            Files.deleteIfExists(file);
+            throw e;
+        }
     }
 
     public static void register(ToolRegistry registry, CoreConfig config, WorldService world) {
@@ -82,15 +97,20 @@ public final class WorldTools {
                         throw new ToolException(e.getMessage());
                     }
                     Region region = Coords.region(world.world(args.str("world", null)), args.str("region"));
+                    Path dir = OutputFile.checkFolder(config.dataDir().resolve("renders"), "render folder");
                     boolean marked = args.bool("entities", true);
                     List<Ops.EntitySummary> entities = marked ? new ArrayList<>() : null;
                     List<Ops.SignText> signs = marked ? new ArrayList<>() : null;
                     BlockGrid grid = world.readAll(region, MAX_RENDER_BLOCKS, "world_render", entities, signs);
                     RenderResult r = renderer.render(grid, view, options, markers(entities, signs));
-                    Path dir = Files.createDirectories(config.dataDir().resolve("renders"));
-                    Path file = Files.write(Files.createTempFile(dir, "render-", ".png"), r.png());
-                    pruneRenders(dir, file, KEPT_RENDERS);
-                    return new Tool.Output(r.caption() + "\nsaved: " + file, r.png(), r.estimatedTokens());
+                    // The image is the result; its saved copy and the pruning are extras that only add a note when they fail.
+                    Steps steps = new Steps("world_render").then(SAVE_RENDER).then(PRUNE_RENDERS);
+                    Path[] file = new Path[1];
+                    String saved = steps.optional(SAVE_RENDER, () -> file[0] = saveRender(dir, r.png()));
+                    String pruned = file[0] == null ? "" : steps.optional(PRUNE_RENDERS,
+                            () -> pruneRenders(dir, file[0], KEPT_RENDERS));
+                    return new Tool.Output(r.caption() + (file[0] == null ? "" : "\nsaved: " + file[0]) + saved + pruned,
+                            r.png(), r.estimatedTokens());
                 });
         registry.add("world_summary",
                 "Summarize a region in a few lines: block counts (with where rare ones are), non-air bounds, fill per layer, entities. Use before world_slice on unknown areas and to find a block.",
@@ -132,8 +152,10 @@ public final class WorldTools {
                         .opt("world", "string", WORLD),
                 args -> {
                     Region region = Coords.region(world.world(args.str("world", null)), args.str("region"));
-                    Path file = config.resolve(args.str("file"));
-                    Schematic.save(world.read(region), file);
+                    Path file = OutputFile.check(config.resolve(args.str("file")), "file");
+                    BlockGrid grid = world.read(region);
+                    new Steps("structure_save").then(SAVE_STRUCTURE)
+                            .run(SAVE_STRUCTURE, () -> OutputFile.write(file, to -> Schematic.save(grid, to)));
                     return "saved " + region.sizeX() + "x" + region.sizeY() + "x" + region.sizeZ() + " to " + file
                             + " (" + Files.size(file) + " bytes)";
                 });

@@ -143,6 +143,37 @@ public final class ResourcePack implements AutoCloseable {
         return built;
     }
 
+    /** What the pack host serves, so a build whose send failed can be taken back ({@link #restore}). */
+    public record Snapshot(PackHost.Served served, Built built) {
+    }
+
+    /** What is served now. */
+    public synchronized Snapshot snapshot() {
+        return new Snapshot(served, lastBuilt);
+    }
+
+    /**
+     * Serve {@code snapshot} again, in-process and through the zip file a standalone host reads, so the URL the
+     * players were last sent works again after a build whose send failed.
+     */
+    public synchronized void restore(Snapshot snapshot) throws IOException {
+        if (snapshot.built() == null || snapshot.served().sha1().isEmpty()) {
+            served = PackHost.Served.NONE;
+            lastBuilt = null;
+            Files.deleteIfExists(zipFile());
+            return;
+        }
+        Path temp = Files.createTempFile(Files.createDirectories(outDir), "pack-", ".part");
+        try {
+            Files.write(temp, snapshot.served().data());
+            Files.move(temp, zipFile(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        } finally {
+            Files.deleteIfExists(temp);
+        }
+        served = snapshot.served();
+        lastBuilt = snapshot.built();
+    }
+
     /** Serve on the configured or remembered port, or on a free one when that is taken. */
     private HttpServer startHost() throws IOException {
         int want = preferredPort > 0 ? preferredPort : rememberedPort();
