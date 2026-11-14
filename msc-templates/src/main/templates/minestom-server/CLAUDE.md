@@ -12,8 +12,8 @@ Minestom server for Minecraft {{minestomMcVersion}}, Java {{javaVersion}}, Gradl
 ## Layout
 
 - `src/main/java/{{packagePath}}/{{name}}Server.java`: entry point. Only wiring here (world, events, commands); put logic in its own classes.
-- `Console.java`: reads `stop` and console commands from standard input.
-- `src/test/java/`: plain unit tests (`GreeterTest`) and Minestom test-environment tests (`{{name}}ServerTest`).
+- `Console.java`: reads `stop` and console commands from standard input, and runs the commands on the tick thread.
+- `src/test/java/`: plain unit tests (`GreeterTest`) and Minestom test-environment tests (`{{name}}ServerTest`, `ConsoleTest`).
 - `gradle/libs.versions.toml`: every dependency version. Add versions there, never inline in `build.gradle.kts`.
 - `libs/msc-agent-minestom.jar`: Minecraft Server Creator's agent. Keep it; do not edit it.
 
@@ -25,7 +25,8 @@ Minestom server for Minecraft {{minestomMcVersion}}, Java {{javaVersion}}, Gradl
 - Commands: subclass `Command`, add syntaxes with `ArgumentType`, register with `MinecraftServer.getCommandManager().register(...)`. They run with the console as sender in tests and from `Console`.
 - Blocks: `Block.STONE`, `Block.OAK_STAIRS.withProperty("facing", "north")`, `instance.setBlock(x, y, z, block)`. Chunks must be loaded first (`instance.loadChunk(cx, cz)`).
 - Text is Adventure `Component`s (`Component.text("Hi", NamedTextColor.GREEN)`). Never use `§` codes.
-- Instances tick on their own threads. Do not block in event listeners or commands; use `MinecraftServer.getSchedulerManager()` or a virtual thread for slow work.
+- Threads: world and server state is touched only on the tick thread. Event listeners and player commands run there, and so do console commands: `Console` and msc's `server_command` hand each command to the scheduler, which runs it at the start of the next tick. Code on any other thread (a virtual thread, a `CompletableFuture` callback, an `Async...` event) hops back first with `MinecraftServer.getSchedulerManager().execute(() -> ...)`; then plain collections are safe.
+- Do not block the tick thread (no files, network or sleeps in listeners or commands): do slow work on a virtual thread, then hop back with its result.
 
 ## Tests
 

@@ -53,6 +53,8 @@ final class GameEvents {
                 game.moved(event.getPlayer(), event.getNewPosition());
             }
         });
-        events.addListener(PlayerDisconnectEvent.class, event -> game.quit(event.getPlayer()));
+        // Minestom fires this on the network thread for a player who left outside of play, so hop to the tick.
+        events.addListener(PlayerDisconnectEvent.class,
+                event -> game.world().scheduleNextTick(w -> game.quit(event.getPlayer())));
     }
 }

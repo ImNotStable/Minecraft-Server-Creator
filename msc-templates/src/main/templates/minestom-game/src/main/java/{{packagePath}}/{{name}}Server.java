@@ -38,7 +38,8 @@ public final class {{name}}Server {
 
         GameConfig config = GameConfig.game();
         Progress progress = new Progress(Path.of("progress.properties")).load();
-        Game game = new Game(config, world, progress, () -> Thread.startVirtualThread(() -> save(progress)));
+        Game game = new Game(config, world, progress, () -> Thread.startVirtualThread(() -> save(progress)))
+                .confineTo(Game::isTickThread);
         game.applyWorldRules();
         MinecraftServer.setDifficulty(config.difficulty());
         GameEvents.register(MinecraftServer.getGlobalEventHandler(), game);
