@@ -17,6 +17,11 @@ public final class StepsAccess {
         return Steps.trace();
     }
 
+    /** Run {@code hook} at every kill point reached on this thread (see {@code Steps.killPoint}); null: none. */
+    public static void killPoints(java.util.function.Consumer<String> hook) {
+        Steps.killPoints(hook);
+    }
+
     public static void stopTrace() {
         Steps.stopTrace();
     }
