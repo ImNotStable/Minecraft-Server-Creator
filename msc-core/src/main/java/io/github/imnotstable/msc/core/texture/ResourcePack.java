@@ -1,6 +1,5 @@
 package io.github.imnotstable.msc.core.texture;
 
-import com.sun.net.httpserver.HttpServer;
 import io.github.imnotstable.msc.core.server.PidFile;
 import io.github.imnotstable.msc.core.tool.ToolException;
 import io.github.imnotstable.msc.process.AtomicFile;
@@ -46,7 +45,7 @@ public final class ResourcePack implements AutoCloseable {
     private final String host;
     private final int packFormat;
     private final int preferredPort;
-    private HttpServer server;
+    private PackHost.Host server;
     private volatile Built lastBuilt;
     private volatile PackHost.Served served = PackHost.Served.NONE;
     private Process hostProcess;
@@ -137,7 +136,7 @@ public final class ResourcePack implements AutoCloseable {
             if (server == null) {
                 server = startHost();
             }
-            port = server.getAddress().getPort();
+            port = server.port();
         }
         String url = "http://" + host + ":" + port + "/pack-" + sha1 + ".zip";
         Built built = new Built(zipped.zip(), sha1, url, zipped.files(), data.length);
@@ -172,9 +171,9 @@ public final class ResourcePack implements AutoCloseable {
     }
 
     /** Serve on the configured or remembered port, or on a free one when that is taken. */
-    private HttpServer startHost() throws IOException {
+    private PackHost.Host startHost() throws IOException {
         int want = preferredPort > 0 ? preferredPort : rememberedPort();
-        HttpServer started;
+        PackHost.Host started;
         try {
             // The port may have been let go a moment ago, by the leftover host or this session's own.
             started = PackHost.startWithin(host, want, () -> served, PackHost.PORT_PATIENCE);
@@ -187,7 +186,7 @@ public final class ResourcePack implements AutoCloseable {
             }
             started = PackHost.start(host, 0, () -> served);
         }
-        int port = started.getAddress().getPort();
+        int port = started.port();
         if (port != want) {
             Files.createDirectories(portFile().getParent());
             Files.writeString(portFile(), port + "\n");
@@ -233,8 +232,8 @@ public final class ResourcePack implements AutoCloseable {
         if (server == null) {
             return false;
         }
-        int port = server.getAddress().getPort();
-        server.stop(0);
+        int port = server.port();
+        server.stop();
         server = null;
         // Its log is read as UTF-8 when it does not come up (#478).
         Process p = ServerJava.processBuilder(List.of(java, "-cp", classPath, PackHost.class.getName(), host,
@@ -351,7 +350,7 @@ public final class ResourcePack implements AutoCloseable {
     public synchronized void close(boolean keepHost) {
         closed = true;
         if (server != null) {
-            server.stop(0);
+            server.stop();
             server = null;
         }
         if (!keepHost && hostProcess != null) {

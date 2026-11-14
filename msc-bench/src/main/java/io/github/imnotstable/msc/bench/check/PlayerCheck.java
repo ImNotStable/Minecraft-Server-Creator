@@ -17,7 +17,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.time.Duration;
-import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
@@ -47,6 +46,9 @@ record PlayerCheck(
         List<Pattern> expect,
         int timeoutSeconds) implements Check {
 
+    /** What a server prints once it is ready, when the check names no {@code ready} regex. */
+    private static final Pattern DEFAULT_READY = Pattern.compile("Done \\(");
+
     /** Folder in the workspace the check's server runs in. */
     static final String SERVER_DIR = ".bench-player-check";
 
@@ -61,21 +63,37 @@ record PlayerCheck(
     }
 
     static PlayerCheck parse(String name, UserJson json) {
-        List<Pattern> expect = new ArrayList<>();
-        for (String regex : Checks.strings(json, "expect")) {
-            expect.add(Pattern.compile(regex, Pattern.MULTILINE));
-        }
+        Checks.strings(json, "expect");
+        List<Pattern> expect = json.patterns("expect", Pattern.MULTILINE);
+        Pattern ready = json.pattern("ready", 0);
         return new PlayerCheck(
                 name,
-                Checks.require(json, "jar"),
+                Checks.requirePath(json, "jar"),
                 json.exactStrings("command", List.of("{java}", "-Xmx1G", "-jar", "server.jar")),
-                Checks.string(json, "port", "{serverPort}"),
+                port(json),
                 Checks.string(json, "player", "Steve"),
                 json.exactStrings("script"),
                 json.exactStrings("console"),
-                Pattern.compile(Checks.string(json, "ready", "Done \\(")),
+                ready == null ? DEFAULT_READY : ready,
                 expect,
                 json.wholeNumber("timeoutSeconds", JsonNumbers.SECONDS, 180));
+    }
+
+    /**
+     * The {@code port} the player joins: a port number, or text with a placeholder such as {@code {serverPort}} that
+     * the run fills in. A port number that is out of range or not a number is refused here, not when the check runs.
+     */
+    private static String port(UserJson json) {
+        String port = Checks.string(json, "port", "{serverPort}");
+        if (port.contains("{")) {
+            return port;
+        }
+        if (!port.strip().matches("\\d{1,5}") || Integer.parseInt(port.strip()) < 1
+                || Integer.parseInt(port.strip()) > 65535) {
+            throw new IllegalArgumentException(json.key("port") + ": " + UserJson.quoted(port)
+                    + " is not a port from 1 to 65535 or a placeholder such as {serverPort}");
+        }
+        return port;
     }
 
     @Override

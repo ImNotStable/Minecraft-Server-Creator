@@ -106,10 +106,10 @@ public final class Main {
         try {
             return command.run();
         } catch (IOException | IllegalArgumentException e) {
-            err.println("msc-bench: " + message(e));
+            err.println("msc-bench: " + oneLine(message(e)));
             return BAD_INPUT;
         } catch (UncheckedIOException e) {
-            err.println("msc-bench: " + message(e.getCause()));
+            err.println("msc-bench: " + oneLine(message(e.getCause())));
             return BAD_INPUT;
         } catch (RuntimeException | Error e) {
             String text = e.getMessage() == null ? "" : e.getMessage().strip().lines().findFirst().orElse("");
@@ -117,6 +117,15 @@ public final class Main {
                     + "); please report it");
             return INTERNAL_ERROR;
         }
+    }
+
+    /**
+     * {@code message} on one line, the last guard of the one-line promise (#508) for a message nobody foresaw: a line
+     * break after a colon becomes a space, any other one {@code "; "}, so a list such as bench.json's problems keeps
+     * every entry.
+     */
+    static String oneLine(String message) {
+        return message.strip().replaceAll(":\\s*\\R\\s*", ": ").replaceAll("\\s*\\R\\s*", "; ");
     }
 
     /** The exception's message, with the path and what went wrong for a file-system error, whose message is bare. */

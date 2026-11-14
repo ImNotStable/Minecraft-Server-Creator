@@ -120,6 +120,12 @@ class CommandLineTest {
         BAD_TASKS.put("start-before-yes", new String[] {"{\"category\":\"code\",\"title\":\"t\","
                 + "\"server\":{\"startBefore\":\"yes\"}," + check + "}",
                 "server.startBefore: \"yes\" is not true or false"});
+        BAD_CONFIGS.put("path-nul", new String[] {"{\"gradleWrapperFrom\":\"a\\u0000b\"}",
+                "gradleWrapperFrom: \"a\\u0000b\" is not a path: Nul character not allowed"});
+        // #508: a bad regex is refused in one line naming its key, not in PatternSyntaxException's three lines.
+        BAD_TASKS.put("bad-regex", new String[] {"{\"category\":\"code\",\"title\":\"t\",\"checks\":[{\"type\":"
+                + "\"file\",\"path\":\"a.txt\",\"contains\":\"(abc\"}]}",
+                "checks[0].contains: \"(abc\" is not a regex: Unclosed group at index 4"});
         BAD_TASKS.put("title-number", new String[] {"{\"category\":\"code\",\"title\":7," + check + "}",
                 "title: 7 is not a string"});
     }
@@ -369,6 +375,20 @@ class CommandLineTest {
                 Main.USAGE_LIMIT, Main.NOT_RECORDED);
         assertThat(err.toString(StandardCharsets.UTF_8).lines().toList()).singleElement().asString()
                 .isEqualTo("msc-bench: internal error (java.lang.IllegalStateException: broken); please report it");
+    }
+
+    /** #508: the last guard of the one-line promise, for a refusal whose message nobody made one line. */
+    @Test
+    void aRefusalWithLineBreaksIsPrintedAsOneLine() {
+        ByteArrayOutputStream err = new ByteArrayOutputStream();
+
+        int exit = Main.guarded(new PrintStream(err, true, StandardCharsets.UTF_8), () -> {
+            throw new IOException("Bad bench config b.json:\n  a: one\r\n  b: two\u2028three\n");
+        });
+
+        assertThat(exit).isEqualTo(Main.BAD_INPUT);
+        assertThat(err.toString(StandardCharsets.UTF_8).lines().toList()).singleElement().asString()
+                .isEqualTo("msc-bench: Bad bench config b.json: a: one; b: two; three");
     }
 
     @Test
