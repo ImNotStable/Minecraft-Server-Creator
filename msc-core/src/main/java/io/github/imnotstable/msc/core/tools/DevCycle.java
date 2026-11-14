@@ -3,6 +3,7 @@ package io.github.imnotstable.msc.core.tools;
 import io.github.imnotstable.msc.core.CoreConfig;
 import io.github.imnotstable.msc.process.AtomicFile;
 import io.github.imnotstable.msc.core.server.LogCondenser;
+import io.github.imnotstable.msc.core.server.LoaderInstaller;
 import io.github.imnotstable.msc.core.server.Platform;
 import io.github.imnotstable.msc.core.server.ProjectBuilder;
 import io.github.imnotstable.msc.core.server.ServerManager;
@@ -285,7 +286,14 @@ final class DevCycle {
             swept.addAll(ScanFolders.sweep(server(), ScanFolders.all(server())));
             swept.addAll(ScanFolders.sweepTemps(deployedFile().getParent(), deployedFile().getFileName().toString()));
         });
-        steps.run(DEPLOY, () -> copy(build.jar(), target, server()));
+        steps.run(DEPLOY, () -> {
+            if (platform.addonDir() == null) {
+                // The project is the server jar: mark the folder Minestom's first, so no setup takes it for its own
+                // (#518) and another platform's jar is removed before the copy, not left to look like this one's.
+                LoaderInstaller.claimSharedJar(target.getParent(), ServerSetup.MINESTOM_ID);
+            }
+            copy(build.jar(), target, server());
+        });
         String kept = earlier == null ? null
                 : steps.note(REMOVE_EARLIER, () -> removeEarlier(earlier, target, server(), sameFile(),
                         () -> copy(build.jar(), target, server())));

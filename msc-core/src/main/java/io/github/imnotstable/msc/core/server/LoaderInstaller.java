@@ -211,18 +211,25 @@ public final class LoaderInstaller {
 
     /**
      * For a platform whose start reads {@code server.jar} without its setup installing it: the Fabric launcher
-     * downloads the vanilla server there on first start, and Minestom's dev_cycle deploys the project jar there. A
-     * {@code server.jar} in a folder the marker does not give to {@code id} came from another platform (NeoForge's
-     * starter, Quilt's vanilla jar, Minestom's project, another version's vanilla jar) and is removed, so the
-     * launcher downloads its own or server_start asks for a dev_cycle; then the folder is marked as {@code id}'s.
-     * Returns true when a jar was removed.
+     * downloads the vanilla server there on first start, and Minestom's dev_cycle deploys the project jar there. The
+     * one entry point both server_setup and the Minestom deploy go through, so the folder always says whose
+     * {@code server.jar} it holds. A {@code server.jar} the marker gives to another id (NeoForge's starter, Quilt's
+     * vanilla jar, Minestom's project, another version's vanilla jar) is removed, so the launcher downloads its own or
+     * server_start asks for a dev_cycle. With no marker the folder's owner is unknown, and the jar is kept: it is most
+     * likely this platform's own, such as a Minestom project deployed before deploys marked the folder (#518). Then
+     * the folder is marked as {@code id}'s. Returns the id the removed jar belonged to, or null when none was removed.
      */
-    public static boolean claimSharedJar(Path dir, String id) throws IOException {
+    public static String claimSharedJar(Path dir, String id) throws IOException {
         List<String> lines = markerLines(dir);
-        boolean removed = (lines.isEmpty() || !lines.getFirst().equals(id))
-                && Files.deleteIfExists(dir.resolve(SHARED_JAR));
+        String owner = lines.isEmpty() ? null : lines.getFirst();
+        boolean removed = owner != null && !owner.equals(id) && Files.deleteIfExists(dir.resolve(SHARED_JAR));
         mark(dir, id);
-        return removed;
+        return removed ? owner : null;
+    }
+
+    /** The line a tool reply gives a jar {@link #claimSharedJar} removed, or "" when it removed none. */
+    public static String removedLine(String owner, String next) {
+        return owner == null ? "" : "removed " + SHARED_JAR + ", which the folder held for " + owner + "; " + next + "\n";
     }
 
     private static String sha256(Path file) throws IOException {
