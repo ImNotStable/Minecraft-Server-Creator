@@ -2,13 +2,15 @@ package {{packageName}};
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Predicate;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
+import net.minestom.server.MinecraftServer;
 import net.minestom.server.coordinate.Point;
 import net.minestom.server.coordinate.Pos;
 import net.minestom.server.entity.Player;
@@ -21,6 +23,11 @@ import org.slf4j.LoggerFactory;
  * The game's state and rules: which stage each player is on, joining, advancing and jumping between stages.
  * Every stage change is logged ({@code Steve -> stage 2/3 arena (goal)}) so tests and tools can wait for it.
  * Put your game logic here or in classes it calls; keep the server class and {@link GameEvents} thin.
+ *
+ * <p>Runs on the tick thread only: event listeners and commands (players', the console's through {@link Console},
+ * msc's {@code server_command}) all run there, so its state needs no locks and a step like "read the stage, then
+ * advance" cannot interleave with another. Code on any other thread hops back first with
+ * {@code MinecraftServer.getSchedulerManager().execute(...)}. {@link #confineTo} makes a call from elsewhere fail.
  */
 public final class Game {
     private static final Logger LOG = LoggerFactory.getLogger("game");
@@ -29,7 +36,9 @@ public final class Game {
     private final Instance world;
     private final Progress progress;
     private final Runnable onProgressChange;
-    private final Set<UUID> inGoal = newGoalSet();
+    /** Who is standing in their stage's goal. A plain set: only the tick thread touches it. */
+    private final Set<UUID> inGoal = new HashSet<>();
+    private Predicate<Thread> gameThread = t -> true;
 
     /**
      * @param onProgressChange called after every progress change; the server flushes {@link Progress} off the
@@ -43,12 +52,26 @@ public final class Game {
     }
 
     /**
-     * Who is standing in their stage's goal. Concurrent: the instance's tick thread updates it as players move,
-     * while {@code /game} from the console runs on the console thread (or msc's agent thread) and clears it in
-     * {@link #moveTo}. Game state shared like this must be thread-safe; {@link Progress} is too.
+     * From now on, a call that changes game state from a thread {@code isGameThread} rejects throws instead of
+     * racing the tick. The server passes {@link #isTickThread}; tests pass the test thread too, since they act
+     * for the tick there.
      */
-    static Set<UUID> newGoalSet() {
-        return ConcurrentHashMap.newKeySet();
+    public Game confineTo(Predicate<Thread> isGameThread) {
+        this.gameThread = isGameThread;
+        return this;
+    }
+
+    /** True on Minestom's tick threads: the one that runs scheduler tasks and instance ticks, and those it waits for. */
+    public static boolean isTickThread(Thread thread) {
+        return thread.getName().startsWith(MinecraftServer.THREAD_NAME_TICK);
+    }
+
+    private void checkThread() {
+        Thread current = Thread.currentThread();
+        if (!gameThread.test(current)) {
+            throw new IllegalStateException("game state changed on thread " + current.getName()
+                    + "; hop to the tick thread first: MinecraftServer.getSchedulerManager().execute(...)");
+        }
     }
 
     public GameConfig config() {
@@ -91,6 +114,7 @@ public final class Game {
 
     /** Puts the player on stage {@code index} (0-based), saves it and teleports them there. */
     public void moveTo(Player player, int index, String why) {
+        checkThread();
         Stage stage = config.stages().get(index);
         progress.setStage(player.getUuid(), stage.name());
         onProgressChange.run();
@@ -105,6 +129,7 @@ public final class Game {
 
     /** Completes the player's current stage: on to the next one, or finished after the last. */
     public void advance(Player player, String why) {
+        checkThread();
         int next = stageIndex(player.getUuid()) + 1;
         if (next < config.stages().size()) {
             moveTo(player, next, why);
@@ -116,6 +141,7 @@ public final class Game {
 
     /** Forgets the player's progress and starts them again from the first stage with a fresh kit. */
     public void reset(Player player) {
+        checkThread();
         progress.clear(player.getUuid());
         onProgressChange.run();
         config.kit().give(player);
@@ -124,6 +150,7 @@ public final class Game {
 
     /** Called when a player moves: completes the stage when they step into its goal. */
     public void moved(Player player, Point to) {
+        checkThread();
         Box goal = stage(player).goal();
         boolean inside = goal != null && goal.contains(to);
         if (!inside) {
@@ -134,6 +161,7 @@ public final class Game {
     }
 
     public void quit(Player player) {
+        checkThread();
         inGoal.remove(player.getUuid());
     }
 
