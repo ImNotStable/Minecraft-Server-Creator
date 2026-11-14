@@ -26,9 +26,12 @@ final class Downloads {
 
     /** A checksum a download must match: a {@link MessageDigest} algorithm and the expected digest in hex. */
     record Checksum(String algorithm, String hex) {
-        /** The checksum, or null when the source gave none. */
+        /**
+         * The checksum, without the whitespace around {@code hex}, or null when the source gave none (Purpur's
+         * answer may name no md5): the download is then not checked.
+         */
         static Checksum of(String algorithm, String hex) {
-            return hex == null ? null : new Checksum(algorithm, hex);
+            return hex == null ? null : new Checksum(algorithm, hex.strip());
         }
     }
 
@@ -58,7 +61,8 @@ final class Downloads {
     /**
      * Download {@code uri} to {@code target} through a {@code .part} file beside it ({@link AtomicFile}), so a failed
      * download leaves nothing behind and a replaced file keeps its permissions. A 404 throws {@code notFound}; a
-     * non-null {@code checksum} must match the downloaded bytes. A download that stalls fails with a one-line error
+     * non-null {@code checksum} must match the downloaded bytes; a null one skips
+     * the check. A download that stalls fails with a one-line error
      * that names the host.
      */
     void fetch(URI uri, Path target, String notFound, Checksum checksum) throws IOException, InterruptedException {
