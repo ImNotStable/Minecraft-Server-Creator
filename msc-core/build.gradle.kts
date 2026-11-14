@@ -184,7 +184,8 @@ tasks.test {
 // whose own inputs stay msc-core's. Each set is both what the tests read and that task's input (msc.repo-inputs).
 val repoCheckClasses = listOf("io.github.imnotstable.msc.core.DocumentedCommandsTest",
     "io.github.imnotstable.msc.core.RepoInputsTest", "io.github.imnotstable.msc.core.EulaWritersTest",
-    "io.github.imnotstable.msc.core.ServerPropertiesAccessTest", "io.github.imnotstable.msc.core.DecisionsIndexTest")
+    "io.github.imnotstable.msc.core.ServerPropertiesAccessTest", "io.github.imnotstable.msc.core.DecisionsIndexTest",
+    "io.github.imnotstable.msc.core.DocumentedResultLinesTest")
 val repoChecks = tasks.register<Test>("repoChecks") {
     description = "Runs the tests that scan the whole repository (documented commands, test-source reads, EULA writers, " +
         "server.properties access, ADR index)."
@@ -223,6 +224,9 @@ repoInputs.on(repoChecks).set("productionSources", rootProject.fileTree(rootDir)
 repoInputs.on(repoChecks).set("decisions", rootProject.fileTree(rootDir) {
     include("msc-docs/docs/plan.md", "msc-docs/docs/adr/*.md")
 })
+
+// DocumentedResultLinesTest: tools.md's result line counts, checked against real tool results (#419).
+repoInputs.on(repoChecks).set("toolDoc", rootProject.file("msc-docs/docs/tools.md"))
 
 tasks.register<Test>("e2eTest") {
     description = "Scaffolds minestom-game and drives a real Minestom server end to end through the installed core."

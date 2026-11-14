@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Consumer;
 
 /**
  * The side effects of one state-changing tool call, in the order they run. The rule every such tool follows:
@@ -42,6 +43,7 @@ final class Steps {
 
     private static final ThreadLocal<String> FAIL_AT = new ThreadLocal<>();
     private static final ThreadLocal<List<String>> TRACE = new ThreadLocal<>();
+    private static final ThreadLocal<Consumer<String>> KILL = new ThreadLocal<>();
 
     private final String tool;
     private final List<String> plan = new ArrayList<>();
@@ -183,6 +185,31 @@ final class Steps {
             case IOException io -> io.getMessage() == null ? io.getClass().getSimpleName() : io.getMessage();
             default -> e.getClass().getSimpleName() + (e.getMessage() == null ? "" : ": " + e.getMessage());
         };
+    }
+
+    /**
+     * A place between two file operations of a step where the core could be killed (the MCP client closing mid-call,
+     * a crash, a power cut). Code that writes, moves or deletes files a server reads calls it between operations;
+     * tests ({@link #killPoints}) "kill" the core there and check that what is on disk is harmless and that the next
+     * call cleans it up. Outside tests it does nothing.
+     */
+    static void killPoint(String where) {
+        Consumer<String> hook = KILL.get();
+        if (hook != null) {
+            hook.accept(where);
+        }
+    }
+
+    /**
+     * For tests: run {@code hook} at every {@link #killPoint} reached on this thread; null: none. A hook that kills
+     * throws an {@link Error}, which no step catches, after taking what it needs from the disk.
+     */
+    static void killPoints(Consumer<String> hook) {
+        if (hook == null) {
+            KILL.remove();
+        } else {
+            KILL.set(hook);
+        }
     }
 
     /** For tests: make {@code step} of the calls on this thread fail before it runs; null: none. */

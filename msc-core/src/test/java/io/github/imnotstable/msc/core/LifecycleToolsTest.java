@@ -723,6 +723,9 @@ class LifecycleToolsTest {
         String first = h.ok("dev_cycle", "project", "demo");
         assertThat(first).contains("deployed demo-1.0.jar as plugins/demo.jar")
                 .containsPattern("\ntime: jar \\d+\\.\\ds, start \\d+\\.\\ds, agent \\d+\\.\\ds, tests \\d+\\.\\ds, total \\d+\\.\\ds$");
+        // The start ends when the agent says ready, which the fake server does before it logs "Done": wait for that
+        // line, so the mark is the whole startup log and a line after it can only come from a restart.
+        awaitLogLine("Done (");
         long logMark = h.core.server().log().mark();
         assertThat(project.resolve("tasks.log")).hasContent("mscJar\ncheck");
 
@@ -735,6 +738,15 @@ class LifecycleToolsTest {
         assertThat(h.ok("dev_cycle", "project", "demo")).contains("\ntime: jar ").contains(", stop ")
                 .contains("server ready");
         h.ok("server_stop");
+    }
+
+    /** Waits (generously: a loaded machine) until the server log holds a line containing {@code text}. */
+    private void awaitLogLine(String text) throws InterruptedException {
+        long deadline = System.nanoTime() + java.time.Duration.ofSeconds(60).toNanos();
+        while (h.core.server().log().since(0).stream().noneMatch(l -> l.contains(text))) {
+            assertThat(System.nanoTime()).as("no log line with " + text).isLessThan(deadline);
+            Thread.sleep(10);
+        }
     }
 
     @Test

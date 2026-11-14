@@ -114,13 +114,15 @@ class SideEffectStepsTest {
                         "stop the server an earlier session left running", "take over the pack an earlier session served",
                         "update the installed agent jar", "start the server")),
                 Arguments.of("dev_cycle", new DevCycleScenario(), List.of(
-                        "stop a server an earlier session left holding the jar", "stop the server", "deploy the jar",
+                        "stop a server an earlier session left holding the jar", "stop the server",
+                        "remove what an interrupted earlier call left", "deploy the jar",
                         "remove the earlier deploy", "record the deploy", "remember the workspace platform",
                         "stop the server an earlier session left running", "take over the pack an earlier session served",
                         "update the installed agent jar", "start the server")),
                 Arguments.of("dev_cycle on a volume that hides one file under two names", new DevCycleAliasScenario(),
                         List.of("stop a server an earlier session left holding the jar", "stop the server",
-                        "deploy the jar", "remove the earlier deploy", "record the deploy",
+                        "remove what an interrupted earlier call left", "deploy the jar", "remove the earlier deploy",
+                        "record the deploy",
                         "remember the workspace platform", "stop the server an earlier session left running",
                         "take over the pack an earlier session served", "update the installed agent jar",
                         "start the server")),
@@ -564,6 +566,11 @@ class SideEffectStepsTest {
                 // Nothing deployed: the earlier jar is still the one there.
                 assertThat(jars).containsExactly("demo.jar");
             }
+        }
+
+        @Override
+        public List<String> optional() {
+            return List.of("remove what an interrupted earlier call left");
         }
 
         @Override

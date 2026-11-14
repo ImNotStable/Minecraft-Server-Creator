@@ -29,7 +29,7 @@ class DevCycleRemoveEarlierTest {
     }
 
     private String remove(Path earlier, Path target) throws IOException {
-        return DevCycle.removeEarlier(earlier, target, AtomicFile::sameFile, redeploys::incrementAndGet);
+        return DevCycle.removeEarlier(earlier, target, dir, AtomicFile::sameFile, redeploys::incrementAndGet);
     }
 
     private static Path alias(Path dir) throws IOException {
@@ -104,7 +104,7 @@ class DevCycleRemoveEarlierTest {
     void aWrongSamenessAnswerNeverLosesTheNewJarAndDoesNotFail() throws IOException {
         Path jar = Files.writeString(plugins().resolve("lobby.jar"), "new");
         Path earlier = alias(plugins()).resolve("lobby.jar");
-        String note = DevCycle.removeEarlier(earlier, jar, (a, b) -> false, redeploys::incrementAndGet);
+        String note = DevCycle.removeEarlier(earlier, jar, dir, (a, b) -> false, redeploys::incrementAndGet);
         assertThat(note).isEqualTo(earlier + " is the new jar under another name on this volume, so it was kept");
         assertThat(jar).hasContent("new");
         assertThat(redeploys).hasValue(0);
@@ -116,7 +116,7 @@ class DevCycleRemoveEarlierTest {
         Path jar = Files.writeString(plugins().resolve("arena.jar"), "new");
         Path earlier = Files.writeString(plugins().resolve("demo.jar"), "old");
         // The aside name is taken by a folder that is not empty: the rename fails, nothing changes.
-        Files.writeString(Files.createDirectories(plugins().resolve("demo.jar" + DevCycle.ASIDE)).resolve("x"), "x");
+        Files.writeString(Files.createDirectories(ScanFolders.aside(earlier, dir, false)).resolve("x"), "x");
         assertThatThrownBy(() -> remove(earlier, jar)).isInstanceOf(ToolException.class)
                 .hasMessageStartingWith("cannot remove the earlier deploy " + earlier);
         assertThat(earlier).hasContent("old");
@@ -136,8 +136,8 @@ class DevCycleRemoveEarlierTest {
         Files.writeString(src.resolve("dep.jar"), "dep");
         Files.writeString(Files.createDirectories(dest.resolve("notes")).resolve("readme.txt"), "kept");
         DevCycle.checkMirror(src, dest);
-        assertThat(DevCycle.mirror(src, dest, false)).isEqualTo(1);
-        assertThat(DevCycle.mirror(src, dest, true)).as("nothing left to do, so no retry loop").isZero();
+        assertThat(DevCycle.mirror(src, dest, dir, false)).isEqualTo(1);
+        assertThat(DevCycle.mirror(src, dest, dir, true)).as("nothing left to do, so no retry loop").isZero();
         assertThat(dest.resolve("notes/readme.txt")).hasContent("kept");
         Files.delete(dest.resolve("dep.jar"));
         Files.createDirectories(dest.resolve("dep.jar"));
@@ -160,11 +160,11 @@ class DevCycleRemoveEarlierTest {
                 assumeTrue(false, "hard links: " + e.getMessage());
             }
         }
-        assertThat(DevCycle.mirror(src, dest, true)).isZero();
-        assertThat(DevCycle.mirror(src, dest, false)).isZero();
+        assertThat(DevCycle.mirror(src, dest, dir, true)).isZero();
+        assertThat(DevCycle.mirror(src, dest, dir, false)).isZero();
         assertThat(kept).hasContent("dep");
         Files.writeString(dest.resolve("stale.jar"), "old");
-        assertThat(DevCycle.mirror(src, dest, false)).isEqualTo(1);
+        assertThat(DevCycle.mirror(src, dest, dir, false)).isEqualTo(1);
         assertThat(dest.resolve("stale.jar")).doesNotExist();
         assertThat(kept).hasContent("dep");
     }
