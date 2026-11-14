@@ -69,7 +69,7 @@ public final class TextureTools {
                         .opt("seed", "integer", "Pattern seed. Default 1")
                         .range("contrast", Ramp.MIN_CONTRAST, Ramp.MAX_CONTRAST, "Default 1 for shapes, 0.6 for patterns")
                         .opt("animate", "string", "scroll (flows down), \"scroll dx,dy\" or pulse (glows)")
-                        .range("frames", MIN_FRAMES, Animation.MAX_FRAMES, "Default: one full loop for scroll, 8 for pulse")
+                        .range("frames", MIN_FRAMES, Animation.MAX_FRAMES, "Default: one full loop for scroll (refused if over 64), 8 for pulse")
                         .opt("frametime", "integer", "Ticks per frame. Default 2")
                         .opt("model", "string", "Also write a model and item definition: item (flat), handheld (tools), "
                                 + "block (cube) or none. Default block for patterns, handheld for sword and pickaxe, none for minecraft:, else item"),
@@ -419,9 +419,9 @@ public final class TextureTools {
             shades.sort(Comparator.comparingDouble(Colors::luminance));
             return Animation.pulse(base, new Ramp(shades), args.integer("frames", 8), frametime);
         }
-        int step = Math.max(1, Math.max(Math.abs(spec.dx()), Math.abs(spec.dy())));
-        int loop = Math.clamp(base.width() / step, 2, Animation.MAX_FRAMES);
-        return Animation.scroll(base, spec.dx(), spec.dy(), args.integer("frames", loop), frametime);
+        return args.has("frames")
+                ? Animation.scroll(base, spec.dx(), spec.dy(), args.integer("frames"), frametime)
+                : Animation.scroll(base, spec.dx(), spec.dy(), frametime);
     }
 
     /** A pack texture, or the first frame when it is already animated, so it can be animated or copied again. */

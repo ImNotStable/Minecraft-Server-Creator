@@ -1,0 +1,32 @@
+// Copied to ~/.gradle/init.d by session-start.sh in cloud sessions only (ADR 0038). Maven Central answers the cloud's
+// shared address with 429s, so every repository on repo.maven.apache.org is pointed at Google's mirror of it, in
+// plugin management, dependency resolution management and (when projects may declare repositories) every project.
+// The mirror also goes first in plugin management and dependency resolution management: the Plugin Portal redirects
+// artifacts it does not host to Maven Central itself, which no URL rewrite can reach.
+def central = 'repo.maven.apache.org'
+def mirror = 'https://maven-central.storage-download.googleapis.com/maven2/'
+
+def redirect = { RepositoryHandler repos ->
+    repos.withType(MavenArtifactRepository).configureEach { repo ->
+        if (repo.url?.host == central) {
+            repo.url = mirror
+        }
+    }
+}
+
+def mirrorFirst = { RepositoryHandler repos ->
+    def repo = repos.maven { name = 'mavenCentralMirror'; url = mirror }
+    repos.remove(repo)
+    repos.addFirst(repo)
+    redirect(repos)
+}
+
+beforeSettings { settings ->
+    mirrorFirst(settings.pluginManagement.repositories)
+    mirrorFirst(settings.dependencyResolutionManagement.repositories)
+}
+
+allprojects { project ->
+    redirect(project.repositories)
+    project.buildscript { redirect(repositories) }
+}

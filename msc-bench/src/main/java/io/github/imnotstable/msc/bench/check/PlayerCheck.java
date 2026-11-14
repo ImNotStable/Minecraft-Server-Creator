@@ -117,8 +117,8 @@ record PlayerCheck(
                     .redirectErrorStream(true)
                     .redirectOutput(log.toFile()));
             if (!waitFor(ready, log, server, deadline)) {
-                return CheckResult.fail(name, (server.isAlive() ? "server not ready in time: " : "server stopped: ")
-                        + tail(read(log)));
+                String prefix = server.isAlive() ? "server not ready in time: " : "server stopped: ";
+                return CheckResult.fail(name, prefix + tail(read(log), CheckResult.MAX_DETAIL - prefix.length()));
             }
             StringBuilder seen = new StringBuilder();
             if (!script.isEmpty()) {
@@ -141,8 +141,7 @@ record PlayerCheck(
             String text = seen + read(log);
             for (Pattern p : expect) {
                 if (!p.matcher(text).find()) {
-                    return CheckResult.fail(name, "no match for /" + p.pattern() + "/; player saw: "
-                            + tail(seen.toString()) + "; console after start: " + tail(afterReady(read(log))));
+                    return CheckResult.fail(name, noMatch(p, seen.toString(), afterReady(read(log))));
                 }
             }
             return CheckResult.pass(name, expect.size() + " patterns found");
@@ -230,8 +229,22 @@ record PlayerCheck(
         return Files.isRegularFile(log) ? Text.read(log) : "";
     }
 
-    private static String tail(String text) {
-        return Text.tailWithEllipsis(text.strip(), 303);
+    /**
+     * The detail for a pattern nothing matched: the ends of what the player saw and of the console, sized so the whole
+     * detail fits {@link CheckResult#MAX_DETAIL} and is stored without a second cut (#535). The player gets at most
+     * half the room and the console the rest, so a short or empty player part leaves the console more.
+     */
+    static String noMatch(Pattern p, String seen, String console) {
+        String start = "no match for /" + p.pattern() + "/; player saw: ";
+        String middle = "; console after start: ";
+        int room = CheckResult.MAX_DETAIL - start.length() - middle.length();
+        String seenTail = tail(seen, Math.max(0, room / 2));
+        return start + seenTail + middle + tail(console, Math.max(0, room - seenTail.length()));
+    }
+
+    /** The end of {@code text}, where a server says what went wrong, in at most {@code max} chars. */
+    private static String tail(String text, int max) {
+        return Text.tailWithEllipsis(text.strip(), max);
     }
 
     private static void deleteTree(Path dir) throws IOException {

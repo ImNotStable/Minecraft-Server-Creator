@@ -49,7 +49,8 @@ record CommandCheck(String name, List<String> run, int timeoutSeconds, int expec
             // not fail a command that passed.
             String output = Text.read(log);
             if (process.exitValue() != expectExit) {
-                return CheckResult.fail(name, "exit " + process.exitValue() + ": " + tail(output));
+                String prefix = "exit " + process.exitValue() + ": ";
+                return CheckResult.fail(name, prefix + tail(output, CheckResult.MAX_DETAIL - prefix.length()));
             }
             if (outputMatches != null && !outputMatches.matcher(output).find()) {
                 return CheckResult.fail(name, "output has no match for /" + outputMatches.pattern() + "/");
@@ -71,7 +72,8 @@ record CommandCheck(String name, List<String> run, int timeoutSeconds, int expec
         }
     }
 
-    private static String tail(String output) {
-        return Text.tail(output.strip(), 200);
+    /** The end of {@code output}, where a failing tool says why, in {@code max} chars so CheckResult keeps it whole. */
+    private static String tail(String output, int max) {
+        return Text.tailWithEllipsis(output.strip(), max);
     }
 }

@@ -11,11 +11,15 @@ import io.github.imnotstable.msc.bench.Text;
  */
 public record CheckResult(String name, boolean passed, String detail) {
 
-    private static final int MAX_DETAIL = 300;
+    /**
+     * The most chars a detail keeps. A producer that quotes output sizes its quote so its whole detail fits, so this
+     * cut ({@link Text#cut}, head and tail kept) only catches a detail that did not (#535).
+     */
+    public static final int MAX_DETAIL = 300;
 
     public CheckResult {
         detail = detail == null ? "" : detail.strip();
-        detail = Text.headWithEllipsis(detail, MAX_DETAIL);
+        detail = Text.cut(detail, MAX_DETAIL);
     }
 
     public static CheckResult pass(String name, String detail) {

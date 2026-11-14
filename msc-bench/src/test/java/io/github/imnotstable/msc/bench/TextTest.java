@@ -21,8 +21,10 @@ class TextTest {
                 assertThat(head.length()).isLessThanOrEqualTo(max).isGreaterThanOrEqualTo(Math.min(max, text.length()) - 1);
                 assertThat(tail.length()).isLessThanOrEqualTo(max).isGreaterThanOrEqualTo(Math.min(max, text.length()) - 1);
                 assertThat(text).startsWith(head).endsWith(tail);
+                assertThat(Text.cut(text, max).length()).isLessThanOrEqualTo(max);
                 for (String cut : new String[] {head, tail, Text.headWithEllipsis(text, max + 3),
-                        Text.tailWithEllipsis(text, max + 3)}) {
+                        Text.tailWithEllipsis(text, max + 3), Text.cut(text, max), Text.headWithEllipsis(text, max),
+                        Text.tailWithEllipsis(text, max)}) {
                     assertThat(Text.hasLoneSurrogate(cut)).as("%d %d %s", at, max, cut).isFalse();
                 }
             }
@@ -41,9 +43,19 @@ class TextTest {
 
     @Test
     void aCheckDetailCutAtAnEmojiKeepsItWhole() {
-        // The detail keeps 297 chars and "...": the cut falls between the halves of the emoji at 296.
-        CheckResult result = CheckResult.fail("n", "x".repeat(296) + EMOJI + " tail");
+        // Of 300 chars the cut keeps a 73-char head, " ... " and a 222-char tail; both cuts fall inside an emoji.
+        String text = "x".repeat(72) + EMOJI + "y".repeat(103) + EMOJI + "z".repeat(221);
+        CheckResult result = CheckResult.fail("n", text);
         assertThat(Text.hasLoneSurrogate(result.detail())).isFalse();
-        assertThat(result.detail()).endsWith("x...").hasSizeLessThanOrEqualTo(300);
+        assertThat(result.detail()).startsWith("xxx").contains("x" + Text.CUT_MARK + "z").endsWith("zzz")
+                .hasSizeLessThanOrEqualTo(CheckResult.MAX_DETAIL);
+    }
+
+    @Test
+    void cutKeepsHeadAndTailAndLeavesShortTextAlone() {
+        assertThat(Text.cut("short", 300)).isEqualTo("short");
+        assertThat(Text.cut("a".repeat(100) + "b".repeat(100), 45)).isEqualTo("a".repeat(10) + Text.CUT_MARK
+                + "b".repeat(30));
+        assertThat(Text.cut("abcdefgh", 4)).isEqualTo("efgh");
     }
 }

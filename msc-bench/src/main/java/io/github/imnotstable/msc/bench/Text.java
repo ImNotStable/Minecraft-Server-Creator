@@ -69,22 +69,56 @@ public final class Text {
         return text.substring(start);
     }
 
-    /** {@code text} cut to {@code max} chars and {@code "..."} when longer, the marker within the limit. */
+    /**
+     * {@code text} cut to {@code max} chars and {@code "..."} when longer, the marker within the limit (a limit of 3
+     * or less has no room for it and keeps the plain head).
+     */
     public static String headWithEllipsis(String text, int max) {
-        return text.length() <= max ? text : head(text, max - 3) + "...";
+        if (text.length() <= max) {
+            return text;
+        }
+        return max <= 3 ? head(text, max) : head(text, max - 3) + "...";
     }
 
-    /** {@code "..."} and the end of {@code text} when longer than {@code max} chars, the marker within the limit. */
+    /**
+     * {@code "..."} and the end of {@code text} when longer than {@code max} chars, the marker within the limit (a
+     * limit of 3 or less has no room for it and keeps the plain tail).
+     */
     public static String tailWithEllipsis(String text, int max) {
-        return text.length() <= max ? text : "..." + tail(text, max - 3);
+        if (text.length() <= max) {
+            return text;
+        }
+        return max <= 3 ? tail(text, max) : "..." + tail(text, max - 3);
+    }
+
+    /** What {@link #cut} puts where it took text out. */
+    public static final String CUT_MARK = " ... ";
+
+    /**
+     * The one cut for a detail that says why something failed (#535): {@code text} unchanged when at most {@code max}
+     * chars, otherwise its head and its tail with {@link #CUT_MARK} between them, {@code max} chars at most. The tail
+     * gets three quarters of the room because the end of a log is what names the failure, and the head says what was
+     * running. Neither cut splits a surrogate pair. A limit below the mark's length keeps only a tail.
+     */
+    public static String cut(String text, int max) {
+        if (text.length() <= max) {
+            return text;
+        }
+        int keep = max - CUT_MARK.length();
+        if (keep <= 0) {
+            return tail(text, max);
+        }
+        int head = keep / 4;
+        return head(text, head) + CUT_MARK + tail(text, keep - head);
     }
 
     /**
      * {@code text} as one bounded line: every run of line breaks, tabs and other control characters becomes one space,
-     * the ends are stripped, and text over {@code max} chars is cut with a visible {@code "..."} within the limit.
+     * the ends are stripped, and text over {@code max} chars is cut by {@link #cut}, keeping its head and its tail.
+     * Collapsing never makes text longer, so a text {@link #cut} already fitted to {@code max} is not cut again.
      */
     public static String singleLine(String text, int max) {
-        return headWithEllipsis(text.replaceAll("[\\p{Cntrl}\\u0085\\u2028\\u2029\\s]+", " ").strip(), max);
+        return cut(text.replaceAll("[\\p{Cntrl}\\u0085\\u2028\\u2029\\s]+", " ").strip(), max);
     }
 
     /**
