@@ -60,13 +60,23 @@ public final class RconClient implements AutoCloseable {
         }
     }
 
-    /** Runs one console command and returns the server's reply text. */
+    /**
+     * Runs one console command and returns the server's whole reply text. A Minecraft server splits a long reply into
+     * packets of at most 4096 characters, all with the command's id and no end marker, so after the command this
+     * sends an empty packet of a type the server does not handle: it answers that one ("Unknown request 0") only after
+     * the last packet of the reply, so the reply is every packet before it.
+     */
     public synchronized String command(String command) throws IOException {
         int id = send(TYPE_COMMAND, command);
+        int end = send(TYPE_RESPONSE, "");
+        StringBuilder reply = new StringBuilder();
         while (true) {
             Packet packet = read();
+            if (packet.id() == end) {
+                return reply.toString();
+            }
             if (packet.id() == id && packet.type() == TYPE_RESPONSE) {
-                return packet.body();
+                reply.append(packet.body());
             }
         }
     }

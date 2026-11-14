@@ -2,11 +2,11 @@ package {{packageName}};
 
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.minestom.server.coordinate.Point;
@@ -29,7 +29,7 @@ public final class Game {
     private final Instance world;
     private final Progress progress;
     private final Runnable onProgressChange;
-    private final Set<UUID> inGoal = new HashSet<>();
+    private final Set<UUID> inGoal = newGoalSet();
 
     /**
      * @param onProgressChange called after every progress change; the server flushes {@link Progress} off the
@@ -40,6 +40,15 @@ public final class Game {
         this.world = world;
         this.progress = progress;
         this.onProgressChange = onProgressChange;
+    }
+
+    /**
+     * Who is standing in their stage's goal. Concurrent: the instance's tick thread updates it as players move,
+     * while {@code /game} from the console runs on the console thread (or msc's agent thread) and clears it in
+     * {@link #moveTo}. Game state shared like this must be thread-safe; {@link Progress} is too.
+     */
+    static Set<UUID> newGoalSet() {
+        return ConcurrentHashMap.newKeySet();
     }
 
     public GameConfig config() {

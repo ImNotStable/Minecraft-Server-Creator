@@ -13,8 +13,14 @@ import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.UnaryOperator;
 
-/** Speaks just enough RCON for tests: login, then one reply per command from a function. */
+/**
+ * Speaks just enough RCON for tests, the way the vanilla server does: login, then a reply per command from a function,
+ * split into packets of {@link #CHUNK} characters, and "Unknown request" for packets of any other type.
+ */
 public final class FakeRconServer implements AutoCloseable {
+
+    /** The vanilla server's largest reply packet, in characters. */
+    public static final int CHUNK = 4096;
 
     private final ServerSocket socket;
     private final String password;
@@ -67,9 +73,18 @@ public final class FakeRconServer implements AutoCloseable {
                 String body = new String(data, 8, length - 10, StandardCharsets.UTF_8);
                 if (type == 3) {
                     write(out, body.equals(password) ? id : -1, 2, "");
-                } else {
+                } else if (type == 2) {
                     commands.add(body);
-                    write(out, id, 0, replies.apply(body));
+                    // Like the vanilla server: a long reply goes out in packets of 4096 characters, no end marker.
+                    String reply = replies.apply(body);
+                    int offset = 0;
+                    do {
+                        int end = Math.min(reply.length(), offset + CHUNK);
+                        write(out, id, 0, reply.substring(offset, end));
+                        offset = end;
+                    } while (offset < reply.length());
+                } else {
+                    write(out, id, 0, "Unknown request " + Integer.toHexString(type));
                 }
             }
         } catch (IOException e) {
