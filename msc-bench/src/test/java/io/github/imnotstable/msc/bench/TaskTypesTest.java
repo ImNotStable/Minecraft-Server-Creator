@@ -7,6 +7,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import com.google.gson.JsonPrimitive;
 import io.github.imnotstable.msc.bench.check.Checks;
 import io.github.imnotstable.msc.bench.task.TaskDef;
 import io.github.imnotstable.msc.bench.task.TaskLoader;
@@ -139,6 +140,50 @@ class TaskTypesTest {
         assertThatThrownBy(() -> load(json))
                 .isInstanceOf(IOException.class)
                 .hasMessage("Task t: task.json " + key + ": " + value + " is not " + type);
+    }
+
+    /** Each regex key of {@link #VALID} (#508), as a path; a list of regexes by its first entry. */
+    private static final List<String> REGEX_KEYS = List.of("checks[0].contains", "checks[1].outputMatches",
+            "checks[3].textEntries[0].contains", "checks[4].expect", "checks[6].expect[0]", "checks[6].ready");
+
+    /** Each path key of {@link #VALID} (#508); a list of paths by its first entry. */
+    private static final List<String> PATH_KEYS = List.of("fixtures[0]", "checks[0].path", "checks[1].addFiles",
+            "checks[2].path", "checks[3].path", "checks[6].jar");
+
+    @Test
+    void theRegexKeysAreStringKeys() {
+        REGEX_KEYS.forEach(key -> assertThat(KEYS.get(key)).as(key).isEqualTo(STRING));
+    }
+
+    static Stream<Arguments> unreadableStrings() {
+        List<Arguments> rows = new ArrayList<>();
+        for (String key : REGEX_KEYS) {
+            rows.add(Arguments.of(key, "(abc", "\"(abc\" is not a regex: Unclosed group at index 4"));
+            rows.add(Arguments.of(key, "x\n[" + "a".repeat(100), "\"x\\n[" + "a".repeat(52)
+                    + "... is not a regex: Unclosed character class at index 102"));
+        }
+        for (String key : PATH_KEYS) {
+            rows.add(Arguments.of(key, "a\0b", "\"a\\u0000b\" is not a path: Nul character not allowed"));
+        }
+        rows.add(Arguments.of("checks[6].port", "70000",
+                "\"70000\" is not a port from 1 to 65535 or a placeholder such as {serverPort}"));
+        rows.add(Arguments.of("checks[6].port", "x", "\"x\" is not a port from 1 to 65535 or a placeholder such as "
+                + "{serverPort}"));
+        return rows.stream();
+    }
+
+    /** #508: a string a key cannot use (a bad regex, no path, no port) is refused in one line naming its key path. */
+    @ParameterizedTest(name = "{0} = {1}")
+    @MethodSource("unreadableStrings")
+    void aStringTheKeyCannotUseIsRefusedInOneLineNamingTheKey(String key, String value, String says) {
+        JsonObject json = JsonParser.parseString(VALID).getAsJsonObject();
+        if (key.startsWith("fixtures")) {
+            json.add("fixtures", JsonParser.parseString("[\"x\"]"));
+        }
+        set(json, key, new JsonPrimitive(value));
+        assertThatThrownBy(() -> load(json))
+                .isInstanceOf(IOException.class)
+                .hasMessage("Task t: task.json " + key + ": " + says);
     }
 
     @Test

@@ -56,29 +56,29 @@ public final class Checks {
         return switch (type) {
             case "file" -> new FileCheck(
                     orDefault(name, "file " + string(json, "path", "")),
-                    require(json, "path"),
-                    pattern(json, "contains"));
+                    requirePath(json, "path"),
+                    json.pattern("contains", Pattern.MULTILINE));
             case "command" -> new CommandCheck(
                     orDefault(name, "command"),
                     strings(json, "run"),
                     json.wholeNumber("timeoutSeconds", JsonNumbers.SECONDS, 600),
                     json.wholeNumber("expectExit", JsonNumbers.EXIT_CODE, 0),
-                    pattern(json, "outputMatches"),
+                    json.pattern("outputMatches", Pattern.MULTILINE),
                     taskFolder(json, "addFiles", taskDir));
             case "png" -> new PngCheck(
                     orDefault(name, "png " + string(json, "path", "")),
-                    require(json, "path"),
+                    requirePath(json, "path"),
                     PngRules.parse(json));
             case "zip" -> new ZipCheck(
                     orDefault(name, "zip " + string(json, "path", "")),
-                    require(json, "path"),
+                    requirePath(json, "path"),
                     json.exactStrings("entries"),
                     zipPngs(json),
                     zipTexts(json));
             case "rcon" -> new RconCheck(
                     orDefault(name, "rcon " + string(json, "command", "")),
                     require(json, "command"),
-                    Pattern.compile(require(json, "expect")));
+                    requirePattern(json, "expect", 0));
             case "blocks" -> BlocksCheck.parse(orDefault(name, "blocks"), json);
             case "player" -> PlayerCheck.parse(orDefault(name, "player"), json);
             default -> throw new IllegalArgumentException("unknown check type \"" + type + "\"");
@@ -87,7 +87,7 @@ public final class Checks {
 
     /** A folder of the task named by {@code key}, which must exist, or null when the key is absent. */
     private static Path taskFolder(UserJson json, String key, Path taskDir) {
-        String folder = string(json, key, null);
+        String folder = json.path(key, null);
         if (folder == null) {
             return null;
         }
@@ -112,7 +112,7 @@ public final class Checks {
     private static List<ZipCheck.TextEntry> zipTexts(UserJson json) {
         List<ZipCheck.TextEntry> out = new ArrayList<>();
         for (UserJson o : json.exactObjects("textEntries", TEXT_ENTRY)) {
-            out.add(new ZipCheck.TextEntry(require(o, "entry"), Pattern.compile(require(o, "contains"), Pattern.MULTILINE)));
+            out.add(new ZipCheck.TextEntry(require(o, "entry"), requirePattern(o, "contains", Pattern.MULTILINE)));
         }
         return out;
     }
@@ -125,6 +125,18 @@ public final class Checks {
         return value;
     }
 
+    /** The path {@code key}, which must be there and be a path on this system. */
+    static String requirePath(UserJson json, String key) {
+        require(json, key);
+        return json.path(key, null);
+    }
+
+    /** The regex {@code key}, which must be there, compiled through {@link UserJson#pattern} (#508). */
+    private static Pattern requirePattern(UserJson json, String key, int flags) {
+        require(json, key);
+        return json.pattern(key, flags);
+    }
+
     static String string(UserJson json, String key, String fallback) {
         return json.exactString(key, fallback);
     }
@@ -135,11 +147,6 @@ public final class Checks {
             throw new IllegalArgumentException("check is missing \"" + key + "\": " + json);
         }
         return value;
-    }
-
-    private static Pattern pattern(UserJson json, String key) {
-        String regex = string(json, key, null);
-        return regex == null ? null : Pattern.compile(regex, Pattern.MULTILINE);
     }
 
     private static String orDefault(String value, String fallback) {
