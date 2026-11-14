@@ -18,7 +18,7 @@ The base every game needs, so you only write the game itself. All of it is set i
 - World: time frozen at `time`, weather clear, `difficulty` applied (the dev server starts peaceful; this overrides it), natural mob spawns off (`natural-spawns`). Mobs your code, commands and spawner blocks create still spawn.
 - Stages: an ordered list, each with a `spawn` and an optional `goal` box. Stepping into the goal moves the player to the next stage. Progress is saved per player in `plugins/{{name}}/progress.yml` and survives restarts.
 - `/game` admin command (op or `{{projectId}}.admin`): `status`, `stage <name|n> [player]`, `next [player]`, `reset [player]`, `kit [player]`.
-- A bad config value (wrong type, unknown name, a typo'd key) disables the plugin with one log line naming the key (`config.yml: difficulty: unknown value brutal`, `config.yml: time: needs a whole number, got night`), so it shows up in the startup report. A missing key takes its default.
+- A bad config value (wrong type, unknown name, a typo'd key) disables the plugin with one log line naming the key (`config.yml: difficulty: unknown value brutal`, `config.yml: time: needs a whole number, got the text 'night'`), so it shows up in the startup report. The message names the type the value has, so a quoted number says so: `got the text '6000'; remove the quotes`. A missing key takes its default.
 
 ## Layout
 
