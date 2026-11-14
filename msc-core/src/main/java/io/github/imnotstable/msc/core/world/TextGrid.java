@@ -2,6 +2,7 @@ package io.github.imnotstable.msc.core.world;
 
 import io.github.imnotstable.msc.core.tool.Budget;
 import io.github.imnotstable.msc.core.tool.ToolException;
+import io.github.imnotstable.msc.protocol.Limits;
 import io.github.imnotstable.msc.protocol.world.BlockGrid;
 import io.github.imnotstable.msc.protocol.world.BlockPos;
 import io.github.imnotstable.msc.protocol.world.Region;
@@ -42,6 +43,9 @@ public final class TextGrid {
 
     /** A row written once for N equal rows: {@code #...# (x3)}. */
     private static final Pattern REPEAT = Pattern.compile("^(.*\\S) \\(x(\\d{1,4})\\)$");
+
+    /** Most layers a structure may have: taller than any world. */
+    static final int MAX_LAYERS = 4096;
 
     private TextGrid() {
     }
@@ -118,6 +122,8 @@ public final class TextGrid {
                 .append(sz).append(" rows=z cols=x\n").append(legend).append('\n');
         // Each layer is "all c", "same as y=N" or rows; runs of equal "all"/"same as" layers share one line.
         Map<String, Integer> seenLayers = new HashMap<>();
+        // A structure needs one layer of rows to give its size, so when every layer is uniform the lowest gets rows.
+        boolean rowsNeeded = allLayersUniform(grid, symbol, toName);
         String pending = null;
         int runStart = 0;
         int runEnd = 0;
@@ -128,7 +134,7 @@ public final class TextGrid {
             for (int z = 0; z < sz; z++) {
                 for (int x = 0; x < sx; x++) {
                     int b = grid.blocks()[(y * sz + z) * sx + x];
-                    char c = b < 0 ? '_' : symbol[toName[b]];
+                    char c = cell(b, symbol, toName);
                     if (first == 0) {
                         first = c;
                     } else if (c != first) {
@@ -141,7 +147,8 @@ public final class TextGrid {
             int worldY = r.min().y() + y;
             String text = layer.toString();
             Integer same = seenLayers.putIfAbsent(text, worldY);
-            String shortForm = uniform && sx * sz > 1 ? " all " + first : same != null ? " same as y=" + same : null;
+            String shortForm = uniform && sx * sz > 1 && !(rowsNeeded && y == 0) ? " all " + first
+                    : same != null ? " same as y=" + same : null;
             if (pending != null && pending.equals(shortForm) && runEnd == worldY - 1) {
                 runEnd = worldY;
                 continue;
@@ -157,6 +164,22 @@ public final class TextGrid {
         appendRun(out, pending, runStart, runEnd);
         return Budget.truncate(out.toString().stripTrailing(), maxChars,
                 "Ask for fewer layers or a smaller area, or raise maxChars.");
+    }
+
+    /** Whether every layer shows one symbol only. */
+    private static boolean allLayersUniform(BlockGrid grid, char[] symbol, int[] toName) {
+        int layer = grid.region().sizeX() * grid.region().sizeZ();
+        int[] blocks = grid.blocks();
+        for (int i = 0; i < blocks.length; i++) {
+            if (i % layer != 0 && cell(blocks[i], symbol, toName) != cell(blocks[i - 1], symbol, toName)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static char cell(int block, char[] symbol, int[] toName) {
+        return block < 0 ? '_' : symbol[toName[block]];
     }
 
     private static void appendRun(StringBuilder out, String shortForm, int from, int to) {
@@ -197,11 +220,20 @@ public final class TextGrid {
         String all;
     }
 
+    private static int layerNumber(String digits) {
+        try {
+            return Integer.parseInt(digits);
+        } catch (NumberFormatException e) {
+            throw new ToolException("layer number " + digits + " is too large");
+        }
+    }
+
     /** Parse a structure and place its lowest corner (lowest x, y and z) at {@code origin}. */
     public static BlockGrid parse(String text, String world, BlockPos origin) {
         Map<Character, String> legend = new LinkedHashMap<>();
         TreeMap<Integer, Layer> layers = new TreeMap<>();
         Layer current = null;
+        long rowCells = 0;
         for (String raw : text.split("\\R")) {
             String line = raw.stripTrailing();
             if (line.isBlank() || line.startsWith("region ") || line.startsWith("[")) {
@@ -223,16 +255,20 @@ public final class TextGrid {
             }
             Matcher m = LAYER.matcher(line);
             if (m.matches()) {
-                int from = Integer.parseInt(m.group(1));
-                int to = m.group(2) == null ? from : Integer.parseInt(m.group(2));
+                int from = layerNumber(m.group(1));
+                int to = m.group(2) == null ? from : layerNumber(m.group(2));
                 if (to < from || (to > from && m.group(3) == null && m.group(4) == null)) {
                     throw new ToolException("y=" + from + ".." + to + " needs a rising range and \"same as\" or \"all\"");
                 }
-                for (int y = from; y <= to; y++) {
+                if (layers.size() + ((long) to - from + 1) > MAX_LAYERS) {
+                    throw new ToolException("structure has more than " + MAX_LAYERS + " layers (y=" + from + ".." + to
+                            + "); split it");
+                }
+                Integer sameAs = m.group(3) == null ? null : layerNumber(m.group(3));
+                for (long ly = from; ly <= to; ly++) { // long: an int counter wraps when to is Integer.MAX_VALUE
+                    int y = (int) ly;
                     current = new Layer();
-                    if (m.group(3) != null) {
-                        current.sameAs = Integer.parseInt(m.group(3));
-                    }
+                    current.sameAs = sameAs;
                     current.all = m.group(4);
                     if (layers.put(y, current) != null) {
                         throw new ToolException("layer y=" + y + " appears twice");
@@ -248,9 +284,18 @@ public final class TextGrid {
                 throw new ToolException("layer with \"same as\" or \"all\" must not have rows");
             }
             Matcher repeat = REPEAT.matcher(line);
-            int times = repeat.matches() ? Integer.parseInt(repeat.group(2)) : 1;
+            boolean repeated = repeat.matches();
+            int times = repeated ? Integer.parseInt(repeat.group(2)) : 1;
+            String row = repeated ? repeat.group(1) : line;
+            // Every character of a row is a block, so more than the volume limit cannot fit; "(x9999)" on many or
+            // long lines would otherwise fill memory before the size check below.
+            rowCells += (long) times * row.length();
+            if (rowCells > Limits.MAX_REGION_VOLUME) {
+                throw new ToolException("structure has more than " + Limits.MAX_REGION_VOLUME
+                        + " blocks in its rows; split it");
+            }
             for (int i = 0; i < times; i++) {
-                current.rows.add(repeat.matches() ? repeat.group(1) : line);
+                current.rows.add(row);
             }
         }
         if (layers.isEmpty()) {
@@ -265,7 +310,7 @@ public final class TextGrid {
         int sz = shaped.rows.size();
         int sx = shaped.rows.get(0).length();
         Region region = new Region(world, origin, origin.offset(sx - 1, sy - 1, sz - 1));
-        if (region.volume() > io.github.imnotstable.msc.protocol.Limits.MAX_REGION_VOLUME) {
+        if (region.volume() > Limits.MAX_REGION_VOLUME) {
             throw new ToolException("structure is larger than 1,048,576 blocks; split it");
         }
         List<String> palette = new ArrayList<>();

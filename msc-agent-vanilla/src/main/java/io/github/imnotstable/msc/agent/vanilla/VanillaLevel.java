@@ -7,18 +7,26 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.TreeSet;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.HolderLookup;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.syncher.EntityDataSerializers;
+import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.util.ProblemReporter;
+import net.minecraft.world.entity.Display;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.SignBlockEntity;
 import net.minecraft.world.level.block.entity.SignText;
 import net.minecraft.world.level.block.entity.SignTextSlot;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.levelgen.Heightmap;
+import net.minecraft.world.level.storage.TagValueInput;
 import net.minecraft.world.phys.AABB;
 
 /** {@link AgentWorld} on a {@code ServerLevel}. Main thread only. */
@@ -67,6 +75,32 @@ final class VanillaLevel implements AgentWorld<BlockState> {
         level.setBlock(pos.set(x, y, z), state, physics ? PHYSICS : NO_PHYSICS);
     }
 
+    /** The block entity's data (sign text, container items), which a {@code BlockState} leaves out. */
+    @Override
+    public Object blockEntity(int x, int y, int z) {
+        BlockEntity entity = level.getBlockEntity(pos.set(x, y, z));
+        return entity == null ? null : save(entity, level.registryAccess());
+    }
+
+    @Override
+    public void loadBlockEntity(int x, int y, int z, Object data) {
+        BlockEntity entity = level.getBlockEntity(pos.set(x, y, z));
+        if (entity != null) {
+            load(entity, (CompoundTag) data, level.registryAccess());
+            BlockState state = level.getBlockState(pos);
+            level.sendBlockUpdated(pos, state, state, Block.UPDATE_CLIENTS);
+        }
+    }
+
+    static CompoundTag save(BlockEntity entity, HolderLookup.Provider registries) {
+        return entity.saveWithFullMetadata(registries);
+    }
+
+    static void load(BlockEntity entity, CompoundTag data, HolderLookup.Provider registries) {
+        entity.loadWithComponents(TagValueInput.create(ProblemReporter.DISCARDING, registries, data));
+        entity.setChanged();
+    }
+
     /** Block states are interned singletons, so identity is equality. */
     @Override
     public boolean sameState(BlockState current, BlockState target) {
@@ -87,10 +121,8 @@ final class VanillaLevel implements AgentWorld<BlockState> {
 
     @Override
     public List<Ops.EntitySummary> entities(Region region, int max) {
-        AABB box = new AABB(region.min().x(), region.min().y(), region.min().z(),
-                region.max().x() + 1, region.max().y() + 1, region.max().z() + 1);
         List<Ops.EntitySummary> out = new ArrayList<>();
-        for (Entity e : level.getEntities((Entity) null, box, e -> true)) {
+        for (Entity e : level.getEntities((Entity) null, box(region), e -> inside(region, e))) {
             if (out.size() == max) {
                 break;
             }
@@ -102,10 +134,8 @@ final class VanillaLevel implements AgentWorld<BlockState> {
 
     @Override
     public List<Ops.EntityInfo> entityInfos(Region region, String type) {
-        AABB box = new AABB(region.min().x(), region.min().y(), region.min().z(),
-                region.max().x() + 1, region.max().y() + 1, region.max().z() + 1);
         List<Ops.EntityInfo> out = new ArrayList<>();
-        for (Entity e : level.getEntities((Entity) null, box, e -> true)) {
+        for (Entity e : level.getEntities((Entity) null, box(region), e -> inside(region, e))) {
             String key = BuiltInRegistries.ENTITY_TYPE.getKey(e.getType()).toString();
             if (type != null && !type.equals(key)) {
                 continue;
@@ -130,6 +160,17 @@ final class VanillaLevel implements AgentWorld<BlockState> {
         return Ops.SignText.of(x, y, z, lines(sign.getText(SignTextSlot.FRONT)), lines(sign.getText(SignTextSlot.BACK)));
     }
 
+    /** Candidates whose hitbox meets the region; {@link #inside} then keeps those whose position is in it. */
+    private static AABB box(Region region) {
+        return new AABB(region.min().x(), region.min().y(), region.min().z(),
+                region.max().x() + 1, region.max().y() + 1, region.max().z() + 1);
+    }
+
+    /** An entity is in a region by its position, as on every platform, so split reads count it once. */
+    private static boolean inside(Region region, Entity e) {
+        return region.containsPoint(e.getX(), e.getY(), e.getZ());
+    }
+
     private static List<String> lines(SignText text) {
         List<String> out = new ArrayList<>(SignText.LINES);
         for (Component line : text.getMessages(false)) {
@@ -143,6 +184,27 @@ final class VanillaLevel implements AgentWorld<BlockState> {
             return p.getPlainTextName();
         }
         Component custom = e.getCustomName();
+        if (custom == null && e instanceof Display.TextDisplay) {
+            // A hologram's words are its text, not a name: report them so a render or summary can show them.
+            return displayText(e.getEntityData().getNonDefaultValues());
+        }
         return custom == null ? null : custom.getString();
+    }
+
+    /**
+     * The text of a text display from its synched data ({@code getText()} is private). Its text is the only
+     * {@code COMPONENT} value a text display has; the custom name is an optional component.
+     *
+     * @param data the entity's non-default values, null when all are default (empty text)
+     */
+    static String displayText(List<SynchedEntityData.DataValue<?>> data) {
+        if (data != null) {
+            for (SynchedEntityData.DataValue<?> value : data) {
+                if (value.serializer() == EntityDataSerializers.COMPONENT && value.value() instanceof Component text) {
+                    return text.getString();
+                }
+            }
+        }
+        return null;
     }
 }

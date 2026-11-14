@@ -3,6 +3,7 @@ package io.github.imnotstable.msc.core;
 import io.github.imnotstable.msc.protocol.message.AgentInfo;
 import io.github.imnotstable.msc.protocol.message.ErrorCodes;
 import io.github.imnotstable.msc.protocol.op.Ops;
+import io.github.imnotstable.msc.protocol.op.PartialEdit;
 import io.github.imnotstable.msc.protocol.transport.AgentClient;
 import io.github.imnotstable.msc.protocol.transport.Connection;
 import io.github.imnotstable.msc.protocol.transport.OpException;
@@ -25,6 +26,8 @@ public final class FakeAgent {
     static final String STONE = "minecraft:stone";
     /** The Minecraft version SERVER_INFO reports. */
     volatile String minecraft = "26.3";
+    /** When set, PACK_APPLY fails as an agent error would. */
+    volatile boolean failPackApply;
 
     final Map<BlockPos, String> blocks = new HashMap<>();
     final List<String> commands = new ArrayList<>();
@@ -34,6 +37,8 @@ public final class FakeAgent {
     final List<Region> writes = new ArrayList<>();
     private final Map<String, Map<BlockPos, String>> undo = new HashMap<>();
     private int editCounter;
+    private int undosBeforeFailure = -1;
+    private int writesBeforeTimeout = -1;
 
     public synchronized String get(int x, int y, int z) {
         String s = blocks.get(new BlockPos(x, y, z));
@@ -85,6 +90,9 @@ public final class FakeAgent {
                 .on(Ops.WORLD_WRITE, this::write)
                 .on(Ops.WORLD_UNDO, this::undo)
                 .on(Ops.PACK_APPLY, p -> {
+                    if (failPackApply) {
+                        throw new OpException(ErrorCodes.INTERNAL, "pack apply failed");
+                    }
                     synchronized (this) {
                         packs.add(p);
                     }
@@ -166,12 +174,19 @@ public final class FakeAgent {
         writes.add(r);
         Map<BlockPos, String> before = new HashMap<>();
         long changed = 0;
+        boolean timeOut = writesBeforeTimeout >= 0 && writesBeforeTimeout-- == 0;
         for (int y = r.min().y(); y <= r.max().y(); y++) {
+
             for (int z = r.min().z(); z <= r.max().z(); z++) {
                 for (int x = r.min().x(); x <= r.max().x(); x++) {
                     String s = p.grid().stateAt(x, y, z);
                     if (s != null) {
                         changed += put(before, x, y, z, s);
+                    }
+                    if (timeOut && changed > 0) {
+                        // Like a real agent whose main-thread wait ran out mid-way: what changed stays, undoable.
+                        String id = finish(before, changed).editId();
+                        throw new OpException(ErrorCodes.TIMEOUT, PartialEdit.note("main thread did not finish within 120s", id));
                     }
                 }
             }
@@ -179,7 +194,27 @@ public final class FakeAgent {
         return finish(before, changed);
     }
 
+    /** Drop the oldest edit that changed blocks, as a real agent does when its undo budget runs out. */
+    synchronized void forgetOldestEdit() {
+        undo.entrySet().stream().filter(e -> !e.getValue().isEmpty())
+                .min(java.util.Comparator.comparingInt(e -> Integer.parseInt(e.getKey().substring(6))))
+                .ifPresent(e -> undo.remove(e.getKey()));
+    }
+
+    /** Make the write after {@code skip} more writes time out after its first changed block, as a slow server would. */
+    synchronized void timeOutWrite(int skip) {
+        writesBeforeTimeout = skip;
+    }
+
+    /** Make the undo after {@code skip} more undos fail, as a timeout would. */
+    synchronized void failUndo(int skip) {
+        undosBeforeFailure = skip;
+    }
+
     private synchronized Ops.EditResult undo(Ops.UndoParams p) {
+        if (undosBeforeFailure >= 0 && undosBeforeFailure-- == 0) {
+            throw new OpException(ErrorCodes.INTERNAL, "timed out");
+        }
         Map<BlockPos, String> before = undo.remove(p.editId());
         if (before == null) {
             throw new OpException(ErrorCodes.NOT_FOUND, "no edit " + p.editId());

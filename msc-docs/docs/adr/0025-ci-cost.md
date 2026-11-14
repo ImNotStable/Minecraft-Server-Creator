@@ -9,7 +9,7 @@ The repository is private, so GitHub Actions minutes are billed, and Windows min
 ## Decisions
 
 1. **Pull requests run one job: `Build and test (ubuntu-latest)`.** It runs `./gradlew build`, which holds every unit test.
-2. **The full set runs elsewhere.** The Windows build and the Minestom end-to-end job (Linux and Windows) run on pushes to `main`, nightly at 03:17 UTC, by hand (`workflow_dispatch`), and on a pull request labelled `full-ci`. Adding the label starts a full run; other labels start nothing.
+2. **The full set runs elsewhere.** The Windows build and the Minestom end-to-end job (Linux and Windows) run on pushes to `main`, nightly at 03:17 UTC, by hand (`workflow_dispatch`), and on a pull request labelled `full-ci`. Adding the label starts a full run; other labels start nothing and cancel nothing (their runs get a concurrency group of their own, and both jobs skip a labelled event unless the label is `full-ci`).
 3. **Kept from before:** a newer push cancels the older run on the same branch (not on `main`), docs-only changes skip CI, and `setup-gradle` caches dependencies and the build cache, written only from `main`.
 4. **Use `full-ci` on PRs that touch** OS-specific code (paths, processes, ports, file locking, line endings), the agents, the core's MCP layer, `dev_cycle`, templates or the CI workflow itself.
 
@@ -19,3 +19,10 @@ The repository is private, so GitHub Actions minutes are billed, and Windows min
 - A Windows-only or e2e-only break can reach `main` and is then caught by `main`'s own run or the nightly run, not by the PR. The integrator fixes it in a follow-up PR the same way as any red `main`.
 - While Actions cannot run at all, the integrator verifies each PR with a local build and tests on top of current `main` (and on the PC for Windows or Paper when it matters) before merging.
 - The GitHub-managed "Automatic Dependency Submission" workflow is not in this repository and is not changed here.
+
+## Addendum 2026-11-14: Actions only by hand
+
+The owner's PC is out of use for a while and Actions must be used sparingly. CI no longer runs on pushes to main,
+on ordinary pull request events or nightly. It runs only by hand (`workflow_dispatch`) or when a pull request is
+labelled `full-ci`. Every pull request is still built locally (full `./gradlew build`, plus e2eTest or
+verifyTemplates where it touches those paths) on top of current main before it is merged.

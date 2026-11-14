@@ -3,8 +3,10 @@ package io.github.imnotstable.msc.core.world;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.github.imnotstable.msc.bot.Footing;
 import io.github.imnotstable.msc.core.tool.ToolException;
 import io.github.imnotstable.msc.protocol.world.BlockPos;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 
 class WalkTest {
@@ -76,12 +78,44 @@ class WalkTest {
 
     @Test
     void judgesBlocksByName() {
-        assertThat(Walk.classify("minecraft:oak_door[half=lower,open=false]")).isEqualTo(Walk.classify("minecraft:air"));
+        assertThat(Walk.classify("minecraft:oak_door[half=lower,open=false]")).isEqualTo(Walk.classify("minecraft:stone"));
+        assertThat(Walk.classify("minecraft:oak_door[half=lower,open=true]")).isEqualTo(Walk.classify("minecraft:air"));
+        assertThat(Walk.classify("minecraft:oak_fence_gate[open=false]")).isEqualTo(Walk.classify("minecraft:oak_fence"));
         assertThat(Walk.classify("minecraft:red_carpet")).isEqualTo(Walk.classify("minecraft:air"));
-        assertThat(Walk.classify("minecraft:oak_trapdoor[open=false]")).isEqualTo(Walk.classify("minecraft:stone"));
+        assertThat(Walk.classify("minecraft:oak_trapdoor[open=false]")).isEqualTo(Walk.classify("minecraft:oak_stairs"));
         assertThat(Walk.classify("minecraft:stone_slab[type=top]")).isEqualTo(Walk.classify("minecraft:stone"));
         assertThat(Walk.classify("minecraft:stone_slab[type=bottom]")).isEqualTo(Walk.classify("minecraft:oak_stairs"));
         assertThat(Walk.classify("minecraft:mushroom_stem")).isEqualTo(Walk.classify("minecraft:stone"));
+        assertThat(Walk.classify("minecraft:torch")).isEqualTo(Walk.classify("minecraft:air"));
+        assertThat(Walk.classify("minecraft:rail[shape=north_south]")).isEqualTo(Walk.classify("minecraft:air"));
+        assertThat(Walk.classify("minecraft:candle[candles=1]")).isEqualTo(Walk.classify("minecraft:oak_stairs"));
+        assertThat(Walk.classify("minecraft:mangrove_roots")).isEqualTo(Walk.classify("minecraft:stone"));
+        assertThat(Walk.classify("minecraft:muddy_mangrove_roots")).isEqualTo(Walk.classify("minecraft:stone"));
+        assertThat(Walk.classify("minecraft:crimson_roots")).isEqualTo(Walk.classify("minecraft:air"));
         assertThat(Walk.classify("mymod:glowing_moss")).isEqualTo(Walk.classify("minecraft:stone"));
+    }
+
+    @Test
+    void plansWithTheShapesTheTestPlayerCollidesWith() {
+        // Each block is passable for the route exactly when the test player's collision table lets it through.
+        for (String state : List.of("minecraft:oak_door[half=lower,open=false]", "minecraft:oak_door[open=true]",
+                "minecraft:spruce_fence_gate[open=false]", "minecraft:spruce_fence_gate[open=true]",
+                "minecraft:iron_door[open=false]", "minecraft:cocoa[age=2]", "minecraft:end_rod",
+                "minecraft:cactus_flower", "minecraft:red_candle[candles=2]", "minecraft:crimson_fungus",
+                "minecraft:mangrove_propagule", "minecraft:mangrove_roots", "minecraft:crimson_roots",
+                "minecraft:scaffolding", "minecraft:snow[layers=1]", "minecraft:white_carpet", "minecraft:poppy",
+                "minecraft:twisting_vines_plant", "minecraft:oak_sign")) {
+            boolean walkThrough = Walk.classify(state) == Walk.classify("minecraft:air")
+                    || Walk.classify(state) == Walk.classify("minecraft:ladder");
+            assertThat(walkThrough).as(state).isEqualTo(Footing.of(state) == Footing.OPEN);
+        }
+    }
+
+    @Test
+    void aClosedDoorBlocksTheRoute() {
+        StringBuilder text = new StringBuilder("legend: #=stone d=oak_door[half=lower,open=false] "
+                + "D=oak_door[half=upper,open=false]\ny=0\n##########\ny=1\n.....d....\ny=2\n.....D....\n");
+        Walk walk = new Walk(TextGrid.parse(text.toString(), "world", new BlockPos(0, 0, 0)));
+        assertThat(walk.path(FROM, TO)).endsWith("oak_door at 5,1,0 (closed; a walk opens nothing)");
     }
 }

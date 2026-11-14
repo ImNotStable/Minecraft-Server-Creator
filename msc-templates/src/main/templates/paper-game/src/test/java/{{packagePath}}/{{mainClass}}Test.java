@@ -13,6 +13,8 @@ import org.bukkit.GameRules;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.command.CommandSender;
+import org.bukkit.configuration.InvalidConfigurationException;
+import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.EntityType;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.event.EventHandler;
@@ -30,17 +32,39 @@ import org.mockbukkit.mockbukkit.ServerMock;
 import org.mockbukkit.mockbukkit.entity.PlayerMock;
 import org.mockbukkit.mockbukkit.world.WorldMock;
 
-/** Loads the real plugin on a MockBukkit server: use this kind of test for events, commands and players. */
+/**
+ * Loads the real plugin on a MockBukkit server: use this kind of test for events, commands and players. The plugin
+ * reads {@link #CONFIG}, not your config.yml, so editing config.yml does not break these tests.
+ */
 class {{mainClass}}Test {
+    /** Its time of day and bread, kept inside GameConfig.MAX_TIME and Kit.MAX_AMOUNT when you lower them. */
+    static final int TIME = Math.min(6000, GameConfig.MAX_TIME);
+    static final int BREAD = Math.min(8, Kit.MAX_AMOUNT);
+
+    /** The game these tests play. A key it leaves out takes GameConfig's default. */
+    static final String CONFIG = """
+            game-mode: adventure
+            difficulty: normal
+            time: %d
+            natural-spawns: false
+            keep-inventory: true
+            kit: [wooden_sword, 'bread:%d']
+            stages:
+              - {name: start, spawn: [0.5, -60, 0.5, 0, 0], goal: [-2, -61, 10, 2, -58, 12]}
+              - {name: arena, spawn: [0.5, -60, 40.5, 0, 0]}
+            """.formatted(TIME, BREAD);
+
     private ServerMock server;
     private WorldMock world;
     private {{mainClass}} plugin;
 
     @BeforeEach
-    void setUp() {
+    void setUp() throws InvalidConfigurationException {
         server = MockBukkit.mock();
         world = server.addSimpleWorld("world");
-        plugin = MockBukkit.load({{mainClass}}.class);
+        YamlConfiguration config = new YamlConfiguration();
+        config.loadFromString(CONFIG);
+        plugin = MockBukkit.loadWithConfig({{mainClass}}.class, config);
     }
 
     @AfterEach
@@ -73,7 +97,7 @@ class {{mainClass}}Test {
 
     @Test
     void appliesTheWorldRules() {
-        assertThat(world.getTime()).isEqualTo(6000);
+        assertThat(world.getTime()).isEqualTo(TIME);
         assertThat(world.getGameRuleValue(GameRules.ADVANCE_TIME)).isFalse();
         assertThat(world.getGameRuleValue(GameRules.KEEP_INVENTORY)).isTrue();
         assertThat(world.getGameRuleValue(GameRules.SPAWN_MOBS)).isFalse();
@@ -85,7 +109,7 @@ class {{mainClass}}Test {
 
         assertThat(steve.getGameMode()).isEqualTo(GameMode.ADVENTURE);
         assertThat(steve.getInventory().contains(Material.WOODEN_SWORD)).isTrue();
-        assertThat(steve.getInventory().contains(Material.BREAD, 8)).isTrue();
+        assertThat(steve.getInventory().contains(Material.BREAD, BREAD)).isTrue();
         assertThat(steve.getLocation().getBlockZ()).isZero();
         assertThat(plugin.game().stage(steve).name()).isEqualTo("start");
     }
@@ -104,6 +128,18 @@ class {{mainClass}}Test {
         server.getScheduler().waitAsyncTasksFinished();
         Path saved = plugin.getDataFolder().toPath().resolve("progress.yml");
         assertThat(Files.readString(saved)).contains(steve.getUniqueId() + ": arena");
+    }
+
+    @Test
+    void aBadProgressFileDisablesThePluginInsteadOfCrashing() throws Exception {
+        server.getPluginManager().disablePlugin(plugin);
+        Path saved = plugin.getDataFolder().toPath().resolve("progress.yml");
+        Files.createDirectories(saved.getParent());
+        Files.writeString(saved, "stage:\n  not-a-uuid: arena\n");
+
+        server.getPluginManager().enablePlugin(plugin);
+
+        assertThat(plugin.isEnabled()).isFalse();
     }
 
     @Test
@@ -146,10 +182,22 @@ class {{mainClass}}Test {
 
         assertThat(console("game stage arena Steve")).containsExactly("Steve is on stage 2 arena");
         assertThat(steve.getLocation().getBlockZ()).isEqualTo(40);
-        assertThat(console("game status")).hasSize(2).last().asString()
-                .startsWith("Steve: stage 2/2 arena, at 0 -60 40, adventure");
+        // Only the lines it checks: status lines you add for your own state do not break it.
+        assertThat(console("game status")).anySatisfy(line -> assertThat(line)
+                .startsWith("Steve: stage 2/2 arena, at 0 -60 40, adventure"));
         assertThat(console("game reset Steve")).containsExactly("Steve was reset to stage 1");
         assertThat(plugin.game().stage(steve).name()).isEqualTo("start");
+    }
+
+    /** Words are split on runs of spaces, and tab completion offers stage names after them. */
+    @Test
+    void extraSpacesBetweenWordsAreIgnored() {
+        server.addPlayer("Steve");
+        assertThat(console("game  stage   arena  Steve")).containsExactly("Steve is on stage 2 arena");
+        GameCommand command = new GameCommand(plugin.game(), server, "test");
+        assertThat(command.suggestions(new String[] {"stage", "", ""})).containsExactly("start", "arena");
+        assertThat(command.suggestions(new String[] {"stage", "", "ar"})).containsExactly("arena");
+        assertThat(command.suggestions(new String[] {""})).contains("stage", "status");
     }
 
     @Test

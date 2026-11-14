@@ -51,6 +51,24 @@ class LogCondenserTest {
     }
 
     @Test
+    void modLoaderFramesAreFramework() {
+        List<String> log = List.of(
+                "[12:00:03] [main/ERROR] [ne.ne.fm.ModLoader/LOADING]: Failed to create mod instance",
+                "java.lang.IllegalStateException: boom",
+                "\tat TRANSFORMER/mymod@1.0/com.example.mymod.MyMod.<init>(MyMod.java:12) ~[mymod-1.0.jar%23190!/:?]",
+                "\tat net.neoforged.fml.javafmlmod.FMLModContainer.constructMod(FMLModContainer.java:110) ~[?:?]",
+                "\tat MC-BOOTSTRAP/cpw.mods.modlauncher@11.0.4/cpw.mods.modlauncher.Launcher.run(Launcher.java:108) ~[?:?]",
+                "\tat net.minecraftforge.eventbus.EventBus.post(EventBus.java:302) ~[?:?]",
+                "\tat org.spongepowered.asm.mixin.transformer.MixinProcessor.applyMixins(MixinProcessor.java:363) ~[?:?]",
+                "\tat net.fabricmc.loader.impl.launch.knot.Knot.launch(Knot.java:74) ~[?:?]",
+                "\tat org.quiltmc.loader.impl.launch.knot.Knot.init(Knot.java:3) ~[?:?]",
+                "\tat org.purpurmc.purpur.PurpurConfig.init(PurpurConfig.java:1) ~[?:?]");
+        assertThat(LogCondenser.condense(log, 6000)).endsWith("""
+                \tat TRANSFORMER/mymod@1.0/com.example.mymod.MyMod.<init>(MyMod.java:12) ~[mymod-1.0.jar%23190!/:?]
+                \t... 7 framework frames""");
+    }
+
+    @Test
     void devServerBannersAndTheWindowsOshiErrorAreDropped() {
         List<String> log = List.of(
                 "[01:06:43 WARN]: ****************************",
@@ -85,7 +103,87 @@ class LogCondenserTest {
                 "[14:03:39] [Server thread/WARN] [ne.mi.co.ForgeMod/CORE]: Something worth reading",
                 "[14:03:40] [Server thread/INFO] [minecraft/DedicatedServer]: Done (3.1s)! For help, type \"help\"");
         assertThat(LogCondenser.condense(log, 6000))
-                .isEqualTo("5 lines, 0 errors, 1 warnings\n14:03:39 WARN Something worth reading");
+                .isEqualTo("5 lines, 0 errors, 1 warnings, 3 known-harmless hidden\n14:03:39 WARN Something worth reading");
+    }
+
+    @Test
+    void windowsLoaderStartupNoiseIsDroppedAndCounted() {
+        List<String> log = List.of(
+                // NeoForge and Forge on Windows: netty probes the macOS and Linux native transports.
+                "[14:03:30] [main/ERROR] [io.ne.ch.kq.KQueue/]: KQueue support is not available",
+                "java.lang.NoClassDefFoundError: Could not initialize class io.netty.channel.kqueue.Native",
+                "\tat io.netty.channel.kqueue.KQueue.<clinit>(KQueue.java:39) ~[netty-transport-classes-kqueue.jar:?]",
+                "Caused by: java.lang.ExceptionInInitializerError: Exception java.lang.IllegalStateException: Only supported on OSX/BSD [in thread \"main\"]",
+                "\tat io.netty.channel.kqueue.Native.<clinit>(Native.java:62) ~[netty-transport-classes-kqueue.jar:?]",
+                "[14:03:30] [main/DEBUG] [io.ne.ch.ep.Epoll/]: Epoll support is not available",
+                "java.lang.NoClassDefFoundError: Could not initialize class io.netty.channel.epoll.Native",
+                "\tat io.netty.channel.epoll.Epoll.<clinit>(Epoll.java:40) ~[netty-transport-classes-epoll.jar:?]",
+                "Caused by: java.lang.IllegalStateException: Only supported on Linux",
+                // Forge's first start writes its config files.
+                "[14:03:31] [main/WARN] [ne.mi.fm.co.ConfigFileTypeHandler/CONFIG]: Configuration file C:\\srv\\config\\fml.toml is not correct. Correcting",
+                "[14:03:31] [main/WARN] [ne.mi.fm.co.ConfigSpec/CORE]: Incorrect key earlyWindowControl was corrected from null to its default, true. ",
+                // Fabric and Quilt print oshi's message without its logger.
+                "[14:03:34] [Server thread/ERROR]: Unable to locate English counter names in registry Perflib 009",
+                "com.sun.jna.platform.win32.Win32Exception: The parameter is incorrect.",
+                "\tat com.sun.jna.platform.win32.Advapi32Util.registryGetValue(Advapi32Util.java:1104) ~[jna-platform.jar:?]",
+                "[14:03:34] [Server thread/WARN]: Unable to locate English counter names in registry Perflib 009. Assuming English counters.",
+                "[14:03:35] [Server thread/WARN] [ne.mi.co.ConfigSpec/CORE]: Incorrect key arena.size was corrected from 500 to its default, 64.",
+                "[14:03:40] [Server thread/INFO] [minecraft/DedicatedServer]: Done (3.1s)! For help, type \"help\"");
+        LogCondenser.Condensed c = LogCondenser.analyze(log, 6000);
+        assertThat(c.text()).isEqualTo("17 lines, 0 errors, 1 warnings, 6 known-harmless hidden\n"
+                + "14:03:35 WARN Incorrect key arena.size was corrected from 500 to its default, 64.");
+        assertThat(c.hidden()).isEqualTo(6);
+    }
+
+    /** The forge-mod template and the agent ship a pack.mcmeta, so a mod jar without one is the user's (#254). */
+    @Test
+    void aForgeModWithoutPackMetadataIsKept() {
+        List<String> log = List.of(
+                "[14:03:33] [Worker-Main-2/WARN] [minecraft/Pack]: Missing metadata in pack mod:mymod",
+                "[14:03:33] [Worker-Main-2/WARN] [ne.mi.re.ResourcePackLoader/CORE]: Could not find resource pack for mod file mymod.jar",
+                "[14:03:34] [Server thread/WARN] [minecraft/MinecraftServer]: Missing data pack mod:mymod");
+        assertThat(LogCondenser.analyze(log, 6000).warnings()).isEqualTo(3);
+    }
+
+    @Test
+    void quiltsMissingIntermediaryOn26IsDroppedWithItsTimings() {
+        List<String> log = List.of(
+                "[10:01:02] [main/WARN]: Not remapping mods because intermediary is missing!",
+                "transform-cache took 2460ms",
+                "zip sub copy took 9ms",
+                "[10:01:03] [main/WARN]: Not remapping mods because mappings are empty");
+        assertThat(LogCondenser.condense(log, 6000)).isEqualTo("4 lines, 0 errors, 1 warnings, 1 known-harmless hidden\n"
+                + "10:01:03 WARN Not remapping mods because mappings are empty");
+    }
+
+    @Test
+    void quiltsTimingLinesAreNotShownAsAnotherWarningsContext() {
+        List<String> log = List.of(
+                "[10:01:02] [main/WARN]: Mod mymod uses a deprecated entrypoint",
+                "mod adding took 12ms",
+                "tmp jar copy took 3ms",
+                "transform-cache took 2460ms",
+                "zip sub copy took 9ms");
+        assertThat(LogCondenser.condense(log, 6000))
+                .isEqualTo("5 lines, 0 errors, 1 warnings\n10:01:02 WARN Mod mymod uses a deprecated entrypoint");
+    }
+
+    @Test
+    void quiltsInMemoryAssetsUrlIsDroppedButAnotherSchemaIsKept() {
+        List<String> log = List.of(
+                "[10:01:04] [main/WARN]: Assets URL 'quilt.zfs://minecraft-26.3.jar/assets/.mcassetsroot' uses unexpected schema",
+                "[10:01:04] [main/WARN]: Assets URL 'http://example.com/assets/.mcassetsroot' uses unexpected schema");
+        assertThat(LogCondenser.condense(log, 6000)).isEqualTo("2 lines, 0 errors, 1 warnings, 1 known-harmless hidden\n"
+                + "10:01:04 WARN Assets URL 'http://example.com/assets/.mcassetsroot' uses unexpected schema");
+    }
+
+    @Test
+    void aNettyErrorThatIsNotTheNativeProbeIsKept() {
+        List<String> log = List.of(
+                "[14:03:30] [Server thread/ERROR] [io.ne.ch.DefaultChannelPipeline/]: An exceptionCaught() event was fired",
+                "java.lang.IllegalStateException: boom",
+                "\tat io.netty.channel.epoll.EpollEventLoop.run(EpollEventLoop.java:1) ~[netty.jar:?]");
+        assertThat(LogCondenser.analyze(log, 6000).errors()).isEqualTo(1);
     }
 
     @Test
@@ -180,5 +278,125 @@ class LogCondenserTest {
                 * What went wrong:
                 Execution failed for task ':compileJava'.
                 BUILD FAILED in 2s""");
+    }
+
+    /** Minestom logs with slf4j-simple: {@code [thread] LEVEL logger - msg}, no timestamp (#272). */
+    @Test
+    void minestomWarningsAndErrorsAreCounted() {
+        List<String> log = List.of(
+                "[main] INFO net.minestom.server.MinecraftServer - Starting",
+                "[main] WARN com.example.lobby.LobbyConfig - lobby.json missing, using defaults",
+                "[main] ERROR com.example.lobby.Arena - Could not load arena",
+                "Done (0.512s)! Listening on 0.0.0.0:25565. Type stop to stop.");
+        LogCondenser.Condensed c = LogCondenser.analyze(log, 6000);
+        assertThat(c.text()).isEqualTo("""
+                4 lines, 1 errors, 1 warnings
+                WARN lobby.json missing, using defaults
+                ERROR Could not load arena""");
+    }
+
+    @Test
+    void minestomErrorsWithTracesStaySeparate() {
+        List<String> log = List.of(
+                "[main] INFO net.minestom.server.MinecraftServer - Starting",
+                "[main] ERROR com.example.lobby.Arena - Could not load arena a",
+                "java.lang.IllegalStateException: a",
+                "\tat com.example.lobby.Arena.load(Arena.java:10)",
+                "[main] INFO com.example.lobby.Lobby - Loaded",
+                "[main] ERROR com.example.lobby.Arena - Could not load arena b",
+                "java.lang.IllegalStateException: b",
+                "\tat com.example.lobby.Arena.load(Arena.java:10)");
+        assertThat(LogCondenser.condense(log, 6000)).isEqualTo("""
+                8 lines, 2 errors, 0 warnings
+                ERROR Could not load arena a
+                java.lang.IllegalStateException: a
+                \tat com.example.lobby.Arena.load(Arena.java:10)
+                ERROR Could not load arena b
+                java.lang.IllegalStateException: b
+                \tat com.example.lobby.Arena.load(Arena.java:10)""");
+    }
+
+    @Test
+    void aBareReadyLineIsNotPartOfTheWarningBefore() {
+        List<String> log = List.of(
+                "[main] WARN com.example.lobby.LobbyConfig - lobby.json missing",
+                "Done (0.512s)! Listening on 0.0.0.0:25565. Type stop to stop.",
+                "[12:00:00] [Server thread/WARN]: Something odd",
+                "Done (0.5s)! For help, type \"help\"");
+        assertThat(LogCondenser.condense(log, 6000))
+                .isEqualTo("4 lines, 0 errors, 2 warnings\nWARN lobby.json missing\n12:00:00 WARN Something odd");
+    }
+
+    @Test
+    void anUncaughtExceptionIsNotShownUnderTheInfoLineBefore() {
+        List<String> log = List.of(
+                "[main] INFO com.example.lobby.Lobby - Loading arenas",
+                "Exception in thread \"main\" java.lang.IllegalStateException: boom",
+                "\tat com.example.lobby.Lobby.main(Lobby.java:5)");
+        assertThat(LogCondenser.condense(log, 6000)).isEqualTo("""
+                3 lines, 1 errors, 0 warnings
+                Exception in thread "main" java.lang.IllegalStateException: boom
+                \tat com.example.lobby.Lobby.main(Lobby.java:5)""");
+    }
+
+    /** Minestom's default exception handler prints listener exceptions bare: each one is its own error (#294). */
+    @Test
+    void bareTracesAfterTheReadyLineAreSeparateErrors() {
+        List<String> log = List.of(
+                "[main] INFO com.example.lobby.Lobby - hi",
+                "Done (0.512s)! Listening on 0.0.0.0:25565. Type stop to stop.",
+                "java.lang.IllegalStateException: join failed",
+                "\tat com.example.lobby.Lobby.onJoin(Lobby.java:30)",
+                "\tat net.minestom.server.event.EventNodeImpl$Handle.call(EventNodeImpl.java:1)",
+                "java.lang.NullPointerException: arena is null",
+                "\tat com.example.lobby.Arena.tick(Arena.java:55)",
+                "\tat net.minestom.server.timer.SchedulerImpl.run(SchedulerImpl.java:1)",
+                "java.lang.NullPointerException: arena is null",
+                "\tat com.example.lobby.Arena.tick(Arena.java:55)",
+                "\tat net.minestom.server.timer.SchedulerImpl.run(SchedulerImpl.java:1)");
+        assertThat(LogCondenser.condense(log, 6000)).isEqualTo("""
+                11 lines, 3 errors, 0 warnings
+                java.lang.IllegalStateException: join failed
+                \tat com.example.lobby.Lobby.onJoin(Lobby.java:30)
+                \t... 1 framework frames
+                java.lang.NullPointerException: arena is null (x2)
+                \tat com.example.lobby.Arena.tick(Arena.java:55)
+                \t... 1 framework frames""");
+    }
+
+    @Test
+    void aBareTraceAfterAnInfoLineIsAnErrorOfItsOwn() {
+        List<String> log = List.of(
+                "[main] INFO com.example.lobby.Lobby - Loaded",
+                "java.lang.IllegalStateException: listener failed",
+                "\tat com.example.lobby.Lobby.onSpawn(Lobby.java:30)");
+        assertThat(LogCondenser.condense(log, 6000)).isEqualTo("""
+                3 lines, 1 errors, 0 warnings
+                java.lang.IllegalStateException: listener failed
+                \tat com.example.lobby.Lobby.onSpawn(Lobby.java:30)""");
+    }
+
+    /** A trace after a warning that already has one is a new error; the first trace stays the warning's. */
+    @Test
+    void aSecondTraceAfterAWarningsTraceIsAnError() {
+        List<String> log = List.of(
+                "[main] WARN com.example.lobby.LobbyConfig - lobby.json unreadable, using defaults",
+                "java.io.IOException: lobby.json",
+                "\tat com.example.lobby.LobbyConfig.load(LobbyConfig.java:12)",
+                "java.lang.IllegalStateException: listener failed",
+                "\tat com.example.lobby.Lobby.onSpawn(Lobby.java:30)");
+        LogCondenser.Condensed c = LogCondenser.analyze(log, 6000);
+        assertThat(c.errors()).isEqualTo(1);
+        assertThat(c.warnings()).isEqualTo(1);
+    }
+
+    @Test
+    void colouredLinesAreClassified() {
+        List<String> log = List.of(
+                "\u001b[33;1m[12:00:00 WARN]: Paper warning\u001b[m",
+                "\u001b[31m[main] ERROR com.example.Foo - Minestom error\u001b[0m");
+        LogCondenser.Condensed c = LogCondenser.analyze(log, 6000);
+        assertThat(c.errors()).isEqualTo(1);
+        assertThat(c.warnings()).isEqualTo(1);
     }
 }

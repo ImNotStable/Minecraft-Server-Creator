@@ -4,9 +4,12 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.Map;
+import java.util.TreeMap;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.bukkit.configuration.InvalidConfigurationException;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.jspecify.annotations.Nullable;
@@ -14,12 +17,15 @@ import org.jspecify.annotations.Nullable;
 /**
  * Saved progress: the stage each player has reached, by stage name (so reordering stages keeps progress).
  * Stored in {@code plugins/<name>/progress.yml}. Add more per-player fields here (scores, unlocks) as needed.
+ *
+ * <p>Changes only touch memory, so they are cheap on the main thread; {@link #flush()} builds the file text
+ * and writes it, so run it on an async task.
  */
 public final class Progress {
     private final Map<UUID, String> stages = new ConcurrentHashMap<>();
     private final Path file;
     private final Object writeLock = new Object();
-    private volatile @Nullable String pending;
+    private final AtomicBoolean dirty = new AtomicBoolean();
 
     public Progress(Path file) {
         this.file = file;
@@ -37,53 +43,68 @@ public final class Progress {
             var section = yaml.getConfigurationSection("stage");
             if (section != null) {
                 for (String key : section.getKeys(false)) {
-                    stages.put(UUID.fromString(key), String.valueOf(section.getString(key)));
+                    stages.put(playerId(key), String.valueOf(section.getString(key)));
                 }
             }
         }
         return this;
     }
 
+    private UUID playerId(String key) throws IOException {
+        try {
+            return UUID.fromString(key);
+        } catch (IllegalArgumentException e) {
+            throw new IOException(file + ": not a player UUID: " + key, e);
+        }
+    }
+
+    /** The saved stage name, or null for a player with no progress. */
     public @Nullable String stage(UUID player) {
         return stages.get(player);
     }
 
     public void setStage(UUID player, String stage) {
         stages.put(player, stage);
-        pending = toYaml();
+        dirty.set(true);
     }
 
     public void clear(UUID player) {
         stages.remove(player);
-        pending = toYaml();
+        dirty.set(true);
     }
 
     public int size() {
         return stages.size();
     }
 
-    String toYaml() {
+    /** The file text for these entries, sorted by UUID, so the file only changes when progress does. */
+    static String serialize(Map<UUID, String> entries) {
         YamlConfiguration yaml = new YamlConfiguration();
-        stages.entrySet().stream().sorted(Map.Entry.comparingByKey())
-                .forEach(e -> yaml.set("stage." + e.getKey(), e.getValue()));
+        new TreeMap<>(entries).forEach((uuid, stage) -> yaml.set("stage." + uuid, stage));
         return yaml.saveToString();
     }
 
     /**
-     * Writes the latest change, if any. Safe to call from any thread: run it async after a change
-     * and once more on disable. Writes happen in order, so an older snapshot never overwrites a newer one.
+     * Writes the latest changes, if any. Safe to call from any thread: run it on an async task after a change
+     * and once more on disable. Writes happen in order, so an older state never overwrites a newer one.
      */
     public void flush() throws IOException {
         synchronized (writeLock) {
-            String yaml = pending;
-            if (yaml == null) {
+            // Clear the flag before the snapshot: a change made after this is either in the snapshot or sets the
+            // flag again for the next flush, so none is lost.
+            if (!dirty.getAndSet(false)) {
                 return;
             }
-            pending = null;
-            Files.createDirectories(file.toAbsolutePath().getParent());
-            Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
-            Files.writeString(tmp, yaml, StandardCharsets.UTF_8);
-            Files.move(tmp, file, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            try {
+                String text = serialize(Map.copyOf(stages));
+                Files.createDirectories(file.toAbsolutePath().getParent());
+                Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
+                Files.writeString(tmp, text, StandardCharsets.UTF_8);
+                Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING);
+            } catch (IOException | RuntimeException e) {
+                dirty.set(true); // keep the changes for the next flush
+                throw e;
+            }
         }
     }
 }

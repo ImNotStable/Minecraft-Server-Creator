@@ -41,12 +41,16 @@ public final class Bots {
      */
     public static Bot join(String name, String host, int port, BlockSource blocks, Duration timeout, Path protocols)
             throws InterruptedException {
-        return join(name, host, port, blocks, null, timeout, protocols);
+        return join(name, host, port, blocks, null, null, timeout, protocols);
     }
 
-    /** As {@link #join(String, String, int, BlockSource, Duration, Path)}, with a planner for the walk action. */
+    /**
+     * As {@link #join(String, String, int, BlockSource, Duration, Path)}, with a planner for the walk action and a
+     * locator that says which world the player is in after the server puts it in one; without the locator the bot
+     * goes by the dimension.
+     */
     public static Bot join(String name, String host, int port, BlockSource blocks, RoutePlanner planner,
-                           Duration timeout, Path protocols) throws InterruptedException {
+                           WorldLocator locator, Duration timeout, Path protocols) throws InterruptedException {
         ServerPing.Version version;
         try {
             version = ServerPing.version(host, port, Duration.ofSeconds(5));
@@ -62,10 +66,11 @@ public final class Bots {
                     + "); the test player speaks " + String.join(", ", known));
         }
         if (speaker.loader() == Bots.class.getClassLoader()) {
-            return TestPlayer.join(name, host, port, blocks, planner, timeout);
+            return TestPlayer.join(name, host, port, blocks, planner, locator, timeout);
         }
         Object bot = call(speaker.loader(), "join", new Class<?>[] {String.class, String.class, int.class,
-                BlockSource.class, RoutePlanner.class, Duration.class}, name, host, port, blocks, planner, timeout);
+                BlockSource.class, RoutePlanner.class, WorldLocator.class, Duration.class}, name, host, port, blocks,
+                planner, locator, timeout);
         return (Bot) bot;
     }
 
@@ -133,12 +138,12 @@ public final class Bots {
 
     /**
      * Loads MCProtocolLib and the bot's own classes from its URLs first, so they link against that MCProtocolLib.
-     * {@link Bot}, {@link BlockSource} and {@link RoutePlanner} stay shared with the core, and so does everything else (Netty, Adventure,
-     * msc-protocol).
+     * {@link Bot}, {@link BlockSource}, {@link RoutePlanner} and {@link WorldLocator} stay shared with the core, and
+     * so does everything else (Netty, Adventure, msc-protocol).
      */
     static final class ChildFirst extends URLClassLoader {
         private static final Set<String> SHARED = Set.of(Bot.class.getName(), BlockSource.class.getName(),
-                RoutePlanner.class.getName());
+                RoutePlanner.class.getName(), WorldLocator.class.getName());
 
         static {
             registerAsParallelCapable();

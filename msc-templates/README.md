@@ -3,7 +3,7 @@
 Starter server projects per platform, ready for the AI to build on, with tests and conventions wired in. `msc-core` scaffolds them through a small Java API; nothing else needs to know how they are stored.
 
 **Phase:** MVP  
-**Status:** Paper plugin and Paper dev server templates done and verified (Java 25, Paper 26.3.build.248, MockBukkit 4.120.0). Fabric mod template done and verified (Fabric Loader 0.20.1, Fabric API 0.166.0+26.3, Loom 1.19.4). Minestom server template done and verified in the cloud (Minestom 2026.10.07-26.2). NeoForge mod template (NeoForge 26.3.0.102, ModDevGradle 2.0.148) and Forge mod template (Forge 26.3-66.1.5, ForgeGradle 7.0.40) build and pass their tests in the cloud (ADR 0027). Paper game template (`paper-game`) builds and passes its 15 tests against Paper 26.3.build.249 and MockBukkit 4.120.0. Minestom game template (`minestom-game`, 14 tests, `@EnvTest` game tests) and Fabric game template (`fabric-game`, 9 tests) build and pass in the cloud; `fabric-game`'s player paths still need a check on a real Fabric server.
+**Status:** Paper plugin and Paper dev server templates done and verified (Java 25, Paper 26.3.build.248, MockBukkit 4.120.0). Fabric mod template done and verified (Fabric Loader 0.20.1, Fabric API 0.166.0+26.3, Loom 1.19.4). Minestom server template done and verified in the cloud (Minestom 2026.10.07-26.2). NeoForge mod template (NeoForge 26.3.0.102, ModDevGradle 2.0.148) and Forge mod template (Forge 26.3-66.1.5, ForgeGradle 7.0.40) build and pass their tests in the cloud (ADR 0027). Paper game template (`paper-game`) builds and passes its tests against Paper 26.3.build.249 and MockBukkit 4.120.0. Minestom game template (`minestom-game`, with `@EnvTest` game tests) and Fabric game template (`fabric-game`) build and pass in the cloud; `fabric-game`'s player paths still need a check on a real Fabric server.
 
 ## Templates
 
@@ -32,7 +32,7 @@ result.values().get("rconPassword");  // plus rconPort, serverPort, serverIp, mc
 ```
 
 - `Templates.ids()`: packaged template ids. `Templates.info(id)`: `platform` and `description`. `Templates.versions()`: versions pinned into scaffolded projects.
-- `Templates.scaffold(id, target, vars)` throws `IllegalArgumentException` for an unknown id, `IllegalStateException` if `target` exists and is not an empty directory (it never overwrites), and `IOException` if writing fails.
+- `Templates.scaffold(id, target, vars)` throws `IllegalArgumentException` for an unknown id, `IllegalStateException` if `target` exists and is not an empty directory (it never overwrites; a directory holding only MSC's own `.msc` folder counts as empty), and `IOException` if writing fails.
 - After scaffolding `paper-plugin`: `gradlew build` (or `gradlew.bat build`) in the target builds and tests it; the jar is `build/libs/<projectId>-<version>.jar`.
 
 ### Variables
@@ -55,7 +55,7 @@ result.values().get("rconPassword");  // plus rconPort, serverPort, serverIp, mc
 | `levelType` | `minecraft:flat` (also sets `generator-settings` layers) | `withLevelType` |
 | `acceptEula` | `false`: writes `eula=false`. Set it only when the user has accepted the [Minecraft EULA](https://aka.ms/MinecraftEULA) | `withAcceptEula(boolean)` |
 
-Invalid values throw `IllegalArgumentException` when the variables are built. Pinned versions (`javaVersion`, `mcVersion`, `paperVersion`, `mockbukkitVersion`, `junitVersion`, `assertjVersion`, `runPaperVersion`, `foojayVersion`, `fabricLoaderVersion`, `fabricApiVersion`, `fabricLoomVersion`, `minestomVersion`, `minestomMcVersion`, `slf4jVersion`, `shadowVersion`) come from the repo's version catalog at build time and are also available as placeholders.
+Invalid values throw `IllegalArgumentException` when the variables are built, including a package segment that is a Java keyword or literal (name `Void` gives `com.example.void`) and a `projectId` outside 2-64 characters (it is also the mod id). `scaffold` also refuses variables that would name a class like one of its imports (`Minecraft` with a Minestom template gives `MinecraftServer`) or write two files to one path, before writing anything. Pinned versions (`javaVersion`, `mcVersion`, `paperVersion`, `mockbukkitVersion`, `junitVersion`, `assertjVersion`, `runPaperVersion`, `foojayVersion`, `fabricLoaderVersion`, `fabricApiVersion`, `fabricLoomVersion`, `minestomVersion`, `minestomMcVersion`, `slf4jVersion`, `shadowVersion`) come from the repo's version catalog at build time and are also available as placeholders.
 
 ## Writing a template
 
@@ -63,12 +63,15 @@ Invalid values throw `IllegalArgumentException` when the variables are built. Pi
 - `{{variable}}` works in file contents and in paths (`src/main/java/{{packagePath}}/{{mainClass}}.java`). An unknown placeholder fails the scaffold, and a test checks no `{{` survives.
 - Name a file `*.tmpl` when it would otherwise be picked up by this repo's Gradle or git (`build.gradle.kts.tmpl`, `.gitignore.tmpl`); the suffix is dropped when scaffolding.
 - Binary files (`.jar`, `.png`, ...) are copied as is. `gradlew` is made executable.
+- Text a template ships (CLAUDE.md, README.md, Javadoc, comments) speaks to the author of that one project. Rules about keeping templates alike belong here and in this module's tests, not in a scaffold.
+- Code in a template's CLAUDE.md or README.md must compile against its pinned versions. A fenced `java` block is a whole file: `TemplateRecipesTest` writes it into a scaffold as written and builds and tests the project. Every Java name written in backticks must be in the template's own code, in such a block, in the template's `src/test/resources/doc-names/<id>/` files (copied into the same scaffold; they only have to compile) or in the recipe edits, or `TemplateDocNamesTest` fails; names the docs tell you not to use are listed in that test.
+- The game templates (`paper-game`, `fabric-game`, `minestom-game`) check names and values the same way: each `SharedRulesTest` holds the same rule tables after its `// ---- The rule tables. ----` line, and `SharedRulesTablesTest` fails when they drift. Change a rule in all three or in none. Where they differ, and why: paper-game reads `config.yml`, so its messages name the key path, a typo'd key fails and a value of the wrong YAML type fails; fabric-game and minestom-game set the game in Java, where the compiler checks keys and types. Minestom's `Pos` wraps yaw and clamps pitch itself, so minestom-game never refuses a view direction; its `/game` has no tab completion, and it has `admins` where Paper and Fabric use permissions.
 - The `packTemplates` task copies the sources into the jar under `msc/templates/`, adds the repo's Gradle wrapper to every project template, the Minestom agent jar to `minestom-server` and `minestom-game`, nests `paper-server` under the `run/` of `paper-plugin`, `paper-game`, `fabric-mod`, `fabric-game`, `neoforge-mod` and `forge-mod`, and writes `index.txt`, `<id>/files.txt` and `versions.properties`.
 
 ## Tests
 
 - `./gradlew :msc-templates:test`: the API, variables and rendering (runs anywhere).
-- `./gradlew :msc-templates:verifyTemplates`: scaffolds every project template (`paper-plugin`, `paper-game`, `fabric-mod`, `fabric-game`, `neoforge-mod`, `forge-mod`, `minestom-server`, `minestom-game`) into `build/verify/` and runs each one's own `gradlew build`, so the templates compile against Paper, Fabric, NeoForge, Forge and Minestom and their tests pass. Needs Java 25, repo.papermc.io, maven.fabricmc.net, maven.neoforged.net, maven.minecraftforge.net and Maven Central, so it is not part of `check`.
+- `./gradlew :msc-templates:verifyTemplates`: scaffolds every project template (`paper-plugin`, `paper-game`, `fabric-mod`, `fabric-game`, `neoforge-mod`, `forge-mod`, `minestom-server`, `minestom-game`) into `build/verify/` and runs each one's own `gradlew build`, so the templates compile against Paper, Fabric, NeoForge, Forge and Minestom and their tests pass. It also follows each CLAUDE.md on a second scaffold (`*-recipes/`): the docs' `java` blocks and `doc-names` files go in, and for the game templates the steps for adding a setting, a stage setting and a stage and for changing a rule, then the project's tests run, so documented code compiles and a documented change cannot turn an unrelated shipped test red (`TemplateRecipesTest`). The builds of each test class share one Gradle daemon in its own registry under `build/verify/daemons/`, stopped when the class ends. Needs Java 25, repo.papermc.io, maven.fabricmc.net, maven.neoforged.net, maven.minecraftforge.net and Maven Central, so it is not part of `check`.
 
 ## Decisions
 

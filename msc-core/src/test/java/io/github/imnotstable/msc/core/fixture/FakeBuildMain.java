@@ -6,7 +6,8 @@ import java.nio.file.Path;
 /**
  * A stand-in for {@code gradlew}. {@code assemble} (or no task) fails like javac when {@code broken.flag} exists, else
  * writes a jar; {@code check} fails like a test when {@code failing-test.flag} exists, and appends each task it ran to
- * {@code tasks.log}. With {@code thin.flag}, the jar also goes to {@code build/msc/server.jar} with one dependency in
+ * {@code tasks.log}. With {@code slow-check.flag} or {@code -Dfake.slowCheck=true}, any run with {@code check} (also a
+ * warmup's {@code mscJar check}) writes its pid to {@code check-started} and sleeps a minute. With {@code thin.flag}, the jar also goes to {@code build/msc/server.jar} with one dependency in
  * {@code build/msc/libs}, as the init script's thin Minestom jar does.
  */
 public final class FakeBuildMain {
@@ -16,7 +17,24 @@ public final class FakeBuildMain {
     public static void main(String[] args) throws Exception {
         Files.writeString(Path.of("tasks.log"), String.join(" ", args) + "\n", java.nio.file.StandardOpenOption.CREATE,
                 java.nio.file.StandardOpenOption.APPEND);
+        if (java.util.List.of(args).contains("check")
+                && (Files.exists(Path.of("slow-check.flag")) || Boolean.getBoolean("fake.slowCheck"))) {
+            Files.move(Files.writeString(Path.of("check-started.tmp"), String.valueOf(ProcessHandle.current().pid())),
+                    Path.of("check-started"));
+            Thread.sleep(60_000);
+        }
         if (args.length > 0 && args[0].equals("check")) {
+            // many-failing-tests.flag: 200 failed tests, far more than any cap (#473).
+            if (Files.exists(Path.of("many-failing-tests.flag"))) {
+                StringBuilder out = new StringBuilder("> Task :test FAILED\n");
+                for (int i = 0; i < 200; i++) {
+                    out.append("\nDemoTest > case").append(i).append("() FAILED\n    org.opentest4j.AssertionFailedError: ")
+                            .append("expected: \"hi").append(i).append("\" but was: \"bye").append(i)
+                            .append("\" in a fairly long message\n");
+                }
+                System.out.println(out + "200 tests completed, 200 failed\nBUILD FAILED in 1s");
+                System.exit(1);
+            }
             if (Files.exists(Path.of("failing-test.flag"))) {
                 System.out.println("> Task :test FAILED\n\nDemoTest > greets() FAILED\n    org.opentest4j.AssertionFailedError: "
                         + "expected: \"hi\" but was: \"bye\"\n\n1 test completed, 1 failed\n\nBUILD FAILED in 1s");

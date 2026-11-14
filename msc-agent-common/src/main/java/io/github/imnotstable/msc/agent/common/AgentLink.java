@@ -2,6 +2,7 @@ package io.github.imnotstable.msc.agent.common;
 
 import com.google.gson.JsonObject;
 import io.github.imnotstable.msc.protocol.Limits;
+import io.github.imnotstable.msc.protocol.ProtocolException;
 import io.github.imnotstable.msc.protocol.message.AgentInfo;
 import io.github.imnotstable.msc.protocol.message.ErrorCodes;
 import io.github.imnotstable.msc.protocol.op.Events;
@@ -74,7 +75,7 @@ public final class AgentLink {
         return stopping;
     }
 
-    /** Send an event if connected; dropped otherwise. */
+    /** Send an event if connected; dropped otherwise, and logged as a warning if it cannot be sent at all. */
     public void send(String event, JsonObject data) {
         AgentClient.Session s = session;
         if (s == null) {
@@ -82,6 +83,9 @@ public final class AgentLink {
         }
         try {
             s.connection().sendEvent(event, data);
+        } catch (ProtocolException e) {
+            // The connection is fine but this event could not go (too large, not encodable): never drop it unseen.
+            log.warn("Could not send " + event + ": " + e.getMessage());
         } catch (IOException e) {
             log.debug("Could not send " + event + ": " + e.getMessage());
         }

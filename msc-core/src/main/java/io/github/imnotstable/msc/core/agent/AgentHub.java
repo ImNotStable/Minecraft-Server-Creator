@@ -1,6 +1,7 @@
 package io.github.imnotstable.msc.core.agent;
 
 import io.github.imnotstable.msc.core.tool.ToolException;
+import io.github.imnotstable.msc.protocol.Limits;
 import io.github.imnotstable.msc.protocol.message.Event;
 import io.github.imnotstable.msc.protocol.op.Events;
 import io.github.imnotstable.msc.protocol.op.OpSpec;
@@ -22,16 +23,20 @@ import java.util.concurrent.locks.ReentrantLock;
 public final class AgentHub implements AutoCloseable {
     /** How long a world tool waits for an agent that is not connected yet. */
     public static final Duration CONNECT_WAIT = Duration.ofSeconds(30);
-    /** Longer than the agents' own 2 minute limit per operation, so the agent's answer (or its timeout error) wins. */
-    public static final Duration CALL_TIMEOUT = Duration.ofSeconds(130);
+    /**
+     * Longer than every wait an agent may make in one operation ({@link Limits#CORE_CALL_TIMEOUT}), so the agent's
+     * answer (or its timeout error, with the undo id of a write's changed blocks) wins.
+     */
+    public static final Duration CALL_TIMEOUT = Limits.CORE_CALL_TIMEOUT;
 
     private final ReentrantLock lock = new ReentrantLock();
     private final Condition changed = lock.newCondition();
     private final CoreServer server;
     private final String token;
     private CoreServer.AgentSession session;
-    private long connectCount;
     private long readyCount;
+    /** Set by {@link #close()} under {@link #lock}: no agent can arrive after it, so nobody waits for one. */
+    private boolean closed;
     private volatile Duration connectWait = CONNECT_WAIT;
     private volatile java.util.function.BooleanSupplier agentExpected = () -> true;
 
@@ -40,10 +45,21 @@ public final class AgentHub implements AutoCloseable {
         this.server = CoreServer.start(port, token, RequestHandler.none(), new CoreServer.AgentListener() {
             @Override
             public void connected(CoreServer.AgentSession s) {
-                update(() -> {
-                    session = s;
-                    connectCount++;
-                });
+                boolean late;
+                lock.lock();
+                try {
+                    // A handshake that raced close(): CoreServer may finish one after its socket closed.
+                    late = closed;
+                    if (!late) {
+                        session = s;
+                        changed.signalAll();
+                    }
+                } finally {
+                    lock.unlock();
+                }
+                if (late) {
+                    s.connection().close();
+                }
             }
 
             @Override
@@ -135,23 +151,38 @@ public final class AgentHub implements AutoCloseable {
 
     /** The connected agent, waiting a little for one to arrive. */
     public CoreServer.AgentSession require() throws InterruptedException {
-        long nanos = connectWait.toNanos();
-        lock.lock();
-        try {
-            while (session == null || !session.connection().isOpen()) {
-                if (!agentExpected.getAsBoolean()) {
-                    throw new ToolException("the server is not running. Start it with server_start, or dev_cycle to "
-                            + "build and deploy first.");
+        long deadline = System.nanoTime() + connectWait.toNanos();
+        while (true) {
+            CoreServer.AgentSession s = current();
+            if (s != null) {
+                return s;
+            }
+            if (closed()) {
+                throw ToolException.workspaceClosed("no server agent can connect any more");
+            }
+            // Asked without the hub lock: the answer may need another lock (ServerManager's monitor), whose holder
+            // may be waiting for this one.
+            if (!agentExpected.getAsBoolean()) {
+                throw new ToolException("the server is not running. Start it with server_start, or dev_cycle to "
+                        + "build and deploy first.");
+            }
+            lock.lock();
+            try {
+                if (session != null && session.connection().isOpen()) {
+                    return session;
                 }
+                if (closed) {
+                    continue;
+                }
+                long nanos = deadline - System.nanoTime();
                 if (nanos <= 0) {
                     throw new ToolException("no server agent connected. Start the server with server_start "
                             + "(server_setup installs the msc agent; a Minestom project has it built in).");
                 }
-                nanos = changed.awaitNanos(nanos);
+                changed.awaitNanos(nanos);
+            } finally {
+                lock.unlock();
             }
-            return session;
-        } finally {
-            lock.unlock();
         }
     }
 
@@ -181,8 +212,19 @@ public final class AgentHub implements AutoCloseable {
                 + "s. Try a smaller region, or check server_logs: the server may be overloaded or stopped.");
     }
 
+    private boolean closed() {
+        lock.lock();
+        try {
+            return closed;
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /** Close the agent session and stop listening. Wakes a caller waiting for an agent, which then fails at once. */
     @Override
     public void close() throws IOException {
+        update(() -> closed = true);
         CoreServer.AgentSession s = current();
         if (s != null) {
             s.connection().close();

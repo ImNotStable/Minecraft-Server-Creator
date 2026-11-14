@@ -7,6 +7,7 @@ Phase: Post-MVP. Steps are in order; each ends with passing tests.
 - [x] Block and item model generation.
 - [x] Animated textures.
 - [x] Pack-wide consistency checks.
-- [ ] Expose as `msc-core` tools (requested from the `msc-core` thread: `texture_generate`, `texture_recolor`, `texture_animate`, `model_create`, `pack_check`).
-- [ ] More item shapes: tools, food, armour, dust, nugget.
+- [x] Expose as `msc-core` tools (ADR 0023): `texture` (draw, generate, recolor, animate), `texture_view`, `model_create`, `pack` (`check=true` lints).
+- [x] Item shapes for tools and food: `sword`, `pickaxe`, `food`.
+- [ ] More item shapes: armour, dust, nugget.
 - [ ] Check client-side rendering with a player on a real server.

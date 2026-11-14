@@ -1,5 +1,6 @@
 package io.github.imnotstable.msc.protocol.op;
 
+import io.github.imnotstable.msc.protocol.Limits;
 import io.github.imnotstable.msc.protocol.world.BlockGrid;
 import io.github.imnotstable.msc.protocol.world.BlockPos;
 import io.github.imnotstable.msc.protocol.world.Region;
@@ -46,7 +47,17 @@ public final class Ops {
         }
     }
 
+    /**
+     * @param output the feedback lines, at most {@link Limits#MAX_RESULT_TEXT_CHARS} characters in all (each line
+     *               counts one more). The line that crosses it is cut with {@link Limits#cut}; lines after it are
+     *               left out and {@link #cutLine} ends the output.
+     */
     public record CommandResult(boolean success, List<String> output) {
+        /** The last line of an output that left lines out. */
+        public static String cutLine(long linesLeftOut) {
+            return "[output cut at " + Limits.MAX_RESULT_TEXT_CHARS + " characters: " + linesLeftOut + " more line"
+                    + (linesLeftOut == 1 ? "" : "s") + " not shown]";
+        }
     }
 
     // ---- world: read ----------------------------------------------------------------------
@@ -81,7 +92,8 @@ public final class Ops {
     }
 
     /**
-     * The text on one sign. Only signs with some text are reported.
+     * The text on one sign. Only signs with some text are reported. Each line is cut to
+     * {@link Limits#MAX_SIGN_LINE_CHARS} with {@link Limits#cut}.
      *
      * @param front the four front lines as plain text, blank lines as {@code ""}
      * @param back  the four back lines, or null when the back is blank
@@ -143,7 +155,7 @@ public final class Ops {
             List<String> out = new java.util.ArrayList<>(4);
             if (lines != null) {
                 for (int i = 0; i < Math.min(4, lines.size()); i++) {
-                    out.add(lines.get(i) == null ? "" : lines.get(i));
+                    out.add(lines.get(i) == null ? "" : Limits.cut(lines.get(i), Limits.MAX_SIGN_LINE_CHARS));
                 }
             }
             while (out.size() < 4) {
@@ -157,7 +169,11 @@ public final class Ops {
         }
     }
 
+    /** @param name cut to {@link Limits#MAX_TEXT_CHARS} with {@link Limits#cut}; null when it has none */
     public record EntitySummary(String type, double x, double y, double z, String name) {
+        public EntitySummary {
+            name = Limits.cut(name, Limits.MAX_TEXT_CHARS);
+        }
     }
 
     /**
@@ -184,22 +200,33 @@ public final class Ops {
 
         /**
          * What every agent answers: {@code found} sorted by type, then x, z and y, cut to {@code limit} (at most
-         * {@link #MAX_ENTITIES}; 0 or less means that maximum), with {@code total} counting them all.
+         * {@link #MAX_ENTITIES}; 0 or less means that maximum) and to {@link Limits#MAX_RESULT_TEXT_CHARS} of names
+         * and tags, with {@code total} counting them all. Fewer entities than {@code total} marks the cut.
          */
         public static EntitiesResult of(List<EntityInfo> found, int limit) {
             int max = limit <= 0 ? MAX_ENTITIES : Math.min(limit, MAX_ENTITIES);
             List<EntityInfo> sorted = found.stream().sorted(java.util.Comparator.comparing(EntityInfo::type)
                     .thenComparingDouble(EntityInfo::x).thenComparingDouble(EntityInfo::z)
                     .thenComparingDouble(EntityInfo::y)).limit(max).toList();
-            return new EntitiesResult(sorted, found.size());
+            long text = 0;
+            int fit = 0;
+            for (EntityInfo e : sorted) {
+                text += e.textChars();
+                if (text > Limits.MAX_RESULT_TEXT_CHARS) {
+                    break;
+                }
+                fit++;
+            }
+            return new EntitiesResult(sorted.subList(0, fit), found.size());
         }
     }
 
     /**
      * One entity.
      *
-     * @param name      player name, custom name or a text display's text; null when it has none
-     * @param tags      scoreboard tags, empty when none
+     * @param name      player name, custom name or a text display's text, cut to {@link Limits#MAX_TEXT_CHARS} with
+     *                  {@link Limits#cut}; null when it has none
+     * @param tags      scoreboard tags, empty when none; each cut like {@code name}
      * @param health    current health; null for entities that are not alive (items, displays, minecarts)
      * @param maxHealth maximum health; null like {@code health}
      */
@@ -207,7 +234,18 @@ public final class Ops {
                              List<String> tags, Double health, Double maxHealth) {
         public EntityInfo {
             Objects.requireNonNull(type, "type");
-            tags = tags == null ? List.of() : List.copyOf(tags);
+            name = Limits.cut(name, Limits.MAX_TEXT_CHARS);
+            tags = tags == null ? List.of()
+                    : List.copyOf(tags.stream().map(t -> Limits.cut(t, Limits.MAX_TEXT_CHARS)).toList());
+        }
+
+        /** Characters of name and tags, what {@link EntitiesResult#of} budgets. */
+        long textChars() {
+            long n = name == null ? 0 : name.length();
+            for (String t : tags) {
+                n += t.length();
+            }
+            return n;
         }
     }
 

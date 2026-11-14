@@ -15,9 +15,15 @@ import io.github.imnotstable.msc.protocol.world.BlockPos;
 import io.github.imnotstable.msc.protocol.world.Region;
 import java.time.Duration;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.function.BooleanSupplier;
 import net.kyori.adventure.nbt.CompoundBinaryTag;
 import net.kyori.adventure.nbt.ListBinaryTag;
 import net.kyori.adventure.nbt.StringBinaryTag;
+import net.minestom.server.coordinate.Pos;
+import net.minestom.server.entity.Entity;
+import net.minestom.server.entity.EntityType;
 import net.minestom.server.instance.Instance;
 import net.minestom.server.instance.block.Block;
 import net.minestom.testing.Env;
@@ -192,6 +198,174 @@ class WorldOpsTest {
         assertThat(result.sizeX()).isEqualTo(2);
         assertThat(result.sizeZ()).isEqualTo(2);
         assertThat(result.heights()).containsExactly(80, 75, 10, world.getCachedDimensionType().minY() - 1);
+    }
+
+    @Test
+    void readsUnloadTheChunksTheyLoadedButWritesKeepThem(Env env) {
+        setUp(env);
+        world.loadChunk(0, 0).join();
+
+        ops.read(new Ops.ReadParams(box(0, 70, 0, 40, 70, 0), false));
+        ops.heightmap(new Ops.HeightmapParams("world", new BlockPos(0, 0, 32), new BlockPos(0, 0, 32)));
+        fill(box(64, 70, 0, 64, 70, 0), "minecraft:stone");
+        ops.read(new Ops.ReadParams(box(64, 70, 0, 64, 70, 0), false));
+        env.tick();
+
+        assertThat(world.getChunk(0, 0)).as("loaded before the read").isNotNull();
+        assertThat(world.getChunk(1, 0)).as("loaded by the read").isNull();
+        assertThat(world.getChunk(2, 0)).as("loaded by the read").isNull();
+        assertThat(world.getChunk(0, 2)).as("loaded by the heightmap").isNull();
+        assertThat(world.getChunk(4, 0)).as("loaded by a write").isNotNull();
+    }
+
+    @Test
+    void aReadKeepsTheChunksAnOverlappingReadLoadedUntilItEnds(Env env) {
+        setUp(env);
+        MinestomWorld agentWorld = new MinestomWorld(world, "world", TIMEOUT);
+
+        Runnable shortRead = agentWorld.loadAreaToRead(16, 0, 16, 0);
+        Runnable longRead = agentWorld.loadAreaToRead(0, 0, 40, 0);
+        shortRead.run();
+        env.tick();
+
+        assertThat(world.getChunk(1, 0)).as("still read by the long read").isNotNull();
+
+        longRead.run();
+        env.tick();
+
+        assertThat(world.getChunk(0, 0)).isNull();
+        assertThat(world.getChunk(1, 0)).as("loaded by the short read, released by the long one").isNull();
+        assertThat(world.getChunk(2, 0)).isNull();
+    }
+
+    @Test
+    void aReadThatTimesOutStillUnloadsTheChunksItLoaded(Env env) throws InterruptedException {
+        setUp(env);
+        CountDownLatch slow = new CountDownLatch(1);
+        world.setGenerator(unit -> {
+            if (unit.absoluteStart().chunkX() == 1) {
+                try {
+                    slow.await(10, TimeUnit.SECONDS);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+        });
+        MinestomWorld agentWorld = new MinestomWorld(world, "world", Duration.ofMillis(300));
+
+        assertThatThrownBy(() -> agentWorld.loadAreaToRead(0, 0, 16, 0))
+                .isInstanceOfSatisfying(OpException.class, e -> assertThat(e.code()).isEqualTo(ErrorCodes.TIMEOUT));
+        env.tick();
+        assertThat(world.getChunk(0, 0)).as("loaded before the timeout").isNull();
+
+        slow.countDown();
+        assertThat(tickUntil(env, () -> world.getChunk(1, 0) != null)).as("the late chunk arrives").isTrue();
+        assertThat(tickUntil(env, () -> world.getChunk(1, 0) == null)).as("loaded after the timeout").isTrue();
+    }
+
+    @Test
+    void aChunkKeptAtReleaseIsNeverUnloadedByALaterRead(Env env) {
+        setUp(env);
+        MinestomWorld agentWorld = new MinestomWorld(world, "world", TIMEOUT);
+        Runnable read = agentWorld.loadAreaToRead(0, 0, 0, 0);
+        Entity mob = spawn(2.5, 70, 2.5);
+        read.run();
+        env.tick();
+        assertThat(world.getChunk(0, 0)).as("an entity is in it at release").isNotNull();
+
+        mob.remove();
+        world.setBlock(1, 70, 1, Block.GOLD_BLOCK);
+        ops.read(new Ops.ReadParams(box(0, 70, 0, 1, 70, 1), false));
+        ops.heightmap(new Ops.HeightmapParams("world", new BlockPos(0, 0, 0), new BlockPos(1, 0, 1)));
+        env.tick();
+
+        assertThat(world.getChunk(0, 0)).as("a normal chunk of the world since that release").isNotNull();
+        assertThat(at(1, 70, 1)).isEqualTo(Block.GOLD_BLOCK);
+    }
+
+    @Test
+    void aChunkTheGameUsesWhenItArrivesLateIsKept(Env env) throws InterruptedException {
+        setUp(env);
+        CountDownLatch slow = new CountDownLatch(1);
+        world.setGenerator(unit -> {
+            if (unit.absoluteStart().chunkX() == 1) {
+                await(slow);
+            }
+        });
+        MinestomWorld agentWorld = new MinestomWorld(world, "world", Duration.ofMillis(300));
+        assertThatThrownBy(() -> agentWorld.loadAreaToRead(16, 0, 16, 0)).isInstanceOf(OpException.class);
+        // The game asks for the same chunk while the read's load is in flight and spawns a mob in it.
+        world.loadChunk(1, 0).thenAccept(c -> spawn(20.5, 70, 2.5));
+
+        slow.countDown();
+        assertThat(tickUntil(env, () -> world.getChunk(1, 0) != null)).isTrue();
+        env.tick();
+        env.tick();
+        world.getEntities().forEach(Entity::remove);
+        world.setBlock(17, 70, 1, Block.GOLD_BLOCK);
+        ops.read(new Ops.ReadParams(box(16, 70, 0, 17, 70, 1), false));
+        env.tick();
+
+        assertThat(world.getChunk(1, 0)).isNotNull();
+        assertThat(at(17, 70, 1)).isEqualTo(Block.GOLD_BLOCK);
+    }
+
+    @Test
+    void anEditThatFailsWhileHoldingAReadsChunkLetsThatChunkUnload(Env env) throws InterruptedException {
+        setUp(env);
+        CountDownLatch slow = new CountDownLatch(1);
+        CountDownLatch editWaits = new CountDownLatch(1);
+        world.setGenerator(unit -> {
+            if (unit.absoluteStart().chunkX() == 1) {
+                editWaits.countDown();
+                await(slow);
+            }
+        });
+        MinestomWorld agentWorld = new MinestomWorld(world, "world", Duration.ofMillis(300));
+        Runnable read = agentWorld.loadAreaToRead(0, 0, 0, 0);
+        read.run();
+        Thread edit = Thread.ofVirtual().start(() -> {
+            try {
+                agentWorld.loadArea(0, 0, 16, 0);
+            } catch (OpException expected) {
+                // times out on the slow chunk
+            }
+        });
+        assertThat(editWaits.await(5, TimeUnit.SECONDS)).isTrue();
+        env.tick();
+        assertThat(world.getChunk(0, 0)).as("the edit still counts it").isNotNull();
+
+        edit.join();
+        env.tick();
+        slow.countDown();
+
+        assertThat(world.getChunk(0, 0)).as("released by the failed edit").isNull();
+    }
+
+    private Entity spawn(double x, double y, double z) {
+        Entity mob = new Entity(EntityType.ZOMBIE);
+        mob.setInstance(world, new Pos(x, y, z)).join();
+        return mob;
+    }
+
+    private static void await(CountDownLatch latch) {
+        try {
+            latch.await(10, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    private static boolean tickUntil(Env env, BooleanSupplier condition) throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        while (!condition.getAsBoolean()) {
+            if (System.nanoTime() > deadline) {
+                return false;
+            }
+            env.tick();
+            Thread.sleep(10);
+        }
+        return true;
     }
 
     @Test

@@ -16,6 +16,7 @@
 | `world-find-block` | Finding one gold block among decoys |
 | `texture-ruby-item` | Drawing an item texture |
 | `texture-resource-pack` | Making a resource pack |
+| `game-sky-sprint` | Making a whole minigame on Minestom |
 
 ## Run it
 
@@ -25,7 +26,7 @@
    ./gradlew :msc-core:installDist :msc-agent-paper:shadowJar
    ```
 
-2. Accept the EULA, if you agree. Read the [Minecraft EULA](https://aka.ms/MinecraftEULA). Server tasks fail until you set `"acceptEula": true` under `server` in `msc-bench/bench.json`. The benchmark never does this for you.
+2. Accept the EULA, if you agree. Read the [Minecraft EULA](https://aka.ms/MinecraftEULA). The benchmark never accepts it for you, and no config file can: it reads the acceptance msc keeps in `~/.msc/eula.json`, which only you write: run the line in `~/.msc/core/eula-accept.txt` in a terminal and type `yes`, install with `./gradlew :msc-core:installMsc -Pmsc.acceptEula=true`, or tell Claude yes so it runs `server_setup` or `server_start` with `acceptEula=true`. Without it, tasks that run a Paper server are skipped with a message and the rest run. Minestom tasks never need it.
 
 3. List the tasks:
 
@@ -41,7 +42,7 @@
    ./gradlew :msc-bench:run --args="run --tasks build-hut --repeat 3"
    ```
 
-5. Read the report in `msc-bench/runs/<time>/report.md`. Each attempt keeps its workspace, prompt, output and server log under `attempts/`.
+5. Read the report in `~/.msc/bench-runs/<time>/report.md` (the full path is printed after `Report:`). Each attempt keeps its workspace, prompt, output and server log under `attempts/`. Runs must stay outside any repository or folder with a `CLAUDE.md`, so Claude Code does not load this project into the attempts: `--out DIR` picks another such folder, and when your home folder is itself a repository the default moves to `msc-bench-runs` in the system's temporary folder.
 
 ## Good to know
 

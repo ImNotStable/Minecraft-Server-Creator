@@ -60,6 +60,39 @@ class InventoryTest {
     }
 
     @Test
+    void appliesThePlayersSlotsSentThroughAnOpenMenu() {
+        inv.accept(new ClientboundOpenScreenPacket(3, ContainerType.GENERIC_9X3, Component.text("Shop")));
+        ItemStack[] menu = new ItemStack[27 + 36];
+        menu[30] = new ItemStack(2, 1); // the 4th backpack slot
+        inv.accept(new ClientboundContainerSetContentPacket(3, 1, menu, null));
+        inv.accept(new ClientboundContainerSetSlotPacket(3, 2, 27 + 27, new ItemStack(1, 3))); // hotbar 1
+        assertThat(inv.report()).startsWith("""
+                holding slot 1: stone x3
+                hotbar: 1 stone x3
+                backpack: granite
+                open menu generic_9x3 "Shop": empty""");
+        inv.accept(new ClientboundContainerClosePacket(3));
+        assertThat(inv.report()).isEqualTo("holding slot 1: stone x3\nhotbar: 1 stone x3\nbackpack: granite");
+    }
+
+    @Test
+    void smithingAndLoomMenusHaveFourSlotsBeforeThePlayers() {
+        for (ContainerType type : new ContainerType[] {ContainerType.SMITHING, ContainerType.LOOM}) {
+            Inventory fresh = new Inventory(Items.forVersion("26.3"));
+            fresh.accept(new ClientboundOpenScreenPacket(5, type, Component.text("T")));
+            ItemStack[] menu = new ItemStack[4 + 36];
+            menu[3] = new ItemStack(3, 1); // the menu's result slot
+            menu[4 + 27] = new ItemStack(1, 1); // hotbar 1
+            menu[4 + 35] = new ItemStack(2, 1); // hotbar 9
+            fresh.accept(new ClientboundContainerSetContentPacket(5, 1, menu, null));
+            assertThat(fresh.report()).as(type.name()).startsWith("""
+                    holding slot 1: stone
+                    hotbar: 1 stone; 9 granite
+                    open menu""");
+        }
+    }
+
+    @Test
     void readsMenusSentWithoutThePlayersSlots() {
         // Minestom sends only the menu's own slots.
         inv.accept(new ClientboundOpenScreenPacket(4, ContainerType.GENERIC_9X6, Component.text("Big")));

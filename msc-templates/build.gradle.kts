@@ -48,6 +48,10 @@ val minestomAgent = configurations.dependencyScope("minestomAgent")
 val minestomAgentJar = configurations.resolvable("minestomAgentJar") { extendsFrom(minestomAgent.get()) }
 dependencies {
     minestomAgent(project(path = ":msc-agent-minestom", configuration = "shadowRuntimeElements")) { isTransitive = false }
+    // For TemplateNameCasesTest: Gson reads fabric.mod.json; Paper's API reads plugin.yml as Paper does (its
+    // SnakeYAML and PluginDescriptionFile checks).
+    testImplementation(libs.gson)
+    testImplementation(libs.paper.api)
 }
 
 abstract class PackTemplates : DefaultTask() {

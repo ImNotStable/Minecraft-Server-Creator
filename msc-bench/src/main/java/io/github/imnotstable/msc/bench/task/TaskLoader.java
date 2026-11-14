@@ -1,9 +1,9 @@
 package io.github.imnotstable.msc.bench.task;
 
-import com.google.gson.JsonArray;
-import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import io.github.imnotstable.msc.bench.JsonNumbers;
+import io.github.imnotstable.msc.bench.UserJson;
 import io.github.imnotstable.msc.bench.check.Check;
 import io.github.imnotstable.msc.bench.check.Checks;
 import java.io.IOException;
@@ -21,6 +21,20 @@ import java.util.stream.Stream;
  * are not tasks.
  */
 public final class TaskLoader {
+
+    /**
+     * The keys a task.json may have. Every object in it is made with its own keys ({@link UserJson.Keys}), so a
+     * misspelt key at any depth is refused instead of left out silently (#502): a reset that never happens, a time
+     * limit never applied, a {@code "contain"} whose file check would pass for any file.
+     */
+    public static final UserJson.Keys KEYS = UserJson.Keys.of("category", "title", "platform", "scaffold",
+            "fixtures", "server", "checks", "resetBeforeChecks", "timeoutSeconds");
+
+    /** The keys of {@code scaffold}. */
+    public static final UserJson.Keys SCAFFOLD = UserJson.Keys.of("template", "name", "package");
+
+    /** The keys of {@code server}. */
+    public static final UserJson.Keys SERVER = UserJson.Keys.of("startBefore", "setup");
 
     private TaskLoader() {
     }
@@ -48,13 +62,14 @@ public final class TaskLoader {
 
     public static TaskDef load(Path taskDir) throws IOException {
         String id = taskDir.getFileName().toString();
-        JsonObject json;
+        JsonObject tree;
         try {
-            json = JsonParser.parseString(Files.readString(taskDir.resolve("task.json"))).getAsJsonObject();
+            tree = JsonParser.parseString(Files.readString(taskDir.resolve("task.json"))).getAsJsonObject();
         } catch (RuntimeException e) {
             throw new IOException("Task " + id + ": task.json is not a JSON object: " + e.getMessage(), e);
         }
         try {
+            UserJson json = UserJson.of(tree, "task.json ", KEYS);
             Path promptFile = taskDir.resolve("prompt.md");
             if (!Files.isRegularFile(promptFile)) {
                 throw new IllegalArgumentException("prompt.md is missing");
@@ -62,7 +77,7 @@ public final class TaskLoader {
             String prompt = Files.readString(promptFile).strip();
 
             List<Path> fixtures = new ArrayList<>();
-            for (String shared : strings(json, "fixtures")) {
+            for (String shared : json.exactStrings("fixtures")) {
                 Path fixture = taskDir.getParent().resolve(shared).normalize();
                 if (!Files.isDirectory(fixture)) {
                     throw new IllegalArgumentException("shared fixture not found: " + shared);
@@ -73,27 +88,25 @@ public final class TaskLoader {
                 fixtures.add(taskDir.resolve("fixture"));
             }
 
-            String platform = json.has("platform") ? json.get("platform").getAsString() : TaskDef.PAPER;
+            String platform = json.exactString("platform", TaskDef.PAPER);
             if (!platform.equals(TaskDef.PAPER) && !platform.equals(TaskDef.MINESTOM)) {
                 throw new IllegalArgumentException("platform must be paper or minestom, not " + platform);
             }
             Scaffold scaffold = null;
-            if (json.has("scaffold")) {
-                JsonObject s = json.getAsJsonObject("scaffold");
+            UserJson s = json.exactObject("scaffold", SCAFFOLD);
+            if (s != null) {
                 scaffold = new Scaffold(requireString(s, "template"), requireString(s, "name"), requireString(s, "package"));
             }
 
             ServerSpec server = ServerSpec.NONE;
-            if (json.has("server")) {
-                JsonObject s = json.getAsJsonObject("server");
-                server = new ServerSpec(
-                        s.has("startBefore") && s.get("startBefore").getAsBoolean(), strings(s, "setup"));
+            UserJson spec = json.exactObject("server", SERVER);
+            if (spec != null) {
+                server = new ServerSpec(spec.exactBool("startBefore", false), spec.exactStrings("setup"));
             }
 
             List<Check> checks = new ArrayList<>();
-            JsonArray checkArray = json.has("checks") ? json.getAsJsonArray("checks") : new JsonArray();
-            for (JsonElement element : checkArray) {
-                checks.add(Checks.parse(element.getAsJsonObject(), taskDir));
+            for (UserJson check : json.exactObjects("checks", Checks.KEYS)) {
+                checks.add(Checks.parse(check, taskDir));
             }
             if (checks.isEmpty()) {
                 throw new IllegalArgumentException("a task needs at least one check");
@@ -109,27 +122,18 @@ public final class TaskLoader {
                     fixtures,
                     server,
                     checks,
-                    json.has("timeoutSeconds") ? json.get("timeoutSeconds").getAsInt() : 0);
+                    Reset.parse(json.exactObject("resetBeforeChecks", Reset.KEYS)),
+                    json.wholeNumber("timeoutSeconds", JsonNumbers.SECONDS, 0));
         } catch (RuntimeException e) {
             throw new IOException("Task " + id + ": " + e.getMessage(), e);
         }
     }
 
-    private static String requireString(JsonObject json, String key) {
-        if (!json.has(key)) {
+    private static String requireString(UserJson json, String key) {
+        String value = json.exactString(key, null);
+        if (value == null) {
             throw new IllegalArgumentException("missing \"" + key + "\"");
         }
-        return json.get(key).getAsString();
-    }
-
-    private static List<String> strings(JsonObject json, String key) {
-        if (!json.has(key)) {
-            return List.of();
-        }
-        List<String> out = new ArrayList<>();
-        for (JsonElement e : json.getAsJsonArray(key)) {
-            out.add(e.getAsString());
-        }
-        return out;
+        return value;
     }
 }

@@ -8,30 +8,51 @@ import io.github.imnotstable.msc.core.tool.Schema;
 import io.github.imnotstable.msc.core.tool.ToolException;
 import io.github.imnotstable.msc.core.tool.ToolRegistry;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 
-/** Platform API lookups from a local index, built on first use. */
+/**
+ * Platform API lookups from a local index, built on first use and rebuilt when the platform or its jars change
+ * (another project_scaffold or server_setup platform, or a newer API version Gradle downloaded).
+ */
 public final class ApiTools {
     private final CoreConfig config;
+    private final Path gradleHome;
     private ApiIndex index;
+    /** The jars and their modification times the index was built from. */
+    private List<JarStamp> builtFrom;
 
-    public ApiTools(CoreConfig config) {
-        this.config = config;
+    private record JarStamp(Path jar, long modified) {
     }
 
-    private synchronized ApiIndex index() throws IOException {
-        if (index == null) {
-            List<Path> jars = config.apiJars();
+    public ApiTools(CoreConfig config) {
+        this(config, Path.of(System.getProperty("user.home"), ".gradle"));
+    }
+
+    ApiTools(CoreConfig config, Path gradleHome) {
+        this.config = config;
+        this.gradleHome = gradleHome;
+    }
+
+    synchronized ApiIndex index() throws IOException {
+        List<Path> jars = config.apiJars();
+        if (jars.isEmpty()) {
+            String platform = Platform.current(config).agent();
+            jars = ApiIndex.findJars(gradleHome, platform);
             if (jars.isEmpty()) {
-                String platform = Platform.current(config).agent();
-                jars = ApiIndex.findJars(Path.of(System.getProperty("user.home"), ".gradle"), platform);
-                if (jars.isEmpty()) {
-                    throw new ToolException("no " + platform + " API jar found. Build the project once (dev_cycle) so "
-                            + "Gradle downloads it, or set MSC_API_JARS.");
-                }
+                throw new ToolException("no " + platform + " API jar found. Build the project once (dev_cycle) so "
+                        + "Gradle downloads it, or set MSC_API_JARS.");
             }
+        }
+        List<JarStamp> stamps = new ArrayList<>();
+        for (Path jar : jars) {
+            stamps.add(new JarStamp(jar, Files.exists(jar) ? Files.getLastModifiedTime(jar).toMillis() : -1));
+        }
+        if (index == null || !stamps.equals(builtFrom)) {
             index = ApiIndex.load(jars);
+            builtFrom = stamps;
         }
         return index;
     }
@@ -46,29 +67,37 @@ public final class ApiTools {
                 : jars.subList(0, 3) + " and " + (jars.size() - 3) + " more jars");
     }
 
+    /** Most matches api_search lists. */
+    static final int MAX_SEARCH = 100;
+    /** Most members api_class lists. */
+    static final int MAX_MEMBERS = 300;
+
     public void register(ToolRegistry registry) {
         registry.add("api_search",
                 "Search the platform API (Paper, Fabric, NeoForge, Forge or Minestom) by class, method, field or constant name; "
                         + "one line per match with full signature.",
                 Schema.of().req("query", "string", "Words that must all match, for example \"player teleport\"")
                         .opt("kind", "string", "class, interface, enum, record, annotation or event")
-                        .opt("limit", "integer", "Default 15"),
+                        .opt("limit", "integer", "Default 15, at most " + MAX_SEARCH)
+                        .opt("maxChars", "integer", "Result size cap. Default 6000"),
                 args -> {
                     String kind = args.str("kind", null);
                     if (kind != null && !List.of("class", "interface", "enum", "record", "annotation", "event").contains(kind)) {
                         throw new ToolException("kind must be class, interface, enum, record, annotation or event");
                     }
-                    int limit = Math.max(1, Math.min(100, args.integer("limit", 15)));
-                    return Budget.truncate(index().search(args.str("query"), kind, limit), Budget.MAX_CHARS, "Lower limit.");
+                    int limit = args.integer("limit", 15, 1, MAX_SEARCH);
+                    return Budget.truncate(index().search(args.str("query"), kind, limit, MAX_SEARCH), Budget.of(args),
+                            "Add words or lower limit.");
                 });
         registry.add("api_class",
                 "Show one API class: supertypes, constants (with inherited) and public members with signatures.",
                 Schema.of().req("name", "string", "Simple or full class name, for example Player or org.bukkit.entity.Player")
                         .opt("filter", "string", "Only members whose name contains this")
                         .opt("inherited", "boolean", "Include members of supertypes")
-                        .opt("limit", "integer", "Default 40"),
+                        .opt("limit", "integer", "Default 40, at most " + MAX_MEMBERS)
+                        .opt("maxChars", "integer", "Result size cap. Default 6000"),
                 args -> Budget.truncate(index().describe(args.str("name"), args.str("filter", null),
-                        args.bool("inherited", false), Math.max(1, Math.min(300, args.integer("limit", 40)))),
-                        Budget.MAX_CHARS, "Use filter."));
+                        args.bool("inherited", false), args.integer("limit", 40, 1, MAX_MEMBERS), MAX_MEMBERS),
+                        Budget.of(args), "Use filter."));
     }
 }

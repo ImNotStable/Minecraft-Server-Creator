@@ -7,14 +7,18 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
 import java.io.IOException;
+import java.io.OutputStream;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 
+@Timeout(value = 5, unit = TimeUnit.MINUTES, threadMode = Timeout.ThreadMode.SEPARATE_THREAD) // a hang fails
 class BotsTest {
     private static final Path PROTOCOLS = Path.of(System.getProperty("msc.bot.protocols"));
 
@@ -47,6 +51,17 @@ class BotsTest {
     }
 
     @Test
+    void pingReadsAStatusThatArrivesInPieces() throws Exception {
+        // #442: a real server's status reaches the client in several TCP reads; the frame is split inside both length
+        // varints and inside the JSON (with multi-byte characters), each piece flushed with a pause after it.
+        String name = "Paper 26.2 – ".repeat(20) + "é";
+        try (ServerSocket server = statusServer("{\"version\":{\"name\":\"" + name + "\",\"protocol\":776}}", true)) {
+            assertThat(ServerPing.version("127.0.0.1", server.getLocalPort(), Duration.ofSeconds(30)))
+                    .isEqualTo(new ServerPing.Version(776, name));
+        }
+    }
+
+    @Test
     void varIntsRoundTrip() throws IOException {
         for (int v : new int[] {0, 1, 127, 128, 25565, -1, Integer.MAX_VALUE}) {
             ByteArrayOutputStream out = new ByteArrayOutputStream();
@@ -55,8 +70,17 @@ class BotsTest {
         }
     }
 
-    /** A server that answers one status request with {@code json}. */
+    /** A server that answers one status request with {@code json}, in one write. */
     private static ServerSocket statusServer(String json) throws IOException {
+        return statusServer(json, false);
+    }
+
+    /**
+     * A server that answers one status request with {@code json}; with {@code pieces}, in pieces: one byte (half the
+     * frame length), up to inside the JSON length, half the JSON, the rest. The JSON must be over 127 bytes so both
+     * lengths are two-byte varints. The pauses come while the client waits its full read timeout.
+     */
+    private static ServerSocket statusServer(String json, boolean pieces) throws IOException {
         ServerSocket server = new ServerSocket(0);
         Thread.ofVirtual().start(() -> {
             try (Socket s = server.accept()) {
@@ -71,8 +95,20 @@ class BotsTest {
                 ByteArrayOutputStream frame = new ByteArrayOutputStream();
                 ServerPing.writeVarInt(frame, packet.size());
                 packet.writeTo(frame);
-                s.getOutputStream().write(frame.toByteArray());
-            } catch (IOException e) {
+                byte[] bytes = frame.toByteArray();
+                OutputStream out = s.getOutputStream();
+                if (!pieces) {
+                    out.write(bytes);
+                    return;
+                }
+                s.setTcpNoDelay(true);
+                int[] cuts = {0, 1, 4, 5 + (bytes.length - 5) / 2, bytes.length};
+                for (int c = 0; c + 1 < cuts.length; c++) {
+                    out.write(bytes, cuts[c], cuts[c + 1] - cuts[c]);
+                    out.flush();
+                    Thread.sleep(20);
+                }
+            } catch (IOException | InterruptedException e) {
                 // the test fails on its own assertion
             }
         });

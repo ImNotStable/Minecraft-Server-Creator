@@ -54,7 +54,7 @@ class EulaCommandTest {
     }
 
     private int run(FakeTerminal t, String... args) throws Exception {
-        return EulaCommand.run(List.of(args), dir.resolve(".msc/eula.json"), dir, t, CLOCK, "owner", "pc");
+        return EulaCommand.run(List.of(args), MachineEula.forHome(dir), dir, t, CLOCK, "owner", "pc");
     }
 
     @Test
@@ -87,13 +87,28 @@ class EulaCommandTest {
         assertThat(again.text()).startsWith("Already accepted for this machine by owner on pc, 2026-11-12");
     }
 
+    /** The status line and the accept prompt name exactly the platforms that need the EULA. */
+    @Test
+    void theNoticesNameEveryPlatformThatNeedsTheEula() throws Exception {
+        FakeTerminal status = new FakeTerminal(false);
+        assertThat(run(status, "status")).isEqualTo(1);
+        FakeTerminal prompt = new FakeTerminal(true, "no");
+        assertThat(run(prompt, "accept")).isEqualTo(1);
+        for (FakeTerminal t : List.of(status, prompt)) {
+            for (Platform p : Platform.values()) {
+                assertThat(t.text().contains(p.displayName())).as(p.id() + " in " + t.text())
+                        .isEqualTo(p.needsEula());
+            }
+        }
+    }
+
     @Test
     void statusRevokeAndUsage() throws Exception {
         FakeTerminal t = new FakeTerminal(false);
         assertThat(run(t, "status")).isEqualTo(1);
         assertThat(run(t, "revoke")).isZero();
         assertThat(t.text()).contains("not accepted for this machine").contains("Nothing to revoke");
-        MachineEulaAccess.accepted(dir.resolve(".msc/eula.json"));
+        MachineEulaAccess.accepted(dir);
         assertThat(run(t, "status")).isZero();
         assertThat(run(t, "revoke")).isZero();
         assertThat(dir.resolve(".msc/eula.json")).doesNotExist();

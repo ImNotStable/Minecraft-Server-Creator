@@ -2,22 +2,38 @@ package io.github.imnotstable.msc.protocol;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowable;
 
 import com.google.gson.JsonObject;
 import io.github.imnotstable.msc.protocol.message.AgentInfo;
 import io.github.imnotstable.msc.protocol.message.ErrorCodes;
 import io.github.imnotstable.msc.protocol.message.Event;
+import io.github.imnotstable.msc.protocol.message.Goodbye;
+import io.github.imnotstable.msc.protocol.message.Hello;
+import io.github.imnotstable.msc.protocol.message.MessageCodec;
+import io.github.imnotstable.msc.protocol.message.Ping;
+import io.github.imnotstable.msc.protocol.message.Pong;
+import io.github.imnotstable.msc.protocol.message.RawJson;
+import io.github.imnotstable.msc.protocol.message.Request;
+import io.github.imnotstable.msc.protocol.message.Response;
+import io.github.imnotstable.msc.protocol.message.Welcome;
 import io.github.imnotstable.msc.protocol.op.Events;
 import io.github.imnotstable.msc.protocol.op.Ops;
+import io.github.imnotstable.msc.protocol.op.PartialEdit;
 import io.github.imnotstable.msc.protocol.world.BlockGrid;
 import io.github.imnotstable.msc.protocol.world.Region;
 import io.github.imnotstable.msc.protocol.transport.AgentClient;
 import io.github.imnotstable.msc.protocol.transport.Connection;
 import io.github.imnotstable.msc.protocol.transport.ConnectionClosedException;
 import io.github.imnotstable.msc.protocol.transport.CoreServer;
+import io.github.imnotstable.msc.protocol.transport.FrameReader;
+import io.github.imnotstable.msc.protocol.transport.FrameTooLargeException;
+import io.github.imnotstable.msc.protocol.transport.FrameWriter;
 import io.github.imnotstable.msc.protocol.transport.OpException;
 import io.github.imnotstable.msc.protocol.transport.OpRouter;
 import io.github.imnotstable.msc.protocol.transport.RequestHandler;
+import java.net.Socket;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.BlockingQueue;
@@ -119,6 +135,51 @@ class ConnectionTest {
     }
 
     @Test
+    void handlerErrorIsAnsweredAsInternal() throws Exception {
+        OpRouter broken = new OpRouter().on(Ops.SERVER_INFO, p -> {
+            throw new NoSuchMethodError("gone");
+        });
+        connect(TOKEN, broken);
+        Connection core = sessions.poll(5, TimeUnit.SECONDS).connection();
+        CompletableFuture<Ops.ServerInfo> call = core.call(Ops.SERVER_INFO, new Ops.Empty(), TIMEOUT);
+        assertCode(call, ErrorCodes.INTERNAL);
+        assertThat(call.exceptionNow()).hasMessageContaining("NoSuchMethodError");
+    }
+
+    @Test
+    void malformedResultFailsOnlyThatCall() throws Exception {
+        RequestHandler handler = (op, params) -> op.equals("server.info")
+                ? Ops.SERVER_INFO.encodeResult(new Ops.ServerInfo("paper", "1", "26.3", List.of(), 0, 20))
+                : new RawJson("{\"grid\":}");
+        AgentInfo info = new AgentInfo("paper", "test", "26.3", List.of("server.info", "world.read"));
+        AgentClient.connect("127.0.0.1", server.port(), TOKEN, info, handler, new Connection.Listener() {
+        }, TIMEOUT);
+        Connection core = sessions.poll(5, TimeUnit.SECONDS).connection();
+        Region small = Region.of("world", 0, 0, 0, 0, 0, 0);
+        assertCode(core.call(Ops.WORLD_READ, new Ops.ReadParams(small, false), TIMEOUT), ErrorCodes.BAD_FRAME);
+        assertThat(core.call(Ops.SERVER_INFO, new Ops.Empty(), TIMEOUT).get().platform()).isEqualTo("paper");
+    }
+
+    @Test
+    void badFrameAfterHandshakeGetsAGoodbye() throws Exception {
+        AgentInfo info = new AgentInfo("paper", "test", "26.3", List.of());
+        for (int i = 0; i < 10; i++) {
+            try (Socket socket = new Socket("127.0.0.1", server.port())) {
+                socket.setSoTimeout(5_000);
+                FrameWriter writer = new FrameWriter(socket.getOutputStream(), Limits.MAX_FRAME_BYTES);
+                FrameReader reader = new FrameReader(socket.getInputStream(), Limits.MAX_FRAME_BYTES);
+                writer.write(MessageCodec.encode(new Hello(ProtocolVersion.CURRENT, TOKEN, info)));
+                assertThat(MessageCodec.decode(reader.read())).isInstanceOf(Welcome.class);
+                writer.write("this is not json");
+                String frame = reader.read();
+                assertThat(frame).as("goodbye before close").isNotNull();
+                assertThat(MessageCodec.decode(frame)).isInstanceOfSatisfying(Goodbye.class,
+                        g -> assertThat(g.code()).isEqualTo(ErrorCodes.BAD_FRAME));
+            }
+        }
+    }
+
+    @Test
     void eventsReachTheCore() throws Exception {
         AgentClient.Session agent = connect(TOKEN, fakeAgent());
         agent.connection().sendEvent(Events.SERVER_READY, new JsonObject());
@@ -156,6 +217,95 @@ class ConnectionTest {
         assertThatThrownBy(() -> call.get(5, TimeUnit.SECONDS))
                 .isInstanceOf(ExecutionException.class)
                 .hasCauseInstanceOf(ConnectionClosedException.class);
+    }
+
+    @Test
+    void answersJustBeforeAGoodbyeStillArrive() throws Exception {
+        AgentInfo info = new AgentInfo("paper", "test", "26.3", List.of("server.info"));
+        for (int i = 0; i < 300; i++) {
+            try (Socket socket = new Socket("127.0.0.1", server.port())) {
+                socket.setSoTimeout(5_000);
+                FrameWriter writer = new FrameWriter(socket.getOutputStream(), Limits.MAX_FRAME_BYTES);
+                FrameReader reader = new FrameReader(socket.getInputStream(), Limits.MAX_FRAME_BYTES);
+                writer.write(MessageCodec.encode(new Hello(ProtocolVersion.CURRENT, TOKEN, info)));
+                assertThat(MessageCodec.decode(reader.read())).isInstanceOf(Welcome.class);
+                Connection core = sessions.poll(5, TimeUnit.SECONDS).connection();
+                CompletableFuture<Response> call = core.request("server.info", new JsonObject(), TIMEOUT);
+                CompletableFuture<Duration> ping = core.ping(TIMEOUT);
+                Request request = (Request) MessageCodec.decode(reader.read());
+                Ping sent = (Ping) MessageCodec.decode(reader.read());
+                // Response, pong and goodbye in one write, so the core reads them in one go.
+                String burst = MessageCodec.encode(Response.ok(request.id(), new JsonObject())) + "\n"
+                        + MessageCodec.encode(new Pong(sent.nonce())) + "\n"
+                        + MessageCodec.encode(new Goodbye(ErrorCodes.SHUTDOWN, "bye")) + "\n";
+                socket.getOutputStream().write(burst.getBytes(StandardCharsets.UTF_8));
+                assertThat(call.get(5, TimeUnit.SECONDS).isOk()).as("response %d", i).isTrue();
+                assertThat(ping.get(5, TimeUnit.SECONDS)).as("pong %d", i).isNotNull();
+            }
+        }
+    }
+
+    /** Long enough that a lost message shows as a TimeoutException, never as a slow pass on a loaded machine. */
+    private static final Duration LONG = Duration.ofSeconds(60);
+    /** Text that makes a frame just over the limit. */
+    private static final String OVER_LIMIT = "x".repeat(Limits.MAX_FRAME_BYTES);
+
+    @Test
+    void anAnswerOverTheFrameLimitComesBackAsTooLarge() throws Exception {
+        OpRouter router = fakeAgent().on(Ops.SERVER_COMMAND, p -> new Ops.CommandResult(true, List.of(OVER_LIMIT)));
+        connect(TOKEN, router);
+        Connection core = sessions.poll(5, TimeUnit.SECONDS).connection();
+
+        OpException e = failure(core.call(Ops.SERVER_COMMAND, new Ops.CommandParams("say"), LONG));
+        assertThat(e.code()).isEqualTo(ErrorCodes.TOO_LARGE);
+        assertThat(e.detail()).contains("server.command", "frame limit");
+        assertThat(core.call(Ops.SERVER_INFO, new Ops.Empty(), LONG).get().platform()).isEqualTo("paper");
+    }
+
+    @Test
+    void anErrorOverTheFrameLimitKeepsItsCodeAndUndoId() throws Exception {
+        OpRouter router = fakeAgent().on(Ops.WORLD_UNDO, p -> {
+            throw new OpException(ErrorCodes.TIMEOUT, PartialEdit.note(OVER_LIMIT, "e42"));
+        });
+        connect(TOKEN, router);
+        Connection core = sessions.poll(5, TimeUnit.SECONDS).connection();
+
+        OpException e = failure(core.call(Ops.WORLD_UNDO, new Ops.UndoParams("x"), LONG));
+        assertThat(e.code()).isEqualTo(ErrorCodes.TIMEOUT);
+        assertThat(e.detail()).hasSizeLessThan(2 * Limits.MAX_TEXT_CHARS).contains("[cut: ");
+        assertThat(PartialEdit.editId(e.detail())).contains("e42");
+    }
+
+    @Test
+    void aRequestOverTheFrameLimitFailsAtOnceAndTheConnectionStays() throws Exception {
+        connect(TOKEN, fakeAgent());
+        Connection core = sessions.poll(5, TimeUnit.SECONDS).connection();
+        JsonObject params = new JsonObject();
+        params.addProperty("command", OVER_LIMIT);
+
+        CompletableFuture<Response> call = core.request("server.command", params, LONG);
+        assertThat(call).isCompletedExceptionally();
+        assertThat(call.exceptionNow()).isInstanceOf(FrameTooLargeException.class)
+                .hasMessageContaining("request server.command");
+        assertThat(core.call(Ops.SERVER_INFO, new Ops.Empty(), LONG).get().platform()).isEqualTo("paper");
+    }
+
+    @Test
+    void anEventOverTheFrameLimitThrowsAndTheNextOneArrives() throws Exception {
+        AgentClient.Session agent = connect(TOKEN, fakeAgent());
+        JsonObject data = new JsonObject();
+        data.addProperty("text", OVER_LIMIT);
+
+        assertThatThrownBy(() -> agent.connection().sendEvent(Events.PLAYER_JOIN, data))
+                .isInstanceOf(FrameTooLargeException.class).hasMessageContaining("event " + Events.PLAYER_JOIN);
+        agent.connection().sendEvent(Events.SERVER_READY, new JsonObject());
+        assertThat(events.poll(LONG.toSeconds(), TimeUnit.SECONDS)).extracting(Event::name).isEqualTo(Events.SERVER_READY);
+    }
+
+    private static OpException failure(CompletableFuture<?> future) {
+        Throwable cause = catchThrowable(() -> future.get(LONG.toSeconds() + 30, TimeUnit.SECONDS));
+        assertThat(cause).isInstanceOf(ExecutionException.class).hasCauseInstanceOf(OpException.class);
+        return (OpException) cause.getCause();
     }
 
     private static void assertCode(CompletableFuture<?> future, String code) {

@@ -6,7 +6,8 @@ A toolset that helps an AI develop custom Minecraft servers. One Gradle monorepo
 
 - Java 25 (Gradle downloads it if missing), Gradle 9.9 wrapper, Kotlin DSL.
 - `./gradlew build` builds and tests everything. `./gradlew :msc-protocol:test` for one module.
-- Versions live only in `gradle/libs.versions.toml`. Shared build setup lives in `build-logic/` (`msc.java-conventions`, `msc.application-conventions`).
+- Versions live only in `gradle/libs.versions.toml`. Shared build setup lives in `build-logic/` (`msc.java-conventions`, `msc.application-conventions`, `msc.previous-protocol`).
+- A test that reads files outside its own module gets them only through `msc.repo-inputs` (`repoInputs.set(...)` in the build, `RepoFiles` in the test), so they are test inputs too. A set of repository-wide files goes on its own Test task (`repoInputs.on(task).set(...)`, like msc-core's `repoChecks`), so an edit elsewhere doesn't rerun a whole suite.
 - `-Xlint:all -Werror` is on: fix warnings, don't suppress them broadly.
 
 ## Code

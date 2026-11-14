@@ -8,17 +8,27 @@ import io.github.imnotstable.msc.core.tool.ToolException;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
+import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
+import java.util.jar.Attributes;
+import java.util.jar.JarEntry;
+import java.util.jar.JarOutputStream;
+import java.util.jar.Manifest;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
+@Timeout(value = 5, unit = TimeUnit.MINUTES, threadMode = Timeout.ThreadMode.SEPARATE_THREAD) // a hang fails
 class LoaderInstallerTest {
     @TempDir
     Path dir;
@@ -32,6 +42,10 @@ class LoaderInstallerTest {
         Map<String, String> files = Map.of(
                 "/purpur/v2/purpur/26.3/latest", "{\"project\":\"purpur\",\"version\":\"26.3\",\"build\":\"2658\"}",
                 "/purpur/v2/purpur/26.3/2658/download", "purpur jar",
+                "/purpur/v2/purpur/26.4/latest", "{\"build\":\"7\",\"md5\":\"d062b7110636df72b4e22b7aaed97484\"}",
+                "/purpur/v2/purpur/26.4/7/download", "purpur jar",
+                "/purpur/v2/purpur/26.5/latest", "{\"build\":\"8\",\"md5\":\"00000000000000000000000000000000\"}",
+                "/purpur/v2/purpur/26.5/8/download", "purpur jar",
                 "/neo/net/neoforged/neoforge/26.3.0.1/neoforge-26.3.0.1-installer.jar", "not a jar");
         http = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         http.createContext("/", ex -> {
@@ -66,6 +80,39 @@ class LoaderInstallerTest {
                 .hasMessage("Purpur has no version 1.0");
     }
 
+    /** #454: a jar that does not match the MD5 Purpur's answer names is never kept. */
+    @Test
+    void purpurJarsAreCheckedAgainstTheMd5OfTheAnswer() throws Exception {
+        Path server = Files.createDirectories(dir.resolve("server"));
+        assertThat(installer.purpur("26.4", server)).isEqualTo(new LoaderInstaller.Result("26.4 build 7", false));
+        assertThatThrownBy(() -> installer.purpur("26.5", server)).isInstanceOf(ToolException.class)
+                .hasMessageStartingWith("checksum mismatch for ").hasMessageEndingWith("/26.5/8/download");
+        assertThat(dir.resolve("cache/purpur-26.5-8.jar")).doesNotExist();
+    }
+
+    /** #428: with Purpur's API unreachable, the cached build with the highest number, digits counted. */
+    @ParameterizedTest
+    @CsvSource({"9 10, 10", "999 1000, 1000", "9999 10000, 10000"})
+    void offlinePurpurIsTheNewestCachedBuild(String builds, int newest) throws Exception {
+        Path cache = Files.createDirectories(dir.resolve("cache"));
+        for (String build : builds.split(" ")) {
+            Files.writeString(cache.resolve("purpur-26.3-" + build + ".jar"), "build " + build);
+        }
+        Path server = dir.resolve("server");
+        // Bound but not listening: every connection is refused, and no other process can take the port meanwhile.
+        try (Socket unreachable = new Socket()) {
+            unreachable.bind(new InetSocketAddress("127.0.0.1", 0));
+            String base = "http://127.0.0.1:" + unreachable.getLocalPort();
+            LoaderInstaller offline = new LoaderInstaller(new LoaderInstaller.Urls(base, base, base, base), cache,
+                    "java");
+            assertThat(offline.purpur("26.3", server))
+                    .isEqualTo(new LoaderInstaller.Result("26.3 build " + newest, true));
+            assertThat(server.resolve("purpur.jar")).hasContent("build " + newest);
+            assertThatThrownBy(() -> offline.purpur("1.0", server)).isInstanceOf(ToolException.class)
+                    .hasMessageStartingWith("cannot reach ");
+        }
+    }
+
     @Test
     void anInstalledLoaderIsNotInstalledAgain() throws Exception {
         Path server = Files.createDirectories(dir.resolve("server"));
@@ -74,9 +121,42 @@ class LoaderInstallerTest {
         Files.createDirectories(server.resolve("libraries/org/quiltmc/quilt-loader/0.30.2"));
         Files.writeString(server.resolve("quilt-server-launch.jar"), "launcher");
 
+        Files.writeString(server.resolve(LoaderInstaller.MARKER), "neoforge 26.3.0.1");
         assertThat(installer.neoforge("26.3.0.1", server).cached()).isTrue();
+        Files.writeString(server.resolve(LoaderInstaller.MARKER), "quilt 26.3 0.30.2");
         assertThat(installer.quilt("26.3", "0.30.2", "0.15.1", server).cached()).isTrue();
         assertThat(requests).isEmpty();
+    }
+
+    @Test
+    void aDirectoryInstalledAtAnotherVersionIsInstalledAgain() throws Exception {
+        Path server = Files.createDirectories(dir.resolve("server"));
+        Files.createDirectories(server.resolve("libraries/org/quiltmc/quilt-loader/0.30.2"));
+        Files.writeString(server.resolve("quilt-server-launch.jar"), "launcher");
+        Files.writeString(server.resolve(LoaderInstaller.MARKER), "quilt 26.2 0.30.2");
+        assertThatThrownBy(() -> installer.quilt("26.3", "0.30.2", "0.15.1", server))
+                .hasMessage("Quilt has no installer 0.15.1");
+
+        Files.createDirectories(server.resolve("libraries/net/neoforged/neoforge/26.3.0.1"));
+        Files.writeString(server.resolve("server.jar"), "starter");
+        Files.writeString(server.resolve(LoaderInstaller.MARKER), "neoforge 26.3.0.2");
+        assertThatThrownBy(() -> installer.neoforge("26.3.0.1", server))
+                .hasMessageStartingWith("the NeoForge installer failed (exit 1)");
+
+        Files.writeString(server.resolve("forge-26.3-66.1.5-shim.jar"), "shim A");
+        Files.writeString(server.resolve("forge-26.3-66.1.6-shim.jar"), "shim B");
+        Files.writeString(server.resolve("forge-server.jar"), "shim B");
+        assertThat(installer.forge("26.3-66.1.5", server).cached()).isFalse();
+        assertThat(server.resolve("forge-server.jar")).hasContent("shim A");
+    }
+
+    @Test
+    void anUnmarkedDirectoryIsInstalledAgain() throws Exception {
+        Path server = Files.createDirectories(dir.resolve("server"));
+        Files.createDirectories(server.resolve("libraries/net/neoforged/neoforge/26.3.0.1"));
+        Files.writeString(server.resolve("server.jar"), "starter");
+        assertThatThrownBy(() -> installer.neoforge("26.3.0.1", server))
+                .hasMessageStartingWith("the NeoForge installer failed (exit 1)");
     }
 
     @Test
@@ -97,6 +177,45 @@ class LoaderInstallerTest {
                 .hasMessage("Forge has no version 26.3-0.0.0");
         assertThatThrownBy(() -> installer.neoforge("26.3.0.1", server)).isInstanceOf(ToolException.class)
                 .hasMessageStartingWith("the NeoForge installer failed (exit 1)");
+    }
+
+    @Test
+    void anInstallerThatWritesNoJarShowsItsOutput() throws Exception {
+        Path server = Files.createDirectories(dir.resolve("server"));
+        quietInstaller(dir.resolve("cache/quilt-installer-0.15.1.jar"));
+        quietInstaller(dir.resolve("cache/neoforge-26.3.0.9-installer.jar"));
+        quietInstaller(dir.resolve("cache/forge-26.3-66.1.9-installer.jar"));
+
+        assertThatThrownBy(() -> installer.quilt("26.3", "0.30.2", "0.15.1", server))
+                .hasMessageStartingWith("the Quilt installer finished but wrote no quilt-server-launch.jar:\n")
+                .hasMessageEndingWith(QuietInstaller.SAYS);
+        assertThatThrownBy(() -> installer.neoforge("26.3.0.9", server))
+                .hasMessageContaining("wrote no server.jar:\n").hasMessageEndingWith(QuietInstaller.SAYS);
+        assertThatThrownBy(() -> installer.forge("26.3-66.1.9", server))
+                .hasMessageContaining("wrote no forge-26.3-66.1.9-shim.jar:\n")
+                .hasMessageEndingWith(QuietInstaller.SAYS);
+    }
+
+    /** An installer that exits 0 and says why it wrote nothing. */
+    public static final class QuietInstaller {
+        static final String SAYS = "download failed: connection reset";
+
+        public static void main(String[] args) {
+            System.out.println(SAYS);
+        }
+    }
+
+    private static void quietInstaller(Path jar) throws IOException {
+        Files.createDirectories(jar.getParent());
+        Manifest manifest = new Manifest();
+        manifest.getMainAttributes().put(Attributes.Name.MANIFEST_VERSION, "1.0");
+        manifest.getMainAttributes().put(Attributes.Name.MAIN_CLASS, QuietInstaller.class.getName());
+        String entry = QuietInstaller.class.getName().replace('.', '/') + ".class";
+        try (JarOutputStream out = new JarOutputStream(Files.newOutputStream(jar), manifest);
+                var in = QuietInstaller.class.getResourceAsStream("/" + entry)) {
+            out.putNextEntry(new JarEntry(entry));
+            in.transferTo(out);
+        }
     }
 
     @Test

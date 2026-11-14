@@ -3,7 +3,12 @@ package io.github.imnotstable.msc.agent.common;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.github.imnotstable.msc.protocol.Limits;
+import io.github.imnotstable.msc.protocol.message.MessageCodec;
+import io.github.imnotstable.msc.protocol.message.Response;
 import io.github.imnotstable.msc.protocol.op.Ops;
+import java.nio.charset.StandardCharsets;
+import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -41,6 +46,21 @@ class ServerOpsTest {
         Ops.CommandResult unknown = ops.command(new Ops.CommandParams("nope"));
         assertThat(unknown.success()).isFalse();
         assertThat(unknown.output()).isNotEmpty();
+    }
+
+    @Test
+    void hugeOutputIsCutWithAMarkerAndFitsInAFrame() {
+        for (String command : List.of("flood 20000 1000", "flood 1 20000000", "flood 5000000 0")) {
+            Ops.CommandResult result = ops.command(new Ops.CommandParams(command));
+
+            long chars = result.output().stream().mapToLong(l -> l.length() + 1).sum();
+            assertThat(chars).as(command).isLessThanOrEqualTo(Limits.MAX_RESULT_TEXT_CHARS);
+            assertThat(result.output().getLast()).as(command).containsAnyOf(" more chars]", " not shown]");
+            String frame = MessageCodec.encode(Response.ok(1, Ops.SERVER_COMMAND.encodeResult(result)));
+            assertThat(frame.getBytes(StandardCharsets.UTF_8).length).as(command).isLessThan(Limits.MAX_FRAME_BYTES);
+        }
+        assertThat(ops.command(new Ops.CommandParams("flood 3 10")).output()).containsExactly(
+                "ffffffffff", "ffffffffff", "ffffffffff");
     }
 
     @Test

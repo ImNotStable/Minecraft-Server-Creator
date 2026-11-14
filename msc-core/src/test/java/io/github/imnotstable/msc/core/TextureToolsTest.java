@@ -44,6 +44,71 @@ class TextureToolsTest {
         return rows;
     }
 
+    /** #458: texture_view obeys the cap rule: 6,000 characters by default, maxChars up to 24,000. */
+    @Test
+    void textureViewObeysTheCapRule() {
+        List<String> palette = new ArrayList<>();
+        String symbols = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+        for (int i = 0; i < symbols.length(); i++) {
+            palette.add(symbols.charAt(i) + "=#" + String.format("%02x%02x%02x", i * 4, 255 - i * 4, i));
+        }
+        List<String> rows = new ArrayList<>();
+        for (int y = 0; y < 160; y++) {
+            StringBuilder row = new StringBuilder();
+            for (int x = 0; x < 160; x++) {
+                row.append(symbols.charAt((x * 7 + y * 3) % symbols.length()));
+            }
+            rows.add(row.toString());
+        }
+        h.ok("texture", "name", "block/big", "palette", palette, "rows", rows);
+        assertThat(h.ok("texture_view", "name", "block/big")).hasSizeLessThanOrEqualTo(6000)
+                .endsWith("Raise maxChars (at most 24000) to see more rows.]");
+        assertThat(h.ok("texture_view", "name", "block/big", "maxChars", 24000)).hasSizeLessThanOrEqualTo(24000)
+                .hasSizeGreaterThan(20000).endsWith("Texture too large to show in full.]");
+        assertThat(h.ok("texture_view", "name", "block/big", "maxChars", 400)).hasSizeLessThanOrEqualTo(400);
+    }
+
+    /** #473: the largest drawing a texture call shows fits the cap with its closing line, in the pack and outside. */
+    @Test
+    void theLargestDrawingFitsTheCapWithItsClosingLine() {
+        String noise = h.ok("texture", "name", "block/" + "n".repeat(200), "kind", "noise", "color", "#7f7f7f",
+                "accent", "#d4263a", "size", 64, "contrast", 1);
+        assertThat(noise).hasSizeLessThanOrEqualTo(6000).endsWith("\nnext: pack").doesNotContain("Narrow the call.");
+        String loose = h.ok("texture", "name", "n".repeat(200) + ".png", "kind", "noise", "color", "#7f7f7f",
+                "accent", "#d4263a", "size", 64, "contrast", 1);
+        assertThat(loose).hasSizeLessThanOrEqualTo(6000).doesNotContain("Narrow the call.");
+    }
+
+    /** #474: a pack description is shown on two lines, so one line break is taken; more, or a tab, is refused. */
+    @Test
+    void aPackDescriptionMayHaveTwoLines() throws Exception {
+        h.ok("texture", "name", "item/ruby", "kind", "gem", "color", "#d4263a");
+        h.ok("pack", "apply", false, "description", "Ruby pack\r\nby the team");
+        assertThat(workspace.resolve(".msc/pack/pack.mcmeta")).content().contains("Ruby pack\\nby the team");
+        assertThat(h.error("pack", "apply", false, "description", "a\nb\nc"))
+                .isEqualTo("error: argument description has 3 lines; at most 2 are shown");
+        assertThat(h.error("pack", "apply", false, "description", "a\tb")).isEqualTo("error: argument description has a"
+                + " control character (U+0009); only a line break may be in it");
+    }
+
+    /** #457: a texture name too long for the file system is refused before any folder is made. */
+    @Test
+    void aTextureNameTooLongForTheFileSystemLeavesNothingBehind() throws Exception {
+        Path pack = workspace.resolve(".msc/pack");
+        java.util.Map<String, String> before = TreeSnapshot.of(pack);
+        for (String name : List.of("item/" + "a".repeat(250), "block/deep/" + "b".repeat(300))) {
+            String error = h.error("texture", "name", name, "kind", "gem", "color", "#d4263a");
+            assertThat(error).startsWith("error: texture ").contains("Use a shorter name.").doesNotContain("\n")
+                    .doesNotContain("internal");
+        }
+        assertThat(h.error("model_create", "name", "item/" + "d".repeat(300), "kind", "item", "textures",
+                List.of("item/ruby"))).startsWith("error: model ").contains("at most 255").doesNotContain("\n");
+        assertThat(TreeSnapshot.of(pack)).isEqualTo(before);
+        // The longest name that fits still works, its animation's .png.mcmeta included.
+        assertThat(h.ok("texture", "name", "item/" + "c".repeat(244), "kind", "gem", "color", "#d4263a", "animate", "pulse"))
+                .contains("animated ");
+    }
+
     @Test
     void aPngPathWritesALooseFileOutsideThePack() throws Exception {
         String gem = h.ok("texture", "name", "textures/ruby.png", "kind", "gem", "color", "#d4263a");
@@ -87,6 +152,42 @@ class TextureToolsTest {
     }
 
     @Test
+    void sameNamesInOtherFoldersGetTheirOwnModels() {
+        List<String> palette = List.of("r=#d4263a");
+        assertThat(h.ok("texture", "name", "item/red/gem", "palette", palette, "rows", List.of("r")))
+                .contains("item_model msc:red/gem");
+        assertThat(h.ok("texture", "name", "item/blue/gem", "palette", palette, "rows", List.of("r")))
+                .contains("item_model msc:blue/gem");
+        h.ok("texture", "name", "item/ruby", "palette", palette, "rows", List.of("r"));
+        assertThat(h.error("texture", "name", "block/ruby", "kind", "noise", "color", "#d4263a"))
+                .isEqualTo("error: item msc:ruby already shows model msc:item/ruby; give this one another name");
+    }
+
+    @Test
+    void viewOutputDrawsTheSameTextureAgainAndBadFilesAreReported() throws Exception {
+        h.ok("texture", "name", "item/dot", "palette", List.of("r=#d4263a"), "rows", List.of("r.", ".r"));
+        List<String> view = h.ok("texture_view", "name", "item/dot").lines().toList();
+        h.ok("texture", "name", "item/dot2", "model", "none", "palette", List.of(view.get(1)), "rows", view.subList(2, 4));
+        assertThat(h.ok("texture_view", "name", "item/dot2")).isEqualTo(String.join("\n", view));
+        Path bad = workspace.resolve(".msc/pack/assets/msc/textures/item/bad.png");
+        Files.writeString(bad, "not a png");
+        assertThat(h.error("texture_view", "name", "item/bad")).isEqualTo("error: not a PNG image");
+    }
+
+    @Test
+    void viewShowsATextureWithMoreColorsThanSymbols() throws Exception {
+        BufferedImage image = new BufferedImage(16, 16, BufferedImage.TYPE_INT_ARGB);
+        for (int i = 0; i < 73; i++) {
+            image.setRGB(i % 16, i / 16, 0xFF000000 | i * 3 << 16 | i << 8);
+        }
+        Path png = workspace.resolve(".msc/pack/assets/minecraft/textures/block/shaded.png");
+        Files.createDirectories(png.getParent());
+        ImageIO.write(image, "png", png.toFile());
+        assertThat(h.ok("texture_view", "name", "minecraft:block/shaded"))
+                .startsWith("73 colors merged to 72 to show them; the file is unchanged\n16x16\n");
+    }
+
+    @Test
     void mistakesAreReportedPrecisely() {
         assertThat(h.error("pack", "apply", false)).contains("the pack is empty");
         assertThat(h.error("texture", "name", "item/x", "palette", List.of("a=#000000"), "rows", List.of("ab")))
@@ -96,7 +197,7 @@ class TextureToolsTest {
         assertThat(h.error("texture", "name", "item/x", "palette", List.of("a=#000"), "rows", List.of("aa", "a")))
                 .contains("row 2 has 1 pixels, expected 2");
         assertThat(h.error("texture", "name", "Item/Ruby", "palette", List.of("a=#000"), "rows", List.of("a")))
-                .contains("bad texture name");
+                .contains("bad resource name");
         assertThat(h.ok("texture", "name", "item/odd", "palette", List.of("a=#000"), "rows", List.of("aaa", "aaa", "aaa")))
                 .contains("warning: width 3 is not a power of two");
     }
@@ -232,5 +333,68 @@ class TextureToolsTest {
         assertThat(h.ok("pack", "apply", false, "file", "out/ruby-pack.zip"))
                 .contains("saved: " + workspace.resolve("out/ruby-pack.zip"));
         assertThat(Files.readAllBytes(workspace.resolve("out/ruby-pack.zip"))).isEqualTo(response.body());
+    }
+
+    /** A texture call refused for any argument, the animation included, writes nothing into the pack (#356). */
+    @Test
+    void aRefusedTextureLeavesThePackAsItWas() throws Exception {
+        Path pack = workspace.resolve(".msc/pack");
+        List<List<Object>> refused = List.of(
+                List.of("name", "item/ruby", "kind", "gem", "color", "#d4263a", "animate", "wobble"),
+                List.of("name", "item/ruby", "kind", "gem", "color", "#d4263a", "animate", "pulse", "frames", 999),
+                List.of("name", "item/ruby", "kind", "gem", "color", "#d4263a", "animate", "scroll", "frametime", 0),
+                List.of("name", "item/ruby", "kind", "gem", "color", "#d4263a", "animate", "scroll x,y"),
+                List.of("name", "item/ruby", "palette", List.of("r=#d4263a"), "rows", List.of("rr"), "animate", "pulse"),
+                List.of("name", "item/ruby", "palette", List.of("r=#d4263a"), "rows", ruby(), "model", "cube"));
+        for (List<Object> call : refused) {
+            h.error("texture", call.toArray());
+            assertThat(pack.resolve("assets")).as("pack after %s", call).doesNotExist();
+        }
+        h.ok("texture", "name", "item/ruby", "kind", "gem", "color", "#d4263a");
+        var before = TreeSnapshot.of(pack);
+        for (List<Object> call : refused) {
+            h.error("texture", call.toArray());
+            assertThat(TreeSnapshot.of(pack)).as("pack after %s", call).isEqualTo(before);
+        }
+        assertThat(h.ok("texture", "name", "item/ruby", "kind", "gem", "color", "#d4263a", "animate", "pulse"))
+                .contains("wrote msc:item/ruby: 16x16").contains("animated msc:item/ruby: 8 frames, 2 ticks each");
+        assertThat(pack.resolve("assets/msc/textures/item/ruby.png.mcmeta")).isRegularFile();
+    }
+
+    /** A pack call whose apply fails saves no copy of the zip into the workspace (#356). */
+    @Test
+    void aFailedPackApplySavesNoFile() {
+        h.ok("texture", "name", "item/ruby", "kind", "gem", "color", "#d4263a");
+        h.agent.failPackApply = true;
+        assertThat(h.error("pack", "file", "out/ruby-pack.zip")).contains("pack apply failed");
+        assertThat(workspace.resolve("out")).doesNotExist();
+        h.agent.failPackApply = false;
+        assertThat(h.ok("pack", "file", "out/ruby-pack.zip")).contains("applied: sent to 1 players")
+                .contains("saved: " + workspace.resolve("out/ruby-pack.zip"));
+        assertThat(workspace.resolve("out/ruby-pack.zip")).isRegularFile();
+    }
+
+    /**
+     * A file= that cannot be written (a folder with files in it, a path through a file) is refused before the pack is
+     * built or sent, so server.properties, the pack host and the players keep the same pack (#373).
+     */
+    @Test
+    void anUnwritableFileIsRefusedBeforeThePackIsSent() throws Exception {
+        h.ok("texture", "name", "item/ruby", "kind", "gem", "color", "#d4263a");
+        String url = h.ok("pack").lines().filter(l -> l.startsWith("url: ")).findFirst().orElseThrow().substring(5);
+        Files.createDirectories(workspace.resolve("run"));
+        Files.writeString(workspace.resolve("run/server.properties"), "resource-pack=" + url + "\n");
+        Files.createDirectories(workspace.resolve("packs/old"));
+        Files.writeString(workspace.resolve("notes.txt"), "a file");
+        h.ok("texture", "name", "item/ruby", "kind", "gem", "color", "#2655d4");
+        int sent = h.agent.packs.size();
+        assertThat(h.error("pack", "file", "packs")).isEqualTo("error: file " + workspace.resolve("packs")
+                + " is a folder; give a file path");
+        assertThat(h.error("pack", "file", "notes.txt/pack.zip")).contains("is a file, not a folder");
+        assertThat(h.agent.packs).hasSize(sent);
+        assertThat(workspace.resolve("run/server.properties")).hasContent("resource-pack=" + url);
+        HttpResponse<Void> served = HttpClient.newHttpClient().send(HttpRequest.newBuilder(URI.create(url)).build(),
+                HttpResponse.BodyHandlers.discarding());
+        assertThat(served.statusCode()).isEqualTo(200);
     }
 }

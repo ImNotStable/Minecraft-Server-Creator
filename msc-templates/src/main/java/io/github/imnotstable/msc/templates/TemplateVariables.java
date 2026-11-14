@@ -1,6 +1,7 @@
 package io.github.imnotstable.msc.templates;
 
 import java.security.SecureRandom;
+import java.text.Normalizer;
 import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
@@ -8,14 +9,16 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.regex.Pattern;
+import javax.lang.model.SourceVersion;
 
 /**
  * The values a template is rendered with. Build with {@link #of(String)}, which derives every
  * other value from the project name, then override with the {@code withX} methods.
  *
  * @param name         plugin name, PascalCase letters and digits, for example {@code SpawnLobby}
- * @param projectId    Gradle project and jar name, kebab-case, for example {@code spawn-lobby}
- * @param packageName  Java package, for example {@code com.example.spawnlobby}
+ * @param projectId    Gradle project and jar name, kebab-case, 2-64 characters (it is also the mod id, and
+ *                     Fabric allows no other length), for example {@code spawn-lobby}
+ * @param packageName  Java package with no keyword segments and not under {@code java}, for example {@code com.example.spawnlobby}
  * @param mainClass    plugin main class simple name, for example {@code SpawnLobbyPlugin}
  * @param version      project version
  * @param description  one-line description
@@ -52,12 +55,28 @@ public record TemplateVariables(
     private static final String FLAT_LAYERS = "{\"biome\":\"minecraft:plains\",\"layers\":["
             + "{\"block\":\"minecraft:bedrock\",\"height\":1},{\"block\":\"minecraft:dirt\",\"height\":2},"
             + "{\"block\":\"minecraft:grass_block\",\"height\":1}]}";
+    private static final Pattern NON_SPACING_MARKS = Pattern.compile("\\p{Mn}+");
+    private static final Pattern WORD_CHAR = Pattern.compile("[\\p{L}\\p{N}]");
+    private static final Pattern NON_ASCII_WORD_CHAR = Pattern.compile("[\\p{L}\\p{N}&&[^\\p{ASCII}]]");
     private static final SecureRandom RANDOM = new SecureRandom();
 
     public TemplateVariables {
         check(name, NAME, "name");
         check(projectId, PROJECT_ID, "projectId");
+        if (projectId.length() < 2 || projectId.length() > 64) {
+            throw new IllegalArgumentException("projectId must be 2-64 characters (the mod id rule): " + projectId);
+        }
         check(packageName, PACKAGE, "packageName");
+        for (String segment : packageName.split("\\.")) {
+            if (SourceVersion.isKeyword(segment)) {
+                throw new IllegalArgumentException(
+                        "packageName segment '" + segment + "' is a Java keyword or literal: " + packageName);
+            }
+        }
+        if (packageName.equals("java") || packageName.startsWith("java.")) {
+            throw new IllegalArgumentException("packageName must not be java or below it, which only the JDK may"
+                    + " define classes in: " + packageName);
+        }
         check(mainClass, CLASS, "mainClass");
         check(version, VERSION, "version");
         requireQuotable(description, "description");
@@ -80,9 +99,11 @@ public record TemplateVariables(
      * {@code "spawn-lobby"} or {@code "SpawnLobby"}.
      */
     public static TemplateVariables of(String projectName) {
-        List<String> words = words(projectName);
+        String ascii = ascii(projectName);
+        List<String> words = words(ascii);
         if (words.isEmpty() || !Character.isLetter(words.getFirst().charAt(0))) {
-            throw new IllegalArgumentException("Project name must start with a letter: " + projectName);
+            throw new IllegalArgumentException("Project name '" + projectName + "' cannot be used: it must start with"
+                    + " a letter (A-Z, a-z)");
         }
         StringBuilder pascal = new StringBuilder();
         for (String w : words) {
@@ -90,6 +111,14 @@ public record TemplateVariables(
         }
         String name = pascal.toString();
         String lower = String.join("", words);
+        try {
+            return derived(name, words, lower);
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("Project name '" + projectName + "' cannot be used: " + e.getMessage(), e);
+        }
+    }
+
+    private static TemplateVariables derived(String name, List<String> words, String lower) {
         return new TemplateVariables(
                 name,
                 String.join("-", words),
@@ -106,9 +135,36 @@ public record TemplateVariables(
                 false);
     }
 
+    /**
+     * The name in ASCII, since ids, packages and class names take ASCII only: accents come off ({@code Café} becomes
+     * {@code Cafe}) and letters and digits get their compatibility form (full-width {@code Ｌｏｂｂｙ} becomes
+     * {@code Lobby}, {@code ﬁ} becomes {@code fi}, {@code ²} becomes {@code 2}). Other characters keep their form,
+     * so a symbol such as {@code ™} is dropped later rather than spelled out. A letter or digit with no ASCII form
+     * ({@code Ø}, {@code ß}, {@code 日}) is refused, not dropped.
+     */
+    private static String ascii(String projectName) {
+        String name = projectName == null ? "" : projectName;
+        StringBuilder out = new StringBuilder(name.length());
+        name.codePoints().forEach(cp -> {
+            String c = Character.toString(cp);
+            if (WORD_CHAR.matcher(c).matches()) {
+                String plain = NON_SPACING_MARKS.matcher(Normalizer.normalize(c, Normalizer.Form.NFKD)).replaceAll("");
+                if (NON_ASCII_WORD_CHAR.matcher(plain).find()) {
+                    throw new IllegalArgumentException("Project name '" + projectName + "' cannot be used: '" + c
+                            + "' has no ASCII form, and ids, packages and class names take A-Z, a-z and 0-9 only");
+                }
+                out.append(plain);
+            } else {
+                out.append(c);
+            }
+        });
+        // Combining marks typed apart from their letter come off too.
+        return NON_SPACING_MARKS.matcher(out).replaceAll("");
+    }
+
     private static List<String> words(String projectName) {
         List<String> words = new ArrayList<>();
-        var m = WORD.matcher(projectName == null ? "" : projectName);
+        var m = WORD.matcher(projectName);
         while (m.find()) {
             words.add(m.group().toLowerCase(Locale.ROOT));
         }

@@ -13,24 +13,13 @@ import java.util.regex.Pattern;
  * errors, stack traces cut down to the project's own frames, repeats collapsed.
  */
 public final class LogCondenser {
-    /** {@code [12:34:56 INFO]: msg} (Paper) or {@code [12:34:56] [Server thread/INFO]: msg} (vanilla). */
-    private static final Pattern LINE = Pattern.compile("^\\[(\\d\\d:\\d\\d:\\d\\d)(?:\\] \\[[^\\]]*/| )(\\w+)\\]:? ?(.*)$");
-    private static final Pattern FRAME = Pattern.compile("^\\s+at (?:[\\w.]+//?)?([\\w.$<>]+)\\(.*\\).*$");
-    private static final Pattern MORE = Pattern.compile("^\\s+\\.\\.\\. \\d+ (more|common frames omitted).*$");
-    /**
-     * Forge and NeoForge put the logger after the level: {@code [12:34:56] [main/WARN] [ne.mi.fm.Foo/CORE]: msg}. The
-     * logger is dropped from the message (it costs tokens and says little), but kept to recognise known noise.
-     */
-    private static final Pattern LOGGER = Pattern.compile("^\\[([\\w.$]+)/[^\\]]*\\]: (.*)$");
-    /** OSHI, the system-report library, under its own name or Forge's shortened one ({@code os.ha.pl...}). */
-    private static final Pattern OSHI_LOGGER = Pattern.compile("^(oshi|os)\\..*");
-
     /** Frames from these packages are noise unless nothing else is there. */
     private static final List<String> FRAMEWORK = List.of("java.", "javax.", "jdk.", "sun.", "com.sun.",
             "net.minecraft.", "com.mojang.", "org.bukkit.", "org.spigotmc.", "io.papermc.", "com.destroystokyo.",
             "io.netty.", "org.apache.", "com.google.", "it.unimi.", "org.slf4j.", "co.aikar.", "ca.spottedleaf.",
             "org.gradle.", "org.junit.", "org.mockbukkit.", "be.seeseemelk.", "kotlin.", "worker.org.gradle.", "oshi.",
-            "net.minestom.");
+            "net.minestom.", "org.purpurmc.", "net.fabricmc.", "org.quiltmc.", "net.neoforged.", "net.minecraftforge.",
+            "cpw.mods.", "org.spongepowered.");
 
     /**
      * Entries every dev server prints and the AI can do nothing about: Paper's banners for running as root or
@@ -46,7 +35,23 @@ public final class LogCondenser {
                     + "possible to play without internet access|To change this, set \"online-mode\" to \"true\").*"),
             // Paper's system report on Windows: oshi messages and "Failed to get system info for ..." with an NPE.
             Pattern.compile("^\\[(oshi|os)\\.[\\w.$]+\\] .*"),
-            Pattern.compile("^Failed to get system info for .*"));
+            Pattern.compile("^Failed to get system info for .*"),
+            // The same oshi message on Fabric and Quilt, whose log lines carry no logger.
+            Pattern.compile("^Unable to locate English counter names in registry Perflib.*"),
+            // Forge's first start writes its default config files. A key corrected from a value someone set is kept.
+            // A mod jar without pack.mcmeta is kept too: the template and the agent ship one, so it is a real mistake.
+            Pattern.compile("^Configuration file .* is not correct\\. Correcting.*"),
+            Pattern.compile("^Incorrect key .* was corrected from null to its default.*"),
+            // Quilt on Minecraft 26.x, which ships unobfuscated: there is no intermediary to remap to, and vanilla's
+            // asset lookup does not know Quilt's in-memory file system.
+            Pattern.compile("^Not remapping mods because intermediary is missing!$"),
+            Pattern.compile("^Assets URL 'quilt\\.zfs://[^']*' uses unexpected schema$"));
+    /**
+     * Netty probing the macOS and Linux native transports on another OS (NeoForge and Forge log the failed probe
+     * with its trace). Matched anywhere in an entry together with {@link #NETTY_UNSUPPORTED}.
+     */
+    private static final Pattern NETTY_NATIVE = Pattern.compile("io\\.netty\\.channel\\.(kqueue|epoll|uring)\\.Native");
+    private static final Pattern NETTY_UNSUPPORTED = Pattern.compile("Only supported on (OSX/BSD|Linux)");
 
     private static final List<Pattern> BUILD_NOISE = List.of(
             Pattern.compile("^> Task (?!.*FAILED).*"),
@@ -64,21 +69,11 @@ public final class LogCondenser {
     private LogCondenser() {
     }
 
-    private static final class Entry {
-        final String time;
-        final String level;
-        final StringBuilder text = new StringBuilder();
-        final List<String> extra = new ArrayList<>();
-
-        Entry(String time, String level, String message) {
-            this.time = time;
-            this.level = level;
-            text.append(message);
-        }
-    }
-
-    /** @param text the condensed log, starting with a one-line count */
-    public record Condensed(String text, int errors, int warnings) {
+    /**
+     * @param text the condensed log, starting with a one-line count
+     * @param hidden warnings and errors dropped as known-harmless
+     */
+    public record Condensed(String text, int errors, int warnings, int hidden) {
         public boolean clean() {
             return errors == 0 && warnings == 0;
         }
@@ -91,41 +86,20 @@ public final class LogCondenser {
 
     /** Errors and warnings from a server log. */
     public static Condensed analyze(List<String> lines, int maxChars) {
-        List<Entry> entries = new ArrayList<>();
-        Entry current = null;
-        for (String raw : lines) {
-            String line = stripAnsi(raw);
-            Matcher m = LINE.matcher(line);
-            if (m.matches()) {
-                String message = m.group(3);
-                Matcher logger = LOGGER.matcher(message);
-                if (logger.matches()) {
-                    message = OSHI_LOGGER.matcher(logger.group(1)).matches()
-                            ? "[" + logger.group(1) + "] " + logger.group(2) : logger.group(2);
-                }
-                current = new Entry(m.group(1), m.group(2).toUpperCase(), message);
-                entries.add(current);
-            } else if (!line.isBlank()) {
-                if (current == null) {
-                    current = new Entry("", "", line);
-                    entries.add(current);
-                } else {
-                    current.extra.add(line);
-                }
-            }
-        }
         int errors = 0;
         int warnings = 0;
+        int hidden = 0;
         Map<String, int[]> counts = new LinkedHashMap<>();
         Map<String, String> firstTime = new LinkedHashMap<>();
-        for (Entry e : entries) {
-            boolean error = e.level.equals("ERROR") || e.level.equals("FATAL") || e.level.equals("SEVERE");
-            boolean warn = e.level.startsWith("WARN");
-            boolean trace = e.extra.stream().anyMatch(x -> FRAME.matcher(x).matches());
+        for (LogReader.Entry e : LogReader.entries(lines)) {
+            boolean error = e.error();
+            boolean warn = e.level().startsWith("WARN");
+            boolean trace = e.trace();
             if (!error && !warn && !trace) {
                 continue;
             }
-            if (EXPECTED.stream().anyMatch(p -> p.matcher(e.text).matches())) {
+            if (expected(e)) {
+                hidden++;
                 continue;
             }
             if (error || (trace && !warn)) {
@@ -133,17 +107,23 @@ public final class LogCondenser {
             } else {
                 warnings++;
             }
-            StringBuilder body = new StringBuilder(e.level.isEmpty() ? "" : e.level + " ").append(e.text);
-            for (String x : trimTrace(e.extra)) {
+            StringBuilder body = new StringBuilder(e.level().isEmpty() ? "" : e.level() + " ").append(e.text());
+            for (String x : trimTrace(e.extra())) {
                 body.append('\n').append(x);
+            }
+            if (e.cut() > 0) {
+                body.append("\n\t... ").append(e.cut()).append(" more lines cut");
             }
             String key = body.toString();
             counts.computeIfAbsent(key, k -> new int[1])[0]++;
-            firstTime.putIfAbsent(key, e.time);
+            firstTime.putIfAbsent(key, e.time());
         }
         StringBuilder out = new StringBuilder();
         out.append(lines.size()).append(" lines, ").append(errors).append(" errors, ").append(warnings)
                 .append(" warnings");
+        if (hidden > 0) {
+            out.append(", ").append(hidden).append(" known-harmless hidden");
+        }
         for (Map.Entry<String, int[]> c : counts.entrySet()) {
             out.append('\n');
             String time = firstTime.get(c.getKey());
@@ -159,7 +139,15 @@ public final class LogCondenser {
             out.append(body);
         }
         return new Condensed(Budget.truncate(out.toString(), maxChars, "Use server_logs with grep to narrow."),
-                errors, warnings);
+                errors, warnings, hidden);
+    }
+
+    private static boolean expected(LogReader.Entry e) {
+        if (EXPECTED.stream().anyMatch(p -> p.matcher(e.text()).matches())) {
+            return true;
+        }
+        String all = e.text() + "\n" + String.join("\n", e.extra());
+        return NETTY_NATIVE.matcher(all).find() && NETTY_UNSUPPORTED.matcher(all).find();
     }
 
     /**
@@ -172,10 +160,10 @@ public final class LogCondenser {
         boolean firstFrameOfBlock = true;
         boolean audit = false;
         for (String line : extra) {
-            if (MORE.matcher(line).matches()) {
+            if (LogReader.MORE.matcher(line).matches()) {
                 continue;
             }
-            Matcher f = FRAME.matcher(line);
+            Matcher f = LogReader.FRAME.matcher(line);
             if (line.strip().equals("Transformer Audit:")) {
                 audit = true;
                 continue;
@@ -217,7 +205,7 @@ public final class LogCondenser {
         Map<String, int[]> seen = new LinkedHashMap<>();
         boolean skipping = false;
         for (String raw : output.split("\\R")) {
-            String line = stripAnsi(raw).stripTrailing();
+            String line = LogReader.stripAnsi(raw).stripTrailing();
             // Gradle 9 repeats the whole compiler output, indented, after this line.
             if (line.startsWith("* Try:") || line.startsWith("* Get more help") || line.startsWith("* Exception is:")
                     || line.startsWith("> Compilation failed; see the compiler output below")) {
@@ -240,7 +228,7 @@ public final class LogCondenser {
             if (noise) {
                 continue;
             }
-            Matcher f = FRAME.matcher(line);
+            Matcher f = LogReader.FRAME.matcher(line);
             if (f.matches() && FRAMEWORK.stream().anyMatch(f.group(1)::startsWith)) {
                 continue;
             }
@@ -257,9 +245,5 @@ public final class LogCondenser {
             }
         }
         return Budget.truncate(out.toString(), maxChars, "Fix the first errors and build again.");
-    }
-
-    static String stripAnsi(String s) {
-        return s.indexOf('\u001b') < 0 ? s : s.replaceAll("\u001b\\[[0-9;?]*[A-Za-z]", "");
     }
 }

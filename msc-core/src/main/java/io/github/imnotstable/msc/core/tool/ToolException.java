@@ -7,4 +7,9 @@ public final class ToolException extends RuntimeException {
     public ToolException(String message) {
         super(message);
     }
+
+    /** What a workspace part says when a call reaches it after its close (see the ownership model on Core). */
+    public static ToolException workspaceClosed(String what) {
+        return new ToolException("the workspace was closed (session ended or msc_workspace), so " + what);
+    }
 }

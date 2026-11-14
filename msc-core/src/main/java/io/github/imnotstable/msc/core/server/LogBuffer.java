@@ -8,21 +8,28 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
 import java.util.function.Predicate;
 
-/** The last lines the server printed, numbered so a caller can ask for "everything since". */
+/**
+ * The last lines the server printed, numbered so a caller can ask for "everything since". It keeps at most
+ * {@code capacity} lines and {@code maxChars} characters, dropping the oldest lines first.
+ */
 public final class LogBuffer {
     private final int capacity;
+    private final long maxChars;
     private final ArrayDeque<String> lines = new ArrayDeque<>();
+    private long chars;
     private long next;
 
-    public LogBuffer(int capacity) {
+    public LogBuffer(int capacity, long maxChars) {
         this.capacity = capacity;
+        this.maxChars = maxChars;
     }
 
     public synchronized void add(String line) {
-        if (lines.size() == capacity) {
-            lines.removeFirst();
-        }
         lines.addLast(line);
+        chars += line.length();
+        while (lines.size() > capacity || (chars > maxChars && lines.size() > 1)) {
+            chars -= lines.removeFirst().length();
+        }
         next++;
         notifyAll();
     }
@@ -51,26 +58,33 @@ public final class LogBuffer {
     /**
      * Wait for the first line from {@code mark} on that {@code test} accepts. Returns null when {@code timeout}
      * passes or {@code alive} turns false first. Lines that already scrolled out of the buffer are not seen.
+     * {@code alive} runs without this buffer's monitor, so it may take other locks (#242).
      */
-    public synchronized Match await(long mark, Predicate<String> test, Duration timeout,
-                                    BooleanSupplier alive) throws InterruptedException {
+    public Match await(long mark, Predicate<String> test, Duration timeout,
+                       BooleanSupplier alive) throws InterruptedException {
         long deadline = System.nanoTime() + timeout.toNanos();
         long checked = mark;
         while (true) {
-            long first = next - lines.size();
-            long i = first;
-            for (String line : lines) {
-                if (i >= checked && test.test(line)) {
-                    return new Match(line, i);
+            synchronized (this) {
+                long i = next - lines.size();
+                for (String line : lines) {
+                    if (i >= checked && test.test(line)) {
+                        return new Match(line, i);
+                    }
+                    i++;
                 }
-                i++;
+                checked = next;
             }
-            checked = next;
             long left = deadline - System.nanoTime();
             if (left <= 0 || !alive.getAsBoolean()) {
                 return null;
             }
-            wait(Math.max(1, Math.min(TimeUnit.NANOSECONDS.toMillis(left), 250)));
+            synchronized (this) {
+                // Lines added while alive ran are scanned at once instead of after a missed notify.
+                if (next == checked) {
+                    wait(Math.max(1, Math.min(TimeUnit.NANOSECONDS.toMillis(left), 250)));
+                }
+            }
         }
     }
 

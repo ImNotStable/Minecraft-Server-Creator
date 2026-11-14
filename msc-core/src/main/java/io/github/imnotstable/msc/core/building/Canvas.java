@@ -6,8 +6,10 @@ import io.github.imnotstable.msc.protocol.world.Region;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * The blocks a build will place, held in one dense array over the build's bounds. Later writes win,
@@ -20,11 +22,13 @@ public final class Canvas {
     private final List<String> palette = new ArrayList<>();
     private final Map<String, Integer> paletteIndex = new HashMap<>();
     private final WorldReader worldReader;
+    private final List<Region> readAhead = new ArrayList<>();
+    private final List<BlockGrid> worldReads = new ArrayList<>();
     private long placed;
 
     /**
      * @param worldReader reads the current world for steps that only replace some blocks; called at
-     *                    most once per such step, with that step's bounds
+     *                    most once per such step, with that step's bounds, or once per {@link #readAhead} region
      */
     public Canvas(Region bounds, WorldReader worldReader) {
         this.bounds = bounds;
@@ -74,22 +78,58 @@ public final class Canvas {
         if (replace == null || replace.isEmpty()) {
             return (x, y, z) -> true;
         }
-        BlockGrid world = worldReader.read(stepBounds);
+        BlockGrid world = world(stepBounds);
         List<String> wanted = replace.stream().map(BlockNames::full).toList();
+        Map<String, Boolean> judged = new HashMap<>();
         return (x, y, z) -> {
             String current = planned(x, y, z);
             if (current == null) {
                 current = world.region().contains(x, y, z) ? world.stateAt(x, y, z) : null;
             }
-            return current != null && matches(current, wanted);
+            return current != null && judged.computeIfAbsent(current, s -> matches(s, wanted));
         };
     }
 
-    /** Whether a state is one of {@code wanted}; an entry without properties matches any properties. */
+    /**
+     * Read all of {@code region} at once when a later step inside it first needs the world, so the copies
+     * of a repeated step share one read. The world does not change while the canvas is drawn. Lasts until
+     * {@link #endReadAhead}, so steps after the group read only their own bounds.
+     */
+    void readAhead(Region region) {
+        readAhead.add(region);
+    }
+
+    /** End the latest {@link #readAhead} of {@code region}. */
+    void endReadAhead(Region region) {
+        readAhead.remove(readAhead.lastIndexOf(region));
+    }
+
+    private BlockGrid world(Region stepBounds) throws InterruptedException {
+        for (BlockGrid g : worldReads) {
+            if (encloses(g.region(), stepBounds)) {
+                return g;
+            }
+        }
+        Region read = readAhead.stream().filter(r -> encloses(r, stepBounds)).findFirst().orElse(stepBounds);
+        BlockGrid g = worldReader.read(read);
+        worldReads.add(g);
+        return g;
+    }
+
+    private static boolean encloses(Region outer, Region inner) {
+        return outer.contains(inner.min().x(), inner.min().y(), inner.min().z())
+                && outer.contains(inner.max().x(), inner.max().y(), inner.max().z());
+    }
+
+    /**
+     * Whether a state is one of {@code wanted}. An entry matches a state with the same id that has every property
+     * the entry lists, in any order; an entry without properties matches any properties.
+     */
     static boolean matches(String state, List<String> wanted) {
         String id = BlockNames.id(state);
+        Set<String> has = properties(state);
         for (String w : wanted) {
-            if (w.indexOf('[') < 0 ? w.equals(id) : w.equals(state)) {
+            if (BlockNames.id(w).equals(id) && has.containsAll(properties(w))) {
                 return true;
             }
             if (BlockNames.isAir(w) && BlockNames.isAir(state)) {
@@ -97,6 +137,23 @@ public final class Canvas {
             }
         }
         return false;
+    }
+
+    /** The {@code key=value} pairs in a state's brackets. */
+    private static Set<String> properties(String state) {
+        int open = state.indexOf('[');
+        if (open < 0) {
+            return Set.of();
+        }
+        int close = state.lastIndexOf(']');
+        Set<String> out = new HashSet<>();
+        for (String p : state.substring(open + 1, close > open ? close : state.length()).split(",")) {
+            String pair = p.replace(" ", "");
+            if (!pair.isEmpty()) {
+                out.add(pair);
+            }
+        }
+        return out;
     }
 
     /** Reads the world as it is now. */

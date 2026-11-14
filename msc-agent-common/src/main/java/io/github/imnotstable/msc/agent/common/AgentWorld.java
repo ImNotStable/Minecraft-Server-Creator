@@ -33,6 +33,18 @@ public interface AgentWorld<S> {
     /** Set a block; {@code physics} lets neighbours react (sand falls, torches pop off). */
     void set(int x, int y, int z, S state, boolean physics);
 
+    /**
+     * The block entity data at a position that {@link #get} leaves out (sign text, container items), or null when
+     * there is none or the state already holds it. An undo record keeps it. Defaults to null.
+     */
+    default Object blockEntity(int x, int y, int z) {
+        return null;
+    }
+
+    /** Writes data from {@link #blockEntity} back, after {@link #set} put the block itself there. */
+    default void loadBlockEntity(int x, int y, int z, Object data) {
+    }
+
     /** Whether writing {@code target} over {@code current} would change nothing. Defaults to {@code equals}. */
     default boolean sameState(S current, S target) {
         return Objects.equals(current, target);
@@ -64,6 +76,18 @@ public interface AgentWorld<S> {
      * does nothing by default.
      */
     default void loadArea(int minX, int minZ, int maxX, int maxZ) {
+    }
+
+    /**
+     * As {@link #loadArea}, for a job that only reads. The returned action, run once the job is
+     * done (from any thread), releases the chunks this call loaded that nothing else needs, so
+     * reads do not pile up chunks on a platform that never unloads them. Defaults to
+     * {@link #loadArea} and nothing to release.
+     */
+    default Runnable loadAreaToRead(int minX, int minZ, int maxX, int maxZ) {
+        loadArea(minX, minZ, maxX, maxZ);
+        return () -> {
+        };
     }
 
     /** As {@link #loadArea}, for the chunks under a set of {@link PackedPos packed positions}. */

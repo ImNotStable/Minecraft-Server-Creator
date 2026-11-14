@@ -40,6 +40,39 @@ class OverlayTest {
                 + "1 zombie at 4.5,65,4.5; 2 player \"Alex\" at 11.5,65,11.5.");
     }
 
+    /**
+     * World text cut for the legend (40 chars) and for the image (20 chars) with an emoji at every position around
+     * either cut: the caption the render tool returns and the drawn lines never hold half of it (#479).
+     */
+    @Test
+    void cutWorldTextNeverHoldsHalfAnEmoji() {
+        String emoji = "\uD83C\uDFC6";
+        for (int at = 10; at <= 45; at++) {
+            String words = "x".repeat(at) + emoji + "y".repeat(60 - at);
+            RenderResult result = renderer.render(floor().grid(), View.parse("top"), PLAIN, List.of(
+                    Marker.entity("minecraft:cow", words, 4.5, 65, 4.5),
+                    Marker.entity("minecraft:text_display", words, 8, 66, 4),
+                    Marker.sign(8, 65, 12, List.of(words)),
+                    Marker.text(12, 66, 12, words)));
+            assertThat(loneSurrogates(result.caption())).as("caption, emoji at %d", at).isZero();
+            assertThat(result.caption()).as("caption, emoji at %d", at).contains("xxx");
+            assertThat(WorldRenderer.textLines(List.of(words, words, words, words, words)))
+                    .as("image lines, emoji at %d", at).allSatisfy(l -> assertThat(loneSurrogates(l)).isZero());
+        }
+    }
+
+    private static long loneSurrogates(String s) {
+        long n = 0;
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (Character.isHighSurrogate(c) && (i + 1 == s.length() || !Character.isLowSurrogate(s.charAt(i + 1)))
+                    || Character.isLowSurrogate(c) && (i == 0 || !Character.isHighSurrogate(s.charAt(i - 1)))) {
+                n++;
+            }
+        }
+        return n;
+    }
+
     @Test
     void hologramsAndSignsShowTheirWords() {
         RenderResult result = renderer.render(floor().grid(), View.parse("top"), PLAIN, List.of(
@@ -74,6 +107,56 @@ class OverlayTest {
         assertThat(image.getRGB(72, 72) & 0xffffff).as("hollow centre under the roof").isEqualTo(0xffffff);
         assertThat(image.getRGB(200, 72) & 0xffffff).as("solid dot in the open").isEqualTo(0x30c048);
         assertThat(result.caption()).endsWith("Behind blocks (hollow or faded): 1.");
+    }
+
+    @Test
+    void aSignBlockDoesNotHideItsOwnText() {
+        for (String sign : List.of("oak_sign[rotation=0]", "oak_hanging_sign[rotation=0]")) {
+            Scenes s = floor().set(8, 65, 12, sign);
+            RenderResult result = renderer.render(s.grid(), View.parse("top"), PLAIN,
+                    List.of(Marker.sign(8, 65, 12, List.of("Shop"))));
+            assertThat(result.caption()).as(sign).doesNotContain("Behind blocks");
+        }
+        // A roof over the sign still hides it.
+        Scenes roofed = floor().set(8, 65, 12, "oak_sign").fill(0, 67, 0, 15, 67, 15, "oak_planks");
+        assertThat(renderer.render(roofed.grid(), View.parse("top"), PLAIN,
+                List.of(Marker.sign(8, 65, 12, List.of("Shop")))).caption()).endsWith("Behind blocks (hollow or faded): 1.");
+        // So does a roof that rests right on top of the sign's block.
+        Scenes touching = floor().set(8, 65, 12, "oak_sign").fill(0, 66, 0, 15, 66, 15, "oak_planks");
+        assertThat(renderer.render(touching.grid(), View.parse("top"), PLAIN,
+                List.of(Marker.sign(8, 65, 12, List.of("Shop")))).caption()).endsWith("Behind blocks (hollow or faded): 1.");
+        // And a partial block (a slab) right above it.
+        Scenes slab = floor().set(8, 65, 12, "oak_sign").set(8, 66, 12, "oak_slab[type=bottom]");
+        assertThat(renderer.render(slab.grid(), View.parse("top"), PLAIN,
+                List.of(Marker.sign(8, 65, 12, List.of("Shop")))).caption()).endsWith("Behind blocks (hollow or faded): 1.");
+        // A wall sign seen from the far side of its wall.
+        Scenes wall = floor().fill(0, 65, 8, 15, 68, 8, "stone_bricks").set(8, 66, 7, "oak_wall_sign[facing=north]");
+        assertThat(renderer.render(wall.grid(), View.parse("south"), PLAIN,
+                List.of(Marker.sign(8, 66, 7, List.of("Shop")))).caption()).endsWith("Behind blocks (hollow or faded): 1.");
+    }
+
+    @Test
+    void captionListsOnlyTheDrawnMarkers() {
+        List<Marker> markers = new java.util.ArrayList<>();
+        for (int i = 0; i < 1000; i++) {
+            markers.add(Marker.entity("minecraft:item", null, 1.5 + i % 14, 65, 1.5 + i % 13));
+        }
+        markers.add(Marker.sign(3, 65, 3, List.of("Late")));
+        String caption = renderer.render(floor().grid(), View.parse("top"), PLAIN, markers).caption();
+        assertThat(caption).contains("; 40 item at ").doesNotContain("41 item")
+                .endsWith(" 961 more not drawn: 960 item, 1 sign; world_entities lists entities.");
+        assertThat(caption.length()).isLessThan(2500);
+    }
+
+    @Test
+    void aMarkerOnTheRegionsTopPlaneIsNotHiddenByTheBlockUnderIt() {
+        // The region stops at the stone floor, so text standing on it sits exactly on the grid's top plane.
+        Scenes s = new Scenes(0, 64, 0, 15, 64, 15).fill(0, 64, 0, 15, 64, 15, "stone");
+        RenderResult top = renderer.render(s.grid(), View.parse("top"), PLAIN, List.of(Marker.text(8, 65, 8, "Hi")));
+        assertThat(top.caption()).doesNotContain("Behind blocks");
+        RenderResult camera = renderer.render(s.grid(), View.parse("eye 8,70,2 look 8,65,8"), PLAIN,
+                List.of(Marker.text(8, 65, 8, "Hi")));
+        assertThat(camera.caption()).doesNotContain("Behind blocks");
     }
 
     @Test

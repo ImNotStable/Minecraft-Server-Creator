@@ -6,6 +6,8 @@ import java.util.Properties
 
 plugins {
     id("msc.application-conventions")
+    id("msc.previous-protocol")
+    id("msc.repo-inputs")
 }
 
 description = "The MCP server the AI talks to."
@@ -16,6 +18,9 @@ dependencies {
     implementation(project(":msc-textures"))
     implementation(project(":msc-renderer"))
     implementation(project(":msc-bot"))
+    implementation(project(":msc-process"))
+    // The fake RCON server shared with msc-bench (ADR 0032).
+    testImplementation(testFixtures(project(":msc-process")))
     implementation(libs.mcp.sdk)
     // Lifts the SDK's transitive Jackson 3 past known advisories; it parses every MCP message.
     implementation(platform(libs.jackson.bom))
@@ -37,11 +42,7 @@ dependencies {
 
 // The test player's client for the previous Minecraft version (Minestom lags Paper by one), in bot/<version>/.
 // Not on the class path: msc-bot's Bots loads it in its own class loader when a server answers with that protocol.
-val previousProtocol = configurations.dependencyScope("previousProtocol")
-val previousProtocolJars = configurations.resolvable("previousProtocolJars") { extendsFrom(previousProtocol.get()) }
-dependencies {
-    previousProtocol(libs.mcprotocollib.previous) { isTransitive = false }
-}
+// The configuration and the bot/<version> layout come from msc.previous-protocol, shared with msc-bot and msc-bench.
 
 distributions {
     main {
@@ -51,8 +52,8 @@ distributions {
                 // Loom's runtimeElements may also carry the dev (named) jar; only the remapped one loads.
                 exclude("*-dev.jar", "*-sources.jar")
             }
-            into("bot/${libs.versions.mcprotocollib.previous.get()}") {
-                from(previousProtocolJars)
+            into(previousProtocolClient.distributionDir) {
+                from(previousProtocolClient.jars)
             }
         }
     }
@@ -145,7 +146,8 @@ val installMsc = tasks.register("installMsc") {
             }
             println("Minecraft EULA (https://aka.ms/MinecraftEULA) accepted for this machine, saved in $file.")
             println("By -Pmsc.acceptEula=true you confirm you read and accept Mojang's EULA; MSC now writes eula=true for")
-            println("every Paper and Fabric dev server here without asking. Terms: TERMS.md in this repo. Undo: the line in")
+            println("every Paper, Purpur, Fabric, Quilt, NeoForge and Forge dev server here without asking. Terms: TERMS.md")
+            println("in this repo. Undo: the line in")
             println("eula-accept.txt with revoke instead of accept.")
         }
         val eula = "\"" + javaPath.get() + "\" -cp \"" + classPath + "\" io.github.imnotstable.msc.core.Main eula accept"
@@ -163,11 +165,69 @@ val installMsc = tasks.register("installMsc") {
     }
 }
 
+// The version msc_status and the MCP serverInfo report: project.version (a release passes -Pversion=<tag>).
+val versionResource = tasks.register<WriteProperties>("versionResource") {
+    destinationFile = layout.buildDirectory.file("generated/version/io/github/imnotstable/msc/core/version.properties")
+    property("version", project.version.toString())
+}
+sourceSets.main { resources.srcDir(versionResource.map { layout.buildDirectory.dir("generated/version").get() }) }
+
 // e2eTest: a real Minestom server driven through the installed core over MCP stdio (MinestomEndToEndTest, tag e2e).
 // Not part of `build`: it scaffolds a project and runs its own Gradle build. CI runs it on Linux and Windows.
 tasks.test {
     useJUnitPlatform { excludeTags("e2e") }
+    systemProperty("msc.expectedVersion", project.version.toString())
 }
+
+// repoChecks: the tests whose inputs are the whole repository (#370). They read sets every module's files are in, so
+// they run on their own task, part of `check`: an edit elsewhere reruns these few seconds, not all of msc-core:test,
+// whose own inputs stay msc-core's. Each set is both what the tests read and that task's input (msc.repo-inputs).
+val repoCheckClasses = listOf("io.github.imnotstable.msc.core.DocumentedCommandsTest",
+    "io.github.imnotstable.msc.core.RepoInputsTest", "io.github.imnotstable.msc.core.EulaWritersTest",
+    "io.github.imnotstable.msc.core.ServerPropertiesAccessTest", "io.github.imnotstable.msc.core.DecisionsIndexTest",
+    "io.github.imnotstable.msc.core.DocumentedResultLinesTest")
+val repoChecks = tasks.register<Test>("repoChecks") {
+    description = "Runs the tests that scan the whole repository (documented commands, test-source reads, EULA writers, " +
+        "server.properties access, ADR index)."
+    group = "verification"
+    testClassesDirs = sourceSets.test.get().output.classesDirs
+    classpath = sourceSets.test.get().runtimeClasspath
+    filter { repoCheckClasses.forEach { includeTestsMatching(it) } }
+}
+tasks.test { filter { repoCheckClasses.forEach { excludeTestsMatching(it) } } }
+tasks.check { dependsOn(repoChecks) }
+// DocumentedCommandsTest: every text file of the repository outside build output, server and IDE run folders (at
+// the root or a module's root, so source packages named run stay in), test sources and dot folders. A `**/.*/**`
+// pattern would also drop dot files such as msc-plugin/.mcp.json, so dot folders are matched by their contents.
+repoInputs.on(repoChecks).set("documentedCommands", rootProject.fileTree(rootDir) {
+    include("**/*.md", "**/*.java", "**/*.kts", "**/*.txt", "**/*.json", "**/*.yml", "**/*.properties")
+    exclude("**/build/**", "run/**", "*/run/**", "out/**", "*/out/**", "**/node_modules/**", "**/test/**",
+        "**/testFixtures/**", "graphify-out/**", "**/.*/*/**")
+})
+// RepoInputsTest: every module's test sources, checked for reads that bypass these sets.
+repoInputs.on(repoChecks).set("testSources", rootProject.fileTree(rootDir) {
+    include("msc-*/src/test/**/*.java", "msc-*/src/test/**/*.kt")
+})
+// EulaWritersTest: every module's production sources and every build script, checked for code that writes the
+// owner's machine EULA acceptance (~/.msc/eula.json; ADR 0020, #383).
+repoInputs.on(repoChecks).set("eulaWriters", rootProject.fileTree(rootDir) {
+    include("msc-*/src/main/**/*.java", "msc-*/src/main/**/*.kt", "**/*.gradle.kts", "build-logic/src/main/**")
+    exclude("**/build/**", "**/.gradle/**", "**/node_modules/**", "graphify-out/**")
+})
+// ServerPropertiesAccessTest: every module's production sources, checked that no string literal outside msc-process's
+// ServerPropertiesFile names server.properties (a literal rule, ADR 0033, ADR 0036). Template sources are scaffolded,
+// not run.
+repoInputs.on(repoChecks).set("productionSources", rootProject.fileTree(rootDir) {
+    include("msc-*/src/main/**/*.java", "msc-*/src/main/**/*.kt")
+    exclude("**/build/**", "msc-templates/src/main/templates/**")
+})
+// DecisionsIndexTest: the plan and every ADR, checked that each ADR has a row or mention in the plan (#411).
+repoInputs.on(repoChecks).set("decisions", rootProject.fileTree(rootDir) {
+    include("msc-docs/docs/plan.md", "msc-docs/docs/adr/*.md")
+})
+
+// DocumentedResultLinesTest: tools.md's result line counts, checked against real tool results (#419).
+repoInputs.on(repoChecks).set("toolDoc", rootProject.file("msc-docs/docs/tools.md"))
 
 tasks.register<Test>("e2eTest") {
     description = "Scaffolds minestom-game and drives a real Minestom server end to end through the installed core."

@@ -10,6 +10,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
+import java.util.Objects;
 import java.util.Optional;
 
 /**
@@ -19,6 +20,11 @@ import java.util.Optional;
  * It is written only on an explicit opt-in by the owner: {@code yes} to {@link EulaCommand}, {@code installMsc
  * -Pmsc.acceptEula=true}, or {@code acceptEula=true} on {@code server_setup} or {@code server_start}. Never by default,
  * and never by installing or using MSC alone. See ADR 0020.
+ *
+ * <p>The file's path never leaves this class (ADR 0036): other code holds a {@code MachineEula}, asks it
+ * {@link #read}, has it {@link #applyTo} a server's {@code eula.txt}, calls its one write,
+ * {@link #recordAcceptance}, and prints it with {@link #toString}. Writing the acceptance any other way would mean
+ * building the path again, file name and all, which EulaWritersTest's literal rule reports.
  */
 public final class MachineEula {
     public static final String EULA_URL = "https://aka.ms/MinecraftEULA";
@@ -34,16 +40,38 @@ public final class MachineEula {
         }
     }
 
-    private MachineEula() {
+    private static final String FILE_NAME = "eula.json";
+    private static final MachineEula NONE = new MachineEula(null);
+
+    /** The acceptance file, or null for {@link #none}. Private: see the class comment. */
+    private final Path file;
+
+    private MachineEula(Path file) {
+        this.file = file;
     }
 
-    /** {@code <home>/.msc/eula.json}. */
-    public static Path defaultFile(String home) {
-        return Path.of(home, ".msc", "eula.json");
+    /** The acceptance of the owner whose home folder is {@code home}: {@code <home>/.msc/eula.json}. */
+    public static MachineEula forHome(Path home) {
+        return new MachineEula(home.resolve(".msc").resolve(FILE_NAME));
+    }
+
+    /** No machine-wide acceptance at all (a config built by tests): nothing is read and nothing can be written. */
+    public static MachineEula none() {
+        return NONE;
+    }
+
+    /** False for {@link #none}. */
+    public boolean configured() {
+        return file != null;
+    }
+
+    /** The owner's acceptance, or empty when there is none or the file is not a complete acceptance. */
+    public Optional<Acceptance> read() {
+        return read(file);
     }
 
     /** The acceptance in {@code file}, or empty when there is no file or it is not a complete acceptance. */
-    public static Optional<Acceptance> read(Path file) {
+    static Optional<Acceptance> read(Path file) {
         if (file == null || !Files.isRegularFile(file)) {
             return Optional.empty();
         }
@@ -62,13 +90,15 @@ public final class MachineEula {
         }
     }
 
-    /** How the owner agreed, stored in the file. */
-    public static final String VIA_TERMINAL = "typed yes to 'msc eula accept' in an interactive terminal";
-    public static final String VIA_INSTALL = "ran installMsc with -Pmsc.acceptEula=true";
+    /** How the owner agreed, stored in the file. installMsc (msc-core/build.gradle.kts) writes its own value. */
+    public static final String VIA_TERMINAL = "typed yes to 'Main eula accept' in an interactive terminal";
     public static final String VIA_TOOL = "the user's own yes, passed as acceptEula=true";
 
     /** Records the owner's explicit agreement; callers must only pass one the owner gave (ADR 0020). */
-    public static void write(Path file, Acceptance a, String how) throws IOException {
+    public void recordAcceptance(Acceptance a, String how) throws IOException {
+        if (file == null) {
+            throw new IllegalStateException("no machine EULA file to write");
+        }
         JsonObject o = new JsonObject();
         o.addProperty("eula", EULA_URL);
         o.addProperty("accepted", true);
@@ -80,20 +110,25 @@ public final class MachineEula {
         Files.writeString(file, GSON.toJson(o) + "\n");
     }
 
+    /** Deletes the acceptance; false when there was none. */
+    public boolean revoke() throws IOException {
+        return file != null && Files.deleteIfExists(file);
+    }
+
     /**
-     * Writes {@code eula=true} into {@code eulaTxt} when it does not say so yet and {@code file} holds an acceptance.
+     * Writes {@code eula=true} into {@code eulaTxt} when it does not say so yet and the owner has an acceptance.
      *
      * @return the acceptance that was applied, or empty when nothing was written
      */
-    public static Optional<Acceptance> applyTo(Path file, Path eulaTxt) throws IOException {
+    public Optional<Acceptance> applyTo(Path eulaTxt) throws IOException {
         if (ServerManager.eulaAccepted(eulaTxt)) {
             return Optional.empty();
         }
-        Optional<Acceptance> a = read(file);
+        Optional<Acceptance> a = read();
         if (a.isPresent()) {
             Files.createDirectories(eulaTxt.toAbsolutePath().getParent());
             Files.writeString(eulaTxt, "# Minecraft EULA (" + EULA_URL + ") accepted by " + a.get().describe()
-                    + " for this machine with 'msc eula accept' (" + file + ")\neula=true\n");
+                    + " for this machine (" + file + ")\neula=true\n");
         }
         return a;
     }
@@ -109,5 +144,21 @@ public final class MachineEula {
         String java = Path.of(System.getProperty("java.home"), "bin", "java").toString();
         return "\"" + java + "\" -cp \"" + installDir.resolve("lib") + File.separator + "*\" "
                 + "io.github.imnotstable.msc.core.Main eula accept";
+    }
+
+    /** Where the acceptance is kept, for messages to the user. */
+    @Override
+    public String toString() {
+        return file == null ? "no machine EULA file" : file.toString();
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        return o instanceof MachineEula m && Objects.equals(file, m.file);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hashCode(file);
     }
 }

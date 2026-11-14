@@ -30,9 +30,34 @@ class RegionTest {
     }
 
     @Test
+    void anEntityPositionBelongsToTheBlockItIsIn() {
+        Region left = Region.of("world", 0, 60, 0, 9, 80, 9);
+        Region right = Region.of("world", 10, 60, 0, 19, 80, 9);
+
+        assertThat(left.containsPoint(9.999, 70, 2.5)).isTrue();
+        assertThat(left.containsPoint(10.2, 70, 2.5)).isFalse();
+        assertThat(right.containsPoint(10.2, 70, 2.5)).isTrue();
+        assertThat(right.containsPoint(10, 60, 0)).isTrue();
+        assertThat(right.containsPoint(10, 59.99, 0)).isFalse();
+        assertThat(right.containsPoint(20, 70, 0)).isFalse();
+    }
+
+    @Test
     void limitIsEnforced() {
         assertThatThrownBy(() -> Region.of("w", 0, 0, 0, 999, 255, 999).requireWithinLimit())
                 .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void spansBeyondIntDoNotWrapUnderTheLimit() {
+        Region wide = Region.of("w", -2_000_000_000, 0, 0, 2_000_000_000, 0, 0);
+        assertThat(wide.volume()).isEqualTo(4_000_000_001L);
+        assertThatThrownBy(wide::requireWithinLimit).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(wide::sizeX).isInstanceOf(ArithmeticException.class);
+        Region full = Region.of("w", Integer.MIN_VALUE, Integer.MIN_VALUE, Integer.MIN_VALUE,
+                Integer.MAX_VALUE, Integer.MAX_VALUE, Integer.MAX_VALUE);
+        assertThat(full.volume()).isEqualTo(Long.MAX_VALUE);
+        assertThatThrownBy(full::requireWithinLimit).isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test

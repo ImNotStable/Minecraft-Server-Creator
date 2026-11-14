@@ -5,13 +5,16 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Path;
 import java.util.Locale;
+import java.util.function.Function;
 import net.kyori.adventure.key.Key;
 import net.minestom.server.MinecraftServer;
+import net.minestom.server.entity.Player;
 import net.minestom.server.instance.InstanceContainer;
 import net.minestom.server.instance.InstanceManager;
 import net.minestom.server.instance.LightingChunk;
 import net.minestom.server.instance.anvil.AnvilLoader;
 import net.minestom.server.instance.block.Block;
+import net.minestom.server.network.ConnectionManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -35,12 +38,13 @@ public final class {{name}}Server {
 
         GameConfig config = GameConfig.game();
         Progress progress = new Progress(Path.of("progress.properties")).load();
-        Game game = new Game(config, world, progress, () -> Thread.startVirtualThread(() -> save(progress)));
+        Game game = new Game(config, world, progress, () -> Thread.startVirtualThread(() -> save(progress)))
+                .confineTo(Game::isTickThread);
         game.applyWorldRules();
         MinecraftServer.setDifficulty(config.difficulty());
         GameEvents.register(MinecraftServer.getGlobalEventHandler(), game);
         MinecraftServer.getCommandManager().register(
-                new GameCommand(game, MinecraftServer.getConnectionManager()::findOnlinePlayer));
+                new GameCommand(game, playerLookup(MinecraftServer.getConnectionManager())));
         MinecraftServer.getSchedulerManager().buildShutdownTask(() -> {
             save(progress);
             world.saveChunksToStorage().join();
@@ -67,6 +71,14 @@ public final class {{name}}Server {
             unit.modifier().fillHeight(-61, -60, Block.GRASS_BLOCK);
         });
         return world;
+    }
+
+    /**
+     * Exact (case-insensitive) lookup of an online player for {@code /game ... <player>}. Not
+     * {@code findOnlinePlayer}: that falls back to the most similar name, so a typo would act on someone else.
+     */
+    static Function<String, Player> playerLookup(ConnectionManager connections) {
+        return connections::getOnlinePlayerByUsername;
     }
 
     private static void save(Progress progress) {

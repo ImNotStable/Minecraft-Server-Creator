@@ -3,10 +3,15 @@ package io.github.imnotstable.msc.core;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import io.github.imnotstable.msc.core.tool.ToolRegistry;
+import io.github.imnotstable.msc.process.ClosedPort;
+import io.github.imnotstable.msc.process.ServerPropertiesFile;
 import io.github.imnotstable.msc.protocol.transport.AgentClient;
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 import java.util.function.UnaryOperator;
 
 /** A core in a temp workspace with a fake agent attached. */
@@ -34,6 +39,11 @@ final class CoreHarness implements AutoCloseable {
 
     /** Call a tool with alternating name, value arguments. Values may be String, Number, Boolean or List of String. */
     ToolRegistry.Result call(String tool, Object... pairs) {
+        return core.registry().call(tool, args(pairs));
+    }
+
+    /** Tool arguments from alternating name, value pairs, as {@link #call} takes them. */
+    static JsonObject args(Object... pairs) {
         JsonObject args = new JsonObject();
         for (int i = 0; i < pairs.length; i += 2) {
             Object v = pairs[i + 1];
@@ -50,7 +60,7 @@ final class CoreHarness implements AutoCloseable {
                 args.addProperty(name, String.valueOf(v));
             }
         }
-        return core.registry().call(tool, args);
+        return args;
     }
 
     /** Text of a call that must succeed. */
@@ -69,6 +79,38 @@ final class CoreHarness implements AutoCloseable {
             throw new AssertionError(tool + " should have failed: " + r.text());
         }
         return r.text();
+    }
+
+    /**
+     * Sets {@code server-port} in the dev server's server.properties to a port held closed, until the returned port is
+     * closed. Without it player_test joins whatever answers on 127.0.0.1:25565, the port it falls back to when the file
+     * names none, which on a developer's machine can be their own server.
+     */
+    static ClosedPort noGameServer(Path serverDir) throws IOException {
+        ClosedPort port = ClosedPort.reserve();
+        try {
+            Files.createDirectories(serverDir);
+            ServerPropertiesFile.set(serverDir.resolve(ServerPropertiesFile.NAME),
+                    Map.of("server-port", Integer.toString(port.port())));
+        } catch (IOException | RuntimeException e) {
+            port.close();
+            throw e;
+        }
+        return port;
+    }
+
+    /**
+     * Holds a server's default port (25565, 25575) closed on loopback, for a test of the fallback to it; the test is
+     * aborted, not failed, when something on this machine uses the port, since it would reach that instead. The rule
+     * itself is tested without the network in msc-process's ServerAddressTest.
+     */
+    static ClosedPort holdDefaultPort(int port) throws IOException {
+        try {
+            return ClosedPort.reserve(port);
+        } catch (java.net.BindException e) {
+            org.junit.jupiter.api.Assumptions.abort("port " + port + " is in use on this machine");
+            throw e;
+        }
     }
 
     @Override

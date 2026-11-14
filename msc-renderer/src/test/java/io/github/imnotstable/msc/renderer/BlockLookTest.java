@@ -66,4 +66,15 @@ class BlockLookTest {
                 .containsExactly(new Box(0, 0, 0, 1, 1, 3 / 16.0));
         assertThat(Shapes.of(BlockState.parse("snow[layers=4]"))).containsExactly(new Box(0, 0, 0, 1, 0.5, 1));
     }
+
+    @Test
+    void fullCubesWithSmallBlockSuffixes() {
+        for (String full : new String[] {"sea_lantern", "jack_o_lantern", "mangrove_roots", "muddy_mangrove_roots"}) {
+            assertThat(Shapes.of(BlockState.parse(full))).as(full).isSameAs(Shapes.FULL);
+        }
+        for (String small : new String[] {"lantern", "soul_lantern", "waxed_oxidized_copper_lantern",
+                "crimson_roots", "warped_roots"}) {
+            assertThat(Shapes.of(BlockState.parse(small))).as(small).isNotSameAs(Shapes.FULL);
+        }
+    }
 }

@@ -1,6 +1,6 @@
 # ADR 0015: One build language for batches, shapes, mixes and stamps
 
-Status: accepted, 2026-11-12. Decided by Claude under Jeremiah's hand-over of build decisions.
+Status: accepted, 2026-11-12. Decided by Claude under Jeremiah's hand-over of build decisions. Amended 2026-11-14 (see the end).
 
 ## Context
 
@@ -22,3 +22,9 @@ Both playtests (Lumen Siege and Gearfall, see `playtest-findings.md`) wrote a Py
 - An AI can build an island with a keep, towers facing the centre, a ring wall, a bridge with lamps and a tree in one call (checked on Paper 26.3: 5,496 blocks, one undo).
 - Steps with `replace=` read the world over their bounds once.
 - The core holds 4 bytes per block of the batch's bounding box while it builds: 32 MB at the limit.
+
+## Amendment, 2026-11-14: statements later changes made untrue (#383)
+
+Found by reading every ADR against the code during the campaign. The original text above is kept as decided; what is true now:
+
+- `build_fill` and `build_set` were removed by [ADR 0019](0019-smaller-tool-surface.md), so `build_batch` is the only build tool: the 8,388,608-block limit of decision 2 and the room shapes of decision 8 (`hollow`, `outline`, `walls`) are its own, not shared with `build_fill`.

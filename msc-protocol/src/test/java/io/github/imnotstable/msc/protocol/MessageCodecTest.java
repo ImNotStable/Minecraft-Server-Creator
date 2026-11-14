@@ -13,6 +13,7 @@ import io.github.imnotstable.msc.protocol.message.Message;
 import io.github.imnotstable.msc.protocol.message.MessageCodec;
 import io.github.imnotstable.msc.protocol.message.Ping;
 import io.github.imnotstable.msc.protocol.message.Pong;
+import io.github.imnotstable.msc.protocol.message.RawJson;
 import io.github.imnotstable.msc.protocol.message.Request;
 import io.github.imnotstable.msc.protocol.message.Response;
 import io.github.imnotstable.msc.protocol.message.Welcome;
@@ -51,9 +52,18 @@ class MessageCodecTest {
     }
 
     @Test
+    void decodesWhereverTheTypeStands() throws ProtocolException {
+        assertThat(MessageCodec.decode("{\"nonce\":3,\"type\":\"ping\"}")).isEqualTo(new Ping(3));
+        assertThat(MessageCodec.decode("{\"type\":\"ping\",\"nonce\":3}")).isEqualTo(new Ping(3));
+        assertThat(MessageCodec.decode(" {\"type\" : \"pong\", \"nonce\":4}")).isEqualTo(new Pong(4));
+        assertThat(MessageCodec.decode("{\"type\":\"ping\"}")).isEqualTo(new Ping(0));
+        assertThat(MessageCodec.encode(new Response(2, null, null))).isEqualTo("{\"type\":\"response\",\"id\":2}");
+    }
+
+    @Test
     void missingParamsBecomeEmptyObject() throws ProtocolException {
         Message m = MessageCodec.decode("{\"type\":\"request\",\"id\":1,\"op\":\"server.info\"}");
-        assertThat(((Request) m).params()).isEqualTo(new JsonObject());
+        assertThat(((Request) m).params()).isEqualTo(new RawJson("{}"));
     }
 
     @Test

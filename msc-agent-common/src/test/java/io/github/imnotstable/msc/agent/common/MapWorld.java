@@ -48,6 +48,7 @@ final class MapWorld implements AgentWorld<String>, AgentWorlds<String> {
     public void set(int x, int y, int z, String state, boolean physics) {
         writes++;
         lastPhysics = physics;
+        signs.remove(PackedPos.pack(x, y, z)); // like a real world: a new block drops the old block entity
         if (state.equals(AIR)) {
             blocks.remove(PackedPos.pack(x, y, z));
         } else {
@@ -83,6 +84,17 @@ final class MapWorld implements AgentWorld<String>, AgentWorlds<String> {
                 .toList();
     }
 
+    /** Sign text lives outside the state, as on Paper and the mod loaders. */
+    @Override
+    public Object blockEntity(int x, int y, int z) {
+        return signs.get(PackedPos.pack(x, y, z));
+    }
+
+    @Override
+    public void loadBlockEntity(int x, int y, int z, Object data) {
+        signs.put(PackedPos.pack(x, y, z), (Ops.SignText) data);
+    }
+
     @Override
     public Ops.SignText sign(int x, int y, int z) {
         return signs.get(PackedPos.pack(x, y, z));
@@ -91,6 +103,12 @@ final class MapWorld implements AgentWorld<String>, AgentWorlds<String> {
     @Override
     public void loadArea(int minX, int minZ, int maxX, int maxZ) {
         loads.add("area " + minX + "," + minZ + ".." + maxX + "," + maxZ);
+    }
+
+    @Override
+    public Runnable loadAreaToRead(int minX, int minZ, int maxX, int maxZ) {
+        loadArea(minX, minZ, maxX, maxZ);
+        return () -> loads.add("released");
     }
 
     @Override

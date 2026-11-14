@@ -7,11 +7,15 @@ import net.minecraft.world.item.ItemStack;
 
 /** The items a player gets on join and on {@code /game kit}. */
 public record Kit(List<Entry> items) {
+    /** The most of one item a kit entry gives: a full inventory, 36 stacks of 64. */
+    public static final int MAX_AMOUNT = 36 * 64;
+
     /** One kit entry: {@code new Kit.Entry(Items.BREAD, 8)}. */
     public record Entry(Item item, int count) {
         public Entry {
-            if (count < 1) {
-                throw new IllegalArgumentException("kit: count must be at least 1 for " + item);
+            if (count < 1 || count > MAX_AMOUNT) {
+                throw new IllegalArgumentException("kit: count must be a whole number from 1 to " + MAX_AMOUNT + " for "
+                        + item + ", got " + count);
             }
         }
     }

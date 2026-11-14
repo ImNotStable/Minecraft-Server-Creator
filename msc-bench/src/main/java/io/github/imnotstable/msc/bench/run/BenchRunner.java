@@ -2,19 +2,19 @@ package io.github.imnotstable.msc.bench.run;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import io.github.imnotstable.msc.bench.RunSelection;
+import io.github.imnotstable.msc.bench.Text;
 import io.github.imnotstable.msc.bench.check.Check;
 import io.github.imnotstable.msc.bench.check.CheckContext;
 import io.github.imnotstable.msc.bench.check.CheckResult;
 import io.github.imnotstable.msc.bench.check.Placeholders;
-import io.github.imnotstable.msc.bench.rcon.RconClient;
 import io.github.imnotstable.msc.bench.task.TaskDef;
+import io.github.imnotstable.msc.process.rcon.RconClient;
 import io.github.imnotstable.msc.templates.Templates;
 import java.io.IOException;
 import java.io.PrintStream;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
 import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -32,7 +32,7 @@ import java.util.concurrent.TimeUnit;
 public final class BenchRunner {
 
     /** Results file inside a run folder. */
-    public static final String RESULTS_FILE = "results.jsonl";
+    public static final String RESULTS_FILE = ResultsFile.NAME;
 
     private static final Gson GSON = new GsonBuilder().disableHtmlEscaping().create();
 
@@ -40,7 +40,13 @@ public final class BenchRunner {
     private final Path runDir;
     private final Map<String, String> preambles;
     private final PrintStream log;
+    private final Disk disk;
+    /** The agent, servers and check processes of the attempt under way, killed if the run is cut short. */
+    private final ChildProcesses children = new ChildProcesses();
+    /** True while an attempt whose task has a Paper server is under way. */
+    private volatile boolean serverTask;
     private String stoppedBy;
+    private IOException notRecorded;
 
     /** A runner whose Paper tasks get {@code preamble}. */
     public BenchRunner(BenchConfig config, Path runDir, String preamble, PrintStream log) {
@@ -58,7 +64,13 @@ public final class BenchRunner {
      * before each task's prompt.
      */
     public BenchRunner(BenchConfig config, Path runDir, Map<String, String> preambles, PrintStream log) {
+        this(config, runDir, preambles, log, Disk.REAL);
+    }
+
+    /** A runner that writes {@code results.jsonl} through {@code disk}. */
+    public BenchRunner(BenchConfig config, Path runDir, Map<String, String> preambles, PrintStream log, Disk disk) {
         this.config = config;
+        this.disk = disk;
         this.runDir = runDir;
         this.preambles = new LinkedHashMap<>();
         preambles.forEach((platform, text) -> this.preambles.put(platform, text == null ? "" : text.strip()));
@@ -73,19 +85,62 @@ public final class BenchRunner {
         return stoppedBy;
     }
 
-    public List<RunRecord> run(List<TaskDef> tasks, List<String> modes, int repeats) throws IOException {
-        for (String mode : modes) {
-            if (!config.modes().containsKey(mode)) {
-                throw new IOException("Unknown mode \"" + mode + "\"; bench.json defines " + config.modes().keySet());
-            }
+    /**
+     * Why the last {@link #run} stopped before the end because an attempt could not be written to
+     * {@code results.jsonl} (a full disk, a file another program holds), or null. That attempt and every later one are
+     * not recorded; the records returned are exactly the ones the file holds.
+     */
+    public IOException notRecorded() {
+        return notRecorded;
+    }
+
+    /**
+     * Runs {@code selection}, which {@link RunSelection#resolve} checked against this runner's config: its modes are
+     * modes of the config, and no task or mode is listed twice (a second attempt with the same task, mode and repeat
+     * number would run in the first one's folder, on its work).
+     */
+    public List<RunRecord> run(RunSelection selection, int repeats) throws IOException {
+        if (repeats < 1) {
+            throw new IllegalArgumentException("repeats is " + repeats + "; a run needs at least 1 attempt");
         }
         Files.createDirectories(runDir);
         stoppedBy = null;
+        notRecorded = null;
+        // Ctrl-C ends the bench JVM without running the finally blocks that stop the agent and the server: left
+        // running, they would keep working unattended and the next run's setup and checks would reach their world.
+        Thread hook = Thread.ofPlatform().name("msc-bench-abort").unstarted(this::abort);
+        Runtime.getRuntime().addShutdownHook(hook);
+        try {
+            return runAll(selection.tasks(), selection.modes(), repeats);
+        } finally {
+            try {
+                Runtime.getRuntime().removeShutdownHook(hook);
+            } catch (IllegalStateException shuttingDown) {
+                // the hook is running or has run
+            }
+        }
+    }
+
+    /**
+     * Stops the run for good: kills the agent, server and check processes under way with their descendants, and
+     * sends {@code stop} to a server on the bench's RCON port (the agent may have started one outside its own
+     * process tree, through a Gradle daemon). Runs from the shutdown hook; later attempts do not start.
+     */
+    public void abort() {
+        children.killAll();
+        if (serverTask) {
+            ServerManager.sendStop(config.server());
+        }
+    }
+
+    private List<RunRecord> runAll(List<TaskDef> tasks, List<String> modes, int repeats) throws IOException {
         List<RunRecord> records = new ArrayList<>();
+        int skipped = 0;
         for (TaskDef task : tasks) {
             if (task.needsServer() && !config.server().acceptEula()) {
+                skipped++;
                 log.printf("skipped %s: it runs a Paper server, and the Minecraft EULA is not accepted on this machine "
-                        + "(%s)%n", task.id(), MachineEula.file(Path.of(System.getProperty("user.home"))));
+                        + "(%s)%n", task.id(), MachineEula.location(Path.of(System.getProperty("user.home"))));
                 continue;
             }
             for (int repeat = 1; repeat <= repeats; repeat++) {
@@ -100,9 +155,22 @@ public final class BenchRunner {
                                 mode, task.id(), repeat, stoppedBy);
                         return records;
                     }
+                    if (children.closed() || Thread.currentThread().isInterrupted()) {
+                        // Cut short: the attempt's agent was killed, so its record would score nothing real.
+                        log.printf("[%s] %s #%d: stopped, the run was interrupted%n", mode, task.id(), repeat);
+                        return records;
+                    }
+                    try {
+                        ResultsFile.append(runDir.resolve(RESULTS_FILE), record, disk);
+                    } catch (IOException e) {
+                        // The file system refused the write: later attempts would be lost the same way, so the run
+                        // stops with the records the file holds, and the caller still writes their report.
+                        notRecorded = e;
+                        log.printf("[%s] %s #%d: stopped, the attempt could not be written to %s (%s)%n",
+                                mode, task.id(), repeat, RESULTS_FILE, e);
+                        return records;
+                    }
                     records.add(record);
-                    Files.writeString(runDir.resolve(RESULTS_FILE), GSON.toJson(record) + "\n",
-                            StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.APPEND);
                     log.printf("[%s] %s #%d %s in %ds, %d tokens, %d/%d checks%s%n",
                             mode, task.id(), repeat, record.passed() ? "PASS" : "FAIL",
                             record.wallMs() / 1000, record.agent().totalTokens(),
@@ -110,6 +178,9 @@ public final class BenchRunner {
                             record.error() == null ? "" : " (" + record.error() + ")");
                 }
             }
+        }
+        if (!tasks.isEmpty() && skipped == tasks.size()) {
+            log.println("Nothing ran: every selected task was skipped (see above), so the report is empty.");
         }
         return records;
     }
@@ -123,9 +194,10 @@ public final class BenchRunner {
         for (int attempt = 1; attempt <= MCP_TRIES; attempt++) {
             record = runOne(task, modeName, repeat, attempt);
             // Claude Code connects MCP servers in the background, so the init event can list none even though the
-            // tools arrived a moment later: a logged tool call proves the server was there.
-            if (required == null || record.error() != null || record.agent().mcpConnected().contains(required)
-                    || record.tools().calls() > 0) {
+            // tools arrived a moment later: a logged tool call proves the server was there. Without a parsed result
+            // (a time-out, a crash) no init event says the server was missing, so the attempt stands as it is.
+            if (required == null || record.error() != null || record.timedOut() || !record.agent().parsed()
+                    || record.agent().mcpConnected().contains(required) || record.tools().calls() > 0) {
                 return record;
             }
             log.printf("[%s] %s #%d: MCP server %s was not connected when the agent started (try %d of %d)%n",
@@ -139,6 +211,10 @@ public final class BenchRunner {
         BenchConfig.Mode mode = config.modes().get(modeName);
         String name = modeName + "-" + repeat + (attempt > 1 ? "-try" + attempt : "");
         Path attemptDir = runDir.resolve("attempts").resolve(task.id()).resolve(name).toAbsolutePath();
+        if (Files.exists(attemptDir)) {
+            // Its workspace and tool log hold an earlier attempt's work, which this attempt's checks would score.
+            throw new IOException("attempt folder " + attemptDir + " already exists");
+        }
         Path workspace = attemptDir.resolve("workspace");
         String startedAt = Instant.now().toString();
         Map<String, String> values = placeholders(attemptDir, workspace);
@@ -162,17 +238,23 @@ public final class BenchRunner {
         String error = null;
 
         ServerManager server = null;
+        serverTask = task.needsServer();
         try {
+            if (task.needsServer()) {
+                ServerManager.clearPorts(config.server());
+            }
             Workspaces.prepare(task, workspace, config, mode, task.needsServer() ? paperJar() : null, values);
             if (task.needsServer()) {
                 ServerFiles.restore(sharedServerFiles(), workspace.resolve("server"));
-                server = new ServerManager(workspace.resolve("server"), config.server(), serverEnv);
+                server = new ServerManager(workspace.resolve("server"), config.server(), serverEnv, children);
             }
             if (task.server().startBefore()) {
                 RconClient rcon = server.rcon();
                 for (String command : task.server().setup()) {
                     rcon.command(Placeholders.fill(command, values));
                 }
+                // The agent may stop or restart the server; the checks then connect afresh.
+                server.disconnect();
             }
 
             values.put("prompt", fullPrompt(task, values));
@@ -188,24 +270,22 @@ public final class BenchRunner {
 
             int timeout = task.timeoutSeconds() > 0 ? task.timeoutSeconds() : config.agent().timeoutSeconds();
             long start = System.nanoTime();
-            Process process = builder.start();
+            Process process = children.start(builder);
             try {
                 if (process.waitFor(timeout, TimeUnit.SECONDS)) {
                     exitCode = process.exitValue();
                 } else {
                     timedOut = true;
-                    process.descendants().forEach(ProcessHandle::destroyForcibly);
-                    process.destroyForcibly();
-                    process.waitFor(10, TimeUnit.SECONDS);
+                    ChildProcesses.killTree(process);
                 }
             } catch (InterruptedException e) {
-                process.destroyForcibly();
+                ChildProcesses.killTree(process);
                 Thread.currentThread().interrupt();
                 throw new IOException("interrupted", e);
             }
             wallMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
-            // Lenient UTF-8: one stray byte in the agent's output must not cost the whole attempt.
-            String stdout = new String(Files.readAllBytes(attemptDir.resolve("agent-stdout.json")), StandardCharsets.UTF_8);
+            // Lenient UTF-8 (Text.read): one stray byte in the agent's output must not cost the whole attempt.
+            String stdout = Text.read(attemptDir.resolve("agent-stdout.json"));
             String limit = ClaudeResultParser.usageLimit(stdout);
             if (limit != null) {
                 throw new UsageLimitReached(limit);
@@ -231,7 +311,21 @@ public final class BenchRunner {
                     }
                     return checkServer.rcon();
                 }
+
+                @Override
+                public Process start(ProcessBuilder builder) throws IOException {
+                    return children.start(builder);
+                }
             };
+            if (!task.reset().isEmpty()) {
+                if (server != null) {
+                    // A plugin holds what the reset deletes in memory: a server still running (the bench's, or one
+                    // the agent left) is stopped first, so the checks start one that loads the reset files.
+                    server.close();
+                    ServerManager.clearPorts(config.server());
+                }
+                task.reset().apply(workspace);
+            }
             for (Check check : task.checks()) {
                 results.add(check.run(context));
             }
@@ -250,9 +344,10 @@ public final class BenchRunner {
                     }
                 }
             }
+            serverTask = false;
         }
 
-        ToolStats tools = ToolLogReader.read(attemptDir.resolve("tool-calls.jsonl"));
+        ToolStats tools = ToolLogReader.read(attemptDir.resolve("tool-calls.jsonl"), log::println);
         boolean passed = error == null && !timedOut && !results.isEmpty()
                 && results.size() == task.checks().size()
                 && results.stream().allMatch(CheckResult::passed);

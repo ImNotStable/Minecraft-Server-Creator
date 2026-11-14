@@ -1,5 +1,6 @@
 package io.github.imnotstable.msc.core;
 
+import org.junit.jupiter.api.Timeout;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.nio.file.Files;
@@ -73,6 +74,10 @@ class BuildToolsTest {
         assertThat(h.error("build_batch", "steps", "disc 0,64,0 r=3 stone dirt")).contains("did not understand \"dirt\"");
         assertThat(h.error("build_batch", "steps", "line 0,64,0 9,64,0 stone colour=red")).contains("line does not take colour=");
         assertThat(h.error("build_batch", "steps", "structure 0,64,0\nlegend: #=stone\ny=0\n#")).contains("no closing \"end\"");
+        assertThat(h.error("build_batch", "steps", "bands 0,63,0 99999999999=sand"))
+                .isEqualTo("error: line 1 (bands 0,63,0 99999999999=sand): band radius 99999999999 is above 1024");
+        assertThat(h.error("build_batch", "steps", "bands 0,63,0 5=sand 999999999999999999999999=water"))
+                .contains("line 1 (").contains("is above 1024");
     }
 
     @Test
@@ -82,6 +87,53 @@ class BuildToolsTest {
         assertThat(out).contains("8 blocks changed");
         assertThat(h.agent.get(0, 64, 0)).isEqualTo("minecraft:glass");
         assertThat(h.agent.get(1, 64, 0)).isEqualTo("minecraft:sand");
+    }
+
+    @Test
+    void undoSkipsPartsTheAgentNoLongerKeeps() {
+        // Over 1,048,576 blocks: two agent parts, x 0..127 and x 128.
+        h.ok("build_batch", "steps", "fill 0,64,0 128,127,127 glass");
+        h.agent.forgetOldestEdit();
+        assertThat(h.ok("build_undo", "edit", "e1"))
+                .isEqualTo("undid e1 partly: 8192 blocks restored, 1 of 2 parts no longer kept by the server"
+                        + " (it keeps the last 8,388,608 changed blocks)");
+        assertThat(h.agent.get(128, 64, 0)).isEqualTo("minecraft:air");
+        assertThat(h.agent.get(0, 64, 0)).isEqualTo("minecraft:glass");
+        assertThat(h.error("build_undo", "edit", "e1")).contains("unknown edit e1");
+    }
+
+    @Test
+    void undoKeepsTheRestAfterAFailedPart() {
+        h.ok("build_batch", "steps", "fill 0,64,0 128,127,127 glass");
+        h.ok("build_batch", "steps", "set 0,200,0 stone");
+        h.agent.failUndo(0);
+        assertThat(h.error("build_undo", "edit", "e1")).contains("timed out");
+        h.agent.failUndo(1);
+        assertThat(h.error("build_undo", "edit", "e1")).isEqualTo("error: undo of e1 stopped after 8192 blocks restored:"
+                + " timed out; build_undo edit=e1 again undoes the rest");
+        assertThat(h.agent.get(128, 64, 0)).isEqualTo("minecraft:air");
+        assertThat(h.agent.get(0, 64, 0)).isEqualTo("minecraft:glass");
+        assertThat(h.ok("build_undo", "edit", "e1")).isEqualTo("undid e1: 1048576 blocks restored");
+        assertThat(h.agent.get(0, 64, 0)).isEqualTo("minecraft:air");
+        assertThat(h.agent.get(128, 64, 0)).isEqualTo("minecraft:air");
+    }
+
+    @Test
+    void replaceAlsoLimitsSetStructureAndCopy() {
+        h.ok("build_batch", "steps", "set 0,64,0 glass\nset 1,64,0 glass");
+        h.ok("build_batch", "steps", "set 0,64,0 torch replace=air\nset 0,65,0 torch replace=air");
+        assertThat(h.agent.get(0, 64, 0)).isEqualTo("minecraft:glass");
+        assertThat(h.agent.get(0, 65, 0)).isEqualTo("minecraft:torch");
+
+        h.ok("build_batch", "steps", "structure 0,64,0 replace=air\nlegend: #=stone\ny=0\n###\nend");
+        assertThat(h.agent.get(0, 64, 0)).isEqualTo("minecraft:glass");
+        assertThat(h.agent.get(2, 64, 0)).isEqualTo("minecraft:stone");
+
+        h.ok("build_batch", "steps", "copy 0,64,0 2,64,0 to=0,64,0 replace=stone");
+        h.ok("build_batch", "steps", "set 1,64,5 sand\ncopy 0,64,0 2,64,0 to=0,64,5 replace=air");
+        assertThat(h.agent.get(0, 64, 5)).isEqualTo("minecraft:glass");
+        assertThat(h.agent.get(1, 64, 5)).isEqualTo("minecraft:sand");
+        assertThat(h.agent.get(2, 64, 5)).isEqualTo("minecraft:stone");
     }
 
     @Test
@@ -118,5 +170,43 @@ class BuildToolsTest {
         assertThat(h.agent.get(0, 64, 0)).isEqualTo("minecraft:air");
         assertThat(h.agent.get(200, 90, 200)).isEqualTo("minecraft:air");
         assertThat(h.error("build_batch", "steps", "fill 0,0,0 2000,10,2000 stone")).contains("Split it");
+    }
+
+    @Test
+    void aPartThatTimesOutMidWayIsUndoneWithTheRest() {
+        // Writes: the name check, the first part, then the second part, which times out after one block (#275).
+        h.agent.timeOutWrite(2);
+        String err = h.error("build_batch", "steps", "set 0,64,0 stone\nfill 200,90,200 201,90,201 andesite");
+        // The agent's own undo id means nothing to build_undo, and the blocks are undone already (#292).
+        assertThat(err).isEqualTo("error: agent answered timeout: main thread did not finish within 120s");
+        assertThat(h.agent.writes).hasSize(3);
+        assertThat(h.agent.get(0, 64, 0)).isEqualTo("minecraft:air");
+        assertThat(h.agent.get(200, 90, 200)).isEqualTo("minecraft:air");
+        assertThat(h.agent.blocks.values()).allMatch("minecraft:air"::equals);
+    }
+
+    @Test
+    void aFailedCleanUpLeavesABuildUndoIdForWhatStayed() {
+        // The second part times out after one block, then undoing that partial edit fails too (#292).
+        h.agent.timeOutWrite(2);
+        h.agent.failUndo(0);
+        String err = h.error("build_batch", "steps", "set 0,64,0 stone\nfill 200,90,200 201,90,201 andesite");
+        assertThat(err).isEqualTo("error: agent answered timeout: main thread did not finish within 120s;"
+                + " undoing it failed (timed out), build_undo edit=e1 removes the rest");
+        assertThat(h.agent.get(0, 64, 0)).isEqualTo("minecraft:air");
+        assertThat(h.agent.get(200, 90, 200)).isEqualTo("minecraft:andesite");
+        assertThat(h.ok("build_undo", "edit", "e1")).isEqualTo("undid e1: 1 blocks restored");
+        assertThat(h.agent.blocks.values()).allMatch("minecraft:air"::equals);
+    }
+
+    @Test
+    @Timeout(10)
+    void coordinatesAtTheIntLimitAreRefusedInsteadOfLoopingForever() {
+        assertThat(h.error("build_batch", "steps", "fill 2147483647,64,0 2147483647,64,0 stone"))
+                .contains("x=2147483647 is outside the world");
+        assertThat(h.error("build_batch", "steps", "set 29999999,64,0 stone repeat=2 step=2,0,0"))
+                .contains("x=30000001 is outside the world");
+        assertThat(h.error("build_batch", "steps", "structure 29999999,64,0 repeat=2 step=2,0,0\nlegend: #=stone\n#\nend"))
+                .contains("x=30000001 is outside the world");
     }
 }

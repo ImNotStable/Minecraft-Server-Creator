@@ -1,6 +1,6 @@
 # Building and viewing the world
 
-The server must be running (`server_start`) for these tools. They work the same on Paper, Fabric and Minestom.
+The server must be running (`server_start`) for these tools. They work the same on every platform.
 
 ## How to point at blocks
 
@@ -59,4 +59,4 @@ Go from cheap to detailed:
 - `world_slice`: up to about 1 million blocks, 128 wide.
 - `build_batch` and `world_summary`: up to about 8 million blocks.
 - `world_render`: up to 16 million blocks.
-- Pictures are close, not perfect: no stair corners, no entities, signs have no text.
+- Pictures are close, not perfect: no stair corners; entities are numbered markers, and sign and hologram text is drawn as labels, not on the block (`entities=false` hides them).

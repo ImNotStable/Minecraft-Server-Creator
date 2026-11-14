@@ -89,10 +89,15 @@ class TemplatesTest {
         ScaffoldResult r = Templates.scaffold(Templates.FORGE_MOD, dir.resolve("g"), vars);
 
         assertThat(relative(r)).contains("build.gradle.kts", "settings.gradle.kts", "CLAUDE.md", "gradlew",
-                "src/main/resources/META-INF/mods.toml", "src/test/java/com/example/spawnlobby/GreeterTest.java");
+                "src/main/resources/META-INF/mods.toml", "src/main/resources/pack.mcmeta",
+                "src/test/java/com/example/spawnlobby/GreeterTest.java");
         assertNoPlaceholders(r);
         assertThat(Files.readString(r.root().resolve("src/main/resources/META-INF/mods.toml")))
                 .contains("modId = \"spawn_lobby\"", "loaderVersion = \"[${forgeMajor},)\"");
+        // Forge reads no pack from a mod jar without pack.mcmeta and warns on every start (#254).
+        assertThat(Files.readString(r.root().resolve("src/main/resources/pack.mcmeta")))
+                .contains("\"description\": \"spawn_lobby resources\"", "\"min_format\": 82",
+                        "\"max_format\": 2147483647");
         assertThat(Files.readString(r.root().resolve("gradle/libs.versions.toml")))
                 .contains("forge = \"" + Templates.versions().get("forgeVersion") + "\"");
     }
@@ -126,7 +131,7 @@ class TemplatesTest {
         assertThat(Files.readString(r.root().resolve("src/main/java/com/example/spawnlobby/SpawnLobbyPlugin.java")))
                 .contains("package com.example.spawnlobby;", "public class SpawnLobbyPlugin extends JavaPlugin");
         assertThat(Files.readString(r.root().resolve("src/main/resources/plugin.yml")))
-                .contains("name: SpawnLobby", "main: com.example.spawnlobby.SpawnLobbyPlugin", "version: '${version}'");
+                .contains("name: \"SpawnLobby\"", "main: com.example.spawnlobby.SpawnLobbyPlugin", "version: '${version}'");
         assertThat(Files.readString(r.root().resolve("settings.gradle.kts"))).contains("rootProject.name = \"spawn-lobby\"");
         assertThat(Files.readString(r.root().resolve("run/server.properties")))
                 .contains("rcon.password=secret", "rcon.port=25575", "online-mode=false", "server-ip=127.0.0.1");
@@ -237,11 +242,78 @@ class TemplatesTest {
     }
 
     @Test
+    void claudeMdBulletsAreWhole() throws IOException {
+        for (String id : Templates.ids()) {
+            if (id.equals(Templates.PAPER_SERVER)) {
+                continue;
+            }
+            Path root = Templates.scaffold(id, dir.resolve(id), vars).root();
+            // A bullet starting with punctuation or a sentence glued after a closing `...`) means two bullets got spliced.
+            assertThat(Files.readString(root.resolve("CLAUDE.md"))).as(id)
+                    .doesNotContainPattern("(?m)^- +[^\\w`*\\[(\"]")
+                    .doesNotContainPattern("`\\)[A-Z]");
+        }
+    }
+
+    @Test
+    void refusesNamesWhoseClassClashesWithAnImport() {
+        assertThatThrownBy(() -> Templates.scaffold(Templates.MINESTOM_SERVER, dir.resolve("m"), TemplateVariables.of("Minecraft")))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("MinecraftServer").hasMessageContaining("Minecraft");
+        assertThatThrownBy(() -> Templates.scaffold(Templates.PAPER_PLUGIN, dir.resolve("p"), TemplateVariables.of("Java")))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("JavaPlugin");
+        assertThatThrownBy(() -> Templates.scaffold(Templates.FABRIC_MOD, dir.resolve("f"), vars.withMainClass("Greeter")))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("Greeter.java");
+        assertThat(dir.resolve("m")).doesNotExist();
+        assertThat(dir.resolve("p")).doesNotExist();
+        assertThat(dir.resolve("f")).doesNotExist();
+    }
+
+    @Test
+    void refusesModIdsAndPackagesTheLoaderOwns() throws IOException {
+        record Case(String template, String name) {}
+        for (Case c : List.of(new Case(Templates.FABRIC_MOD, "Minecraft"), new Case(Templates.FABRIC_GAME, "Fabric Api"),
+                new Case(Templates.FABRIC_MOD, "Java"), new Case(Templates.NEOFORGE_MOD, "Minecraft"),
+                new Case(Templates.NEOFORGE_MOD, "Neoforge"), new Case(Templates.FORGE_MOD, "Forge"),
+                // MSC's own agent runs next to the project on the dev server (#293).
+                new Case(Templates.FABRIC_MOD, "Msc Agent"), new Case(Templates.FABRIC_GAME, "msc-agent"),
+                new Case(Templates.NEOFORGE_MOD, "MSC agent"), new Case(Templates.FORGE_MOD, "msc_agent"),
+                new Case(Templates.PAPER_PLUGIN, "Msc Agent"), new Case(Templates.PAPER_GAME, "MscAgent"),
+                new Case(Templates.PAPER_PLUGIN, "Minecraft"), new Case(Templates.PAPER_GAME, "Bukkit"),
+                // ...and its jar, msc-agent-<platform>.jar, sits where dev_cycle deploys <projectId>.jar (#311).
+                new Case(Templates.PAPER_PLUGIN, "Msc Agent Paper"), new Case(Templates.PAPER_GAME, "msc-agent-paper"),
+                new Case(Templates.FABRIC_MOD, "msc-agent-fabric"), new Case(Templates.FABRIC_GAME, "MSC Agent Fabric"),
+                new Case(Templates.NEOFORGE_MOD, "msc-agent-neoforge"), new Case(Templates.FORGE_MOD, "Msc Agent Forge"))) {
+            Path target = dir.resolve(c.template() + "-" + c.name());
+            assertThatThrownBy(() -> Templates.scaffold(c.template(), target, TemplateVariables.of(c.name())))
+                    .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("keeps for itself");
+            assertThat(target).doesNotExist();
+        }
+        assertThatThrownBy(() -> Templates.scaffold(Templates.PAPER_PLUGIN, dir.resolve("b"), vars.withPackageName("org.bukkit.lobby")))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("org.bukkit");
+        // Only the exact ids are the loader's; another platform's id is fine.
+        ScaffoldResult fabric = Templates.scaffold(Templates.FABRIC_MOD, dir.resolve("ok1"), TemplateVariables.of("Minecraft Tools"));
+        assertThat(fabric.root().resolve("src/main/resources/fabric.mod.json")).content().contains("\"id\": \"minecraft-tools\"");
+        ScaffoldResult forge = Templates.scaffold(Templates.FORGE_MOD, dir.resolve("ok2"), TemplateVariables.of("Neoforge"));
+        assertThat(forge.root().resolve("src/main/resources/META-INF/mods.toml")).content().contains("modId = \"neoforge\"");
+        Templates.scaffold(Templates.PAPER_PLUGIN, dir.resolve("ok3"), vars.withPackageName("org.bukkitlobby"));
+        // Another platform's agent jar is not in this project's addon folder.
+        Templates.scaffold(Templates.PAPER_PLUGIN, dir.resolve("ok4"), TemplateVariables.of("Msc Agent Fabric"));
+        Templates.scaffold(Templates.FABRIC_MOD, dir.resolve("ok5"), TemplateVariables.of("Msc Agent Paper Tools"));
+    }
+
+    @Test
     void scaffoldsServerDefaultsOnly() throws IOException {
         ScaffoldResult r = Templates.scaffold(Templates.PAPER_SERVER, dir, vars);
         assertThat(relative(r)).containsExactlyInAnyOrder("eula.txt", "server.properties");
         assertThat(Files.readString(dir.resolve("eula.txt"))).containsPattern("(?m)^eula=false$").doesNotContainPattern("(?m)^eula=true$");
         assertThat(Files.readString(dir.resolve("server.properties"))).contains("generator-settings={\"biome\"");
+    }
+
+    @Test
+    void serverDefaultsTakeAnyName() throws IOException {
+        // paper-server is config only, so plugin-name rules do not apply to it.
+        Templates.scaffold(Templates.PAPER_SERVER, dir, TemplateVariables.of("Msc Agent"));
+        assertThat(dir.resolve("server.properties")).content().contains("motd=MscAgent dev server");
     }
 
     @Test

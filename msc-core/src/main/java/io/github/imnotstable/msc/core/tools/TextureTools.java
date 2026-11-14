@@ -3,14 +3,15 @@ package io.github.imnotstable.msc.core.tools;
 import io.github.imnotstable.msc.core.CoreConfig;
 import io.github.imnotstable.msc.core.agent.AgentHub;
 import io.github.imnotstable.msc.core.texture.PackProperties;
-import io.github.imnotstable.msc.core.texture.PaletteTexture;
 import io.github.imnotstable.msc.core.texture.ResourcePack;
 import io.github.imnotstable.msc.core.tool.Args;
 import io.github.imnotstable.msc.core.tool.Budget;
+import io.github.imnotstable.msc.core.tool.PathArg;
 import io.github.imnotstable.msc.core.tool.Schema;
 import io.github.imnotstable.msc.core.tool.Tool;
 import io.github.imnotstable.msc.core.tool.ToolException;
 import io.github.imnotstable.msc.core.tool.ToolRegistry;
+import io.github.imnotstable.msc.process.ServerPropertiesFile;
 import io.github.imnotstable.msc.protocol.op.Ops;
 import io.github.imnotstable.msc.textures.Animation;
 import io.github.imnotstable.msc.textures.Colors;
@@ -26,7 +27,6 @@ import io.github.imnotstable.msc.textures.Shapes;
 import io.github.imnotstable.msc.textures.Stats;
 import io.github.imnotstable.msc.textures.Texture;
 import io.github.imnotstable.msc.textures.TextureException;
-import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -44,7 +44,7 @@ public final class TextureTools {
 
     public static void register(ToolRegistry registry, AgentHub hub, ResourcePack pack, CoreConfig config) {
         Path serverDir = config.serverDir();
-        PackSource source = new PackSource(pack.root());
+        PackSource source = pack.source();
         registry.add("texture",
                 "Add a pixel-art texture to the project's resource pack, in one of three ways: draw it as text "
                         + "(palette, rows), generate it (kind, color) or recolor a pack texture (copy, color). "
@@ -68,18 +68,19 @@ public final class TextureTools {
                 textures(args -> texture(args, pack, source, config)));
         registry.add("texture_view",
                 "Show a pack texture as a palette and pixel rows, the format texture draws. Animations show frame 1.",
-                Schema.of().req("name", "string", "Texture name such as item/ruby"),
-                args -> {
-                    ResourcePack.TextureId id = ResourcePack.id(args.str("name"));
-                    BufferedImage image = pack.readTexture(id);
-                    int frames = image.getHeight() / image.getWidth();
-                    String note = "";
-                    if (frames > 1 && image.getHeight() % image.getWidth() == 0 && animated(source, id)) {
-                        image = image.getSubimage(0, 0, image.getWidth(), image.getWidth());
-                        note = "frame 1 of " + frames + "\n";
-                    }
-                    return note + Budget.truncate(PaletteTexture.render(image), Budget.MAX_CHARS, "Texture too large to show.");
-                });
+                Schema.of().req("name", "string", "Texture name such as item/ruby")
+                        .opt("maxChars", "integer", "Result size cap. Default 6000"),
+                textures(args -> {
+                    int maxChars = Budget.of(args);
+                    ResourceId id = ResourceId.parse(args.str("name"));
+                    Texture t = source.readTexture(id);
+                    Texture frame = firstFrame(source, id, t);
+                    String note = frame == t ? "" : "frame 1 of " + (t.height() / t.width()) + "\n";
+                    String hint = maxChars < Budget.MAX_CHARS
+                            ? "Raise maxChars (at most " + Budget.MAX_CHARS + ") to see more rows."
+                            : "Texture too large to show in full.";
+                    return note + Budget.truncate(PaletteText.view(frame), maxChars - note.length(), hint);
+                }));
         registry.add("model_create",
                 "Write a block or item model from pack textures, and optionally an item definition.",
                 Schema.of().req("name", "string", "Model name such as block/ruby_log")
@@ -94,8 +95,11 @@ public final class TextureTools {
                         slots.put(eq < 0 ? "*" : entry.substring(0, eq).trim(),
                                 ResourceId.parse(entry.substring(eq + 1)));
                     }
-                    String item = source.writeModel(model, Models.Kind.parse(args.str("kind")), slots,
-                            args.bool("item", true));
+                    Models.Kind kind = Models.Kind.parse(args.str("kind"));
+                    boolean withItem = args.bool("item", true);
+                    OutputFile.check(source.modelPath(model), "model");
+                    String item = new Steps("model_create").then(WRITE_MODEL).run(WRITE_MODEL,
+                            () -> source.writeModel(model, kind, slots, withItem));
                     return "wrote model " + model + (item == null ? "" : "; item_model " + item) + "\nnext: pack";
                 }));
         registry.add("pack",
@@ -103,7 +107,7 @@ public final class TextureTools {
                         + "its problems. check=true: only list problems.",
                 Schema.of().opt("check", "boolean", "Only check the pack, do not build it. Default false")
                         .opt("limit", "integer", "Most problems to list. Default 30 with check, 5 on a build")
-                        .opt("description", "string", "Pack description")
+                        .opt("description", "string", "Pack description, up to two lines")
                         .opt("file", "string", "Also save the zip here, such as ruby-pack.zip")
                         .opt("apply", "boolean", "Send to the running server. Default true")
                         .opt("required", "boolean", "Kick players who decline. Default false"),
@@ -114,44 +118,122 @@ public final class TextureTools {
                         }
                         return check(pack, Math.max(0, args.integer("limit", 30)));
                     }
-                    int limit = Math.max(0, args.integer("limit", 5));
-                    String description = args.str("description", LifecycleTools.DEFAULT_PACK_DESCRIPTION);
-                    ResourcePack.Built built = pack.build(description);
-                    StringBuilder out = new StringBuilder();
-                    out.append("pack built: ").append(built.files()).append(" files, ").append(built.bytes())
-                            .append(" bytes, pack_format ").append(pack.packFormat()).append("\nurl: ").append(built.url())
-                            .append("\nsha1: ").append(built.sha1());
-                    if (args.has("file")) {
-                        Path copy = config.resolve(args.str("file"));
-                        Files.createDirectories(copy.toAbsolutePath().getParent());
-                        Files.copy(built.zip(), copy, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-                        out.append("\nsaved: ").append(copy);
-                    }
-                    if (args.bool("apply", true)) {
-                        if (hub.current() == null) {
-                            out.append("\nnot applied: no server agent connected");
-                        } else {
-                            Ops.PackResult r = hub.call(Ops.PACK_APPLY,
-                                    new Ops.PackParams(built.url(), built.sha1(), args.bool("required", false)));
-                            pack.applied(new ResourcePack.Applied(description, args.bool("required", false)));
-                            out.append("\napplied: sent to ").append(r.playersSent())
-                                    .append(" players; players who join later get it too, also after a restart");
-                        }
-                    }
-                    // A detached session made server.properties offer the pack: keep it pointing at this build.
-                    Path properties = serverDir.resolve("server.properties");
-                    if (pack.ours(PackProperties.url(properties)) && PackProperties.write(properties, built.url(),
-                            built.sha1(), args.bool("required", false))) {
-                        out.append("\nserver.properties updated to offer this build");
-                    }
-                    return out.append('\n').append(check(pack, limit)).toString();
+                    return pack(args, hub, pack, config, serverDir.resolve(ServerPropertiesFile.NAME));
                 });
     }
 
+    static final String BUILD = "build the pack and serve it";
+    static final String OFFER = "point " + ServerPropertiesFile.NAME + " at this build";
+    static final String APPLY = "send it to the server's players";
+    static final String SAVE = "save the zip";
+
+    /**
+     * The pack build. Checked first: the arguments, the file= target and server.properties. Then, in this order:
+     * build and serve (the pack host then serves only this build), point server.properties at it (so what the file
+     * offers is always what is served), send it to the players, save the zip copy (last: it is the least important,
+     * and a failed apply then writes nothing into the workspace).
+     */
+    private static String pack(Args args, AgentHub hub, ResourcePack pack, CoreConfig config, Path properties)
+            throws IOException, InterruptedException {
+        int limit = Math.max(0, args.integer("limit", 5));
+        String description = args.lines("description", LifecycleTools.DEFAULT_PACK_DESCRIPTION, 2);
+        boolean required = args.bool("required", false);
+        Path copy = args.has("file") ? OutputFile.check(args.path("file", config.inWorkspace()), "file") : null;
+        boolean offered = pack.ours(PackProperties.url(properties));
+        if (offered) {
+            OutputFile.check(properties, ServerPropertiesFile.NAME);
+        }
+        boolean apply = args.bool("apply", true);
+        boolean connected = apply && hub.current() != null;
+        Steps steps = new Steps("pack").then(BUILD);
+        if (offered) {
+            steps.then(OFFER);
+        }
+        if (connected) {
+            steps.then(APPLY);
+        }
+        if (copy != null) {
+            steps.then(SAVE).ifFails(SAVE, "no file was written at " + copy + "; run pack file=... again to save it");
+        }
+        ResourcePack.Snapshot before = pack.snapshot();
+        byte[] offeredBefore = offered ? Files.readAllBytes(properties) : null;
+        ResourcePack.Built built = steps.run(BUILD, () -> pack.build(description));
+        StringBuilder out = new StringBuilder();
+        out.append("pack built: ").append(built.files()).append(" files, ").append(built.bytes())
+                .append(" bytes, pack_format ").append(pack.packFormat()).append("\nurl: ").append(built.url())
+                .append("\nsha1: ").append(built.sha1());
+        // Until the players have it, a failure takes the build back: what they were sent, what the host serves and
+        // what server.properties offers then agree again.
+        try {
+            if (offered && steps.run(OFFER, () -> PackProperties.write(properties, built.url(), built.sha1(), required))) {
+                out.append("\n").append(ServerPropertiesFile.NAME).append(" updated to offer this build");
+            }
+            if (connected) {
+                Ops.PackResult r = steps.run(APPLY, () -> {
+                    Ops.PackResult sent = hub.call(Ops.PACK_APPLY,
+                            new Ops.PackParams(built.url(), built.sha1(), required));
+                    pack.applied(new ResourcePack.Applied(description, required));
+                    return sent;
+                });
+                out.append("\napplied: sent to ").append(r.playersSent())
+                        .append(" players; players who join later get it too, also after a restart");
+            } else if (apply) {
+                out.append("\nnot applied: no server agent connected");
+            }
+        } catch (ToolException e) {
+            throw new ToolException(e.getMessage() + "\n" + takeBack(pack, before, properties, offeredBefore));
+        }
+        if (copy != null) {
+            steps.run(SAVE, () -> OutputFile.copy(built.zip(), copy));
+            out.append("\nsaved: ").append(copy);
+        }
+        try {
+            return out.append('\n').append(check(pack, limit)).toString();
+        } catch (IOException e) {
+            return out.append("\nproblems not listed (").append(Steps.reason(e)).append("); pack check=true lists them")
+                    .toString();
+        }
+    }
+
+    /**
+     * After a build whose send failed: serve the earlier build again and put server.properties back, so the URL the
+     * agent hands joining players, the pack host and server.properties agree again. Returns what it did.
+     */
+    static String takeBack(ResourcePack pack, ResourcePack.Snapshot before, Path properties, byte[] offeredBefore) {
+        try {
+            pack.restore(before);
+            if (offeredBefore != null) {
+                OutputFile.write(properties, to -> Files.write(to, offeredBefore));
+            }
+            return "taken back: the pack host serves the earlier build again"
+                    + (offeredBefore == null ? "" : " and " + ServerPropertiesFile.NAME + " offers it again")
+                    + ", as the players have it; run pack again to send this one";
+        } catch (IOException | RuntimeException e) {
+            return "taking it back failed too (" + Steps.reason(e) + "): the pack host serves the new build, which the "
+                    + "players were not sent; run pack again";
+        }
+    }
+
+    /**
+     * After any build that changed what the pack host serves: keep a server.properties that offers our pack pointing
+     * at that build. Returns true when it did.
+     */
+    static boolean keepOffered(ResourcePack pack, Path properties, ResourcePack.Built built, boolean required)
+            throws IOException {
+        return pack.ours(PackProperties.url(properties)) && PackProperties.write(properties, built.url(), built.sha1(),
+                required);
+    }
+
     /** The texture tool: one of draw, generate or recolor, then an optional animation; or only animate. */
-    private static String texture(Args args, ResourcePack pack, PackSource source, CoreConfig config) throws IOException {
+    static final String WRITE_TEXTURE = "write the texture and its model";
+    static final String ANIMATE = "write the animation";
+    static final String WRITE_PNG = "write the png";
+    static final String WRITE_MODEL = "write the model and item definition";
+
+    private static String texture(Args args, ResourcePack pack, PackSource source, CoreConfig config)
+            throws IOException, InterruptedException {
         if (args.str("name").toLowerCase(Locale.ROOT).endsWith(".png")) {
-            return looseFile(args, source, config.resolve(args.str("name")));
+            return looseFile(args, source, args.path("name", config.inWorkspace()));
         }
         List<String> ways = new ArrayList<>();
         for (String way : List.of("rows", "kind", "copy")) {
@@ -166,58 +248,106 @@ public final class TextureTools {
             throw new ToolException("give rows and palette to draw, kind and color to generate, copy and color to "
                     + "recolor, or animate to animate the texture already there");
         }
-        ResourcePack.TextureId id = ResourcePack.id(args.str("name"));
-        StringBuilder out = new StringBuilder();
+        ResourceId id = ResourceId.parse(args.str("name"));
+        // Everything that can refuse the arguments runs before the first write, so a refused call (a bad animate,
+        // too many frames, an item that shows another model) leaves the pack as it was.
         String kind = args.str("kind", null);
+        Texture t = null;
+        String model = null;
+        List<String> warnings = List.of();
         if (ways.contains("rows")) {
             if (!args.has("palette")) {
                 throw new ToolException("rows need a palette");
             }
-            PaletteTexture.Parsed parsed = PaletteTexture.parse(args.strings("palette"), args.strings("rows"));
-            String itemModel = pack.writeTexture(id, parsed.image(), model(args, id, "item"));
-            out.append("wrote ").append(id).append(' ').append(parsed.image().getWidth()).append('x')
-                    .append(parsed.image().getHeight());
+            t = PaletteText.parse(args.strings("palette"), args.strings("rows"));
+            model = model(args, id, "item");
+            warnings = drawWarnings(t);
+        } else if (kind != null) {
+            boolean shape = Shapes.NAMES.contains(kind);
+            t = generated(args);
+            model = model(args, id, shape ? (kind.equals("sword") || kind.equals("pickaxe") ? "handheld" : "item") : "block");
+        } else if (ways.contains("copy")) {
+            Texture in = firstFrame(source, ResourceId.parse(args.str("copy")));
+            t = Edits.recolor(in, Ramp.from(color(args), 5));
+            model = model(args, id, "item");
+        }
+        Animation animation = args.has("animate") ? animation(args, t == null ? firstFrame(source, id) : t) : null;
+        OutputFile.check(source.texturePath(id), "texture");
+        checkNameLength(id);
+        Steps steps = new Steps("texture");
+        if (t != null) {
+            steps.then(WRITE_TEXTURE);
+        }
+        if (animation != null) {
+            steps.then(ANIMATE).ifFails(ANIMATE, t == null ? "the texture is as it was"
+                    : "the texture is written as a still image; texture name=" + id + " animate=... animates it");
+        }
+        StringBuilder out = new StringBuilder();
+        Budget.Parts parts = new Budget.Parts();
+        if (t != null) {
+            Texture written = t;
+            String finalModel = model;
+            String itemModel = steps.run(WRITE_TEXTURE, () -> pack.writeTexture(id, written, finalModel));
+            if (ways.contains("rows")) {
+                out.append("wrote ").append(id).append(' ').append(t.width()).append('x').append(t.height());
+            } else {
+                out.append("wrote ").append(id).append(": ").append(Stats.of(t));
+            }
             if (itemModel != null) {
                 out.append("; item_model ").append(itemModel);
             }
-            for (String warning : parsed.warnings()) {
+            for (String warning : warnings) {
                 out.append("\nwarning: ").append(warning);
             }
-        } else if (kind != null) {
-            boolean shape = Shapes.NAMES.contains(kind);
-            Texture t = generated(args);
-            String model = shape ? (kind.equals("sword") || kind.equals("pickaxe") ? "handheld" : "item") : "block";
-            out.append(written(pack, id, t, model(args, id, model)));
-            if (!args.has("animate")) {
-                out.append('\n').append(Budget.truncate(PaletteText.render(t), Budget.DEFAULT_CHARS, "Use texture_view."));
+            if (kind != null && animation == null) {
+                // One budget (#473): the drawing gets what the lines around it leave, "next: pack" stays last.
+                parts.add(out.append('\n').toString())
+                        .cut(n -> Budget.truncate(PaletteText.render(written), n, "Use texture_view."));
+                out.setLength(0);
             }
-        } else if (ways.contains("copy")) {
-            Texture in = firstFrame(source, ResourceId.parse(args.str("copy")));
-            out.append(written(pack, id, Edits.recolor(in, Ramp.from(color(args), 5)), model(args, id, "item")));
         }
-        if (args.has("animate")) {
-            out.append(out.isEmpty() ? "" : "\n").append(animate(args, source, ResourceId.parse(id.toString())));
+        if (animation != null) {
+            steps.run(ANIMATE, () -> source.writeAnimation(id, animation));
+            out.append(out.isEmpty() ? "" : "\n").append("animated ").append(id).append(": ")
+                    .append(animation.frames().size()).append(" frames, ").append(args.integer("frametime", 2))
+                    .append(" ticks each");
         }
-        return out.append("\nnext: pack").toString();
+        return parts.add(out.toString()).text(Budget.DEFAULT_CHARS, "next: pack", "Use texture_view.");
+    }
+
+    /** The longest file name a texture call writes, the animation's {@code <name>.png.mcmeta}. */
+    private static final String LONGEST_SUFFIX = ".png.mcmeta";
+
+    /**
+     * Refuses a texture name too long for the file system before anything is written, so a refused name leaves no
+     * model, item or texture folders behind.
+     */
+    static void checkNameLength(ResourceId id) {
+        int max = PathArg.MAX_NAME_BYTES - LONGEST_SUFFIX.length();
+        int bytes = id.name().getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
+        if (bytes > max) {
+            throw new ToolException("texture name " + id.name().substring(0, 24) + "... is " + bytes
+                    + " bytes; at most " + max + " fit the file system. Use a shorter name.");
+        }
     }
 
     /**
      * A texture written as a plain PNG at a workspace path, outside the pack: no model, no animation. Saves the
      * write-then-copy round trip when a task wants the image itself.
      */
-    private static String looseFile(Args args, PackSource source, Path file) throws IOException {
+    private static String looseFile(Args args, PackSource source, Path file) throws IOException, InterruptedException {
         if (args.has("animate")) {
             throw new ToolException("animate needs a pack texture name such as item/ruby, not a .png path");
         }
+        OutputFile.check(file, "png");
         Texture t;
         List<String> warnings = List.of();
         if (args.has("rows")) {
             if (!args.has("palette")) {
                 throw new ToolException("rows need a palette");
             }
-            PaletteTexture.Parsed parsed = PaletteTexture.parse(args.strings("palette"), args.strings("rows"));
-            t = Texture.of(parsed.image());
-            warnings = parsed.warnings();
+            t = PaletteText.parse(args.strings("palette"), args.strings("rows"));
+            warnings = drawWarnings(t);
         } else if (args.has("kind")) {
             t = generated(args);
         } else if (args.has("copy")) {
@@ -225,14 +355,19 @@ public final class TextureTools {
         } else {
             throw new ToolException("give rows and palette to draw, kind and color to generate, or copy and color to recolor");
         }
-        Files.createDirectories(file.toAbsolutePath().getParent());
-        javax.imageio.ImageIO.write(t.toImage(), "png", file.toFile());
+        Texture image = t;
+        new Steps("texture").then(WRITE_PNG).run(WRITE_PNG, () -> OutputFile.replace(file, to -> {
+            if (!javax.imageio.ImageIO.write(image.toImage(), "png", to.toFile())) {
+                throw new IOException("no png writer");
+            }
+        }));
         StringBuilder out = new StringBuilder("wrote ").append(file).append(": ").append(Stats.of(t));
         warnings.forEach(w -> out.append("\nwarning: ").append(w));
+        Budget.Parts parts = new Budget.Parts().add(out.toString());
         if (args.has("kind")) {
-            out.append('\n').append(Budget.truncate(PaletteText.render(t), Budget.DEFAULT_CHARS, "Too large to show."));
+            parts.add("\n").cut(n -> Budget.truncate(PaletteText.render(t), n, "Too large to show."));
         }
-        return out.toString();
+        return parts.text(Budget.DEFAULT_CHARS, null, "Too large to show.");
     }
 
     /** The texture of {@code kind}: a 16x16 shape or a tiling pattern. */
@@ -254,11 +389,11 @@ public final class TextureTools {
                 accent == null ? null : Ramp.from(accent, 4, 1.0), args.integer("seed", 1));
     }
 
-    private static String animate(Args args, PackSource source, ResourceId id) throws IOException {
-        Texture base = firstFrame(source, id);
+    /** The animation {@code animate} asks for, made from {@code base}; refuses a bad spec without writing anything. */
+    private static Animation animation(Args args, Texture base) {
         String[] mode = args.str("animate").trim().split("\\s+", 2);
         int frametime = args.integer("frametime", 2);
-        Animation a = switch (mode[0]) {
+        return switch (mode[0]) {
             case "scroll" -> {
                 int dx = 0;
                 int dy = 1;
@@ -282,23 +417,44 @@ public final class TextureTools {
             }
             default -> throw new ToolException("animate must be scroll, \"scroll dx,dy\" or pulse");
         };
-        source.writeAnimation(id, a);
-        return "animated " + id + ": " + a.frames().size() + " frames, " + frametime + " ticks each";
     }
 
     /** A pack texture, or the first frame when it is already animated, so it can be animated or copied again. */
     private static Texture firstFrame(PackSource source, ResourceId id) throws IOException {
-        Texture t = source.readTexture(id);
+        return firstFrame(source, id, source.readTexture(id));
+    }
+
+    /** {@code t} itself, or its first frame when it is an animation strip. */
+    private static Texture firstFrame(PackSource source, ResourceId id, Texture t) {
+        Path png = source.texturePath(id);
         if (t.height() > t.width() && t.height() % t.width() == 0
-                && Files.exists(source.texturePath(id).resolveSibling(source.texturePath(id).getFileName() + ".mcmeta"))) {
-            return Animation.fromStrip(t, 1, false).frames().getFirst();
+                && Files.exists(png.resolveSibling(png.getFileName() + ".mcmeta"))) {
+            Texture frame = Texture.square(t.width());
+            frame.draw(t, 0, 0);
+            return frame;
         }
         return t;
     }
 
-    private static boolean animated(PackSource source, ResourcePack.TextureId id) {
-        Path png = source.texturePath(ResourceId.parse(id.toString()));
-        return Files.exists(png.resolveSibling(png.getFileName() + ".mcmeta"));
+    /** Things that will look wrong in game but do not stop a drawn texture being written. */
+    private static List<String> drawWarnings(Texture t) {
+        int width = t.width();
+        int height = t.height();
+        List<String> warnings = new ArrayList<>();
+        if (Integer.bitCount(width) != 1) {
+            warnings.add("width " + width + " is not a power of two; use 16, 32 or 64");
+        }
+        if (width != height && height % width != 0) {
+            warnings.add("height " + height + " is not a multiple of width " + width
+                    + "; textures are square, or stacked square frames for animation");
+        } else if (width != height) {
+            warnings.add((height / width) + " stacked frames: this needs a .png.mcmeta animation file to display correctly");
+        }
+        int colors = t.colors().size();
+        if (colors > 16) {
+            warnings.add(colors + " colors; vanilla-style textures use 4 to 12");
+        }
+        return warnings;
     }
 
     private static int color(Args args) {
@@ -343,12 +499,7 @@ public final class TextureTools {
      * The model to write: the one asked for, else {@code fallback}; but a vanilla texture ({@code minecraft:block/...})
      * is a retexture, and a written model would replace vanilla's (a stem's cube_column with a cube_all), so none.
      */
-    static String model(Args args, ResourcePack.TextureId id, String fallback) {
+    static String model(Args args, ResourceId id, String fallback) {
         return args.str("model", id.namespace().equals("minecraft") ? "none" : fallback);
-    }
-
-    private static String written(ResourcePack pack, ResourcePack.TextureId id, Texture t, String model) throws IOException {
-        String itemModel = pack.writeTexture(id, t.toImage(), model);
-        return "wrote " + id + ": " + Stats.of(t) + (itemModel == null ? "" : "; item_model " + itemModel);
     }
 }

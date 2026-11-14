@@ -20,7 +20,8 @@ import java.util.regex.PatternSyntaxException;
 /** Reading the server log ({@code server_logs}, {@code server_wait}) and typing into it ({@code server_command}). */
 final class ServerConsole {
     static final int MAX_WAIT_SECONDS = 600;
-    private static final Pattern LOG_PREFIX = Pattern.compile("^\\[[^\\]]*\\]:? ?(\\[[^\\]]*(INFO|WARN|ERROR)\\]:? ?)?");
+    private static final Pattern LOG_PREFIX = Pattern.compile(
+            "^(?:\\[[^\\]]*\\] (?:TRACE|DEBUG|INFO|WARN|ERROR) \\S+ - |\\[[^\\]]*\\]:? ?(\\[[^\\]]*(INFO|WARN|ERROR)\\]:? ?)?)");
 
     private final AgentHub hub;
     private final ServerManager server;
@@ -75,22 +76,19 @@ final class ServerConsole {
 
     String await(Args args) throws InterruptedException {
         Pattern pattern = pattern(args.str("until"));
-        int timeout = args.integer("timeoutSeconds", 60);
-        if (timeout < 1 || timeout > MAX_WAIT_SECONDS) {
-            throw new ToolException("timeoutSeconds must be 1 to " + MAX_WAIT_SECONDS);
-        }
+        int timeout = args.integer("timeoutSeconds", 60, 1, MAX_WAIT_SECONDS);
         if (!server.running()) {
             throw new ToolException("server_wait reads the log of a server this session started, and none is running. "
                     + "Start it with server_start or dev_cycle.");
         }
         long from = Math.max(marks.waitFrom, marks.start);
         long started = System.nanoTime();
-        LogBuffer.Match m = server.log().await(from, line -> pattern.matcher(LogText.clean(line)).find(),
+        LogBuffer.Match m = server.log().await(from, line -> pattern.matcher(line).find(),
                 Duration.ofSeconds(timeout), server::running);
         String waited = LogText.seconds((System.nanoTime() - started) / 1_000_000);
         if (m != null) {
             marks.waitFrom = m.seq() + 1;
-            return "matched after " + waited + ": " + LogText.clean(m.line());
+            return "matched after " + waited + ": " + m.line();
         }
         marks.waitFrom = server.log().mark();
         String last = LogText.tail(server.log().since(from), 5);
@@ -100,21 +98,24 @@ final class ServerConsole {
 
     /** Most commands one server_command call runs. */
     static final int MAX_COMMANDS = 64;
+    private static final String CUT = "Output cut.";
 
     /** One command, or several (one per line) run in order, each output under its command, in one tool call. */
     String command(Args args) throws IOException, InterruptedException {
-        List<String> commands = args.str("command").lines().map(String::strip).filter(c -> !c.isEmpty()).toList();
+        List<String> commands = args.text("command").lines().map(String::strip).filter(c -> !c.isEmpty()).toList();
         if (commands.size() > MAX_COMMANDS) {
             throw new ToolException("at most " + MAX_COMMANDS + " commands per call; got " + commands.size());
         }
         if (commands.size() <= 1) {
-            return one(commands.isEmpty() ? "" : commands.getFirst());
+            return Budget.truncate(one(commands.isEmpty() ? "" : commands.getFirst()), Budget.DEFAULT_CHARS, CUT);
         }
-        StringBuilder out = new StringBuilder();
+        // One budget (#473): every command keeps its line, the outputs share what is left.
+        Budget.Parts out = new Budget.Parts();
         for (String command : commands) {
-            out.append(out.isEmpty() ? "" : "\n").append("> ").append(command).append('\n').append(one(command));
+            String output = one(command);
+            out.add((out.isEmpty() ? "" : "\n") + "> " + command + "\n").cut(n -> Budget.truncate(output, n, CUT));
         }
-        return Budget.truncate(out.toString(), Budget.DEFAULT_CHARS, "Output cut.");
+        return out.text(Budget.DEFAULT_CHARS, null, "Run fewer commands per call.");
     }
 
     private String one(String command) throws IOException, InterruptedException {
@@ -134,7 +135,7 @@ final class ServerConsole {
                 text.append(output.isEmpty() ? "" : "\n").append("console during the command:\n")
                         .append(String.join("\n", console));
             }
-            return Budget.truncate(text.toString(), Budget.DEFAULT_CHARS, "Output cut.");
+            return text.toString();
         }
         long mark = server.log().mark();
         marks.waitFrom = mark;
@@ -142,7 +143,7 @@ final class ServerConsole {
         Thread.sleep(700);
         List<String> lines = server.log().since(mark);
         return lines.isEmpty() ? "sent (no output within 0.7s)"
-                : Budget.truncate(LogText.tail(lines, 30), Budget.DEFAULT_CHARS, "Output cut.");
+                : LogText.tail(lines, 30);
     }
 
     /**
@@ -171,7 +172,7 @@ final class ServerConsole {
     static List<String> consoleLines(List<String> lines, List<String> returned) {
         List<String> raw = new ArrayList<>();
         for (String line : lines) {
-            raw.add(LOG_PREFIX.matcher(LogText.clean(line)).replaceFirst("").stripTrailing());
+            raw.add(LOG_PREFIX.matcher(line).replaceFirst("").stripTrailing());
         }
         Set<String> skip = new HashSet<>(returned);
         List<String> out = new ArrayList<>();

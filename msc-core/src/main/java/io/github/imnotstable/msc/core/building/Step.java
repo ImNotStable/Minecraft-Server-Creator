@@ -54,7 +54,7 @@ public sealed interface Step {
     }
 
     /** Single blocks. */
-    record Set(String world, List<BlockPos> positions, List<String> states) implements Step {
+    record Set(String world, List<BlockPos> positions, List<String> states, List<String> replace) implements Step {
         @Override
         public Region bounds() {
             return Shapes.box(world, positions);
@@ -62,9 +62,12 @@ public sealed interface Step {
 
         @Override
         public void draw(Canvas c) throws InterruptedException {
+            Canvas.Mask mask = c.mask(bounds(), replace);
             for (int i = 0; i < positions.size(); i++) {
                 BlockPos p = positions.get(i);
-                c.set(p.x(), p.y(), p.z(), states.get(i));
+                if (mask.allows(p.x(), p.y(), p.z())) {
+                    c.set(p.x(), p.y(), p.z(), states.get(i));
+                }
             }
         }
     }
@@ -149,37 +152,31 @@ public sealed interface Step {
         }
     }
 
-    /** A straight line from {@code from} to {@code to}, {@code width} blocks across (a round brush). */
+    /**
+     * A straight line from {@code from} to {@code to}, {@code width} blocks across (a round brush). An even width has
+     * no middle block, so its brush reaches one block further toward +x, +y and +z than toward -x, -y and -z.
+     */
     record Line(String world, BlockPos from, BlockPos to, int width, BlockPattern block, List<String> replace)
             implements Step {
         @Override
         public Region bounds() {
-            int r = (width - 1) / 2;
-            return Region.of(world, Math.min(from.x(), to.x()) - r, Math.min(from.y(), to.y()) - r,
-                    Math.min(from.z(), to.z()) - r, Math.max(from.x(), to.x()) + r, Math.max(from.y(), to.y()) + r,
-                    Math.max(from.z(), to.z()) + r);
+            int lo = Shapes.brushLow(width);
+            int hi = width - 1 - lo;
+            return Region.of(world, Math.min(from.x(), to.x()) - lo, Math.min(from.y(), to.y()) - lo,
+                    Math.min(from.z(), to.z()) - lo, Math.max(from.x(), to.x()) + hi, Math.max(from.y(), to.y()) + hi,
+                    Math.max(from.z(), to.z()) + hi);
         }
 
         @Override
         public void draw(Canvas c) throws InterruptedException {
-            int r = (width - 1) / 2;
-            boolean[] brush = Shapes.ball(r);
-            int n = 2 * r + 1;
             Canvas.Mask mask = c.mask(bounds(), replace);
-            for (BlockPos p : Shapes.line(from, to)) {
-                for (int dy = -r; dy <= r; dy++) {
-                    for (int dz = -r; dz <= r; dz++) {
-                        for (int dx = -r; dx <= r; dx++) {
-                            int x = p.x() + dx;
-                            int y = p.y() + dy;
-                            int z = p.z() + dz;
-                            if (brush[((dy + r) * n + dz + r) * n + dx + r] && mask.allows(x, y, z)) {
-                                c.set(x, y, z, block.at(x, y, z));
-                            }
-                        }
-                    }
+            // A block reached twice gets the same answer: the pattern depends only on the position, and after the
+            // first visit the mask sees either this step's own block there or what it already refused.
+            Shapes.sweep(Shapes.line(from, to), width, (x, y, z) -> {
+                if (mask.allows(x, y, z)) {
+                    c.set(x, y, z, block.at(x, y, z));
                 }
-            }
+            });
         }
     }
 
@@ -233,8 +230,14 @@ public sealed interface Step {
 
         @Override
         public void draw(Canvas c) throws InterruptedException {
-            for (Step s : steps) {
-                s.draw(c);
+            Region b = bounds();
+            c.readAhead(b);
+            try {
+                for (Step s : steps) {
+                    s.draw(c);
+                }
+            } finally {
+                c.endReadAhead(b);
             }
         }
     }
@@ -288,7 +291,7 @@ public sealed interface Step {
      * A structure placed once per position. {@code structure} starts at 0,0,0 and is already turned;
      * {@code -1} cells and, without {@code air}, air cells leave the world as it is.
      */
-    record Stamp(String world, List<Placement> placements, boolean air) implements Step {
+    record Stamp(String world, List<Placement> placements, boolean air, List<String> replace) implements Step {
         /** One copy: the structure, already turned, with its lowest corner at {@code at}. */
         public record Placement(BlockGrid structure, BlockPos at) {
         }
@@ -317,6 +320,7 @@ public sealed interface Step {
 
         @Override
         public void draw(Canvas c) throws InterruptedException {
+            Canvas.Mask mask = c.mask(bounds(), replace);
             for (Placement p : placements) {
                 BlockGrid g = p.structure();
                 Region r = g.region();
@@ -332,7 +336,12 @@ public sealed interface Step {
                             if (!air && io.github.imnotstable.msc.core.world.BlockNames.isAir(state)) {
                                 continue;
                             }
-                            c.set(p.at().x() + x, p.at().y() + y, p.at().z() + z, state);
+                            int wx = p.at().x() + x;
+                            int wy = p.at().y() + y;
+                            int wz = p.at().z() + z;
+                            if (mask.allows(wx, wy, wz)) {
+                                c.set(wx, wy, wz, state);
+                            }
                         }
                     }
                 }

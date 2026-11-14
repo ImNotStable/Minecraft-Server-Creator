@@ -3,8 +3,10 @@ package io.github.imnotstable.msc.agent.common;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.github.imnotstable.msc.protocol.Limits;
 import io.github.imnotstable.msc.protocol.message.ErrorCodes;
 import io.github.imnotstable.msc.protocol.op.Ops;
+import io.github.imnotstable.msc.protocol.op.PartialEdit;
 import io.github.imnotstable.msc.protocol.transport.OpException;
 import io.github.imnotstable.msc.protocol.world.BlockGrid;
 import io.github.imnotstable.msc.protocol.world.BlockPos;
@@ -70,6 +72,122 @@ class WorldOpsTest {
     }
 
     @Test
+    void failedUndoKeepsTheRecordSoARetryUndoesTheRest() {
+        boolean[] timeOut = {false};
+        MainThread inline = MainThread.inline();
+        EditHistory<String> history = new EditHistory<>(1_000_000);
+        ops = new WorldOps<>(world, new MainThread() {
+            @Override
+            public <T> T call(java.util.function.Supplier<T> task) {
+                return inline.call(task);
+            }
+
+            @Override
+            public <T> T run(SlicedJob<T> job) {
+                if (timeOut[0]) {
+                    timeOut[0] = false;
+                    throw new OpException(ErrorCodes.TIMEOUT, "main thread did not finish");
+                }
+                return inline.run(job);
+            }
+        }, history);
+        Ops.EditResult fill = fill(box(0, 70, 0, 1, 70, 0), STONE);
+
+        timeOut[0] = true;
+        assertThatThrownBy(() -> ops.undo(new Ops.UndoParams(fill.editId())))
+                .isInstanceOfSatisfying(OpException.class, e -> assertThat(e.code()).isEqualTo(ErrorCodes.TIMEOUT));
+        assertThat(history.rememberedBlocks()).isEqualTo(2);
+
+        Ops.EditResult retry = ops.undo(new Ops.UndoParams(fill.editId()));
+        assertThat(retry.changed()).isEqualTo(2);
+        assertThat(world.get(0, 70, 0)).isEqualTo(MapWorld.AIR);
+    }
+
+    @Test
+    void aWriteThatTimesOutMidWayKeepsItsChangedBlocksUndoable() {
+        // The real timeout path: a JobQueue the "main thread" steps once, then MainThread.await gives up and cancels.
+        JobQueue queue = new JobQueue();
+        MainThread inline = MainThread.inline();
+        EditHistory<String> history = new EditHistory<>(1_000_000);
+        ops = new WorldOps<>(world, new MainThread() {
+            @Override
+            public <T> T call(java.util.function.Supplier<T> task) {
+                return inline.call(task);
+            }
+
+            @Override
+            public <T> T run(SlicedJob<T> job) {
+                java.util.concurrent.CompletableFuture<T> future = queue.add(job);
+                queue.step(java.time.Duration.ZERO);
+                return MainThread.await(future, java.time.Duration.ofMillis(1));
+            }
+        }, history);
+
+        Throwable thrown = org.assertj.core.api.Assertions.catchThrowable(() -> fill(box(0, 70, 0, 19, 70, 19), STONE));
+
+        assertThat(thrown).isInstanceOfSatisfying(OpException.class, e -> assertThat(e.code()).isEqualTo(ErrorCodes.TIMEOUT));
+        String id = PartialEdit.editId(((OpException) thrown).detail()).orElseThrow();
+        long placed = world.blocks.values().stream().filter(STONE::equals).count();
+        assertThat(placed).isEqualTo(256);
+        queue.step(java.time.Duration.ofSeconds(1));
+        assertThat(world.blocks.values().stream().filter(STONE::equals).count()).isEqualTo(placed);
+
+        WorldOps<String> patient = new WorldOps<>(world, inline, history);
+        assertThat(patient.undo(new Ops.UndoParams(id)).changed()).isEqualTo(256);
+        assertThat(world.blocks.values()).doesNotContain(STONE);
+    }
+
+    @Test
+    void aWriteThatFailsBeforeChangingAnythingHasNoPartialEdit() {
+        ops = new WorldOps<>(world, new MainThread() {
+            @Override
+            public <T> T call(java.util.function.Supplier<T> task) {
+                return task.get();
+            }
+
+            @Override
+            public <T> T run(SlicedJob<T> job) {
+                throw new OpException(ErrorCodes.SHUTDOWN, "server is shutting down");
+            }
+        }, new EditHistory<>(1_000_000));
+
+        assertThatThrownBy(() -> fill(box(0, 70, 0, 1, 70, 0), STONE))
+                .isInstanceOfSatisfying(OpException.class, e -> assertThat(e.detail()).isEqualTo("server is shutting down"));
+    }
+
+    @Test
+    void oneAgentWaitIsTheTimeoutEveryAgentUses() {
+        assertThat(AgentDefaults.OP_TIMEOUT).isEqualTo(Limits.AGENT_WAIT);
+    }
+
+    @Test
+    void undoPutsBackBlockEntityDataTheStateLeavesOut() {
+        world.set(0, 70, 0, "minecraft:oak_sign", false);
+        Ops.SignText text = new Ops.SignText(0, 70, 0, List.of("Shop"), null);
+        world.signs.put(PackedPos.pack(0, 70, 0), text);
+        Ops.EditResult fill = fill(box(0, 70, 0, 1, 70, 0), STONE);
+        assertThat(world.sign(0, 70, 0)).isNull();
+
+        ops.undo(new Ops.UndoParams(fill.editId()));
+
+        assertThat(world.get(0, 70, 0)).isEqualTo("minecraft:oak_sign");
+        assertThat(world.sign(0, 70, 0)).isEqualTo(text);
+    }
+
+    @Test
+    void writeRefusesXzThatUndoCannotRecord() {
+        int edge = PackedPos.MAX_XZ;
+        fill(box(edge, 70, -edge - 1, edge, 70, -edge - 1), STONE);
+        assertThat(world.get(edge, 70, -edge - 1)).isEqualTo(STONE);
+        int writes = world.writes;
+        assertThatThrownBy(() -> fill(box(40_000_000, 70, 0, 40_000_000, 70, 0), STONE))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("40000000");
+        assertThatThrownBy(() -> fill(box(0, 70, -edge - 2, 0, 70, -edge - 2), STONE))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThat(world.writes).isEqualTo(writes);
+    }
+
+    @Test
     void writeSkipsCellsMarkedMinusOne() {
         Region r = box(0, 70, 0, 1, 70, 1);
         // Y-Z-X order: (0,0) (1,0) (0,1) (1,1)
@@ -99,6 +217,7 @@ class WorldOpsTest {
         assertThat(grid.palette()).hasSize(3);
         assertThat(result.entities()).isEmpty();
         assertThat(result.signs()).isEmpty();
+        assertThat(world.loads).containsExactly("area 0,0..1,1", "released");
     }
 
     @Test
@@ -145,7 +264,7 @@ class WorldOpsTest {
         assertThat(result.sizeX()).isEqualTo(2);
         assertThat(result.sizeZ()).isEqualTo(2);
         assertThat(result.heights()).containsExactly(80, 75, -65, -65);
-        assertThat(world.loads).containsExactly("area 0,0..1,1");
+        assertThat(world.loads).containsExactly("area 0,0..1,1", "released");
     }
 
     @Test
@@ -157,6 +276,12 @@ class WorldOpsTest {
                 .isInstanceOfSatisfying(OpException.class, e -> assertThat(e.code()).isEqualTo(ErrorCodes.TOO_LARGE));
         assertThatThrownBy(() -> ops.heightmap(new Ops.HeightmapParams("world", new BlockPos(0, 0, 0), new BlockPos(2000, 0, 2000))))
                 .isInstanceOfSatisfying(OpException.class, e -> assertThat(e.code()).isEqualTo(ErrorCodes.TOO_LARGE));
+        assertThatThrownBy(() -> ops.read(new Ops.ReadParams(Region.of("world", -2_000_000_000, 64, 0, 2_000_000_000, 64, 0), false)))
+                .isInstanceOfSatisfying(OpException.class, e -> assertThat(e.code()).isEqualTo(ErrorCodes.TOO_LARGE));
+        assertThatThrownBy(() -> ops.heightmap(new Ops.HeightmapParams("world",
+                new BlockPos(Integer.MIN_VALUE, 0, Integer.MIN_VALUE), new BlockPos(Integer.MAX_VALUE, 0, Integer.MAX_VALUE))))
+                .isInstanceOfSatisfying(OpException.class, e -> assertThat(e.code()).isEqualTo(ErrorCodes.TOO_LARGE));
+        assertThat(world.loads).isEmpty();
         assertThatThrownBy(() -> fill(box(0, 70, 0, 0, 70, 0), "minecraft:not_a_block"))
                 .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("not_a_block");
         int top = world.maxY();
@@ -204,5 +329,88 @@ class WorldOpsTest {
     void routerServesEveryOperation() {
         var router = AgentRoutes.router(new ServerOps(new FakeServer(), MainThread.inline()), ops);
         assertThat(router.operations()).containsExactlyInAnyOrderElementsOf(Ops.names());
+    }
+
+    /** Counts the agent's waits: each main-thread hand-off and each chunk load (a wait on Minestom). */
+    private int[] countWaits() {
+        int[] waits = {0};
+        MainThread inline = MainThread.inline();
+        ops = new WorldOps<>(world, new MainThread() {
+            @Override
+            public <T> T call(java.util.function.Supplier<T> task) {
+                waits[0]++;
+                return inline.call(task);
+            }
+
+            @Override
+            public <T> T run(SlicedJob<T> job) {
+                waits[0]++;
+                return inline.run(job);
+            }
+        }, new EditHistory<>(1_000_000));
+        return waits;
+    }
+
+    private long chunkWaits() {
+        return world.loads.stream().filter(l -> !l.equals("released")).count();
+    }
+
+    @Test
+    void aReadWithEntitiesAndSignsStaysWithinTheAgentWaitsTheCoreAllowsFor() {
+        world.set(1, 70, 1, "minecraft:oak_sign", false);
+        world.signs.put(PackedPos.pack(1, 70, 1), new Ops.SignText(1, 70, 1, List.of("Shop"), null));
+        world.entities.add(new Ops.EntitySummary("minecraft:pig", 1.5, 70, 1.5, null));
+        int[] waits = countWaits();
+
+        Ops.ReadResult result = ops.read(new Ops.ReadParams(box(0, 70, 0, 3, 71, 3), true, true));
+
+        assertThat(result.signs()).hasSize(1);
+        assertThat(result.entities()).hasSize(1);
+        assertThat(waits[0] + chunkWaits()).isLessThanOrEqualTo(Limits.AGENT_WAITS_PER_OP);
+    }
+
+    @Test
+    void everyOtherWorldOpStaysWithinTheAgentWaitsTheCoreAllowsFor() {
+        int[] waits = countWaits();
+        Ops.EditResult fill = fill(box(0, 70, 0, 1, 70, 1), STONE);
+        assertThat(waits[0] + chunkWaits()).isLessThanOrEqualTo(Limits.AGENT_WAITS_PER_OP);
+
+        for (Runnable op : List.<Runnable>of(
+                () -> ops.undo(new Ops.UndoParams(fill.editId())),
+                () -> ops.heightmap(new Ops.HeightmapParams("world", new BlockPos(0, 0, 0), new BlockPos(1, 0, 1))),
+                () -> ops.entities(new Ops.EntitiesParams(box(0, 70, 0, 1, 70, 1), null, 10)))) {
+            waits[0] = 0;
+            world.loads.clear();
+            op.run();
+            assertThat(waits[0] + chunkWaits()).isLessThanOrEqualTo(Limits.AGENT_WAITS_PER_OP);
+        }
+    }
+
+    @Test
+    void aReadLeavesEntitiesAndSignsToTheNextStepEvenWhenThatStepIsPastItsDeadline() {
+        world.entities.add(new Ops.EntitySummary("minecraft:pig", 1.5, 70, 1.5, null));
+        WorldReadJob<String> job = new WorldReadJob<>(world, new Ops.ReadParams(box(0, 70, 0, 1, 70, 1), true, true));
+
+        assertThat(job.step(System.nanoTime() - 1)).isFalse();
+        assertThat(job.step(System.nanoTime() - 1)).isTrue();
+        assertThat(job.result().entities()).hasSize(1);
+        assertThat(job.result().grid().blocks()).hasSize(4);
+    }
+
+    @Test
+    void aReadFinishesWithinTwoStepsPastTheirDeadlineAndAtOnceWithoutExtras() {
+        world.entities.add(new Ops.EntitySummary("minecraft:pig", 1.5, 70, 1.5, null));
+        for (boolean entities : new boolean[] {false, true}) {
+            for (boolean signs : new boolean[] {false, true}) {
+                WorldReadJob<String> job = new WorldReadJob<>(world,
+                        new Ops.ReadParams(box(0, 70, 0, 1, 70, 1), entities, signs));
+                int steps = 1;
+                while (steps < 10 && !job.step(System.nanoTime() - 1)) {
+                    steps++;
+                }
+                assertThat(steps).as("entities=%s signs=%s", entities, signs).isEqualTo(entities || signs ? 2 : 1);
+                assertThat(job.result().entities()).hasSize(entities ? 1 : 0);
+            }
+        }
     }
 }

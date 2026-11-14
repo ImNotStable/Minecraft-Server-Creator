@@ -7,8 +7,14 @@ import com.google.gson.JsonParser;
 import com.sun.net.httpserver.HttpServer;
 import io.github.imnotstable.msc.core.fixture.FakeBuildMain;
 import io.github.imnotstable.msc.core.fixture.FakeServerMain;
+import io.github.imnotstable.msc.core.server.FakeLeftover;
+import io.github.imnotstable.msc.core.server.MachineEula;
 import io.github.imnotstable.msc.core.server.MachineEulaAccess;
+import io.github.imnotstable.msc.core.server.PidFile;
+import io.github.imnotstable.msc.core.server.PidFileAccess;
 import io.github.imnotstable.msc.core.tools.LifecycleToolsAccess;
+import io.github.imnotstable.msc.core.tools.StepsAccess;
+import io.github.imnotstable.msc.process.rcon.FakeRconServer;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -55,6 +61,16 @@ class LifecycleToolsTest {
         assertThat(h.ok("server_command", "command", "/say hi")).isEqualTo("ran say hi");
         assertThat(h.ok("server_command", "command", "say a\n\n/say b\n")).isEqualTo("> say a\nran say a\n> /say b\nran say b");
         assertThat(h.error("server_command", "command", "say x\n".repeat(65))).contains("at most 64 commands");
+        // #473: the commands' outputs share the cap, so every command keeps its line and a share of its output.
+        StringBuilder many = new StringBuilder();
+        for (int i = 0; i < 20; i++) {
+            many.append("say ").append(i).append(' ').append("w".repeat(140)).append('\n');
+        }
+        String shared = h.ok("server_command", "command", many.toString());
+        assertThat(shared).hasSizeLessThanOrEqualTo(6000).doesNotContain("Narrow the call.").endsWith("Output cut.]");
+        for (int i = 0; i < 20; i++) {
+            assertThat(shared).contains("> say " + i + " w").contains("ran say " + i + " w");
+        }
         assertThat(h.ok("server_logs", "mode", "tail", "lines", 1)).contains("Done (0.1s)!");
         assertThat(h.ok("server_logs", "mode", "grep", "pattern", "starting")).contains("Starting minecraft server");
         assertThat(h.ok("server_logs")).endsWith("lines, 0 errors, 0 warnings");
@@ -72,6 +88,23 @@ class LifecycleToolsTest {
         Files.writeString(workspace.resolve("run/server.properties"), "gamemode=survival\ndifficulty=normal\n");
         assertThat(h.ok("server_start", "timeoutSeconds", 30))
                 .contains("\nmode: survival, normal difficulty (server_setup mode=build for creative, peaceful)\n");
+    }
+
+    @Test
+    void startRemovesTheAsideCopiesOlderCoresLeftInTheScanFolders() throws Exception {
+        // #434: cores before #430 set a jar aside as x.jar.msc-removing in mods/, which Quilt loads as a second copy.
+        Path mods = Files.createDirectories(workspace.resolve("run/mods"));
+        Path plugins = Files.createDirectories(workspace.resolve("run/plugins"));
+        Files.writeString(mods.resolve("lobby.jar.msc-removing"), "old");
+        Files.writeString(plugins.resolve("arena.jar.msc-removing"), "old");
+        Files.writeString(mods.resolve("lobby.jar"), "kept");
+        assertThat(h.ok("server_start", "timeoutSeconds", 30))
+                .startsWith("removed 2 files an interrupted earlier call left\nserver ready in ");
+        assertThat(mods.resolve("lobby.jar.msc-removing")).doesNotExist();
+        assertThat(plugins.resolve("arena.jar.msc-removing")).doesNotExist();
+        assertThat(mods.resolve("lobby.jar")).hasContent("kept");
+        h.ok("server_stop");
+        assertThat(h.ok("server_start", "timeoutSeconds", 30)).startsWith("server ready in ");
     }
 
     @Test
@@ -157,6 +190,21 @@ class LifecycleToolsTest {
     }
 
     @Test
+    void aServerStartedAfterADetachedOneExitedIsNotDetached() throws Exception {
+        h.ok("server_start", "timeoutSeconds", 30);
+        h.ok("server_detach");
+        h.core.server().console("stop");
+        for (int i = 0; i < 100 && h.core.server().running(); i++) {
+            Thread.sleep(100);
+        }
+        assertThat(h.core.server().running()).isFalse();
+        h.ok("server_start", "timeoutSeconds", 30);
+        assertThat(h.ok("msc_status")).contains("server: running").doesNotContain("detached");
+        h.core.server().close();
+        assertThat(h.core.server().running()).isFalse();
+    }
+
+    @Test
     void stoppingADetachedServerInTheSameSessionStopsItsPackHostToo() throws Exception {
         h.ok("server_start", "timeoutSeconds", 30);
         h.ok("texture", "name", "item/dot", "palette", List.of("a=#ff0000"), "rows", List.of("a"));
@@ -220,18 +268,52 @@ class LifecycleToolsTest {
     }
 
     @Test
+    void noStartOrDeployRunsWhileALeftoverThatCannotBeStoppedRuns() throws Exception {
+        // #408: server_start went on after "stop it by hand", and the new server's pid replaced the leftover's.
+        FakeLeftover leftover = FakeLeftover.install(h.core.server(), java.time.Duration.ofMillis(1));
+        Path pidFile = FakeLeftover.pidFile(h.core.server());
+        String pid = "pid " + leftover.pid();
+        assertThat(h.error("server_start", "timeoutSeconds", 30)).contains(pid, "could not be stopped", "over RCON",
+                "Nothing was started", "kill -9 " + leftover.pid());
+        assertThat(h.core.server().running()).isFalse();
+        assertThat(Files.readString(pidFile)).startsWith(leftover.pid() + " ");
+
+        assertThat(h.error("server_start", "timeoutSeconds", 30)).contains(pid, "survived a whole stop before");
+        assertThat(h.error("dev_cycle", "project", "demo")).contains(pid, "survived a whole stop before");
+        assertThat(workspace.resolve("run/plugins/demo.jar")).doesNotExist();
+        assertThat(h.core.server().running()).isFalse();
+        int destroys = leftover.destroys.get();
+        assertThat(h.error("server_stop")).contains(pid, "over RCON", "is still running");
+        assertThat(leftover.destroys.get()).as("server_stop tries the whole stop again").isEqualTo(destroys + 1);
+        assertThat(Files.readString(pidFile)).startsWith(leftover.pid() + " ");
+
+        leftover.diesWhenKilled();
+        assertThat(h.ok("server_stop")).startsWith("stopped a server left running by an earlier session (" + pid);
+        assertThat(pidFile).doesNotExist();
+        try {
+            assertThat(h.ok("server_start", "timeoutSeconds", 30)).startsWith("server ready in ");
+        } finally {
+            h.ok("server_stop");
+        }
+    }
+
+    @Test
     void deployedJarIsNamedAfterTheBuiltJarWithoutItsVersion() {
         Path folder = Path.of("my-server");
         assertThat(LifecycleToolsAccess.deployName(Path.of("lobby-0.1.0-SNAPSHOT.jar"), folder)).isEqualTo("lobby");
         assertThat(LifecycleToolsAccess.deployName(Path.of("demo-1.0.jar"), folder)).isEqualTo("demo");
         assertThat(LifecycleToolsAccess.deployName(Path.of("my-mod-2.3+26.3.jar"), folder)).isEqualTo("my-mod");
         assertThat(LifecycleToolsAccess.deployName(Path.of("plugin.jar"), folder)).isEqualTo("plugin");
+        assertThat(LifecycleToolsAccess.deployName(Path.of("parkour-2-0.1.0-SNAPSHOT.jar"), folder)).isEqualTo("parkour-2");
+        assertThat(LifecycleToolsAccess.deployName(Path.of("bedwars-4v4-1.0.jar"), folder)).isEqualTo("bedwars-4v4");
+        assertThat(LifecycleToolsAccess.deployName(Path.of("lobby-1v1-2.0-rc1.jar"), folder)).isEqualTo("lobby-1v1");
+        assertThat(LifecycleToolsAccess.deployName(Path.of("arena-2-1.0.jar"), folder)).isEqualTo("arena-2");
     }
 
     @Test
     void startRemembersTheServerPidAndStopForgetsIt() {
         h.ok("server_start", "timeoutSeconds", 30);
-        assertThat(workspace.resolve(".msc/server.pid")).content().matches("\\d+ \\d+\n");
+        assertThat(workspace.resolve(".msc/server.pid")).content().matches("\\d+ \\d+ " + ProcessHandle.current().pid() + " \\d+\n");
         h.ok("server_stop");
         assertThat(workspace.resolve(".msc/server.pid")).doesNotExist();
     }
@@ -284,6 +366,83 @@ class LifecycleToolsTest {
     }
 
     @Test
+    void aProjectNamedLikeTheAgentJarIsRefusedAndTheAgentStays() throws Exception {
+        Path plugins = Files.createDirectories(workspace.resolve("run/plugins"));
+        Files.writeString(plugins.resolve("msc-agent-paper.jar"), "agent");
+        // #311: the jar's name minus its version is the agent's, in any case.
+        for (String name : List.of("msc-agent-paper", "MSC-Agent-Paper")) {
+            Path p = Files.createDirectories(workspace.resolve("p-" + name));
+            Files.writeString(p.resolve("version.txt"), "0.1.0-SNAPSHOT");
+            Files.writeString(p.resolve("name.txt"), name);
+            assertThat(h.error("dev_cycle", "project", "p-" + name, "restart", false))
+                    .contains("plugins/" + name + ".jar").contains("MSC's agent jar on Paper");
+        }
+        // A project folder named like the agent jar, with no earlier deploy recorded, is not taken for one.
+        Path folder = Files.createDirectories(workspace.resolve("msc-agent-paper"));
+        Files.writeString(folder.resolve("version.txt"), "1.0");
+        Files.writeString(folder.resolve("name.txt"), "demo");
+        assertThat(h.ok("dev_cycle", "project", "msc-agent-paper", "restart", false)).contains("as plugins/demo.jar");
+        assertThat(plugins.resolve("msc-agent-paper.jar")).hasContent("agent");
+        try (var jars = Files.list(plugins)) {
+            assertThat(jars.map(p -> p.getFileName().toString())).containsExactlyInAnyOrder("demo.jar", "msc-agent-paper.jar");
+        }
+    }
+
+    @Test
+    void aFailedDeployStopsTheTestsRunningBesideIt() throws Exception {
+        Path ws = Files.createDirectories(workspace.resolve("ws9"));
+        Path slow = Files.createDirectories(ws.resolve("slow"));
+        Files.writeString(slow.resolve("version.txt"), "1.0");
+        Files.writeString(slow.resolve("slow-check.flag"), "");
+        Path started = slow.resolve("check-started");
+        Files.createDirectories(ws.resolve("run"));
+        Files.writeString(ws.resolve("run/paper.jar"), "not a jar");
+        Files.writeString(ws.resolve("run/eula.txt"), "eula=true\n");
+        // The deploy first stops a server an earlier core left running, over RCON. Its fake RCON lets that server
+        // exit only once the check has started, so the deploy, made to fail, fails while the check is surely running.
+        // (A refusal such as a missing EULA comes before the build, so it never runs beside the tests: #445.)
+        Process leftover = new ProcessBuilder(java(io.github.imnotstable.msc.core.fixture.SleepMain.class)).start();
+        try (FakeRconServer rcon = new FakeRconServer("pw", command -> {
+            if (command.equals("stop")) {
+                Thread.ofVirtual().start(() -> stopWhenStarted(leftover, started));
+            }
+            return "Stopping the server";
+        })) {
+            Files.writeString(ws.resolve("run/server.properties"),
+                    "enable-rcon=true\nrcon.port=" + rcon.port() + "\nrcon.password=pw\n");
+            Files.createDirectories(ws.resolve(".msc"));
+            Files.writeString(ws.resolve(".msc/server.pid"),
+                    leftover.pid() + " " + leftover.info().startInstant().orElseThrow().toEpochMilli() + "\n");
+            try (CoreHarness s = new CoreHarness(ws, c -> c.withBuildCommand(java(FakeBuildMain.class)))) {
+                StepsAccess.failAt("deploy the jar");
+                try {
+                    assertThat(s.error("dev_cycle", "project", "slow")).contains("injected failure");
+                } finally {
+                    StepsAccess.failAt(null);
+                }
+            }
+            ProcessHandle check = ProcessHandle.of(Long.parseLong(Files.readString(started).strip())).orElse(null);
+            if (check != null) {
+                check.onExit().get(10, java.util.concurrent.TimeUnit.SECONDS);
+            }
+        } finally {
+            leftover.destroyForcibly();
+        }
+    }
+
+    /** What the fake server does on "stop": ends the leftover server once the check has started. */
+    private static void stopWhenStarted(Process server, Path started) {
+        try {
+            for (int i = 0; i < 300 && !Files.exists(started); i++) {
+                Thread.sleep(100);
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+        server.destroyForcibly();
+    }
+
+    @Test
     void devCycleStopsAtABrokenBuildAndLeavesTheServerAlone() throws Exception {
         h.ok("server_start", "timeoutSeconds", 30);
         Files.writeString(project.resolve("broken.flag"), "");
@@ -292,6 +451,19 @@ class LifecycleToolsTest {
                 .doesNotContain("* Try").doesNotContain("--info");
         assertThat(h.core.server().running()).isTrue();
         assertThat(h.error("dev_cycle", "project", "nowhere")).contains("no project at");
+        // #457: a project outside the workspace is refused; MSC builds only what is in it.
+        assertThat(h.error("dev_cycle", "project", "/etc")).contains("must be inside the workspace");
+        assertThat(h.error("dev_cycle", "project", "..")).contains("must be inside the workspace");
+    }
+
+    /** A start timeout below one second is refused with the range, not taken as an instant timeout. */
+    @Test
+    void serverStartRefusesATimeoutOutsideItsRange() {
+        for (int timeout : new int[] {0, -5, 3601}) {
+            assertThat(h.error("server_start", "timeoutSeconds", timeout))
+                    .isEqualTo("error: argument timeoutSeconds must be 1 to 3600, not " + timeout);
+        }
+        assertThat(h.core.server().running()).isFalse();
     }
 
     @Test
@@ -355,10 +527,23 @@ class LifecycleToolsTest {
     }
 
     @Test
+    void scaffoldAcceptEulaIsNotKeptForTheMachine() throws Exception {
+        // tools.md: only server_setup and server_start record acceptEula=true in ~/.msc/eula.json (#376).
+        Path machineEula = workspace.resolve("home/.msc/eula.json");
+        Path ws = Files.createDirectories(workspace.resolve("ws8"));
+        try (CoreHarness s = new CoreHarness(ws, c -> c.withMachineEula(MachineEula.forHome(workspace.resolve("home"))))) {
+            s.ok("project_scaffold", "name", "Srv", "dir", "srv", "template", "paper-server", "acceptEula", true);
+            s.ok("project_scaffold", "name", "Plug", "dir", "plug", "acceptEula", true);
+        }
+        assertThat(ws.resolve("srv/eula.txt")).content().contains("eula=true");
+        assertThat(machineEula).doesNotExist();
+    }
+
+    @Test
     void scaffoldAndStartUseTheMachineWideAcceptance() throws Exception {
-        Path machineEula = MachineEulaAccess.accepted(workspace.resolve("home/.msc/eula.json"));
+        Path machineEula = MachineEulaAccess.accepted(workspace.resolve("home"));
         Path ws = Files.createDirectories(workspace.resolve("ws5"));
-        try (CoreHarness s = new CoreHarness(ws, c -> c.withEulaFile(machineEula))) {
+        try (CoreHarness s = new CoreHarness(ws, c -> c.withMachineEula(MachineEula.forHome(workspace.resolve("home"))))) {
             assertThat(s.ok("project_scaffold", "name", "MyPlugin")).doesNotContain("ask the user")
                     .endsWith("next: server_setup (the Minecraft EULA is accepted for this machine by owner on pc, "
                             + "2026-11-12), then edit the code and dev_cycle");
@@ -375,12 +560,12 @@ class LifecycleToolsTest {
         Path machineEula = workspace.resolve("home/.msc/eula.json");
         Path ws = Files.createDirectories(workspace.resolve("ws6/run")).getParent();
         Files.writeString(ws.resolve("run/paper.jar"), "not a jar");
-        try (CoreHarness s = new CoreHarness(ws, c -> c.withEulaFile(machineEula))) {
+        try (CoreHarness s = new CoreHarness(ws, c -> c.withMachineEula(MachineEula.forHome(workspace.resolve("home"))))) {
             assertThat(s.error("server_start")).contains("EULA is not accepted");
             assertThat(machineEula).doesNotExist();
             assertThat(s.call("server_start", "acceptEula", true, "timeoutSeconds", 20).text())
                     .startsWith("Minecraft EULA (https://aka.ms/MinecraftEULA) accepted for this machine, saved in ")
-                    .contains("TERMS.md");
+                    .contains("TERMS.md").contains("every Paper, Purpur, Fabric, Quilt, NeoForge and Forge server");
             // The notice is shown once.
             assertThat(s.call("server_start", "acceptEula", true, "timeoutSeconds", 20).text()).doesNotContain("TERMS.md");
             assertThat(ws.resolve("run/eula.txt")).content().contains("eula=true");
@@ -388,7 +573,7 @@ class LifecycleToolsTest {
         }
         Path other = Files.createDirectories(workspace.resolve("ws7/run")).getParent();
         Files.writeString(other.resolve("run/paper.jar"), "not a jar");
-        try (CoreHarness s = new CoreHarness(other, c -> c.withEulaFile(machineEula))) {
+        try (CoreHarness s = new CoreHarness(other, c -> c.withMachineEula(MachineEula.forHome(workspace.resolve("home"))))) {
             assertThat(s.call("server_start", "timeoutSeconds", 20).text()).doesNotContain("EULA");
             assertThat(other.resolve("run/eula.txt")).content().contains("eula=true");
         }
@@ -463,14 +648,26 @@ class LifecycleToolsTest {
         Files.writeString(install.resolve("agents/msc-agent-fabric-0.1.0.jar"), "fabric");
         Files.writeString(install.resolve("agents/msc-agent-paper-0.1.0.jar"), "bundled");
         // The owner's one-time acceptance for this machine (ADR 0020) stands in for acceptEula=true.
-        Path machineEula = MachineEulaAccess.accepted(workspace.resolve("home/.msc/eula.json"));
+        Path machineEula = MachineEulaAccess.accepted(workspace.resolve("home"));
         try (CoreHarness s = new CoreHarness(workspace.resolve("ws4"), c -> c.withDownloadsUrl(base).withInstallDir(install)
-                .withEulaFile(machineEula))) {
+                .withMachineEula(MachineEula.forHome(workspace.resolve("home"))))) {
             assertThat(s.ok("server_setup")).contains("agent installed in plugins/")
                     .contains("eula.txt has eula=true from the owner's one-time acceptance for this machine (owner on pc, 2026-11-12)")
                     .doesNotContain("ask the user");
             assertThat(workspace.resolve("ws4/run/plugins/msc-agent-paper.jar")).hasContent("bundled");
             assertThat(workspace.resolve("ws4/run/eula.txt")).content().contains("eula=true").doesNotContain("eula=false");
+        }
+        // dev_cycle or server_start acceptEula=true may fill run/ first: the missing defaults are still written.
+        Path ws8 = workspace.resolve("ws8");
+        Files.createDirectories(ws8.resolve("run/plugins"));
+        Files.writeString(ws8.resolve("run/plugins/demo.jar"), "deployed before setup");
+        Files.writeString(ws8.resolve("run/eula.txt"), "eula=true\n");
+        try (CoreHarness s = new CoreHarness(ws8, c -> c.withDownloadsUrl(base))) {
+            assertThat(s.ok("server_setup")).contains("wrote 1 default config files");
+            assertThat(ws8.resolve("run/server.properties")).content().contains("online-mode=false");
+            assertThat(ws8.resolve("run/eula.txt")).hasContent("eula=true\n");
+            assertThat(ws8.resolve("run/plugins/demo.jar")).hasContent("deployed before setup");
+            assertThat(s.ok("server_setup")).doesNotContain("default config files");
         } finally {
             fill.stop(0);
         }
@@ -577,6 +774,9 @@ class LifecycleToolsTest {
         String first = h.ok("dev_cycle", "project", "demo");
         assertThat(first).contains("deployed demo-1.0.jar as plugins/demo.jar")
                 .containsPattern("\ntime: jar \\d+\\.\\ds, start \\d+\\.\\ds, agent \\d+\\.\\ds, tests \\d+\\.\\ds, total \\d+\\.\\ds$");
+        // The start ends when the agent says ready, which the fake server does before it logs "Done": wait for that
+        // line, so the mark is the whole startup log and a line after it can only come from a restart.
+        awaitLogLine("Done (");
         long logMark = h.core.server().log().mark();
         assertThat(project.resolve("tasks.log")).hasContent("mscJar\ncheck");
 
@@ -591,6 +791,15 @@ class LifecycleToolsTest {
         h.ok("server_stop");
     }
 
+    /** Waits (generously: a loaded machine) until the server log holds a line containing {@code text}. */
+    private void awaitLogLine(String text) throws InterruptedException {
+        long deadline = System.nanoTime() + java.time.Duration.ofSeconds(60).toNanos();
+        while (h.core.server().log().since(0).stream().noneMatch(l -> l.contains(text))) {
+            assertThat(System.nanoTime()).as("no log line with " + text).isLessThan(deadline);
+            Thread.sleep(10);
+        }
+    }
+
     @Test
     void failingTestsAreReportedFirstWhileTheNewJarAlreadyRuns() throws Exception {
         Files.writeString(project.resolve("failing-test.flag"), "");
@@ -600,6 +809,45 @@ class LifecycleToolsTest {
                 .contains("server ready");
         assertThat(h.core.server().running()).isTrue();
         h.ok("server_stop");
+    }
+
+    /**
+     * #473: failed tests and a noisy start share dev_cycle's one budget: at every cap the result fits, the time line is
+     * last, and each cut keeps its own hint, which names what shows the rest.
+     */
+    @Test
+    void manyFailedTestsAndANoisyStartShareOneBudget() throws Exception {
+        Files.writeString(project.resolve("many-failing-tests.flag"), "");
+        Files.createDirectories(workspace.resolve("run"));
+        Files.writeString(workspace.resolve("run/many-errors.flag"), "");
+        int version = 1;
+        for (int cap : new int[] {io.github.imnotstable.msc.core.tool.Budget.DEFAULT_CHARS, 200, 24_000}) {
+            Files.writeString(project.resolve("version.txt"), "1." + version++);
+            String result = h.ok("dev_cycle", "project", "demo", "maxChars", cap);
+            assertThat(result).as("maxChars %d", cap).hasSizeLessThanOrEqualTo(cap)
+                    .containsPattern("\ntime: jar [^\n]*, total \\d+\\.\\ds$");
+            assertHintsAreTrue(result);
+            if (cap > 200) {
+                assertThat(result).as("maxChars %d", cap).startsWith("TESTS FAILED in ")
+                        .contains("Fix the first errors and build again.]").contains("server ready")
+                        .contains("Use server_logs with grep to narrow.]").doesNotContain("Narrow the call.");
+            }
+        }
+        h.ok("server_stop");
+        String start = h.ok("server_start", "timeoutSeconds", 60);
+        assertThat(start).hasSizeLessThanOrEqualTo(io.github.imnotstable.msc.core.tool.Budget.DEFAULT_CHARS)
+                .startsWith("server ready").endsWith("Use server_logs with grep to narrow.]");
+        h.ok("server_stop");
+    }
+
+    /** Every cut names a call that shows the rest, or what to change; never the registry's safety net. */
+    private static void assertHintsAreTrue(String result) {
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("\\[truncated: \\d+ more lines, \\d+ chars\\. ([^\\]]*)\\]")
+                .matcher(result);
+        while (m.find()) {
+            assertThat(m.group(1)).isIn("Fix the first errors and build again.", "Use server_logs with grep to narrow.",
+                    io.github.imnotstable.msc.core.tool.Budget.RAISE);
+        }
     }
 
     @Test
@@ -623,6 +871,31 @@ class LifecycleToolsTest {
     }
 
     @Test
+    void aServerAnotherLiveSessionRunsIsNeitherStoppedNorReplaced() throws Exception {
+        // #482: a second session on the workspace took the first one's live server for a leftover and killed it.
+        Process other = new ProcessBuilder(java(io.github.imnotstable.msc.core.fixture.SleepMain.class)).start();
+        try {
+            Path pidFile = Files.createDirectories(workspace.resolve(".msc")).resolve("server.pid");
+            // The other session's core stands as its own server: both alive, neither this JVM.
+            PidFileAccess.write(pidFile, other.toHandle(), PidFile.Identity.of(other.toHandle()));
+            String written = Files.readString(pidFile);
+            String pids = "(server pid " + other.pid() + ", MSC core pid " + other.pid() + ";";
+            assertThat(h.ok("msc_status")).contains("server: running under another session that is still running " + pids);
+            for (String tool : List.of("server_start", "server_stop", "server_setup")) {
+                assertThat(h.call(tool).text()).as(tool).contains("belongs to another session that is still running "
+                        + "(MSC core pid " + other.pid() + "): use that session, or end it");
+            }
+            assertThat(other.isAlive()).isTrue();
+            assertThat(pidFile).content().isEqualTo(written);
+            // Its core killed: the server is a leftover, as before (ADR 0013 point 8).
+            other.destroyForcibly().waitFor();
+            assertThat(h.ok("msc_status")).doesNotContain("another session");
+        } finally {
+            other.destroyForcibly();
+        }
+    }
+
+    @Test
     void aStartWaitsForAnAgentThatConnectsAfterDone() throws Exception {
         Files.createDirectories(workspace.resolve("run/plugins"));
         Files.writeString(workspace.resolve("run/plugins/msc-agent-paper.jar"), "agent");
@@ -633,6 +906,16 @@ class LifecycleToolsTest {
         // No agent installed: nothing to wait for, so the start reports at "Done".
         assertThat(h.ok("server_start", "timeoutSeconds", 30)).contains("no agent connected");
         h.ok("server_stop");
+    }
+
+    @Test
+    void aServerThatDiesRightAfterDoneIsReportedAsExitedWithItsTrace() throws Exception {
+        Files.createDirectories(workspace.resolve("run/plugins"));
+        Files.writeString(workspace.resolve("run/plugins/msc-agent-paper.jar"), "agent");
+        Files.writeString(workspace.resolve("run/done-crash.flag"), "");
+        assertThat(h.ok("server_start", "timeoutSeconds", 30)).startsWith("server exited right after it was ready, after ")
+                .contains("12:00:03 ERROR Encountered an unexpected exception\njava.lang.IllegalStateException: tick failed")
+                .doesNotContain("server ready");
     }
 
     @Test
@@ -674,5 +957,79 @@ class LifecycleToolsTest {
         assertThat(failed.get("error").getAsString()).isEqualTo("error: server is not running");
         assertThat(h.ok("msc_status", "stats", true)).startsWith("tool calls errors ms resultTokens\nmsc_status 1 0 ")
                 .contains("\nserver_command 1 1 ").contains("\ntotal 3 2 ");
+    }
+
+    /**
+     * A server_setup that fails (a version the platform's pinned loader does not cover, a download that fails) leaves
+     * the workspace as it was: its platform, its run/ folder and so its working server (#356).
+     */
+    @Test
+    void aFailedSetupLeavesTheWorkspaceAsItWas() throws Exception {
+        String api = io.github.imnotstable.msc.templates.Templates.versions().get("fabricApiVersion");
+        String minecraft = api.substring(api.indexOf('+') + 1);
+        // Every download fails, as offline.
+        HttpServer offline = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        offline.createContext("/", exchange -> {
+            exchange.sendResponseHeaders(404, -1);
+            exchange.close();
+        });
+        offline.start();
+        String base = "http://127.0.0.1:" + offline.getAddress().getPort();
+        Path ws = Files.createDirectories(workspace.resolve("setup-fails"));
+        Path run = ws.resolve("run");
+        Files.createDirectories(run.resolve("plugins"));
+        Files.writeString(run.resolve("paper.jar"), "paper");
+        Files.writeString(run.resolve("plugins/msc-agent-paper.jar"), "agent");
+        Files.writeString(run.resolve("eula.txt"), "eula=false\n");
+        Files.writeString(run.resolve("server.properties"), "gamemode=creative\n");
+        Files.createDirectories(ws.resolve(".msc"));
+        Files.writeString(ws.resolve(".msc/platform"), "paper\n");
+        Path fresh = Files.createDirectories(workspace.resolve("setup-fails-fresh"));
+        List<List<Object>> calls = List.of(
+                List.of("platform", "fabric", "version", "1.0"),
+                List.of("platform", "quilt", "version", "1.0"),
+                List.of("platform", "neoforge", "version", "1.0"),
+                List.of("platform", "forge", "version", "1.0"),
+                List.of("platform", "fabric"),
+                List.of("platform", "quilt", "mode", "game"),
+                List.of("platform", "fabric", "mode", "game"),
+                List.of("version", "1.0", "mode", "game"),
+                List.of("mode", "game"));
+        try (CoreHarness s = new CoreHarness(ws, c -> c.withFabricUrls(base + "/meta", base + "/maven")
+                .withDownloadsUrl(base).withMinecraft(minecraft));
+             CoreHarness f = new CoreHarness(fresh, c -> c.withFabricUrls(base + "/meta", base + "/maven")
+                     .withDownloadsUrl(base).withMinecraft(minecraft))) {
+            var before = TreeSnapshot.of(run);
+            for (List<Object> call : calls) {
+                s.error("server_setup", call.toArray());
+                assertThat(TreeSnapshot.of(run)).as("run/ after %s", call).isEqualTo(before);
+                assertThat(ws.resolve(".msc/platform")).as("platform after %s", call).hasContent("paper\n");
+                assertThat(s.ok("msc_status")).as("status after %s", call).contains("platform: paper\n")
+                        .contains("server: stopped");
+                f.error("server_setup", call.toArray());
+                assertThat(fresh.resolve("run")).as("fresh run/ after %s", call).doesNotExist();
+                assertThat(fresh.resolve(".msc/platform")).as("fresh platform after %s", call).doesNotExist();
+            }
+        } finally {
+            offline.stop(0);
+        }
+    }
+
+    /** dev_cycle remembers a fresh workspace's platform only once it deployed the project's jar (#356). */
+    @Test
+    void aFailedDevCycleDoesNotSetTheWorkspacePlatform() throws Exception {
+        Files.createDirectories(project.resolve("src/main/resources"));
+        Files.writeString(project.resolve("src/main/resources/fabric.mod.json"), "{}");
+        Files.writeString(project.resolve("broken.flag"), "");
+        assertThat(h.ok("dev_cycle", "project", "demo", "restart", false)).startsWith("BUILD FAILED in ");
+        assertThat(workspace.resolve(".msc/platform")).doesNotExist();
+        Files.delete(project.resolve("broken.flag"));
+        // A jar named as the agent is refused before anything is deployed.
+        Files.writeString(project.resolve("name.txt"), "msc-agent-fabric");
+        assertThat(h.error("dev_cycle", "project", "demo", "restart", false)).contains("MSC's agent jar");
+        assertThat(workspace.resolve(".msc/platform")).doesNotExist();
+        Files.delete(project.resolve("name.txt"));
+        assertThat(h.ok("dev_cycle", "project", "demo", "restart", false)).contains("deployed demo-1.0.jar as mods/demo.jar");
+        assertThat(workspace.resolve(".msc/platform")).hasContent("fabric\n");
     }
 }

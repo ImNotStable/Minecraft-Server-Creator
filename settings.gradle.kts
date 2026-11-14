@@ -61,8 +61,9 @@ include("msc-agent-common")
 include("msc-agent-paper")
 include("msc-templates")
 include("msc-bench")
+include("msc-process")
 
-// Post-MVP modules (empty for now, kept in the build so they stay wired in)
+// Post-MVP modules
 include("msc-agent-fabric")
 include("msc-agent-minestom")
 include("msc-agent-neoforge")

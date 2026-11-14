@@ -10,28 +10,35 @@ import io.github.imnotstable.msc.core.tool.ToolException;
 import io.github.imnotstable.msc.core.tool.ToolRegistry;
 import io.github.imnotstable.msc.core.world.Walk;
 import io.github.imnotstable.msc.core.world.WorldService;
+import io.github.imnotstable.msc.process.ServerAddress;
+import io.github.imnotstable.msc.process.ServerPropertiesFile;
 import io.github.imnotstable.msc.protocol.op.Ops;
 import io.github.imnotstable.msc.protocol.world.BlockPos;
 import io.github.imnotstable.msc.protocol.world.Region;
 import java.io.IOException;
-import java.io.Reader;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
-import java.util.Properties;
+import java.util.Map;
 import java.util.regex.Pattern;
 
 /** A headless test player, so the AI can play what it built: walk, jump gaps, press buttons, fight, and read back. */
 public final class PlayerTools implements AutoCloseable {
     /** Blocks around the two ends a walk route may wander through. */
     private static final int ROUTE_MARGIN = 16;
+    /** How far from where the bot thinks it stands the agent looks for it: the server's position may lag a little. */
+    static final int LOCATE_REACH = 4;
+    private static final String PLAYER = "minecraft:player";
     private static final Pattern NAME = Pattern.compile("[A-Za-z0-9_]{3,16}");
     private final CoreConfig config;
     private final AgentHub hub;
     private final WorldService worlds;
+    /**
+     * Guards {@link #player} and {@link #closed}, never held across network I/O: {@link #close()} takes only this, so
+     * it does not wait for a running player_test (which holds this object's monitor for its whole run).
+     */
+    private final Object slot = new Object();
     private Bot player;
-    private volatile String world = "world";
+    private boolean closed;
 
     private PlayerTools(CoreConfig config, AgentHub hub, WorldService worlds) {
         this.config = config;
@@ -56,6 +63,11 @@ public final class PlayerTools implements AutoCloseable {
     }
 
     private synchronized String run(io.github.imnotstable.msc.core.tool.Args args) throws Exception {
+        synchronized (slot) {
+            if (closed) {
+                throw ToolException.workspaceClosed("player_test did not run");
+            }
+        }
         if (hub.current() == null) {
             throw new ToolException("the server is not running with the agent. Start it with server_start first.");
         }
@@ -73,24 +85,29 @@ public final class PlayerTools implements AutoCloseable {
             throw new ToolException("gamemode must be survival, adventure or creative");
         }
         Ops.ServerInfo info = hub.call(Ops.SERVER_INFO, new Ops.Empty());
-        world = info.worlds().isEmpty() ? "world" : info.worlds().getFirst();
+        // The overworld; the test player asks worldOf which world the server put it in, else goes by the dimension.
+        String world = info.worlds().isEmpty() ? "world" : info.worlds().getFirst();
         StringBuilder out = new StringBuilder();
-        if (player != null && (!player.connected() || !player.name().equals(name))) {
-            player.close();
-            player = null;
+        Bot bot = current();
+        if (bot != null && (!bot.connected() || !bot.name().equals(name))) {
+            drop(bot);
+            bot = null;
         }
-        if (player == null) {
+        if (bot == null) {
             // Bots pings the server and picks the client for its version, or says which versions it speaks.
-            String[] address = address();
+            ServerAddress address = address();
             try {
-                player = Bots.join(name, address[0], Integer.parseInt(address[1]),
+                bot = adopt(Bots.join(name, address.host(), address.port(),
                         region -> hub.call(Ops.WORLD_READ, new Ops.ReadParams(region, false)).grid(), this::route,
-                        Duration.ofSeconds(20), config.installDir() == null ? null : config.installDir().resolve("bot"));
+                        (who, at) -> worldOf(hub.call(Ops.SERVER_INFO, new Ops.Empty()).worlds(), who, at,
+                                region -> hub.call(Ops.WORLD_ENTITIES, new Ops.EntitiesParams(region, PLAYER, 0))
+                                        .entities()),
+                        Duration.ofSeconds(20), config.installDir() == null ? null : config.installDir().resolve("bot")));
             } catch (IllegalStateException e) {
                 throw new ToolException(e.getMessage() + (e.getMessage().contains("not_whitelisted")
                         // whitelist add can't help: offline mode stores the lowercased name's UUID.
                         ? ". The whitelist is on: server_command \"whitelist off\", and set white-list=false"
-                                + " in server.properties so it stays off"
+                                + " in " + ServerPropertiesFile.NAME + " so it stays off"
                         : ""));
             }
             // A dev-server test player: op so commands and tp work, in the mode real players will have.
@@ -105,28 +122,58 @@ public final class PlayerTools implements AutoCloseable {
             console("gamemode " + gamemode + " " + name);
         }
         try {
-            out.append(player.run(actions, world));
+            out.append(bot.run(actions, world));
         } catch (IllegalArgumentException e) {
             throw new ToolException(e.getMessage());
         }
-        if (!player.connected()) {
+        if (!bot.connected()) {
             // A kick is a failed play-test, not a result: say so first and keep what happened before it.
-            String why = player.disconnectReason();
-            player.close();
-            player = null;
-            throw new ToolException("the test player was kicked" + (why != null ? ": " + why : "") + "\n"
-                    + Budget.truncate(out.toString(), Budget.DEFAULT_CHARS, "Use fewer actions per call."));
+            String why = bot.disconnectReason();
+            drop(bot);
+            synchronized (slot) {
+                if (closed) {
+                    throw ToolException.workspaceClosed("the test player was disconnected");
+                }
+            }
+            // One budget (#473): the kick line and "error: " are kept, what happened before it gets the rest.
+            throw new ToolException(new Budget.Parts()
+                    .add("the test player was kicked" + (why != null ? ": " + why : "") + "\n").cut(cut(out))
+                    .text(Budget.DEFAULT_CHARS - "error: ".length(), null, FEWER));
         }
+        String left = null;
         if (args.bool("leave", false)) {
-            player.close();
-            player = null;
-            out.append("\nleft the server");
+            drop(bot);
+            left = "left the server";
         }
-        return Budget.truncate(out.toString(), Budget.DEFAULT_CHARS, "Use fewer actions per call.");
+        return new Budget.Parts().cut(cut(out)).text(Budget.DEFAULT_CHARS, left, FEWER);
     }
 
-    /** The walk action's route: world_summary path's search over the blocks around both ends. */
-    private List<int[]> route(BlockPos from, BlockPos to) throws Exception {
+    /** Lists the entities of one type in a region; the agent's {@code world.entities}. */
+    @FunctionalInterface
+    interface EntityLookup {
+        List<Ops.EntityInfo> find(Region region) throws Exception;
+    }
+
+    /**
+     * The world in which the agent lists player {@code who} near {@code at}, or null. The bot cannot tell this from
+     * its packets: Minestom moves a player between instances of one dimension without a Respawn and names its
+     * instances its own way.
+     */
+    static String worldOf(List<String> worlds, String who, BlockPos at, EntityLookup players) throws Exception {
+        for (String world : worlds) {
+            Region near = Region.of(world, at.x() - LOCATE_REACH, at.y() - LOCATE_REACH, at.z() - LOCATE_REACH,
+                    at.x() + LOCATE_REACH, at.y() + LOCATE_REACH, at.z() + LOCATE_REACH);
+            for (Ops.EntityInfo e : players.find(near)) {
+                if (who.equals(e.name())) {
+                    return world;
+                }
+            }
+        }
+        return null;
+    }
+
+    /** The walk action's route: world_summary path's search over the blocks around both ends, in the player's world. */
+    private List<int[]> route(String world, BlockPos from, BlockPos to) throws Exception {
         int margin = ROUTE_MARGIN;
         Region region;
         do {
@@ -150,24 +197,84 @@ public final class PlayerTools implements AutoCloseable {
         return result.success() || !(text.contains("unknown") && text.contains("command"));
     }
 
-    /** server-ip and server-port from the dev server's server.properties. */
-    private String[] address() throws IOException {
-        Path file = config.serverDir().resolve("server.properties");
-        Properties p = new Properties();
-        if (Files.exists(file)) {
-            try (Reader in = Files.newBufferedReader(file)) {
-                p.load(in);
-            }
+    /**
+     * Where the dev server takes players: server-ip and server-port from its server.properties, read as the server
+     * reads them and as server_stop's RCON reads them ({@link ServerAddress}).
+     */
+    private ServerAddress address() throws ToolException {
+        Map<String, String> p;
+        try {
+            p = ServerPropertiesFile.read(config.serverDir().resolve(ServerPropertiesFile.NAME));
+        } catch (IOException e) {
+            throw new ToolException("cannot read " + ServerPropertiesFile.NAME + ": " + e.getMessage());
         }
-        String ip = p.getProperty("server-ip", "").isBlank() ? "127.0.0.1" : p.getProperty("server-ip").strip();
-        return new String[] {ip, p.getProperty("server-port", "25565").strip()};
+        ServerAddress address = ServerAddress.game(p);
+        if (address == null) {
+            throw new ToolException(ServerAddress.GAME_PORT_KEY + "=" + p.get(ServerAddress.GAME_PORT_KEY) + " in "
+                    + ServerPropertiesFile.NAME + " is not a port from 1 to 65535, so the server takes no players."
+                    + " Set it to the port to join on and restart the server");
+        }
+        return address;
     }
 
+    /** The joined test player, or null. */
+    private Bot current() {
+        synchronized (slot) {
+            return player;
+        }
+    }
+
+    /**
+     * Keep a player that just joined, unless the workspace closed while it joined: then it leaves at once, since
+     * nothing would disconnect it later.
+     */
+    Bot adopt(Bot joined) {
+        synchronized (slot) {
+            if (!closed) {
+                player = joined;
+                return joined;
+            }
+        }
+        joined.close();
+        throw ToolException.workspaceClosed("the test player left again");
+    }
+
+    /** Disconnect {@code bot} and forget it if it is still the current one. */
+    private void drop(Bot bot) {
+        synchronized (slot) {
+            if (player == bot) {
+                player = null;
+            }
+        }
+        bot.close();
+    }
+
+    /** True while a test player is joined; tests use this. */
+    boolean joined() {
+        return current() != null;
+    }
+
+    /**
+     * Disconnect the test player and refuse later play-tests. Does not wait for a running player_test: closing the
+     * bot ends what it was doing.
+     */
     @Override
-    public synchronized void close() {
-        if (player != null) {
-            player.close();
+    public void close() {
+        Bot left;
+        synchronized (slot) {
+            closed = true;
+            left = player;
             player = null;
         }
+        if (left != null) {
+            left.close();
+        }
+    }
+
+    private static final String FEWER = "Use fewer actions per call.";
+
+    private static java.util.function.IntFunction<String> cut(StringBuilder out) {
+        String text = out.toString();
+        return n -> Budget.truncate(text, n, FEWER);
     }
 }

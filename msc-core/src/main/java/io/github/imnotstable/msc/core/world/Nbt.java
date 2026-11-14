@@ -5,7 +5,6 @@ import java.io.DataOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -18,72 +17,129 @@ import java.util.zip.GZIPOutputStream;
  * byte[], String, List, Map (compound), int[], long[].
  */
 final class Nbt {
+    /** Deepest nesting of lists and compounds read, as in Minecraft: a deeper file would overflow the stack. */
+    static final int MAX_DEPTH = 512;
+
+    /**
+     * Rough heap a read may build, in bytes: every tag costs {@link #TAG_COST} plus its array or string data. Gzip
+     * shrinks a run of empty tags about 1000:1, so without a cap a small file could fill memory. A schematic of the
+     * largest region the tools accept (palette, block data and some block entities) needs far less.
+     */
+    static final long MAX_HEAP = 128L * 1024 * 1024;
+
+    /** Estimated heap of one tag (boxed value, map or list and its slot in the parent). */
+    static final int TAG_COST = 64;
+
     private Nbt() {
     }
 
     /** Read a gzipped NBT file; the root compound's name is dropped. */
     @SuppressWarnings("unchecked")
     static Map<String, Object> read(InputStream stream) throws IOException {
+        return read(stream, MAX_HEAP);
+    }
+
+    /** {@link #read(InputStream)} with another heap budget. */
+    @SuppressWarnings("unchecked")
+    static Map<String, Object> read(InputStream stream, long maxHeap) throws IOException {
         try (DataInputStream in = new DataInputStream(new GZIPInputStream(stream))) {
             int type = in.readUnsignedByte();
             if (type != 10) {
                 throw new IOException("NBT root is not a compound");
             }
             in.readUTF();
-            return (Map<String, Object>) payload(in, type);
+            return (Map<String, Object>) new Reader(in, maxHeap).payload(type, 0);
         }
     }
 
-    private static Object payload(DataInputStream in, int type) throws IOException {
-        switch (type) {
-            case 1: return in.readByte();
-            case 2: return in.readShort();
-            case 3: return in.readInt();
-            case 4: return in.readLong();
-            case 5: return in.readFloat();
-            case 6: return in.readDouble();
-            case 7: {
-                byte[] bytes = new byte[checked(in.readInt())];
-                in.readFully(bytes);
-                return bytes;
+    /** One read: the stream and what is left of the heap budget. */
+    private static final class Reader {
+        private final DataInputStream in;
+        private final long maxHeap;
+        private long left;
+
+        Reader(DataInputStream in, long maxHeap) {
+            this.in = in;
+            this.maxHeap = maxHeap;
+            this.left = maxHeap;
+        }
+
+        /** Take {@code bytes} of estimated heap from the budget before building them. */
+        private void charge(long bytes) throws IOException {
+            left -= bytes;
+            if (left < 0) {
+                throw new IOException("NBT would take more than " + maxHeap / (1024 * 1024)
+                        + " MB of memory; the file is not a schematic this tool reads");
             }
-            case 8: return in.readUTF();
-            case 9: {
-                int itemType = in.readUnsignedByte();
-                int n = checked(in.readInt());
-                List<Object> list = new ArrayList<>();
-                for (int i = 0; i < n; i++) {
-                    list.add(payload(in, itemType));
+        }
+
+        private String utf() throws IOException {
+            String s = in.readUTF();
+            charge(2L * s.length());
+            return s;
+        }
+
+        private Object payload(int type, int depth) throws IOException {
+            if (depth > MAX_DEPTH) {
+                throw new IOException("NBT nested deeper than " + MAX_DEPTH);
+            }
+            charge(TAG_COST);
+            switch (type) {
+                case 1: return in.readByte();
+                case 2: return in.readShort();
+                case 3: return in.readInt();
+                case 4: return in.readLong();
+                case 5: return in.readFloat();
+                case 6: return in.readDouble();
+                case 7: {
+                    int n = checked(in.readInt());
+                    charge(n);
+                    byte[] bytes = new byte[n];
+                    in.readFully(bytes);
+                    return bytes;
                 }
-                return list;
-            }
-            case 10: {
-                Map<String, Object> map = new LinkedHashMap<>();
-                while (true) {
-                    int t = in.readUnsignedByte();
-                    if (t == 0) {
-                        return map;
+                case 8: return utf();
+                case 9: {
+                    int itemType = in.readUnsignedByte();
+                    int n = checked(in.readInt());
+                    List<Object> list = new ArrayList<>();
+                    for (int i = 0; i < n; i++) {
+                        list.add(payload(itemType, depth + 1));
                     }
-                    String name = in.readUTF();
-                    map.put(name, payload(in, t));
+                    return list;
                 }
-            }
-            case 11: {
-                int[] ints = new int[checked(in.readInt())];
-                for (int i = 0; i < ints.length; i++) {
-                    ints[i] = in.readInt();
+                case 10: {
+                    Map<String, Object> map = new LinkedHashMap<>();
+                    while (true) {
+                        int t = in.readUnsignedByte();
+                        if (t == 0) {
+                            return map;
+                        }
+                        String name = utf();
+                        map.put(name, payload(t, depth + 1));
+                    }
                 }
-                return ints;
-            }
-            case 12: {
-                long[] longs = new long[checked(in.readInt())];
-                for (int i = 0; i < longs.length; i++) {
-                    longs[i] = in.readLong();
+                case 11: {
+                    int n = checked(in.readInt());
+                    charge(4L * n);
+                    int[] ints = new int[n];
+                    for (int i = 0; i < n; i++) {
+                        ints[i] = in.readInt();
+                    }
+                    return ints;
                 }
-                return longs;
+                case 12: {
+                    int n = checked(in.readInt());
+                    charge(8L * n);
+                    long[] longs = new long[n];
+                    for (int i = 0; i < n; i++) {
+                        longs[i] = in.readLong();
+                    }
+                    return longs;
+                }
+                default:
+                    throw new IOException("unknown NBT tag " + type);
             }
-            default:
-                throw new IOException("unknown NBT tag " + type);
         }
     }
 
@@ -140,10 +196,9 @@ final class Nbt {
         out.writeByte(0);
     }
 
+    /** Names are modified UTF-8 like every NBT string, so {@link DataInputStream#readUTF} reads them back. */
     private static void tag(DataOutputStream out, int type, String name) throws IOException {
         out.writeByte(type);
-        byte[] bytes = name.getBytes(StandardCharsets.UTF_8);
-        out.writeShort(bytes.length);
-        out.write(bytes);
+        out.writeUTF(name);
     }
 }

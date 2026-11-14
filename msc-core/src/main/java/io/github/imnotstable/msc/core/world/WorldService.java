@@ -4,8 +4,10 @@ import io.github.imnotstable.msc.core.agent.AgentHub;
 import io.github.imnotstable.msc.core.tool.Budget;
 import io.github.imnotstable.msc.core.tool.ToolException;
 import io.github.imnotstable.msc.protocol.Limits;
+import io.github.imnotstable.msc.protocol.message.ErrorCodes;
 import io.github.imnotstable.msc.protocol.op.Ops;
 import io.github.imnotstable.msc.protocol.transport.CoreServer;
+import io.github.imnotstable.msc.protocol.transport.OpException;
 import io.github.imnotstable.msc.protocol.world.BlockGrid;
 import io.github.imnotstable.msc.protocol.world.Region;
 import java.util.ArrayList;
@@ -27,6 +29,10 @@ public final class WorldService {
 
     private final AgentHub hub;
     private final Map<String, List<String>> edits = new LinkedHashMap<>();
+    /** Edits an undo is working on, so two calls do not undo the same parts. */
+    private final java.util.Set<String> undoing = new java.util.HashSet<>();
+    /** The agents' undo budget ({@code AgentDefaults.UNDO_BLOCKS}), for messages. */
+    private static final String UNDO_BLOCKS_TEXT = String.format(java.util.Locale.ROOT, "%,d", 8 * Limits.MAX_REGION_VOLUME);
     private int editCounter;
     private String worldSession;
     private String worldName;
@@ -341,16 +347,24 @@ public final class WorldService {
                     + MAX_ENTITY_SIDE + "x" + MAX_ENTITY_SIDE + ". Use a smaller region.");
         }
         String full = type == null || type.isBlank() ? null : BlockNames.full(type.strip().toLowerCase(java.util.Locale.ROOT));
+        // Minestom lists every entity of the instance and has no forceload command (ADR 0010).
+        boolean loadedChunksOnly = !"minestom".equals(hub.require().agent().platform());
         Ops.EntitiesResult r = hub.call(Ops.WORLD_ENTITIES, new Ops.EntitiesParams(region, full, Math.max(1, limit)));
-        return Budget.truncate(formatEntities(r, full, ids, region), maxChars, "Pass type, a smaller region or a lower limit.");
+        return Budget.truncate(formatEntities(r, full, ids, region, loadedChunksOnly), maxChars, "Pass type, a smaller region or a lower limit.");
     }
 
-    /** The listing: a count line with totals per type, then one line per entity. */
-    static String formatEntities(Ops.EntitiesResult r, String type, boolean ids, Region region) {
+    /**
+     * The listing: a count line with totals per type, then one line per entity. {@code loadedChunksOnly} says the
+     * agent searches only loaded chunks, so an empty answer suggests forceloading them.
+     */
+    static String formatEntities(Ops.EntitiesResult r, String type, boolean ids, Region region, boolean loadedChunksOnly) {
         if (r.total() == 0) {
+            String none = "no " + (type == null ? "entities" : BlockNames.brief(type) + " entities") + " in the region";
+            if (!loadedChunksOnly) {
+                return none;
+            }
             // With no player online the region's chunks are usually unloaded, and their entities with them.
-            return "no " + (type == null ? "entities" : BlockNames.brief(type) + " entities")
-                    + " in the region. Only loaded chunks are searched, and with no player nearby they are unloaded: "
+            return none + ". Only loaded chunks are searched, and with no player nearby they are unloaded: "
                     + "server_command \"forceload add " + region.min().x() + " " + region.min().z() + " "
                     + region.max().x() + " " + region.max().z() + "\" loads them, then ask again";
         }
@@ -399,11 +413,15 @@ public final class WorldService {
     /** Keep agent edit ids under one new edit id for {@code build_undo}, and return that id. */
     public synchronized String remember(List<String> agentEdits) {
         String id = "e" + (++editCounter);
-        edits.put(id, agentEdits);
+        edits.put(id, new ArrayList<>(agentEdits));
         return id;
     }
 
-    /** Undo one edit, or the most recent one when {@code id} is null. */
+    /**
+     * Undo one edit, or the most recent one when {@code id} is null, newest part first. Each agent part is dropped
+     * only once the agent has undone it, so after a failure the same id undoes the rest. A part the agent no
+     * longer keeps (its undo history is bounded) is skipped and reported.
+     */
     public String undo(String id) throws InterruptedException {
         List<String> agentEdits;
         String target = id;
@@ -416,15 +434,61 @@ public final class WorldService {
                     target = key;
                 }
             }
-            agentEdits = edits.remove(target);
-        }
-        if (agentEdits == null) {
-            throw new ToolException("unknown edit " + target + " (already undone, or from an earlier session)");
+            agentEdits = edits.get(target);
+            if (agentEdits == null) {
+                throw new ToolException("unknown edit " + target + " (already undone, or from an earlier session)");
+            }
+            if (!undoing.add(target)) {
+                throw new ToolException(target + " is being undone already");
+            }
         }
         long changed = 0;
-        for (int i = agentEdits.size() - 1; i >= 0; i--) {
-            changed += hub.call(Ops.WORLD_UNDO, new Ops.UndoParams(agentEdits.get(i))).changed();
+        int lost = 0;
+        int parts;
+        try {
+            synchronized (this) {
+                parts = agentEdits.size();
+            }
+            for (int i = parts - 1; i >= 0; i--) {
+                String part;
+                synchronized (this) {
+                    part = agentEdits.get(i);
+                }
+                try {
+                    changed += hub.call(Ops.WORLD_UNDO, new Ops.UndoParams(part)).changed();
+                } catch (OpException e) {
+                    if (!e.code().equals(ErrorCodes.NOT_FOUND)) {
+                        throw stopped(target, changed, e);
+                    }
+                    lost++;
+                } catch (RuntimeException e) {
+                    throw stopped(target, changed, e);
+                }
+                synchronized (this) {
+                    agentEdits.remove(i);
+                }
+            }
+            synchronized (this) {
+                edits.remove(target);
+            }
+        } finally {
+            synchronized (this) {
+                undoing.remove(target);
+            }
         }
-        return "undid " + target + ": " + changed + " blocks restored";
+        if (lost == 0) {
+            return "undid " + target + ": " + changed + " blocks restored";
+        }
+        return "undid " + target + " partly: " + changed + " blocks restored, " + lost + " of " + parts
+                + " parts no longer kept by the server (it keeps the last " + UNDO_BLOCKS_TEXT + " changed blocks)";
+    }
+
+    private static RuntimeException stopped(String target, long changed, RuntimeException e) {
+        if (changed == 0) {
+            return e;
+        }
+        return new ToolException("undo of " + target + " stopped after " + changed + " blocks restored: "
+                + (e instanceof OpException op ? op.detail() : e.getMessage()) + "; build_undo edit=" + target
+                + " again undoes the rest");
     }
 }

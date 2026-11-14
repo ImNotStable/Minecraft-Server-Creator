@@ -1,6 +1,9 @@
 package io.github.imnotstable.msc.bench.check;
 
+import io.github.imnotstable.msc.bench.Text;
+import io.github.imnotstable.msc.bench.run.ChildProcesses;
 import io.github.imnotstable.msc.bench.run.Workspaces;
+import io.github.imnotstable.msc.process.ServerJava;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -33,17 +36,18 @@ record CommandCheck(String name, List<String> run, int timeoutSeconds, int expec
                 Workspaces.copyTree(addFiles, context.workspace());
             }
             log = Files.createTempFile("msc-bench-check", ".log");
-            Process process = new ProcessBuilder(command)
+            // A Java tool (or a Gradle build) writes its output as UTF-8, as it is read below (#478).
+            Process process = context.start(ServerJava.processBuilder(command)
                     .directory(context.workspace().toFile())
                     .redirectErrorStream(true)
-                    .redirectOutput(log.toFile())
-                    .start();
+                    .redirectOutput(log.toFile()));
             if (!process.waitFor(timeoutSeconds, TimeUnit.SECONDS)) {
-                process.descendants().forEach(ProcessHandle::destroyForcibly);
-                process.destroyForcibly();
+                ChildProcesses.killTree(process);
                 return CheckResult.fail(name, "timed out after " + timeoutSeconds + "s");
             }
-            String output = Files.readString(log);
+            // Lenient UTF-8 (Text.read): tools write in the console charset (Cp1252 on Windows), and a stray byte must
+            // not fail a command that passed.
+            String output = Text.read(log);
             if (process.exitValue() != expectExit) {
                 return CheckResult.fail(name, "exit " + process.exitValue() + ": " + tail(output));
             }
@@ -68,7 +72,6 @@ record CommandCheck(String name, List<String> run, int timeoutSeconds, int expec
     }
 
     private static String tail(String output) {
-        String trimmed = output.strip();
-        return trimmed.length() <= 200 ? trimmed : trimmed.substring(trimmed.length() - 200);
+        return Text.tail(output.strip(), 200);
     }
 }

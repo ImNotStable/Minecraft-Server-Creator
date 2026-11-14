@@ -1,6 +1,6 @@
 # ADR 0007: msc-textures, pixel-art generation without an image model
 
-Date: 2026-11-11. Status: accepted. Decided by Claude under Jeremiah's instruction to build autonomously.
+Date: 2026-11-11. Status: accepted. Decided by Claude under Jeremiah's instruction to build autonomously. Amended 2026-11-14 (see the end).
 
 ## Context
 
@@ -36,3 +36,10 @@ Requested from the `msc-core` owner; the names follow `tools.md`:
 - A typical item or block texture costs one short tool call instead of 256 drawn characters, and comes out shaded consistently.
 - Generated art is recognisably procedural. The AI can still draw by hand with `texture_create`, or start from a generated texture and edit its palette text.
 - Shapes beyond gem, ingot and orb (tools, food, armour) are template work for later.
+
+## Amendment, 2026-11-14: statements later changes made untrue (#383)
+
+Found by reading every ADR against the code during the campaign. The original text above is kept as decided; what is true now:
+
+- The proposed tools were built, then merged: `texture_generate`, `texture_recolor` and `texture_animate` are ways into the one `texture` tool, and `pack_check` is `pack check=true` ([ADR 0023](0023-texture-tools.md)). `model_create` stays.
+- The last consequence: `sword`, `pickaxe` and `food` shapes were added by ADR 0023; armour is still not done.

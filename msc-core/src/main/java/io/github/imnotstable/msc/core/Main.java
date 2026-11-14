@@ -1,5 +1,7 @@
 package io.github.imnotstable.msc.core;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
+
 import io.github.imnotstable.msc.core.mcp.McpBridge;
 import io.github.imnotstable.msc.core.server.EulaCommand;
 import java.io.FileDescriptor;
@@ -8,6 +10,8 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.PrintStream;
 import java.net.URISyntaxException;
+import java.nio.charset.Charset;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.security.CodeSource;
 import java.time.Clock;
@@ -23,16 +27,47 @@ public final class Main {
     }
 
     public static void main(String[] args) throws Exception {
+        try {
+            run(args);
+        } catch (InvalidPathException e) {
+            String why = unrepresentable(e, Charset.forName(System.getProperty("sun.jnu.encoding"), UTF_8));
+            if (why == null) {
+                throw e;
+            }
+            // One line the owner can act on, not a stack trace: Claude Code shows it as the server's error.
+            System.err.println(why);
+            System.exit(2);
+        }
+    }
+
+    /**
+     * The one line Main prints when a path it was given (MSC_WORKSPACE, for example) has characters the file name
+     * encoding of this JVM ({@code sun.jnu.encoding}, from the locale: US-ASCII under {@code LANG=C}) cannot
+     * represent, or null when {@code e} is another bad path. Only the locale changes that encoding: Java 25 ignores
+     * {@code -Dsun.jnu.encoding}.
+     */
+    static String unrepresentable(InvalidPathException e, Charset fileNames) {
+        if (fileNames.newEncoder().canEncode(e.getInput())) {
+            return null;
+        }
+        return "MSC cannot use the path " + e.getInput() + ": this locale's file name encoding (" + fileNames.name()
+                + ") cannot represent its characters. Start Claude Code under a UTF-8 locale, for example with "
+                + "LANG=C.UTF-8 (or en_US.UTF-8) set.";
+    }
+
+    private static void run(String[] args) throws Exception {
         if (args.length > 0 && args[0].equals("eula")) {
             // The owner's own command, never an MCP tool: see EulaCommand and ADR 0020.
             Path installDir = installDir(Main.class.getProtectionDomain().getCodeSource());
             System.exit(EulaCommand.run(List.of(args).subList(1, args.length),
-                    CoreConfig.fromEnvironment(System.getenv()).eulaFile(), installDir, EulaCommand.console(),
+                    CoreConfig.fromEnvironment(System.getenv()).machineEula(), installDir, EulaCommand.console(),
                     Clock.systemUTC(), System.getProperty("user.name"), EulaCommand.hostName()));
         }
         if (args.length == 3 && args[0].equals("refresh-legacy-install")) {
             // Run by installMsc after each install: see LegacyInstall.
-            LegacyInstall.refresh(Path.of(args[1]), Path.of(args[2])).forEach(System.out::println);
+            // installMsc reads this as UTF-8, whatever the native encoding (#478).
+            PrintStream out = new PrintStream(new FileOutputStream(FileDescriptor.out), true, UTF_8);
+            LegacyInstall.refresh(Path.of(args[1]), Path.of(args[2])).forEach(out::println);
             return;
         }
         System.setProperty("java.awt.headless", "true");

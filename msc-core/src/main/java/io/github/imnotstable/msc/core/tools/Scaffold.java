@@ -11,6 +11,7 @@ import io.github.imnotstable.msc.templates.Templates;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -34,27 +35,49 @@ final class Scaffold {
         this.warmup = warmup;
     }
 
-    String run(Args args) throws IOException {
+    static final String WRITE_FILES = "write the project files";
+    static final String REMEMBER = "remember the workspace platform";
+    static final String WARMUP = "start the first build";
+
+    /**
+     * Checked first: the template, the name and package, and that the folder can be written. Then: write the files
+     * (through a staging folder beside tool files), remember the platform, start the first build.
+     */
+    String run(Args args) throws IOException, InterruptedException {
         String name = args.str("name");
-        Path dir = config.resolve(args.str("dir", "."));
+        Path dir = OutputFile.checkFolder(args.path("dir", ".", config.inWorkspace()), "dir");
         String template = args.str("template", Templates.PAPER_PLUGIN);
         if (!Templates.ids().contains(template)) {
             throw new ToolException("unknown template " + template + ". Available: " + String.join(", ", Templates.ids()));
         }
-        ScaffoldResult result;
+        TemplateVariables vars;
         try {
-            TemplateVariables vars = TemplateVariables.of(name).withAcceptEula(args.bool("acceptEula", false));
-            if (args.has("package")) {
-                vars = vars.withPackageName(args.str("package").strip());
-            }
-            result = onlyToolFiles(dir) ? besideToolFiles(template, dir, vars) : Templates.scaffold(template, dir, vars);
+            TemplateVariables v = TemplateVariables.of(name).withAcceptEula(args.bool("acceptEula", false));
+            vars = args.has("package") ? v.withPackageName(args.str("package").strip()) : v;
         } catch (IllegalArgumentException | IllegalStateException e) {
             throw new ToolException(String.valueOf(e.getMessage()));
         }
         String platformId = Templates.info(template).get("platform");
-        if (platformId != null && !template.equals(Templates.PAPER_SERVER)
-                && (dir.equals(config.workspace()) || !Files.exists(Platform.file(config)))) {
-            Platform.remember(config, Platform.of(platformId));
+        boolean remember = platformId != null && !template.equals(Templates.PAPER_SERVER)
+                && (dir.equals(config.workspace()) || !Files.exists(Platform.file(config)));
+        boolean warm = Boolean.parseBoolean(Templates.info(template).get("warmup"));
+        Steps steps = new Steps("project_scaffold").then(WRITE_FILES);
+        if (remember) {
+            steps.then(REMEMBER).ifFails(REMEMBER, "the project is created, but the workspace platform is still "
+                    + Platform.current(config).id() + ": server_setup platform=" + platformId + " sets it");
+        }
+        if (warm) {
+            steps.then(WARMUP).ifFails(WARMUP, "the project is created; dev_cycle runs the first build");
+        }
+        ScaffoldResult result = steps.run(WRITE_FILES, () -> {
+            try {
+                return onlyToolFiles(dir) ? besideToolFiles(template, dir, vars) : Templates.scaffold(template, dir, vars);
+            } catch (IllegalArgumentException | IllegalStateException e) {
+                throw new ToolException(String.valueOf(e.getMessage()));
+            }
+        });
+        if (remember) {
+            steps.run(REMEMBER, () -> Platform.remember(config, Platform.of(platformId)));
         }
         StringBuilder out = new StringBuilder();
         out.append("created ").append(template).append(" project in ").append(dir).append(" (")
@@ -65,8 +88,8 @@ final class Scaffold {
                 out.append('\n').append(key).append(": ").append(result.values().get(key));
             }
         }
-        if (Boolean.parseBoolean(Templates.info(template).get("warmup"))) {
-            warmup.start(dir);
+        if (warm) {
+            steps.run(WARMUP, () -> warmup.start(dir));
             out.append("\nfirst build started in the background (the loader sets up Minecraft once, which takes "
                     + "minutes); dev_cycle waits for it");
         }
@@ -74,7 +97,7 @@ final class Scaffold {
         if (platform != null && platform.needsEula()
                 && !Files.exists(config.serverDir().resolve(platform.serverJar()))) {
             // The server is not set up yet: a first dev_cycle would build for nothing and then stop there.
-            Optional<MachineEula.Acceptance> machine = MachineEula.read(config.eulaFile());
+            Optional<MachineEula.Acceptance> machine = config.machineEula().read();
             if (machine.isPresent()) {
                 out.append("\nnext: server_setup (the Minecraft EULA is accepted for this machine by ")
                         .append(machine.get().describe()).append("), then edit the code and dev_cycle");
@@ -102,15 +125,26 @@ final class Scaffold {
     /** Templates only write into empty directories, so render into a staging folder and move the files in. */
     private ScaffoldResult besideToolFiles(String template, Path dir, TemplateVariables vars) throws IOException {
         Path staging = Files.createTempDirectory(Files.createDirectories(config.dataDir()), "scaffold-");
-        Path staged = staging.resolve("project");
-        ScaffoldResult result = Templates.scaffold(template, staged, vars);
-        try (Stream<Path> list = Files.list(staged)) {
-            for (Path entry : list.toList()) {
-                Files.move(entry, dir.resolve(entry.getFileName().toString()));
+        try {
+            Path staged = staging.resolve("project");
+            ScaffoldResult result = Templates.scaffold(template, staged, vars);
+            try (Stream<Path> list = Files.list(staged)) {
+                for (Path entry : list.toList()) {
+                    Files.move(entry, dir.resolve(entry.getFileName().toString()));
+                }
+            }
+            return result;
+        } finally {
+            // The call owns its staging folder: gone also when the template refuses the arguments.
+            deleteTree(staging);
+        }
+    }
+
+    static void deleteTree(Path root) throws IOException {
+        try (Stream<Path> tree = Files.walk(root)) {
+            for (Path p : tree.sorted(Comparator.reverseOrder()).toList()) {
+                Files.delete(p);
             }
         }
-        Files.delete(staged);
-        Files.delete(staging);
-        return result;
     }
 }

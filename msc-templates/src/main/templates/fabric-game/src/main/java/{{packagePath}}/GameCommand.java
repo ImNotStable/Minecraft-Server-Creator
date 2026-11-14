@@ -46,9 +46,11 @@ public final class GameCommand {
     public void register(CommandDispatcher<CommandSourceStack> dispatcher) {
         SuggestionProvider<CommandSourceStack> suggest = (context, builder) -> {
             String typed = builder.getRemaining();
+            String[] words = words(typed, true);
             // Suggest for the last word only: the greedy argument holds the whole line after "game ".
-            SuggestionsBuilder word = builder.createOffset(builder.getStart() + typed.lastIndexOf(' ') + 1);
-            return SharedSuggestionProvider.suggest(suggestions(context.getSource(), typed), word);
+            SuggestionsBuilder word = builder.createOffset(
+                    builder.getStart() + typed.length() - words[words.length - 1].length());
+            return SharedSuggestionProvider.suggest(suggestions(context.getSource(), words), word);
         };
         dispatcher.register(Commands.literal("game")
                 .requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS))
@@ -59,7 +61,7 @@ public final class GameCommand {
 
     private int run(CommandContext<CommandSourceStack> context, String args) {
         CommandSourceStack source = context.getSource();
-        List<Reply> replies = handle(source, args.isBlank() ? new String[0] : args.strip().split("\\s+"));
+        List<Reply> replies = handle(source, words(args, false));
         for (Reply r : replies) {
             if (r.ok()) {
                 source.sendSuccess(() -> Component.literal(r.text()), false);
@@ -144,8 +146,7 @@ public final class GameCommand {
     }
 
     /** Suggestions for the word being typed: subcommands first, then stage names, then player names. */
-    private List<String> suggestions(CommandSourceStack source, String typed) {
-        String[] words = typed.split(" ", -1);
+    private List<String> suggestions(CommandSourceStack source, String[] words) {
         if (words.length <= 1) {
             return SUBCOMMANDS;
         }
@@ -153,6 +154,19 @@ public final class GameCommand {
             return stageNames();
         }
         return online(source).stream().map(ServerPlayer::getPlainTextName).toList();
+    }
+
+    /**
+     * The words of a command line, split on runs of whitespace, so {@code stage  arena} is two words.
+     * With {@code typing} (tab completion), a trailing space starts an empty last word, the one being
+     * typed, and there is always a last word.
+     */
+    static String[] words(String line, boolean typing) {
+        String s = typing ? line.stripLeading() : line.strip();
+        if (s.isEmpty()) {
+            return typing ? new String[] {""} : new String[0];
+        }
+        return s.split("\\s+", typing ? -1 : 0);
     }
 
     private List<String> stageNames() {

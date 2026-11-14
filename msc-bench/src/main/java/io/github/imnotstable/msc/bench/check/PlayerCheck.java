@@ -1,9 +1,13 @@
 package io.github.imnotstable.msc.bench.check;
 
-import com.google.gson.JsonObject;
+import io.github.imnotstable.msc.bench.JsonNumbers;
+import io.github.imnotstable.msc.bench.Text;
+import io.github.imnotstable.msc.bench.UserJson;
+import io.github.imnotstable.msc.bench.run.ChildProcesses;
 import io.github.imnotstable.msc.bot.BlockSource;
 import io.github.imnotstable.msc.bot.Bot;
 import io.github.imnotstable.msc.bot.Bots;
+import io.github.imnotstable.msc.process.ServerJava;
 import io.github.imnotstable.msc.protocol.world.BlockGrid;
 import io.github.imnotstable.msc.protocol.world.Region;
 import java.io.IOException;
@@ -56,7 +60,7 @@ record PlayerCheck(
         }
     }
 
-    static PlayerCheck parse(String name, JsonObject json) {
+    static PlayerCheck parse(String name, UserJson json) {
         List<Pattern> expect = new ArrayList<>();
         for (String regex : Checks.strings(json, "expect")) {
             expect.add(Pattern.compile(regex, Pattern.MULTILINE));
@@ -64,14 +68,14 @@ record PlayerCheck(
         return new PlayerCheck(
                 name,
                 Checks.require(json, "jar"),
-                json.has("command") ? Checks.strings(json, "command") : List.of("{java}", "-Xmx1G", "-jar", "server.jar"),
+                json.exactStrings("command", List.of("{java}", "-Xmx1G", "-jar", "server.jar")),
                 Checks.string(json, "port", "{serverPort}"),
                 Checks.string(json, "player", "Steve"),
-                json.has("script") ? Checks.strings(json, "script") : List.of(),
-                json.has("console") ? Checks.strings(json, "console") : List.of(),
+                json.exactStrings("script"),
+                json.exactStrings("console"),
                 Pattern.compile(Checks.string(json, "ready", "Done \\(")),
                 expect,
-                json.has("timeoutSeconds") ? json.get("timeoutSeconds").getAsInt() : 180);
+                json.wholeNumber("timeoutSeconds", JsonNumbers.SECONDS, 180));
     }
 
     @Override
@@ -89,11 +93,11 @@ record PlayerCheck(
             deleteTree(dir);
             Files.createDirectories(dir);
             Files.copy(builtJar, dir.resolve("server.jar"), StandardCopyOption.REPLACE_EXISTING);
-            server = new ProcessBuilder(Placeholders.fill(command, context.placeholders()))
+            // The console is written and read as UTF-8 below; so must the server's Java speak (#478).
+            server = context.start(ServerJava.processBuilder(Placeholders.fill(command, context.placeholders()))
                     .directory(dir.toFile())
                     .redirectErrorStream(true)
-                    .redirectOutput(log.toFile())
-                    .start();
+                    .redirectOutput(log.toFile()));
             if (!waitFor(ready, log, server, deadline)) {
                 return CheckResult.fail(name, (server.isAlive() ? "server not ready in time: " : "server stopped: ")
                         + tail(read(log)));
@@ -131,8 +135,7 @@ record PlayerCheck(
             return CheckResult.fail(name, "interrupted");
         } finally {
             if (server != null && server.isAlive()) {
-                server.descendants().forEach(ProcessHandle::destroyForcibly);
-                server.destroyForcibly();
+                ChildProcesses.killTree(server);
             }
         }
     }
@@ -195,9 +198,7 @@ record PlayerCheck(
             // Already gone: nothing to stop.
         }
         if (!server.waitFor(20, TimeUnit.SECONDS)) {
-            server.descendants().forEach(ProcessHandle::destroyForcibly);
-            server.destroyForcibly();
-            server.waitFor(10, TimeUnit.SECONDS);
+            ChildProcesses.killTree(server);
         }
     }
 
@@ -208,12 +209,11 @@ record PlayerCheck(
     }
 
     private static String read(Path log) throws IOException {
-        return Files.isRegularFile(log) ? new String(Files.readAllBytes(log), StandardCharsets.UTF_8) : "";
+        return Files.isRegularFile(log) ? Text.read(log) : "";
     }
 
     private static String tail(String text) {
-        String trimmed = text.strip();
-        return trimmed.length() <= 300 ? trimmed : "..." + trimmed.substring(trimmed.length() - 300);
+        return Text.tailWithEllipsis(text.strip(), 303);
     }
 
     private static void deleteTree(Path dir) throws IOException {

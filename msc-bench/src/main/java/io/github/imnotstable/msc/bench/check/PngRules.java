@@ -1,6 +1,7 @@
 package io.github.imnotstable.msc.bench.check;
 
-import com.google.gson.JsonObject;
+import io.github.imnotstable.msc.bench.JsonNumbers;
+import io.github.imnotstable.msc.bench.UserJson;
 import java.awt.Color;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
@@ -12,7 +13,8 @@ import java.util.Set;
 import javax.imageio.ImageIO;
 
 /**
- * Rules a pixel-art PNG must meet. Every field is optional; 0 means "not checked".
+ * Rules a pixel-art PNG must meet. Every field is optional; 0 means "not checked", and a size or count given in
+ * {@code task.json} must be above 0.
  *
  * @param width             exact width in pixels
  * @param height            exact height in pixels
@@ -38,22 +40,35 @@ public record PngRules(
         }
     }
 
-    static PngRules parse(JsonObject json) {
+    /** The keys of the rules, which a {@code png} check and a zip's {@code pngEntries} entry hold (#502). */
+    static final List<String> KEYS = List.of("width", "height", "maxColors", "minOpaqueFraction", "maxOpaqueFraction",
+            "hue");
+
+    /** The keys of {@code hue}. */
+    static final UserJson.Keys HUE = UserJson.Keys.of("from", "to", "minFraction", "minSaturation");
+
+    /** Reads the rules of a check or zip entry. */
+    static PngRules parse(UserJson json) {
         HueRule hue = null;
-        if (json.has("hue")) {
-            JsonObject h = json.getAsJsonObject("hue");
+        UserJson h = json.exactObject("hue", HUE);
+        if (h != null) {
+            for (String required : List.of("from", "to")) {
+                if (!h.has(required)) {
+                    throw new IllegalArgumentException(json.key("hue") + ": missing \"" + required + "\"");
+                }
+            }
             hue = new HueRule(
-                    h.get("from").getAsDouble(),
-                    h.get("to").getAsDouble(),
-                    h.has("minFraction") ? h.get("minFraction").getAsDouble() : 0.5,
-                    h.has("minSaturation") ? h.get("minSaturation").getAsDouble() : 0.25);
+                    h.number("from", JsonNumbers.HUE, 0),
+                    h.number("to", JsonNumbers.HUE, 0),
+                    h.number("minFraction", JsonNumbers.FRACTION, 0.5),
+                    h.number("minSaturation", JsonNumbers.FRACTION, 0.25));
         }
         return new PngRules(
-                json.has("width") ? json.get("width").getAsInt() : 0,
-                json.has("height") ? json.get("height").getAsInt() : 0,
-                json.has("maxColors") ? json.get("maxColors").getAsInt() : 0,
-                json.has("minOpaqueFraction") ? json.get("minOpaqueFraction").getAsDouble() : 0,
-                json.has("maxOpaqueFraction") ? json.get("maxOpaqueFraction").getAsDouble() : 0,
+                json.wholeNumber("width", JsonNumbers.POSITIVE, 0),
+                json.wholeNumber("height", JsonNumbers.POSITIVE, 0),
+                json.wholeNumber("maxColors", JsonNumbers.POSITIVE, 0),
+                json.number("minOpaqueFraction", JsonNumbers.FRACTION, 0),
+                json.number("maxOpaqueFraction", JsonNumbers.FRACTION, 0),
                 hue);
     }
 

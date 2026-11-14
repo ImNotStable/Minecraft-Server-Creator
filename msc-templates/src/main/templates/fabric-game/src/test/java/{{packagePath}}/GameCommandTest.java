@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
+import com.mojang.brigadier.suggestion.Suggestion;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -43,7 +44,7 @@ class GameCommandTest {
     @BeforeEach
     void register() {
         dispatcher = new CommandDispatcher<>();
-        Game game = new Game(GameConfig.game(), new Progress(dir.resolve("progress.properties")), () -> {
+        Game game = new Game(TestGames.twoStages(), new Progress(dir.resolve("progress.properties")), () -> {
         });
         new GameCommand(game).register(dispatcher);
     }
@@ -84,7 +85,8 @@ class GameCommandTest {
         int result = dispatcher.execute("game status", source(console, LevelBasedPermissionSet.OWNER));
 
         assertThat(result).isEqualTo(1);
-        assertThat(console.messages).containsExactly("game: 2 stages, time 6000, normal, 0 online, 0 saved");
+        // Only the start of the line: state you add to the status does not break it.
+        assertThat(console.messages).first().asString().startsWith("game: 2 stages, time " + TestGames.TIME + ", normal, 0 online");
     }
 
     @Test
@@ -98,6 +100,21 @@ class GameCommandTest {
 
         assertThat(console.messages).containsExactly(GameCommand.USAGE,
                 "no stage lava. Stages: [start, arena]", "name a player: next <player>");
+    }
+
+    /** Words are split on runs of spaces, and tab completion offers stage names after them. */
+    @Test
+    void extraSpacesBetweenWordsAreIgnored() throws CommandSyntaxException {
+        Recorder console = new Recorder();
+        CommandSourceStack source = source(console, LevelBasedPermissionSet.OWNER);
+
+        dispatcher.execute("game  stage   lava  Steve", source);
+
+        assertThat(console.messages).containsExactly("no stage lava. Stages: [start, arena]");
+        assertThat(dispatcher.getCompletionSuggestions(dispatcher.parse("game stage  ", source)).join().getList())
+                .extracting(Suggestion::getText).containsExactly("arena", "start");
+        assertThat(dispatcher.getCompletionSuggestions(dispatcher.parse("game stage   ar", source)).join().getList())
+                .extracting(Suggestion::getText).containsExactly("arena");
     }
 
     @Test

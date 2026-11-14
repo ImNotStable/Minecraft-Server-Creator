@@ -1,5 +1,6 @@
 package io.github.imnotstable.msc.renderer;
 
+import io.github.imnotstable.msc.protocol.Limits;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -8,7 +9,8 @@ import java.util.Set;
 
 /**
  * Something that is not a block, drawn on top of the image. Entities are numbered dots coloured by {@link Kind};
- * holograms and signs show their words in a text box. The caption lists every marker by number with its label.
+ * holograms and signs show their words in a text box. The caption lists each drawn marker by number with its label
+ * and counts the rest by type.
  * Build one with {@link #entity}, {@link #sign} or {@link #text}.
  *
  * @param x     world x: an entity's feet, a hologram's anchor, or a sign block's centre
@@ -116,7 +118,8 @@ public record Marker(double x, double y, double z, String label, Kind kind, List
         return id.contains(":") ? Kind.OTHER : Kind.CREATURE;
     }
 
+    /** World text (a name, sign lines, a hologram) cut for the legend, never through an emoji (#479). */
     private static String shorten(String s) {
-        return s.length() > MAX_NAME ? s.substring(0, MAX_NAME - 1) + "..." : s;
+        return s.length() > MAX_NAME ? Limits.head(s, MAX_NAME - 1) + "..." : s;
     }
 }

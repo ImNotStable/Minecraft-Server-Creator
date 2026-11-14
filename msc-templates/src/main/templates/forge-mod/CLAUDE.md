@@ -13,7 +13,8 @@ Minecraft Forge server mod for Minecraft {{mcVersion}}, Java {{javaVersion}}, Gr
 
 - `src/main/java/{{packagePath}}/{{mainClass}}.java`: entry point (`@Mod`). Only wiring here (commands, event listeners); put logic in its own classes.
 - `src/main/resources/META-INF/mods.toml`: mod metadata and dependencies. The mod id is `{{modId}}`.
-- `src/test/java/`: plain unit tests (`GreeterTest`)Each Forge event has its own bus: `ServerStartingEvent.BUS.addListener(e -> ...)`, `RegisterCommandsEvent.BUS`, `PlayerEvent.PlayerLoggedInEvent.BUS`, `TickEvent.ServerTickEvent.Post.BUS`, `BlockEvent.BreakEvent.BUS`. Add a mixin only when no event exists.
+- `src/main/resources/pack.mcmeta`: marks the jar as a resource and data pack. Forge needs it to load anything under `assets/` or `data/`; without it the server warns `Missing metadata in pack mod:{{modId}}`.
+- `src/test/java/`: plain unit tests (`GreeterTest`). They run on plain JUnit without Forge loaded: keep logic that tests need free of registries, and check commands and events on the dev server.
 - `gradle/libs.versions.toml`: every dependency version. Add versions there, never inline in `build.gradle.kts`.
 - `run/`: dev server. `server.properties` and `eula.txt` are committed; the world, logs and jars are not.
 
@@ -21,13 +22,105 @@ Minecraft Forge server mod for Minecraft {{mcVersion}}, Java {{javaVersion}}, Gr
 
 - Names are Mojang's official names (Minecraft 26.x is not obfuscated): `ServerPlayer`, `ServerLevel`, `BlockPos`, `Component`. Don't use SRG names (`m_12345_`) or names from old tutorials.
 - This is a server-side mod: never reference client classes (`net.minecraft.client`).
-- . They run on plain JUnit without Forge loaded: keep logic that tests need free of registries, and check commands and events on the dev server.
+- Each Forge event has its own bus: `ServerStartingEvent.BUS.addListener(e -> ...)`, `RegisterCommandsEvent.BUS`, `PlayerEvent.PlayerLoggedInEvent.BUS`, `TickEvent.ServerTickEvent.Post.BUS`, `BlockEvent.BreakEvent.BUS`. Add a mixin only when no event exists.
+- A cancellable event's bus (`BlockEvent.BreakEvent.BUS`) has two one-argument `addListener` methods: a `Consumer` and a `Predicate` that returns `true` to cancel. A lambda whose body is a single boolean expression fits both and does not compile; give it a block body (`e -> { return ...; }`), as the recipe below does.
 - Commands are Brigadier trees built with `Commands.literal(...)` and `Commands.argument(...)`; reply with `source.sendSuccess(() -> component, false)` or `source.sendFailure(component)`.
 - Text is `Component.literal(...)` / `Component.translatable(...)` with `.withStyle(ChatFormatting.X)`. Never use `§` codes.
 - Never block the server thread (no I/O, sleeps or network in listeners or commands). Do slow work on another thread, then hop back with `server.execute(...)` before touching the world.
 - World, entity and inventory access only on the server thread.
-- Config goes through `ForgeConfigSpec`, registered with `FMLJavaModLoadingContext.registerConfig`.
+- Config goes through `ForgeConfigSpec`: take `FMLJavaModLoadingContext context` in the constructor and call `context.registerConfig(ModConfig.Type.SERVER, spec)`. `SERVER` configs live in the world's `serverconfig/{{modId}}-server.toml` and load when the server starts, so read values (`value.get()`) in listeners and commands, not in the constructor.
 - Prefer small final classes and records. Pass dependencies through constructors; avoid static state.
+
+## Recipes
+
+Built and tested against this project's pinned versions; copy them as they are.
+
+A command with an argument, `src/main/java/{{packagePath}}/CountdownCommand.java`:
+
+```java
+package {{packageName}};
+
+import com.mojang.brigadier.CommandDispatcher;
+import com.mojang.brigadier.arguments.IntegerArgumentType;
+import net.minecraft.commands.CommandSourceStack;
+import net.minecraft.commands.Commands;
+import net.minecraft.network.chat.Component;
+
+/** {@code /countdown <seconds>}: a command with a number argument, 1 to 600. */
+public final class CountdownCommand {
+    private CountdownCommand() {
+    }
+
+    public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
+        dispatcher.register(Commands.literal("countdown")
+                .then(Commands.argument("seconds", IntegerArgumentType.integer(1, 600)).executes(context -> {
+                    int seconds = IntegerArgumentType.getInteger(context, "seconds");
+                    context.getSource().sendSuccess(() -> Component.literal("Starting in " + seconds + "s"), false);
+                    return seconds;
+                })));
+    }
+}
+```
+
+A setting, `src/main/java/{{packagePath}}/Settings.java`:
+
+```java
+package {{packageName}};
+
+import net.minecraftforge.common.ForgeConfigSpec;
+
+/** The mod's settings, in the world's serverconfig/{{modId}}-server.toml. */
+public final class Settings {
+    final ForgeConfigSpec.BooleanValue protectBlocks;
+    final ForgeConfigSpec spec;
+
+    Settings() {
+        ForgeConfigSpec.Builder builder = new ForgeConfigSpec.Builder();
+        protectBlocks = builder.comment("Stop players breaking blocks.").define("protectBlocks", false);
+        spec = builder.build();
+    }
+}
+```
+
+The entry point with both wired in, and a block-break listener that reads the setting:
+
+```java
+package {{packageName}};
+
+import net.minecraftforge.event.RegisterCommandsEvent;
+import net.minecraftforge.event.entity.player.PlayerEvent;
+import net.minecraftforge.event.level.BlockEvent;
+import net.minecraftforge.fml.common.Mod;
+import net.minecraftforge.fml.config.ModConfig;
+import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+/** Mod entry point: registers settings, commands and event listeners, and holds no game logic itself. */
+@Mod({{mainClass}}.MOD_ID)
+public final class {{mainClass}} {
+    public static final String MOD_ID = "{{modId}}";
+    public static final Logger LOG = LoggerFactory.getLogger(MOD_ID);
+
+    public {{mainClass}}(FMLJavaModLoadingContext context) {
+        Greeter greeter = new Greeter(Greeter.DEFAULT_JOIN, Greeter.DEFAULT_HELLO);
+        Settings settings = new Settings();
+        context.registerConfig(ModConfig.Type.SERVER, settings.spec);
+
+        RegisterCommandsEvent.BUS.addListener(e -> {
+            HelloCommand.register(e.getDispatcher(), greeter);
+            CountdownCommand.register(e.getDispatcher());
+        });
+        PlayerEvent.PlayerLoggedInEvent.BUS.addListener(e ->
+                e.getEntity().sendSystemMessage(greeter.join(e.getEntity().getPlainTextName())));
+        // Returning true cancels the break.
+        BlockEvent.BreakEvent.BUS.addListener(e -> {
+            return settings.protectBlocks.get();
+        });
+        LOG.info("{{name}} loaded");
+    }
+}
+```
 
 ## Tests
 

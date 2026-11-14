@@ -37,7 +37,9 @@ class McpBridgeTest {
                 JsonObject init = read(reader, 1).getAsJsonObject("result");
                 assertThat(init.getAsJsonObject("serverInfo").get("name").getAsString()).isEqualTo("msc-core");
                 assertThat(init.get("instructions").getAsString()).contains("dev_cycle").contains("acceptEula=true")
-                        .contains("never accept it for them");
+                        .contains("never accept it for them")
+                        .contains("(Paper, Purpur, Fabric, Quilt, NeoForge, Forge or Minestom)")
+                        .contains("Paper, Purpur, Fabric, Quilt, NeoForge and Forge need the user's agreement");
                 send(toServer, "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}");
 
                 send(toServer, "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\",\"params\":{}}");
@@ -83,6 +85,38 @@ class McpBridgeTest {
                 byte[] png = java.util.Base64.getDecoder().decode(image.get("data").getAsString());
                 assertThat(javax.imageio.ImageIO.read(new java.io.ByteArrayInputStream(png))).isNotNull();
                 assertThat(rendered.get(1).getAsJsonObject().get("text").getAsString()).startsWith("Top view");
+            } finally {
+                server.close();
+            }
+        }
+    }
+
+    @Test
+    void badOrBatchedLinesDoNotStopTheServer(@TempDir Path workspace) throws Exception {
+        java.io.ByteArrayOutputStream noteBytes = new java.io.ByteArrayOutputStream();
+        try (CoreHarness h = new CoreHarness(workspace);
+             PipedOutputStream toServer = new PipedOutputStream();
+             PipedInputStream serverIn = new PipedInputStream(toServer, 1 << 16);
+             PipedOutputStream serverOut = new PipedOutputStream();
+             PipedInputStream fromServer = new PipedInputStream(serverOut, 1 << 20);
+             java.io.PrintStream notes = new java.io.PrintStream(noteBytes, true, StandardCharsets.UTF_8)) {
+            McpSyncServer server = McpBridge.start(h.core.registry(), serverIn, serverOut, notes);
+            BufferedReader reader = new BufferedReader(new InputStreamReader(fromServer, StandardCharsets.UTF_8));
+            try {
+                send(toServer, "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-03-26\","
+                        + "\"capabilities\":{},\"clientInfo\":{\"name\":\"test\",\"version\":\"1\"}}}");
+                read(reader, 1);
+                send(toServer, "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}");
+                send(toServer, "this is not json");
+                send(toServer, "{\"hello\":1}");
+                send(toServer, "[{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"ping\"},42]");
+                assertThat(read(reader, 2).has("result")).isTrue();
+                send(toServer, "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"ping\"}");
+                assertThat(read(reader, 3).has("result")).isTrue();
+                assertThat(noteBytes.toString(StandardCharsets.UTF_8).lines().toList()).containsExactly(
+                        "msc-core: ignored stdin input that is not a JSON-RPC message: this is not json",
+                        "msc-core: ignored stdin input that is not a JSON-RPC message: {\"hello\":1}",
+                        "msc-core: ignored stdin input that is not a JSON-RPC message: 42");
             } finally {
                 server.close();
             }

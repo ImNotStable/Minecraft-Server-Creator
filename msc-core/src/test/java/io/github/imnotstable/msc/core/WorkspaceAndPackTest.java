@@ -5,7 +5,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.github.imnotstable.msc.core.fixture.FakeServerMain;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -47,8 +50,25 @@ class WorkspaceAndPackTest {
         return packBuild.lines().filter(l -> l.startsWith("url: ")).findFirst().orElseThrow().substring(5);
     }
 
+    /** #457: a folder msc_workspace cannot create is a one-line refusal naming it, never an internal error. */
+    @Test
+    void aFolderThatCannotBeCreatedIsRefusedInOneLine() throws Exception {
+        Files.writeString(first.resolve("version.txt"), "1.0");
+        assertThat(h.error("msc_workspace", "path", "version.txt/sub", "create", true))
+                .startsWith("error: folder " + first.resolve("version.txt/sub") + " could not be created: ")
+                .doesNotContain("internal").doesNotContain("\n");
+        assertThat(h.error("msc_workspace", "path", "a".repeat(300), "create", true))
+                .isEqualTo("error: argument path has a name of 300 bytes (" + "a".repeat(24)
+                        + "...); file systems hold at most 255. Use a shorter name.");
+        assertThat(h.error("msc_workspace", "path", "a\u0000b")).contains("control character (U+0000)");
+        assertThat(h.ok("msc_workspace")).isEqualTo("workspace: " + first);
+    }
+
     @Test
     void switchingMovesEveryToolToTheNewFolderAndStopsTheOldServer() throws Exception {
+        h.close();
+        h = new CoreHarness(first, c -> c.withServerCommand(java(FakeServerMain.class))
+                .withToolLog(first.resolve(".msc/tool-calls.jsonl")));
         assertThat(h.ok("msc_workspace")).isEqualTo("workspace: " + first);
         Path second = root.resolve("second project");
         assertThat(h.error("msc_workspace", "path", "../second project")).contains("no folder").contains("create=true");
@@ -63,7 +83,31 @@ class WorkspaceAndPackTest {
         assertThat(second.resolve(".msc/pack/assets/msc/textures/item/dot.png")).exists();
         assertThat(first.resolve(".msc/pack")).doesNotExist();
         assertThat(h.ok("msc_workspace", "path", second.toString())).startsWith("workspace is already ");
-        assertThat(h.ok("msc_status", "stats", true)).contains("msc_workspace");
+        assertThat(h.ok("msc_status", "stats", true)).contains("msc_workspace")
+                .contains("log: " + second.toRealPath().resolve(".msc/tool-calls.jsonl"));
+        // The tool log moved along: later calls land in the new workspace's log, not the first one's.
+        long firstLines = Files.readAllLines(first.resolve(".msc/tool-calls.jsonl")).size();
+        h.ok("msc_status");
+        assertThat(Files.readAllLines(first.resolve(".msc/tool-calls.jsonl"))).hasSize((int) firstLines);
+        assertThat(second.resolve(".msc/tool-calls.jsonl")).content().contains("\"tool\":\"msc_status\"");
+    }
+
+    @Test
+    void aLongCallHoldsUpNeitherASwitchNorTheEndOfTheSession() throws Exception {
+        h.ok("server_start", "timeoutSeconds", 30);
+        h.core.lockWait(Duration.ofMillis(300));
+        CompletableFuture<String> wait = CompletableFuture.supplyAsync(
+                () -> h.call("server_wait", "until", "^no such line$", "timeoutSeconds", 600).text());
+        Thread.sleep(500);
+        long started = System.nanoTime();
+        assertThat(h.error("msc_workspace", "path", "../second", "create", true))
+                .contains("server_wait is still running").contains("still in " + first);
+        assertThat(h.ok("msc_status")).contains("workspace: " + first);
+        h.close();
+        // Closing interrupts the call (or stops the server under it) instead of waiting out its 600 s.
+        assertThat(wait.get(10, TimeUnit.SECONDS)).containsAnyOf("server_wait was stopped: the session ended", "the server stopped");
+        assertThat(h.core.server().running()).isFalse();
+        assertThat(Duration.ofNanos(System.nanoTime() - started)).isLessThan(Duration.ofSeconds(15));
     }
 
     @Test

@@ -8,7 +8,8 @@ import io.github.imnotstable.msc.bench.check.Check;
 import io.github.imnotstable.msc.bench.check.CheckContext;
 import io.github.imnotstable.msc.bench.check.CheckResult;
 import io.github.imnotstable.msc.bench.check.Checks;
-import io.github.imnotstable.msc.bench.rcon.RconClient;
+import io.github.imnotstable.msc.process.rcon.FakeRconServer;
+import io.github.imnotstable.msc.process.rcon.RconClient;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -19,12 +20,15 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 import javax.imageio.ImageIO;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 
+@Timeout(value = 5, unit = TimeUnit.MINUTES, threadMode = Timeout.ThreadMode.SEPARATE_THREAD) // a hang fails
 class ChecksTest {
 
     private static final String RUBY_RULES = "\"width\":16,\"height\":16,\"maxColors\":8,\"minOpaqueFraction\":0.2,"
@@ -41,11 +45,23 @@ class ChecksTest {
     }
 
     private CheckResult run(String json, FakeRconServer server) {
-        return run(Checks.parse(JsonParser.parseString(json).getAsJsonObject(), taskDir), server);
+        return run(Checks.parse(UserJson.of(JsonParser.parseString(json).getAsJsonObject(), "check.", Checks.KEYS),
+                taskDir), server);
     }
 
     private CheckResult run(Check check, FakeRconServer server) {
+        return run(check, server, Map.of());
+    }
+
+    /** {@code env} goes into the environment of every process the check starts. */
+    private CheckResult run(Check check, FakeRconServer server, Map<String, String> env) {
         return check.run(new CheckContext() {
+            @Override
+            public Process start(ProcessBuilder builder) throws IOException {
+                builder.environment().putAll(env);
+                return builder.start();
+            }
+
             @Override
             public Path workspace() {
                 return workspace;
@@ -99,6 +115,24 @@ class ChecksTest {
         assertThat(noJar.detail()).contains("no server jar");
     }
 
+    /** The check writes the console and reads the server's output as UTF-8; under a C locale so must the server. */
+    @Test
+    void playerCheckServerEchoesNonAsciiTextUnderACLocale() throws IOException {
+        Files.createDirectories(workspace.resolve("build/libs"));
+        Files.writeString(workspace.resolve("build/libs/game-1.0.0.jar"), "stands in for the server jar");
+        String text = EchoServer.TEXT;
+        String check = """
+                {"type":"player","jar":"build/libs/game-1.0.0.jar",
+                 "command":["{java}","-cp","{classpath}","io.github.imnotstable.msc.bench.EchoServer"],
+                 "console":["say %s"],"expect":["log: %s","got: say %s"],"timeoutSeconds":120}
+                """.formatted(text, text, text);
+
+        CheckResult result = run(Checks.parse(UserJson.of(JsonParser.parseString(check).getAsJsonObject(), "check.",
+                Checks.KEYS), taskDir), null, Map.of("LC_ALL", "C", "LANG", "C"));
+
+        assertThat(result.passed()).as(result.detail()).isTrue();
+    }
+
     @Test
     void fileCheckFindsTextAndReportsMissingFiles() throws IOException {
         Files.writeString(workspace.resolve("answer.txt"), "13 -57 22\n");
@@ -114,6 +148,14 @@ class ChecksTest {
         CheckResult bad = run("{\"type\":\"command\",\"run\":[\"{java}\",\"-no-such-flag\"]}");
         assertThat(bad.passed()).isFalse();
         assertThat(bad.detail()).startsWith("exit ");
+    }
+
+    @Test
+    void commandCheckReadsOutputThatIsNotUtf8() {
+        CheckResult result = run("{\"type\":\"command\",\"run\":[\"{java}\",\"-cp\",\"{classpath}\","
+                + "\"io.github.imnotstable.msc.bench.PrintNonUtf8\"],\"outputMatches\":\"caf\"}");
+
+        assertThat(result.passed()).as(result.detail()).isTrue();
     }
 
     @Test

@@ -22,17 +22,26 @@ final class WorldView {
         this.world = world;
     }
 
-    /** Make sure {@code area} is loaded and fresh enough. */
-    void ensure(Box area) throws Exception {
+    String world() {
+        return world;
+    }
+
+    /**
+     * Make sure {@code needed} (what this tick's move touches) is loaded and fresh enough. A new read covers
+     * {@code ahead} too, the next few ticks of the move, so a fast fall does not read every tick.
+     */
+    void ensure(Box needed, Box ahead) throws Exception {
         age++;
-        if (grid != null && age < REFRESH_TICKS && covers(area)) {
+        if (grid != null && age < REFRESH_TICKS && covers(needed)) {
             return;
         }
-        int cx = (int) Math.floor((area.minX() + area.maxX()) / 2);
-        int cy = (int) Math.floor(area.minY());
-        int cz = (int) Math.floor((area.minZ() + area.maxZ()) / 2);
-        grid = source.read(Region.of(world, cx - RADIUS, cy - RADIUS, cz - RADIUS, cx + RADIUS, cy + RADIUS + 2,
-                cz + RADIUS));
+        Box want = new Box(Math.min(needed.minX(), ahead.minX()), Math.min(needed.minY(), ahead.minY()),
+                Math.min(needed.minZ(), ahead.minZ()), Math.max(needed.maxX(), ahead.maxX()),
+                Math.max(needed.maxY(), ahead.maxY()), Math.max(needed.maxZ(), ahead.maxZ()));
+        grid = source.read(Region.of(world, (int) Math.floor(want.minX()) - RADIUS,
+                (int) Math.floor(want.minY()) - RADIUS, (int) Math.floor(want.minZ()) - RADIUS,
+                (int) Math.floor(want.maxX()) + RADIUS, (int) Math.floor(want.maxY()) + 2,
+                (int) Math.floor(want.maxZ()) + RADIUS));
         age = 0;
     }
 

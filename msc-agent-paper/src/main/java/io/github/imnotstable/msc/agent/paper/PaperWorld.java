@@ -12,7 +12,10 @@ import org.bukkit.HeightMap;
 import org.bukkit.World;
 import org.bukkit.attribute.Attribute;
 import org.bukkit.attribute.AttributeInstance;
+import org.bukkit.block.Block;
+import org.bukkit.block.BlockState;
 import org.bukkit.block.Sign;
+import org.bukkit.block.TileState;
 import org.bukkit.block.data.BlockData;
 import org.bukkit.block.sign.Side;
 import org.bukkit.block.sign.SignSide;
@@ -55,6 +58,18 @@ final class PaperWorld implements AgentWorld<BlockData> {
         world.getBlockAt(x, y, z).setBlockData(state, physics);
     }
 
+    /** A snapshot of a block entity (sign text, container items), which {@link BlockData} leaves out. */
+    @Override
+    public Object blockEntity(int x, int y, int z) {
+        Block block = world.getBlockAt(x, y, z);
+        return block.getState(false) instanceof TileState ? block.getState(true) : null;
+    }
+
+    @Override
+    public void loadBlockEntity(int x, int y, int z, Object data) {
+        ((BlockState) data).update(true, false);
+    }
+
     @Override
     public String serialize(BlockData state) {
         return state.getAsString();
@@ -68,7 +83,7 @@ final class PaperWorld implements AgentWorld<BlockData> {
     @Override
     public List<Ops.EntitySummary> entities(Region region, int max) {
         List<Ops.EntitySummary> out = new ArrayList<>();
-        for (Entity e : world.getNearbyEntities(box(region))) {
+        for (Entity e : world.getNearbyEntities(box(region), e -> inside(region, e))) {
             if (out.size() == max) {
                 break;
             }
@@ -80,7 +95,7 @@ final class PaperWorld implements AgentWorld<BlockData> {
     @Override
     public List<Ops.EntityInfo> entityInfos(Region region, String type) {
         List<Ops.EntityInfo> out = new ArrayList<>();
-        for (Entity e : world.getNearbyEntities(box(region))) {
+        for (Entity e : world.getNearbyEntities(box(region), e -> inside(region, e))) {
             String key = e.getType().key().asString();
             if (type == null || type.equals(key)) {
                 out.add(info(e, key));
@@ -97,6 +112,12 @@ final class PaperWorld implements AgentWorld<BlockData> {
         return Ops.SignText.of(x, y, z, lines(sign.getSide(Side.FRONT)), lines(sign.getSide(Side.BACK)));
     }
 
+    /** An entity is in a region by its position, as on every platform, so split reads count it once. */
+    private static boolean inside(Region region, Entity e) {
+        return region.containsPoint(e.getX(), e.getY(), e.getZ());
+    }
+
+    /** Candidates whose hitbox meets the region; {@link #inside} then keeps those whose position is in it. */
     private static BoundingBox box(Region region) {
         return new BoundingBox(region.min().x(), region.min().y(), region.min().z(),
                 region.max().x() + 1, region.max().y() + 1, region.max().z() + 1);

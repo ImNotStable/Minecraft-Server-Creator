@@ -1,6 +1,6 @@
 # ADR 0024: Shared agent code in msc-agent-common
 
-Status: accepted, 2026-11-12. Decided by Claude under Jeremiah's hand-over of build decisions. Roadmap round 2 item R2.
+Status: accepted, 2026-11-12. Decided by Claude under Jeremiah's hand-over of build decisions. Roadmap round 2 item R2. Amended 2026-11-14 (see the end).
 (0022 and 0023 are taken by #47 and #49.)
 
 ## Context
@@ -29,6 +29,8 @@ wording, timeout messages).
      reads without NBT), and `loadArea`/`loadPositions` (only Minestom loads chunks before a job; no-ops elsewhere).
    - `AgentServer`: platform id and versions, worlds, players, running a command, sending a resource pack.
    - `MainThread`: the platform's scheduler (Bukkit scheduler, Fabric tick hook, Minestom scheduler) stays per agent.
+     Each steps its jobs through the shared `JobQueue` from one task per tick, so all jobs in flight share one 20 ms
+     budget on every platform (#247; before, Paper and Minestom gave each job its own 20 ms).
 4. **Logging goes through a four-method `AgentLog`**, so common code needs no logging library; Paper adapts its JUL
    logger, Fabric slf4j, Minestom `System.Logger` (`AgentLog.of`).
 5. **Shared constants** (`AgentDefaults`: 20 ms tick budget, 2 min op timeout, 10 s connect timeout, about 8 full-size
@@ -50,3 +52,9 @@ wording, timeout messages).
   (used by the Minestom templates). `BukkitMainThread` and `SchedulerMainThread` now implement the common
   `MainThread`.
 - `settings.gradle.kts` includes the new module (agreed with the foundation thread); no catalog or build-logic change.
+
+## Amendment, 2026-11-14: statements later changes made untrue (#383)
+
+Found by reading every ADR against the code during the campaign. The original text above is kept as decided; what is true now:
+
+- Decisions 1 and 3: the NeoForge and Forge agents shade msc-agent-common too, and the Fabric adapters moved to the `msc-agent-vanilla` source folder, which the Fabric, NeoForge and Forge agents compile in ([ADR 0027](0027-more-platforms.md)).

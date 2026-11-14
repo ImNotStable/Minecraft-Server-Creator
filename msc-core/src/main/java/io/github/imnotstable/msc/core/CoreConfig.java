@@ -1,10 +1,13 @@
 package io.github.imnotstable.msc.core;
 
+import io.github.imnotstable.msc.core.server.LoaderInstaller;
 import io.github.imnotstable.msc.core.server.MachineEula;
+import io.github.imnotstable.msc.core.tool.PathArg;
 import io.github.imnotstable.msc.protocol.Limits;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 
 /**
@@ -17,6 +20,9 @@ import java.util.UUID;
  * @param toolLog       JSON Lines file for tool calls, or null for none
  * @param javaCommand   java executable used to run the game server
  * @param serverCommand full command that starts the server, or null for {@code java -jar <paper jar> --nogui}
+ *                      ({@code ServerJava.processBuilder} adds the UTF-8 console flags when its program is
+ *                      {@code java}, else puts them in {@code JAVA_OPTS}; a script that ignores JAVA_OPTS must pass
+ *                      {@code ServerJava.ENCODING_FLAGS} to its Java itself, or non-ASCII output arrives garbled)
  * @param buildCommand  full command that builds a project, or null for its Gradle wrapper
  * @param downloadsUrl  base URL of the Paper downloads service
  * @param minecraft     Minecraft version used when a tool is not given one
@@ -29,14 +35,17 @@ import java.util.UUID;
  * @param installDir    where this core is installed, or null when unknown; its {@code agents/} folder holds the
  *                      agent jars shipped with the core, the last place {@code server_setup} looks
  * @param packPort      port the resource pack server binds; 0 reuses the port this workspace used last
- * @param eulaFile      the owner's one-time, per-machine EULA acceptance ({@code ~/.msc/eula.json}), only ever read;
- *                      null (tests) means there is none
+ * @param machineEula   the owner's one-time, per-machine EULA acceptance ({@code ~/.msc/eula.json}); read by
+ *                      {@code server_setup} and {@code server_start}, written only on the owner's explicit opt-in
+ *                      (see {@link MachineEula}); {@link MachineEula#none} (tests) means there is none
+ * @param loaderUrls    where the NeoForge, Forge and Quilt installers and the Purpur jars are downloaded from
  */
 public record CoreConfig(Path workspace, Path serverDir, int agentPort, String token, Path toolLog,
                          String javaCommand, List<String> serverCommand, List<String> buildCommand,
                          String downloadsUrl, String minecraft, List<Path> apiJars, String packHost,
                          int packFormat, Path agentJar, String fabricMetaUrl, String fabricMavenUrl,
-                         Path installDir, int packPort, Path eulaFile) {
+                         Path installDir, int packPort, MachineEula machineEula,
+                         LoaderInstaller.Urls loaderUrls) {
     public static final String ENV_WORKSPACE = "MSC_WORKSPACE";
     public static final String ENV_SERVER_DIR = "MSC_SERVER_DIR";
     public static final String ENV_TOOL_LOG = "MSC_TOOL_LOG";
@@ -63,6 +72,7 @@ public record CoreConfig(Path workspace, Path serverDir, int agentPort, String t
         workspace = workspace.toAbsolutePath().normalize();
         serverDir = serverDir.toAbsolutePath().normalize();
         apiJars = List.copyOf(apiJars);
+        machineEula = Objects.requireNonNull(machineEula, "machineEula: MachineEula.none() for none");
     }
 
     /** Defaults for a workspace; used by tests and as the base for {@link #fromEnvironment}. */
@@ -70,7 +80,7 @@ public record CoreConfig(Path workspace, Path serverDir, int agentPort, String t
         String java = Path.of(System.getProperty("java.home"), "bin", "java").toString();
         return new CoreConfig(workspace, workspace.resolve("run"), 0, UUID.randomUUID().toString(), null, java,
                 null, null, DEFAULT_DOWNLOADS_URL, DEFAULT_MINECRAFT, List.of(), "127.0.0.1", DEFAULT_PACK_FORMAT, null,
-                DEFAULT_FABRIC_META_URL, DEFAULT_FABRIC_MAVEN_URL, null, 0, null);
+                DEFAULT_FABRIC_META_URL, DEFAULT_FABRIC_MAVEN_URL, null, 0, MachineEula.none(), LoaderInstaller.Urls.DEFAULT);
     }
 
     public static CoreConfig fromEnvironment(Map<String, String> env) {
@@ -103,7 +113,8 @@ public record CoreConfig(Path workspace, Path serverDir, int agentPort, String t
                 env.getOrDefault(ENV_FABRIC_MAVEN_URL, DEFAULT_FABRIC_MAVEN_URL),
                 null,
                 Integer.parseInt(env.getOrDefault(ENV_PACK_PORT, "0").trim()),
-                MachineEula.defaultFile(System.getProperty("user.home")));
+                MachineEula.forHome(Path.of(System.getProperty("user.home"))),
+                base.loaderUrls());
     }
 
     /** {@code <workspace>/.msc}: caches, the resource pack source and logs. */
@@ -113,54 +124,43 @@ public record CoreConfig(Path workspace, Path serverDir, int agentPort, String t
 
     public CoreConfig withServerCommand(List<String> command) {
         return new CoreConfig(workspace, serverDir, agentPort, token, toolLog, javaCommand, command, buildCommand,
-                downloadsUrl, minecraft, apiJars, packHost, packFormat, agentJar, fabricMetaUrl, fabricMavenUrl, installDir, packPort, eulaFile);
+                downloadsUrl, minecraft, apiJars, packHost, packFormat, agentJar, fabricMetaUrl, fabricMavenUrl, installDir, packPort, machineEula, loaderUrls);
     }
 
     public CoreConfig withBuildCommand(List<String> command) {
         return new CoreConfig(workspace, serverDir, agentPort, token, toolLog, javaCommand, serverCommand, command,
-                downloadsUrl, minecraft, apiJars, packHost, packFormat, agentJar, fabricMetaUrl, fabricMavenUrl, installDir, packPort, eulaFile);
+                downloadsUrl, minecraft, apiJars, packHost, packFormat, agentJar, fabricMetaUrl, fabricMavenUrl, installDir, packPort, machineEula, loaderUrls);
     }
 
     public CoreConfig withToolLog(Path file) {
         return new CoreConfig(workspace, serverDir, agentPort, token, file, javaCommand, serverCommand, buildCommand,
-                downloadsUrl, minecraft, apiJars, packHost, packFormat, agentJar, fabricMetaUrl, fabricMavenUrl, installDir, packPort, eulaFile);
+                downloadsUrl, minecraft, apiJars, packHost, packFormat, agentJar, fabricMetaUrl, fabricMavenUrl, installDir, packPort, machineEula, loaderUrls);
     }
 
     public CoreConfig withDownloadsUrl(String url) {
         return new CoreConfig(workspace, serverDir, agentPort, token, toolLog, javaCommand, serverCommand,
-                buildCommand, url, minecraft, apiJars, packHost, packFormat, agentJar, fabricMetaUrl, fabricMavenUrl, installDir, packPort, eulaFile);
+                buildCommand, url, minecraft, apiJars, packHost, packFormat, agentJar, fabricMetaUrl, fabricMavenUrl, installDir, packPort, machineEula, loaderUrls);
     }
 
     public CoreConfig withFabricUrls(String metaUrl, String mavenUrl) {
         return new CoreConfig(workspace, serverDir, agentPort, token, toolLog, javaCommand, serverCommand,
-                buildCommand, downloadsUrl, minecraft, apiJars, packHost, packFormat, agentJar, metaUrl, mavenUrl, installDir, packPort, eulaFile);
+                buildCommand, downloadsUrl, minecraft, apiJars, packHost, packFormat, agentJar, metaUrl, mavenUrl, installDir, packPort, machineEula, loaderUrls);
     }
 
     public CoreConfig withMinecraft(String version) {
         return new CoreConfig(workspace, serverDir, agentPort, token, toolLog, javaCommand, serverCommand,
-                buildCommand, downloadsUrl, version, apiJars, packHost, packFormat, agentJar, fabricMetaUrl, fabricMavenUrl, installDir, packPort, eulaFile);
-    }
-
-    public CoreConfig withAgentJar(Path jar) {
-        return new CoreConfig(workspace, serverDir, agentPort, token, toolLog, javaCommand, serverCommand,
-                buildCommand, downloadsUrl, minecraft, apiJars, packHost, packFormat, jar, fabricMetaUrl, fabricMavenUrl, installDir, packPort, eulaFile);
+                buildCommand, downloadsUrl, version, apiJars, packHost, packFormat, agentJar, fabricMetaUrl, fabricMavenUrl, installDir, packPort, machineEula, loaderUrls);
     }
 
     public CoreConfig withApiJars(List<Path> jars) {
         return new CoreConfig(workspace, serverDir, agentPort, token, toolLog, javaCommand, serverCommand,
-                buildCommand, downloadsUrl, minecraft, jars, packHost, packFormat, agentJar, fabricMetaUrl, fabricMavenUrl, installDir, packPort, eulaFile);
+                buildCommand, downloadsUrl, minecraft, jars, packHost, packFormat, agentJar, fabricMetaUrl, fabricMavenUrl, installDir, packPort, machineEula, loaderUrls);
     }
 
     public CoreConfig withInstallDir(Path dir) {
         return new CoreConfig(workspace, serverDir, agentPort, token, toolLog, javaCommand, serverCommand,
                 buildCommand, downloadsUrl, minecraft, apiJars, packHost, packFormat, agentJar, fabricMetaUrl,
-                fabricMavenUrl, dir, packPort, eulaFile);
-    }
-
-    public CoreConfig withPackPort(int port) {
-        return new CoreConfig(workspace, serverDir, agentPort, token, toolLog, javaCommand, serverCommand,
-                buildCommand, downloadsUrl, minecraft, apiJars, packHost, packFormat, agentJar, fabricMetaUrl,
-                fabricMavenUrl, installDir, port, eulaFile);
+                fabricMavenUrl, dir, packPort, machineEula, loaderUrls);
     }
 
     /**
@@ -175,17 +175,23 @@ public record CoreConfig(Path workspace, Path serverDir, int agentPort, String t
                 : toolLog;
         return new CoreConfig(ws, server, agentPort, token, logFile, javaCommand, serverCommand, buildCommand,
                 downloadsUrl, minecraft, apiJars, packHost, packFormat, agentJar, fabricMetaUrl, fabricMavenUrl,
-                installDir, packPort, eulaFile);
+                installDir, packPort, machineEula, loaderUrls);
     }
 
-    public CoreConfig withEulaFile(Path file) {
+    public CoreConfig withMachineEula(MachineEula eula) {
         return new CoreConfig(workspace, serverDir, agentPort, token, toolLog, javaCommand, serverCommand,
                 buildCommand, downloadsUrl, minecraft, apiJars, packHost, packFormat, agentJar, fabricMetaUrl,
-                fabricMavenUrl, installDir, packPort, file);
+                fabricMavenUrl, installDir, packPort, eula, loaderUrls);
     }
 
-    /** Resolve a path argument against the workspace. */
-    public Path resolve(String path) {
-        return workspace.resolve(path).normalize();
+    public CoreConfig withLoaderUrls(LoaderInstaller.Urls urls) {
+        return new CoreConfig(workspace, serverDir, agentPort, token, toolLog, javaCommand, serverCommand,
+                buildCommand, downloadsUrl, minecraft, apiJars, packHost, packFormat, agentJar, fabricMetaUrl,
+                fabricMavenUrl, installDir, packPort, machineEula, urls);
+    }
+
+    /** The rule for a path argument: relative to the workspace and inside it (see {@link PathArg}). */
+    public PathArg inWorkspace() {
+        return PathArg.inside(workspace);
     }
 }
