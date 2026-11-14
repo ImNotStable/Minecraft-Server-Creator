@@ -66,9 +66,10 @@ public final class WorldTools {
                         + "Best up to about 32x32 per layer.",
                 Schema.of().req("region", "string", REGION).opt("world", "string", WORLD)
                         .opt("states", "boolean", "Show block properties such as facing")
+                        .opt("data", "boolean", "Add block entity data as SNBT")
                         .maxChars(),
                 args -> world.slice(Coords.region(world.world(args.str("world", null)), args.str("region")),
-                        args.bool("states", false), Budget.of(args)));
+                        args.bool("states", false), args.bool("data", false), Budget.of(args)));
         registry.add("world_heightmap", "Surface height per column over an area, as a compact grid.",
                 Schema.of().req("area", "string", "Two corners: \"x1,z1 x2,z2\"").opt("world", "string", WORLD)
                         .maxChars(),
@@ -114,7 +115,7 @@ public final class WorldTools {
                             r.png(), r.estimatedTokens());
                 });
         registry.add("world_summary",
-                "Summarize a region in a few lines: block counts (with where rare ones are), non-air bounds, fill per layer, entities. Use before world_slice on unknown areas and to find a block.",
+                "Summarize a region: block counts (with where rare ones are), non-air bounds, fill per layer, entities. Use before world_slice on unknown areas and to find a block.",
                 Schema.of().req("region", "string", REGION).opt("world", "string", WORLD)
                         .opt("path", "string", "\"x,y,z x,y,z\": can a player walk/jump from A to B; else the wall or gap")
                         .opt("diff", "string", "structure_save file of this region: what changed since"),
@@ -147,7 +148,7 @@ public final class WorldTools {
         registry.add("build_undo", "Undo a build_batch edit.",
                 Schema.of().opt("edit", "string", "Edit id such as e3. Default: the most recent edit"),
                 args -> world.undo(args.str("edit", null)));
-        registry.add("structure_save", "Save a region as a Sponge schematic (.schem) file, blocks only.",
+        registry.add("structure_save", "Save a region as a Sponge schematic (.schem) file.",
                 Schema.of().req("region", "string", REGION)
                         .req("file", "string", "Path ending .schem, such as structures/house.schem")
                         .opt("world", "string", WORLD),
@@ -155,7 +156,7 @@ public final class WorldTools {
                     Region region = Coords.region(world.world(args.str("world", null)), args.str("region"));
                     Path file = OutputFile.check(StructureFile.checkSaveName(args.path("file", config.inWorkspace()),
                             "file"), "file");
-                    BlockGrid grid = world.read(region);
+                    BlockGrid grid = world.readWithData(region);
                     new Steps("structure_save").then(SAVE_STRUCTURE)
                             .run(SAVE_STRUCTURE, () -> OutputFile.write(file, to -> Schematic.save(grid, to)));
                     return "saved " + region.sizeX() + "x" + region.sizeY() + "x" + region.sizeZ() + " to " + file

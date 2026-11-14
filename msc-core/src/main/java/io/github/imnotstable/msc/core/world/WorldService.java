@@ -58,32 +58,55 @@ public final class WorldService {
     // ---- views ------------------------------------------------------------------------------
 
     public BlockGrid read(Region region) throws InterruptedException {
-        return read(region, null, null);
+        return read(region, null, null, false);
+    }
+
+    /** As {@link #read(Region)}, with block entity data on the blocks that have some (ADR 0042). */
+    public BlockGrid readWithData(Region region) throws InterruptedException {
+        return read(region, null, null, true);
     }
 
     /**
      * As {@link #read(Region)}, adding the region's entities to {@code entities} and its signs with text to
      * {@code signs}, each when not null.
      */
-    private BlockGrid read(Region region, List<Ops.EntitySummary> entities, List<Ops.SignText> signs)
+    private BlockGrid read(Region region, List<Ops.EntitySummary> entities, List<Ops.SignText> signs, boolean data)
             throws InterruptedException {
         if (region.volume() > Limits.MAX_REGION_VOLUME) {
             throw new ToolException("region has " + region.volume() + " blocks; the limit per call is "
                     + Limits.MAX_REGION_VOLUME + " (128x64x128). Use a smaller region.");
         }
-        Ops.ReadResult result = hub.call(Ops.WORLD_READ, new Ops.ReadParams(region, entities != null, signs != null));
+        Ops.ReadResult result = hub.call(Ops.WORLD_READ,
+                new Ops.ReadParams(region, entities != null, signs != null, data));
         if (entities != null) {
             entities.addAll(result.entities());
         }
         if (signs != null) {
             signs.addAll(result.signs());
         }
-        return result.grid();
+        return data ? withCoreData(result.grid()) : result.grid();
+    }
+
+    /**
+     * The grid with its block entity data in the core's one spelling ({@link BlockNames#full}): each platform's agent
+     * writes SNBT its own way, and Paper's keeps the id and position.
+     */
+    static BlockGrid withCoreData(BlockGrid grid) {
+        List<String> palette = new ArrayList<>(grid.palette().size());
+        for (String state : grid.palette()) {
+            palette.add(BlockNames.data(state) == null ? state : BlockNames.full(state));
+        }
+        return new BlockGrid(grid.region(), palette, grid.blocks());
     }
 
     /** Read a region of up to {@code max} blocks as one grid, stitching protocol-sized reads together. */
     public BlockGrid readAll(Region region, long max, String tool) throws InterruptedException {
-        return readAll(region, max, tool, null, null);
+        return readAll(region, max, tool, null, null, false);
+    }
+
+    /** As {@link #readAll(Region, long, String)}, with block entity data (ADR 0042). */
+    public BlockGrid readAllWithData(Region region, long max, String tool) throws InterruptedException {
+        return readAll(region, max, tool, null, null, true);
     }
 
     /**
@@ -92,18 +115,23 @@ public final class WorldService {
      */
     public BlockGrid readAll(Region region, long max, String tool, List<Ops.EntitySummary> entities,
                              List<Ops.SignText> signs) throws InterruptedException {
+        return readAll(region, max, tool, entities, signs, false);
+    }
+
+    private BlockGrid readAll(Region region, long max, String tool, List<Ops.EntitySummary> entities,
+                              List<Ops.SignText> signs, boolean data) throws InterruptedException {
         if (region.volume() > max) {
             throw new ToolException("region has " + region.volume() + " blocks; " + tool + " takes at most " + max);
         }
         List<Region> parts = Coords.split(region);
         if (parts.size() == 1) {
-            return read(region, entities, signs);
+            return read(region, entities, signs, data);
         }
         int[] blocks = new int[(int) region.volume()];
         List<String> palette = new ArrayList<>();
         Map<String, Integer> index = new HashMap<>();
         for (Region part : parts) {
-            BlockGrid grid = read(part, entities, signs);
+            BlockGrid grid = read(part, entities, signs, data);
             int[] remap = new int[grid.palette().size()];
             for (int i = 0; i < remap.length; i++) {
                 remap[i] = index.computeIfAbsent(grid.palette().get(i), s -> {
@@ -124,12 +152,13 @@ public final class WorldService {
         return new BlockGrid(region, palette, blocks);
     }
 
-    public String slice(Region region, boolean states, int maxChars) throws InterruptedException {
+    /** @param data add a {@code data X,Y,Z {SNBT}} line per block with block entity data (ADR 0042) */
+    public String slice(Region region, boolean states, boolean data, int maxChars) throws InterruptedException {
         if (region.sizeX() > MAX_VIEW_SIDE || region.sizeZ() > MAX_VIEW_SIDE) {
             throw new ToolException("slice is at most " + MAX_VIEW_SIDE + " blocks wide; use world_summary or "
                     + "world_heightmap for larger areas");
         }
-        return TextGrid.render(read(region), states, maxChars);
+        return TextGrid.render(data ? readWithData(region) : read(region), states, maxChars);
     }
 
     public String heightmap(Region area, int maxChars) throws InterruptedException {

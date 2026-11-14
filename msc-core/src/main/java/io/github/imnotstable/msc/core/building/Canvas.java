@@ -21,6 +21,8 @@ public final class Canvas {
     private final int[] cells;
     private final List<String> palette = new ArrayList<>();
     private final Map<String, Integer> paletteIndex = new HashMap<>();
+    /** Ids by the name a step gave, so a name with block entity data is checked once, not once per block. */
+    private final Map<String, Integer> givenIndex = new HashMap<>();
     private final WorldReader worldReader;
     private final List<Region> readAhead = new ArrayList<>();
     private final List<BlockGrid> worldReads = new ArrayList<>();
@@ -46,10 +48,10 @@ public final class Canvas {
     }
 
     int stateId(String state) {
-        return paletteIndex.computeIfAbsent(BlockNames.full(state), s -> {
+        return givenIndex.computeIfAbsent(state, given -> paletteIndex.computeIfAbsent(BlockNames.full(given), s -> {
             palette.add(s);
             return palette.size() - 1;
-        });
+        }));
     }
 
     /** Set one block; positions outside the bounds are ignored. {@code state == null} leaves it as it is. */
@@ -140,7 +142,8 @@ public final class Canvas {
     }
 
     /** The {@code key=value} pairs in a state's brackets. */
-    private static Set<String> properties(String state) {
+    private static Set<String> properties(String name) {
+        String state = BlockNames.withoutData(name); // data may hold brackets of its own
         int open = state.indexOf('[');
         if (open < 0) {
             return Set.of();
@@ -173,7 +176,7 @@ public final class Canvas {
         return placed;
     }
 
-    /** Count per block, most common first. */
+    /** Count per block, most common first; a block with block entity data counts as its block. */
     public Map<String, Long> counts() {
         long[] per = new long[palette.size()];
         for (int c : cells) {
@@ -181,17 +184,15 @@ public final class Canvas {
                 per[c]++;
             }
         }
-        Map<String, Long> out = new java.util.LinkedHashMap<>();
-        Integer[] order = new Integer[per.length];
-        for (int i = 0; i < order.length; i++) {
-            order[i] = i;
-        }
-        Arrays.sort(order, (a, b) -> Long.compare(per[b], per[a]));
-        for (int i : order) {
+        Map<String, Long> byName = new java.util.LinkedHashMap<>(); // palette order breaks ties, as before
+        for (int i = 0; i < per.length; i++) {
             if (per[i] > 0) {
-                out.put(BlockNames.brief(palette.get(i)), per[i]);
+                byName.merge(BlockNames.brief(BlockNames.withoutData(palette.get(i))), per[i], Long::sum);
             }
         }
+        Map<String, Long> out = new java.util.LinkedHashMap<>();
+        byName.entrySet().stream().sorted(Map.Entry.<String, Long>comparingByValue().reversed())
+                .forEach(e -> out.put(e.getKey(), e.getValue()));
         return out;
     }
 

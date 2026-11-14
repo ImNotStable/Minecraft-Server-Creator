@@ -67,15 +67,29 @@ public final class Ops {
             new OpSpec<>("world.read", ReadParams.class, ReadResult.class);
 
     /**
-     * @param includeSigns also report the text of signs in the region (see {@link SignText}); off by default
+     * @param includeSigns     also report the text of signs in the region (see {@link SignText}); off by default
+     * @param includeBlockData also give each block with block entity data (chest items, sign text, a spawner's mob)
+     *                         its own palette entry: the state, then the data as SNBT, as {@code /setblock} takes it,
+     *                         such as {@code minecraft:chest[facing=north]{Items:[...]}}. Null means off and is left
+     *                         out of the frame, so older frames are unchanged; {@code false} is stored as null.
      */
-    public record ReadParams(Region region, boolean includeEntities, boolean includeSigns) {
+    public record ReadParams(Region region, boolean includeEntities, boolean includeSigns, Boolean includeBlockData) {
         public ReadParams {
             Objects.requireNonNull(region, "region");
+            includeBlockData = Boolean.TRUE.equals(includeBlockData) ? Boolean.TRUE : null;
+        }
+
+        public ReadParams(Region region, boolean includeEntities, boolean includeSigns) {
+            this(region, includeEntities, includeSigns, null);
         }
 
         public ReadParams(Region region, boolean includeEntities) {
             this(region, includeEntities, false);
+        }
+
+        /** Whether block entity data was asked for. */
+        public boolean blockData() {
+            return Boolean.TRUE.equals(includeBlockData);
         }
     }
 
@@ -268,7 +282,12 @@ public final class Ops {
 
     // ---- world: write ---------------------------------------------------------------------
 
-    /** Write a palette grid; cells set to -1 are left as they are. The one block-writing op: every build is a grid. */
+    /**
+     * Write a palette grid; cells set to -1 are left as they are. The one block-writing op: every build is a grid. A
+     * palette entry may end in block entity data as SNBT ({@code minecraft:chest{Items:[...]}}), merged into the placed
+     * block's data as {@code /data merge block} does; data on a block that keeps none is refused with
+     * {@code invalid_params} before anything changes.
+     */
     public static final OpSpec<WriteParams, EditResult> WORLD_WRITE =
             new OpSpec<>("world.write", WriteParams.class, EditResult.class);
 

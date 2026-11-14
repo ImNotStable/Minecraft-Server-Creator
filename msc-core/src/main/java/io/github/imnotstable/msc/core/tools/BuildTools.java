@@ -34,7 +34,7 @@ public final class BuildTools {
 
             @Override
             public BlockGrid read(Region region) throws InterruptedException {
-                return world.readAll(region, Builder.MAX_VOLUME, "build_batch");
+                return world.readAllWithData(region, Builder.MAX_VOLUME, "build_batch");
             }
         };
         registry.add("build_batch",

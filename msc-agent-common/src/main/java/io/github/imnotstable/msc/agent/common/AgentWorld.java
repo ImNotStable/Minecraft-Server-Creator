@@ -45,6 +45,27 @@ public interface AgentWorld<S> {
     default void loadBlockEntity(int x, int y, int z, Object data) {
     }
 
+    /** Whether blocks in this state may keep block entity data, so a read with block data asks for it. */
+    default boolean holdsData(S state) {
+        return false;
+    }
+
+    /**
+     * The block entity data at a position as SNBT, without its id and position, or null when there is none. Read
+     * with block data (ADR 0042) calls it only where {@link #holdsData} is true.
+     */
+    default String blockData(int x, int y, int z) {
+        return null;
+    }
+
+    /**
+     * Merges data from {@link AgentWorlds#parseData} into the block entity at a position, as {@code /data merge block}
+     * does, after {@link #set} put the block there.
+     */
+    default void mergeBlockData(int x, int y, int z, Object data) {
+        throw new IllegalArgumentException("block entity data is not supported here");
+    }
+
     /** Whether writing {@code target} over {@code current} would change nothing. Defaults to {@code equals}. */
     default boolean sameState(S current, S target) {
         return Objects.equals(current, target);

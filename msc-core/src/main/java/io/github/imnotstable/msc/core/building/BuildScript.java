@@ -34,7 +34,8 @@ import java.util.regex.Pattern;
 public final class BuildScript {
     /** What every step verb takes, for the tool descriptions. */
     public static final String HELP = """
-            One step per line; later steps win. B = a block or a mix like grass_block:78,moss_block:10. Every step \
+            One step per line; later steps win. B = a block or a mix like grass_block:78,moss_block:10; B{SNBT} adds \
+            block entity data (also world_slice's data lines). Every step \
             takes replace=a,b (change only those; air = empty), seed=N, repeat=N step=DX,DY,DZ.
             fill X,Y,Z X,Y,Z B [hollow|outline|walls]
             set X,Y,Z B
@@ -62,7 +63,7 @@ public final class BuildScript {
         /** A structure file (.schem or text) relative to the workspace, starting at 0,0,0. */
         BlockGrid load(String path, String world) throws java.io.IOException;
 
-        /** The blocks in a region of the world as they are now, at their own coordinates. */
+        /** The blocks in a region of the world as they are now, with block entity data, at their own coordinates. */
         BlockGrid read(Region region) throws InterruptedException;
     }
 
@@ -119,8 +120,29 @@ public final class BuildScript {
         return Limits.shorten(line, 60);
     }
 
+    /** Words split at spaces, except spaces inside a block's {@code [...]} or block entity data {@code {...}}. */
+    static String[] tokens(String line) {
+        List<String> out = new ArrayList<>();
+        StringBuilder word = new StringBuilder();
+        BlockPattern.Nesting n = new BlockPattern.Nesting();
+        for (char c : line.trim().toCharArray()) {
+            if (n.top(c) && Character.isWhitespace(c)) {
+                if (!word.isEmpty()) {
+                    out.add(word.toString());
+                    word.setLength(0);
+                }
+            } else {
+                word.append(c);
+            }
+        }
+        if (!word.isEmpty() || out.isEmpty()) {
+            out.add(word.toString());
+        }
+        return out.toArray(String[]::new);
+    }
+
     public static Parts split(String line) {
-        String[] tokens = line.trim().split("\\s+");
+        String[] tokens = tokens(line);
         String verb = tokens[0].toLowerCase(java.util.Locale.ROOT);
         List<BlockPos> points = new ArrayList<>();
         Map<String, String> options = new LinkedHashMap<>();

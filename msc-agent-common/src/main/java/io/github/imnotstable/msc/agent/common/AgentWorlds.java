@@ -20,4 +20,14 @@ public interface AgentWorlds<S> {
      * @throws IllegalArgumentException for an unknown block, property or value, saying which
      */
     S parse(String state);
+
+    /**
+     * Checks block entity data (SNBT from a palette entry, see {@link BlockData}) for {@code state} and returns it in
+     * the form {@link AgentWorld#mergeBlockData} takes. Called before an edit changes anything.
+     *
+     * @throws IllegalArgumentException when the block keeps no block entity data or the SNBT is malformed
+     */
+    default Object parseData(S state, String snbt) {
+        throw new IllegalArgumentException("block entity data is not supported here: " + snbt);
+    }
 }

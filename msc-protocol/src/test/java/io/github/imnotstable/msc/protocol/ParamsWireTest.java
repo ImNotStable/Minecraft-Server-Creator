@@ -89,6 +89,17 @@ class ParamsWireTest {
         }
     }
 
+    /** ADR 0042: the block data flag is in the frame only when on, so a read without it is the recorded bytes. */
+    @Test
+    void blockDataFlagIsSentOnlyWhenOn() throws ProtocolException {
+        assertThat(new Ops.ReadParams(SMALL, true, false, false)).isEqualTo(new Ops.ReadParams(SMALL, true, false));
+        Recorded<Ops.ReadParams> on = new Recorded<>(9, Ops.WORLD_READ, new Ops.ReadParams(SMALL, false, false, true),
+                "{\"region\":" + REGION + ",\"includeEntities\":false,\"includeSigns\":false,\"includeBlockData\":true}");
+        assertThat(on.encode()).isEqualTo(on.frame());
+        assertThat(on.decode(on.frame()).blockData()).isTrue();
+        assertThat(((Ops.ReadParams) RECORDED.get(3).decode(RECORDED.get(3).frame())).blockData()).isFalse();
+    }
+
     @Test
     void requestReadsInAnyFieldOrderAndSpacing() throws ProtocolException {
         Request expected = new Request(3, "world.undo", new RawJson("{\"editId\":\"}]\\\"\"}"));

@@ -145,6 +145,43 @@ class WorldOpsTest {
         assertThat(without.signs()).isEmpty();
     }
 
+    /** ADR 0042: the same read and write of block entity data as on the vanilla platforms. */
+    @Test
+    void blockDataIsWrittenMergedReadBackAndUndone(Env env) {
+        setUp(env);
+        set(0, 70, 0, Block.CHEST.withNbt(CompoundBinaryTag.builder().putString("CustomName", "\"Old\"")
+                .putString("Lock", "k").build()));
+        Region two = box(0, 70, 0, 1, 70, 0);
+
+        Ops.EditResult edit = ops.write(new Ops.WriteParams(new BlockGrid(two,
+                List.of("minecraft:chest{CustomName:'\"Loot\"',x:9}"), new int[] {0, 0}), false));
+
+        assertThat(edit.changed()).as("data alone is a change").isEqualTo(2);
+        assertThat(at(0, 70, 0).nbt().getString("CustomName")).isEqualTo("\"Loot\"");
+        assertThat(at(0, 70, 0).nbt().getString("Lock")).as("a merge keeps what it does not name").isEqualTo("k");
+        assertThat(at(1, 70, 0).nbt().keySet()).containsExactly("CustomName");
+        BlockGrid read = ops.read(new Ops.ReadParams(two, false, false, true)).grid();
+        assertThat(read.stateAt(1, 70, 0)).startsWith("minecraft:chest[").contains("]{CustomName:").endsWith("Loot\\\"\"}");
+        assertThat(ops.read(new Ops.ReadParams(two, false)).grid().stateAt(1, 70, 0)).doesNotContain("{");
+
+        ops.undo(new Ops.UndoParams(edit.editId()));
+        assertThat(at(0, 70, 0).nbt().getString("CustomName")).isEqualTo("\"Old\"");
+        assertThat(at(1, 70, 0)).isEqualTo(Block.AIR);
+    }
+
+    @Test
+    void blockDataOnABlockThatKeepsNoneIsRefusedBeforeAnythingChanges(Env env) {
+        setUp(env);
+        set(5, 70, 5, Block.STONE); // loads the chunk, so the check below can look
+        Region two = box(0, 70, 0, 1, 70, 0);
+        for (String bad : List.of("minecraft:stone{a:1}", "minecraft:chest{Items:[")) {
+            assertThatThrownBy(() -> ops.write(new Ops.WriteParams(new BlockGrid(two,
+                    List.of("minecraft:glass", bad), new int[] {0, 1}), false)))
+                    .isInstanceOf(IllegalArgumentException.class);
+        }
+        assertThat(at(0, 70, 0)).isEqualTo(Block.AIR);
+    }
+
     @Test
     void readReturnsAPaletteGridInYzxOrder(Env env) {
         setUp(env);

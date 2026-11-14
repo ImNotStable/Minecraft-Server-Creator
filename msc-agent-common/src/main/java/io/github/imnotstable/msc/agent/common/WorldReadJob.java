@@ -27,7 +27,7 @@ final class WorldReadJob<S> implements SlicedJob<Ops.ReadResult> {
         this.world = world;
         this.region = params.region();
         this.params = params;
-        this.grid = new ReadJob<>(world, region);
+        this.grid = new ReadJob<>(world, region, params.blockData());
     }
 
     @Override
