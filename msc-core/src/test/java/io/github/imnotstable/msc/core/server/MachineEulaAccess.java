@@ -4,7 +4,7 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.time.Instant;
 
-/** Lets tests in other packages record an acceptance, which main code outside {@link EulaCommand} cannot. */
+/** The owner's acceptance as tests need it: by "owner" on "pc" at a fixed time, as the eula command records it. */
 public final class MachineEulaAccess {
     private MachineEulaAccess() {
     }

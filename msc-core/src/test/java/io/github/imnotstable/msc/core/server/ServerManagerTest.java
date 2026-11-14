@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import io.github.imnotstable.msc.core.CoreConfig;
 import io.github.imnotstable.msc.core.agent.AgentHub;
 import io.github.imnotstable.msc.core.tool.ToolException;
+import io.github.imnotstable.msc.process.ClosedPort;
 import io.github.imnotstable.msc.process.rcon.FakeRconServer;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
@@ -99,9 +100,13 @@ class ServerManagerTest {
         ServerManager m = manager(QuietServer.class);
         Process leftover = leftover(m);
         Files.createDirectories(m.serverDir());
-        Files.writeString(m.serverDir().resolve("server.properties"),
-                "enable-rcon=true\nrcon.password=pw\n" + line + "\n");
-        assertThat(m.stopLeftover()).contains("pid " + leftover.pid(), "killed");
+        // A port nothing answers on before the line under test (a later key wins), so no case can fall back to the
+        // default 25575 and reach an RCON server on this machine.
+        try (ClosedPort closed = ClosedPort.reserve()) {
+            Files.writeString(m.serverDir().resolve("server.properties"),
+                    "enable-rcon=true\nrcon.password=pw\nrcon.port=" + closed.port() + "\n" + line + "\n");
+            assertThat(m.stopLeftover()).contains("pid " + leftover.pid(), "killed");
+        }
         assertThat(leftover.isAlive()).isFalse();
         assertThat(m.pidFile()).doesNotExist();
         assertThat(m.stopLeftover()).isNull();

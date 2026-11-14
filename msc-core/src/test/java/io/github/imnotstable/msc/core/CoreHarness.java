@@ -3,10 +3,15 @@ package io.github.imnotstable.msc.core;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import io.github.imnotstable.msc.core.tool.ToolRegistry;
+import io.github.imnotstable.msc.process.ClosedPort;
+import io.github.imnotstable.msc.process.ServerPropertiesFile;
 import io.github.imnotstable.msc.protocol.transport.AgentClient;
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 import java.util.function.UnaryOperator;
 
 /** A core in a temp workspace with a fake agent attached. */
@@ -74,6 +79,24 @@ final class CoreHarness implements AutoCloseable {
             throw new AssertionError(tool + " should have failed: " + r.text());
         }
         return r.text();
+    }
+
+    /**
+     * Sets {@code server-port} in the dev server's server.properties to a port held closed, until the returned port is
+     * closed. Without it player_test joins whatever answers on 127.0.0.1:25565, the port it falls back to when the file
+     * names none, which on a developer's machine can be their own server.
+     */
+    static ClosedPort noGameServer(Path serverDir) throws IOException {
+        ClosedPort port = ClosedPort.reserve();
+        try {
+            Files.createDirectories(serverDir);
+            ServerPropertiesFile.set(serverDir.resolve(ServerPropertiesFile.NAME),
+                    Map.of("server-port", Integer.toString(port.port())));
+        } catch (IOException | RuntimeException e) {
+            port.close();
+            throw e;
+        }
+        return port;
     }
 
     @Override

@@ -1,4 +1,4 @@
-package io.github.imnotstable.msc.bench;
+package io.github.imnotstable.msc.process;
 
 import java.io.IOException;
 import java.net.InetAddress;
