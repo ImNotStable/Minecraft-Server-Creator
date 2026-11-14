@@ -147,19 +147,24 @@ public final class Budget {
 
         /**
          * The result in at most {@code cap} characters, {@code last} (or nothing, when null) as its last line, for
-         * every cap (#487).
+         * every cap (#487). The rule (#499):
          *
-         * <p>When the fixed text and {@code last} fit, every fixed piece is kept whole and the parts share what is
-         * left ({@link #split}). A part whose share is below {@link #MIN_SHARE} and below what it wants would show
-         * little more than its own cut line, so the largest such part (the later one on a tie) is left out, shown as
-         * {@code [cut]}, and the others share again until every part shown fits whole or has a useful share. One line
-         * before {@code last} then says how many outputs were left out, with {@code hint}; without the hint, or
-         * without that line and the markers, when the room left is too small for them. Every part is given
-         * room for at most its share; a part that renders longer is cut to it.
+         * <ol>
+         *   <li>The fixed text and {@code last} always stay. When they do not fit, the parts are left out and the
+         *       fixed text before {@code last} is cut with {@code hint}; when {@code last} alone is longer than the
+         *       cap, the result is {@code last} cut with {@code hint}.
+         *   <li>Parts are shown whole, smallest first (the earlier one on a tie), as many as fit together with the
+         *       short summary line {@code [N of M outputs cut]} the others would need.
+         *   <li>The other parts share what is left: when each would get at least {@link #MIN_SHARE}, every one is
+         *       cut to its share ({@link #split}) and carries its own cut line. Otherwise one line before
+         *       {@code last} counts every part not shown whole, with {@code hint} when that fits, else short; the
+         *       room after it is cut into useful shares for as many of them as it holds (smallest first) and the rest
+         *       show {@link #LEFT_OUT} when every left-over part's marker fits, else nothing.
+         * </ol>
          *
-         * <p>When the fixed text and {@code last} do not fit, the parts are left out and the fixed text before
-         * {@code last} is cut with {@code hint}; when {@code last} alone is longer than the cap, the result is
-         * {@code last} cut with {@code hint}.
+         * <p>So a part is never left out or cut while the unused room would have shown it whole, give or take the
+         * short summary line: the room it would need beyond what it shows is more than the unused room minus that
+         * line. When even the short summary line for every part does not fit beside the fixed text, there is none.
          */
         public String text(int cap, String last, String hint) {
             String closing = last == null ? "" : pieces.isEmpty() ? last : "\n" + last;
@@ -189,18 +194,16 @@ public final class Budget {
             for (Piece piece : pieces) {
                 if (piece.fixed() != null) {
                     body.append(piece.fixed());
-                } else if (plan.shares()[next] < 0) {
-                    body.append(plan.marker());
-                    next++;
                 } else {
                     int share = plan.shares()[next++];
-                    body.append(truncate(piece.render().apply(share), share, hint));
+                    if (share == Plan.MARKER) {
+                        body.append(LEFT_OUT);
+                    } else if (share >= 0) {
+                        body.append(truncate(piece.render().apply(share), share, hint));
+                    }
                 }
             }
-            String text = body.append(plan.note()).toString();
-            // Never fires: kept so a wrong sum can only cut, not overflow.
-            return (text.length() + closing.length() <= cap ? text : truncate(text, cap - closing.length(), hint))
-                    + closing;
+            return body.append(plan.note()).append(closing).toString();
         }
     }
 
@@ -211,52 +214,62 @@ public final class Budget {
     public static final String LEFT_OUT = "[cut]";
 
     /**
-     * How {@link Parts} spends {@code room} on its parts: {@code shares[i]} characters for part i, or -1 when it is
-     * left out and shows {@code marker}; {@code note} is the line saying how many were left out.
+     * How {@link Parts} spends {@code room} on its parts (the rule in {@link Parts#text}): {@code shares[i]}
+     * characters for part i, {@link #MARKER} when it shows {@link #LEFT_OUT}, {@link #HIDDEN} when it shows nothing;
+     * {@code note} is the summary line, or empty.
      */
-    private record Plan(int[] shares, String marker, String note) {
+    private record Plan(int[] shares, String note) {
+        static final int MARKER = -1;
+        static final int HIDDEN = -2;
+
         static Plan of(int room, int[] wants, String hint) {
-            int[] shares = split(room, wants);
-            int[] active = wants.clone();
-            int dropped = 0;
-            // The line that counts left-out parts, sized for the largest count: with the hint, short, or none.
-            String full = note(wants.length, wants.length, hint);
-            String brief = note(wants.length, wants.length, null);
-            boolean withHint = full.length() <= room;
-            int noteChars = withHint ? full.length() : brief.length() <= room ? brief.length() : 0;
-            boolean markers = true;
-            while (true) {
-                int worst = -1;
-                for (int i = 0; i < wants.length; i++) {
-                    if (active[i] > 0 && shares[i] < wants[i] && shares[i] < MIN_SHARE
-                            && (worst < 0 || wants[i] >= wants[worst])) {
-                        worst = i;
-                    }
-                }
-                if (worst < 0) {
-                    break;
-                }
-                active[worst] = 0;
-                dropped++;
-                int left = room - noteChars - LEFT_OUT.length() * dropped;
-                markers = left >= 0;
-                shares = split(markers ? left : room - noteChars, active);
+            int n = wants.length;
+            Integer[] order = new Integer[n];
+            Arrays.setAll(order, i -> i);
+            Arrays.sort(order, (a, b) -> wants[a] != wants[b] ? Integer.compare(wants[a], wants[b]) : a - b);
+            long[] sum = new long[n + 1]; // sum[k]: the k smallest parts whole
+            for (int k = 0; k < n; k++) {
+                sum[k + 1] = sum[k] + wants[order[k]];
             }
-            if (dropped == 0) {
-                return new Plan(shares, "", "");
+            boolean counted = note(n, n, null).length() <= room;
+            int k = n;
+            while (k > 0 && sum[k] + (counted && k < n ? note(n - k, n, null).length() : 0) > room) {
+                k--;
             }
-            for (int i = 0; i < wants.length; i++) {
-                if (active[i] == 0 && wants[i] > 0) {
-                    shares[i] = -1;
-                }
+            int[] shares = new int[n];
+            for (int i = 0; i < k; i++) {
+                shares[order[i]] = wants[order[i]];
             }
-            String note = noteChars == 0 ? "" : note(dropped, wants.length, withHint ? hint : null);
-            return new Plan(shares, markers ? LEFT_OUT : "", note);
+            int left = n - k;
+            int free = (int) (room - sum[k]);
+            String note = "";
+            int cut = left;
+            boolean markers = false;
+            if (left > 0 && (long) left * MIN_SHARE > free) {
+                String full = note(left, n, hint);
+                note = !counted ? "" : full.length() <= free ? full : note(left, n, null);
+                free -= note.length();
+                markers = LEFT_OUT.length() * left <= free;
+                cut = markers ? (free - LEFT_OUT.length() * left) / (MIN_SHARE - LEFT_OUT.length())
+                        : free / MIN_SHARE;
+                cut = Math.max(0, Math.min(left, cut));
+                free -= markers ? LEFT_OUT.length() * (left - cut) : 0;
+            }
+            int[] cutWants = new int[cut];
+            for (int i = 0; i < cut; i++) {
+                cutWants[i] = wants[order[k + i]];
+            }
+            int[] cutShares = split(free, cutWants);
+            for (int i = 0; i < left; i++) {
+                shares[order[k + i]] = i < cut ? cutShares[i] : markers ? MARKER : HIDDEN;
+            }
+            return new Plan(shares, note);
         }
 
-        /** The line saying how many outputs were left out, with {@code hint} unless it is null. */
-        private static String note(int dropped, int of, String hint) {
-            return "\n[" + dropped + " of " + of + " outputs cut" + (hint == null ? "]" : " to fit. " + hint + "]");
+        /** The line counting the parts not shown whole, with {@code hint} unless it is null or empty. */
+        static String note(int notWhole, int of, String hint) {
+            return "\n[" + notWhole + " of " + of + " outputs cut"
+                    + (hint == null || hint.isEmpty() ? "]" : " to fit. " + hint + "]");
         }
     }
 

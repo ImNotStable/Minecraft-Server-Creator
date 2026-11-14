@@ -9,6 +9,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -48,13 +50,31 @@ class PartsResultsBehaviourTest {
                         .as(as).containsExactlyElementsOf(commands.stream().map(c -> "> " + c).toList());
                 long whole = commands.stream().filter(c -> result.contains("\nran " + c + "\n")
                         || result.endsWith("\nran " + c)).count();
-                long left = result.lines().filter(Budget.LEFT_OUT::equals).count();
-                if (left > 0) {
-                    assertThat(result).as(as).endsWith("\n[" + left + " of " + row.count()
-                            + " outputs cut to fit. Run fewer commands per call.]");
-                    assertThat(whole + left).as(as).isEqualTo(row.count());
+                // #499: the summary line counts exactly the outputs not shown whole; a left-out output is counted.
+                Matcher note = Pattern
+                        .compile("\n\\[(\\d+) of (\\d+) outputs cut(?: to fit\\. Run fewer commands per call\\.)?]$")
+                        .matcher(result);
+                if (note.find()) {
+                    assertThat(Long.parseLong(note.group(1))).as(as).isEqualTo(row.count() - whole);
+                } else {
+                    assertThat(whole + result.split("Output cut\\.]", -1).length - 1).as(as).isEqualTo(row.count());
                 }
             }
+        }
+    }
+
+    /**
+     * #499: 64 commands of 72 characters answered with 76 ("ran " and the command) leave 1,137 characters for the
+     * outputs: 14 are shown whole (14 x 76 plus the 23-character summary line fit; 15 do not), none is dropped to pay
+     * for a marker, and the line counts the other 50 with its hint, which fits in the 73 left after them.
+     */
+    @Test
+    void serverCommandShowsEveryOutputThatFits() throws Exception {
+        try (CoreHarness h = new CoreHarness(workspace).withAgent()) {
+            List<String> commands = new Commands(64, 72).lines();
+            String result = h.ok("server_command", "command", String.join("\n", commands));
+            assertThat(commands.stream().filter(c -> result.contains("\nran " + c + "\n"))).hasSize(14);
+            assertThat(result).hasSizeLessThanOrEqualTo(Budget.DEFAULT_CHARS).endsWith("\n[50 of 64 outputs cut to fit. Run fewer commands per call.]");
         }
     }
 
