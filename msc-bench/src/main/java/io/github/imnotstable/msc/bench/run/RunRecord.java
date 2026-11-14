@@ -53,7 +53,9 @@ public record RunRecord(
      * Why this attempt failed, or null when it passed: the one text the terminal's progress line and the report's
      * Failures section both show, so they cannot differ. Lists the bench error, the timeout, how the agent ended
      * (non-zero exit, an error it reported, output the bench could not read, said only when it ran) and every failed
-     * check. Each part is one line and at most {@link #MAX_REASON_PART} chars, so the terminal line stays one line.
+     * check. Each part is one line and at most {@link #MAX_REASON_PART} chars, so the terminal line stays one line; a
+     * failed check's part is its name, {@code ": "} and its detail, and the name is added outside that budget, so a
+     * stored detail (already at most {@link CheckResult#MAX_DETAIL}) is shown whole, never cut a second time (#535).
      */
     public String failureReason() {
         if (passed) {
@@ -75,14 +77,17 @@ public record RunRecord(
         if (!agent.parsed() && agentRan()) {
             reasons.add("agent output not parsed");
         }
-        checks.stream().filter(c -> !c.passed()).forEach(c -> reasons.add(c.name() + ": " + c.detail()));
-        return reasons.isEmpty()
-                ? "no checks ran"
-                : String.join("; ", reasons.stream().map(r -> Text.singleLine(r, MAX_REASON_PART)).toList());
+        List<String> parts = new ArrayList<>(reasons.stream().map(r -> Text.singleLine(r, MAX_REASON_PART)).toList());
+        checks.stream().filter(c -> !c.passed()).forEach(c -> parts.add(Text.singleLine(c.name(), MAX_REASON_PART)
+                + ": " + Text.singleLine(c.detail(), MAX_REASON_PART)));
+        return parts.isEmpty() ? "no checks ran" : String.join("; ", parts);
     }
 
-    /** The most chars one part of {@link #failureReason()} keeps; a check's full detail stays in results.jsonl. */
-    static final int MAX_REASON_PART = 300;
+    /**
+     * The most chars one part of {@link #failureReason()} keeps, not counting a check's name; equal to
+     * {@link CheckResult#MAX_DETAIL}, so a check's detail reads the same here as in results.jsonl.
+     */
+    static final int MAX_REASON_PART = CheckResult.MAX_DETAIL;
 
     /** Whether the agent process was started: a setup failure before it leaves {@code wallMs} at 0. */
     public boolean agentRan() {

@@ -54,9 +54,9 @@ public final class TextureTools {
         Path serverDir = config.serverDir();
         PackSource source = pack.source();
         registry.add("texture",
-                "Add a pixel-art texture to the project's resource pack, in one of three ways: draw it as text "
+                "Add a pixel-art texture to the project's resource pack: draw it as text "
                         + "(palette, rows), generate it (kind, color) or recolor a pack texture (copy, color). "
-                        + "animate makes it an animation; with only name and animate, animates the texture already there.",
+                        + "animate animates it; with only name and animate, the texture already there.",
                 Schema.of().req("name", "string", "Texture name such as item/ruby or myplugin:block/ruby_ore, or a .png path for a file outside the pack")
                         .opt("palette", "strings", "Draw: symbol=#rrggbb or #rrggbbaa entries, for example \"r=#d4263a\". \".\" is transparent")
                         .opt("rows", "strings", "Draw: pixel rows, top first, all the same length (16 is standard)")
@@ -113,7 +113,7 @@ public final class TextureTools {
         registry.add("pack",
                 "Zip the project's resource pack, serve it over HTTP, send it to the server's players and list "
                         + "its problems. check=true: only list problems.",
-                Schema.of().opt("check", "boolean", "Only check the pack, do not build it")
+                Schema.of().opt("check", "boolean", "Only check, do not build")
                         .range("limit", 0, Integer.MAX_VALUE, "Problems to list. Default 30 with check, 5 on a build")
                         .opt("description", "string", "Pack description, up to two lines")
                         .opt("file", "string", "Also save the zip here, such as ruby-pack.zip")
@@ -419,9 +419,9 @@ public final class TextureTools {
             shades.sort(Comparator.comparingDouble(Colors::luminance));
             return Animation.pulse(base, new Ramp(shades), args.integer("frames", 8), frametime);
         }
-        int step = Math.max(1, Math.max(Math.abs(spec.dx()), Math.abs(spec.dy())));
-        int loop = Math.clamp(base.width() / step, 2, Animation.MAX_FRAMES);
-        return Animation.scroll(base, spec.dx(), spec.dy(), args.integer("frames", loop), frametime);
+        return args.has("frames")
+                ? Animation.scroll(base, spec.dx(), spec.dy(), args.integer("frames"), frametime)
+                : Animation.scroll(base, spec.dx(), spec.dy(), frametime);
     }
 
     /** A pack texture, or the first frame when it is already animated, so it can be animated or copied again. */

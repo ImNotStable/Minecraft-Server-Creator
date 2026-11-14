@@ -271,3 +271,15 @@ val checkToolDocs = tasks.register<JavaExec>("checkToolDocs") {
 }
 
 tasks.named("check") { dependsOn(checkToolDocs) }
+
+// checkUpstreamVersions: one line per pinned component (Minecraft, Paper, Fabric, NeoForge, Forge, Quilt, Minestom),
+// the version pinned and the newest stable upstream (ADR 0039). Run by hand, never part of `build`; offline it says
+// "could not check" and still succeeds.
+tasks.register<JavaExec>("checkUpstreamVersions") {
+    description = "Lists pinned Minecraft, Paper and loader versions next to the newest stable ones upstream."
+    group = "help"
+    classpath = sourceSets.main.get().runtimeClasspath
+    mainClass = "io.github.imnotstable.msc.core.upstream.UpstreamVersions"
+    args(rootProject.file("gradle/libs.versions.toml").absolutePath)
+    outputs.upToDateWhen { false }
+}

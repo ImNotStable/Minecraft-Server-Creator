@@ -39,7 +39,7 @@ final class ServerSetup {
         this.paper = paper;
         this.fabric = fabric;
         this.loaders = new LoaderInstaller(config.loaderUrls(), config.dataDir().resolve("cache"),
-                config.javaCommand());
+                config.javaCommand(), config.downloadStore());
         this.eula = eula;
     }
 

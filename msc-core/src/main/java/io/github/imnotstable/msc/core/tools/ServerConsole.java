@@ -34,7 +34,9 @@ final class ServerConsole {
         this.marks = marks;
     }
 
-    String logs(Args args) {
+    String logs(Args args) throws InterruptedException {
+        // A server that just exited: its last lines may still be in the pipe (#533).
+        server.awaitLogEnd();
         int maxChars = Budget.of(args);
         String mode = args.str("mode", "errors");
         if (!List.of("errors", "tail", "grep", "triage").contains(mode)) {
@@ -93,8 +95,7 @@ final class ServerConsole {
         }
         long from = Math.max(marks.waitFrom, marks.start);
         long started = System.nanoTime();
-        LogBuffer.Match m = server.log().await(from, line -> pattern.matcher(line).find(),
-                Duration.ofSeconds(timeout), server::running);
+        LogBuffer.Match m = server.awaitLine(from, line -> pattern.matcher(line).find(), Duration.ofSeconds(timeout));
         String waited = LogText.seconds((System.nanoTime() - started) / 1_000_000);
         if (m != null) {
             marks.waitFrom = m.seq() + 1;

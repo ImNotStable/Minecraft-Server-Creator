@@ -17,6 +17,7 @@ import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.function.Predicate;
 
 /** Owns the dev server process: start it with the agent's connection details, watch its log, stop it. */
 public final class ServerManager implements AutoCloseable {
@@ -36,6 +37,8 @@ public final class ServerManager implements AutoCloseable {
     /** At most 20,000 lines of at most {@link LogReader#MAX_LINE_CHARS} chars, and 4M chars in all. */
     private final LogBuffer log = new LogBuffer(20_000, 4_000_000);
     private Process process;
+    /** Reads {@link #process}'s output; null before the first start. */
+    private LogPump pump;
     private volatile boolean sawDone;
     private volatile boolean detached;
     /** Set by {@link #close()} under this monitor; {@link #start} checks it under the same monitor (#282). */
@@ -236,7 +239,7 @@ public final class ServerManager implements AutoCloseable {
         String token = hub.token();
         long readyBefore = hub.readyCount();
         Process started;
-        Thread pump;
+        LogPump startedPump;
         synchronized (this) {
             if (closed) {
                 // A call that was already running when the workspace closed: nothing would stop this server.
@@ -250,7 +253,8 @@ public final class ServerManager implements AutoCloseable {
             mark = log.mark();
             started = record.locked(held -> launch(held, address, token));
             process = started;
-            pump = Thread.ofVirtual().name("msc-server-log").start(() -> pump(started));
+            startedPump = LogPump.start(started, log, () -> sawDone = true, PUMP_DRAIN);
+            pump = startedPump;
         }
         long deadline = begin + timeout.toNanos();
         boolean ready = false;
@@ -280,10 +284,9 @@ public final class ServerManager implements AutoCloseable {
         boolean exited = !started.isAlive();
         if (exited) {
             // A dead server is not ready, whatever it printed first (#337). The report reads the log next: let the
-            // pump reach the end of the output, which comes as soon as the pipe closes. Bounded, since a child the
-            // server left running may hold the pipe open (#324).
+            // pump reach the end of the output (#324, #533).
             ready = false;
-            pump.join(PUMP_DRAIN);
+            startedPump.awaitEnd();
         }
         return new StartResult(ready, exited, (System.nanoTime() - begin) / 1_000_000, mark, agentMillis, sawDone);
     }
@@ -328,12 +331,30 @@ public final class ServerManager implements AutoCloseable {
                 || Files.exists(config.serverDir().resolve(platform.addonDir()).resolve(platform.agentJar()));
     }
 
-    private void pump(Process p) {
-        try {
-            LogReader.pump(p.getInputStream(), log, () -> sawDone = true);
-        } catch (IOException ignored) {
-            // Stream closed with the process.
+    /**
+     * The one answer to "is the server gone and its log complete" (#533): false at once while a server runs, else
+     * true once its log pump has read the whole output, bounded by {@link #PUMP_DRAIN} ({@link LogPump#awaitEnd}).
+     */
+    public boolean awaitLogEnd() throws InterruptedException {
+        LogPump p;
+        synchronized (this) {
+            p = pump;
         }
+        return p == null ? !running() : p.awaitEnd();
+    }
+
+    /**
+     * Wait for the first log line from {@code mark} that {@code test} accepts. Null when {@code timeout} passes or
+     * the server stops first; a server that stops has its log completed and checked once more, so a line it printed
+     * just before it exited is found (#533).
+     */
+    public LogBuffer.Match awaitLine(long mark, Predicate<String> test, Duration timeout)
+            throws InterruptedException {
+        LogPump p;
+        synchronized (this) {
+            p = pump;
+        }
+        return p == null ? log.await(mark, test, Duration.ZERO, () -> false) : p.await(log, mark, test, timeout);
     }
 
     /** Clock time just before this core launched the running server, or null when none is running. */

@@ -22,11 +22,17 @@ public final class PaperDownloader {
 
     private final String baseUrl;
     private final Path cacheDir;
-    private final Downloads downloads = new Downloads();
+    private final Downloads downloads;
 
+    /** Without the machine's store, for tests. */
     public PaperDownloader(String baseUrl, Path cacheDir) {
+        this(baseUrl, cacheDir, DownloadStore.NONE);
+    }
+
+    public PaperDownloader(String baseUrl, Path cacheDir, DownloadStore store) {
         this.baseUrl = Downloads.trim(baseUrl);
         this.cacheDir = cacheDir;
+        this.downloads = new Downloads(store);
     }
 
     public Download download(String version) throws IOException, InterruptedException {
@@ -66,9 +72,9 @@ public final class PaperDownloader {
         if (Files.exists(jar) && (sha256 == null || sha256.equalsIgnoreCase(Downloads.sha256(jar)))) {
             return new Download(jar, version, build, true);
         }
-        downloads.fetch(URI.create(url), jar, "download of " + url + " answered 404",
+        boolean stored = downloads.fetch(URI.create(url), jar, "download of " + url + " answered 404",
                 Downloads.Checksum.of("SHA-256", sha256));
-        return new Download(jar, version, build, false);
+        return new Download(jar, version, build, stored);
     }
 
     private static long rank(JsonObject build) {

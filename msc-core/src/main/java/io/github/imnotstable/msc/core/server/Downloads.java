@@ -38,14 +38,25 @@ final class Downloads {
     private final HttpClient http = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NORMAL)
             .connectTimeout(Duration.ofSeconds(15)).build();
     private final Duration stall;
+    private final DownloadStore store;
 
+    /** Without the machine's store, for tests. */
     Downloads() {
-        this(HttpStall.LIMIT);
+        this(HttpStall.LIMIT, DownloadStore.NONE);
+    }
+
+    Downloads(DownloadStore store) {
+        this(HttpStall.LIMIT, store);
     }
 
     /** With another stall limit, for tests. */
     Downloads(Duration stall) {
+        this(stall, DownloadStore.NONE);
+    }
+
+    Downloads(Duration stall, DownloadStore store) {
         this.stall = stall;
+        this.store = store;
     }
 
     /** A base URL without its trailing slash. */
@@ -63,9 +74,17 @@ final class Downloads {
      * download leaves nothing behind and a replaced file keeps its permissions. A 404 throws {@code notFound}; a
      * non-null {@code checksum} must match the downloaded bytes; a null one skips
      * the check. A download that stalls fails with a one-line error
-     * that names the host.
+     * that names the host. With a checksum, the machine's {@link DownloadStore} is asked first and keeps what was
+     * downloaded.
+     *
+     * @return true when the file came from the machine's store, not the network
      */
-    void fetch(URI uri, Path target, String notFound, Checksum checksum) throws IOException, InterruptedException {
+    boolean fetch(URI uri, Path target, String notFound, Checksum checksum) throws IOException, InterruptedException {
+        Path stored = store.find(checksum);
+        if (stored != null) {
+            AtomicFile.copy(stored, target);
+            return true;
+        }
         try {
             AtomicFile.replace(target, tmp -> {
                 HttpResponse<Path> got;
@@ -89,6 +108,10 @@ final class Downloads {
         } catch (Interrupted e) {
             throw e.interrupt;
         }
+        if (checksum != null) {
+            store.keep(target, checksum);
+        }
+        return false;
     }
 
     /** Carries an interrupt out of the writer, which may only throw an IOException. */

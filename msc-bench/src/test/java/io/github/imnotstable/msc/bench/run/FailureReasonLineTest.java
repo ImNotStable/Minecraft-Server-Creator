@@ -2,6 +2,7 @@ package io.github.imnotstable.msc.bench.run;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.imnotstable.msc.bench.Text;
 import io.github.imnotstable.msc.bench.check.CheckResult;
 import io.github.imnotstable.msc.bench.report.ReportWriter;
 import java.util.ArrayList;
@@ -58,7 +59,8 @@ class FailureReasonLineTest {
         RunRecord r = record(1, List.of(CheckResult.fail("build", "exit 1:\n" + "y".repeat(10_000))), null);
 
         String reason = r.failureReason();
-        assertThat(reason).startsWith("agent exited with code 1; build: exit 1: yyy").endsWith("...");
+        assertThat(reason).startsWith("agent exited with code 1; build: exit 1: yyy").contains("y" + Text.CUT_MARK + "y")
+                .endsWith("yyy");
         assertThat(reason.length()).isLessThan(2 * RunRecord.MAX_REASON_PART);
     }
 
