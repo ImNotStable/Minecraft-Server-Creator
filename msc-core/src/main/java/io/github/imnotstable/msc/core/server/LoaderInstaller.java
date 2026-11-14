@@ -3,6 +3,7 @@ package io.github.imnotstable.msc.core.server;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import io.github.imnotstable.msc.core.tool.ToolException;
+import io.github.imnotstable.msc.process.AtomicFile;
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpResponse;
@@ -159,8 +160,9 @@ public final class LoaderInstaller {
         return Files.exists(marker) && Files.readString(marker).strip().equals(id);
     }
 
-    private static void mark(Path dir, String id) throws IOException {
-        Files.writeString(dir.resolve(MARKER), id + "\n");
+    /** Whole or not at all ({@link AtomicFile}), so a marker is never a cut-off id. */
+    static void mark(Path dir, String id) throws IOException {
+        AtomicFile.write(dir.resolve(MARKER), to -> Files.writeString(to, id + "\n"));
     }
 
     private Path installer(String name, String url, String notFound) throws IOException, InterruptedException {
