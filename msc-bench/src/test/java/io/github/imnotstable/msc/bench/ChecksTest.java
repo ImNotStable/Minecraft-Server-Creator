@@ -45,7 +45,8 @@ class ChecksTest {
     }
 
     private CheckResult run(String json, FakeRconServer server) {
-        return run(Checks.parse(UserJson.of(JsonParser.parseString(json).getAsJsonObject(), "check."), taskDir), server);
+        return run(Checks.parse(UserJson.of(JsonParser.parseString(json).getAsJsonObject(), "check.", Checks.KEYS),
+                taskDir), server);
     }
 
     private CheckResult run(Check check, FakeRconServer server) {
@@ -126,8 +127,8 @@ class ChecksTest {
                  "console":["say %s"],"expect":["log: %s","got: say %s"],"timeoutSeconds":120}
                 """.formatted(text, text, text);
 
-        CheckResult result = run(Checks.parse(UserJson.of(JsonParser.parseString(check).getAsJsonObject(), "check."),
-                taskDir), null, Map.of("LC_ALL", "C", "LANG", "C"));
+        CheckResult result = run(Checks.parse(UserJson.of(JsonParser.parseString(check).getAsJsonObject(), "check.",
+                Checks.KEYS), taskDir), null, Map.of("LC_ALL", "C", "LANG", "C"));
 
         assertThat(result.passed()).as(result.detail()).isTrue();
     }

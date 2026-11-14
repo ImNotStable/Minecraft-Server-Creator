@@ -23,6 +23,9 @@ import java.util.List;
  */
 public record Reset(List<String> delete) {
 
+    /** The keys of {@code resetBeforeChecks}. */
+    public static final UserJson.Keys KEYS = UserJson.Keys.of("delete");
+
     /** No reset: the checks see the workspace as the agent left it. */
     public static final Reset NONE = new Reset(List.of());
 
@@ -39,7 +42,6 @@ public record Reset(List<String> delete) {
         if (json == null) {
             return NONE;
         }
-        json.onlyKeys(List.of("delete"));
         List<String> paths = json.exactStrings("delete");
         List<String> out = new ArrayList<>();
         for (int i = 0; i < paths.size(); i++) {

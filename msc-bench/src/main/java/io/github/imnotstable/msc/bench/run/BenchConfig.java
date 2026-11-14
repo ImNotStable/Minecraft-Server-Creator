@@ -106,6 +106,19 @@ public record BenchConfig(
             int startTimeoutSeconds) {
     }
 
+    /**
+     * The keys bench.json may have, and those of each object in it (#502): a misspelt key at any depth is refused
+     * instead of left out silently. The names under {@code modes}, {@code paths}, {@code env} and {@code serverEnv}
+     * are the file's own.
+     */
+    static final UserJson.Keys KEYS = UserJson.Keys.of("minecraftVersion", "agent", "modes", "paths",
+            "gradleWrapperFrom", "corePort", "server");
+    static final UserJson.Keys AGENT = UserJson.Keys.of("command", "timeoutSeconds");
+    static final UserJson.Keys MODE = UserJson.Keys.of("extraArgs", "env", "mcpConfigTemplate", "serverEnv",
+            "serverPlugins", "paperCacheSeed", "requireMcp");
+    static final UserJson.Keys SERVER = UserJson.Keys.of("command", "paperJar", "paperCacheDirs", "downloadsUrl",
+            "acceptEula", "serverPort", "rconPort", "rconPassword", "startTimeoutSeconds");
+
     /** Reads the config; the EULA choice comes from the owner's machine-wide acceptance in {@code ~/.msc/eula.json}. */
     public static BenchConfig load(Path file) throws IOException {
         return load(file, Path.of(System.getProperty("user.home")));
@@ -127,11 +140,19 @@ public record BenchConfig(
                 throw new IOException("Empty bench config " + file);
             }
             problems = new ArrayList<>();
-            raw = read(UserJson.of(parsed.getAsJsonObject(), ""), problems);
+            UserJson root = null;
+            try {
+                root = UserJson.of(parsed.getAsJsonObject(), "", KEYS);
+            } catch (IllegalArgumentException e) {
+                problems.add(e.getMessage());
+            }
+            raw = root == null ? null : read(root, problems);
         } catch (JsonParseException | IllegalStateException e) {
             throw new IOException("Bad bench config " + file + ": " + e.getMessage(), e);
         }
-        problems.addAll(BenchConfigRules.beforeDefaults(raw));
+        if (raw != null) {
+            problems.addAll(BenchConfigRules.beforeDefaults(raw));
+        }
         BenchConfig full = null;
         if (problems.isEmpty()) {
             full = raw.withDefaults(file.toAbsolutePath().getParent(), MachineEula.accepted(home));
@@ -151,11 +172,11 @@ public record BenchConfig(
      * {@link BenchConfigRules} to name.
      */
     static BenchConfig read(UserJson json, List<String> problems) {
-        UserJson a = field(problems, () -> json.exactObject("agent"));
+        UserJson a = field(problems, () -> json.exactObject("agent", AGENT));
         Agent agent = a == null ? null : new Agent(
                 field(problems, () -> a.stringsOrNulls("command")),
                 number(problems, a, "agent.", "timeoutSeconds"));
-        Map<String, UserJson> m = field(problems, () -> json.objectMapOrNulls("modes"));
+        Map<String, UserJson> m = field(problems, () -> json.objectMapOrNulls("modes", MODE));
         Map<String, Mode> modes = null;
         if (m != null) {
             modes = new LinkedHashMap<>();
@@ -171,7 +192,7 @@ public record BenchConfig(
                         field(problems, () -> mode.exactString("requireMcp", null))));
             }
         }
-        UserJson s = field(problems, () -> json.exactObject("server"));
+        UserJson s = field(problems, () -> json.exactObject("server", SERVER));
         Server server = s == null ? null : new Server(
                 field(problems, () -> s.stringsOrNulls("command")),
                 field(problems, () -> s.exactString("paperJar", null)),
