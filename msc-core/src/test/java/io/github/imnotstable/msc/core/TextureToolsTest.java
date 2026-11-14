@@ -250,6 +250,19 @@ class TextureToolsTest {
     }
 
     @Test
+    void scrollDefaultsToAFullLoopAndRefusesAStepThatMovesNothing() throws Exception {
+        h.ok("texture", "name", "block/lava", "kind", "noise", "color", "#e05010");
+        // 1,2 on 16x16 is back at the start after 16 steps, not after 16 / 2 (#534).
+        assertThat(h.ok("texture", "name", "block/lava", "animate", "scroll 1,2")).contains("16 frames");
+        h.ok("texture", "name", "block/lava", "kind", "noise", "color", "#e05010");
+        assertThat(h.error("texture", "name", "block/lava", "animate", "scroll 16,0"))
+                .isEqualTo("error: scroll 16,0 moves nothing on 16x16: give a step that is not a multiple of 16");
+        assertThat(h.error("texture", "name", "block/lava", "animate", "scroll 0,0", "frames", 4))
+                .startsWith("error: scroll 0,0 moves nothing");
+        assertThat(workspace.resolve(".msc/pack/assets/msc/textures/block/lava.png.mcmeta")).doesNotExist();
+    }
+
+    @Test
     void textureTakesExactlyOneWay() {
         assertThat(h.error("texture", "name", "item/x")).contains("give rows and palette to draw, kind and color");
         assertThat(h.error("texture", "name", "item/x", "kind", "gem", "color", "#fff", "copy", "item/y"))

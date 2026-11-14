@@ -77,11 +77,46 @@ public record Animation(List<Texture> frames, int frametime, boolean interpolate
         return root;
     }
 
+    /**
+     * Frames of one full scroll loop on a {@code size}-pixel square: the fewest steps of (dx, dy) after which both
+     * axes are back at the start, the lcm over the axes of {@code size / gcd(size, |step| mod size)}. 1 means the
+     * step moves nothing.
+     */
+    public static int scrollLoop(int size, int dx, int dy) {
+        if (size < 1) {
+            throw new TextureException("size must be at least 1");
+        }
+        long a = axisLoop(size, dx);
+        long b = axisLoop(size, dy);
+        return Math.toIntExact(a / gcd(a, b) * b);
+    }
+
+    private static long axisLoop(int size, int step) {
+        return size / gcd(size, Math.floorMod(step, size));
+    }
+
+    private static long gcd(long a, long b) {
+        return b == 0 ? a : gcd(b, a % b);
+    }
+
+    /**
+     * {@link #scroll(Texture, int, int, int, int)} with one full loop of frames ({@link #scrollLoop}), so the last
+     * frame plus one step is the first. Refuses a loop longer than {@link #MAX_FRAMES}, saying what to give instead.
+     */
+    public static Animation scroll(Texture base, int dx, int dy, int frametime) {
+        int size = checkScroll(base, dx, dy);
+        int loop = scrollLoop(size, dx, dy);
+        if (loop > MAX_FRAMES) {
+            throw new TextureException("scroll " + dx + "," + dy + " loops after " + loop + " frames on " + size + "x"
+                    + size + ", over the " + MAX_FRAMES + " limit: give frames (at most " + MAX_FRAMES
+                    + ") or a step that loops within " + MAX_FRAMES + " frames");
+        }
+        return scroll(base, dx, dy, loop, frametime);
+    }
+
     /** Slide the texture by (dx, dy) pixels per frame, wrapping, for flowing liquids and conveyors. */
     public static Animation scroll(Texture base, int dx, int dy, int frames, int frametime) {
-        if (base.width() != base.height()) {
-            throw new TextureException("scroll needs a square texture");
-        }
+        checkScroll(base, dx, dy);
         checkCounts(frames, frametime);
         List<Texture> out = new ArrayList<>();
         for (int f = 0; f < frames; f++) {
@@ -94,6 +129,19 @@ public record Animation(List<Texture> frames, int frametime, boolean interpolate
             out.add(t);
         }
         return new Animation(out, frametime, false);
+    }
+
+    /** Square texture and a step that moves it; returns the size. */
+    private static int checkScroll(Texture base, int dx, int dy) {
+        if (base.width() != base.height()) {
+            throw new TextureException("scroll needs a square texture");
+        }
+        int size = base.width();
+        if (scrollLoop(size, dx, dy) == 1) {
+            throw new TextureException("scroll " + dx + "," + dy + " moves nothing on " + size + "x" + size
+                    + ": give a step that is not a multiple of " + size);
+        }
+        return size;
     }
 
     /**
