@@ -3,6 +3,7 @@ package io.github.imnotstable.msc.bench.check;
 import io.github.imnotstable.msc.bench.Text;
 import io.github.imnotstable.msc.bench.run.ChildProcesses;
 import io.github.imnotstable.msc.bench.run.Workspaces;
+import io.github.imnotstable.msc.process.ServerJava;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -36,7 +37,8 @@ record CommandCheck(String name, List<String> run, int timeoutSeconds, int expec
                 Workspaces.copyTree(addFiles, context.workspace());
             }
             log = Files.createTempFile("msc-bench-check", ".log");
-            Process process = context.start(new ProcessBuilder(command)
+            // A Java tool (or a Gradle build) writes its output as UTF-8, as it is read below (#478).
+            Process process = context.start(ServerJava.processBuilder(command)
                     .directory(context.workspace().toFile())
                     .redirectErrorStream(true)
                     .redirectOutput(log.toFile()));

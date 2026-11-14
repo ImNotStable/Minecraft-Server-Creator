@@ -49,7 +49,18 @@ class ChecksTest {
     }
 
     private CheckResult run(Check check, FakeRconServer server) {
+        return run(check, server, Map.of());
+    }
+
+    /** {@code env} goes into the environment of every process the check starts. */
+    private CheckResult run(Check check, FakeRconServer server, Map<String, String> env) {
         return check.run(new CheckContext() {
+            @Override
+            public Process start(ProcessBuilder builder) throws IOException {
+                builder.environment().putAll(env);
+                return builder.start();
+            }
+
             @Override
             public Path workspace() {
                 return workspace;
@@ -101,6 +112,24 @@ class ChecksTest {
         assertThat(fail.passed()).isFalse();
         assertThat(fail.detail()).contains("no match for /Steve best: \\d/").contains("reply to game best Steve");
         assertThat(noJar.detail()).contains("no server jar");
+    }
+
+    /** The check writes the console and reads the server's output as UTF-8; under a C locale so must the server. */
+    @Test
+    void playerCheckServerEchoesNonAsciiTextUnderACLocale() throws IOException {
+        Files.createDirectories(workspace.resolve("build/libs"));
+        Files.writeString(workspace.resolve("build/libs/game-1.0.0.jar"), "stands in for the server jar");
+        String text = EchoServer.TEXT;
+        String check = """
+                {"type":"player","jar":"build/libs/game-1.0.0.jar",
+                 "command":["{java}","-cp","{classpath}","io.github.imnotstable.msc.bench.EchoServer"],
+                 "console":["say %s"],"expect":["log: %s","got: say %s"],"timeoutSeconds":120}
+                """.formatted(text, text, text);
+
+        CheckResult result = run(Checks.parse(UserJson.of(JsonParser.parseString(check).getAsJsonObject(), "check."),
+                taskDir), null, Map.of("LC_ALL", "C", "LANG", "C"));
+
+        assertThat(result.passed()).as(result.detail()).isTrue();
     }
 
     @Test

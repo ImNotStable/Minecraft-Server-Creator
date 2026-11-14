@@ -1,5 +1,6 @@
 package io.github.imnotstable.msc.renderer;
 
+import io.github.imnotstable.msc.protocol.Limits;
 import io.github.imnotstable.msc.protocol.world.BlockGrid;
 import io.github.imnotstable.msc.protocol.world.Region;
 import java.awt.image.BufferedImage;
@@ -406,8 +407,9 @@ public final class WorldRenderer {
         return out;
     }
 
+    /** A line of world text cut for the image, never through an emoji (#479). */
     private static String cut(String line) {
-        return line.length() > MAX_TEXT_CHARS ? line.substring(0, MAX_TEXT_CHARS - 2) + ".." : line;
+        return line.length() > MAX_TEXT_CHARS ? Limits.head(line, MAX_TEXT_CHARS - 2) + ".." : line;
     }
 
     /** Halfway between two colours. */

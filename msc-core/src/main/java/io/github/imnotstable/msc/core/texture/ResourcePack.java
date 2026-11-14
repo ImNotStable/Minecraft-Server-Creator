@@ -4,6 +4,7 @@ import com.sun.net.httpserver.HttpServer;
 import io.github.imnotstable.msc.core.server.PidFile;
 import io.github.imnotstable.msc.core.tool.ToolException;
 import io.github.imnotstable.msc.process.AtomicFile;
+import io.github.imnotstable.msc.process.ServerJava;
 import io.github.imnotstable.msc.textures.Models;
 import io.github.imnotstable.msc.textures.PackSource;
 import io.github.imnotstable.msc.textures.ResourceId;
@@ -235,8 +236,9 @@ public final class ResourcePack implements AutoCloseable {
         int port = server.getAddress().getPort();
         server.stop(0);
         server = null;
-        Process p = new ProcessBuilder(java, "-cp", classPath, PackHost.class.getName(), host, String.valueOf(port),
-                zipFile().toString())
+        // Its log is read as UTF-8 when it does not come up (#478).
+        Process p = ServerJava.processBuilder(List.of(java, "-cp", classPath, PackHost.class.getName(), host,
+                String.valueOf(port), zipFile().toString()))
                 .redirectOutput(ProcessBuilder.Redirect.DISCARD)
                 .redirectError(hostLog().toFile())
                 .start();

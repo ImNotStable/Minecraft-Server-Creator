@@ -7,6 +7,7 @@ import io.github.imnotstable.msc.bench.run.ChildProcesses;
 import io.github.imnotstable.msc.bot.BlockSource;
 import io.github.imnotstable.msc.bot.Bot;
 import io.github.imnotstable.msc.bot.Bots;
+import io.github.imnotstable.msc.process.ServerJava;
 import io.github.imnotstable.msc.protocol.world.BlockGrid;
 import io.github.imnotstable.msc.protocol.world.Region;
 import java.io.IOException;
@@ -92,7 +93,8 @@ record PlayerCheck(
             deleteTree(dir);
             Files.createDirectories(dir);
             Files.copy(builtJar, dir.resolve("server.jar"), StandardCopyOption.REPLACE_EXISTING);
-            server = context.start(new ProcessBuilder(Placeholders.fill(command, context.placeholders()))
+            // The console is written and read as UTF-8 below; so must the server's Java speak (#478).
+            server = context.start(ServerJava.processBuilder(Placeholders.fill(command, context.placeholders()))
                     .directory(dir.toFile())
                     .redirectErrorStream(true)
                     .redirectOutput(log.toFile()));

@@ -1,5 +1,6 @@
 package io.github.imnotstable.msc.renderer;
 
+import io.github.imnotstable.msc.protocol.Limits;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -117,7 +118,8 @@ public record Marker(double x, double y, double z, String label, Kind kind, List
         return id.contains(":") ? Kind.OTHER : Kind.CREATURE;
     }
 
+    /** World text (a name, sign lines, a hologram) cut for the legend, never through an emoji (#479). */
     private static String shorten(String s) {
-        return s.length() > MAX_NAME ? s.substring(0, MAX_NAME - 1) + "..." : s;
+        return s.length() > MAX_NAME ? Limits.head(s, MAX_NAME - 1) + "..." : s;
     }
 }

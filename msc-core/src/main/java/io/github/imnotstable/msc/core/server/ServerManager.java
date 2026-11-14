@@ -11,7 +11,6 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -185,10 +184,9 @@ public final class ServerManager implements AutoCloseable {
                 throw new ToolException(LeftoverServer.stillRunning(left.pid(), PidFile.resisting(pidFile())
                         ? LeftoverServer.RESISTED : LeftoverServer.NOT_STOPPED));
             }
-            // MSC reads the output and writes commands as UTF-8; so must the server's Java (#466).
-            List<String> command = new ArrayList<>(ServerJava.withEncoding(command()));
             Files.createDirectories(config.serverDir());
-            ProcessBuilder pb = new ProcessBuilder(command).directory(config.serverDir().toFile())
+            // MSC reads the output and writes commands as UTF-8; so must the server's Java (#466, #478).
+            ProcessBuilder pb = ServerJava.processBuilder(command()).directory(config.serverDir().toFile())
                     .redirectErrorStream(true);
             pb.environment().put(Limits.ENV_CORE_ADDRESS, address);
             pb.environment().put(Limits.ENV_TOKEN, token);

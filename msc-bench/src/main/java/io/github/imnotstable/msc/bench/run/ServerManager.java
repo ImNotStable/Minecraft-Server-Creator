@@ -111,8 +111,7 @@ public final class ServerManager implements AutoCloseable {
             throw new IOException("Minecraft EULA not accepted on this machine ("
                     + MachineEula.location(Path.of(System.getProperty("user.home"))) + ")");
         }
-        ProcessBuilder builder = new ProcessBuilder(
-                io.github.imnotstable.msc.process.ServerJava.withEncoding(config.command()))
+        ProcessBuilder builder = io.github.imnotstable.msc.process.ServerJava.processBuilder(config.command())
                 .directory(serverDir.toFile())
                 .redirectErrorStream(true)
                 .redirectOutput(serverDir.resolve("bench-console.log").toFile())
