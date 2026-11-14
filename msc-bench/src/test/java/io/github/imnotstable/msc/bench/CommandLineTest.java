@@ -3,6 +3,7 @@ package io.github.imnotstable.msc.bench;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.imnotstable.msc.bench.run.FullDisk;
+import io.github.imnotstable.msc.buildlogic.RepoFiles;
 import io.github.imnotstable.msc.bench.run.RunRecord;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -126,6 +127,25 @@ class CommandLineTest {
         BAD_TASKS.put("bad-regex", new String[] {"{\"category\":\"code\",\"title\":\"t\",\"checks\":[{\"type\":"
                 + "\"file\",\"path\":\"a.txt\",\"contains\":\"(abc\"}]}",
                 "checks[0].contains: \"(abc\" is not a regex: Unclosed group at index 4"});
+        // #519: a task refusal names its file and key path.
+        BAD_TASKS.put("missing-fixture", new String[] {"{\"category\":\"code\",\"title\":\"t\",\"fixtures\":[\"_nope\"],"
+                + check + "}", "fixtures: no folder _nope next to the task folders"});
+        BAD_TASKS.put("bad-platform", new String[] {"{\"category\":\"code\",\"title\":\"t\",\"platform\":\"spigot\","
+                + check + "}", "platform: \"spigot\" is no platform; use paper or minestom"});
+        BAD_TASKS.put("no-category", new String[] {"{\"title\":\"t\"," + check + "}", "category: is missing"});
+        BAD_TASKS.put("unknown-template", new String[] {"{\"category\":\"code\",\"title\":\"t\",\"scaffold\":"
+                + "{\"template\":\"nope\",\"name\":\"n\",\"package\":\"p\"}," + check + "}",
+                "scaffold.template: \"nope\" is no template; use one of"});
+        BAD_TASKS.put("missing-add-files", new String[] {"{\"category\":\"code\",\"title\":\"t\",\"checks\":[{\"type\":"
+                + "\"command\",\"run\":[\"x\"],\"addFiles\":\"tests\"}]}",
+                "checks[0].addFiles: no folder tests in the task"});
+        // #519: a paths entry a selected mode uses that does not exist is refused before the run folder.
+        BAD_CONFIGS.put("missing-core-lib", new String[] {"{\"modes\":{\"toolset\":{\"mcpConfigTemplate\":"
+                + "\"mcp.template\"}},\"paths\":{\"coreLib\":\"no-lib\"}}",
+                "missing-core-lib.json: paths.coreLib: no such file or folder "});
+        BAD_CONFIGS.put("missing-plugin", new String[] {"{\"modes\":{\"toolset\":{\"serverPlugins\":[\"{agentJar}\"]}},"
+                + "\"paths\":{\"agentJar\":\"no.jar\"}}",
+                "missing-plugin.json: paths.agentJar: no such file or folder "});
         BAD_TASKS.put("title-number", new String[] {"{\"category\":\"code\",\"title\":7," + check + "}",
                 "title: 7 is not a string"});
     }
@@ -178,6 +198,13 @@ class CommandLineTest {
             Files.createDirectories(dir.resolve("configs"));
             Files.writeString(dir.resolve("configs").resolve(config.getKey() + ".json"), config.getValue()[0]);
         }
+        Files.writeString(dir.resolve("configs/mcp.template"), "{\"args\":[\"{coreLib}/*\"]}");
+        // #519: the shipped config in a fresh checkout, where neither msc-core nor msc-agent-paper is built.
+        Path fresh = Files.createDirectories(dir.resolve("fresh/msc-bench"));
+        for (String file : List.of("bench.json", "mcp-toolset.template.json")) {
+            Files.copy(RepoFiles.path("shippedConfig", "msc-bench/" + file), fresh.resolve(file));
+        }
+        Files.copy(RepoFiles.path("shippedConfig", "gradlew"), dir.resolve("fresh/gradlew"));
         for (Map.Entry<String, String[]> task : BAD_TASKS.entrySet()) {
             Path folder = Files.createDirectories(dir.resolve("bad-tasks").resolve(task.getKey()).resolve("t1"));
             Files.writeString(folder.resolve("task.json"), task.getValue()[0]);
@@ -242,6 +269,10 @@ class CommandLineTest {
                         "@bad-tasks/" + name, "--config", "@bench.json"));
             }
         });
+        rows.add(row("run shipped bench.json unbuilt", "bench.json: paths.coreLib: no such file or folder ",
+                "run", "--tasks-dir", "@tasks", "--config", "@fresh/msc-bench/bench.json"));
+        rows.add(row("run --modes toolset unbuilt", "run ./gradlew :msc-core:installDist first", "run", "--tasks-dir",
+                "@tasks", "--modes", "toolset", "--config", "@fresh/msc-bench/bench.json"));
         // check: its task, its workspace and its --config.
         String[] check = {"check", "--tasks-dir", "@tasks"};
         rows.add(row("check task ''", "the task \"\" names no task", with(check, "", "@ws")));
@@ -271,6 +302,18 @@ class CommandLineTest {
         System.arraycopy(base, 0, out, 0, base.length);
         System.arraycopy(more, 0, out, base.length, more.length);
         return out;
+    }
+
+    /** #519: only run needs the toolset built; list and check take the shipped config in a fresh checkout. */
+    @Test
+    void listAndCheckTakeTheShippedConfigBeforeTheToolsetIsBuilt() throws IOException {
+        Files.writeString(dir.resolve("ws/a.txt"), "x");
+
+        Outcome list = exec("list", "--tasks-dir", "@tasks", "--config", "@fresh/msc-bench/bench.json");
+        Outcome check = exec("check", "t1", "@ws", "--tasks-dir", "@tasks", "--config", "@fresh/msc-bench/bench.json");
+
+        assertThat(list.exit()).as(list.err()).isZero();
+        assertThat(check.exit()).as(check.err()).isZero();
     }
 
     @ParameterizedTest

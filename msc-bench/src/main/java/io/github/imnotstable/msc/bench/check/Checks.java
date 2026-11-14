@@ -92,11 +92,11 @@ public final class Checks {
             return null;
         }
         if (taskDir == null) {
-            throw new IllegalArgumentException("\"" + key + "\" needs the task's folder");
+            throw new IllegalArgumentException(json.key(key) + ": needs the task's folder");
         }
         Path dir = taskDir.resolve(folder).normalize();
         if (!dir.startsWith(taskDir.normalize()) || !java.nio.file.Files.isDirectory(dir)) {
-            throw new IllegalArgumentException("\"" + key + "\": no folder " + folder + " in the task");
+            throw new IllegalArgumentException(json.key(key) + ": no folder " + folder + " in the task");
         }
         return dir;
     }

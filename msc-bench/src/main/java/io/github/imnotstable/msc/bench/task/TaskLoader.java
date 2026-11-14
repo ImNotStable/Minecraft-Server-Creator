@@ -6,6 +6,7 @@ import io.github.imnotstable.msc.bench.JsonNumbers;
 import io.github.imnotstable.msc.bench.UserJson;
 import io.github.imnotstable.msc.bench.check.Check;
 import io.github.imnotstable.msc.bench.check.Checks;
+import io.github.imnotstable.msc.templates.Templates;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
@@ -80,7 +81,8 @@ public final class TaskLoader {
             for (String shared : json.paths("fixtures")) {
                 Path fixture = taskDir.getParent().resolve(shared).normalize();
                 if (!Files.isDirectory(fixture)) {
-                    throw new IllegalArgumentException("shared fixture not found: " + shared);
+                    throw new IllegalArgumentException(json.key("fixtures") + ": no folder " + shared + " next to the task "
+                            + "folders");
                 }
                 fixtures.add(fixture);
             }
@@ -90,12 +92,18 @@ public final class TaskLoader {
 
             String platform = json.exactString("platform", TaskDef.PAPER);
             if (!platform.equals(TaskDef.PAPER) && !platform.equals(TaskDef.MINESTOM)) {
-                throw new IllegalArgumentException("platform must be paper or minestom, not " + platform);
+                throw new IllegalArgumentException(json.key("platform") + ": " + UserJson.quoted(platform)
+                        + " is no platform; use paper or minestom");
             }
             Scaffold scaffold = null;
             UserJson s = json.exactObject("scaffold", SCAFFOLD);
             if (s != null) {
-                scaffold = new Scaffold(requireString(s, "template"), requireString(s, "name"), requireString(s, "package"));
+                String template = requireString(s, "template");
+                if (!Templates.ids().contains(template)) {
+                    throw new IllegalArgumentException(s.key("template") + ": " + UserJson.quoted(template)
+                            + " is no template; use one of " + String.join(", ", Templates.ids()));
+                }
+                scaffold = new Scaffold(template, requireString(s, "name"), requireString(s, "package"));
             }
 
             ServerSpec server = ServerSpec.NONE;
@@ -132,7 +140,7 @@ public final class TaskLoader {
     private static String requireString(UserJson json, String key) {
         String value = json.exactString(key, null);
         if (value == null) {
-            throw new IllegalArgumentException("missing \"" + key + "\"");
+            throw new IllegalArgumentException(json.key(key) + ": is missing");
         }
         return value;
     }
