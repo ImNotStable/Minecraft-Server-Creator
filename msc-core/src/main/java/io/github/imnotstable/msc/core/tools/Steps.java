@@ -19,8 +19,9 @@ import java.util.function.Consumer;
 /**
  * The side effects of one state-changing tool call, in the order they run. The rule every such tool follows:
  * <ol>
- *   <li>check everything that can be checked (arguments, and that every file the call writes can be written) before
- *       the first step;</li>
+ *   <li>check first: every refusal that can be known before a side effect (arguments, that every file the call writes
+ *       can be written, that the server can start at all) is decided before the first step, so a refusal is always
+ *       the plain one-line answer and nothing was touched;</li>
  *   <li>run the steps in an order where no later step can fail for a reason an earlier check could have caught;</li>
  *   <li>a step that still fails ends the call with a message that names the step, the reason, what was done, what
  *       was not, and what that leaves ({@link #ifFails}), never a bare {@code internal:} error.</li>
@@ -129,6 +130,11 @@ final class Steps {
         if (!plan.contains(step)) {
             plan.add(step);
         }
+        checkpoint(step);
+    }
+
+    /** Records {@code step} for {@link #trace}, and fails it when a test asks. */
+    private void checkpoint(String step) throws IOException {
         List<String> trace = TRACE.get();
         if (trace != null) {
             trace.add(tool + ": " + step);
@@ -138,22 +144,16 @@ final class Steps {
         }
     }
 
-    /** A step whose failure does not undo the call's purpose: it adds a note line instead of failing the call. */
-    String optional(String step, Action action) throws InterruptedException {
-        return optionalRan(step, () -> {
-            action.run();
-            return true;
-        });
-    }
-
     /**
-     * Like {@link #optional}, for a step that may find nothing to do: {@code action} returns whether it did something,
-     * and only then is the step counted as done, so a refusal in a later step is still the whole answer.
+     * An extra, not part of the plan: a step whose failure does not undo the call's purpose (a saved copy, removing
+     * MSC's own leftovers). It is never counted as done or not done, so it never changes the shape of a result: a
+     * later refusal is still the whole answer, a later failure does not list it. Only its own failure shows, as a
+     * note line the caller adds to its answer.
      */
-    String optionalRan(String step, Result<Boolean> action) throws InterruptedException {
+    String optional(String step, Action action) throws InterruptedException {
         try {
-            begin(step);
-            (action.get() ? done : idle).add(step);
+            checkpoint(step);
+            action.run();
             return "";
         } catch (InterruptedException e) {
             throw e;

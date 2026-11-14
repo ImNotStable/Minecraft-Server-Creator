@@ -70,11 +70,14 @@ final class DevCycle {
         Path project = config.resolve(args.str("project", "."));
         boolean restart = args.bool("restart", true);
         Timings time = new Timings();
+        Platform platform = platform(project);
+        if (restart) {
+            checkStart(project, platform);
+        }
         long warmed = warmup.await(project);
         if (warmed >= 0) {
             time.add("waited for first build", warmed);
         }
-        Platform platform = platform(project);
         ProjectBuilder.BuildResult jar = builder.devJar(project, BUILD_TIMEOUT, platform.addonDir() == null);
         time.add("jar", jar.millis());
         if (!jar.ok()) {
@@ -102,6 +105,20 @@ final class DevCycle {
                     .append(LogCondenser.condenseBuild(checked.output(), maxChars / 2)).append('\n');
         }
         return out.append(rest).append('\n').append(time.line()).toString();
+    }
+
+    /**
+     * Check first: a start that would refuse after the deploy (the EULA not accepted) refuses now, before the build
+     * and any change, so the refusal is the plain one-line answer and the server is not stopped for nothing. Without
+     * a server jar nothing starts after the deploy, which the result says: no refusal.
+     */
+    private void checkStart(Path project, Platform platform) {
+        // The deploy remembers the project's platform for a workspace that has none; the start then uses it.
+        boolean remember = Platform.detect(project) != null && !Files.exists(Platform.file(config));
+        Platform starts = remember ? platform : server.platform();
+        if (starts.needsEula() && Files.exists(server().resolve(starts.serverJar()))) {
+            run.checkStart(starts, false);
+        }
     }
 
     /** The tests running beside the deploy, and the thread to interrupt to stop them. */
@@ -167,9 +184,10 @@ final class DevCycle {
 
     /**
      * Checked first: where the jar goes (never over the agent jar) and that every file the deploy writes can be
-     * written. Then: stop a leftover server, stop the server, deploy the new jar (whole, through a temp file), remove
-     * an earlier deploy under another name (after the deploy, so a failed deploy leaves the earlier jar working),
-     * mirror libs/, record the deploy, remember the platform, then the start's own steps.
+     * written; the start's own refusals were checked before the build ({@link #checkStart}). Then: stop a leftover
+     * server, stop the server, remove what interrupted calls left (housekeeping), deploy the new jar (whole, through a
+     * temp file), remove an earlier deploy under another name (after the deploy, so a failed deploy leaves the earlier
+     * jar working), mirror libs/, record the deploy, remember the platform, then the start's own steps.
      */
     private String deployAndRestart(Path project, Platform platform, ProjectBuilder.BuildResult build, boolean restart,
                                     int maxChars, Timings time) throws IOException, InterruptedException {
@@ -212,7 +230,7 @@ final class DevCycle {
         if (stopping) {
             steps.then(STOP);
         }
-        steps.then(SWEEP).then(DEPLOY);
+        steps.then(DEPLOY);
         if (earlier != null) {
             steps.then(REMOVE_EARLIER);
         }
@@ -224,7 +242,7 @@ final class DevCycle {
             steps.then(REMEMBER);
         }
         if (restart) {
-            ServerRun.plan(steps, false);
+            ServerRun.plan(steps);
         }
         String stopped = stopping ? "; the server is stopped: server_start starts it with what is deployed" : "";
         steps.ifFails(DEPLOY, "the earlier jar is still deployed" + stopped)
@@ -280,7 +298,7 @@ final class DevCycle {
         if (server.serverJar() == null && config.serverCommand() == null) {
             return out.append("\nserver not set up, so nothing was started. Run server_setup, then dev_cycle.").toString();
         }
-        ServerRun.Report report = run.startAndReport(steps, 180, maxChars);
+        ServerRun.Report report = run.startAndReport(steps, false, 180, maxChars);
         time.add("start", report.result().millis());
         if (report.result().agentMillis() >= 0) {
             time.add("agent", report.result().agentMillis());
@@ -292,7 +310,6 @@ final class DevCycle {
         return config.serverDir();
     }
 
-    /** Every folder a server of any platform scans, so a leftover from before a platform change goes too. */
     private static long millisSince(long nanos) {
         return (System.nanoTime() - nanos) / 1_000_000;
     }
