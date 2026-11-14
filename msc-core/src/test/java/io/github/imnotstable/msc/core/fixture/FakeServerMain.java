@@ -32,6 +32,14 @@ public final class FakeServerMain {
         if (Files.exists(Path.of("plugins", "demo.jar"))) {
             System.out.println("[12:00:01 INFO]: [Demo] Enabling Demo v" + Files.readString(Path.of("plugins", "demo.jar")).trim());
         }
+        // many-errors.flag: a noisy start, 300 errors with traces, far more than any cap (#473).
+        if (Files.exists(Path.of("many-errors.flag"))) {
+            for (int i = 0; i < 300; i++) {
+                System.out.println("[12:00:01 ERROR]: Could not load plugin part" + i + ": something broke number " + i
+                        + " in a long-ish message text\njava.lang.IllegalStateException: failure " + i
+                        + "\n\tat com.example.demo.Part" + i + ".onEnable(Part" + i + ".java:" + i + ") ~[demo.jar:?]");
+            }
+        }
         if (Files.exists(Path.of("error.flag"))) {
             System.out.println("[12:00:01 ERROR]: Error occurred while enabling Demo v1.0 (Is it up to date?)");
             System.out.println("java.lang.IllegalStateException: arena missing");

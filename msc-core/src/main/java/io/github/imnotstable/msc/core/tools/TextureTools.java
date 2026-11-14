@@ -107,7 +107,7 @@ public final class TextureTools {
                         + "its problems. check=true: only list problems.",
                 Schema.of().opt("check", "boolean", "Only check the pack, do not build it. Default false")
                         .opt("limit", "integer", "Most problems to list. Default 30 with check, 5 on a build")
-                        .opt("description", "string", "Pack description")
+                        .opt("description", "string", "Pack description, up to two lines")
                         .opt("file", "string", "Also save the zip here, such as ruby-pack.zip")
                         .opt("apply", "boolean", "Send to the running server. Default true")
                         .opt("required", "boolean", "Kick players who decline. Default false"),
@@ -136,7 +136,7 @@ public final class TextureTools {
     private static String pack(Args args, AgentHub hub, ResourcePack pack, CoreConfig config, Path properties)
             throws IOException, InterruptedException {
         int limit = Math.max(0, args.integer("limit", 5));
-        String description = args.str("description", LifecycleTools.DEFAULT_PACK_DESCRIPTION);
+        String description = args.lines("description", LifecycleTools.DEFAULT_PACK_DESCRIPTION, 2);
         boolean required = args.bool("required", false);
         Path copy = args.has("file") ? OutputFile.check(args.path("file", config.inWorkspace()), "file") : null;
         boolean offered = pack.ours(PackProperties.url(properties));
@@ -283,6 +283,7 @@ public final class TextureTools {
                     : "the texture is written as a still image; texture name=" + id + " animate=... animates it");
         }
         StringBuilder out = new StringBuilder();
+        Budget.Parts parts = new Budget.Parts();
         if (t != null) {
             Texture written = t;
             String finalModel = model;
@@ -299,7 +300,10 @@ public final class TextureTools {
                 out.append("\nwarning: ").append(warning);
             }
             if (kind != null && animation == null) {
-                out.append('\n').append(Budget.truncate(PaletteText.render(t), Budget.DEFAULT_CHARS, "Use texture_view."));
+                // One budget (#473): the drawing gets what the lines around it leave, "next: pack" stays last.
+                parts.add(out.append('\n').toString())
+                        .cut(n -> Budget.truncate(PaletteText.render(written), n, "Use texture_view."));
+                out.setLength(0);
             }
         }
         if (animation != null) {
@@ -308,7 +312,7 @@ public final class TextureTools {
                     .append(animation.frames().size()).append(" frames, ").append(args.integer("frametime", 2))
                     .append(" ticks each");
         }
-        return out.append("\nnext: pack").toString();
+        return parts.add(out.toString()).text(Budget.DEFAULT_CHARS, "next: pack", "Use texture_view.");
     }
 
     /** The longest file name a texture call writes, the animation's {@code <name>.png.mcmeta}. */
@@ -359,10 +363,11 @@ public final class TextureTools {
         }));
         StringBuilder out = new StringBuilder("wrote ").append(file).append(": ").append(Stats.of(t));
         warnings.forEach(w -> out.append("\nwarning: ").append(w));
+        Budget.Parts parts = new Budget.Parts().add(out.toString());
         if (args.has("kind")) {
-            out.append('\n').append(Budget.truncate(PaletteText.render(t), Budget.DEFAULT_CHARS, "Too large to show."));
+            parts.add("\n").cut(n -> Budget.truncate(PaletteText.render(t), n, "Too large to show."));
         }
-        return out.toString();
+        return parts.text(Budget.DEFAULT_CHARS, null, "Too large to show.");
     }
 
     /** The texture of {@code kind}: a 16x16 shape or a tiling pattern. */

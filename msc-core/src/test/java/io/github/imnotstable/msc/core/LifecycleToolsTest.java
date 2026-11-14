@@ -60,6 +60,16 @@ class LifecycleToolsTest {
         assertThat(h.ok("server_command", "command", "/say hi")).isEqualTo("ran say hi");
         assertThat(h.ok("server_command", "command", "say a\n\n/say b\n")).isEqualTo("> say a\nran say a\n> /say b\nran say b");
         assertThat(h.error("server_command", "command", "say x\n".repeat(65))).contains("at most 64 commands");
+        // #473: the commands' outputs share the cap, so every command keeps its line and a share of its output.
+        StringBuilder many = new StringBuilder();
+        for (int i = 0; i < 20; i++) {
+            many.append("say ").append(i).append(' ').append("w".repeat(140)).append('\n');
+        }
+        String shared = h.ok("server_command", "command", many.toString());
+        assertThat(shared).hasSizeLessThanOrEqualTo(6000).doesNotContain("Narrow the call.").endsWith("Output cut.]");
+        for (int i = 0; i < 20; i++) {
+            assertThat(shared).contains("> say " + i + " w").contains("ran say " + i + " w");
+        }
         assertThat(h.ok("server_logs", "mode", "tail", "lines", 1)).contains("Done (0.1s)!");
         assertThat(h.ok("server_logs", "mode", "grep", "pattern", "starting")).contains("Starting minecraft server");
         assertThat(h.ok("server_logs")).endsWith("lines, 0 errors, 0 warnings");
@@ -798,6 +808,45 @@ class LifecycleToolsTest {
                 .contains("server ready");
         assertThat(h.core.server().running()).isTrue();
         h.ok("server_stop");
+    }
+
+    /**
+     * #473: failed tests and a noisy start share dev_cycle's one budget: at every cap the result fits, the time line is
+     * last, and each cut keeps its own hint, which names what shows the rest.
+     */
+    @Test
+    void manyFailedTestsAndANoisyStartShareOneBudget() throws Exception {
+        Files.writeString(project.resolve("many-failing-tests.flag"), "");
+        Files.createDirectories(workspace.resolve("run"));
+        Files.writeString(workspace.resolve("run/many-errors.flag"), "");
+        int version = 1;
+        for (int cap : new int[] {io.github.imnotstable.msc.core.tool.Budget.DEFAULT_CHARS, 200, 24_000}) {
+            Files.writeString(project.resolve("version.txt"), "1." + version++);
+            String result = h.ok("dev_cycle", "project", "demo", "maxChars", cap);
+            assertThat(result).as("maxChars %d", cap).hasSizeLessThanOrEqualTo(cap)
+                    .containsPattern("\ntime: jar [^\n]*, total \\d+\\.\\ds$");
+            assertHintsAreTrue(result);
+            if (cap > 200) {
+                assertThat(result).as("maxChars %d", cap).startsWith("TESTS FAILED in ")
+                        .contains("Fix the first errors and build again.]").contains("server ready")
+                        .contains("Use server_logs with grep to narrow.]").doesNotContain("Narrow the call.");
+            }
+        }
+        h.ok("server_stop");
+        String start = h.ok("server_start", "timeoutSeconds", 60);
+        assertThat(start).hasSizeLessThanOrEqualTo(io.github.imnotstable.msc.core.tool.Budget.DEFAULT_CHARS)
+                .startsWith("server ready").endsWith("Use server_logs with grep to narrow.]");
+        h.ok("server_stop");
+    }
+
+    /** Every cut names a call that shows the rest, or what to change; never the registry's safety net. */
+    private static void assertHintsAreTrue(String result) {
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("\\[truncated: \\d+ more lines, \\d+ chars\\. ([^\\]]*)\\]")
+                .matcher(result);
+        while (m.find()) {
+            assertThat(m.group(1)).isIn("Fix the first errors and build again.", "Use server_logs with grep to narrow.",
+                    io.github.imnotstable.msc.core.tool.Budget.RAISE);
+        }
     }
 
     @Test

@@ -31,6 +31,31 @@ public final class Args {
         return checked(name, raw(name), true);
     }
 
+    /**
+     * A string argument of at most {@code maxLines} lines, such as pack's description, which Minecraft shows on two
+     * lines: line breaks ({@code \r\n} becomes {@code \n}), no other control. {@code fallback} when missing.
+     */
+    public String lines(String name, String fallback, int maxLines) {
+        if (!has(name)) {
+            return fallback;
+        }
+        String value = raw(name).replace("\r\n", "\n");
+        int lines = 1;
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            if (c == '\n') {
+                lines++;
+            } else if (Character.isISOControl(c)) {
+                throw new ToolException(String.format("argument %s has a control character (U+%04X); only a line break"
+                        + " may be in it", name, (int) c));
+            }
+        }
+        if (lines > maxLines) {
+            throw new ToolException("argument " + name + " has " + lines + " lines; at most " + maxLines + " are shown");
+        }
+        return value;
+    }
+
     private String raw(String name) {
         if (!has(name)) {
             throw new ToolException("missing argument: " + name);

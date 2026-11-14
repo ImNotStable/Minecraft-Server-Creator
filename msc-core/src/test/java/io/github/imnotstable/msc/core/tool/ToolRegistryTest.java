@@ -30,7 +30,7 @@ class ToolRegistryTest {
         String plain = registry.call("plain", new JsonObject()).text();
         assertThat(plain).hasSizeLessThanOrEqualTo(Budget.DEFAULT_CHARS).endsWith("Narrow the call.]");
         assertThat(registry.call("sized", new JsonObject()).text()).hasSizeLessThanOrEqualTo(Budget.DEFAULT_CHARS)
-                .endsWith("Raise maxChars or narrow the call.]");
+                .endsWith("Narrow the call.]");
         for (int max : new int[] {200, 9000, Budget.MAX_CHARS, 1_000_000}) {
             JsonObject args = new JsonObject();
             args.addProperty("maxChars", max);
