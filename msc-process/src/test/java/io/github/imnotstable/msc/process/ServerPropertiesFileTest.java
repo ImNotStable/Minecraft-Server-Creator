@@ -105,6 +105,13 @@ class ServerPropertiesFileTest {
     }
 
     @Test
+    void aCommentAfterALineOfOnlyABackslashStays() throws IOException {
+        Path file = write("\\\n# keep me\n\n\\\n\nrcon.port=1\n".getBytes(StandardCharsets.UTF_8));
+        ServerPropertiesFile.set(file, Map.of("rcon.port", "2"));
+        assertThat(Files.readString(file)).isEqualTo("\\\n# keep me\n\n\\\n\nrcon.port=2\n");
+    }
+
+    @Test
     void aLastLineEndingInABackslashDoesNotSwallowAnAddedKey() throws IOException {
         // #407: hand-edited after the server's last start, so no final line end; the server drops the backslash.
         Path file = write("gamemode=survival\nmotd=Shared at C:\\games\\".getBytes(StandardCharsets.UTF_8));
