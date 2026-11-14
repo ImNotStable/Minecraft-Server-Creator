@@ -1,5 +1,6 @@
 package io.github.imnotstable.msc.core.server;
 
+import io.github.imnotstable.msc.process.ServerPropertiesFile;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.DirectoryStream;
@@ -103,7 +104,7 @@ public final class CrashTriage {
                     m -> "ask the user to accept the Minecraft EULA, then server_start acceptEula=true"),
             Rule.of("FAILED TO BIND TO PORT|Address already in use", m -> "server port already in use",
                     m -> "another process holds the port: server_stop stops a leftover server, else change "
-                            + "server-port in server.properties"),
+                            + "server-port in " + ServerPropertiesFile.NAME),
             Rule.of("(?<who>[\\w/$]+) has been compiled by a more recent version of the Java Runtime \\(class file "
                             + "version (?<cls>\\d+)\\.\\d+\\), this version of the Java Runtime only recognizes class "
                             + "file versions up to (?<run>\\d+)",
