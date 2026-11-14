@@ -10,7 +10,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
-import java.util.stream.Stream;
 
 /**
  * Sets up the servers that come from an installer (NeoForge, Forge, Quilt) or a fork's own download service
@@ -65,12 +64,12 @@ public final class LoaderInstaller {
             }
             build = latestBuild(response.body());
         } catch (IOException e) {
-            Path offline = newestCached("purpur-" + minecraft + "-");
+            CachedBuild offline = CachedBuild.newest(cacheDir, "purpur", minecraft);
             if (offline == null) {
                 throw new ToolException("cannot reach " + latest + ": " + e.getMessage());
             }
-            ServerFiles.place(offline, dir, Platform.PURPUR.serverJar());
-            return new Result(minecraft + " build " + between(offline, "purpur-" + minecraft + "-", ".jar"), true);
+            ServerFiles.place(offline.jar(), dir, Platform.PURPUR.serverJar());
+            return new Result(minecraft + " build " + offline.build(), true);
         }
         Path jar = cacheDir.resolve("purpur-" + minecraft + "-" + build + ".jar");
         boolean cached = Files.exists(jar);
@@ -195,21 +194,6 @@ public final class LoaderInstaller {
     static String tail(String text, int lines) {
         List<String> all = text.lines().filter(l -> !l.isBlank()).toList();
         return String.join("\n", all.subList(Math.max(0, all.size() - lines), all.size()));
-    }
-
-    private Path newestCached(String prefix) throws IOException {
-        if (!Files.isDirectory(cacheDir)) {
-            return null;
-        }
-        try (Stream<Path> files = Files.list(cacheDir)) {
-            return files.filter(p -> p.getFileName().toString().startsWith(prefix)
-                    && p.getFileName().toString().endsWith(".jar")).max(Path::compareTo).orElse(null);
-        }
-    }
-
-    private static String between(Path file, String prefix, String suffix) {
-        String n = file.getFileName().toString();
-        return n.substring(prefix.length(), n.length() - suffix.length());
     }
 
     private void fetch(URI uri, Path jar, String notFound) throws IOException, InterruptedException {
