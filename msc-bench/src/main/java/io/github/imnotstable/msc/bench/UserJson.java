@@ -1,6 +1,5 @@
 package io.github.imnotstable.msc.bench;
 
-import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -44,45 +43,6 @@ public final class UserJson {
         return tree.has(field);
     }
 
-    /** The string {@code field}, which the caller knows is there; Gson's refusal of anything but a string stands. */
-    public String string(String field) {
-        return tree.get(field).getAsString();
-    }
-
-    /** The string {@code field}, or {@code fallback} when it is missing or {@code null}. */
-    public String string(String field, String fallback) {
-        return has(field) && !tree.get(field).isJsonNull() ? string(field) : fallback;
-    }
-
-    /** The boolean {@code field}, which the caller knows is there. */
-    public boolean bool(String field) {
-        return tree.get(field).getAsBoolean();
-    }
-
-    /** The list of strings {@code field}, which the caller knows is there. */
-    public List<String> strings(String field) {
-        List<String> out = new ArrayList<>();
-        for (JsonElement e : tree.getAsJsonArray(field)) {
-            out.add(e.getAsString());
-        }
-        return out;
-    }
-
-    /** The object {@code field}, which the caller knows is there. */
-    public UserJson object(String field) {
-        return new UserJson(tree.getAsJsonObject(field), key(field) + ".");
-    }
-
-    /** The list of objects {@code field}, which the caller knows is there; each is named {@code field[i]}. */
-    public List<UserJson> objects(String field) {
-        JsonArray array = tree.getAsJsonArray(field);
-        List<UserJson> out = new ArrayList<>();
-        for (int i = 0; i < array.size(); i++) {
-            out.add(new UserJson(array.get(i).getAsJsonObject(), key(field) + "[" + i + "]."));
-        }
-        return out;
-    }
-
     /** The whole number {@code field} exactly as written, or {@code absent} when it is missing. */
     public int wholeNumber(String field, JsonNumbers.Range range, int absent) {
         return has(field) ? JsonNumbers.wholeNumber(tree.get(field), key(field), range) : absent;
@@ -110,9 +70,10 @@ public final class UserJson {
         return out;
     }
 
-    // Exact reads: each refuses a value of the wrong JSON type with an IllegalArgumentException that names the key and
-    // shows the value, where Gson's getAs* would convert it ("1" as 1, 1 as "1") or throw its own exception. A missing
-    // key or a JSON null is absent, except to the number reads, which refuse null.
+    // Exact reads, the only reads there are (#462): each refuses a value of the wrong JSON type with an
+    // IllegalArgumentException that names the key, shows the value and says the type it takes, where Gson's getAs*
+    // would convert it ("1" as 1, 1 as "1", "yes" as false) or throw a ClassCastException. A missing key or a JSON
+    // null is absent, except to the number reads, which refuse null.
 
     /** Refuses a key outside {@code known}, such as a misspelt one whose value would be silently left out. */
     public void onlyKeys(Collection<String> known) {
@@ -160,11 +121,66 @@ public final class UserJson {
 
     /** The list of strings {@code field}, empty when absent; a list entry that is not a string, null too, is refused. */
     public List<String> exactStrings(String field) {
+        List<String> out = exactStrings(field, null);
+        return out == null ? new ArrayList<>() : out;
+    }
+
+    /** The list of strings {@code field}, or {@code absent}; a list entry that is not a string, null too, is refused. */
+    public List<String> exactStrings(String field, List<String> absent) {
+        if (absent(field)) {
+            return absent;
+        }
         List<String> out = new ArrayList<>();
         JsonArray array = exactArray(field);
         for (int i = 0; i < array.size(); i++) {
             out.add(requireString(array.get(i), key(field) + "[" + i + "]"));
         }
+        return out;
+    }
+
+    /**
+     * The list of strings {@code field}, or null when absent, with {@code null} entries kept as null for a later rule
+     * to name; an entry of another type is refused.
+     */
+    public List<String> stringsOrNulls(String field) {
+        if (absent(field)) {
+            return null;
+        }
+        List<String> out = new ArrayList<>();
+        JsonArray array = exactArray(field);
+        for (int i = 0; i < array.size(); i++) {
+            out.add(array.get(i).isJsonNull() ? null : requireString(array.get(i), key(field) + "[" + i + "]"));
+        }
+        return out;
+    }
+
+    /**
+     * The object {@code field} whose values are strings, by key in file order, or null when absent; {@code null}
+     * values are kept as null for a later rule to name, a value of another type is refused.
+     */
+    public Map<String, String> stringMapOrNulls(String field) {
+        UserJson holder = exactObject(field);
+        if (holder == null) {
+            return null;
+        }
+        Map<String, String> out = new LinkedHashMap<>();
+        holder.tree.entrySet().forEach(e -> out.put(e.getKey(), e.getValue().isJsonNull() ? null
+                : requireString(e.getValue(), holder.key(e.getKey()))));
+        return out;
+    }
+
+    /**
+     * The object {@code field} whose values are objects, by key in file order, or null when absent; {@code null}
+     * values are kept as null for a later rule to name, a value of another type is refused.
+     */
+    public Map<String, UserJson> objectMapOrNulls(String field) {
+        UserJson holder = exactObject(field);
+        if (holder == null) {
+            return null;
+        }
+        Map<String, UserJson> out = new LinkedHashMap<>();
+        holder.tree.entrySet().forEach(e -> out.put(e.getKey(), e.getValue().isJsonNull() ? null
+                : new UserJson(requireObject(e.getValue(), holder.key(e.getKey())), holder.key(e.getKey()) + ".")));
         return out;
     }
 
@@ -225,37 +241,6 @@ public final class UserJson {
             return value.getAsJsonObject();
         }
         throw new IllegalArgumentException(key + ": " + JsonNumbers.written(value) + " is not an object");
-    }
-
-    /**
-     * Binds this object to {@code type} with Gson, which reads an {@code int} field with {@code getAsInt}. So first
-     * each key of {@code numbers} the file gives ({@code server.rconPort}, one level of nesting at most) is read
-     * exactly as written and written back as the checked {@code int}, and the type binds the very number checked. A
-     * refused key goes to {@code problems} and is removed, so the rest of the file still binds and is checked.
-     */
-    public <T> T bind(Class<T> type, Map<String, JsonNumbers.Range> numbers, List<String> problems) {
-        numbers.forEach((key, range) -> {
-            int dot = key.indexOf('.');
-            JsonObject holder = tree;
-            if (dot >= 0) {
-                JsonElement inner = tree.get(key.substring(0, dot));
-                if (inner == null || !inner.isJsonObject()) {
-                    return;
-                }
-                holder = inner.getAsJsonObject();
-            }
-            String field = key.substring(dot + 1);
-            if (!holder.has(field)) {
-                return;
-            }
-            try {
-                holder.add(field, new JsonPrimitive(JsonNumbers.wholeNumber(holder.get(field), at + key, range)));
-            } catch (IllegalArgumentException e) {
-                problems.add(e.getMessage());
-                holder.remove(field);
-            }
-        });
-        return new Gson().fromJson(tree, type);
     }
 
     /** The object as JSON, for messages. */

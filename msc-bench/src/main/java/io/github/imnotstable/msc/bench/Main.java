@@ -47,8 +47,8 @@ import java.util.Set;
  * arguments pass it unexpanded.
  * </pre>
  *
- * <p>Exit codes: {@link #OK}, {@link #USAGE}, {@link #BAD_INPUT}, {@link #FAILED}, {@link #USAGE_LIMIT} and
- * {@link #INTERNAL_ERROR}; every refusal and error is one {@code msc-bench: } message on standard error, never a stack
+ * <p>Exit codes: {@link #OK}, {@link #USAGE}, {@link #BAD_INPUT}, {@link #FAILED}, {@link #USAGE_LIMIT},
+ * {@link #NOT_RECORDED} and {@link #INTERNAL_ERROR}; every refusal and error is one {@code msc-bench: } message on standard error, never a stack
  * trace.
  */
 public final class Main {
@@ -66,6 +66,8 @@ public final class Main {
     static final int FAILED = 3;
     /** {@code run} stopped early on an account usage limit. */
     static final int USAGE_LIMIT = 4;
+    /** {@code run} stopped early: an attempt could not be written to {@code results.jsonl}. */
+    static final int NOT_RECORDED = 5;
     /** An error the bench did not expect: a bug to report. */
     static final int INTERNAL_ERROR = 70;
 
@@ -235,10 +237,17 @@ public final class Main {
         }
 
         BenchRunner runner = new BenchRunner(config, runDir, preambles, out);
-        List<RunRecord> records = runner.run(selection.tasks(), selection.modes(), repeat);
+        List<RunRecord> records = runner.run(selection, repeat);
         Path reportFile = runDir.resolve("report.md");
         Files.writeString(reportFile, ReportWriter.render(records));
         out.println("Report: " + reportFile.toAbsolutePath());
+        if (runner.notRecorded() != null) {
+            out.println("Stopped early: an attempt could not be written to " + ResultsFile.NAME + " ("
+                    + message(runner.notRecorded()) + "); the report covers the " + records.size() + " attempts "
+                    + "recorded. Fix the cause, run the rest into a new folder and put the results.jsonl files "
+                    + "together before `report`.");
+            return NOT_RECORDED;
+        }
         if (runner.stoppedBy() != null) {
             out.println("Stopped early on a usage limit (" + runner.stoppedBy() + "). After it resets, run the rest into "
                     + "a new folder and put the results.jsonl files together before `report`.");
@@ -387,7 +396,7 @@ public final class Main {
                     + "folder that `run` prints after Report:, such as " + RunIsolation.DEFAULT_RUNS_SHOWN
                     + "/<timestamp>");
         }
-        List<RunRecord> records = ResultsFile.read(results);
+        List<RunRecord> records = ResultsFile.read(results, out::println);
         Path reportFile = runDir.resolve("report.md");
         Files.writeString(reportFile, ReportWriter.render(records));
         out.println("Report: " + reportFile.toAbsolutePath());

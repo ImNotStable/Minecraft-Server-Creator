@@ -1,5 +1,6 @@
 package io.github.imnotstable.msc.bench.check;
 
+import io.github.imnotstable.msc.bench.Text;
 import io.github.imnotstable.msc.bench.run.ChildProcesses;
 import io.github.imnotstable.msc.bench.run.Workspaces;
 import java.io.IOException;
@@ -70,7 +71,6 @@ record CommandCheck(String name, List<String> run, int timeoutSeconds, int expec
     }
 
     private static String tail(String output) {
-        String trimmed = output.strip();
-        return trimmed.length() <= 200 ? trimmed : trimmed.substring(trimmed.length() - 200);
+        return Text.tail(output.strip(), 200);
     }
 }

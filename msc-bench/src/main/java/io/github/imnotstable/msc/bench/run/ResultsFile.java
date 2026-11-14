@@ -8,6 +8,7 @@ import com.google.gson.Strictness;
 import com.google.gson.TypeAdapter;
 import com.google.gson.stream.JsonReader;
 import io.github.imnotstable.msc.bench.JsonNumbers;
+import io.github.imnotstable.msc.bench.Text;
 import io.github.imnotstable.msc.bench.UserJson;
 import io.github.imnotstable.msc.bench.check.CheckResult;
 import java.io.IOException;
@@ -28,6 +29,7 @@ import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Consumer;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -43,6 +45,15 @@ import java.util.regex.Pattern;
  * record from an older bench may lack take their empty value. A byte-order mark is taken as what it says: UTF-8, or
  * UTF-16 as Windows PowerShell 5.1's {@code >} and {@code Out-File} write; one at the start of a line (files joined
  * byte for byte) is skipped.
+ *
+ * <p>One exception: a last line that is half-written, because a run was killed while appending it, is left out with a
+ * warning naming it, so the attempts before it still make a report. Such a line has no line break after it and is no
+ * complete JSON value (or its bytes end inside a character). The same line anywhere else, or as the file's only line,
+ * is refused.
+ *
+ * <p>The writer cannot fail over a record's content: every string of the line is made writable first
+ * ({@link Text#writable}), since a lone surrogate, as a cut through an emoji leaves, is the one thing UTF-8 cannot
+ * encode (#462).
  */
 public final class ResultsFile {
 
@@ -57,33 +68,103 @@ public final class ResultsFile {
     private ResultsFile() {
     }
 
-    /** Adds {@code record} as the file's last line, creating the file. */
+    /**
+     * Adds {@code record} as the file's last line, creating the file. Any lone surrogate in any of its strings is
+     * written as U+FFFD, so only the file system can make this fail, never the record.
+     */
     public static void append(Path file, RunRecord record) throws IOException {
-        Files.writeString(file, GSON.toJson(record) + "\n", StandardCharsets.UTF_8, StandardOpenOption.CREATE,
+        Files.writeString(file, Text.writable(GSON.toJson(record)) + "\n", StandardCharsets.UTF_8, StandardOpenOption.CREATE,
                 StandardOpenOption.APPEND);
     }
 
-    /** Every run in the file, in order; refuses a file with none. */
-    public static List<RunRecord> read(Path file) throws IOException {
-        String text = decode(file, Files.readAllBytes(file));
+    /**
+     * Every run in the file, in order; refuses a file with none. A half-written last line (see the class comment) is
+     * left out, and {@code warnings} gets one line naming it.
+     */
+    public static List<RunRecord> read(Path file, Consumer<String> warnings) throws IOException {
+        byte[] bytes = Files.readAllBytes(file);
+        boolean openEnd = bytes.length > 0 && bytes[bytes.length - 1] != '\n';
+        String text;
+        boolean undecodableTail = false;
+        try {
+            text = decode(file, bytes);
+        } catch (IOException e) {
+            // A kill can cut a character's bytes: then the last line is valid UTF-8 that only ends too early, and in
+            // UTF-8 no byte of a character is a line break, so the lines before it still decode. Any other bad byte
+            // is refused; UTF-16, which only a user's join writes, is not cut this way.
+            int lastBreak = lastLineBreak(bytes);
+            if (!openEnd || lastBreak < 0 || utf16(bytes) || !endsTooEarly(bytes, lastBreak + 1)) {
+                throw e;
+            }
+            text = decode(file, Arrays.copyOf(bytes, lastBreak + 1));
+            undecodableTail = true;
+        }
+        List<String> lines = text.lines().toList();
         List<RunRecord> records = new ArrayList<>();
-        int lineNo = 0;
-        for (String line : text.lines().toList()) {
-            lineNo++;
+        for (int i = 0; i < lines.size(); i++) {
+            String line = lines.get(i);
             String content = !line.isEmpty() && line.charAt(0) == BOM ? line.substring(1) : line;
             if (content.isBlank()) {
+                continue;
+            }
+            if (openEnd && !undecodableTail && i == lines.size() - 1 && !records.isEmpty() && !isJson(content)) {
+                warnings.accept(halfWritten(file, i + 1));
                 continue;
             }
             try {
                 records.add(record(content));
             } catch (IllegalArgumentException e) {
-                throw new IOException(file + " line " + lineNo + ": " + e.getMessage(), e);
+                throw new IOException(file + " line " + (i + 1) + ": " + e.getMessage(), e);
             }
+        }
+        if (undecodableTail) {
+            if (records.isEmpty()) {
+                decode(file, bytes);
+            }
+            warnings.accept(halfWritten(file, lines.size() + 1));
         }
         if (records.isEmpty()) {
             throw new IOException(file + " holds no runs: each line of a " + NAME + " is one run as JSON");
         }
         return records;
+    }
+
+    private static String halfWritten(Path file, int line) {
+        return "warning: " + file + " line " + line + " is half-written (the run was stopped while writing it); "
+                + "left it out";
+    }
+
+    private static int lastLineBreak(byte[] bytes) {
+        for (int i = bytes.length - 1; i >= 0; i--) {
+            if (bytes[i] == '\n') {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /** Whether {@code bytes} from {@code from} are UTF-8 whose only fault is a character cut off at the end. */
+    private static boolean endsTooEarly(byte[] bytes, int from) {
+        CharsetDecoder decoder = StandardCharsets.UTF_8.newDecoder()
+                .onMalformedInput(CodingErrorAction.REPORT)
+                .onUnmappableCharacter(CodingErrorAction.REPORT);
+        ByteBuffer in = ByteBuffer.wrap(bytes, from, bytes.length - from);
+        return !decoder.decode(in, CharBuffer.allocate(bytes.length - from + 1), false).isError();
+    }
+
+    private static boolean utf16(byte[] bytes) {
+        return bytes.length >= 2 && (bytes[0] == (byte) 0xFF && bytes[1] == (byte) 0xFE
+                || bytes[0] == (byte) 0xFE && bytes[1] == (byte) 0xFF);
+    }
+
+    /** Whether {@code line} is one complete JSON value, whatever its shape. */
+    private static boolean isJson(String line) {
+        try {
+            tree(line);
+            return true;
+        } catch (IllegalArgumentException e) {
+            return false;
+        }
     }
 
     /** The file's text, from UTF-8 or the encoding its byte-order mark names; refuses bytes that do not decode. */
@@ -126,16 +207,7 @@ public final class ResultsFile {
             throw new IllegalArgumentException("holds a NUL character; is the file UTF-16 without a byte-order mark? "
                     + "Save it as UTF-8");
         }
-        JsonElement tree;
-        try {
-            JsonReader reader = new JsonReader(new StringReader(line));
-            reader.setStrictness(Strictness.STRICT);
-            tree = TREE.read(reader);
-            // In strict mode a second value or other text after the first is a syntax error.
-            reader.peek();
-        } catch (IOException | JsonParseException e) {
-            throw new IllegalArgumentException("is not valid JSON: " + jsonProblem(e.getMessage()), e);
-        }
+        JsonElement tree = tree(line);
         if (tree == null || !tree.isJsonObject()) {
             throw new IllegalArgumentException("is " + (tree == null || tree.isJsonNull() ? "null" : tree.isJsonArray()
                     ? "a list" : "a single value") + ", not a JSON object; each line is one run");
@@ -157,6 +229,20 @@ public final class ResultsFile {
                 agent(json.exactObject("agent")),
                 tools(json.exactObject("tools")),
                 json.exactObjects("checks").stream().map(ResultsFile::check).toList());
+    }
+
+    /** The line as one strict JSON value, refused with Gson's problem and column. */
+    private static JsonElement tree(String line) {
+        try {
+            JsonReader reader = new JsonReader(new StringReader(line));
+            reader.setStrictness(Strictness.STRICT);
+            JsonElement tree = TREE.read(reader);
+            // In strict mode a second value or other text after the first is a syntax error.
+            reader.peek();
+            return tree;
+        } catch (IOException | JsonParseException e) {
+            throw new IllegalArgumentException("is not valid JSON: " + jsonProblem(e.getMessage()), e);
+        }
     }
 
     private static AgentResult agent(UserJson json) {

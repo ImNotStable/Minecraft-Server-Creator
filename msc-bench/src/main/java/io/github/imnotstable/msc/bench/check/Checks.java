@@ -42,7 +42,7 @@ public final class Checks {
             case "zip" -> new ZipCheck(
                     orDefault(name, "zip " + string(json, "path", "")),
                     require(json, "path"),
-                    json.has("entries") ? strings(json, "entries") : List.of(),
+                    json.exactStrings("entries"),
                     zipPngs(json),
                     zipTexts(json));
             case "rcon" -> new RconCheck(
@@ -73,20 +73,16 @@ public final class Checks {
 
     private static List<ZipCheck.PngEntry> zipPngs(UserJson json) {
         List<ZipCheck.PngEntry> out = new ArrayList<>();
-        if (json.has("pngEntries")) {
-            for (UserJson o : json.objects("pngEntries")) {
-                out.add(new ZipCheck.PngEntry(require(o, "entry"), PngRules.parse(o)));
-            }
+        for (UserJson o : json.exactObjects("pngEntries")) {
+            out.add(new ZipCheck.PngEntry(require(o, "entry"), PngRules.parse(o)));
         }
         return out;
     }
 
     private static List<ZipCheck.TextEntry> zipTexts(UserJson json) {
         List<ZipCheck.TextEntry> out = new ArrayList<>();
-        if (json.has("textEntries")) {
-            for (UserJson o : json.objects("textEntries")) {
-                out.add(new ZipCheck.TextEntry(require(o, "entry"), Pattern.compile(require(o, "contains"), Pattern.MULTILINE)));
-            }
+        for (UserJson o : json.exactObjects("textEntries")) {
+            out.add(new ZipCheck.TextEntry(require(o, "entry"), Pattern.compile(require(o, "contains"), Pattern.MULTILINE)));
         }
         return out;
     }
@@ -100,14 +96,15 @@ public final class Checks {
     }
 
     static String string(UserJson json, String key, String fallback) {
-        return json.string(key, fallback);
+        return json.exactString(key, fallback);
     }
 
     static List<String> strings(UserJson json, String key) {
-        if (!json.has(key)) {
+        List<String> value = json.exactStrings(key, null);
+        if (value == null) {
             throw new IllegalArgumentException("check is missing \"" + key + "\": " + json);
         }
-        return json.strings(key);
+        return value;
     }
 
     private static Pattern pattern(UserJson json, String key) {

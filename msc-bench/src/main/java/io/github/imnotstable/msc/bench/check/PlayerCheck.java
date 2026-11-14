@@ -1,6 +1,7 @@
 package io.github.imnotstable.msc.bench.check;
 
 import io.github.imnotstable.msc.bench.JsonNumbers;
+import io.github.imnotstable.msc.bench.Text;
 import io.github.imnotstable.msc.bench.UserJson;
 import io.github.imnotstable.msc.bench.run.ChildProcesses;
 import io.github.imnotstable.msc.bot.BlockSource;
@@ -66,11 +67,11 @@ record PlayerCheck(
         return new PlayerCheck(
                 name,
                 Checks.require(json, "jar"),
-                json.has("command") ? Checks.strings(json, "command") : List.of("{java}", "-Xmx1G", "-jar", "server.jar"),
+                json.exactStrings("command", List.of("{java}", "-Xmx1G", "-jar", "server.jar")),
                 Checks.string(json, "port", "{serverPort}"),
                 Checks.string(json, "player", "Steve"),
-                json.has("script") ? Checks.strings(json, "script") : List.of(),
-                json.has("console") ? Checks.strings(json, "console") : List.of(),
+                json.exactStrings("script"),
+                json.exactStrings("console"),
                 Pattern.compile(Checks.string(json, "ready", "Done \\(")),
                 expect,
                 json.wholeNumber("timeoutSeconds", JsonNumbers.SECONDS, 180));
@@ -210,8 +211,7 @@ record PlayerCheck(
     }
 
     private static String tail(String text) {
-        String trimmed = text.strip();
-        return trimmed.length() <= 300 ? trimmed : "..." + trimmed.substring(trimmed.length() - 300);
+        return Text.tailWithEllipsis(text.strip(), 303);
     }
 
     private static void deleteTree(Path dir) throws IOException {
