@@ -3,7 +3,14 @@ package io.github.imnotstable.msc.bench;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.google.gson.Gson;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParseException;
 import com.google.gson.JsonParser;
+import java.io.IOException;
+import java.lang.reflect.Constructor;
 import java.lang.reflect.Executable;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -33,35 +40,71 @@ class UserJsonTest {
     void theReadersHoldNoGsonTree() throws ClassNotFoundException {
         List<String> found = new ArrayList<>();
         for (String reader : READERS) {
-            Class<?> type = Class.forName("io.github.imnotstable.msc.bench." + reader);
-            for (Executable e : Stream.concat(Stream.of(type.getDeclaredMethods()),
-                    Stream.of(type.getDeclaredConstructors())).toList()) {
-                for (Class<?> parameter : e.getParameterTypes()) {
-                    if (isGson(parameter)) {
-                        found.add(reader + "." + e.getName() + "(" + parameter.getSimpleName() + ")");
-                    }
-                }
-            }
-            for (Field f : type.getDeclaredFields()) {
-                if (isGson(f.getType())) {
-                    found.add(reader + "." + f.getName());
+            found.addAll(gsonTrees(reader, Class.forName("io.github.imnotstable.msc.bench." + reader)));
+        }
+        assertThat(found).as("a reader holds a Gson tree (JsonElement) and could read a number with Gson's cutting "
+                + "getAsInt; take a UserJson, which reads numbers exactly as written").isEmpty();
+    }
+
+    /** #435: only a Gson tree is flagged; Gson's other classes cannot read a number from the file. */
+    static final class TreeFree {
+        private final Gson gson = new Gson();
+
+        IOException notJson(String id, JsonParseException e) {
+            return new IOException(id + ": " + e.getMessage() + gson.hashCode(), e);
+        }
+    }
+
+    static final class HoldsTrees {
+        private final JsonElement any;
+
+        HoldsTrees(JsonObject task) {
+            any = task;
+        }
+
+        int count(JsonArray list) {
+            return list.size() + any.hashCode();
+        }
+    }
+
+    @Test
+    void onlyJsonElementsCountAsATree() {
+        assertThat(gsonTrees("TreeFree", TreeFree.class)).isEmpty();
+        assertThat(gsonTrees("HoldsTrees", HoldsTrees.class)).containsExactlyInAnyOrder("HoldsTrees.any",
+                "HoldsTrees.<init>(JsonObject)", "HoldsTrees.count(JsonArray)");
+    }
+
+    /** The parameters and fields of {@code type} that hold a Gson tree, named {@code owner.member}. */
+    private static List<String> gsonTrees(String owner, Class<?> type) {
+        List<String> found = new ArrayList<>();
+        for (Executable e : Stream.concat(Stream.of(type.getDeclaredMethods()),
+                Stream.of(type.getDeclaredConstructors())).toList()) {
+            for (Class<?> parameter : e.getParameterTypes()) {
+                if (isGsonTree(parameter)) {
+                    String member = e instanceof Constructor<?> ? "<init>" : e.getName();
+                    found.add(owner + "." + member + "(" + parameter.getSimpleName() + ")");
                 }
             }
         }
-        assertThat(found).as("take a UserJson, which reads numbers exactly as written").isEmpty();
+        for (Field f : type.getDeclaredFields()) {
+            if (isGsonTree(f.getType())) {
+                found.add(owner + "." + f.getName());
+            }
+        }
+        return found;
     }
 
     @Test
     void userJsonHandsOutNoGsonTreeAndJsonNumbersNoPublicRead() {
         List<String> leaks = new ArrayList<>();
         for (Method m : UserJson.class.getDeclaredMethods()) {
-            if (Modifier.isPublic(m.getModifiers()) && isGson(m.getReturnType())) {
+            if (Modifier.isPublic(m.getModifiers()) && isGsonTree(m.getReturnType())) {
                 leaks.add("UserJson." + m.getName());
             }
         }
         for (Method m : JsonNumbers.class.getDeclaredMethods()) {
             if (Modifier.isPublic(m.getModifiers())
-                    && Stream.of(m.getParameterTypes()).anyMatch(UserJsonTest::isGson)) {
+                    && Stream.of(m.getParameterTypes()).anyMatch(UserJsonTest::isGsonTree)) {
                 leaks.add("JsonNumbers." + m.getName());
             }
         }
@@ -103,7 +146,8 @@ class UserJsonTest {
         assertThat(bound).isEqualTo(new Bound(new Bound.Inner(25000, 0), 25576));
     }
 
-    private static boolean isGson(Class<?> type) {
-        return type.getName().startsWith("com.google.gson.");
+    /** A Gson tree: {@link JsonElement} or a subtype, by assignability, not by package. */
+    private static boolean isGsonTree(Class<?> type) {
+        return JsonElement.class.isAssignableFrom(type);
     }
 }

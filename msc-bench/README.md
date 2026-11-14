@@ -47,6 +47,8 @@ Check types: `file` (exists, optional `contains` regex), `command` (exit code, o
 
 A leading `~` in a path argument (`check`'s workspace, `report`'s run folder, `--out`, `--config`, `--tasks-dir`) is your home folder: the bench expands it itself, because neither Gradle's `--args` nor a quoted shell argument does. The path `run` prints after `Report:` works too.
 
+`--repeat` is a whole number from 1. A bad argument, such as `--repeat 0`, or a `report` folder without a `results.jsonl` ends with a message and exit code 2. `run` exits 0 when every attempt passed, 3 when one failed, and 4 when it stopped on a usage limit; when every selected task was skipped (Paper tasks without the EULA), it says that nothing ran and writes an empty report.
+
 `check` runs one task's checks on a workspace. Its RCON checks use a server already answering on the RCON port and leave it running; when none does and the EULA is accepted on the machine, it starts the workspace's own `server/` for the checks and stops it after them.
 
 Before the first run:

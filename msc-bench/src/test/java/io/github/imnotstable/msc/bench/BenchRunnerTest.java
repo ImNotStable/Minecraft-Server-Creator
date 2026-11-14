@@ -133,7 +133,8 @@ class BenchRunnerTest {
 
         assertThat(config.server().acceptEula()).as("bench.json cannot accept the EULA").isFalse();
         assertThat(records).isEmpty();
-        assertThat(log.toString(StandardCharsets.UTF_8)).contains("skipped world", "EULA is not accepted");
+        assertThat(log.toString(StandardCharsets.UTF_8)).contains("skipped world", "EULA is not accepted",
+                "Nothing ran: every selected task was skipped");
         assertThat(dir.resolve("run/attempts")).doesNotExist();
     }
 

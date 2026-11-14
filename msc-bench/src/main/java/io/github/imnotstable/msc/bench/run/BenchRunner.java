@@ -80,6 +80,9 @@ public final class BenchRunner {
     }
 
     public List<RunRecord> run(List<TaskDef> tasks, List<String> modes, int repeats) throws IOException {
+        if (repeats < 1) {
+            throw new IllegalArgumentException("repeats is " + repeats + "; a run needs at least 1 attempt");
+        }
         for (String mode : modes) {
             if (!config.modes().containsKey(mode)) {
                 throw new IOException("Unknown mode \"" + mode + "\"; bench.json defines " + config.modes().keySet());
@@ -129,8 +132,10 @@ public final class BenchRunner {
 
     private List<RunRecord> runAll(List<TaskDef> tasks, List<String> modes, int repeats) throws IOException {
         List<RunRecord> records = new ArrayList<>();
+        int skipped = 0;
         for (TaskDef task : tasks) {
             if (task.needsServer() && !config.server().acceptEula()) {
+                skipped++;
                 log.printf("skipped %s: it runs a Paper server, and the Minecraft EULA is not accepted on this machine "
                         + "(%s)%n", task.id(), MachineEula.location(Path.of(System.getProperty("user.home"))));
                 continue;
@@ -162,6 +167,9 @@ public final class BenchRunner {
                             record.error() == null ? "" : " (" + record.error() + ")");
                 }
             }
+        }
+        if (!tasks.isEmpty() && skipped == tasks.size()) {
+            log.println("Nothing ran: every selected task was skipped (see above), so the report is empty.");
         }
         return records;
     }
