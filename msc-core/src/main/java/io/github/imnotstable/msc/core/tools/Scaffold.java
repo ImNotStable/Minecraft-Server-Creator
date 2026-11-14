@@ -97,7 +97,7 @@ final class Scaffold {
         if (platform != null && platform.needsEula()
                 && !Files.exists(config.serverDir().resolve(platform.serverJar()))) {
             // The server is not set up yet: a first dev_cycle would build for nothing and then stop there.
-            Optional<MachineEula.Acceptance> machine = MachineEula.read(config.eulaFile());
+            Optional<MachineEula.Acceptance> machine = config.machineEula().read();
             if (machine.isPresent()) {
                 out.append("\nnext: server_setup (the Minecraft EULA is accepted for this machine by ")
                         .append(machine.get().describe()).append("), then edit the code and dev_cycle");

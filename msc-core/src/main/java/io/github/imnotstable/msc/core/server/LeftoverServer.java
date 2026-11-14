@@ -1,9 +1,11 @@
 package io.github.imnotstable.msc.core.server;
 
+import io.github.imnotstable.msc.process.ServerPropertiesFile;
+
 /** What a start or a stop says about a server an earlier core left running that could not be stopped (#408). */
 final class LeftoverServer {
     /** The whole stop, as {@link ServerManager#stopLeftover(boolean)} tries it. */
-    static final String TRIED = "asked it to stop over RCON where server.properties enables it, ended it, then "
+    static final String TRIED = "asked it to stop over RCON where " + ServerPropertiesFile.NAME + " enables it, ended it, then "
             + "killed it with its child processes, and it is still running";
     /** A start's short try on a leftover that already survived {@link #TRIED}. */
     static final String RESISTED = "it survived a whole stop before (RCON, end, kill), was killed again now, and is "

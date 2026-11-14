@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.github.imnotstable.msc.buildlogic.RepoFiles;
 import io.github.imnotstable.msc.core.fixture.FakeBuildMain;
 import io.github.imnotstable.msc.core.fixture.FakeServerMain;
+import io.github.imnotstable.msc.core.server.MachineEula;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -58,7 +59,7 @@ class DocumentedResultLinesTest {
         Files.createDirectories(root.resolve("other"));
         Files.createDirectories(root.resolve("third"));
         try (CoreHarness h = new CoreHarness(ws, c -> c.withServerCommand(java(FakeServerMain.class))
-                .withEulaFile(root.resolve("home/.msc/eula.json")))) {
+                .withMachineEula(MachineEula.forHome(root.resolve("home"))))) {
             String current = h.ok("msc_workspace");
             String same = h.ok("msc_workspace", "path", ws.toString());
             String quiet = h.ok("msc_workspace", "path", root.resolve("other").toString());
@@ -72,7 +73,7 @@ class DocumentedResultLinesTest {
     void projectScaffold() throws Exception {
         Path ws = Files.createDirectories(root.resolve("ws"));
         try (CoreHarness h = new CoreHarness(ws, c -> c.withBuildCommand(java(FakeBuildMain.class))
-                .withEulaFile(root.resolve("home/.msc/eula.json")))) {
+                .withMachineEula(MachineEula.forHome(root.resolve("home"))))) {
             matches("project_scaffold", List.of(
                     h.ok("project_scaffold", "name", "Lobby", "dir", "lobby", "template", "minestom-server"),
                     h.ok("project_scaffold", "name", "Arena", "dir", "arena"),

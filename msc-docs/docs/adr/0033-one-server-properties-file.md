@@ -54,7 +54,7 @@ RCON login failed (#392).
    `ServerSetup`, `PackProperties`, `RconTarget` and `PlayerTools` use `ServerPropertiesFile`, and so does the
    bench's `Workspaces`. `PackProperties` still writes nothing when the file does not exist, and the byte snapshot
    and restore of the file around a pack build (#388) are untouched: they copy bytes and do not parse.
-5. **A repository check keeps it so.** msc-core's `repoChecks` runs `ServerPropertiesAccessTest` over every
+5. *Amended by [ADR 0036](0036-guards-by-construction-and-behaviour.md): the check is now a literal rule, the name `server.properties` in a string only in `ServerPropertiesFile`, everything else using `ServerPropertiesFile.NAME`.* **A repository check keeps it so.** msc-core's `repoChecks` runs `ServerPropertiesAccessTest` over every
    module's production sources: it fails on a new `java.util.Properties` user (one for another file is listed there),
    on code that splits `key=value` lines it read as text, and on a text read or write whose target names
    `server.properties`.

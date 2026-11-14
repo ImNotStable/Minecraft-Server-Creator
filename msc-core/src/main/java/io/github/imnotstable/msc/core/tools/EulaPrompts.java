@@ -39,14 +39,15 @@ final class EulaPrompts {
      * Returns a line for the result (with the EULA link), or "" when there is no machine file to write.
      */
     String recordForMachine() throws IOException {
-        if (config.eulaFile() == null || MachineEula.read(config.eulaFile()).isPresent()) {
+        MachineEula machine = config.machineEula();
+        if (!machine.configured() || machine.read().isPresent()) {
             return "";
         }
-        MachineEula.write(config.eulaFile(), new MachineEula.Acceptance(System.getProperty("user.name"),
+        machine.recordAcceptance(new MachineEula.Acceptance(System.getProperty("user.name"),
                 EulaCommand.hostName(), Instant.now()), MachineEula.VIA_TOOL);
         // Shown once, the first time: what the user's yes now covers. Tell them.
         return "Minecraft EULA (" + MachineEula.EULA_URL + ") accepted for this machine, saved in "
-                + config.eulaFile() + ". Tell the user: by this they confirm they read and accept Mojang's EULA, and "
+                + machine + ". Tell the user: by this they confirm they read and accept Mojang's EULA, and "
                 + "MSC will now write eula=true for every " + Platform.names(Platform::needsEula, "and")
                 + " server on this machine without asking. "
                 + "Terms: " + MachineEula.TERMS_URL + "\n";

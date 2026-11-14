@@ -2,8 +2,9 @@
 
 Server process control that msc-core and msc-bench share: the process tree kill
 ([ADR 0031](../msc-docs/docs/adr/0031-process-tree-kill.md)), the RCON client
-([ADR 0032](../msc-docs/docs/adr/0032-one-rcon-client.md)) and the `server.properties` reader and writer
-([ADR 0033](../msc-docs/docs/adr/0033-one-server-properties-file.md)). It depends on nothing, so the bench can use it without
+([ADR 0032](../msc-docs/docs/adr/0032-one-rcon-client.md)), the `server.properties` reader and writer
+([ADR 0033](../msc-docs/docs/adr/0033-one-server-properties-file.md)) and the atomic file writer
+([ADR 0034](../msc-docs/docs/adr/0034-one-atomic-file-writer.md)). It depends on nothing, so the bench can use it without
 depending on msc-core (ADR 0004).
 
 `ProcessTree.destroy(handle)` kills a command and every process it can prove descends from it, including a child
@@ -18,7 +19,12 @@ that is not up yet.
 `ServerPropertiesFile.read(file)` reads a server's `server.properties` as the 26.3 server does (strict UTF-8, then
 ISO-8859-1, `Properties.load` rules), and `ServerPropertiesFile.set(file, values)` sets keys, keeping every other line,
 comment and their order, escaped so the server reads back exactly what was set. No other code in the repository reads
-or writes that file (msc-core's `repoChecks` checks it).
+or writes that file (msc-core's `repoChecks` checks that no other code names it).
+
+`AtomicFile.write(target, writer)` and `AtomicFile.replace(target, writer)` write a temp file beside the target and
+move it into place, so a failed write never leaves half a file; `AtomicFile.copy(source, target)` does the same for a
+copy. The replaced file's permissions are kept, and a new file gets the folder's defaults, never `0600`. It is the
+repository's one temp-then-move writer: use it rather than writing another.
 
 **Phase:** Post-MVP  
 **Status:** Done and tested. The Windows branch of the tree kill has been checked only against the fake table so far.
@@ -32,4 +38,5 @@ or writes that file (msc-core's `repoChecks` checks it).
 | `rcon.RconClient` | The RCON client: login, commands, replies split over several packets |
 | `rcon.RconRefusedException` | A login the server refused, or a password too long to send: retrying will not help |
 | `ServerPropertiesFile` | The one reader and writer of `server.properties` |
+| `AtomicFile` | The one atomic file writer: write, replace and copy through a temp file, permissions of the replaced file kept |
 | `rcon.FakeRconServer` (test fixtures) | A vanilla-like RCON server for the RCON tests of this module, msc-core and msc-bench |

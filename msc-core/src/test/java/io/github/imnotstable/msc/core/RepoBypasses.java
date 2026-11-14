@@ -13,13 +13,14 @@ import java.util.regex.Pattern;
  * {@code new File}) whose chain of {@code getParent}, {@code resolveSibling} and {@code resolve("..")} steps climbs
  * above the folder the literal starts in, the module's own folder for a test; and a walk up from a variable that holds
  * a {@code RepoFiles} path or such a literal path, which follows Java scoping: only uses of that variable inside the
- * block it is declared in count, and a parameter, local or lambda parameter of the same name (or a reassignment) hides
- * it.
+ * block it is declared in count, and a parameter, local or lambda parameter of the same name (or a reassignment, after
+ * its value) hides it.
  * <p>A source check, not a run-time one: tests hand {@code RepoFiles} paths to the code under test (the bench reads
  * CLAUDE.md under {@code RepoFiles.dir(set, "")}), Java 25 has no security manager to refuse a read, and a confining
  * Path of its own file system would break {@code toFile}, {@code toRealPath} and equality with ordinary paths. A
- * tripwire for ordinary code, not a proof against deliberate evasion (ADR 0035): a path name built at run time, a
- * variable copied into another, or reflection is out of its reach.
+ * tripwire for ordinary code, not a proof against deliberate evasion (ADR 0035, ADR 0036): a path name built at run
+ * time, a variable copied into another, a loop counted beyond its first step, or reflection is out of its reach. It is
+ * not to grow further (ADR 0036): a new shape it misses is a review comment, not another rule here.
  */
 final class RepoBypasses {
     /** A reach around the sets: its line, the matched text and what to change. */
@@ -37,8 +38,12 @@ final class RepoBypasses {
     private static final Pattern WALK_AT = Pattern.compile(WALK);
     private static final Pattern OUTSIDE = Pattern.compile("getProperty\\(\"user\\.dir\"\\)|\"msc\\.repoRoot\"");
     private static final Pattern CHAINED = Pattern.compile("RepoFiles\\.(?:path|dir)\\(" + ARGS + "\\)" + WALK);
-    /** A path built from the working folder: the start of a {@code Path.of}, {@code Paths.get} or {@code new File}. */
-    private static final String LITERAL_PATH = "(?:Path\\s*\\.\\s*of|Paths\\s*\\.\\s*get|new\\s+File)\\s*\\(";
+    /**
+     * A path built from the working folder: the start of a {@code Path.of}, {@code Paths.get} or {@code new File},
+     * also fully qualified ({@code java.nio.file.Path.of}, {@code new java.io.File}).
+     */
+    private static final String LITERAL_PATH = "(?:(?:java\\.nio\\.file\\.)?(?:Path\\s*\\.\\s*of|Paths\\s*\\.\\s*get)"
+            + "|new\\s+(?:java\\.io\\.)?File)\\s*\\(";
     private static final Pattern LITERAL_START = Pattern.compile("(?<![\\w$.])" + LITERAL_PATH);
     private static final Pattern DECLARED = Pattern.compile(
             "(?<![\\w$.])([\\w$]+)\\s*=\\s*(?:RepoFiles\\.(?:path|dir)\\(|" + LITERAL_PATH + ")");
@@ -246,7 +251,9 @@ final class RepoBypasses {
         }
         String rest = bare.substring(after);
         if (rest.matches("(?s)\\s*=(?!=).*") && !REASSIGNED_FROM_SEED.matcher(rest).matches()) {
-            return new int[] {u, scopeEnd};
+            // From the end of the new value on: the value itself still reads the old one (p = p.getParent()).
+            int value = after + rest.indexOf('=') + 1;
+            return new int[] {expressionEnd(bare, value, true), scopeEnd};
         }
         return null;
     }
