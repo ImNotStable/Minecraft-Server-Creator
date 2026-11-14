@@ -35,11 +35,15 @@ final class ServerPidFile {
 
     private final Path file;
     private final Path lockFile;
-    private final Duration wait;
+    private volatile Duration wait = WAIT;
 
-    ServerPidFile(Path dataDir, Duration wait) {
+    ServerPidFile(Path dataDir) {
         this.file = dataDir.resolve("server.pid");
         this.lockFile = dataDir.resolve("server.lock");
+    }
+
+    /** For tests: how long a call waits for another core's critical section before it refuses ({@link #WAIT}). */
+    void waitLimit(Duration wait) {
         this.wait = wait;
     }
 
@@ -140,15 +144,12 @@ final class ServerPidFile {
      * when the wait runs out.
      */
     void awaitIdle() throws InterruptedException {
-        if (!Files.exists(lockFile)) {
-            return;
-        }
         long deadline = System.nanoTime() + wait.toNanos();
         ReentrantLock local;
         try {
             local = local();
         } catch (ToolException e) {
-            return; // gone meanwhile
+            return; // no .msc folder: no core is in its section, which creates it first
         }
         if (local.isHeldByCurrentThread()) {
             return;
@@ -158,6 +159,11 @@ final class ServerPidFile {
         }
         FileChannel channel = null;
         try {
+            // Checked only now: a manager of this JVM holding the in-process lock may not have created the file yet
+            // (its first section on this workspace), and was waited for above (#497).
+            if (!Files.exists(lockFile)) {
+                return;
+            }
             channel = FileChannel.open(lockFile, StandardOpenOption.WRITE);
             acquire(channel, deadline); // only waited for: closing the channel releases it
         } catch (NoSuchFileException e) {
