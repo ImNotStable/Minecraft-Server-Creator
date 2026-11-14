@@ -3,11 +3,14 @@ package io.github.imnotstable.msc.bench;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.github.imnotstable.msc.bench.FakeRconServer.Other;
+import io.github.imnotstable.msc.bench.FakeRconServer.Quirks;
 import io.github.imnotstable.msc.bench.rcon.RconClient;
 import java.io.IOException;
 import java.time.Duration;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 class RconClientTest {
@@ -51,6 +54,62 @@ class RconClientTest {
             assertThatThrownBy(() -> RconClient.connect("127.0.0.1", server.port(), "nope", Duration.ofSeconds(5)))
                     .isInstanceOf(IOException.class)
                     .hasMessageContaining("refused");
+        }
+    }
+
+    @Test
+    void neverSendsAPacketBehindTheCommandBeforeTheReply() throws IOException {
+        // #379: the end marker went out right behind the command; a busy vanilla server read both in one read,
+        // closed the connection without running the command, and the client got EOFException.
+        String longReply = "y".repeat(2 * FakeRconServer.CHUNK + 5);
+        try (FakeRconServer server = new FakeRconServer("pw", cmd -> cmd.equals("long") ? longReply : "ran " + cmd,
+                        new Quirks(true, Other.ANSWER));
+                RconClient client = RconClient.connect("127.0.0.1", server.port(), "pw", Duration.ofSeconds(30))) {
+            for (int i = 0; i < 3; i++) {
+                assertThat(client.command("say " + i)).isEqualTo("ran say " + i);
+                assertThat(client.command("long")).isEqualTo(longReply);
+            }
+            assertThat(server.connections()).isEqualTo(1);
+        }
+    }
+
+    @ParameterizedTest
+    @EnumSource(Other.class)
+    void sendsNoEndMarkerForAReplyThatFitsOnePacket(Other other) throws IOException {
+        String reply = "z".repeat(FakeRconServer.CHUNK - 1);
+        try (FakeRconServer server = new FakeRconServer("pw", cmd -> reply, new Quirks(false, other));
+                RconClient client = RconClient.connect("127.0.0.1", server.port(), "pw", Duration.ofSeconds(30))) {
+            for (int i = 0; i < 5; i++) {
+                assertThat(client.command("c" + i)).isEqualTo(reply);
+            }
+            assertThat(server.connections()).as("no end marker, so nothing for the server to drop").isEqualTo(1);
+        }
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = Other.class, names = {"IGNORE", "CLOSE"})
+    void returnsALongReplyWhenTheServerDoesNotAnswerTheEndMarker(Other other) throws IOException {
+        // A server that ignores the end marker, or hangs up on it, must not fail the command or the next one.
+        String longReply = "w".repeat(FakeRconServer.CHUNK) + "é".repeat(FakeRconServer.CHUNK + 3) + "!";
+        try (FakeRconServer server = new FakeRconServer("pw", cmd -> cmd.equals("long") ? longReply : "ran " + cmd,
+                        new Quirks(false, other));
+                RconClient client = RconClient.connect("127.0.0.1", server.port(), "pw", Duration.ofSeconds(30))) {
+            assertThat(client.command("long")).isEqualTo(longReply);
+            assertThat(client.command("next")).isEqualTo("ran next");
+            assertThat(client.command("long")).isEqualTo(longReply);
+            assertThat(client.command("last")).isEqualTo("ran last");
+            assertThat(server.commands()).containsExactly("long", "next", "long", "last");
+            assertThat(server.connections()).as("a new connection after each unanswered end marker").isEqualTo(3);
+        }
+    }
+
+    @Test
+    void refusesCommandsOnceClosed() throws IOException {
+        try (FakeRconServer server = new FakeRconServer("pw", cmd -> "ok")) {
+            RconClient client = RconClient.connect("127.0.0.1", server.port(), "pw", Duration.ofSeconds(30));
+            client.close();
+            assertThatThrownBy(() -> client.command("list")).isInstanceOf(IOException.class);
+            assertThat(server.commands()).isEmpty();
         }
     }
 }
