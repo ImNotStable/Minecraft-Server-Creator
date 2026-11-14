@@ -1,8 +1,5 @@
 package io.github.imnotstable.msc.bench.run;
 
-import com.google.gson.JsonElement;
-import com.google.gson.JsonObject;
-import com.google.gson.JsonPrimitive;
 import io.github.imnotstable.msc.bench.JsonNumbers;
 import io.github.imnotstable.msc.process.rcon.RconClient;
 import java.net.URI;
@@ -36,7 +33,10 @@ final class BenchConfigRules {
     private static final Pattern NAME = Pattern.compile("[A-Za-z0-9._-]+");
     private static final Pattern PLACEHOLDER = Pattern.compile("\\{([^{}]*)}");
 
-    /** The number keys of {@code bench.json}, each with the values it takes. */
+    /**
+     * The number keys of {@code bench.json}, each with the values it takes: read exactly as written before the file is
+     * bound, so the config binds the very number checked (#416, {@link io.github.imnotstable.msc.bench.UserJson#bind}).
+     */
     static final Map<String, JsonNumbers.Range> NUMBERS = numbers();
 
     private BenchConfigRules() {
@@ -53,40 +53,8 @@ final class BenchConfigRules {
     }
 
     /**
-     * The first pass, on the file's JSON before it is bound (#416): each number key the file gives is read with
-     * {@link JsonNumbers}, exactly as written, and written back into {@code json} as the checked {@code int}, so the
-     * config binds the very number checked and never a cut or wrapped one. A refused key is reported and removed, so
-     * the other rules still run on the rest of the file.
-     */
-    static List<String> numbers(JsonObject json) {
-        List<String> problems = new ArrayList<>();
-        NUMBERS.forEach((key, range) -> {
-            int dot = key.indexOf('.');
-            JsonObject holder = json;
-            if (dot >= 0) {
-                JsonElement inner = json.get(key.substring(0, dot));
-                if (inner == null || !inner.isJsonObject()) {
-                    return;
-                }
-                holder = inner.getAsJsonObject();
-            }
-            String field = key.substring(dot + 1);
-            if (!holder.has(field)) {
-                return;
-            }
-            try {
-                holder.add(field, new JsonPrimitive(JsonNumbers.wholeNumber(holder.get(field), key, range)));
-            } catch (IllegalArgumentException e) {
-                problems.add(e.getMessage());
-                holder.remove(field);
-            }
-        });
-        return problems;
-    }
-
-    /**
      * Problems visible before defaults are filled in: null or blank entries and lists and maps given empty. Numbers
-     * are checked before binding, by {@link #numbers(JsonObject)}.
+     * are checked before binding, by {@link #NUMBERS}.
      */
     static List<String> beforeDefaults(BenchConfig raw) {
         List<String> problems = new ArrayList<>();

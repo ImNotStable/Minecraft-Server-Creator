@@ -1,7 +1,6 @@
 package io.github.imnotstable.msc.bench;
 
 import com.google.gson.JsonElement;
-import com.google.gson.JsonObject;
 import com.google.gson.JsonPrimitive;
 import java.math.BigDecimal;
 
@@ -12,6 +11,9 @@ import java.math.BigDecimal;
  * written: anything but a JSON number (a string, {@code null}, a list), a decimal where a whole number is needed and a
  * number outside the key's {@link Range} are refused with an {@link IllegalArgumentException} that names the key and
  * shows the value as the file spells it.
+ *
+ * <p>Readers reach these reads only through {@link UserJson}, which holds the file's JSON and offers no other number
+ * read (#423).
  */
 public final class JsonNumbers {
 
@@ -54,26 +56,16 @@ public final class JsonNumbers {
     private JsonNumbers() {
     }
 
-    /** The whole number {@code holder.field}, or {@code absent} when the key is missing; {@code key} names it. */
-    public static int wholeNumber(JsonObject holder, String field, String key, Range range, int absent) {
-        return holder.has(field) ? wholeNumber(holder.get(field), key, range) : absent;
-    }
-
     /** The whole number {@code value} of {@code key}, refused unless it is a whole number within {@code range}. */
-    public static int wholeNumber(JsonElement value, String key, Range range) {
+    static int wholeNumber(JsonElement value, String key, Range range) {
         if (!range.whole()) {
             throw new IllegalArgumentException(key + ": " + range.text() + " is not a whole number range");
         }
         return exact(value, key, range).intValueExact();
     }
 
-    /** The number {@code holder.field}, or {@code absent} when the key is missing; {@code key} names it. */
-    public static double number(JsonObject holder, String field, String key, Range range, double absent) {
-        return holder.has(field) ? number(holder.get(field), key, range) : absent;
-    }
-
     /** The number {@code value} of {@code key}, refused unless it is a number within {@code range}. */
-    public static double number(JsonElement value, String key, Range range) {
+    static double number(JsonElement value, String key, Range range) {
         return exact(value, key, range).doubleValue();
     }
 
