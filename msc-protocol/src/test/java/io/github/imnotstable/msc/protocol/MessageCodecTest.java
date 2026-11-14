@@ -13,6 +13,7 @@ import io.github.imnotstable.msc.protocol.message.Message;
 import io.github.imnotstable.msc.protocol.message.MessageCodec;
 import io.github.imnotstable.msc.protocol.message.Ping;
 import io.github.imnotstable.msc.protocol.message.Pong;
+import io.github.imnotstable.msc.protocol.message.RawJson;
 import io.github.imnotstable.msc.protocol.message.Request;
 import io.github.imnotstable.msc.protocol.message.Response;
 import io.github.imnotstable.msc.protocol.message.Welcome;
@@ -62,7 +63,7 @@ class MessageCodecTest {
     @Test
     void missingParamsBecomeEmptyObject() throws ProtocolException {
         Message m = MessageCodec.decode("{\"type\":\"request\",\"id\":1,\"op\":\"server.info\"}");
-        assertThat(((Request) m).params()).isEqualTo(new JsonObject());
+        assertThat(((Request) m).params()).isEqualTo(new RawJson("{}"));
     }
 
     @Test

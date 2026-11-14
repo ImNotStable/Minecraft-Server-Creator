@@ -61,6 +61,7 @@ include("msc-agent-common")
 include("msc-agent-paper")
 include("msc-templates")
 include("msc-bench")
+include("msc-process")
 
 // Post-MVP modules
 include("msc-agent-fabric")

@@ -11,6 +11,7 @@ import com.google.gson.stream.JsonReader;
 import com.google.gson.stream.JsonWriter;
 import io.github.imnotstable.msc.protocol.ProtocolException;
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.Map;
 
 /**
@@ -31,6 +32,7 @@ public final class MessageCodec {
     private static final String TYPE_PREFIX = "{\"type\":\"";
     private static final Gson GSON = new GsonBuilder().disableHtmlEscaping()
             .registerTypeAdapter(RawJson.class, new RawJsonAdapter().nullSafe())
+            .registerTypeAdapter(int[].class, new IntArrayAdapter().nullSafe())
             .create();
 
     private MessageCodec() {
@@ -61,10 +63,12 @@ public final class MessageCodec {
             int close = line.indexOf('"', TYPE_PREFIX.length());
             Class<? extends Message> cls = close < 0 ? null : TYPES.get(line.substring(TYPE_PREFIX.length(), close));
             char next = cls == null || close + 1 >= line.length() ? 0 : line.charAt(close + 1);
-            if (cls == Response.class) {
-                Response response = ResponseReader.read(line, close + 1);
-                if (response != null) {
-                    return response;
+            if (cls == Response.class || cls == Request.class) {
+                // Params and results can be a million blocks: keep them as text, never as a tree (ADR 0030).
+                Message message = cls == Response.class ? RawFrameReader.response(line, close + 1)
+                        : RawFrameReader.request(line, close + 1);
+                if (message != null) {
+                    return message;
                 }
             } else if (next == ',' || next == '}') {
                 try {
@@ -121,6 +125,48 @@ public final class MessageCodec {
         @Override
         public RawJson read(JsonReader in) {
             return RawJson.of(JsonParser.parseReader(in));
+        }
+    }
+
+    /**
+     * An {@code int[]} (a grid's blocks, a heightmap) as the same JSON array Gson writes, without a boxed
+     * {@code Integer} per element on the way in or a {@code String} per element on the way out.
+     */
+    private static final class IntArrayAdapter extends TypeAdapter<int[]> {
+        @Override
+        public void write(JsonWriter out, int[] value) throws IOException {
+            if (out.getClass() != JsonWriter.class) {
+                // A tree writer (toJsonTree) takes no raw JSON.
+                out.beginArray();
+                for (int v : value) {
+                    out.value(v);
+                }
+                out.endArray();
+                return;
+            }
+            StringBuilder json = new StringBuilder(value.length * 2 + 2).append('[');
+            for (int i = 0; i < value.length; i++) {
+                if (i > 0) {
+                    json.append(',');
+                }
+                json.append(value[i]);
+            }
+            out.jsonValue(json.append(']').toString());
+        }
+
+        @Override
+        public int[] read(JsonReader in) throws IOException {
+            int[] values = new int[16];
+            int size = 0;
+            in.beginArray();
+            while (in.hasNext()) {
+                if (size == values.length) {
+                    values = Arrays.copyOf(values, size * 2);
+                }
+                values[size++] = in.nextInt();
+            }
+            in.endArray();
+            return size == values.length ? values : Arrays.copyOf(values, size);
         }
     }
 
