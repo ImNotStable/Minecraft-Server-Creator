@@ -126,7 +126,7 @@ final class ServerSetup {
     static final String CREATE_FOLDER = "create the server folder";
     static final String INSTALL = "download and install the server";
     static final String DEFAULTS = "write missing default config files";
-    static final String MODE = "set the game mode in server.properties";
+    static final String MODE = "set the game mode in " + ServerPropertiesFile.NAME;
     static final String AGENT = "install the msc agent";
     static final String EULA = "apply the EULA answer";
     static final String REMEMBER = "remember the workspace platform";
