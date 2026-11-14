@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.imnotstable.msc.buildlogic.RepoFiles;
 import io.github.imnotstable.msc.core.server.EulaCommand;
+import io.github.imnotstable.msc.core.server.MachineEula;
 import java.io.IOException;
 import java.nio.charset.MalformedInputException;
 import java.nio.file.Files;
@@ -94,8 +95,8 @@ class DocumentedCommandsTest {
                 out.append(line).append('\n');
             }
         };
-        EulaCommand.run(List.of(sub), tmp.resolve("eula.json"), null, t, Clock.systemUTC(), "test", "test");
-        assertThat(tmp.resolve("eula.json")).doesNotExist();
+        EulaCommand.run(List.of(sub), MachineEula.forHome(tmp), null, t, Clock.systemUTC(), "test", "test");
+        assertThat(tmp.resolve(".msc")).doesNotExist();
         return !out.toString().startsWith("usage:");
     }
 

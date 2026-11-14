@@ -14,6 +14,9 @@ import java.time.format.DateTimeParseException;
  * by the owner: the {@code Main eula accept} line in {@code ~/.msc/core/eula-accept.txt}, installMsc with
  * {@code -Pmsc.acceptEula=true}, or their own yes to a tool). The bench reads it and never writes it: without it,
  * tasks that run a Paper server are skipped.
+ *
+ * <p>Read-only by construction (ADR 0036): the file's path never leaves this class. Other bench code asks
+ * {@link #accepted} or prints {@link #location}; there is no write method.
  */
 public final class MachineEula {
 
@@ -22,8 +25,12 @@ public final class MachineEula {
     private MachineEula() {
     }
 
-    /** {@code <home>/.msc/eula.json}. */
-    public static Path file(Path home) {
+    /** {@code <home>/.msc/eula.json}, for messages to the user. */
+    static String location(Path home) {
+        return file(home).toString();
+    }
+
+    private static Path file(Path home) {
         return home.resolve(".msc").resolve("eula.json");
     }
 

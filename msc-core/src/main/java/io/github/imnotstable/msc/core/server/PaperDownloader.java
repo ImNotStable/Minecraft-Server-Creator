@@ -35,9 +35,9 @@ public final class PaperDownloader {
         try {
             response = downloads.text(builds);
         } catch (IOException e) {
-            Path offline = newestCached(version);
+            CachedBuild offline = CachedBuild.newest(cacheDir, "paper", version);
             if (offline != null) {
-                return new Download(offline, version, buildOf(offline), true);
+                return new Download(offline.jar(), version, offline.build(), true);
             }
             throw new ToolException("cannot reach " + builds + ": " + e.getMessage());
         }
@@ -73,20 +73,5 @@ public final class PaperDownloader {
     private static long rank(JsonObject build) {
         boolean stable = build.has("channel") && "STABLE".equalsIgnoreCase(build.get("channel").getAsString());
         return (stable ? 1_000_000_000L : 0) + build.get("id").getAsInt();
-    }
-
-    private Path newestCached(String version) throws IOException {
-        if (!Files.isDirectory(cacheDir)) {
-            return null;
-        }
-        try (var files = Files.list(cacheDir)) {
-            return files.filter(p -> p.getFileName().toString().matches("paper-\\Q" + version + "\\E-\\d+\\.jar"))
-                    .max((a, b) -> Integer.compare(buildOf(a), buildOf(b))).orElse(null);
-        }
-    }
-
-    private static int buildOf(Path jar) {
-        String n = jar.getFileName().toString();
-        return Integer.parseInt(n.substring(n.lastIndexOf('-') + 1, n.length() - 4));
     }
 }

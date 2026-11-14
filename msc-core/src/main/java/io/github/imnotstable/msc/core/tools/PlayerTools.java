@@ -106,7 +106,7 @@ public final class PlayerTools implements AutoCloseable {
                 throw new ToolException(e.getMessage() + (e.getMessage().contains("not_whitelisted")
                         // whitelist add can't help: offline mode stores the lowercased name's UUID.
                         ? ". The whitelist is on: server_command \"whitelist off\", and set white-list=false"
-                                + " in server.properties so it stays off"
+                                + " in " + ServerPropertiesFile.NAME + " so it stays off"
                         : ""));
             }
             // A dev-server test player: op so commands and tp work, in the mode real players will have.

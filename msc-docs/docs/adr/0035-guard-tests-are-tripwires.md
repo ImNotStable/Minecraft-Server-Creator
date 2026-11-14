@@ -1,6 +1,6 @@
 # ADR 0035: Source-scanning guard tests are tripwires for ordinary changes
 
-Status: accepted, 2026-11-14. Decided by Claude under ADR 0029. Closes #409 and #410; part of #411.
+Status: accepted, 2026-11-14. Decided by Claude under ADR 0029. Closes #409 and #410; part of #411. Amended by [ADR 0036](0036-guards-by-construction-and-behaviour.md): the EULA and server.properties guards are now plain literal rules behind construction and a behaviour test, and `ServerPropertiesAccess` is gone.
 
 ## Context
 

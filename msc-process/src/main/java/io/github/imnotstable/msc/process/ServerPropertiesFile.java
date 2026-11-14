@@ -232,6 +232,8 @@ public final class ServerPropertiesFile {
                     appendedLineBegin = false;
                 }
                 if (line.isEmpty() && (c == '#' || c == '!')) {
+                    // A comment after a line of only a backslash: the next line starts after it, so the comment stays.
+                    start = -1;
                     while (off < n && text.charAt(off) != '\r' && text.charAt(off) != '\n') {
                         off++;
                     }
@@ -251,6 +253,7 @@ public final class ServerPropertiesFile {
                     continue;
                 }
                 if (line.isEmpty()) {
+                    start = -1;
                     skipWhiteSpace = true;
                     continue;
                 }

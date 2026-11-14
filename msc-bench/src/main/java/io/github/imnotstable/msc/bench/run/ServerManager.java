@@ -109,7 +109,7 @@ public final class ServerManager implements AutoCloseable {
         Path eula = serverDir.resolve("eula.txt");
         if (!Files.isRegularFile(eula) || !Files.readString(eula).contains("eula=true")) {
             throw new IOException("Minecraft EULA not accepted on this machine ("
-                    + MachineEula.file(Path.of(System.getProperty("user.home"))) + ")");
+                    + MachineEula.location(Path.of(System.getProperty("user.home"))) + ")");
         }
         ProcessBuilder builder = new ProcessBuilder(List.copyOf(config.command()))
                 .directory(serverDir.toFile())

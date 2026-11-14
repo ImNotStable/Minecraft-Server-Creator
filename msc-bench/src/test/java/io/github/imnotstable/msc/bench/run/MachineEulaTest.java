@@ -17,7 +17,7 @@ class MachineEulaTest {
     @Test
     void agreesWithCoreOnTheSharedFixtures() throws Exception {
         assertThat(MachineEula.accepted(home)).isFalse();
-        Path file = MachineEula.file(home);
+        Path file = home.resolve(".msc").resolve("eula.json");
         Files.createDirectories(file.getParent());
         List<String> fixtures = RepoFiles.list("eulaFixtures");
         assertThat(fixtures).anyMatch(f -> f.contains("/accepted-")).anyMatch(f -> f.contains("/rejected-"));

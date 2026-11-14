@@ -27,7 +27,7 @@ public final class Main {
             // The owner's own command, never an MCP tool: see EulaCommand and ADR 0020.
             Path installDir = installDir(Main.class.getProtectionDomain().getCodeSource());
             System.exit(EulaCommand.run(List.of(args).subList(1, args.length),
-                    CoreConfig.fromEnvironment(System.getenv()).eulaFile(), installDir, EulaCommand.console(),
+                    CoreConfig.fromEnvironment(System.getenv()).machineEula(), installDir, EulaCommand.console(),
                     Clock.systemUTC(), System.getProperty("user.name"), EulaCommand.hostName()));
         }
         if (args.length == 3 && args[0].equals("refresh-legacy-install")) {

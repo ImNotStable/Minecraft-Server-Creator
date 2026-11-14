@@ -126,7 +126,7 @@ final class ServerSetup {
     static final String CREATE_FOLDER = "create the server folder";
     static final String INSTALL = "download and install the server";
     static final String DEFAULTS = "write missing default config files";
-    static final String MODE = "set the game mode in server.properties";
+    static final String MODE = "set the game mode in " + ServerPropertiesFile.NAME;
     static final String AGENT = "install the msc agent";
     static final String EULA = "apply the EULA answer";
     static final String REMEMBER = "remember the workspace platform";
@@ -258,7 +258,7 @@ final class ServerSetup {
         if (accept) {
             out.append(eula.recordForMachine());
         }
-        Optional<MachineEula.Acceptance> machine = MachineEula.applyTo(config.eulaFile(), file);
+        Optional<MachineEula.Acceptance> machine = config.machineEula().applyTo(file);
         if (machine.isPresent()) {
             out.append("eula.txt has eula=true from the owner's one-time acceptance for this machine (")
                     .append(machine.get().describe()).append(")\n");
