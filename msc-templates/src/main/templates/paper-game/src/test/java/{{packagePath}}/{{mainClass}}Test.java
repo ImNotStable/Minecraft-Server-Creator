@@ -185,6 +185,17 @@ class {{mainClass}}Test {
         assertThat(plugin.game().stage(steve).name()).isEqualTo("start");
     }
 
+    /** Words are split on runs of spaces, and tab completion offers stage names after them (as every game template). */
+    @Test
+    void extraSpacesBetweenWordsAreIgnored() {
+        server.addPlayer("Steve");
+        assertThat(console("game  stage   arena  Steve")).containsExactly("Steve is on stage 2 arena");
+        GameCommand command = new GameCommand(plugin.game(), server, "test");
+        assertThat(command.suggestions(new String[] {"stage", "", ""})).containsExactly("start", "arena");
+        assertThat(command.suggestions(new String[] {"stage", "", "ar"})).containsExactly("arena");
+        assertThat(command.suggestions(new String[] {""})).contains("stage", "status");
+    }
+
     @Test
     void badArgumentsGetAUsefulReply() {
         server.addPlayer("Steve");

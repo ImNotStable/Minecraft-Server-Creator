@@ -53,6 +53,7 @@ public final class GameCommand extends Command {
     /** Runs {@code /game args} for {@code self} (null for the console) and returns the reply. Tests call this. */
     public List<Reply> handle(Player self, String[] args) {
         List<Reply> out = new ArrayList<>();
+        args = words(String.join(" ", args), false);
         String sub = args.length == 0 ? "" : args[0].toLowerCase(Locale.ROOT);
         switch (sub) {
             case "status" -> game.status(online()).forEach(line -> out.add(new Reply(true, line)));
@@ -117,6 +118,19 @@ public final class GameCommand extends Command {
 
     private List<Player> online() {
         return List.copyOf(game.world().getPlayers());
+    }
+
+    /**
+     * The words of a command line, split on runs of whitespace, so {@code stage  arena} is two words: the same in every
+     * game template. With {@code typing} (tab completion), a trailing space starts an empty last word, the one being
+     * typed, and there is always a last word.
+     */
+    static String[] words(String line, boolean typing) {
+        String s = typing ? line.stripLeading() : line.strip();
+        if (s.isEmpty()) {
+            return typing ? new String[] {""} : new String[0];
+        }
+        return s.split("\\s+", typing ? -1 : 0);
     }
 
     private List<String> stageNames() {

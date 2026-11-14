@@ -20,6 +20,11 @@ final class TestGames {
     }
 
     static GameConfig withStages(List<Stage> stages) {
-        return new GameConfig(GameType.ADVENTURE, Difficulty.NORMAL, 6000, false, true, Kit.of(), stages);
+        return with(6000, stages);
+    }
+
+    /** These stages, at this time of day. */
+    static GameConfig with(long time, List<Stage> stages) {
+        return new GameConfig(GameType.ADVENTURE, Difficulty.NORMAL, time, false, true, Kit.of(), stages);
     }
 }

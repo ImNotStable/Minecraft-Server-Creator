@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
+import com.mojang.brigadier.suggestion.Suggestion;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -99,6 +100,21 @@ class GameCommandTest {
 
         assertThat(console.messages).containsExactly(GameCommand.USAGE,
                 "no stage lava. Stages: [start, arena]", "name a player: next <player>");
+    }
+
+    /** Words are split on runs of spaces, and tab completion offers stage names after them (as every game template). */
+    @Test
+    void extraSpacesBetweenWordsAreIgnored() throws CommandSyntaxException {
+        Recorder console = new Recorder();
+        CommandSourceStack source = source(console, LevelBasedPermissionSet.OWNER);
+
+        dispatcher.execute("game  stage   lava  Steve", source);
+
+        assertThat(console.messages).containsExactly("no stage lava. Stages: [start, arena]");
+        assertThat(dispatcher.getCompletionSuggestions(dispatcher.parse("game stage  ", source)).join().getList())
+                .extracting(Suggestion::getText).containsExactly("arena", "start");
+        assertThat(dispatcher.getCompletionSuggestions(dispatcher.parse("game stage   ar", source)).join().getList())
+                .extracting(Suggestion::getText).containsExactly("arena");
     }
 
     @Test

@@ -101,6 +101,8 @@ class GameConfigTest {
         }
     }
 
+    private static final String NAME = "one word of visible characters (no spaces, no §)";
+
     private static final List<Bad> BAD = List.of(
             Bad.top("world", "5", "world: needs text, got the whole number 5"),
             Bad.top("world", "''", "world: needs text, got empty text"),
@@ -131,9 +133,14 @@ class GameConfigTest {
             new Bad("stages", "stages: []", "stages: add at least one stage"),
             new Bad("stages", "stages: start", "stages: needs a list, got the text 'start'"),
             new Bad("stages", "stages: [start]", "stages[0]: needs {name: ..., spawn: [x, y, z]}, got the text 'start'"),
-            Bad.stage("name", "{spawn: [0, 0, 0]}", "stages[0].name: needs text, got nothing"),
-            Bad.stage("name", "{name: 5, spawn: [0, 0, 0]}", "stages[0].name: needs text, got the whole number 5"),
-            Bad.stage("name", "{name: '', spawn: [0, 0, 0]}", "stages[0].name: needs text, got empty text"),
+            Bad.stage("name", "{spawn: [0, 0, 0]}", "stages[0].name: needs a stage name, " + NAME + ", got nothing"),
+            Bad.stage("name", "{name: 5, spawn: [0, 0, 0]}",
+                    "stages[0].name: needs a stage name, " + NAME + ", got the whole number 5"),
+            Bad.stage("name", "{name: '', spawn: [0, 0, 0]}",
+                    "stages[0].name: needs a stage name, " + NAME + ", got empty text"),
+            // /game stage splits on spaces, so it could never select this stage by name (#451).
+            Bad.stage("name", "{name: boss room, spawn: [0, 0, 0]}",
+                    "stages[0].name: needs a stage name, " + NAME + ", got the text 'boss room'"),
             Bad.stage("name", "{name: a, spawn: [0, 0, 0]}, {name: A, spawn: [0, 0, 0]}",
                     "stages[1]: duplicate stage name A"),
             Bad.stage("spawn", "{name: a}",
