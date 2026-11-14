@@ -40,7 +40,7 @@ public final class LifecycleTools {
                         .opt("template", "string", "paper-plugin (default), fabric-mod (also Quilt), neoforge-mod, forge-mod, minestom-server, or a minigame base (kit, stages, saved progress, /game debug "
                                 + "commands): paper-game, fabric-game, minestom-game")
                         .opt("package", "string", "Java package. Default com.example.<name>")
-                        .opt("acceptEula", "boolean", EulaPrompts.EULA_ARG),
+                        .opt("acceptEula", "boolean", EulaPrompts.SCAFFOLD_EULA_ARG),
                 scaffold::run);
         registry.add("server_setup",
                 "Prepare the dev server: download or install it, write dev defaults, install the msc agent.",

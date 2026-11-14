@@ -14,7 +14,7 @@ The tool tables are generated from the tool definitions in `msc-core` (`io.githu
 - `world` is optional everywhere and defaults to the server's first world.
 - Every call is logged (see "Tool log").
 - World and build tools fail at once with `error: the server is not running...` when the core has no server running and none was attached with `MSC_CORE_ADDRESS`.
-- <!-- tool-list -->The tool definitions (26 tools: names, descriptions, argument schemas) are 15,320 characters, about 3,830 tokens in every conversation before MCP framing.<!-- /tool-list --> `McpBridgeTest` fails if the tool list as the client receives it grows past 16,000 characters ([ADR 0019](adr/0019-smaller-tool-surface.md), [ADR 0023](adr/0023-texture-tools.md)).
+- <!-- tool-list -->The tool definitions (26 tools: names, descriptions, argument schemas) are 15,375 characters, about 3,844 tokens in every conversation before MCP framing.<!-- /tool-list --> `McpBridgeTest` fails if the tool list as the client receives it grows past 16,000 characters ([ADR 0019](adr/0019-smaller-tool-surface.md), [ADR 0023](adr/0023-texture-tools.md)).
 - Results are text. The one exception is `world_render`, which adds one PNG image next to its text.
 
 ## Typical loop
@@ -40,7 +40,7 @@ Results:
 <!-- tools: project_scaffold server_setup server_start server_detach server_stop dev_cycle server_logs server_command server_wait -->
 | Tool | Arguments | What it does |
 | --- | --- | --- |
-| `project_scaffold` | `name` (string): Project name, for example MyPlugin<br>`dir`? (string): Target directory, relative to the workspace. Default: the workspace itself<br>`template`? (string): paper-plugin (default), fabric-mod (also Quilt), neoforge-mod, forge-mod, minestom-server, or a minigame base (kit, stages, saved progress, /game debug commands): paper-game, fabric-game, minestom-game<br>`package`? (string): Java package. Default com.example.&lt;name&gt;<br>`acceptEula`? (boolean): Only on the user's yes to https://aka.ms/MinecraftEULA; kept for this machine | Create a new project from a template (Gradle KTS, tests wired in). Target directory must be empty. |
+| `project_scaffold` | `name` (string): Project name, for example MyPlugin<br>`dir`? (string): Target directory, relative to the workspace. Default: the workspace itself<br>`template`? (string): paper-plugin (default), fabric-mod (also Quilt), neoforge-mod, forge-mod, minestom-server, or a minigame base (kit, stages, saved progress, /game debug commands): paper-game, fabric-game, minestom-game<br>`package`? (string): Java package. Default com.example.&lt;name&gt;<br>`acceptEula`? (boolean): Only on the user's yes to https://aka.ms/MinecraftEULA; used only by the paper-server template's eula.txt, not kept for this machine | Create a new project from a template (Gradle KTS, tests wired in). Target directory must be empty. |
 | `server_setup` | `version`? (string): Minecraft version. Default 26.3<br>`platform`? (string): paper, purpur, fabric, quilt, neoforge, forge or minestom. Default: the project's<br>`mode`? (string): build (creative, peaceful) or game (survival, normal)<br>`acceptEula`? (boolean): Only on the user's yes to https://aka.ms/MinecraftEULA; kept for this machine | Prepare the dev server: download or install it, write dev defaults, install the msc agent. |
 | `server_start` | `timeoutSeconds`? (integer): Default 180<br>`acceptEula`? (boolean): Only on the user's yes to https://aka.ms/MinecraftEULA; kept for this machine | Start the dev server and wait until it is ready. Returns startup errors only. |
 | `server_detach` | none | Keep the dev server and the pack host running after this session ends, so the user can play. The next session's server_start, dev_cycle or server_stop stops them. |
@@ -81,7 +81,7 @@ The workspace has one platform: `paper` (default), `purpur`, `fabric`, `quilt`, 
 
 Installers and downloads are cached in `.msc/cache`; an installer runs only when the server directory lacks that loader version. NeoForge, Forge and Quilt take the versions pinned in this build and `server_setup` refuses a Minecraft version they do not target.
 
-EULA step: when the owner has accepted the Minecraft EULA once for the machine (`Main eula accept` in their own terminal, `~/.msc/eula.json`, [ADR 0020](adr/0020-machine-eula.md)), `server_setup` and `server_start` write `eula=true` into the server's `eula.txt` and say so; no tool argument creates that file. Otherwise `acceptEula=true` after the owner's own yes, as before.
+EULA step: installing or using MSC never accepts the Minecraft EULA. `server_setup` and `server_start` write `eula=true` into the server's `eula.txt` only on the owner's own yes: either `acceptEula=true` on that call, passed after the owner said yes, or the owner's one-time acceptance for the machine in `~/.msc/eula.json` ([ADR 0020](adr/0020-machine-eula.md)), and they say so. That file is written only on an explicit opt-in: `Main eula accept` run by the owner in their own terminal (the line in `~/.msc/core/eula-accept.txt`) with a typed `yes`, installing with `installMsc -Pmsc.acceptEula=true`, or the first `acceptEula=true` on `server_setup` or `server_start`; that first time the result says the acceptance now covers the machine. `project_scaffold acceptEula=true` does not write it.
 
 
 ## API index

@@ -11,7 +11,7 @@ Find your problem, then try the steps in order.
 
 ## "the Minecraft EULA is not accepted"
 
-Paper, Purpur, Fabric, Quilt, NeoForge and Forge need it. Read the [Minecraft EULA](https://aka.ms/MinecraftEULA). If you agree, tell Claude: "I accept the EULA, run server_setup with acceptEula=true." Or set `eula=true` in `run/eula.txt` yourself. Or accept it once for this machine: run the line in `~/.msc/core/eula-accept.txt` in a terminal and type `yes`; every later dev server of those platforms then starts without asking. Minestom does not need it.
+Paper, Purpur, Fabric, Quilt, NeoForge and Forge need it. Read the [Minecraft EULA](https://aka.ms/MinecraftEULA). If you agree, tell Claude: "I accept the EULA, run server_setup with acceptEula=true." That yes also covers this machine (`~/.msc/eula.json`), so later servers do not ask again. Or set `eula=true` in `run/eula.txt` yourself. Or accept it once for this machine: run the line in `~/.msc/core/eula-accept.txt` in a terminal and type `yes`; every later dev server of those platforms then starts without asking. Minestom does not need it.
 
 ## "target exists and is not an empty directory"
 
