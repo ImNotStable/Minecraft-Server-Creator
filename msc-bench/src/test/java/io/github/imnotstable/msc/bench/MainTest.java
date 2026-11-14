@@ -76,8 +76,15 @@ class MainTest {
     void runRefusesARunFolderInsideAProject() throws IOException {
         Files.writeString(dir.resolve("CLAUDE.md"), "project instructions");
         Path runs = dir.resolve("msc-bench/runs");
+        Files.createDirectories(dir.resolve("tasks/t"));
+        Files.writeString(dir.resolve("tasks/t/task.json"), """
+                {"category":"code","title":"t","checks":[{"type":"file","path":"a"}]}
+                """);
+        Files.writeString(dir.resolve("tasks/t/prompt.md"), "p");
+        Files.writeString(dir.resolve("bench.json"), "{}");
 
-        Throwable refused = catchThrowable(() -> Main.run(new String[] {"run", "--out", runs.toString()},
+        Throwable refused = catchThrowable(() -> Main.run(new String[] {"run", "--out", runs.toString(), "--tasks-dir",
+                dir.resolve("tasks").toString(), "--config", dir.resolve("bench.json").toString()},
                 new PrintStream(new ByteArrayOutputStream(), true, StandardCharsets.UTF_8)));
 
         assertThat(refused).isInstanceOf(IOException.class).hasMessageContaining("CLAUDE.md");
@@ -112,7 +119,9 @@ class MainTest {
     @Test
     void modeAndTaskNamesAreReadWithoutSurroundingSpaces() {
         // "--modes baseline, baseline" passed the repeat check as two different names.
-        assertThat(Main.names("baseline, baseline ,toolset")).containsExactly("baseline", "baseline", "toolset");
+        assertThat(RunSelection.names("--modes", "baseline , toolset", "mode")).containsExactly("baseline", "toolset");
+        assertThat(catchThrowable(() -> RunSelection.names("--modes", "baseline, baseline ,toolset", "mode")))
+                .hasMessageContaining("\"baseline\" is listed twice");
     }
 
     private static int freePort() throws IOException {

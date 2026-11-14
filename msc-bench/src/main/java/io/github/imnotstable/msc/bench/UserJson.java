@@ -6,6 +6,8 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonPrimitive;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -106,6 +108,123 @@ public final class UserJson {
             out[i] = JsonNumbers.wholeNumber(array.get(i), key(field) + "[" + i + "]", ranges[i]);
         }
         return out;
+    }
+
+    // Exact reads: each refuses a value of the wrong JSON type with an IllegalArgumentException that names the key and
+    // shows the value, where Gson's getAs* would convert it ("1" as 1, 1 as "1") or throw its own exception. A missing
+    // key or a JSON null is absent, except to the number reads, which refuse null.
+
+    /** Refuses a key outside {@code known}, such as a misspelt one whose value would be silently left out. */
+    public void onlyKeys(Collection<String> known) {
+        for (String field : tree.keySet()) {
+            if (!known.contains(field)) {
+                throw new IllegalArgumentException(key(field) + ": unknown key; the keys are " + known);
+            }
+        }
+    }
+
+    /** Refuses each of {@code fields} that is missing or {@code null}. */
+    public void require(String... fields) {
+        for (String field : fields) {
+            if (absent(field)) {
+                throw new IllegalArgumentException(key(field) + ": is missing");
+            }
+        }
+    }
+
+    /** The string {@code field}, or {@code absent}; any other JSON value is refused. */
+    public String exactString(String field, String absent) {
+        if (absent(field)) {
+            return absent;
+        }
+        JsonElement value = tree.get(field);
+        return requireString(value, key(field));
+    }
+
+    /** The boolean {@code field}, or {@code absent}; any other JSON value, such as {@code "true"}, is refused. */
+    public boolean exactBool(String field, boolean absent) {
+        if (absent(field)) {
+            return absent;
+        }
+        JsonElement value = tree.get(field);
+        if (value instanceof JsonPrimitive primitive && primitive.isBoolean()) {
+            return primitive.getAsBoolean();
+        }
+        throw new IllegalArgumentException(key(field) + ": " + JsonNumbers.written(value) + " is not true or false");
+    }
+
+    /** The whole number {@code field} as a {@code long} exactly as written, or {@code absent} when it is missing. */
+    public long wholeLong(String field, JsonNumbers.Range range, long absent) {
+        return has(field) ? JsonNumbers.wholeLong(tree.get(field), key(field), range) : absent;
+    }
+
+    /** The list of strings {@code field}, empty when absent; a list entry that is not a string, null too, is refused. */
+    public List<String> exactStrings(String field) {
+        List<String> out = new ArrayList<>();
+        JsonArray array = exactArray(field);
+        for (int i = 0; i < array.size(); i++) {
+            out.add(requireString(array.get(i), key(field) + "[" + i + "]"));
+        }
+        return out;
+    }
+
+    /** The object {@code field}, or null when absent; any other JSON value is refused. */
+    public UserJson exactObject(String field) {
+        if (absent(field)) {
+            return null;
+        }
+        return new UserJson(requireObject(tree.get(field), key(field)), key(field) + ".");
+    }
+
+    /** The list of objects {@code field}, empty when absent; an entry that is not an object, null too, is refused. */
+    public List<UserJson> exactObjects(String field) {
+        JsonArray array = exactArray(field);
+        List<UserJson> out = new ArrayList<>();
+        for (int i = 0; i < array.size(); i++) {
+            String at = key(field) + "[" + i + "]";
+            out.add(new UserJson(requireObject(array.get(i), at), at + "."));
+        }
+        return out;
+    }
+
+    /** The object {@code field} whose values are all objects, by key in file order; empty when absent. */
+    public Map<String, UserJson> exactObjectEntries(String field) {
+        UserJson holder = exactObject(field);
+        Map<String, UserJson> out = new LinkedHashMap<>();
+        if (holder != null) {
+            holder.tree.entrySet().forEach(e -> out.put(e.getKey(),
+                    new UserJson(requireObject(e.getValue(), holder.key(e.getKey())), holder.key(e.getKey()) + ".")));
+        }
+        return out;
+    }
+
+    private boolean absent(String field) {
+        return !tree.has(field) || tree.get(field).isJsonNull();
+    }
+
+    private JsonArray exactArray(String field) {
+        if (absent(field)) {
+            return new JsonArray();
+        }
+        JsonElement value = tree.get(field);
+        if (!value.isJsonArray()) {
+            throw new IllegalArgumentException(key(field) + ": " + JsonNumbers.written(value) + " is not a list");
+        }
+        return value.getAsJsonArray();
+    }
+
+    private static String requireString(JsonElement value, String key) {
+        if (value instanceof JsonPrimitive primitive && primitive.isString()) {
+            return primitive.getAsString();
+        }
+        throw new IllegalArgumentException(key + ": " + JsonNumbers.written(value) + " is not a string");
+    }
+
+    private static JsonObject requireObject(JsonElement value, String key) {
+        if (value.isJsonObject()) {
+            return value.getAsJsonObject();
+        }
+        throw new IllegalArgumentException(key + ": " + JsonNumbers.written(value) + " is not an object");
     }
 
     /**

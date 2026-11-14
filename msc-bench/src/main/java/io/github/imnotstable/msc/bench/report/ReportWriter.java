@@ -1,12 +1,7 @@
 package io.github.imnotstable.msc.bench.report;
 
-import com.google.gson.Gson;
-import com.google.gson.JsonParseException;
 import io.github.imnotstable.msc.bench.run.RunRecord;
 import io.github.imnotstable.msc.bench.run.ToolStats;
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -15,7 +10,7 @@ import java.util.Map;
 import java.util.function.ToLongFunction;
 
 /**
- * Turns {@code results.jsonl} into a Markdown report: one summary row per mode, then one row per
+ * Turns the runs of {@code results.jsonl} ({@link io.github.imnotstable.msc.bench.run.ResultsFile}) into a Markdown report: one summary row per mode, then one row per
  * task comparing modes. Medians are used for time and tokens so one stuck run does not skew them.
  *
  * <p>Usage figures (turns, tokens, cost) come only from runs whose agent reported them: a run that
@@ -26,24 +21,6 @@ import java.util.function.ToLongFunction;
 public final class ReportWriter {
 
     private ReportWriter() {
-    }
-
-    public static List<RunRecord> readResults(Path resultsFile) throws IOException {
-        Gson gson = new Gson();
-        List<RunRecord> records = new ArrayList<>();
-        int lineNo = 0;
-        for (String line : Files.readAllLines(resultsFile)) {
-            lineNo++;
-            if (line.isBlank()) {
-                continue;
-            }
-            try {
-                records.add(gson.fromJson(line, RunRecord.class));
-            } catch (JsonParseException e) {
-                throw new IOException(resultsFile + " line " + lineNo + ": " + e.getMessage(), e);
-            }
-        }
-        return records;
     }
 
     public static String render(List<RunRecord> records) {

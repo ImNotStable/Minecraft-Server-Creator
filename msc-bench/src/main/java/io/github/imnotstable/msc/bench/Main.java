@@ -8,6 +8,7 @@ import io.github.imnotstable.msc.bench.run.BenchConfig;
 import io.github.imnotstable.msc.bench.run.BenchRunner;
 import io.github.imnotstable.msc.bench.run.ChildProcesses;
 import io.github.imnotstable.msc.bench.run.RunIsolation;
+import io.github.imnotstable.msc.bench.run.ResultsFile;
 import io.github.imnotstable.msc.bench.run.RunRecord;
 import io.github.imnotstable.msc.bench.run.ServerManager;
 import io.github.imnotstable.msc.bench.run.Workspaces;
@@ -16,13 +17,16 @@ import io.github.imnotstable.msc.bench.task.TaskLoader;
 import io.github.imnotstable.msc.process.rcon.RconClient;
 import java.io.IOException;
 import java.io.PrintStream;
+import java.io.UncheckedIOException;
+import java.nio.file.AccessDeniedException;
+import java.nio.file.FileSystemException;
 import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -42,25 +46,88 @@ import java.util.Set;
  * A leading {@code ~} in a path argument is the home folder: Gradle's {@code --args="..."} and quoted shell
  * arguments pass it unexpanded.
  * </pre>
+ *
+ * <p>Exit codes: {@link #OK}, {@link #USAGE}, {@link #BAD_INPUT}, {@link #FAILED}, {@link #USAGE_LIMIT} and
+ * {@link #INTERNAL_ERROR}; every refusal and error is one {@code msc-bench: } message on standard error, never a stack
+ * trace.
  */
 public final class Main {
 
     private static final Set<String> FLAGS = Set.of("--tasks", "--modes", "--repeat", "--tasks-dir", "--config", "--out");
     private static final Set<String> PATH_FLAGS = Set.of("--tasks-dir", "--config", "--out");
 
+    /** Every attempt or check passed, or the command had nothing to judge ({@code list}, {@code report}). */
+    static final int OK = 0;
+    /** No command given: the usage is printed. */
+    static final int USAGE = 1;
+    /** A bad argument or input file, refused before anything was created. */
+    static final int BAD_INPUT = 2;
+    /** An attempt or check failed. */
+    static final int FAILED = 3;
+    /** {@code run} stopped early on an account usage limit. */
+    static final int USAGE_LIMIT = 4;
+    /** An error the bench did not expect: a bug to report. */
+    static final int INTERNAL_ERROR = 70;
+
     private Main() {
     }
 
     public static void main(String[] args) {
+        System.exit(exec(args, System.out, System.err, Path.of(System.getProperty("user.home")),
+                Path.of(System.getProperty("java.io.tmpdir"))));
+    }
+
+    /**
+     * Runs the command and returns its exit code. Whatever goes wrong ends as one line on {@code err}: a refusal of
+     * a bad argument or file as {@link #BAD_INPUT}, anything else as {@link #INTERNAL_ERROR}.
+     */
+    static int exec(String[] args, PrintStream out, PrintStream err, Path home, Path temp) {
+        return guarded(err, () -> run(args, out, home, temp));
+    }
+
+    /** A command's body: returns its exit code, or throws. */
+    @FunctionalInterface
+    interface Command {
+        int run() throws IOException;
+    }
+
+    /** {@code command}'s exit code, with every exception it throws turned into one line on {@code err} and a code. */
+    static int guarded(PrintStream err, Command command) {
         try {
-            System.exit(run(args, System.out));
+            return command.run();
         } catch (IOException | IllegalArgumentException e) {
-            System.err.println("msc-bench: " + e.getMessage());
-            System.exit(2);
+            err.println("msc-bench: " + message(e));
+            return BAD_INPUT;
+        } catch (UncheckedIOException e) {
+            err.println("msc-bench: " + message(e.getCause()));
+            return BAD_INPUT;
+        } catch (RuntimeException | Error e) {
+            String text = e.getMessage() == null ? "" : e.getMessage().strip().lines().findFirst().orElse("");
+            err.println("msc-bench: internal error (" + e.getClass().getName() + (text.isEmpty() ? "" : ": " + text)
+                    + "); please report it");
+            return INTERNAL_ERROR;
         }
     }
 
+    /** The exception's message, with the path and what went wrong for a file-system error, whose message is bare. */
+    static String message(Exception e) {
+        if (e instanceof NoSuchFileException missing) {
+            return missing.getFile() + " does not exist";
+        }
+        if (e instanceof AccessDeniedException denied) {
+            return denied.getFile() + ": access denied";
+        }
+        if (e instanceof FileSystemException fs && fs.getReason() == null) {
+            return fs.getFile() + ": " + fs.getClass().getSimpleName();
+        }
+        return e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
+    }
+
     static int run(String[] args, PrintStream out) throws IOException {
+        return run(args, out, Path.of(System.getProperty("user.home")), Path.of(System.getProperty("java.io.tmpdir")));
+    }
+
+    static int run(String[] args, PrintStream out, Path home, Path temp) throws IOException {
         List<String> positional = new ArrayList<>();
         Map<String, String> flags = new HashMap<>();
         for (int i = 0; i < args.length; i++) {
@@ -77,19 +144,29 @@ public final class Main {
         }
         if (positional.isEmpty()) {
             out.println(usage());
-            return 1;
+            return USAGE;
         }
-        Path home = Path.of(System.getProperty("user.home"));
         flags.replaceAll((flag, value) -> PATH_FLAGS.contains(flag) ? expandHome(value, home).toString() : value);
         Path tasksDir = Path.of(flags.getOrDefault("--tasks-dir", "tasks"));
         return switch (positional.getFirst()) {
-            case "list" -> list(tasksDir, out);
-            case "run" -> runBench(tasksDir, flags, out);
+            case "list" -> {
+                if (positional.size() != 1) {
+                    throw new IllegalArgumentException("usage: list");
+                }
+                yield list(tasksDir, out);
+            }
+            case "run" -> {
+                if (positional.size() != 1) {
+                    throw new IllegalArgumentException("usage: run [--tasks a,b] [--modes m1,m2] [--repeat N]; "
+                            + "unexpected " + positional.get(1));
+                }
+                yield runBench(tasksDir, flags, out, home, temp);
+            }
             case "check" -> {
                 if (positional.size() != 3) {
                     throw new IllegalArgumentException("usage: check <task> <workspace>");
                 }
-                yield check(tasksDir, positional.get(1), expandHome(positional.get(2), home), flags, out);
+                yield check(tasksDir, positional.get(1), expandHome(positional.get(2), home), flags, home, out);
             }
             case "report" -> {
                 if (positional.size() != 2) {
@@ -123,19 +200,23 @@ public final class Main {
     }
 
     private static int list(Path tasksDir, PrintStream out) throws IOException {
-        for (TaskDef task : TaskLoader.loadAll(tasksDir)) {
+        for (TaskDef task : RunSelection.all(tasksDir, TaskLoader.loadAll(tasksDir))) {
             out.printf("%-26s %-8s %-8s %d checks  %s%n", task.id(), task.category(), task.platform(),
                     task.checks().size(), task.title());
         }
-        return 0;
+        return OK;
     }
 
-    private static int runBench(Path tasksDir, Map<String, String> flags, PrintStream out) throws IOException {
+    private static int runBench(Path tasksDir, Map<String, String> flags, PrintStream out, Path home, Path temp)
+            throws IOException {
+        // Everything the run works on is read and checked first: a refusal leaves no run folder behind.
         int repeat = repeat(flags.getOrDefault("--repeat", "1"));
+        Path configFile = Path.of(flags.getOrDefault("--config", "bench.json"));
+        BenchConfig config = loadConfig(configFile, home);
+        RunSelection selection = RunSelection.resolve(tasksDir, TaskLoader.loadAll(tasksDir), flags.get("--tasks"),
+                config.modes().keySet(), configFile, flags.get("--modes"));
         // Attempts run in the run folder: inside this repository both modes would load its CLAUDE.md and sources.
         // The checked folder is the resolved one, and the run writes to that same folder (links, .. and all).
-        Path home = Path.of(System.getProperty("user.home"));
-        Path temp = Path.of(System.getProperty("java.io.tmpdir"));
         Path runsDir = flags.containsKey("--out")
                 ? RunIsolation.requireIsolated(Path.of(flags.get("--out")), home, temp)
                 : RunIsolation.defaultRunsDir(home, temp);
@@ -144,11 +225,6 @@ public final class Main {
                     + "has a CLAUDE.md), so runs go to " + runsDir + "; the system may clear it, so pass --out to keep "
                     + "them elsewhere");
         }
-        BenchConfig config = BenchConfig.load(Path.of(flags.getOrDefault("--config", "bench.json")));
-        List<TaskDef> tasks = select(TaskLoader.loadAll(tasksDir), flags.get("--tasks"));
-        List<String> modes = flags.containsKey("--modes")
-                ? names(flags.get("--modes"))
-                : List.copyOf(config.modes().keySet()).stream().sorted().toList();
         Path runDir = runsDir.resolve(LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss")));
         Map<String, String> preambles = new HashMap<>();
         preambles.put(TaskDef.PAPER, readIfPresent(tasksDir.resolve("_preamble.md")));
@@ -159,16 +235,16 @@ public final class Main {
         }
 
         BenchRunner runner = new BenchRunner(config, runDir, preambles, out);
-        List<RunRecord> records = runner.run(tasks, modes, repeat);
+        List<RunRecord> records = runner.run(selection.tasks(), selection.modes(), repeat);
         Path reportFile = runDir.resolve("report.md");
         Files.writeString(reportFile, ReportWriter.render(records));
         out.println("Report: " + reportFile.toAbsolutePath());
         if (runner.stoppedBy() != null) {
             out.println("Stopped early on a usage limit (" + runner.stoppedBy() + "). After it resets, run the rest into "
                     + "a new folder and put the results.jsonl files together before `report`.");
-            return 4;
+            return USAGE_LIMIT;
         }
-        return records.stream().allMatch(RunRecord::passed) ? 0 : 3;
+        return records.stream().allMatch(RunRecord::passed) ? OK : FAILED;
     }
 
     /** The {@code --repeat} value: a whole number of attempts per task and mode, at least 1. */
@@ -186,20 +262,31 @@ public final class Main {
         return repeat;
     }
 
-    /** The comma-separated names of a {@code --tasks} or {@code --modes} value, without surrounding spaces. */
-    static List<String> names(String value) {
-        return Arrays.stream(value.split(",")).map(String::strip).toList();
+    /** The bench config {@code file}, refused when there is no such file. */
+    private static BenchConfig loadConfig(Path file, Path home) throws IOException {
+        if (!Files.isRegularFile(file)) {
+            throw new IOException("config " + file.toAbsolutePath() + (Files.exists(file) ? " is not a file"
+                    : " does not exist") + "; give --config a bench.json");
+        }
+        return BenchConfig.load(file, home);
     }
 
     private static String readIfPresent(Path file) throws IOException {
         return Files.isRegularFile(file) ? Files.readString(file) : "";
     }
 
-    private static int check(Path tasksDir, String taskId, Path workspace, Map<String, String> flags, PrintStream out)
-            throws IOException {
-        TaskDef task = select(TaskLoader.loadAll(tasksDir), taskId).getFirst();
+    private static int check(Path tasksDir, String taskId, Path workspace, Map<String, String> flags, Path home,
+            PrintStream out) throws IOException {
+        TaskDef task = RunSelection.one(tasksDir, TaskLoader.loadAll(tasksDir), taskId);
+        if (!Files.isDirectory(workspace)) {
+            throw new IOException("workspace " + workspace.toAbsolutePath() + (Files.exists(workspace)
+                    ? " is not a folder" : " does not exist") + "; give check an attempt's workspace folder");
+        }
+        // Without --config, checks that need no server run without bench.json; a --config given must be there.
         Path configFile = Path.of(flags.getOrDefault("--config", "bench.json"));
-        BenchConfig config = Files.isRegularFile(configFile) ? BenchConfig.load(configFile) : null;
+        BenchConfig config = flags.containsKey("--config") || Files.isRegularFile(configFile)
+                ? loadConfig(configFile, home)
+                : null;
         return check(task, workspace, config, out);
     }
 
@@ -281,7 +368,7 @@ public final class Main {
                 allPassed &= result.passed();
                 out.printf("%s %s: %s%n", result.passed() ? "PASS" : "FAIL", result.name(), result.detail());
             }
-            return allPassed ? 0 : 3;
+            return allPassed ? OK : FAILED;
         } finally {
             if (running[0] != null) {
                 running[0].close();
@@ -290,28 +377,20 @@ public final class Main {
     }
 
     private static int report(Path runDir, PrintStream out) throws IOException {
-        Path results = runDir.resolve(BenchRunner.RESULTS_FILE);
+        if (!Files.isDirectory(runDir)) {
+            throw new IOException("run folder " + runDir.toAbsolutePath() + (Files.exists(runDir) ? " is not a folder"
+                    : " does not exist") + ": give the run folder that `run` prints after Report:");
+        }
+        Path results = runDir.resolve(ResultsFile.NAME);
         if (!Files.isRegularFile(results)) {
             throw new IOException(runDir.toAbsolutePath() + " has no " + BenchRunner.RESULTS_FILE + ": give the run "
                     + "folder that `run` prints after Report:, such as " + RunIsolation.DEFAULT_RUNS_SHOWN
                     + "/<timestamp>");
         }
-        List<RunRecord> records = ReportWriter.readResults(results);
+        List<RunRecord> records = ResultsFile.read(results);
         Path reportFile = runDir.resolve("report.md");
         Files.writeString(reportFile, ReportWriter.render(records));
         out.println("Report: " + reportFile.toAbsolutePath());
-        return 0;
-    }
-
-    private static List<TaskDef> select(List<TaskDef> all, String ids) {
-        if (ids == null) {
-            return all;
-        }
-        List<TaskDef> picked = new ArrayList<>();
-        for (String id : names(ids)) {
-            picked.add(all.stream().filter(t -> t.id().equals(id)).findFirst()
-                    .orElseThrow(() -> new IllegalArgumentException("no task " + id)));
-        }
-        return picked;
+        return OK;
     }
 }
