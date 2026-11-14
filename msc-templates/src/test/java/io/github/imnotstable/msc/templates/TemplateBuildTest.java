@@ -15,7 +15,8 @@ import org.junit.jupiter.api.Test;
 /**
  * Scaffolds each project template and runs its own {@code gradlew build}, which compiles it
  * against Paper, Fabric, NeoForge, Forge or Minestom and runs its tests. Only runs via
- * {@code ./gradlew :msc-templates:verifyTemplates}.
+ * {@code ./gradlew :msc-templates:verifyTemplates}. The same run lists the project's tasks, and every
+ * {@code ./gradlew <task>} its CLAUDE.md and README.md name must be among them.
  */
 @Tag("template-build")
 class TemplateBuildTest {
@@ -67,8 +68,8 @@ class TemplateBuildTest {
         boolean windows = System.getProperty("os.name").toLowerCase().contains("win");
         List<String> command = windows
                 // Explicit .\\ path: cmd may not search the current directory (NoDefaultCurrentDirectoryInExePath).
-                ? List.of("cmd", "/c", ".\\gradlew.bat", "build", "--no-daemon", "-q")
-                : List.of("./gradlew", "build", "--no-daemon", "-q");
+                ? List.of("cmd", "/c", ".\\gradlew.bat", "build", "tasks", "--all", "--no-daemon", "-q")
+                : List.of("./gradlew", "build", "tasks", "--all", "--no-daemon", "-q");
         Process p = new ProcessBuilder(command).directory(dir.toFile()).redirectErrorStream(true)
                 .redirectOutput(dir.resolve("build-output.txt").toFile()).start();
         boolean finished = p.waitFor(15, TimeUnit.MINUTES);
@@ -77,6 +78,11 @@ class TemplateBuildTest {
         assertThat(finished).as("build finished in time").isTrue();
         assertThat(p.exitValue()).as(output).isZero();
         assertThat(r.root().resolve("build/libs/verify-me-0.1.0-SNAPSHOT.jar")).exists();
+        // Every task the docs say to run is one this build really has (#371); TemplateDocsTest reads the build file.
+        List<String> tasks = output.lines().map(l -> l.split(" ", 2)[0]).toList();
+        for (TemplateDocs.Command c : TemplateDocs.commands(r.root())) {
+            assertThat(tasks).as(c.doc() + ": " + c.line()).contains(c.task());
+        }
     }
 
     private static void deleteRecursively(Path dir) throws IOException {

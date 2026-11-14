@@ -46,7 +46,7 @@ The base every game needs, so you only write the game itself. All of it is set i
 - Commands: subclass `Command`, add syntaxes with `ArgumentType`, register with `MinecraftServer.getCommandManager().register(...)`.
 - Blocks: `Block.STONE`, `Block.OAK_STAIRS.withProperty("facing", "north")`, `instance.setBlock(x, y, z, block)`. Chunks must be loaded first (`instance.loadChunk(cx, cz)`).
 - Text is Adventure `Component`s (`Component.text("Hi", NamedTextColor.GREEN)`). Never use `§` codes.
-- Instances tick on their own threads. Do not block in event listeners or commands; use `MinecraftServer.getSchedulerManager()` or a virtual thread for slow work (`Progress` is flushed on a virtual thread).
+- Instances tick on their own threads. Do not block in event listeners or commands; use `MinecraftServer.getSchedulerManager()` or a virtual thread for slow work (`Progress` is flushed on a virtual thread). Console commands (`Console`, msc's `server_command`) run on their own thread, not the tick thread: state they share with listeners goes in concurrent collections, as in `Game` and `Progress`.
 
 ## Tests
 
