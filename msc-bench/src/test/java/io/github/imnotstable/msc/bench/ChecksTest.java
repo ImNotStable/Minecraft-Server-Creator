@@ -42,7 +42,7 @@ class ChecksTest {
     }
 
     private CheckResult run(String json, FakeRconServer server) {
-        return run(Checks.parse(JsonParser.parseString(json).getAsJsonObject(), taskDir), server);
+        return run(Checks.parse(UserJson.of(JsonParser.parseString(json).getAsJsonObject(), "check."), taskDir), server);
     }
 
     private CheckResult run(Check check, FakeRconServer server) {
