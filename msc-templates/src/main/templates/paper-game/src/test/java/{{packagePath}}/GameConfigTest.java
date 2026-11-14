@@ -61,6 +61,21 @@ class GameConfigTest {
         assertThat(c.stages().get(0).goal()).isNull();
     }
 
+    /** {@code /game stage} and saved progress: a name wins, then a number as Integer.parseInt reads it. */
+    @Test
+    void findsAStageByNameFirstThenByNumber() throws InvalidConfigurationException {
+        GameConfig c = parse("stages: [{name: start, spawn: [0, 0, 0]}, {name: arena, spawn: [0, 0, 0]},"
+                + " {name: '2', spawn: [0, 0, 0]}]\n");
+        assertThat(c.stageIndex("ARENA")).isEqualTo(1);
+        assertThat(c.stageIndex("2")).as("the stage named 2, not the second stage").isEqualTo(2);
+        assertThat(c.stageIndex("3")).isEqualTo(2);
+        assertThat(c.stageIndex("01")).isZero();
+        assertThat(c.stageIndex("+1")).isZero();
+        assertThat(c.stageIndex("0")).isEqualTo(-1);
+        assertThat(c.stageIndex("4")).isEqualTo(-1);
+        assertThat(c.stageIndex("lava")).isEqualTo(-1);
+    }
+
     @Test
     void theShippedConfigLoadsAndMissingKeysTakeDefaults() throws IOException, InvalidConfigurationException {
         GameConfig shipped = parse(Files.readString(Path.of("src/main/resources/config.yml")));

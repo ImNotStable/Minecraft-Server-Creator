@@ -178,8 +178,9 @@ class {{mainClass}}Test {
 
         assertThat(console("game stage arena Steve")).containsExactly("Steve is on stage 2 arena");
         assertThat(steve.getLocation().getBlockZ()).isEqualTo(40);
-        assertThat(console("game status")).hasSize(2).last().asString()
-                .startsWith("Steve: stage 2/2 arena, at 0 -60 40, adventure");
+        // Only the lines it checks: status lines you add for your own state do not break it.
+        assertThat(console("game status")).anySatisfy(line -> assertThat(line)
+                .startsWith("Steve: stage 2/2 arena, at 0 -60 40, adventure"));
         assertThat(console("game reset Steve")).containsExactly("Steve was reset to stage 1");
         assertThat(plugin.game().stage(steve).name()).isEqualTo("start");
     }

@@ -24,10 +24,10 @@ import org.jspecify.annotations.Nullable;
 /**
  * Everything in config.yml, checked once on start. A missing key takes its default; a value of the wrong type, a bad
  * value or an unknown key fails with a message naming the key path and the value it got. Every value is read through
- * the typed readers below ({@link Need}), never with the section's typed getters or a type check of its own (the
- * ConfigNumbersTest guard fails then). To add a setting, add
- * its key to {@link #KEYS} (or {@link #STAGE_KEYS}), a record component (or a {@link Stage} one) read here, its default
- * in config.yml and in GameConfigTest's defaults test, and a bad-value case in GameConfigTest.
+ * the typed readers below ({@link Need}), so a decimal, a too-big number, NaN or a quoted number fails with the same
+ * kind of message. To add a setting, add its key to {@link #KEYS} (or {@link #STAGE_KEYS}), a record component (or a
+ * {@link Stage} one) read here, its default in config.yml and in GameConfigTest's defaults test, and a bad-value case
+ * in GameConfigTest.
  */
 public record GameConfig(String world, GameMode gameMode, Difficulty difficulty, int time, boolean naturalSpawns,
                          boolean keepInventory, Kit kit, List<Stage> stages) {
@@ -260,8 +260,9 @@ public record GameConfig(String world, GameMode gameMode, Difficulty difficulty,
 
     // ---- End of typed readers. ----
 
-    private static String plainNumber(double d) {
-        return d == Math.rint(d) ? Long.toString((long) d) : Double.toString(d);
+    /** The number as the messages show it: {@code 5}, {@code 0.5}, {@code 0.0001}. */
+    static String plainNumber(double d) {
+        return BigDecimal.valueOf(d).stripTrailingZeros().toPlainString();
     }
 
     /** The text as YAML reads it without quotes ({@code "6000"} is 6000, {@code "09"} stays text), or the text itself. */
@@ -329,13 +330,18 @@ public record GameConfig(String world, GameMode gameMode, Difficulty difficulty,
         }
     }
 
-    /** Index of the stage with this name or 1-based number, or -1. */
+    /** Index of the stage with this name or else this 1-based number, or -1. A name wins over a number. */
     int stageIndex(String nameOrNumber) {
         for (int i = 0; i < stages.size(); i++) {
-            if (stages.get(i).name().equalsIgnoreCase(nameOrNumber) || String.valueOf(i + 1).equals(nameOrNumber)) {
+            if (stages.get(i).name().equalsIgnoreCase(nameOrNumber)) {
                 return i;
             }
         }
-        return -1;
+        try {
+            int n = Integer.parseInt(nameOrNumber);
+            return n >= 1 && n <= stages.size() ? n - 1 : -1;
+        } catch (NumberFormatException e) {
+            return -1;
+        }
     }
 }
