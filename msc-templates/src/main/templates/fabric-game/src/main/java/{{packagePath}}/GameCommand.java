@@ -157,8 +157,8 @@ public final class GameCommand {
     }
 
     /**
-     * The words of a command line, split on runs of whitespace, so {@code stage  arena} is two words: the same in every
-     * game template. With {@code typing} (tab completion), a trailing space starts an empty last word, the one being
+     * The words of a command line, split on runs of whitespace, so {@code stage  arena} is two words.
+     * With {@code typing} (tab completion), a trailing space starts an empty last word, the one being
      * typed, and there is always a last word.
      */
     static String[] words(String line, boolean typing) {

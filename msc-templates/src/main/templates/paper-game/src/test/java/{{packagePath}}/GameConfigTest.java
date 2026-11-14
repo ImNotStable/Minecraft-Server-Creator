@@ -44,7 +44,7 @@ class GameConfigTest {
         GameConfig c = parse("""
                 game-mode: survival
                 difficulty: hard
-                time: 18000
+                time: 1000
                 kit: [stone_sword, 'minecraft:arrow:16']
                 stages:
                   - {name: start, spawn: [0, -60, 0]}
@@ -52,7 +52,7 @@ class GameConfigTest {
                 """);
         assertThat(c.gameMode()).isEqualTo(GameMode.SURVIVAL);
         assertThat(c.difficulty()).isEqualTo(Difficulty.HARD);
-        assertThat(c.time()).isEqualTo(18000);
+        assertThat(c.time()).isEqualTo(1000);
         assertThat(c.kit().items()).containsExactly(
                 new Kit.Entry(Material.STONE_SWORD, 1), new Kit.Entry(Material.ARROW, 16));
         assertThat(c.stageIndex("BOSS")).isEqualTo(1);
@@ -102,6 +102,8 @@ class GameConfigTest {
     }
 
     private static final String NAME = "one word of visible characters (no spaces, no §)";
+    private static final String TIME = "time: needs a whole number from 0 to " + GameConfig.MAX_TIME;
+    private static final String AMOUNT = "kit[0] amount: needs a whole number from 1 to " + Kit.MAX_AMOUNT;
 
     private static final List<Bad> BAD = List.of(
             Bad.top("world", "5", "world: needs text, got the whole number 5"),
@@ -109,12 +111,12 @@ class GameConfigTest {
             Bad.top("game-mode", "hover", "game-mode: unknown value hover"),
             Bad.top("game-mode", "[adventure]", "game-mode: needs text, got the list [adventure]"),
             Bad.top("difficulty", "brutal", "difficulty: unknown value brutal"),
-            Bad.top("time", "night", "time: needs a whole number from 0 to 23999, got the text 'night'"),
-            Bad.top("time", "6000.5", "time: needs a whole number from 0 to 23999, got the decimal 6000.5"),
-            Bad.top("time", "'6000'", "time: needs a whole number from 0 to 23999, got the text '6000'; remove the quotes"),
-            Bad.top("time", "'010'", "time: needs a whole number from 0 to 23999, got the text '010'"),
-            Bad.top("time", "09", "time: needs a whole number from 0 to 23999, got the text '09'"),
-            Bad.top("time", "99999999999999999999", "time: needs a whole number from 0 to 23999,"
+            Bad.top("time", "night", TIME + ", got the text 'night'"),
+            Bad.top("time", "6000.5", TIME + ", got the decimal 6000.5"),
+            Bad.top("time", "'6000'", TIME + ", got the text '6000'; remove the quotes"),
+            Bad.top("time", "'010'", TIME + ", got the text '010'"),
+            Bad.top("time", "09", TIME + ", got the text '09'"),
+            Bad.top("time", "99999999999999999999", TIME + ","
                     + " got the whole number 99999999999999999999, which is too big"),
             Bad.top("natural-spawns", "nope", "natural-spawns: needs true or false, got the text 'nope'"),
             Bad.top("natural-spawns", "'false'",
@@ -128,8 +130,8 @@ class GameConfigTest {
             Bad.top("kit", "[laser]", "kit[0]: unknown item laser"),
             Bad.top("kit", "[bread, {bread: 8}]", "kit[1]: needs item or item:amount, got the map {bread=8}"),
             Bad.top("kit", "[5]", "kit[0]: needs item or item:amount, got the whole number 5"),
-            Bad.top("kit", "['bread:0']", "kit[0] amount: needs a whole number from 1 to 2304, got the whole number 0"),
-            Bad.top("kit", "['bread:8.5']", "kit[0] amount: needs a whole number from 1 to 2304, got the decimal 8.5"),
+            Bad.top("kit", "['bread:0']", AMOUNT + ", got the whole number 0"),
+            Bad.top("kit", "['bread:8.5']", AMOUNT + ", got the decimal 8.5"),
             new Bad("stages", "stages: []", "stages: add at least one stage"),
             new Bad("stages", "stages: start", "stages: needs a list, got the text 'start'"),
             new Bad("stages", "stages: [start]", "stages[0]: needs {name: ..., spawn: [x, y, z]}, got the text 'start'"),
@@ -138,7 +140,7 @@ class GameConfigTest {
                     "stages[0].name: needs a stage name, " + NAME + ", got the whole number 5"),
             Bad.stage("name", "{name: '', spawn: [0, 0, 0]}",
                     "stages[0].name: needs a stage name, " + NAME + ", got empty text"),
-            // /game stage splits on spaces, so it could never select this stage by name (#451).
+            // /game stage splits on spaces, so it could never select this stage by name.
             Bad.stage("name", "{name: boss room, spawn: [0, 0, 0]}",
                     "stages[0].name: needs a stage name, " + NAME + ", got the text 'boss room'"),
             Bad.stage("name", "{name: a, spawn: [0, 0, 0]}, {name: A, spawn: [0, 0, 0]}",

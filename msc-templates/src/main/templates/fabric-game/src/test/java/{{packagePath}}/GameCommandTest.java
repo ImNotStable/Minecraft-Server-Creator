@@ -102,7 +102,7 @@ class GameCommandTest {
                 "no stage lava. Stages: [start, arena]", "name a player: next <player>");
     }
 
-    /** Words are split on runs of spaces, and tab completion offers stage names after them (as every game template). */
+    /** Words are split on runs of spaces, and tab completion offers stage names after them. */
     @Test
     void extraSpacesBetweenWordsAreIgnored() throws CommandSyntaxException {
         Recorder console = new Recorder();

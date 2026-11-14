@@ -30,17 +30,18 @@ The base every game needs, so you only write the game itself. All of it is set i
 - `src/test/java/`: plain unit tests (`BoxTest`, `GameConfigTest`, `ProgressTest`, `SharedRulesTest`) and test-environment tests (`GameTest`, `GameThreadsTest`, `{{name}}ServerTest`). Tests play `TestGames`, a fixed two-stage game, not `GameConfig.game()`, so editing your stages, kit or admins does not break them; `GameConfigTest.theGameIsValid` checks that your `game()` passes its checks.
 - `gradle/libs.versions.toml`: every dependency version. `libs/msc-agent-minestom.jar`: Minecraft Server Creator's agent; keep it, do not edit it.
 
-## Rules every game template shares
+## Rules for names and values
 
-paper-game, fabric-game and minestom-game check names and values the same way, and `SharedRulesTest` holds the same table of cases in each (the same inputs, the same outcome). Change a rule in all three or in none.
+The game checks names and values on start. `SharedRulesTest` lists each rule as a table of inputs and whether the game takes them.
 
 - Stage names: one word of visible characters, so `/game stage <name>` can select it and chat can type it. No whitespace (not even a no-break space), no control or invisible formatting character, no `§`. A whole number is allowed: `/game stage 2` picks the stage named `2` first, then the second stage. Two names may not differ only in case (`arena` and `ARENA`), because `/game stage` ignores case (`Stage.sameName`).
-- `/game` arguments are split on runs of whitespace, so `game  stage  arena  Steve` works; tab completion (paper-game, fabric-game) completes the word being typed. Player names are matched exactly, ignoring case. Subcommands ignore case.
+- `/game` arguments are split on runs of whitespace, so `game  stage  arena  Steve` works. Player names are matched exactly, ignoring case. Subcommands ignore case.
 - Values: `time` 0 to 23999; a kit amount 1 to 2304 (a full inventory); spawns finite, x and z within 30000000, y -2032 to 2031, yaw within 360, pitch within 90; goal corners whole numbers inside the same limits, in any order.
 - A bad value stops the game on start with one message naming it and the rule it broke; there is no fallback.
+- To change a rule for this game, change its check and its rows in `SharedRulesTest` together; the messages the test expects come from the same constants. The checks: `GameConfig.MAX_TIME`, `Kit.MAX_AMOUNT`, `Stage.isName`, the limits in `Box`. For example, a game that only allows daytime: set `MAX_TIME = 12000` in `GameConfig`, and in `SharedRulesTest.TIMES` replace `ok(23999L), no(24000L)` with `ok(12000L), no(12001L)`.
 
-Where this template differs, and why: the game is set in Java (`GameConfig.game()`), so the compiler checks names and types, and there are no config keys; a message names the rule and the value (`stage name must be one word of visible characters (no spaces, no §), got 'boss room'`). paper-game reads `config.yml` and names the key path instead.
-Minestom's `Pos` wraps yaw into range and clamps pitch to 90 itself, so a spawn's view direction is never refused here (paper-game and fabric-game refuse yaw past 360 and pitch past 90). Minestom's `/game` has no tab completion: its argument is a plain string array. `admins` is Minestom's own (Paper and Fabric use permissions).
+The game is set in Java (`GameConfig.game()`), so the compiler checks names and types, and there are no config keys; a message names the rule and the value (`stage name must be one word of visible characters (no spaces, no §), got 'boss room'`).
+Minestom's `Pos` wraps yaw into range and clamps pitch to 90 itself, so a spawn's view direction is never refused. `/game` has no tab completion: its argument is a plain string array. Players named in `admins` may use `/game`; the console always can.
 
 ## Building the game
 
@@ -59,7 +60,7 @@ Minestom's `Pos` wraps yaw into range and clamps pitch to 90 itself, so a spawn'
 - Blocks: `Block.STONE`, `Block.OAK_STAIRS.withProperty("facing", "north")`, `instance.setBlock(x, y, z, block)`. Chunks must be loaded first (`instance.loadChunk(cx, cz)`).
 - Text is Adventure `Component`s (`Component.text("Hi", NamedTextColor.GREEN)`). Never use `§` codes.
 - Threads: game state is touched only on the tick thread. Event listeners and player commands run there, and so do console commands: `Console` and msc's `server_command` hand each command to the scheduler, which runs it at the start of the next tick. So `Game` uses plain collections, and a step like "read the stage, then advance" never interleaves with a `/game` command. A concurrent collection would not give that: it protects one call, not the steps between calls.
-- Code on any other thread (a virtual thread, a `CompletableFuture` callback, an `Async...` event) hops back before it touches game state: `MinecraftServer.getSchedulerManager().execute(() -> ...)` or `world.scheduleNextTick(w -> ...)`. `Game.confineTo` makes a change from another thread throw; `main` turns it on for the tick threads and `GameTest` for the test thread. `Progress` is the one exception: it is written to disk on a virtual thread, so it is thread-safe.
+- Code on any other thread (a virtual thread, a `CompletableFuture` callback, an async event such as `AsyncPlayerConfigurationEvent`) hops back before it touches game state: `MinecraftServer.getSchedulerManager().execute(() -> ...)` or `world.scheduleNextTick(w -> ...)`. `Game.confineTo` makes a change from another thread throw; `main` turns it on for the tick threads and `GameTest` for the test thread. `Progress` is the one exception: it is written to disk on a virtual thread, so it is thread-safe.
 - Do not block the tick thread (no files, network or sleeps in listeners or commands): do slow work on a virtual thread, then hop back with its result.
 
 ## Tests

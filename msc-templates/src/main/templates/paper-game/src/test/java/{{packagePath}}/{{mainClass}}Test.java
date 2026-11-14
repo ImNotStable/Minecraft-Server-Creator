@@ -185,7 +185,7 @@ class {{mainClass}}Test {
         assertThat(plugin.game().stage(steve).name()).isEqualTo("start");
     }
 
-    /** Words are split on runs of spaces, and tab completion offers stage names after them (as every game template). */
+    /** Words are split on runs of spaces, and tab completion offers stage names after them. */
     @Test
     void extraSpacesBetweenWordsAreIgnored() {
         server.addPlayer("Steve");

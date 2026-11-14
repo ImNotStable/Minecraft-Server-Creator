@@ -37,8 +37,10 @@ public record GameConfig(String world, GameMode gameMode, Difficulty difficulty,
     /** The keys a stage may hold. */
     static final List<String> STAGE_KEYS = List.of("name", "spawn", "goal");
 
+    /** The last tick of a day: {@code time} is 0 to this. */
+    static final int MAX_TIME = 23999;
     /** Time of day: 0 sunrise, 6000 noon, 13000 night, 18000 midnight. */
-    static final Need<Integer> TIME = wholeNumber(0, 23999);
+    static final Need<Integer> TIME = wholeNumber(0, MAX_TIME);
     /** A kit amount: at most a full inventory (36 stacks of 64). */
     static final Need<Integer> AMOUNT = wholeNumber(1, Kit.MAX_AMOUNT);
     /** A block coordinate (a goal corner). */
@@ -237,7 +239,7 @@ public record GameConfig(String world, GameMode gameMode, Difficulty difficulty,
     static final Need<Integer> WHOLE_NUMBER = wholeNumber(Integer.MIN_VALUE, Integer.MAX_VALUE);
     /** Any finite number, whole or decimal. */
     static final Need<Double> NUMBER = number(Double.NEGATIVE_INFINITY, Double.POSITIVE_INFINITY);
-    /** A stage name: the rule every game template shares ({@link Stage#isName}). */
+    /** A stage name ({@link Stage#isName}). */
     static final Need<String> STAGE_NAME = new Need<>("a stage name, " + Stage.NAME_RULE,
             v -> v instanceof String s && Stage.isName(s) ? s : null);
     static final Need<List<?>> LIST = list("a list");
