@@ -2,7 +2,7 @@
 
 Status: accepted, 2026-11-11. Decided by Claude under Jeremiah's hand-over of build decisions.
 
-This ADR is kept as history: the shared agent code moved to msc-agent-common ([ADR 0024](0024-agent-common.md)), msc-core runs Minestom projects ([ADR 0011](0011-core-platforms.md)), and the test count below is from 2026-11-11.
+This ADR is kept as history: the shared agent code moved to msc-agent-common ([ADR 0024](0024-agent-common.md)), msc-core runs Minestom projects ([ADR 0011](0011-core-platforms.md)), the test count below is from 2026-11-11, and `world.fill` and `world.setBlocks` were removed ([ADR 0019](0019-smaller-tool-surface.md)), so decision 3's nine ops are eight now (#383).
 
 ## Context
 
