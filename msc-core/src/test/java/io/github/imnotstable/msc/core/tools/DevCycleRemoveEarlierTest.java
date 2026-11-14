@@ -4,8 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
-import io.github.imnotstable.msc.core.files.AtomicFile;
 import io.github.imnotstable.msc.core.tool.ToolException;
+import io.github.imnotstable.msc.process.AtomicFile;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
