@@ -7,6 +7,8 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Random;
+import java.util.regex.Pattern;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DynamicTest;
 import org.junit.jupiter.api.Test;
@@ -129,5 +131,48 @@ class LogReaderTest {
         LogReader.pump(new ChunkedInput((line + "\n").getBytes(StandardCharsets.UTF_8), chunk), new LogBuffer(10, Long.MAX_VALUE),
                 () -> calls[0]++);
         return calls[0];
+    }
+
+    /** The regex the throwable header scan replaced; it recursed once per segment and overflowed the stack. */
+    private static final Pattern OLD_THROWABLE =
+            Pattern.compile("^[\\w$]+(?:\\.[\\w$]+)*\\.[\\w$]*(?:Exception|Error|Throwable)(?:: .*)?$");
+
+    @Test
+    void theThrowableScanMatchesExactlyWhatTheRegexDid() {
+        List<String> table = List.of("java.lang.Exception: msg", "java.lang.IllegalStateException", "a.Error",
+                "a.Throwable: ", "Exception", "a..BException", ".a.BException", "a.BException:", "a.BException: x\ny",
+                "a.BException\n", "a.BException: x\r\n", "a.BException\n\n", "a.BExceptions", "a.$_9Error: (x)",
+                "a.BException : x", "a.b.", "", "a.é.BException", "a.BError\u2028");
+        String[] tokens = {"a", "B", "$", "_", "7", ".", ".", ":", " ", ": ", "Exception", "Error", "Throwable", "\n",
+            "\r", "\u0085", "é", "x"};
+        Random random = new Random(376);
+        List<String> mismatches = new ArrayList<>();
+        for (int n = 0; n < 200_000; n++) {
+            String line;
+            if (n < table.size()) {
+                line = table.get(n);
+            } else {
+                StringBuilder b = new StringBuilder();
+                for (int t = random.nextInt(9); t > 0; t--) {
+                    b.append(tokens[random.nextInt(tokens.length)]);
+                }
+                line = b.toString();
+            }
+            if (LogReader.throwable(line) != OLD_THROWABLE.matcher(line).matches()) {
+                mismatches.add(line);
+            }
+        }
+        assertThat(mismatches).isEmpty();
+    }
+
+    @Test
+    void aLineOfAHundredThousandDottedSegmentsIsReadInLinearTime() {
+        String dots = "a.".repeat(100_000);
+        assertThat(LogReader.throwable(dots + "BException: boom")).isTrue();
+        assertThat(LogReader.throwable(dots + "b")).isFalse();
+        List<String> log = List.of("[12:00:00 ERROR]: failed", dots + "BException: boom", dots + "b",
+                "[12:00:01 INFO]: " + dots + "BException");
+        assertThat(LogReader.entries(log)).hasSize(2);
+        assertThat(LogCondenser.analyze(log, 6000).errors()).isEqualTo(1);
     }
 }
