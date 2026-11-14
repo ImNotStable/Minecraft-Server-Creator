@@ -18,7 +18,7 @@ class TestMachineTest {
 
     @Test
     void theHomeIsAFakeThatIsAProjectInEveryWayClaudeCodeKnows() throws IOException {
-        Path repo = RepoFiles.path("repoClaudeMd", "CLAUDE.md").getParent().toRealPath();
+        Path repo = RepoFiles.dir("repoClaudeMd", "").toRealPath();
 
         assertThat(HOME.toRealPath()).startsWith(repo.resolve("msc-bench/build"));
         assertThat(HOME.resolve(".claude/CLAUDE.md")).isRegularFile();
