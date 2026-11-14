@@ -20,6 +20,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
@@ -174,6 +175,43 @@ class ServerManagerTest {
             ServerManager.clearPorts(config(List.of("unused"), orphan.port()), Duration.ofSeconds(10));
 
             assertThat(orphan.commands()).containsExactly("stop");
+        }
+    }
+
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', value = {"pa\\ss|login refused", "LONG|1446"})
+    @Timeout(180)
+    void aRefusedLoginFailsTheStartAtOnce(String password, String reason) throws IOException {
+        // #393: a refused login counted as "not up yet", so the start waited its whole timeout (here 600 s) and
+        // blamed the server for not opening RCON.
+        String configured = password.equals("LONG") ? "p".repeat(1447) : password;
+        Files.writeString(serverDir.resolve("paper.jar"), "stands in for paper");
+        Files.writeString(serverDir.resolve("eula.txt"), "eula=true");
+        int port;
+        try (ServerSocket free = new ServerSocket(0, 1, InetAddress.getLoopbackAddress())) {
+            port = free.getLocalPort();
+        }
+        List<String> command = List.of(JAVA, "-Dmarker=" + serverDir, "-cp", System.getProperty("java.class.path"),
+                FakeRconMain.class.getName(), Integer.toString(port), "pass");
+        BenchConfig.Server config = new BenchConfig.Server(command, null, List.of(), null, true, gamePort.port(), port,
+                configured, 600);
+        try (ServerManager server = new ServerManager(serverDir, config, Map.of())) {
+            assertThat(catchThrowable(server::rcon)).isInstanceOf(IOException.class)
+                    .hasMessageContaining(reason).hasMessageNotContaining("did not open RCON");
+            assertThat(liveServers()).as("the refused server is stopped").isZero();
+            assertThat(catchThrowable(server::rcon)).hasMessageContaining(reason);
+        }
+    }
+
+    @Test
+    @Timeout(120)
+    void clearPortsReportsAServerThatRefusesTheLogin() throws IOException {
+        try (FakeRconServer other = new FakeRconServer("not the bench's", command -> "")) {
+            Throwable refused = catchThrowable(() -> ServerManager.clearPorts(config(List.of("unused"), other.port()),
+                    Duration.ofSeconds(600)));
+            assertThat(refused).isInstanceOf(IOException.class).hasMessageContaining("login refused")
+                    .hasMessageContaining("port " + other.port());
+            assertThat(other.commands()).isEmpty();
         }
     }
 

@@ -83,8 +83,8 @@ public final class RconClient implements AutoCloseable {
     }
 
     /**
-     * Connects and logs in. Throws if the server is unreachable or the password is wrong or too long, and when
-     * {@code timeout} is not positive. Connecting and every read wait at most {@code timeout}.
+     * Connects and logs in. Throws if the server is unreachable, {@link RconRefusedException} if the password is
+     * wrong or too long, and {@link IllegalArgumentException} when {@code timeout} is not positive. Connecting and every read wait at most {@code timeout}.
      */
     public static RconClient connect(String host, int port, String password, Duration timeout) throws IOException {
         return connect(host, port, password, timeout, END_WAIT);
@@ -97,7 +97,11 @@ public final class RconClient implements AutoCloseable {
     public static RconClient connect(String host, int port, String password, Duration timeout, Duration endWait)
             throws IOException {
         RconClient client = new RconClient(new InetSocketAddress(host, port), password, timeout, endWait);
-        checkFits("password", password);
+        try {
+            checkFits("password", password);
+        } catch (IOException e) {
+            throw new RconRefusedException(e.getMessage());
+        }
         client.open();
         return client;
     }
@@ -124,7 +128,7 @@ public final class RconClient implements AutoCloseable {
             Packet packet = read();
             if (packet.type() == TYPE_COMMAND) {
                 if (packet.id() == -1 || packet.id() != id) {
-                    throw new IOException("RCON login refused (wrong password?)");
+                    throw new RconRefusedException("RCON login refused (wrong password?)");
                 }
                 return;
             }

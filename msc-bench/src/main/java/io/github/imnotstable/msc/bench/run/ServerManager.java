@@ -1,6 +1,7 @@
 package io.github.imnotstable.msc.bench.run;
 
 import io.github.imnotstable.msc.process.rcon.RconClient;
+import io.github.imnotstable.msc.process.rcon.RconRefusedException;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
@@ -141,13 +142,22 @@ public final class ServerManager implements AutoCloseable {
         process = null;
     }
 
-    private RconClient tryConnect(Duration commandTimeout) {
+    private RconClient tryConnect(Duration commandTimeout) throws RconRefusedException {
         return tryConnect(config, commandTimeout);
     }
 
-    private static RconClient tryConnect(BenchConfig.Server config, Duration commandTimeout) {
+    /**
+     * The logged-in connection, or null when nothing answers yet (connection refused, a timeout). A server that
+     * answers but refuses the login, or a password too long to send, throws at once: waiting would not change it
+     * (#393).
+     */
+    private static RconClient tryConnect(BenchConfig.Server config, Duration commandTimeout)
+            throws RconRefusedException {
         try {
             return RconClient.connect("127.0.0.1", config.rconPort(), config.rconPassword(), commandTimeout);
+        } catch (RconRefusedException e) {
+            throw new RconRefusedException("the server on RCON port " + config.rconPort() + " answered, but "
+                    + e.getMessage() + "; check server.rconPassword in bench.json");
         } catch (IOException e) {
             return null;
         }
@@ -182,12 +192,19 @@ public final class ServerManager implements AutoCloseable {
         return atLeast.compareTo(LOGIN_TIMEOUT) < 0 ? atLeast : LOGIN_TIMEOUT;
     }
 
-    /** Sends {@code stop} to whatever server answers on the RCON port, without waiting for it to go. */
+    /**
+     * Sends {@code stop} to whatever server answers on the RCON port, without waiting for it to go. A server that
+     * refuses the login is left alone.
+     */
     public static void sendStop(BenchConfig.Server config) {
-        sendStop(config, LOGIN_TIMEOUT);
+        try {
+            sendStop(config, LOGIN_TIMEOUT);
+        } catch (RconRefusedException e) {
+            // Not ours to stop: clearPorts reports it before the next attempt.
+        }
     }
 
-    private static void sendStop(BenchConfig.Server config, Duration loginTimeout) {
+    private static void sendStop(BenchConfig.Server config, Duration loginTimeout) throws RconRefusedException {
         RconClient client = tryConnect(config, loginTimeout);
         if (client == null) {
             return;
@@ -208,7 +225,11 @@ public final class ServerManager implements AutoCloseable {
         if (rcon == null && process != null && process.isAlive()) {
             // Disconnected after the setup and never reached again (the agent did not start, a usage limit): the
             // server still needs its stop, or it is only killed after the wait below.
-            rcon = tryConnect(LOGIN_TIMEOUT);
+            try {
+                rcon = tryConnect(LOGIN_TIMEOUT);
+            } catch (RconRefusedException e) {
+                rcon = null; // killed after the wait below
+            }
         }
         boolean stopSent = rcon != null;
         if (rcon != null) {
