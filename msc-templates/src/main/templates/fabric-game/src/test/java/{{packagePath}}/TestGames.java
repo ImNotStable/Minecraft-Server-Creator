@@ -5,10 +5,13 @@ import net.minecraft.world.Difficulty;
 import net.minecraft.world.level.GameType;
 
 /**
- * The game the tests play. It is fixed here, not taken from {@link GameConfig#game()}, so editing your game's stages,
- * kit or rules does not break the tests. When you add a field to {@link GameConfig}, give it a value here too.
+ * The game the tests play. It is fixed here, not taken from {@link GameConfig#game()}, so editing {@code game()} does
+ * not break the tests. When you add a field to {@link GameConfig}, give it a value here too.
  */
 final class TestGames {
+    /** The time of day the tests play at, kept inside {@link GameConfig#MAX_TIME} when you lower it. */
+    static final long TIME = Math.min(6000, GameConfig.MAX_TIME);
+
     private TestGames() {
     }
 
@@ -20,7 +23,7 @@ final class TestGames {
     }
 
     static GameConfig withStages(List<Stage> stages) {
-        return with(6000, stages);
+        return with(TIME, stages);
     }
 
     /** These stages, at this time of day. */

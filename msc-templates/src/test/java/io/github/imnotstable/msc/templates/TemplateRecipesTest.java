@@ -26,7 +26,8 @@ import org.junit.jupiter.params.provider.ValueSource;
  * open on one side, an unranged decimal (#450), a {@code /game} subcommand that parses its own number and a score in
  * {@code Progress} (#431, #432). Each game template's "To change a rule" examples, one per rule its doc calls
  * changeable, are applied together in a build of their own (#481, #491): they touch different constants and rows, so
- * one build per template proves them all. Only runs via
+ * one build per template proves them all; a harsher set at awkward values, with the shipped values the doc names
+ * moved inside them, gets one more build per template (#498). Only runs via
  * {@code ./gradlew :msc-templates:verifyTemplates}. When a template's text changes, an edit below that no longer
  * matches fails with the file and the text it looked for.
  */
@@ -225,7 +226,7 @@ class TemplateRecipesTest {
     /**
      * A game template's "To change a rule for this game" examples as its CLAUDE.md words them, each a check and its rows
      * in SharedRulesTest: a daytime-only game (and in paper-game the range in config.yml's comment), a kit of at most one
-     * stack, an arena within 100 blocks of 0 0 0 and y -64 to 64, and ASCII-only stage names. None for other templates.
+     * stack, a game within 1000 blocks of 0 0 0 at y -64 to 320, and ASCII-only stage names. None for other templates.
      */
     static List<Edit> ruleChanges(String id) {
         if (!List.of(Templates.PAPER_GAME, Templates.FABRIC_GAME, Templates.MINESTOM_GAME).contains(id)) {
@@ -237,6 +238,47 @@ class TemplateRecipesTest {
                 new Edit(rules, "ok(23999L), no(24000L)", "ok(12000L), no(12001L)"),
                 new Edit(MAIN + "Kit.java", "MAX_AMOUNT = 36 * 64;", "MAX_AMOUNT = 64;"),
                 new Edit(rules, "ok(2304), no(2305)", "no(65)"),
+                new Edit(MAIN + "Box.java", "MAX_XZ = 30_000_000;", "MAX_XZ = 1000;"),
+                new Edit(MAIN + "Box.java", "MIN_Y = -2032;", "MIN_Y = -64;"),
+                new Edit(MAIN + "Box.java", "MAX_Y = 2031;", "MAX_Y = 320;"),
+                new Edit(rules, "{30000000, 2031, -30000000, 360, 90}", "{1000, 320, -1000, 360, 90}"),
+                new Edit(rules, "{-30000000, -2032, 30000000, -360, -90}", "{-1000, -64, 1000, -360, -90}"),
+                new Edit(rules, "{30000000.5, 0, 0, 0, 0}", "{1000.5, 0, 0, 0, 0}"),
+                new Edit(rules, "{0, 0, -30000001, 0, 0}", "{0, 0, -1001, 0, 0}"),
+                new Edit(rules, "{0, 2031.5, 0, 0, 0}", "{0, 320.5, 0, 0, 0}"),
+                new Edit(rules, "{0, -2033, 0, 0, 0}", "{0, -65, 0, 0, 0}"),
+                new Edit(rules, "{30000000, 2031, 30000000, -30000000, -2032, -30000000}", "{1000, 320, 1000, -1000, -64, -1000}"),
+                new Edit(rules, "{30000001, 0, 0, 0, 0, 0}", "{1001, 0, 0, 0, 0, 0}"),
+                new Edit(rules, "{0, 0, 0, 0, 0, -30000001}", "{0, 0, 0, 0, 0, -1001}"),
+                new Edit(rules, "{0, 2032, 0, 0, 0, 0}", "{0, 321, 0, 0, 0, 0}"),
+                new Edit(rules, "{0, 0, 0, 0, -2033, 0}", "{0, 0, 0, 0, -65, 0}"),
+                new Edit(MAIN + "Stage.java", "c != '§');", "c != '§' && c < 0x80);"),
+                new Edit(MAIN + "Stage.java", "NAME_RULE = \"one word of visible characters (no spaces, no §)\";",
+                        "NAME_RULE = \"one word of ASCII letters, digits and symbols (no spaces)\";"),
+                new Edit(rules, "ok(\"été\"), ok(\"竜\")", "no(\"été\"), no(\"竜\")"),
+                new Edit(rules, ", no(List.of(\"I\", \"ı\"))", "")));
+        if (id.equals(Templates.PAPER_GAME)) {
+            edits.add(new Edit("src/main/resources/config.yml", "0 to 23999 (", "0 to 12000 ("));
+        }
+        return edits;
+    }
+
+    /**
+     * Harsher rule changes than the doc's examples, made the way its "To change a rule" bullet says, shipped values
+     * included (#498): a time limit below the shipped 6000, so the shipped time drops to 0 (in paper-game also the
+     * config.yml comment, the default in GameConfig.from and the defaults test); a kit limit of 1, so the shipped
+     * bread drops to 1; the world narrowed to exactly the bound the doc keeps for the tests' stages; and stage names
+     * with no upper case and no digits, every refused row turned and every pair with a refused name dropped.
+     */
+    static List<Edit> harshRuleChanges(String id) {
+        String rules = TEST + "SharedRulesTest.java";
+        List<Edit> edits = new ArrayList<>(List.of(
+                new Edit(MAIN + "GameConfig.java", "MAX_TIME = 23999;", "MAX_TIME = 500;"),
+                new Edit(rules, "List.of(no(-1L), ok(0L), ok(6000L), ok(23999L), no(24000L))",
+                        "List.of(no(-1L), ok(0L), ok(500L), no(501L))"),
+                new Edit(MAIN + "Kit.java", "MAX_AMOUNT = 36 * 64;", "MAX_AMOUNT = 1;"),
+                new Edit(rules, "List.of(no(-1), no(0), ok(1), ok(64), ok(2304), no(2305))",
+                        "List.of(no(-1), no(0), ok(1), no(2))"),
                 new Edit(MAIN + "Box.java", "MAX_XZ = 30_000_000;", "MAX_XZ = 100;"),
                 new Edit(MAIN + "Box.java", "MIN_Y = -2032;", "MIN_Y = -64;"),
                 new Edit(MAIN + "Box.java", "MAX_Y = 2031;", "MAX_Y = 64;"),
@@ -251,13 +293,27 @@ class TemplateRecipesTest {
                 new Edit(rules, "{0, 0, 0, 0, 0, -30000001}", "{0, 0, 0, 0, 0, -101}"),
                 new Edit(rules, "{0, 2032, 0, 0, 0, 0}", "{0, 65, 0, 0, 0, 0}"),
                 new Edit(rules, "{0, 0, 0, 0, -2033, 0}", "{0, 0, 0, 0, -65, 0}"),
-                new Edit(MAIN + "Stage.java", "c != '§');", "c != '§' && c < 0x80);"),
+                new Edit(MAIN + "Stage.java", "c != '§');",
+                        "c != '§' && !Character.isUpperCase(c) && !Character.isDigit(c));"),
                 new Edit(MAIN + "Stage.java", "NAME_RULE = \"one word of visible characters (no spaces, no §)\";",
-                        "NAME_RULE = \"one word of ASCII letters, digits and symbols (no spaces)\";"),
-                new Edit(rules, "ok(\"été\"), ok(\"竜\")", "no(\"été\"), no(\"竜\")"),
-                new Edit(rules, ", no(List.of(\"I\", \"ı\"))", "")));
+                        "NAME_RULE = \"one word of lower-case letters and symbols, no digits (no spaces, no §)\";"),
+                new Edit(rules, "ok(\"Boss_Room\"), ok(\"boss-room\"), ok(\"level.2\"), ok(\"2\"),",
+                        "no(\"Boss_Room\"), ok(\"boss-room\"), no(\"level.2\"), no(\"2\"),"),
+                new Edit(rules, "\n            no(List.of(\"Arena\", \"arena\")), no(List.of(\"I\", \"ı\")));", ""),
+                new Edit(rules, ", ok(List.of(\"arena\", \"arena2\")), no(List.of(\"arena\", \"ARENA\")),", ");")));
         if (id.equals(Templates.PAPER_GAME)) {
-            edits.add(new Edit("src/main/resources/config.yml", "0 to 23999 (", "0 to 12000 ("));
+            edits.addAll(List.of(
+                    new Edit("src/main/resources/config.yml", "0 to 23999 (", "0 to 500 ("),
+                    new Edit("src/main/resources/config.yml", "time: 6000\n", "time: 0\n"),
+                    new Edit(MAIN + "GameConfig.java", "\"time\", 6000),", "\"time\", 0),"),
+                    new Edit(TEST + "GameConfigTest.java", "Difficulty.NORMAL, 6000,", "Difficulty.NORMAL, 0,"),
+                    new Edit("src/main/resources/config.yml", "  - bread:8\n", "  - bread:1\n")));
+        } else {
+            edits.addAll(List.of(
+                    new Edit(MAIN + "GameConfig.java", "                6000,\n", "                0,\n"),
+                    id.equals(Templates.FABRIC_GAME)
+                            ? new Edit(MAIN + "GameConfig.java", "Items.BREAD, 8)", "Items.BREAD, 1)")
+                            : new Edit(MAIN + "GameConfig.java", "Material.BREAD, 8)", "Material.BREAD, 1)")));
         }
         return edits;
     }
@@ -293,6 +349,15 @@ class TemplateRecipesTest {
     void documentedRuleChangesBuildAndPass(String id) throws IOException, InterruptedException {
         ScaffoldResult r = TemplateBuildTest.scaffoldFresh(id, id + "-rules");
         apply(r.root(), ruleChanges(id));
+        daemon.run(r.root(), "test");
+    }
+
+    /** Rule changes at awkward values, shipped values moved inside them as the doc says, leave the tests green (#498). */
+    @ParameterizedTest
+    @ValueSource(strings = {Templates.PAPER_GAME, Templates.FABRIC_GAME, Templates.MINESTOM_GAME})
+    void harshRuleChangesBuildAndPass(String id) throws IOException, InterruptedException {
+        ScaffoldResult r = TemplateBuildTest.scaffoldFresh(id, id + "-harsh-rules");
+        apply(r.root(), harshRuleChanges(id));
         daemon.run(r.root(), "test");
     }
 

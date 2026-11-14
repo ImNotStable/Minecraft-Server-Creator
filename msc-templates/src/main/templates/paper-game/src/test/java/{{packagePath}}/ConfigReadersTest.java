@@ -95,6 +95,15 @@ class ConfigReadersTest {
                 .hasMessage("gravity: needs a number, got infinity (.inf)");
     }
 
+    /** A missing key takes the default only when the reader takes it: a narrowed rule catches a default left outside. */
+    @Test
+    void aDefaultOutsideTheRangeFails() {
+        assertThat(GameConfig.wholeNumber(0, 500).get(null, "time", 500)).isEqualTo(500);
+        assertThat(GameConfig.wholeNumber(0, 500).get(7, "time", 6000)).isEqualTo(7);
+        assertThatThrownBy(() -> GameConfig.wholeNumber(0, 500).get(null, "time", 6000))
+                .hasMessage("time: needs a whole number from 0 to 500, but its default in code is the whole number 6000");
+    }
+
     /** A bound that cannot work fails where it is declared, so the plugin does not start with it. */
     @Test
     void impossibleBoundsAreRefusedWhenDeclared() {

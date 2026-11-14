@@ -59,7 +59,7 @@ class GameTest {
 
         assertThat(player.getGameMode()).isEqualTo(GameMode.ADVENTURE);
         assertThat(player.getInventory().getItemStack(0).material()).isEqualTo(Material.WOODEN_SWORD);
-        assertThat(player.getInventory().getItemStack(1).amount()).isEqualTo(8);
+        assertThat(player.getInventory().getItemStack(1).amount()).isEqualTo(TestGames.BREAD);
         assertThat(game.stage(player).name()).isEqualTo("start");
         assertThat(player.getRespawnPoint()).isEqualTo(new Pos(0.5, -60, 0.5));
     }
@@ -83,7 +83,7 @@ class GameTest {
 
         env.tick();
 
-        assertThat(game.world().getTime()).isEqualTo(6000);
+        assertThat(game.world().getTime()).isEqualTo(TestGames.TIME);
         assertThat(game.world().getWeather()).isEqualTo(Weather.CLEAR);
     }
 

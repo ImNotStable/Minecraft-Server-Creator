@@ -20,7 +20,8 @@ import org.junit.jupiter.api.TestFactory;
  * adapters at the top build a value the way the game does (here every value is set in code, in GameConfig.game()); the tables at the bottom
  * list inputs and whether the game takes them. To change a rule, change its check ({@code GameConfig.MAX_TIME},
  * {@code Kit.MAX_AMOUNT}, {@code Stage.isName} with {@code Stage.NAME_RULE}, {@code Box.MAX_XZ}, {@code Box.MIN_Y},
- * {@code Box.MAX_Y}) and its rows here together: every test takes its limits and messages from those constants.
+ * {@code Box.MAX_Y}) and its rows here together,
+ * and keep the game's shipped values inside the new rule (CLAUDE.md says where they are).
  */
 class SharedRulesTest {
     private static final Pos AT = new Pos(0.5, -60, 0.5);
