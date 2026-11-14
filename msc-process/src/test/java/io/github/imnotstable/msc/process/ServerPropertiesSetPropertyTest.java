@@ -3,22 +3,26 @@ package io.github.imnotstable.msc.process;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.IOException;
+import java.io.StringReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Random;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
  * {@link ServerPropertiesFile#set} on random files built from the hard pieces of the format (#407): whatever the file
  * holds, the server then reads every set key with its set value and every other key with the value it had before.
- * Seeded, so a failure names a file that fails again.
+ * Comments stay too. Seeded, so a failure names a file that fails again.
  */
 class ServerPropertiesSetPropertyTest {
     private static final long SEED = 0x5E7_407L;
@@ -36,6 +40,8 @@ class ServerPropertiesSetPropertyTest {
     private static final List<String> SET_VALUES = List.of("", "creative", "peaceful", "C:\\games\\", "\\",
             " lead", "trail\\", "p\u00e4ss", "\u5bc6\u7801", "a=b:c", "#x", "line\nbreak", "\r", "\\u0041");
     private static final List<String> LINE_ENDS = List.of("\n", "\r\n", "\r");
+    /** A comment's text starts with a numbered mark, so the test can tell whether it is still in the file. */
+    private static final Pattern MARK = Pattern.compile("kept(\\d+)-");
 
     @TempDir
     Path dir;
@@ -54,6 +60,7 @@ class ServerPropertiesSetPropertyTest {
             }
             Files.write(file, bytes);
             Properties before = ServerReads.load(bytes);
+            List<String> comments = comments(ServerPropertiesFile.decode(bytes));
             String which = "file " + i + " (" + (latin1 ? "ISO-8859-1" : "UTF-8") + ") " + show(text) + ", set " + values;
             try {
                 ServerPropertiesFile.set(file, values);
@@ -71,6 +78,9 @@ class ServerPropertiesSetPropertyTest {
             assertThat(actual).as("%s, wrote %s", which, show(new String(written, StandardCharsets.UTF_8)))
                     .isEqualTo(expected);
             assertThat(ServerPropertiesFile.read(file)).as("read() of %s", which).isEqualTo(expected);
+            String writtenText = ServerPropertiesFile.decode(written);
+            assertThat(comments).as("comments of %s, wrote %s", which, show(writtenText))
+                    .allMatch(writtenText::contains);
         }
     }
 
@@ -93,8 +103,10 @@ class ServerPropertiesSetPropertyTest {
         String indent = random.nextInt(4) == 0 ? pick(random, List.of(" ", "\t", "  \f")) : "";
         return switch (random.nextInt(10)) {
             case 0 -> "";
-            case 1 -> indent + (random.nextBoolean() ? "#" : "!") + value(random, latin1);
+            case 1 -> indent + (random.nextBoolean() ? "#" : "!") + mark() + value(random, latin1);
             case 2 -> "\\".repeat(1 + random.nextInt(3));
+            // A line of only a backslash, then a comment: the comment is still one (Properties.load), and stays.
+            case 4 -> "\\" + pick(random, LINE_ENDS) + indent + "#" + mark() + value(random, latin1);
             case 3 -> {
                 // A continuation: the value goes on over indented lines, which may look like comments or keys.
                 StringBuilder sb = new StringBuilder(indent + pick(random, RAW_KEYS) + "=" + value(random, latin1));
@@ -113,6 +125,42 @@ class ServerPropertiesSetPropertyTest {
                         + "\\".repeat(random.nextInt(4) == 0 ? random.nextInt(4) : 0);
             }
         };
+    }
+
+    private static int marks;
+
+    private static String mark() {
+        return "kept" + marks++ + "-";
+    }
+
+    /**
+     * The marks of the comments the server sees in {@code text}: those in no key or value of any line it reads, a
+     * later line of the same key included. A mark inside a continued value is part of it, and {@code set} may
+     * legitimately replace that line.
+     */
+    private static List<String> comments(String text) throws IOException {
+        AllLines lines = new AllLines();
+        lines.load(new StringReader(text));
+        Matcher m = MARK.matcher(text);
+        List<String> out = new ArrayList<>();
+        while (m.find()) {
+            if (!lines.text.toString().contains(m.group())) {
+                out.add(m.group());
+            }
+        }
+        return out;
+    }
+
+    /** Collects the key and value of every line {@link Properties#load} reads. */
+    private static final class AllLines extends Properties {
+        private static final long serialVersionUID = 1L;
+        private final transient StringBuilder text = new StringBuilder();
+
+        @Override
+        public synchronized Object put(Object key, Object value) {
+            text.append(key).append('\u0000').append(value).append('\u0000');
+            return super.put(key, value);
+        }
     }
 
     private static String value(Random random, boolean latin1) {
