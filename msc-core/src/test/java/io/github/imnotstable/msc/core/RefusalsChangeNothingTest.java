@@ -3,13 +3,16 @@ package io.github.imnotstable.msc.core;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.imnotstable.msc.core.fixture.FakeBuildMain;
+import io.github.imnotstable.msc.core.fixture.LockHoldMain;
 import io.github.imnotstable.msc.core.fixture.SleepMain;
 import io.github.imnotstable.msc.core.server.MachineEula;
 import io.github.imnotstable.msc.core.server.MachineEulaAccess;
 import io.github.imnotstable.msc.core.server.PidFile;
+import io.github.imnotstable.msc.core.server.PidFileAccess;
 import io.github.imnotstable.msc.core.tool.ToolRegistry;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -79,11 +82,26 @@ class RefusalsChangeNothingTest {
         return otherSession;
     }
 
+    /** Other cores in the middle of a start: each holds a workspace's {@code .msc/server.lock}. */
+    private static final List<Process> lockHolders = new ArrayList<>();
+
     @AfterAll
     static void endOtherSession() {
         if (otherSession != null) {
             otherSession.destroyForcibly();
         }
+        lockHolders.forEach(Process::destroyForcibly);
+    }
+
+    /** {@code prepare}, then another process holding the lock every change to the server's pid file is made under. */
+    private static Prepare whileAnotherCoreStarts(Prepare prepare) {
+        return ws -> {
+            prepare.into(ws);
+            Process holder = LockHoldMain.hold(ws.resolve(".msc/server.lock"));
+            synchronized (lockHolders) {
+                lockHolders.add(holder);
+            }
+        };
     }
 
     /** {@code prepare}, then a pid file naming {@link #otherSession()}'s server and core. */
@@ -91,7 +109,7 @@ class RefusalsChangeNothingTest {
         return ws -> {
             prepare.into(ws);
             Process other = otherSession();
-            PidFile.write(Files.createDirectories(ws.resolve(".msc")).resolve("server.pid"), other.toHandle(),
+            PidFileAccess.write(Files.createDirectories(ws.resolve(".msc")).resolve("server.pid"), other.toHandle(),
                     PidFile.Identity.of(other.toHandle()));
         };
     }
@@ -110,6 +128,10 @@ class RefusalsChangeNothingTest {
                         "dev_cycle", "project", "demo"),
                 refusal("dev_cycle restart=false under another live session", underOtherSession(project("arena")),
                         OTHER_SESSION, "dev_cycle", "project", "demo", "restart", false),
+                refusal("server_start while another core holds the server lock", whileAnotherCoreStarts(ws -> {
+                    PAPER_JAR.into(ws);
+                    Files.writeString(ws.resolve("run/eula.txt"), "eula=true\n");
+                }), "is starting or stopping the server right now", "server_start"),
                 refusal("server_start without a server", NOTHING, "no paper server in ", "server_start"),
                 refusal("server_start acceptEula=true without a server", NOTHING, "no paper server in ",
                         "server_start", "acceptEula", true),
