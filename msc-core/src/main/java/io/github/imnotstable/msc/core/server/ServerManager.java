@@ -434,20 +434,36 @@ public final class ServerManager implements AutoCloseable {
             tried = LeftoverServer.TRIED;
         }
         // Another core that waited for the same leftover may have recorded its own server meanwhile: only a file
-        // still naming this one is changed.
-        if (h.isAlive()) {
-            record.locked(held -> {
+        // still naming this one is changed. The stop has happened by now, so a lock that cannot be had (another core
+        // holds it too long) only leaves the record as it was, and the answer says what was done (#497).
+        boolean alive = h.isAlive();
+        boolean recorded = updateRecord(held -> {
+            if (alive) {
                 held.markResisting(pid);
-                return null;
-            });
+            } else {
+                held.deleteIfNames(pid);
+            }
+        });
+        if (alive) {
             throw new ToolException(LeftoverServer.stillRunning(pid, tried));
         }
-        record.locked(held -> {
-            held.deleteIfNames(pid);
-            return null;
-        });
         return "stopped a server left running by an earlier session (pid " + pid + ", "
-                + (saved ? "saved over RCON)" : "killed: world changes since its last autosave may be lost)");
+                + (saved ? "saved over RCON)" : "killed: world changes since its last autosave may be lost)")
+                + (recorded ? "" : "; its record in " + pidFile() + " was not cleared, as another session held "
+                + "the file's lock: the next start replaces it");
+    }
+
+    /** Changes the pid file in its critical section; false when the lock could not be had (nothing changed). */
+    private boolean updateRecord(Consumer<ServerPidFile.Held> change) throws InterruptedException {
+        try {
+            record.locked(held -> {
+                change.accept(held);
+                return null;
+            });
+            return true;
+        } catch (ToolException e) {
+            return false;
+        }
     }
 
     /** Asks the leftover server over RCON to stop; false when there is no RCON target or anything goes wrong. */
@@ -501,15 +517,9 @@ public final class ServerManager implements AutoCloseable {
         if (process != p) {
             return;
         }
-        try {
-            // Checked and deleted in the pid file's critical section, so a start in between is never undone.
-            record.locked(held -> {
-                held.deleteIfNames(p.pid());
-                return null;
-            });
-        } catch (ToolException e) {
-            // Another core held the lock too long: a stale file is checked against the process start time anyway.
-        }
+        // Checked and deleted in the pid file's critical section, so a start in between is never undone. When another
+        // core holds the lock too long the file stays: a stale one is checked against the process start time anyway.
+        updateRecord(held -> held.deleteIfNames(p.pid()));
     }
 
     /** The current or last server process, for tests. */

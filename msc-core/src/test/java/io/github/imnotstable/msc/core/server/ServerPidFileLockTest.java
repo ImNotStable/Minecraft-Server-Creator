@@ -197,6 +197,80 @@ class ServerPidFileLockTest {
         assertThat(m.pidFile()).doesNotExist();
     }
 
+    /**
+     * A leftover that resisted before, so stopLeftover kills it once more; {@code kill} runs while no section is
+     * held, so another core can take the lock there and keep it past the record's update.
+     */
+    private ServerManager leftoverStoppedWhileTheLockIsTaken(Process server, boolean kills) throws Exception {
+        ServerManager m = core(freePort());
+        ServerLockAccess.refuseQuickly(m);
+        PidFile.write(m.pidFile(), server.toHandle(), new PidFile.Identity(1_900_000_003L, 1));
+        PidFile.markResisting(m.pidFile());
+        Path lock = workspace.resolve(".msc/server.lock");
+        m.leftovers(new ServerManager.Leftovers(PidFile::peek, h -> {
+            try {
+                processes.add(LockHoldMain.hold(lock));
+            } catch (Exception e) {
+                throw new IllegalStateException(e);
+            }
+            if (kills) {
+                h.destroyForcibly();
+            }
+        }, Duration.ofSeconds(30), Duration.ofSeconds(30), Duration.ofSeconds(30),
+                kills ? Duration.ofSeconds(60) : ServerLockAccess.HELD));
+        return m;
+    }
+
+    @Test
+    void aLeftoverStoppedWhileAnotherCoreTakesTheLockIsReportedStoppedNotUnchanged() throws Exception {
+        Process server = new ProcessBuilder(java(), "-cp", System.getProperty("java.class.path"),
+                SleepMain.class.getName(), "3600").start();
+        processes.add(server);
+        ServerManager m = leftoverStoppedWhileTheLockIsTaken(server, true);
+        String file = Files.readString(m.pidFile());
+
+        assertThat(m.stopLeftover()).contains("stopped a server left running by an earlier session (pid "
+                + server.pid()).contains("was not cleared").doesNotContain("Nothing was changed");
+        assertThat(server.isAlive()).isFalse();
+        assertThat(Files.readString(m.pidFile())).as("left as it was").isEqualTo(file);
+    }
+
+    @Test
+    void aLeftoverThatSurvivesWhileAnotherCoreTakesTheLockIsReportedStillRunning() throws Exception {
+        Process server = new ProcessBuilder(java(), "-cp", System.getProperty("java.class.path"),
+                SleepMain.class.getName(), "3600").start();
+        processes.add(server);
+        ServerManager m = leftoverStoppedWhileTheLockIsTaken(server, false);
+
+        assertThatThrownBy(m::stopLeftover).isInstanceOf(ToolException.class)
+                .hasMessageContaining("(pid " + server.pid() + ") could not be stopped").hasMessageNotContaining(BUSY);
+        assertThat(server.isAlive()).isTrue();
+    }
+
+    @Test
+    void aCheckWaitsForAnotherManagerOfThisJvmWhoseLockFileDoesNotExistYet() throws Exception {
+        Path dataDir = Files.createDirectories(workspace.resolve(".msc"));
+        ServerPidFile first = new ServerPidFile(dataDir);
+        ServerPidFile second = new ServerPidFile(dataDir);
+        second.waitLimit(ServerLockAccess.HELD);
+
+        String outcome = first.locked(held -> {
+            // The first section on a workspace, between its in-process lock and the file's creation.
+            Files.delete(first.lockFile());
+            try {
+                threads.submit(() -> {
+                    second.awaitIdle();
+                    return null;
+                }).get();
+                return "the check went ahead";
+            } catch (ExecutionException e) {
+                return e.getCause().getMessage();
+            }
+        });
+
+        assertThat(outcome).contains(BUSY);
+    }
+
     /** A server that binds its port as a real one does, so a second one dies on it, then waits for "stop". */
     public static final class PortServer {
         public static void main(String[] args) throws Exception {

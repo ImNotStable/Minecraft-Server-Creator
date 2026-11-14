@@ -144,15 +144,12 @@ final class ServerPidFile {
      * when the wait runs out.
      */
     void awaitIdle() throws InterruptedException {
-        if (!Files.exists(lockFile)) {
-            return;
-        }
         long deadline = System.nanoTime() + wait.toNanos();
         ReentrantLock local;
         try {
             local = local();
         } catch (ToolException e) {
-            return; // gone meanwhile
+            return; // no .msc folder: no core is in its section, which creates it first
         }
         if (local.isHeldByCurrentThread()) {
             return;
@@ -162,6 +159,11 @@ final class ServerPidFile {
         }
         FileChannel channel = null;
         try {
+            // Checked only now: a manager of this JVM holding the in-process lock may not have created the file yet
+            // (its first section on this workspace), and was waited for above (#497).
+            if (!Files.exists(lockFile)) {
+                return;
+            }
             channel = FileChannel.open(lockFile, StandardOpenOption.WRITE);
             acquire(channel, deadline); // only waited for: closing the channel releases it
         } catch (NoSuchFileException e) {
