@@ -1,5 +1,6 @@
 package io.github.imnotstable.msc.core.server;
 
+import io.github.imnotstable.msc.core.files.AtomicFile;
 import io.github.imnotstable.msc.core.tool.ToolException;
 import java.io.IOException;
 import java.io.InputStream;
@@ -9,7 +10,6 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
@@ -33,29 +33,43 @@ final class Downloads {
     }
 
     /**
-     * Download {@code uri} to {@code target} through a {@code .part} file, so a failed download leaves nothing behind.
-     * A 404 throws {@code notFound}; a non-null {@code sha256} must match the downloaded bytes.
+     * Download {@code uri} to {@code target} through a {@code .part} file beside it ({@link AtomicFile}), so a failed
+     * download leaves nothing behind and a replaced file keeps its permissions. A 404 throws {@code notFound}; a
+     * non-null {@code sha256} must match the downloaded bytes.
      */
     void fetch(URI uri, Path target, String notFound, String sha256) throws IOException, InterruptedException {
-        Files.createDirectories(target.getParent());
-        Path tmp = target.resolveSibling(target.getFileName() + ".part");
-        HttpResponse<Path> got;
         try {
-            got = http.send(request(uri), HttpResponse.BodyHandlers.ofFile(tmp));
-        } catch (IOException e) {
-            Files.deleteIfExists(tmp);
-            throw new ToolException("cannot reach " + uri + ": " + e.getMessage());
+            AtomicFile.replace(target, tmp -> {
+                HttpResponse<Path> got;
+                try {
+                    got = http.send(request(uri), HttpResponse.BodyHandlers.ofFile(tmp));
+                } catch (InterruptedException e) {
+                    throw new Interrupted(e);
+                } catch (IOException e) {
+                    throw new ToolException("cannot reach " + uri + ": " + e.getMessage());
+                }
+                if (got.statusCode() != 200) {
+                    throw new ToolException(got.statusCode() == 404 ? notFound
+                            : "download of " + uri + " answered " + got.statusCode());
+                }
+                if (sha256 != null && !sha256.equalsIgnoreCase(sha256(tmp))) {
+                    throw new ToolException("checksum mismatch for " + uri);
+                }
+            });
+        } catch (Interrupted e) {
+            throw e.interrupt;
         }
-        if (got.statusCode() != 200) {
-            Files.deleteIfExists(tmp);
-            throw new ToolException(got.statusCode() == 404 ? notFound
-                    : "download of " + uri + " answered " + got.statusCode());
+    }
+
+    /** Carries an interrupt out of the writer, which may only throw an IOException. */
+    private static final class Interrupted extends IOException {
+        private static final long serialVersionUID = 1L;
+        private final transient InterruptedException interrupt;
+
+        Interrupted(InterruptedException cause) {
+            super(cause);
+            this.interrupt = cause;
         }
-        if (sha256 != null && !sha256.equalsIgnoreCase(sha256(tmp))) {
-            Files.deleteIfExists(tmp);
-            throw new ToolException("checksum mismatch for " + uri);
-        }
-        Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING);
     }
 
     private static HttpRequest request(URI uri) {

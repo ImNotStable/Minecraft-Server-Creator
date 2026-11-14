@@ -1,6 +1,7 @@
 package io.github.imnotstable.msc.core.texture;
 
 import com.sun.net.httpserver.HttpServer;
+import io.github.imnotstable.msc.core.files.AtomicFile;
 import io.github.imnotstable.msc.core.server.PidFile;
 import io.github.imnotstable.msc.core.tool.ToolException;
 import io.github.imnotstable.msc.textures.Models;
@@ -163,13 +164,8 @@ public final class ResourcePack implements AutoCloseable {
             Files.deleteIfExists(zipFile());
             return;
         }
-        Path temp = Files.createTempFile(Files.createDirectories(outDir), "pack-", ".part");
-        try {
-            Files.write(temp, snapshot.served().data());
-            Files.move(temp, zipFile(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-        } finally {
-            Files.deleteIfExists(temp);
-        }
+        // As a build writes it (in place), but whole: a standalone host may be reading it.
+        AtomicFile.write(zipFile(), to -> Files.write(to, snapshot.served().data()));
         served = snapshot.served();
         lastBuilt = snapshot.built();
     }

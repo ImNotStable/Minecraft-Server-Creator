@@ -328,7 +328,7 @@ public final class TextureTools {
             throw new ToolException("give rows and palette to draw, kind and color to generate, or copy and color to recolor");
         }
         Texture image = t;
-        new Steps("texture").then(WRITE_PNG).run(WRITE_PNG, () -> OutputFile.write(file, to -> {
+        new Steps("texture").then(WRITE_PNG).run(WRITE_PNG, () -> OutputFile.replace(file, to -> {
             if (!javax.imageio.ImageIO.write(image.toImage(), "png", to.toFile())) {
                 throw new IOException("no png writer");
             }
