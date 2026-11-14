@@ -110,8 +110,8 @@ class ConfigNumbersTest {
     }
 
     private static final List<Position> POSITIONS = List.of(
-            setting("time", GameConfig.TIME, 0, 23999),
-            new Position("kit[0] amount", GameConfig.AMOUNT, 1, 2304, false,
+            setting("time", GameConfig.TIME, 0, GameConfig.MAX_TIME),
+            new Position("kit[0] amount", GameConfig.AMOUNT, 1, Kit.MAX_AMOUNT, false,
                     x -> "kit: [\"bread:" + x + "\"]\n" + STAGE),
             spawn(0, GameConfig.XZ, -Box.MAX_XZ, Box.MAX_XZ),
             spawn(1, GameConfig.Y, Box.MIN_Y, Box.MAX_Y),

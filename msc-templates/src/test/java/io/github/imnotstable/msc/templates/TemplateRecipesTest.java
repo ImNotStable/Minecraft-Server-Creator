@@ -3,19 +3,26 @@ package io.github.imnotstable.msc.templates;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.IOException;
+import java.net.URISyntaxException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
 /**
- * Follows the "add a setting" and "add a stage" steps of each game template's CLAUDE.md on a scaffolded project, the
- * way the doc words them, and runs the project's tests: a documented change must not turn an unrelated test red
- * (#401). For paper-game also settings with three kinds of range, a range open on one side, an unranged decimal
- * (#450), a {@code /game} subcommand that parses its own number and a score in {@code Progress} (#431, #432). Only runs via
+ * Follows each template's CLAUDE.md on a scaffolded project the way the doc words it, and runs the project's tests:
+ * code a doc shows must compile against the template's pinned versions, and a documented change must not turn an
+ * unrelated test red (#401, #480). Each {@code java} block of a doc is a whole file and goes in as written; the
+ * template's {@code doc-names} test files, which use every name the docs list, go in too. For the game templates the
+ * "add a setting" and "add a stage" steps and a rule change with its SharedRulesTest rows (#481) are edits; for
+ * paper-game also settings with three kinds of range, a range open on one side, an unranged decimal (#450), a
+ * {@code /game} subcommand that parses its own number and a score in {@code Progress} (#431, #432). Only runs via
  * {@code ./gradlew :msc-templates:verifyTemplates}. When a template's text changes, an edit below that no longer
  * matches fails with the file and the text it looked for.
  */
@@ -26,13 +33,34 @@ class TemplateRecipesTest {
     private static final String START_GOAL = "Box.of(-2, -61, 10, 2, -58, 12)";
     private static final String ARENA_GOAL = "Box.of(-2, -61, 50, 2, -58, 52)";
 
+    private static TemplateBuildTest.Daemon daemon;
+
+    @BeforeAll
+    static void startDaemon() {
+        daemon = TemplateBuildTest.Daemon.forClass("recipes");
+    }
+
+    @AfterAll
+    static void stopDaemon() throws IOException, InterruptedException {
+        daemon.stop();
+    }
+
     /** Replace the one occurrence of {@code old} in {@code file} with {@code replacement}. */
     record Edit(String file, String old, String replacement) {
     }
 
-    @Test
-    void paperGameRecipesKeepTheBuildGreen() throws IOException, InterruptedException {
-        followAndTest(Templates.PAPER_GAME, List.of(
+    /** The CLAUDE.md steps of a game template as edits; none for the other templates, whose docs show whole files. */
+    static List<Edit> edits(String id) {
+        return switch (id) {
+            case Templates.PAPER_GAME -> paperGameEdits();
+            case Templates.FABRIC_GAME -> fabricGameEdits();
+            case Templates.MINESTOM_GAME -> minestomGameEdits();
+            default -> List.of();
+        };
+    }
+
+    private static List<Edit> paperGameEdits() {
+        return Stream.concat(ruleChange("src/main/resources/config.yml").stream(), Stream.of(
                 // Settings: each key in KEYS, a record component read in from, its default in config.yml and in the
                 // defaults test, and a bad-value case. One plain whole number, and three with their own range (a Need
                 // and its row in ConfigNumbersTest): 1 to 10, 1 to 3 (which leaves out 5) and a decimal 0 to 1.
@@ -72,8 +100,8 @@ class TemplateRecipesTest {
                                 + " \"speed: needs a number from 0 (no upper limit), got the whole number -1\"),\n"
                                 + "            Bad.top(\"gravity\", \".inf\", \"gravity: needs a number, got infinity (.inf)\"),\n"
                                 + "            Bad.top(\"world\", \"5\""),
-                new Edit(TEST + "ConfigNumbersTest.java", "setting(\"time\", GameConfig.TIME, 0, 23999),\n",
-                        "setting(\"time\", GameConfig.TIME, 0, 23999),\n"
+                new Edit(TEST + "ConfigNumbersTest.java", "setting(\"time\", GameConfig.TIME, 0, GameConfig.MAX_TIME),\n",
+                        "setting(\"time\", GameConfig.TIME, 0, GameConfig.MAX_TIME),\n"
                                 + "            setting(\"teams\", GameConfig.TEAMS, 1, 10),\n"
                                 + "            setting(\"lives\", GameConfig.LIVES, 1, 3),\n"
                                 + "            setting(\"drop-chance\", GameConfig.DROP_CHANCE, 0, 1),\n"
@@ -150,28 +178,26 @@ class TemplateRecipesTest {
 
                         @Test
                         void flushWithoutChangesWritesNothing() throws IOException {
-                        """.indent(4))));
+                        """.indent(4)))).toList();
     }
 
-    @Test
-    void fabricGameRecipesKeepTheBuildGreen() throws IOException, InterruptedException {
-        followAndTest(Templates.FABRIC_GAME, javaGameEdits("Spot",
+    private static List<Edit> fabricGameEdits() {
+        return javaGameEdits("Spot",
                 new Edit(MAIN + "GameConfig.java", "List<Stage> stages) {", "List<Stage> stages, int rounds) {"),
                 new Edit(MAIN + "GameConfig.java", "new Spot(0.5, -60, 80.5))));",
                         "new Spot(0.5, -60, 80.5))),\n                3);"),
-                new Edit(TEST + "TestGames.java", "Kit.of(), stages);", "Kit.of(), stages, 3);")));
+                new Edit(TEST + "TestGames.java", "Kit.of(), stages);", "Kit.of(), stages, 3);"));
     }
 
-    @Test
-    void minestomGameRecipesKeepTheBuildGreen() throws IOException, InterruptedException {
-        followAndTest(Templates.MINESTOM_GAME, javaGameEdits("Pos",
+    private static List<Edit> minestomGameEdits() {
+        return javaGameEdits("Pos",
                 new Edit(TEST + "GameThreadsTest.java", START_GOAL + ");", START_GOAL + ", 1);"),
                 new Edit(TEST + "GameThreadsTest.java", ARENA_GOAL + ");", ARENA_GOAL + ", 1);"),
                 new Edit(MAIN + "GameConfig.java", "Set<String> admins) {", "Set<String> admins, int rounds) {"),
                 new Edit(MAIN + "GameConfig.java", "                Set.of());",
                         "                Set.of(), 3);"),
                 new Edit(TEST + "TestGames.java", "stages, Set.of(\"Steve\"));",
-                        "stages, Set.of(\"Steve\"), 3);")));
+                        "stages, Set.of(\"Steve\"), 3);"));
     }
 
     /**
@@ -189,17 +215,48 @@ class TemplateRecipesTest {
                 new Edit(MAIN + "GameConfig.java", START_GOAL + "),", START_GOAL + ", 1),"),
                 new Edit(MAIN + "GameConfig.java", ARENA_GOAL + "),", ARENA_GOAL + ", 1),"),
                 new Edit(TEST + "TestGames.java", START_GOAL + "),", START_GOAL + ", 1),"));
-        return Stream.concat(stage.stream(), List.of(config).stream()).toList();
+        return Stream.of(stage, List.of(config), ruleChange(null)).flatMap(List::stream).toList();
     }
 
-    private static void followAndTest(String id, List<Edit> edits) throws IOException, InterruptedException {
+    /**
+     * "To change a rule for this game": a daytime-only game, its check and its rows in SharedRulesTest together (#481),
+     * and in paper-game the range in config.yml's comment.
+     */
+    private static List<Edit> ruleChange(String configYml) {
+        List<Edit> edits = List.of(
+                new Edit(MAIN + "GameConfig.java", "MAX_TIME = 23999;", "MAX_TIME = 12000;"),
+                new Edit(TEST + "SharedRulesTest.java", "ok(23999L), no(24000L)", "ok(12000L), no(12001L)"));
+        return configYml == null ? edits : Stream.concat(edits.stream(),
+                Stream.of(new Edit(configYml, "0 to 23999 (", "0 to 12000 ("))).toList();
+    }
+
+    @ParameterizedTest
+    @MethodSource("io.github.imnotstable.msc.templates.TemplateDocsTest#projects")
+    void documentedRecipesBuildAndPass(String id) throws IOException, InterruptedException, URISyntaxException {
         ScaffoldResult r = TemplateBuildTest.scaffoldFresh(id, id + "-recipes");
-        for (Edit e : edits) {
+        // The docs' java blocks, each a whole file as written, over the shipped file of that name.
+        for (DocCode.Block b : DocCode.javaBlocks(r.root())) {
+            Path file = r.root().resolve(b.path());
+            Files.createDirectories(file.getParent());
+            Files.writeString(file, b.code());
+        }
+        // The names the docs list, in code that only has to compile.
+        Path docNames = TemplateDocNamesTest.docNames(id);
+        if (docNames != null) {
+            try (Stream<Path> files = Files.walk(docNames)) {
+                for (Path f : files.filter(Files::isRegularFile).toList()) {
+                    Path target = r.root().resolve(docNames.relativize(f).toString());
+                    Files.createDirectories(target.getParent());
+                    Files.copy(f, target);
+                }
+            }
+        }
+        for (Edit e : edits(id)) {
             Path file = r.root().resolve(e.file());
             String text = Files.readString(file);
             assertThat(text.split(Pattern.quote(e.old()), -1)).as(e.file() + ": " + e.old()).hasSize(2);
             Files.writeString(file, text.replace(e.old(), e.replacement()));
         }
-        TemplateBuildTest.gradle(r.root(), "test");
+        daemon.run(r.root(), "test");
     }
 }

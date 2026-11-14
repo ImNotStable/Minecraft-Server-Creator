@@ -23,7 +23,7 @@ import net.minestom.server.world.Difficulty;
  */
 public record GameConfig(GameMode gameMode, Difficulty difficulty, long time, Kit kit, List<Stage> stages,
                          Set<String> admins) {
-    /** The last tick of a day: {@code time} is 0 to this, as in every game template. */
+    /** The last tick of a day: {@code time} is 0 to this. */
     public static final long MAX_TIME = 23999;
 
     public GameConfig {

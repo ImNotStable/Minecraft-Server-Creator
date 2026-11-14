@@ -19,12 +19,12 @@ import org.junit.jupiter.api.TestFactory;
 import org.mockbukkit.mockbukkit.MockBukkit;
 
 /**
- * The rules for names and values that every game template (paper-game, fabric-game, minestom-game) shares: stage
- * names, command words, time, kit amounts, spawns and goal boxes. The tables at the bottom are the same in all three
- * templates, with the same inputs and the same outcome; only the adapters at the top differ, because here every value comes from config.yml.
- * Changing one of these rules is a change to all three templates.
- */
-class SharedRulesTest {
+ * This game's rules for names and values: stage names, command words, time, kit amounts, spawns and goal boxes. The
+ * adapters at the top build a value the way the game does (here every value comes from config.yml); the tables at the bottom list
+ * inputs and whether the game takes them. To change a rule, change its check ({@code GameConfig.MAX_TIME},
+ * {@code Kit.MAX_AMOUNT}, {@code Stage.isName}, the {@code Box} limits) and its rows here together: the expected
+ * messages come from the same constants.
+ */class SharedRulesTest {
     @BeforeEach
     void setUp() {
         MockBukkit.mock(); // the item registry, for the kit
@@ -81,7 +81,7 @@ class SharedRulesTest {
         parse("stages: [{name: a, spawn: [0, 0, 0], goal: " + Arrays.toString(corners) + "}]\n");
     }
 
-    // ---- The shared tables: the same text in paper-game, fabric-game and minestom-game. ----
+    // ---- The rule tables. ----
 
     /** An input and whether the game takes it. */
     record Case<T>(T input, boolean taken) {
@@ -128,15 +128,15 @@ class SharedRulesTest {
             "stage ", List.of("stage", ""),
             "  stage   ar", List.of("stage", "ar"));
 
-    /** Time of day: 0 to 23999. */
+    /** Time of day: 0 to GameConfig.MAX_TIME. */
     static final List<Case<Long>> TIMES = List.of(no(-1L), ok(0L), ok(6000L), ok(23999L), no(24000L));
 
-    /** Kit amounts: 1 to 2304, a full inventory. */
+    /** Kit amounts: 1 to Kit.MAX_AMOUNT, a full inventory. */
     static final List<Case<Integer>> AMOUNTS = List.of(no(-1), no(0), ok(1), ok(64), ok(2304), no(2305));
 
     /**
-     * Spawns, {x, y, z, yaw, pitch}: inside the world and finite. Yaw within 360 and pitch within 90 are not in this
-     * table: Minestom's Pos wraps yaw and clamps pitch itself, so minestom-game cannot see an out-of-range one.
+     * Spawns, {x, y, z, yaw, pitch}: inside the world and finite. Yaw within 360 and pitch within 90 are checked too;
+     * ConfigNumbersTest tries them.
      */
     static final List<Case<double[]>> SPAWNS = List.of(
             ok(new double[] {0.5, -60, 0.5, 0, 0}),
@@ -171,12 +171,12 @@ class SharedRulesTest {
 
     @TestFactory
     Stream<DynamicTest> timeOfDay() {
-        return cases(TIMES, this::time, "from 0 to 23999");
+        return cases(TIMES, this::time, "from 0 to " + GameConfig.MAX_TIME);
     }
 
     @TestFactory
     Stream<DynamicTest> kitAmounts() {
-        return cases(AMOUNTS, this::kitAmount, "from 1 to 2304");
+        return cases(AMOUNTS, this::kitAmount, "from 1 to " + Kit.MAX_AMOUNT);
     }
 
     @TestFactory
