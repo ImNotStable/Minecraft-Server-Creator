@@ -32,10 +32,12 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 /** Pixel-art textures drawn as text, and the resource pack that carries them. */
 public final class TextureTools {
@@ -118,7 +120,9 @@ public final class TextureTools {
                         .opt("apply", "boolean", "Send to the running server. Default true")
                         .opt("required", "boolean", "Kick players who decline"),
                 args -> {
-                    if (args.bool("check", false)) {
+                    boolean check = args.bool("check", false);
+                    WayArgs.check(args, Set.of(check ? "check" : "build"), WayArgs.PACK);
+                    if (check) {
                         if (!Files.isDirectory(pack.root())) {
                             throw new ToolException("the pack is empty. Add a texture first.");
                         }
@@ -238,9 +242,6 @@ public final class TextureTools {
 
     private static String texture(Args args, ResourcePack pack, PackSource source, CoreConfig config)
             throws IOException, InterruptedException {
-        if (args.str("name").toLowerCase(Locale.ROOT).endsWith(".png")) {
-            return looseFile(args, source, args.path("name", config.inWorkspace()));
-        }
         List<String> ways = new ArrayList<>();
         for (String way : List.of("rows", "kind", "copy")) {
             if (args.has(way)) {
@@ -250,10 +251,21 @@ public final class TextureTools {
         if (ways.size() > 1) {
             throw new ToolException("give one of rows, kind or copy, not " + String.join(" and ", ways));
         }
+        if (args.str("name").toLowerCase(Locale.ROOT).endsWith(".png")) {
+            return looseFile(args, source, args.path("name", config.inWorkspace()), ways);
+        }
         if (ways.isEmpty() && !args.has("animate")) {
             throw new ToolException("give rows and palette to draw, kind and color to generate, copy and color to "
                     + "recolor, or animate to animate the texture already there");
         }
+        Set<String> read = new HashSet<>(ways);
+        if (!ways.isEmpty()) {
+            read.add("pack");
+        }
+        if (args.has("animate")) {
+            read.add("animate");
+        }
+        WayArgs.check(args, read, WayArgs.TEXTURE);
         ResourceId id = ResourceId.parse(args.str("name"));
         // Everything that can refuse the arguments runs before the first write, so a refused call (a bad animate,
         // too many frames, an item that shows another model) leaves the pack as it was.
@@ -341,10 +353,15 @@ public final class TextureTools {
      * A texture written as a plain PNG at a workspace path, outside the pack: no model, no animation. Saves the
      * write-then-copy round trip when a task wants the image itself.
      */
-    private static String looseFile(Args args, PackSource source, Path file) throws IOException, InterruptedException {
+    private static String looseFile(Args args, PackSource source, Path file, List<String> ways)
+            throws IOException, InterruptedException {
         if (args.has("animate")) {
             throw new ToolException("animate needs a pack texture name such as item/ruby, not a .png path");
         }
+        if (ways.isEmpty()) {
+            throw new ToolException("give rows and palette to draw, kind and color to generate, or copy and color to recolor");
+        }
+        WayArgs.check(args, Set.copyOf(ways), WayArgs.TEXTURE);
         OutputFile.check(file, "png");
         Texture t;
         List<String> warnings = List.of();
