@@ -40,10 +40,17 @@ public record PngRules(
         }
     }
 
+    /** The keys of the rules, which a {@code png} check and a zip's {@code pngEntries} entry hold (#502). */
+    static final List<String> KEYS = List.of("width", "height", "maxColors", "minOpaqueFraction", "maxOpaqueFraction",
+            "hue");
+
+    /** The keys of {@code hue}. */
+    static final UserJson.Keys HUE = UserJson.Keys.of("from", "to", "minFraction", "minSaturation");
+
     /** Reads the rules of a check or zip entry. */
     static PngRules parse(UserJson json) {
         HueRule hue = null;
-        UserJson h = json.exactObject("hue");
+        UserJson h = json.exactObject("hue", HUE);
         if (h != null) {
             for (String required : List.of("from", "to")) {
                 if (!h.has(required)) {

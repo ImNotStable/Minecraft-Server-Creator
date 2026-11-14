@@ -7,6 +7,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import io.github.imnotstable.msc.bench.check.Checks;
 import io.github.imnotstable.msc.bench.task.TaskDef;
 import io.github.imnotstable.msc.bench.task.TaskLoader;
 import java.io.IOException;
@@ -177,6 +178,124 @@ class TaskTypesTest {
         assertThatThrownBy(() -> load(json))
                 .isInstanceOf(IOException.class)
                 .hasMessageStartingWith("Task t: task.json " + message);
+    }
+
+    @Test
+    void validHasACheckOfEveryType() {
+        // So that the walk below reaches every object a check type has, and a new type cannot be left out.
+        List<String> types = new ArrayList<>();
+        JsonParser.parseString(VALID).getAsJsonObject().getAsJsonArray("checks")
+                .forEach(c -> types.add(c.getAsJsonObject().get("type").getAsString()));
+        assertThat(types).containsExactlyInAnyOrderElementsOf(Checks.KEYS.types().keySet());
+    }
+
+    /** #502: the path of every object in {@link #VALID}, such as {@code checks[3].pngEntries[0]} ({@code ""} first). */
+    static Stream<String> objects() {
+        List<String> out = new ArrayList<>();
+        walk(JsonParser.parseString(VALID), "", out);
+        return out.stream();
+    }
+
+    private static void walk(JsonElement value, String path, List<String> out) {
+        if (value.isJsonObject()) {
+            out.add(path);
+            value.getAsJsonObject().entrySet().forEach(e -> walk(e.getValue(),
+                    path.isEmpty() ? e.getKey() : path + "." + e.getKey(), out));
+        } else if (value.isJsonArray()) {
+            for (int i = 0; i < value.getAsJsonArray().size(); i++) {
+                walk(value.getAsJsonArray().get(i), path + "[" + i + "]", out);
+            }
+        }
+    }
+
+    /**
+     * #502: an unknown key in any object of a task.json, at any depth, is refused naming its path and the keys there
+     * are, which hold every key the object has in {@link #VALID}.
+     */
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("objects")
+    void anUnknownKeyInAnyObjectIsRefused(String object) throws IOException {
+        String path = object.isEmpty() ? "zzz" : object + ".zzz";
+        JsonObject json = JsonParser.parseString(VALID).getAsJsonObject();
+        JsonElement holder = json;
+        for (JsonElement step : steps(json, object)) {
+            holder = step;
+        }
+        List<String> present = new ArrayList<>(holder.getAsJsonObject().keySet());
+        set(json, path, JsonParser.parseString("1"));
+        assertThatThrownBy(() -> load(json))
+                .isInstanceOf(IOException.class)
+                .hasMessageStartingWith("Task t: task.json " + path + ": unknown key; the keys are [")
+                .satisfies(e -> assertThat(e.getMessage()).doesNotContain("\n"))
+                .satisfies(e -> assertThat(keysIn(e.getMessage())).containsAll(present));
+    }
+
+    /** #502: every key of every check type, misspelt, is refused with that type's keys; the rows come from the reader. */
+    static Stream<Arguments> misspeltCheckKeys() {
+        List<Arguments> cases = new ArrayList<>();
+        Checks.KEYS.types().forEach((type, keys) -> keys.names().stream().filter(k -> !k.equals("type"))
+                .forEach(key -> cases.add(Arguments.of(type, key + "x", keys.names()))));
+        return cases.stream();
+    }
+
+    @ParameterizedTest(name = "{0} {1}")
+    @MethodSource("misspeltCheckKeys")
+    void aMisspeltKeyOfEachCheckTypeIsRefused(String type, String key, List<String> keys) {
+        JsonObject json = JsonParser.parseString(VALID).getAsJsonObject();
+        JsonObject check = new JsonObject();
+        check.addProperty("type", type);
+        check.addProperty(key, "x");
+        JsonArray checks = new JsonArray();
+        checks.add(check);
+        json.add("checks", checks);
+        assertThatThrownBy(() -> load(json))
+                .isInstanceOf(IOException.class)
+                .hasMessage("Task t: task.json checks[0]." + key + ": unknown key; the keys are " + keys);
+    }
+
+    /** The issue's example: {@code "contain"} for {@code "contains"} made the file check pass for any answer.txt. */
+    @Test
+    void aFileCheckWithContainIsRefusedNotPassedForAnyFile() {
+        JsonObject json = JsonParser.parseString(VALID).getAsJsonObject();
+        JsonObject file = json.getAsJsonArray("checks").get(0).getAsJsonObject();
+        file.add("contain", file.remove("contains"));
+        assertThatThrownBy(() -> load(json))
+                .isInstanceOf(IOException.class)
+                .hasMessage("Task t: task.json checks[0].contain: unknown key; the keys are [type, name, path, contains]");
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @CsvSource(delimiter = '|', quoteCharacter = '`', value = {
+            "`{\"name\":\"n\",\"path\":\"a\"}` | checks[0].type: is missing; the types are [file, command, png, zip, rcon, blocks, player]",
+            "`{\"type\":\"files\",\"path\":\"a\"}` | checks[0].type: \"files\" is not one of [file, command, png, zip, rcon, blocks, player]"})
+    void aCheckWithoutAKnownTypeIsRefusedNamingTheTypes(String check, String message) {
+        JsonObject json = JsonParser.parseString(VALID).getAsJsonObject();
+        JsonArray checks = new JsonArray();
+        checks.add(JsonParser.parseString(check));
+        json.add("checks", checks);
+        assertThatThrownBy(() -> load(json))
+                .isInstanceOf(IOException.class)
+                .hasMessage("Task t: task.json " + message);
+    }
+
+    /** The objects along {@code path}, such as {@code checks[3].pngEntries[0]}, from the root's child on. */
+    private static List<JsonElement> steps(JsonObject root, String path) {
+        List<JsonElement> out = new ArrayList<>();
+        JsonElement holder = root;
+        Matcher step = Pattern.compile("(\\w+)|\\[(\\d+)]").matcher(path);
+        while (step.find()) {
+            holder = step.group(1) != null ? holder.getAsJsonObject().get(step.group(1))
+                    : holder.getAsJsonArray().get(Integer.parseInt(step.group(2)));
+            out.add(holder);
+        }
+        return out;
+    }
+
+    /** The keys a refusal lists after {@code the keys are}. */
+    private static List<String> keysIn(String message) {
+        String list = message.substring(message.indexOf("the keys are [") + "the keys are [".length(),
+                message.lastIndexOf(']'));
+        return List.of(list.split(", "));
     }
 
     private TaskDef load(JsonElement json) throws IOException {

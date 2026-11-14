@@ -17,6 +17,7 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 
@@ -31,8 +32,12 @@ class UserJsonTest {
     private static final List<String> READERS = List.of("task.TaskLoader", "check.Checks", "check.PngRules",
             "check.BlocksCheck", "check.PlayerCheck", "run.BenchConfig", "run.BenchConfigRules");
 
+    private static final UserJson.Keys CHECK = UserJson.Keys.of("hue", "pos", "width");
+    private static final UserJson.Keys HUE = UserJson.Keys.of("from");
+
     private static UserJson task(String json) {
-        return UserJson.of(JsonParser.parseString(json).getAsJsonObject(), "task.json ");
+        return UserJson.of(JsonParser.parseString(json).getAsJsonObject(), "task.json ",
+                UserJson.Keys.of("checks", "timeoutSeconds"));
     }
 
     @Test
@@ -114,9 +119,9 @@ class UserJsonTest {
     void keysAreNamedByTheirPathInTheFile() {
         UserJson json = task("""
                 {"checks":[{},{"hue":{"from":1.5},"pos":[1,2.5,3]}],"timeoutSeconds":0.5}""");
-        UserJson check = json.exactObjects("checks").get(1);
-        assertThat(check.exactObject("hue").key("from")).isEqualTo("task.json checks[1].hue.from");
-        assertThat(check.exactObject("hue").number("from", JsonNumbers.HUE, 0)).isEqualTo(1.5);
+        UserJson check = json.exactObjects("checks", CHECK).get(1);
+        assertThat(check.exactObject("hue", HUE).key("from")).isEqualTo("task.json checks[1].hue.from");
+        assertThat(check.exactObject("hue", HUE).number("from", JsonNumbers.HUE, 0)).isEqualTo(1.5);
         assertThatThrownBy(() -> json.wholeNumber("timeoutSeconds", JsonNumbers.SECONDS, 0))
                 .hasMessage("task.json timeoutSeconds: 0.5 is not " + JsonNumbers.SECONDS.text());
         assertThatThrownBy(() -> check.wholeNumbers("pos", "a position is [x, y, z]",
@@ -124,7 +129,22 @@ class UserJsonTest {
                 .hasMessage("task.json checks[1].pos[1]: 2.5 is not " + JsonNumbers.BLOCK_Y.text());
         assertThatThrownBy(() -> check.wholeNumbers("hue", "a pair", JsonNumbers.HUE, JsonNumbers.HUE))
                 .hasMessage("task.json checks[1].hue: a pair");
-        assertThat(json.exactObjects("checks").getFirst().wholeNumber("width", JsonNumbers.POSITIVE, 7)).isEqualTo(7);
+        assertThat(json.exactObjects("checks", CHECK).getFirst().wholeNumber("width", JsonNumbers.POSITIVE, 7)).isEqualTo(7);
+    }
+
+    /**
+     * #502: a reader can read only the keys its object was made with, so a key it reads but forgot to list would be
+     * refused in every file that holds it; it fails on the first read, in the tests, instead.
+     */
+    @Test
+    void aReaderCannotReadAKeyItsObjectDoesNotList() {
+        UserJson json = task("{\"timeoutSeconds\":5}");
+        assertThatThrownBy(() -> json.exactString("title", null))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("a reader reads task.json title, which is not one of its keys [checks, timeoutSeconds]");
+        assertThatThrownBy(() -> json.has("title")).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> UserJson.Keys.byType("type", Map.of("a", UserJson.Keys.of("name"))))
+                .hasMessage("the keys of type a must be fixed and hold type");
     }
 
     /** A Gson tree: {@link JsonElement} or a subtype, by assignability, not by package. */

@@ -9,6 +9,7 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.google.gson.JsonPrimitive;
+import io.github.imnotstable.msc.bench.UserJson;
 import io.github.imnotstable.msc.buildlogic.RepoFiles;
 import java.io.IOException;
 import java.lang.reflect.ParameterizedType;
@@ -219,6 +220,50 @@ class BenchConfigRulesTest {
         assertThatThrownBy(() -> BenchConfig.load(config, home()))
                 .isInstanceOf(IOException.class)
                 .hasMessageContaining(path + ": " + value + " is not " + type);
+    }
+
+    /** Each object of bench.json, by its path in {@link #VALID} ({@code ""} is the file itself), with its keys. */
+    private static final Map<String, UserJson.Keys> OBJECTS = Map.of("", BenchConfig.KEYS, "agent",
+            BenchConfig.AGENT, "modes.m", BenchConfig.MODE, "server", BenchConfig.SERVER);
+
+    @Test
+    void validHoldsExactlyTheKeysOfEachObject() {
+        OBJECTS.forEach((path, keys) -> assertThat(object(JsonParser.parseString(VALID).getAsJsonObject(), path)
+                .keySet()).as(path).containsExactlyInAnyOrderElementsOf(keys.names()));
+        // And every field the config holds is a key of its object, so no read key can be refused.
+        for (String field : fields(BenchConfig.class, "")) {
+            int dot = field.lastIndexOf('.');
+            String object = dot < 0 ? "" : field.substring(0, dot).replace("*", "m");
+            assertThat(OBJECTS.get(object).names()).as(field).contains(field.substring(dot + 1));
+        }
+    }
+
+    /** #502: every key of every object, misspelt, is refused in one line naming its path and the keys there are. */
+    static Stream<Arguments> misspeltKeys() {
+        List<Arguments> cases = new ArrayList<>();
+        OBJECTS.forEach((path, keys) -> keys.names().forEach(key -> cases.add(Arguments.of(path, key + "x", keys))));
+        return cases.stream();
+    }
+
+    @ParameterizedTest(name = "{0} {1}")
+    @MethodSource("misspeltKeys")
+    void aMisspeltKeyAtAnyDepthIsRefusedNamingItsPathAndTheKeys(String path, String key, UserJson.Keys keys)
+            throws IOException {
+        JsonObject json = JsonParser.parseString(VALID).getAsJsonObject();
+        object(json, path).add(key, new JsonPrimitive(1));
+        Path config = write(json);
+        assertThatThrownBy(() -> BenchConfig.load(config, home()))
+                .isInstanceOf(IOException.class)
+                .hasMessage("Bad bench config " + config + ": " + (path.isEmpty() ? "" : path + ".") + key
+                        + ": unknown key; the keys are " + keys.names());
+    }
+
+    private static JsonObject object(JsonObject root, String path) {
+        JsonObject holder = root;
+        for (String part : path.isEmpty() ? new String[0] : path.split("\\.")) {
+            holder = holder.getAsJsonObject(part);
+        }
+        return holder;
     }
 
     @Test

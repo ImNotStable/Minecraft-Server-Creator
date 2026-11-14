@@ -284,8 +284,7 @@ public final class ResultsFile {
             throw new IllegalArgumentException("is " + (tree == null || tree.isJsonNull() ? "null" : tree.isJsonArray()
                     ? "a list" : "a single value") + ", not a JSON object; each line is one run");
         }
-        UserJson json = UserJson.of(tree.getAsJsonObject(), "");
-        json.onlyKeys(keys(RunRecord.class));
+        UserJson json = UserJson.of(tree.getAsJsonObject(), "", keys(RunRecord.class));
         json.require("task", "category", "mode", "repeat", "passed");
         return new RunRecord(
                 nonBlank(json, "task"),
@@ -298,9 +297,9 @@ public final class ResultsFile {
                 json.exactBool("timedOut", false),
                 json.wholeNumber("exitCode", JsonNumbers.EXIT_CODE, -1),
                 json.exactString("error", null),
-                agent(json.exactObject("agent")),
-                tools(json.exactObject("tools")),
-                json.exactObjects("checks").stream().map(ResultsFile::check).toList());
+                agent(json.exactObject("agent", keys(AgentResult.class))),
+                tools(json.exactObject("tools", keys(ToolStats.class))),
+                json.exactObjects("checks", keys(CheckResult.class)).stream().map(ResultsFile::check).toList());
     }
 
     /** The line as one strict JSON value, refused with Gson's problem and column. */
@@ -321,7 +320,6 @@ public final class ResultsFile {
         if (json == null) {
             return AgentResult.UNKNOWN;
         }
-        json.onlyKeys(keys(AgentResult.class));
         return new AgentResult(
                 json.exactBool("parsed", false),
                 json.exactBool("isError", false),
@@ -340,10 +338,8 @@ public final class ResultsFile {
         if (json == null) {
             return ToolStats.NONE;
         }
-        json.onlyKeys(keys(ToolStats.class));
         Map<String, ToolStats.PerTool> perTool = new LinkedHashMap<>();
-        json.exactObjectEntries("perTool").forEach((tool, t) -> {
-            t.onlyKeys(keys(ToolStats.PerTool.class));
+        json.exactObjectEntries("perTool", keys(ToolStats.PerTool.class)).forEach((tool, t) -> {
             t.require("calls");
             perTool.put(tool, new ToolStats.PerTool(
                     t.wholeNumber("calls", JsonNumbers.CALLS, 1),
@@ -362,7 +358,6 @@ public final class ResultsFile {
     }
 
     private static CheckResult check(UserJson json) {
-        json.onlyKeys(keys(CheckResult.class));
         json.require("name", "passed");
         return new CheckResult(json.exactString("name", ""), json.exactBool("passed", false),
                 json.exactString("detail", ""));
@@ -377,8 +372,8 @@ public final class ResultsFile {
     }
 
     /** The JSON keys of a record type: the names Gson writes its components under. */
-    private static List<String> keys(Class<? extends Record> type) {
-        return Arrays.stream(type.getRecordComponents()).map(RecordComponent::getName).toList();
+    private static UserJson.Keys keys(Class<? extends Record> type) {
+        return UserJson.Keys.of(Arrays.stream(type.getRecordComponents()).map(RecordComponent::getName).toList());
     }
 
     /** Gson's message without its advice to read leniently or its path: what is wrong and the column. */

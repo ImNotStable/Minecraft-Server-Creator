@@ -26,13 +26,17 @@ record BlocksCheck(String name, List<Expectation> expectations, int maxFailuresS
         expectations = List.copyOf(expectations);
     }
 
+    /** The keys of a {@code blocks} entry and of a {@code regions} entry (#502). */
+    static final UserJson.Keys BLOCK = UserJson.Keys.of("pos", "block");
+    static final UserJson.Keys REGION = UserJson.Keys.of("from", "to", "block");
+
     static BlocksCheck parse(String name, UserJson json) {
         List<Expectation> out = new ArrayList<>();
-        for (UserJson o : json.exactObjects("blocks")) {
+        for (UserJson o : json.exactObjects("blocks", BLOCK)) {
             int[] pos = pos(o, "pos");
             out.add(new Expectation(pos[0], pos[1], pos[2], Checks.require(o, "block")));
         }
-        for (UserJson o : json.exactObjects("regions")) {
+        for (UserJson o : json.exactObjects("regions", REGION)) {
             int[] a = pos(o, "from");
             int[] b = pos(o, "to");
             String block = Checks.require(o, "block");

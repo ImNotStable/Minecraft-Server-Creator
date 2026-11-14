@@ -1,5 +1,6 @@
 package io.github.imnotstable.msc.bench.task;
 
+import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import io.github.imnotstable.msc.bench.JsonNumbers;
 import io.github.imnotstable.msc.bench.UserJson;
@@ -21,9 +22,19 @@ import java.util.stream.Stream;
  */
 public final class TaskLoader {
 
-    /** The keys a task.json may have. */
-    static final List<String> KEYS = List.of("category", "title", "platform", "scaffold", "fixtures", "server",
-            "checks", "resetBeforeChecks", "timeoutSeconds");
+    /**
+     * The keys a task.json may have. Every object in it is made with its own keys ({@link UserJson.Keys}), so a
+     * misspelt key at any depth is refused instead of left out silently (#502): a reset that never happens, a time
+     * limit never applied, a {@code "contain"} whose file check would pass for any file.
+     */
+    public static final UserJson.Keys KEYS = UserJson.Keys.of("category", "title", "platform", "scaffold",
+            "fixtures", "server", "checks", "resetBeforeChecks", "timeoutSeconds");
+
+    /** The keys of {@code scaffold}. */
+    public static final UserJson.Keys SCAFFOLD = UserJson.Keys.of("template", "name", "package");
+
+    /** The keys of {@code server}. */
+    public static final UserJson.Keys SERVER = UserJson.Keys.of("startBefore", "setup");
 
     private TaskLoader() {
     }
@@ -51,17 +62,14 @@ public final class TaskLoader {
 
     public static TaskDef load(Path taskDir) throws IOException {
         String id = taskDir.getFileName().toString();
-        UserJson json;
+        JsonObject tree;
         try {
-            json = UserJson.of(
-                    JsonParser.parseString(Files.readString(taskDir.resolve("task.json"))).getAsJsonObject(),
-                    "task.json ");
+            tree = JsonParser.parseString(Files.readString(taskDir.resolve("task.json"))).getAsJsonObject();
         } catch (RuntimeException e) {
             throw new IOException("Task " + id + ": task.json is not a JSON object: " + e.getMessage(), e);
         }
         try {
-            // A misspelt key would be left out silently: a reset that never happens, a time limit never applied.
-            json.onlyKeys(KEYS);
+            UserJson json = UserJson.of(tree, "task.json ", KEYS);
             Path promptFile = taskDir.resolve("prompt.md");
             if (!Files.isRegularFile(promptFile)) {
                 throw new IllegalArgumentException("prompt.md is missing");
@@ -85,19 +93,19 @@ public final class TaskLoader {
                 throw new IllegalArgumentException("platform must be paper or minestom, not " + platform);
             }
             Scaffold scaffold = null;
-            UserJson s = json.exactObject("scaffold");
+            UserJson s = json.exactObject("scaffold", SCAFFOLD);
             if (s != null) {
                 scaffold = new Scaffold(requireString(s, "template"), requireString(s, "name"), requireString(s, "package"));
             }
 
             ServerSpec server = ServerSpec.NONE;
-            UserJson spec = json.exactObject("server");
+            UserJson spec = json.exactObject("server", SERVER);
             if (spec != null) {
                 server = new ServerSpec(spec.exactBool("startBefore", false), spec.exactStrings("setup"));
             }
 
             List<Check> checks = new ArrayList<>();
-            for (UserJson check : json.exactObjects("checks")) {
+            for (UserJson check : json.exactObjects("checks", Checks.KEYS)) {
                 checks.add(Checks.parse(check, taskDir));
             }
             if (checks.isEmpty()) {
@@ -114,7 +122,7 @@ public final class TaskLoader {
                     fixtures,
                     server,
                     checks,
-                    Reset.parse(json.exactObject("resetBeforeChecks")),
+                    Reset.parse(json.exactObject("resetBeforeChecks", Reset.KEYS)),
                     json.wholeNumber("timeoutSeconds", JsonNumbers.SECONDS, 0));
         } catch (RuntimeException e) {
             throw new IOException("Task " + id + ": " + e.getMessage(), e);

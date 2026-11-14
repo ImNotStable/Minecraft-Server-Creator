@@ -100,7 +100,7 @@ class OutsideTextTest {
         Files.writeString(workspace.resolve("server.jar"), "stands in for the server jar");
 
         CheckResult result = run(Checks.parse(UserJson.of(
-                JsonParser.parseString(CHECKS.get(type)).getAsJsonObject(), "check."), taskDir));
+                JsonParser.parseString(CHECKS.get(type)).getAsJsonObject(), "check.", Checks.KEYS), taskDir));
 
         assertThat(result.passed()).as(result.detail()).isEqualTo(variant.holdsAnswer);
         if (!variant.holdsAnswer) {
