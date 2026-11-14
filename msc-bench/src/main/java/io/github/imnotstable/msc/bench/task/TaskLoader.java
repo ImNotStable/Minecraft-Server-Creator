@@ -77,7 +77,7 @@ public final class TaskLoader {
             String prompt = Files.readString(promptFile).strip();
 
             List<Path> fixtures = new ArrayList<>();
-            for (String shared : json.exactStrings("fixtures")) {
+            for (String shared : json.paths("fixtures")) {
                 Path fixture = taskDir.getParent().resolve(shared).normalize();
                 if (!Files.isDirectory(fixture)) {
                     throw new IllegalArgumentException("shared fixture not found: " + shared);

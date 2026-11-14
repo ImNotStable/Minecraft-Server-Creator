@@ -185,18 +185,18 @@ public record BenchConfig(
                 modes.put(e.getKey(), mode == null ? null : new Mode(
                         field(problems, () -> mode.stringsOrNulls("extraArgs")),
                         field(problems, () -> mode.stringMapOrNulls("env")),
-                        field(problems, () -> mode.exactString("mcpConfigTemplate", null)),
+                        field(problems, () -> mode.path("mcpConfigTemplate", null)),
                         field(problems, () -> mode.stringMapOrNulls("serverEnv")),
-                        field(problems, () -> mode.stringsOrNulls("serverPlugins")),
-                        field(problems, () -> mode.exactString("paperCacheSeed", null)),
+                        field(problems, () -> mode.pathsOrNulls("serverPlugins")),
+                        field(problems, () -> mode.path("paperCacheSeed", null)),
                         field(problems, () -> mode.exactString("requireMcp", null))));
             }
         }
         UserJson s = field(problems, () -> json.exactObject("server", SERVER));
         Server server = s == null ? null : new Server(
                 field(problems, () -> s.stringsOrNulls("command")),
-                field(problems, () -> s.exactString("paperJar", null)),
-                field(problems, () -> s.stringsOrNulls("paperCacheDirs")),
+                field(problems, () -> s.path("paperJar", null)),
+                field(problems, () -> s.pathsOrNulls("paperCacheDirs")),
                 field(problems, () -> s.exactString("downloadsUrl", null)),
                 // Read only for its type: the EULA choice comes from the machine, never from this file.
                 Boolean.TRUE.equals(field(problems, () -> s.exactBool("acceptEula", false))),
@@ -208,8 +208,8 @@ public record BenchConfig(
                 agent,
                 modes,
                 server,
-                field(problems, () -> json.exactString("gradleWrapperFrom", null)),
-                field(problems, () -> json.stringMapOrNulls("paths")),
+                field(problems, () -> json.path("gradleWrapperFrom", null)),
+                field(problems, () -> json.pathMapOrNulls("paths")),
                 number(problems, json, "", "corePort"),
                 field(problems, () -> json.exactString("minecraftVersion", null)));
     }
