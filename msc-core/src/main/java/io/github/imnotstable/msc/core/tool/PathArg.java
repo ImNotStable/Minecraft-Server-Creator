@@ -87,7 +87,10 @@ public record PathArg(Path base, boolean inside) {
         try {
             return Files.createDirectories(dir);
         } catch (IOException e) {
-            throw new ToolException(what + " " + dir + " could not be created: " + reason(e));
+            // The folder is named once: a file-system message without the path it repeats.
+            String why = e instanceof FileSystemException f && f.getClass() == FileSystemException.class
+                    && f.getReason() != null ? f.getReason() : reason(e);
+            throw new ToolException(what + " " + dir + " could not be created: " + why);
         }
     }
 
