@@ -67,7 +67,11 @@ final class DevCycle {
 
     String run(Args args) throws IOException, InterruptedException {
         int maxChars = Budget.of(args);
-        Path project = config.resolve(args.str("project", "."));
+        Path project = args.path("project", ".", config.inWorkspace());
+        if (!Files.isDirectory(project)) {
+            // Checked first: a missing project is refused before the build's init script is written.
+            throw new ToolException("no project at " + project + ". Give the project folder, relative to the workspace.");
+        }
         boolean restart = args.bool("restart", true);
         Timings time = new Timings();
         Platform platform = platform(project);

@@ -1,5 +1,6 @@
 package io.github.imnotstable.msc.core.tools;
 
+import io.github.imnotstable.msc.core.tool.PathArg;
 import io.github.imnotstable.msc.core.tool.ToolException;
 import io.github.imnotstable.msc.process.AtomicFile;
 import java.io.IOException;
@@ -22,12 +23,12 @@ final class OutputFile {
 
     /**
      * Refuses {@code target} when it cannot be written: it is a folder, a part of its path is a file, the nearest
-     * existing folder or the file itself is read-only. Returns {@code target}.
+     * existing folder or the file itself is read-only, a name in it is too long ({@link PathArg#checkNames}). Returns {@code target}.
      *
      * @param what how the message names it, such as "file" or "server.properties"
      */
     static Path check(Path target, String what) {
-        Path file = target.toAbsolutePath().normalize();
+        Path file = PathArg.checkNames(target.toAbsolutePath().normalize(), what);
         if (Files.isDirectory(file)) {
             throw new ToolException(what + " " + file + " is a folder; give a file path");
         }
@@ -49,7 +50,7 @@ final class OutputFile {
 
     /** Refuses {@code dir} when it cannot be a folder to write in: a file is there or on its path, or it is read-only. */
     static Path checkFolder(Path dir, String what) {
-        Path folder = dir.toAbsolutePath().normalize();
+        Path folder = PathArg.checkNames(dir.toAbsolutePath().normalize(), what);
         if (Files.exists(folder) && !Files.isDirectory(folder)) {
             throw new ToolException(what + " " + folder + " is a file, not a folder");
         }

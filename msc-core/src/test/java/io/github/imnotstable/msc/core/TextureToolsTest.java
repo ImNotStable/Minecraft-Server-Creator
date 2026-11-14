@@ -44,6 +44,48 @@ class TextureToolsTest {
         return rows;
     }
 
+    /** #458: texture_view obeys the cap rule: 6,000 characters by default, maxChars up to 24,000. */
+    @Test
+    void textureViewObeysTheCapRule() {
+        List<String> palette = new ArrayList<>();
+        String symbols = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+        for (int i = 0; i < symbols.length(); i++) {
+            palette.add(symbols.charAt(i) + "=#" + String.format("%02x%02x%02x", i * 4, 255 - i * 4, i));
+        }
+        List<String> rows = new ArrayList<>();
+        for (int y = 0; y < 160; y++) {
+            StringBuilder row = new StringBuilder();
+            for (int x = 0; x < 160; x++) {
+                row.append(symbols.charAt((x * 7 + y * 3) % symbols.length()));
+            }
+            rows.add(row.toString());
+        }
+        h.ok("texture", "name", "block/big", "palette", palette, "rows", rows);
+        assertThat(h.ok("texture_view", "name", "block/big")).hasSizeLessThanOrEqualTo(6000)
+                .endsWith("Raise maxChars (at most 24000) to see more rows.]");
+        assertThat(h.ok("texture_view", "name", "block/big", "maxChars", 24000)).hasSizeLessThanOrEqualTo(24000)
+                .hasSizeGreaterThan(20000).endsWith("Texture too large to show in full.]");
+        assertThat(h.ok("texture_view", "name", "block/big", "maxChars", 400)).hasSizeLessThanOrEqualTo(400);
+    }
+
+    /** #457: a texture name too long for the file system is refused before any folder is made. */
+    @Test
+    void aTextureNameTooLongForTheFileSystemLeavesNothingBehind() throws Exception {
+        Path pack = workspace.resolve(".msc/pack");
+        java.util.Map<String, String> before = TreeSnapshot.of(pack);
+        for (String name : List.of("item/" + "a".repeat(250), "block/deep/" + "b".repeat(300))) {
+            String error = h.error("texture", "name", name, "kind", "gem", "color", "#d4263a");
+            assertThat(error).startsWith("error: texture ").contains("Use a shorter name.").doesNotContain("\n")
+                    .doesNotContain("internal");
+        }
+        assertThat(h.error("model_create", "name", "item/" + "d".repeat(300), "kind", "item", "textures",
+                List.of("item/ruby"))).startsWith("error: model ").contains("at most 255").doesNotContain("\n");
+        assertThat(TreeSnapshot.of(pack)).isEqualTo(before);
+        // The longest name that fits still works, its animation's .png.mcmeta included.
+        assertThat(h.ok("texture", "name", "item/" + "c".repeat(244), "kind", "gem", "color", "#d4263a", "animate", "pulse"))
+                .contains("animated ");
+    }
+
     @Test
     void aPngPathWritesALooseFileOutsideThePack() throws Exception {
         String gem = h.ok("texture", "name", "textures/ruby.png", "kind", "gem", "color", "#d4263a");

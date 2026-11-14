@@ -140,10 +140,10 @@ public final class WorldTools {
                 });
         registry.add("world_entities", "List entities in a region: type, name, position, health, tags. Loaded chunks only, except on Minestom.",
                 Schema.of().req("region", "string", REGION).opt("type", "string", "Only this type, such as zombie")
-                        .opt("limit", "integer", "Default 50").opt("ids", "boolean", "Add UUIDs")
+                        .opt("limit", "integer", "Default 50, at most " + Ops.EntitiesResult.MAX_ENTITIES).opt("ids", "boolean", "Add UUIDs")
                         .opt("world", "string", WORLD),
                 args -> world.entities(Coords.region(world.world(args.str("world", null)), args.str("region")),
-                        args.str("type", null), args.integer("limit", 50), args.bool("ids", false), Budget.DEFAULT_CHARS));
+                        args.str("type", null), args.integer("limit", 50, 1, Ops.EntitiesResult.MAX_ENTITIES), args.bool("ids", false), Budget.DEFAULT_CHARS));
         registry.add("build_undo", "Undo a build_batch edit.",
                 Schema.of().opt("edit", "string", "Edit id such as e3. Default: the most recent edit"),
                 args -> world.undo(args.str("edit", null)));
@@ -153,7 +153,7 @@ public final class WorldTools {
                         .opt("world", "string", WORLD),
                 args -> {
                     Region region = Coords.region(world.world(args.str("world", null)), args.str("region"));
-                    Path file = OutputFile.check(config.resolve(args.str("file")), "file");
+                    Path file = OutputFile.check(args.path("file", config.inWorkspace()), "file");
                     BlockGrid grid = world.read(region);
                     new Steps("structure_save").then(SAVE_STRUCTURE)
                             .run(SAVE_STRUCTURE, () -> OutputFile.write(file, to -> Schematic.save(grid, to)));
@@ -165,7 +165,7 @@ public final class WorldTools {
     /** Compare a region with a snapshot file (.schem, or text structure) placed at the region's lowest corner. */
     private static String diff(CoreConfig config, WorldService world, Region region, String name)
             throws java.io.IOException, InterruptedException {
-        Path file = config.resolve(name);
+        Path file = config.inWorkspace().resolve("diff", name);
         if (!Files.isRegularFile(file)) {
             throw new ToolException("no file " + file + "; take a snapshot first with structure_save");
         }

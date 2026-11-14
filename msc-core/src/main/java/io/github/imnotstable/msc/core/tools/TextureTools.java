@@ -6,6 +6,7 @@ import io.github.imnotstable.msc.core.texture.PackProperties;
 import io.github.imnotstable.msc.core.texture.ResourcePack;
 import io.github.imnotstable.msc.core.tool.Args;
 import io.github.imnotstable.msc.core.tool.Budget;
+import io.github.imnotstable.msc.core.tool.PathArg;
 import io.github.imnotstable.msc.core.tool.Schema;
 import io.github.imnotstable.msc.core.tool.Tool;
 import io.github.imnotstable.msc.core.tool.ToolException;
@@ -67,13 +68,18 @@ public final class TextureTools {
                 textures(args -> texture(args, pack, source, config)));
         registry.add("texture_view",
                 "Show a pack texture as a palette and pixel rows, the format texture draws. Animations show frame 1.",
-                Schema.of().req("name", "string", "Texture name such as item/ruby"),
+                Schema.of().req("name", "string", "Texture name such as item/ruby")
+                        .opt("maxChars", "integer", "Result size cap. Default 6000"),
                 textures(args -> {
+                    int maxChars = Budget.of(args);
                     ResourceId id = ResourceId.parse(args.str("name"));
                     Texture t = source.readTexture(id);
                     Texture frame = firstFrame(source, id, t);
                     String note = frame == t ? "" : "frame 1 of " + (t.height() / t.width()) + "\n";
-                    return note + Budget.truncate(PaletteText.view(frame), Budget.MAX_CHARS, "Texture too large to show.");
+                    String hint = maxChars < Budget.MAX_CHARS
+                            ? "Raise maxChars (at most " + Budget.MAX_CHARS + ") to see more rows."
+                            : "Texture too large to show in full.";
+                    return note + Budget.truncate(PaletteText.view(frame), maxChars - note.length(), hint);
                 }));
         registry.add("model_create",
                 "Write a block or item model from pack textures, and optionally an item definition.",
@@ -132,7 +138,7 @@ public final class TextureTools {
         int limit = Math.max(0, args.integer("limit", 5));
         String description = args.str("description", LifecycleTools.DEFAULT_PACK_DESCRIPTION);
         boolean required = args.bool("required", false);
-        Path copy = args.has("file") ? OutputFile.check(config.resolve(args.str("file")), "file") : null;
+        Path copy = args.has("file") ? OutputFile.check(args.path("file", config.inWorkspace()), "file") : null;
         boolean offered = pack.ours(PackProperties.url(properties));
         if (offered) {
             OutputFile.check(properties, ServerPropertiesFile.NAME);
@@ -227,7 +233,7 @@ public final class TextureTools {
     private static String texture(Args args, ResourcePack pack, PackSource source, CoreConfig config)
             throws IOException, InterruptedException {
         if (args.str("name").toLowerCase(Locale.ROOT).endsWith(".png")) {
-            return looseFile(args, source, config.resolve(args.str("name")));
+            return looseFile(args, source, args.path("name", config.inWorkspace()));
         }
         List<String> ways = new ArrayList<>();
         for (String way : List.of("rows", "kind", "copy")) {
@@ -267,6 +273,7 @@ public final class TextureTools {
         }
         Animation animation = args.has("animate") ? animation(args, t == null ? firstFrame(source, id) : t) : null;
         OutputFile.check(source.texturePath(id), "texture");
+        checkNameLength(id);
         Steps steps = new Steps("texture");
         if (t != null) {
             steps.then(WRITE_TEXTURE);
@@ -302,6 +309,22 @@ public final class TextureTools {
                     .append(" ticks each");
         }
         return out.append("\nnext: pack").toString();
+    }
+
+    /** The longest file name a texture call writes, the animation's {@code <name>.png.mcmeta}. */
+    private static final String LONGEST_SUFFIX = ".png.mcmeta";
+
+    /**
+     * Refuses a texture name too long for the file system before anything is written, so a refused name leaves no
+     * model, item or texture folders behind.
+     */
+    static void checkNameLength(ResourceId id) {
+        int max = PathArg.MAX_NAME_BYTES - LONGEST_SUFFIX.length();
+        int bytes = id.name().getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
+        if (bytes > max) {
+            throw new ToolException("texture name " + id.name().substring(0, 24) + "... is " + bytes
+                    + " bytes; at most " + max + " fit the file system. Use a shorter name.");
+        }
     }
 
     /**
