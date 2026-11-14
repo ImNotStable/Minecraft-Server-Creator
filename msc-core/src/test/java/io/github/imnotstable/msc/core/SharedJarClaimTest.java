@@ -3,6 +3,7 @@ package io.github.imnotstable.msc.core;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.imnotstable.msc.core.fixture.FakeBuildMain;
+import io.github.imnotstable.msc.templates.Templates;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -19,12 +20,14 @@ import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 
 /**
- * Which {@code server.jar} server_setup leaves for the two platforms that share it without installing it (Minestom,
- * Fabric), per state of the folder's marker, and that the reply says when it removed one (#518). A folder with no
- * marker keeps its jar; only a marker that gives the jar to another id removes it. Fake downloads, no real server.
+ * Which {@code server.jar} server_setup leaves, so which one server_start would launch, for every ordered pair of the
+ * platforms that use that name (NeoForge, Quilt, Fabric, Minestom), per state of the folder's marker. A jar is kept
+ * only when the marker names the caller and records the jar's hash (#524); anything else is removed and the reply
+ * says so, or, for an installer platform, replaced by the installer's own. Fake downloads, no real server.
  */
 class SharedJarClaimTest {
     private static final String MARKER = ".msc-loader";
+    private static final List<String> PLATFORMS = List.of("neoforge", "quilt", "fabric", "minestom");
     private static FakeDownloads downloads;
 
     @TempDir
@@ -41,51 +44,74 @@ class SharedJarClaimTest {
     }
 
     /** A marker state: what the folder's {@code .msc-loader} says before the setup. */
-    enum Marker { NONE, OWN, OTHER, OLD_OWN, OLD_OTHER }
+    enum Marker { NONE, OWN, OWN_WRONG_HASH, OTHER, OLD_FORMAT }
 
     static Stream<Arguments> table() {
-        String fabric = "fabric " + FakeDownloads.MINECRAFT;
-        return Stream.of(
-                Arguments.of("minestom", "minestom", "neoforge 21.0.1", Marker.NONE, false),
-                Arguments.of("minestom", "minestom", "neoforge 21.0.1", Marker.OWN, false),
-                Arguments.of("minestom", "minestom", "neoforge 21.0.1", Marker.OLD_OWN, false),
-                Arguments.of("minestom", "minestom", "neoforge 21.0.1", Marker.OTHER, true),
-                Arguments.of("minestom", "minestom", "neoforge 21.0.1", Marker.OLD_OTHER, true),
-                Arguments.of("minestom", "minestom", fabric, Marker.OTHER, true),
-                Arguments.of("fabric", fabric, "minestom", Marker.NONE, false),
-                Arguments.of("fabric", fabric, "minestom", Marker.OWN, false),
-                Arguments.of("fabric", fabric, "minestom", Marker.OLD_OWN, false),
-                Arguments.of("fabric", fabric, "minestom", Marker.OTHER, true),
-                Arguments.of("fabric", fabric, "minestom", Marker.OLD_OTHER, true),
-                Arguments.of("fabric", fabric, "fabric 1.20.1", Marker.OTHER, true));
+        return PLATFORMS.stream().flatMap(caller -> PLATFORMS.stream().filter(other -> !other.equals(caller))
+                .flatMap(other -> Stream.of(Marker.values()).map(m -> Arguments.of(caller, other, m))));
     }
 
-    @ParameterizedTest(name = "{0} over {2} marker {3}")
+    @ParameterizedTest(name = "{0} over {1}, marker {2}")
     @MethodSource("table")
-    void serverSetupRemovesOnlyAJarTheMarkerGivesToAnother(String platform, String own, String other, Marker marker,
-                                                           boolean removed) throws Exception {
+    void serverSetupKeepsOnlyAJarTheMarkerVouchesForAsTheCallers(String caller, String other, Marker marker)
+            throws Exception {
         Path ws = workspace();
         Path run = Files.createDirectories(ws.resolve("run"));
-        Files.writeString(run.resolve("server.jar"), "left jar");
+        Path jar = run.resolve("server.jar");
+        Files.writeString(jar, "left jar");
+        String hash = sha256(jar);
         switch (marker) {
             case NONE -> { }
-            case OWN -> Files.writeString(run.resolve(MARKER), own + "\n" + sha256(run.resolve("server.jar")) + " server.jar\n");
-            case OTHER -> Files.writeString(run.resolve(MARKER), other + "\n" + sha256(run.resolve("server.jar")) + " server.jar\n");
-            case OLD_OWN -> Files.writeString(run.resolve(MARKER), own);
-            case OLD_OTHER -> Files.writeString(run.resolve(MARKER), other);
+            case OWN -> Files.writeString(run.resolve(MARKER), id(caller) + "\n" + hash + " server.jar\n");
+            case OWN_WRONG_HASH -> Files.writeString(run.resolve(MARKER), id(caller) + "\n" + "0".repeat(64) + " server.jar\n");
+            case OTHER -> Files.writeString(run.resolve(MARKER), id(other) + "\n" + hash + " server.jar\n");
+            case OLD_FORMAT -> Files.writeString(run.resolve(MARKER), id(caller));
         }
         String out;
+        String start;
         try (CoreHarness h = new CoreHarness(ws, downloads::apply)) {
-            out = h.ok("server_setup", "platform", platform, "version", FakeDownloads.MINECRAFT);
+            out = caller.equals("neoforge") ? h.ok("server_setup", "platform", caller)
+                    : h.ok("server_setup", "platform", caller, "version", FakeDownloads.MINECRAFT);
+            // Only where nothing would launch: a Minestom folder without a jar refuses before starting anything.
+            start = caller.equals("minestom") && !Files.exists(jar) ? h.error("server_start") : null;
         }
-        if (removed) {
-            assertThat(run.resolve("server.jar")).doesNotExist();
-            assertThat(out).contains("removed server.jar, which the folder held for " + other + "; ");
-        } else {
-            assertThat(run.resolve("server.jar")).hasContent("left jar");
-            assertThat(out).doesNotContain("removed server.jar");
+        assertThat(Files.readString(run.resolve(MARKER)).lines().findFirst()).contains(id(caller));
+        switch (caller) {
+            case "neoforge", "quilt" -> {
+                // The installer replaces whatever was there with its own jar (no libraries, so never "cached").
+                assertThat(jar).hasContent(caller.equals("neoforge") ? "neoforge server" : "quilt vanilla");
+                assertThat(out).contains("(installed)").doesNotContain("removed server.jar");
+            }
+            default -> {
+                if (marker == Marker.OWN) {
+                    assertThat(jar).hasContent("left jar");
+                    assertThat(out).doesNotContain("removed server.jar");
+                    return;
+                }
+                assertThat(jar).doesNotExist();
+                String next = caller.equals("fabric") ? "; the launcher downloads the vanilla server on first start\n"
+                        : "; dev_cycle deploys this project's jar there\n";
+                String why = switch (marker) {
+                    case NONE -> ": no marker says which platform it belongs to";
+                    case OTHER -> ", which the folder held for " + id(other);
+                    default -> ": the marker for " + id(caller) + " records no matching hash for it";
+                };
+                assertThat(out).contains("removed server.jar" + why + next);
+                assertThat(out.lines().filter(l -> l.contains("removed server.jar")).count()).isEqualTo(1);
+                if (start != null) {
+                    assertThat(start).contains("dev_cycle");
+                }
+            }
         }
-        assertThat(Files.readString(run.resolve(MARKER)).lines().findFirst()).contains(own);
+    }
+
+    private static String id(String platform) {
+        return switch (platform) {
+            case "neoforge" -> "neoforge " + Templates.versions().get("neoforgeVersion");
+            case "quilt" -> "quilt " + FakeDownloads.MINECRAFT + " " + Templates.versions().get("quiltLoaderVersion");
+            case "fabric" -> "fabric " + FakeDownloads.MINECRAFT;
+            default -> platform;
+        };
     }
 
     /** The case from the issue: a Minestom deploy, with no setup before it, marks the folder, so setup keeps it. */
@@ -103,7 +129,8 @@ class SharedJarClaimTest {
             // A Fabric-marked folder (#516): the deploy takes it over, and Fabric's setup then removes the project jar.
             h.ok("server_setup", "platform", "fabric", "version", FakeDownloads.MINECRAFT);
             Files.writeString(ws.resolve("run/server.jar"), "fabric vanilla");
-            h.ok("dev_cycle", "project", "demo", "restart", false);
+            assertThat(h.ok("dev_cycle", "project", "demo", "restart", false))
+                    .contains("removed server.jar, which the folder held for fabric " + FakeDownloads.MINECRAFT + "; ");
             assertThat(ws.resolve("run/server.jar")).hasContent("1.0");
             assertThat(h.ok("server_setup", "platform", "fabric", "version", FakeDownloads.MINECRAFT))
                     .contains("removed server.jar, which the folder held for minestom; ");

@@ -286,13 +286,26 @@ final class DevCycle {
             swept.addAll(ScanFolders.sweep(server(), ScanFolders.all(server())));
             swept.addAll(ScanFolders.sweepTemps(deployedFile().getParent(), deployedFile().getFileName().toString()));
         });
+        String[] claimed = new String[1];
         steps.run(DEPLOY, () -> {
             if (platform.addonDir() == null) {
-                // The project is the server jar: mark the folder Minestom's first, so no setup takes it for its own
-                // (#518) and another platform's jar is removed before the copy, not left to look like this one's.
-                LoaderInstaller.claimSharedJar(target.getParent(), ServerSetup.MINESTOM_ID);
+                // The project is the server jar: a server.jar the marker does not vouch for as Minestom's is removed
+                // before the copy, not left to look like this one's (#518, #524).
+                claimed[0] = LoaderInstaller.claimSharedJar(target.getParent(), ServerSetup.MINESTOM_ID);
+                if (claimed[0] != null) {
+                    steps.ifFails(DEPLOY, LoaderInstaller.removedLine(claimed[0], "no jar is deployed: dev_cycle again")
+                            .strip() + stopped);
+                } else if (!Files.exists(target)) {
+                    steps.ifFails(DEPLOY, "no jar is deployed: dev_cycle again" + stopped);
+                }
             }
             copy(build.jar(), target, server());
+            if (platform.addonDir() == null) {
+                // Only after the copy, so the marker never vouches for a missing or other jar.
+                steps.ifFails(DEPLOY, "the jar is deployed, but the folder does not record it as Minestom's yet: "
+                        + "dev_cycle again" + stopped);
+                LoaderInstaller.markSharedJar(target.getParent(), ServerSetup.MINESTOM_ID);
+            }
         });
         String kept = earlier == null ? null
                 : steps.note(REMOVE_EARLIER, () -> removeEarlier(earlier, target, server(), sameFile(),
@@ -313,6 +326,9 @@ final class DevCycle {
                     .append(" an interrupted earlier call left");
         }
         out.append(unswept);
+        if (claimed[0] != null) {
+            out.append('\n').append(LoaderInstaller.removedLine(claimed[0], "the project's jar replaces it").strip());
+        }
         if (!restart) {
             return new Budget.Parts()
                     .add(out.append(wasRunning ? "; server still running the old jar until restarted" : "").toString());
