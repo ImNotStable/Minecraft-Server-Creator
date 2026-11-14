@@ -1,9 +1,9 @@
 package io.github.imnotstable.msc.core.texture;
 
 import com.sun.net.httpserver.HttpServer;
-import io.github.imnotstable.msc.core.files.AtomicFile;
 import io.github.imnotstable.msc.core.server.PidFile;
 import io.github.imnotstable.msc.core.tool.ToolException;
+import io.github.imnotstable.msc.process.AtomicFile;
 import io.github.imnotstable.msc.textures.Models;
 import io.github.imnotstable.msc.textures.PackSource;
 import io.github.imnotstable.msc.textures.ResourceId;

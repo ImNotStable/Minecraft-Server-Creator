@@ -4,5 +4,5 @@ plugins {
     `java-test-fixtures`
 }
 
-description = "Server process control shared by msc-core and msc-bench: the process tree kill, the RCON client and " +
-    "the server.properties reader and writer."
+description = "Server process control shared by msc-core and msc-bench: the process tree kill, the RCON client, " +
+    "the server.properties reader and writer, and the atomic file writer."
