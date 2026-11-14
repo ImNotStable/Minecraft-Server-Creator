@@ -131,6 +131,7 @@ public final class Main {
     }
 
     private static int runBench(Path tasksDir, Map<String, String> flags, PrintStream out) throws IOException {
+        int repeat = repeat(flags.getOrDefault("--repeat", "1"));
         // Attempts run in the run folder: inside this repository both modes would load its CLAUDE.md and sources.
         // The checked folder is the resolved one, and the run writes to that same folder (links, .. and all).
         Path home = Path.of(System.getProperty("user.home"));
@@ -148,7 +149,6 @@ public final class Main {
         List<String> modes = flags.containsKey("--modes")
                 ? names(flags.get("--modes"))
                 : List.copyOf(config.modes().keySet()).stream().sorted().toList();
-        int repeat = Integer.parseInt(flags.getOrDefault("--repeat", "1"));
         Path runDir = runsDir.resolve(LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss")));
         Map<String, String> preambles = new HashMap<>();
         preambles.put(TaskDef.PAPER, readIfPresent(tasksDir.resolve("_preamble.md")));
@@ -169,6 +169,21 @@ public final class Main {
             return 4;
         }
         return records.stream().allMatch(RunRecord::passed) ? 0 : 3;
+    }
+
+    /** The {@code --repeat} value: a whole number of attempts per task and mode, at least 1. */
+    static int repeat(String value) {
+        int repeat;
+        try {
+            repeat = Integer.parseInt(value.strip());
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("--repeat " + value + " is not a whole number of attempts", e);
+        }
+        if (repeat < 1) {
+            throw new IllegalArgumentException("--repeat " + value + ": a run needs at least 1 attempt of each task "
+                    + "and mode");
+        }
+        return repeat;
     }
 
     /** The comma-separated names of a {@code --tasks} or {@code --modes} value, without surrounding spaces. */
@@ -275,7 +290,13 @@ public final class Main {
     }
 
     private static int report(Path runDir, PrintStream out) throws IOException {
-        List<RunRecord> records = ReportWriter.readResults(runDir.resolve(BenchRunner.RESULTS_FILE));
+        Path results = runDir.resolve(BenchRunner.RESULTS_FILE);
+        if (!Files.isRegularFile(results)) {
+            throw new IOException(runDir.toAbsolutePath() + " has no " + BenchRunner.RESULTS_FILE + ": give the run "
+                    + "folder that `run` prints after Report:, such as " + RunIsolation.DEFAULT_RUNS_SHOWN
+                    + "/<timestamp>");
+        }
+        List<RunRecord> records = ReportWriter.readResults(results);
         Path reportFile = runDir.resolve("report.md");
         Files.writeString(reportFile, ReportWriter.render(records));
         out.println("Report: " + reportFile.toAbsolutePath());

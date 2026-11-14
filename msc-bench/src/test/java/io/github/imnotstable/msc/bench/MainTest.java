@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
 
 import io.github.imnotstable.msc.bench.run.BenchConfig;
+import io.github.imnotstable.msc.bench.run.BenchRunner;
 import io.github.imnotstable.msc.bench.task.TaskDef;
 import io.github.imnotstable.msc.bench.task.TaskLoader;
 import io.github.imnotstable.msc.buildlogic.RepoFiles;
@@ -80,6 +81,31 @@ class MainTest {
 
         assertThat(refused).isInstanceOf(IOException.class).hasMessageContaining("CLAUDE.md");
         assertThat(runs).doesNotExist();
+    }
+
+    @ParameterizedTest
+    @CsvSource({"0", "-1", "two", "''"})
+    void runRefusesARepeatBelowOneLikeOtherBadArguments(String repeat) {
+        Path runs = dir.resolve("runs");
+
+        // IllegalArgumentException is what main turns into exit code 2.
+        Throwable refused = catchThrowable(() -> Main.run(new String[] {"run", "--repeat", repeat, "--out",
+                runs.toString()}, new PrintStream(new ByteArrayOutputStream(), true, StandardCharsets.UTF_8)));
+
+        assertThat(refused).isInstanceOf(IllegalArgumentException.class).hasMessageStartingWith("--repeat " + repeat);
+        assertThat(runs).doesNotExist();
+        assertThat(Main.repeat(" 3 ")).isEqualTo(3);
+    }
+
+    @Test
+    void reportOnAFolderWithoutResultsSaysSo() {
+        // An IOException is what main turns into exit code 2.
+        Throwable refused = catchThrowable(() -> Main.run(new String[] {"report", dir.toString()},
+                new PrintStream(new ByteArrayOutputStream(), true, StandardCharsets.UTF_8)));
+
+        assertThat(refused).isInstanceOf(IOException.class)
+                .hasMessageContaining("has no " + BenchRunner.RESULTS_FILE, "the run folder that `run` prints");
+        assertThat(dir.resolve("report.md")).doesNotExist();
     }
 
     @Test
