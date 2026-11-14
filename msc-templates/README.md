@@ -68,7 +68,7 @@ Invalid values throw `IllegalArgumentException` when the variables are built, in
 ## Tests
 
 - `./gradlew :msc-templates:test`: the API, variables and rendering (runs anywhere).
-- `./gradlew :msc-templates:verifyTemplates`: scaffolds every project template (`paper-plugin`, `paper-game`, `fabric-mod`, `fabric-game`, `neoforge-mod`, `forge-mod`, `minestom-server`, `minestom-game`) into `build/verify/` and runs each one's own `gradlew build`, so the templates compile against Paper, Fabric, NeoForge, Forge and Minestom and their tests pass. Needs Java 25, repo.papermc.io, maven.fabricmc.net, maven.neoforged.net, maven.minecraftforge.net and Maven Central, so it is not part of `check`.
+- `./gradlew :msc-templates:verifyTemplates`: scaffolds every project template (`paper-plugin`, `paper-game`, `fabric-mod`, `fabric-game`, `neoforge-mod`, `forge-mod`, `minestom-server`, `minestom-game`) into `build/verify/` and runs each one's own `gradlew build`, so the templates compile against Paper, Fabric, NeoForge, Forge and Minestom and their tests pass. For each game template it also follows the CLAUDE.md steps for adding a setting, a stage setting and a stage on a scaffold (`*-game-recipes/`) and runs its tests, so a documented change cannot turn an unrelated shipped test red (`TemplateRecipesTest`). Needs Java 25, repo.papermc.io, maven.fabricmc.net, maven.neoforged.net, maven.minecraftforge.net and Maven Central, so it is not part of `check`.
 
 ## Decisions
 

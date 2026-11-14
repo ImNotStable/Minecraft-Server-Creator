@@ -87,35 +87,51 @@ class GameConfigTest {
     }
 
     private static final List<Bad> BAD = List.of(
-            Bad.top("world", "5", "world: needs text, got 5"),
+            Bad.top("world", "5", "world: needs text, got the whole number 5"),
+            Bad.top("world", "''", "world: needs text, got empty text"),
             Bad.top("game-mode", "hover", "game-mode: unknown value hover"),
-            Bad.top("game-mode", "[adventure]", "game-mode: needs text, got [adventure]"),
+            Bad.top("game-mode", "[adventure]", "game-mode: needs text, got the list [adventure]"),
             Bad.top("difficulty", "brutal", "difficulty: unknown value brutal"),
-            Bad.top("time", "night", "time: needs a whole number, got night"),
-            Bad.top("time", "6000.5", "time: needs a whole number, got 6000.5"),
-            Bad.top("natural-spawns", "nope", "natural-spawns: needs true or false, got nope"),
-            Bad.top("keep-inventory", "no way", "keep-inventory: needs true or false, got no way"),
-            Bad.top("kit", "bread", "kit: needs a list, got bread"),
+            Bad.top("time", "night", "time: needs a whole number, got the text 'night'"),
+            Bad.top("time", "6000.5", "time: needs a whole number, got the decimal 6000.5"),
+            Bad.top("time", "'6000'", "time: needs a whole number, got the text '6000'; remove the quotes"),
+            Bad.top("time", "'6000.5'", "time: needs a whole number, got the text '6000.5'"),
+            Bad.top("time", "[6000]", "time: needs a whole number, got the list [6000]"),
+            Bad.top("time", "99999999999999999999",
+                    "time: needs a whole number, got the whole number 99999999999999999999, which is too big"),
+            Bad.top("natural-spawns", "nope", "natural-spawns: needs true or false, got the text 'nope'"),
+            Bad.top("natural-spawns", "'false'",
+                    "natural-spawns: needs true or false, got the text 'false'; remove the quotes"),
+            Bad.top("keep-inventory", "no way", "keep-inventory: needs true or false, got the text 'no way'"),
+            Bad.top("keep-inventory", "1", "keep-inventory: needs true or false, got the whole number 1"),
+            Bad.top("keep-inventory", "[true]", "keep-inventory: needs true or false, got the list [true]"),
+            Bad.top("kit", "bread", "kit: needs a list, got the text 'bread'"),
+            Bad.top("kit", "{bread: 8}", "kit: needs a list, got the map {bread=8}"),
             Bad.top("kit", "[laser]", "kit: unknown item laser"),
-            Bad.top("kit", "[{bread: 8}]", "kit: needs item or item:amount, got {bread=8}"),
+            Bad.top("kit", "[{bread: 8}]", "kit: needs item or item:amount, got the map {bread=8}"),
+            Bad.top("kit", "[5]", "kit: needs item or item:amount, got the whole number 5"),
             Bad.top("kit", "['bread:0']", "kit: amount must be between 1 and 2147483647 in bread:0"),
             Bad.top("kit", "['bread:99999999999']", "kit: amount must be between 1 and 2147483647 in bread:99999999999"),
             new Bad("stages", "stages: []", "stages: add at least one stage"),
-            new Bad("stages", "stages: start", "stages: needs a list, got start"),
-            new Bad("stages", "stages: [start]", "stages[0] needs {name: ..., spawn: [x, y, z]}, got start"),
+            new Bad("stages", "stages: start", "stages: needs a list, got the text 'start'"),
+            new Bad("stages", "stages: [start]", "stages[0] needs {name: ..., spawn: [x, y, z]}, got the text 'start'"),
             Bad.stage("name", "{spawn: [0, 0, 0]}", "stages[0] needs a name"),
+            Bad.stage("name", "{name: 5, spawn: [0, 0, 0]}", "stages[0] needs a name, got the whole number 5"),
+            Bad.stage("name", "{name: '', spawn: [0, 0, 0]}", "stages[0] needs a name, got empty text"),
             Bad.stage("name", "{name: a, spawn: [0, 0, 0]}, {name: A, spawn: [0, 0, 0]}",
                     "stages[1]: duplicate stage name A"),
             Bad.stage("spawn", "{name: a}", "stages[0] (a) needs a spawn"),
-            Bad.stage("spawn", "{name: a, spawn: 0 0 0}", "stages[0] (a).spawn needs [x, y, z], got 0 0 0"),
+            Bad.stage("spawn", "{name: a, spawn: 0 0 0}", "stages[0] (a).spawn needs [x, y, z], got the text '0 0 0'"),
             Bad.stage("spawn", "{name: a, spawn: [0, 0]}",
-                    "stages[0] (a).spawn needs [x, y, z] or [x, y, z, yaw, pitch], got [0, 0]"),
+                    "stages[0] (a).spawn needs [x, y, z] or [x, y, z, yaw, pitch], got the list [0, 0]"),
+            Bad.stage("spawn", "{name: a, spawn: [0, '-60.5', 0]}",
+                    "stages[0] (a).spawn has a non-number: the text '-60.5'; remove the quotes"),
             Bad.stage("goal", "{name: a, spawn: [0, 0, 0], goal: 1 2 3 4 5 6}",
-                    "stages[0] (a).goal needs [x1, y1, z1, x2, y2, z2], got 1 2 3 4 5 6"),
+                    "stages[0] (a).goal needs [x1, y1, z1, x2, y2, z2], got the text '1 2 3 4 5 6'"),
             Bad.stage("goal", "{name: a, spawn: [0, 0, 0], goal: {from: [0, 0, 0], to: [1, 1, 1]}}",
-                    "stages[0] (a).goal needs [x1, y1, z1, x2, y2, z2], got {from=[0, 0, 0], to=[1, 1, 1]}"),
+                    "stages[0] (a).goal needs [x1, y1, z1, x2, y2, z2], got the map {from=[0, 0, 0], to=[1, 1, 1]}"),
             Bad.stage("goal", "{name: a, spawn: [0, 0, 0], goal: [0, 0, x, 1, 1, 1]}",
-                    "stages[0] (a).goal has a non-number: x"));
+                    "stages[0] (a).goal has a non-number: the text 'x'"));
 
     @TestFactory
     Stream<DynamicTest> badValuesNameTheKey() {
@@ -133,12 +149,14 @@ class GameConfigTest {
         assertThat(BAD.stream().map(Bad::key).distinct().toList()).containsExactlyInAnyOrderElementsOf(keys);
     }
 
+    /** The message names the typo'd key and lists the known ones, read from the lists so a new key needs no change here. */
     @Test
     void unknownKeysAreNamed() {
         assertThatThrownBy(() -> parse("keep-inventry: false\n" + STAGE)).hasMessage(
-                "unknown key keep-inventry (known: world, game-mode, difficulty, time, natural-spawns, keep-inventory,"
-                        + " kit, stages)");
+                "unknown key keep-inventry (known: " + String.join(", ", GameConfig.KEYS) + ")");
         assertThatThrownBy(() -> parse("stages: [{name: a, spawn: [0, 0, 0], goals: [0, 0, 0, 1, 1, 1]}]"))
-                .hasMessage("stages[0] (a): unknown key goals (known: name, spawn, goal)");
+                .hasMessage("stages[0] (a): unknown key goals (known: " + String.join(", ", GameConfig.STAGE_KEYS) + ")");
+        assertThat(GameConfig.KEYS).contains("keep-inventory", "stages");
+        assertThat(GameConfig.STAGE_KEYS).contains("goal");
     }
 }
