@@ -1,10 +1,18 @@
 package io.github.imnotstable.msc.bench;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.catchThrowable;
 
 import io.github.imnotstable.msc.bench.check.CheckResult;
+import io.github.imnotstable.msc.buildlogic.RepoFiles;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 /** #462: no cut of captured text leaves half a surrogate pair, and every text can be written as UTF-8. */
 class TextTest {
@@ -57,5 +65,36 @@ class TextTest {
         assertThat(Text.cut("a".repeat(100) + "b".repeat(100), 45)).isEqualTo("a".repeat(10) + Text.CUT_MARK
                 + "b".repeat(30));
         assertThat(Text.cut("abcdefgh", 4)).isEqualTo("efgh");
+    }
+
+    @Test
+    void aFileOfTheBenchsOwnThatIsNotUtf8IsRefusedNamingItAndTheByte(@TempDir Path dir) throws IOException {
+        Path file = dir.resolve("task.json");
+        Files.write(file, "{\"title\":\"caf\u00e9\"}".getBytes(StandardCharsets.ISO_8859_1));
+        Path good = dir.resolve("good.json");
+        Files.writeString(good, "{\"title\":\"caf\u00e9 \uD83D\uDE00\"}");
+
+        assertThat(catchThrowable(() -> Text.readOwn(file)))
+                .isInstanceOf(IOException.class)
+                .hasMessage(file + ": the byte at offset 13 is not UTF-8 text; save the file as UTF-8");
+        assertThat(Text.readOwn(good)).isEqualTo("{\"title\":\"caf\u00e9 \uD83D\uDE00\"}");
+    }
+
+    /**
+     * #555: every read of a file is {@link Text#read} (someone else's text) or {@link Text#readOwn} (the bench's own),
+     * so no new input can come back as a bare "Input length = 1" naming no file.
+     */
+    @Test
+    void theBenchReadsTextOnlyThroughText() throws IOException {
+        List<String> direct = new ArrayList<>();
+        for (String file : RepoFiles.list("benchSources")) {
+            String source = Files.readString(RepoFiles.path("benchSources", file));
+            if (!file.endsWith("/Text.java") && (source.contains("Files.readString(")
+                    || source.contains("Files.readAllLines(") || source.contains("Files.lines(")
+                    || source.contains("Files.newBufferedReader("))) {
+                direct.add(file);
+            }
+        }
+        assertThat(direct).isEmpty();
     }
 }

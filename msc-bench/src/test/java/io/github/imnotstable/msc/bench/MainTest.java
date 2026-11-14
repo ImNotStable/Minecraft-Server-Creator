@@ -130,6 +130,26 @@ class MainTest {
     }
 
     @Test
+    void checkWithoutBenchJsonFillsTheRunsPlaceholdersFromTheDefaults() throws IOException {
+        // #554: without bench.json, check still fills every placeholder a run would, from bench.json's defaults.
+        Files.createDirectories(dir.resolve("tasks/t"));
+        Files.writeString(dir.resolve("tasks/t/task.json"), """
+                {"category":"code","title":"t","checks":[{"type":"command","outputMatches":"by default","run":[
+                  "{java}","-cp","%s","io.github.imnotstable.msc.bench.CatFile",
+                  "{attemptDir}/workspace/{minecraftVersion}-{rconPort}-{serverPort}-{corePort}.txt"]}]}
+                """.formatted(System.getProperty("java.class.path").replace("\\", "\\\\")));
+        Files.writeString(dir.resolve("tasks/t/prompt.md"), "p");
+        TaskDef task = TaskLoader.loadAll(dir.resolve("tasks")).getFirst();
+        Path workspace = Files.createDirectories(dir.resolve("attempt/workspace"));
+        Files.writeString(workspace.resolve("26.3-25576-25566-25590.txt"), "by default");
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+
+        int exit = Main.check(task, workspace, null, new PrintStream(out, true, StandardCharsets.UTF_8));
+
+        assertThat(exit).as(out.toString(StandardCharsets.UTF_8)).isZero();
+    }
+
+    @Test
     void runRefusesARunFolderInsideAProject() throws IOException {
         Files.writeString(dir.resolve("CLAUDE.md"), "project instructions");
         Path runs = dir.resolve("msc-bench/runs");
