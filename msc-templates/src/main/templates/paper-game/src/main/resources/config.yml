@@ -1,5 +1,6 @@
 # Game settings. The plugin applies them to the game world on start and to every player who joins.
 # Coordinates fit the dev server's flat world, where you stand at y -60.
+# A wrong value or an unknown key stops the plugin with one error naming the key; a missing key takes its default.
 
 world: world
 # Game mode for players: adventure (no breaking or placing), survival or creative.
