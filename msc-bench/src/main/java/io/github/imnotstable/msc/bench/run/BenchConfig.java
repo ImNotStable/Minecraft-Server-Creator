@@ -3,9 +3,9 @@ package io.github.imnotstable.msc.bench.run;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonParseException;
 import com.google.gson.JsonParser;
+import io.github.imnotstable.msc.bench.Text;
 import io.github.imnotstable.msc.bench.UserJson;
 import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -136,7 +136,7 @@ public record BenchConfig(
         BenchConfig raw;
         List<String> problems;
         try {
-            JsonElement parsed = JsonParser.parseString(Files.readString(file));
+            JsonElement parsed = JsonParser.parseString(Text.readOwn(file));
             if (parsed.isJsonNull()) {
                 throw new IOException("Empty bench config " + file);
             }
@@ -242,6 +242,15 @@ public record BenchConfig(
     private static int number(List<String> problems, UserJson holder, String prefix, String field) {
         Integer value = field(problems, () -> holder.wholeNumber(field, BenchConfigRules.NUMBERS.get(prefix + field), 0));
         return value == null ? 0 : value;
+    }
+
+    /**
+     * The config an empty {@code bench.json} in the working folder gives, the EULA not accepted: what {@code check}
+     * fills its placeholders from when there is no bench.json, so no default is written twice.
+     */
+    public static BenchConfig defaults() {
+        return new BenchConfig(null, null, null, null, null, 0, null)
+                .withDefaults(Path.of("").toAbsolutePath(), false);
     }
 
     /** Fills defaults and turns relative paths into absolute ones. */

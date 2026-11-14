@@ -267,9 +267,10 @@ final class ServerRun {
             out.append(r.sawDone() ? "server exited right after it was ready, " : "server exited during startup ")
                     .append("after ").append(LogText.seconds(r.millis())).append('\n');
             // What died and the likely fix first (ADR 0040), then the condensed errors.
-            List<CrashTriage.Finding> triage = CrashTriage.triage(lines, config.serverDir(), server.lastLaunch());
+            CrashTriage.Result triage = CrashTriage.triage(lines, config.serverDir(), server.lastLaunch(),
+                    server.platform());
             if (!triage.isEmpty()) {
-                out.append(CrashTriage.render(triage, lines.size(), null)).append('\n');
+                out.append(triage.render(null)).append('\n');
             }
             parts.add(out.toString()).cut(condensed);
             out.setLength(0);

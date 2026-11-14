@@ -44,7 +44,7 @@ class SharedJarClaimTest {
     }
 
     /** A marker state: what the folder's {@code .msc-loader} says before the setup. */
-    enum Marker { NONE, OWN, OWN_WRONG_HASH, OTHER, OLD_FORMAT }
+    enum Marker { NONE, OWN, OWN_CLAIMED, OWN_WRONG_HASH, OTHER, OTHER_CLAIMED, OLD_FORMAT }
 
     static Stream<Arguments> table() {
         return PLATFORMS.stream().flatMap(caller -> PLATFORMS.stream().filter(other -> !other.equals(caller))
@@ -63,8 +63,11 @@ class SharedJarClaimTest {
         switch (marker) {
             case NONE -> { }
             case OWN -> Files.writeString(run.resolve(MARKER), id(caller) + "\n" + hash + " server.jar\n");
+            // As a claim leaves it, before the launcher's download or the deploy wrote the jar (#548).
+            case OWN_CLAIMED -> Files.writeString(run.resolve(MARKER), id(caller) + "\n- server.jar\n");
             case OWN_WRONG_HASH -> Files.writeString(run.resolve(MARKER), id(caller) + "\n" + "0".repeat(64) + " server.jar\n");
             case OTHER -> Files.writeString(run.resolve(MARKER), id(other) + "\n" + hash + " server.jar\n");
+            case OTHER_CLAIMED -> Files.writeString(run.resolve(MARKER), id(other) + "\n- server.jar\n");
             case OLD_FORMAT -> Files.writeString(run.resolve(MARKER), id(caller));
         }
         String out;
@@ -83,9 +86,10 @@ class SharedJarClaimTest {
                 assertThat(out).contains("(installed)").doesNotContain("removed server.jar");
             }
             default -> {
-                if (marker == Marker.OWN) {
+                if (marker == Marker.OWN || marker == Marker.OWN_CLAIMED) {
                     assertThat(jar).hasContent("left jar");
                     assertThat(out).doesNotContain("removed server.jar");
+                    assertThat(run.resolve(MARKER)).hasContent(id(caller) + "\n" + hash + " server.jar\n");
                     return;
                 }
                 assertThat(jar).doesNotExist();
@@ -93,7 +97,7 @@ class SharedJarClaimTest {
                         : "; dev_cycle deploys this project's jar there\n";
                 String why = switch (marker) {
                     case NONE -> ": no marker says which platform it belongs to";
-                    case OTHER -> ", which the folder held for " + id(other);
+                    case OTHER, OTHER_CLAIMED -> ", which the folder held for " + id(other);
                     default -> ": the marker for " + id(caller) + " records no matching hash for it";
                 };
                 assertThat(out).contains("removed server.jar" + why + next);
@@ -112,6 +116,26 @@ class SharedJarClaimTest {
             case "fabric" -> "fabric " + FakeDownloads.MINECRAFT;
             default -> platform;
         };
+    }
+
+    /** #548: the vanilla jar Fabric's launcher downloaded at first start survives any later setup of that version. */
+    @Test
+    void aFabricSetupAgainKeepsTheVanillaJarItsLauncherDownloaded() throws Exception {
+        Path ws = workspace();
+        Path jar = ws.resolve("run/server.jar");
+        try (CoreHarness h = new CoreHarness(ws, downloads::apply)) {
+            h.ok("server_setup", "platform", "fabric", "version", FakeDownloads.MINECRAFT);
+            Files.writeString(jar, "fabric vanilla"); // what the launcher downloads on first start
+            assertThat(h.ok("server_setup", "mode", "game")).doesNotContain("removed");
+            assertThat(h.ok("server_setup", "platform", "fabric", "version", FakeDownloads.MINECRAFT))
+                    .doesNotContain("removed");
+            assertThat(jar).hasContent("fabric vanilla");
+            // Now recorded: a jar changed since is no longer the launcher's.
+            Files.writeString(jar, "changed");
+            assertThat(h.ok("server_setup", "mode", "game")).contains("removed server.jar: the marker for fabric "
+                    + FakeDownloads.MINECRAFT + " records no matching hash for it");
+        }
+        assertThat(jar).doesNotExist();
     }
 
     /** The case from the issue: a Minestom deploy, with no setup before it, marks the folder, so setup keeps it. */

@@ -214,13 +214,13 @@ public final class BenchRunner {
         }
         Path workspace = attemptDir.resolve("workspace");
         String startedAt = Instant.now().toString();
-        Map<String, String> values = placeholders(attemptDir, workspace);
+        Map<String, String> values = placeholders(config, attemptDir, workspace);
 
         Path mcpTemplate = mode.mcpConfigTemplate() == null ? null : Path.of(mode.mcpConfigTemplate());
         if (mcpTemplate != null) {
             Path mcpConfig = attemptDir.resolve("mcp.json");
             Files.createDirectories(attemptDir);
-            Files.writeString(mcpConfig, fillJson(Files.readString(mcpTemplate), values));
+            Files.writeString(mcpConfig, fillJson(Text.readOwn(mcpTemplate), values));
             values.put("mcpConfig", slashes(mcpConfig));
         }
 
@@ -244,13 +244,15 @@ public final class BenchRunner {
             }
             Workspaces.prepare(task, workspace, config, mode, task.needsServer() ? paperJar() : null, values);
             if (task.needsServer()) {
-                setupStep = "starting the server";
+                setupStep = "preparing the server files";
                 ServerFiles.restore(sharedServerFiles(), workspace.resolve("server"));
                 server = new ServerManager(workspace.resolve("server"), config.server(), serverEnv, children);
             }
             if (task.server().startBefore()) {
-                setupStep = "running the server setup commands";
+                // The server starts here, in its first rcon(), not in the constructor above.
+                setupStep = "starting the server";
                 RconClient rcon = server.rcon();
+                setupStep = "running the server setup commands";
                 for (String command : task.server().setup()) {
                     rcon.command(Placeholders.fill(command, values));
                 }
@@ -397,8 +399,14 @@ public final class BenchRunner {
         return paperJar;
     }
 
-    private Map<String, String> placeholders(Path attemptDir, Path workspace) {
-        Map<String, String> values = new LinkedHashMap<>(config.paths().size() + 12);
+    /**
+     * The placeholders of one attempt: every {@code paths} key and the names of
+     * {@link BenchConfigRules#BUILT_IN_PLACEHOLDERS} but {@code mcpConfig} and {@code prompt}, which the run adds once
+     * it has written them. The one source of these values, for {@code run} and for {@code check} (#554), so a check
+     * scores a kept attempt with the values the run gave it.
+     */
+    public static Map<String, String> placeholders(BenchConfig config, Path attemptDir, Path workspace) {
+        Map<String, String> values = new LinkedHashMap<>(config.paths().size() + 14);
         config.paths().forEach((k, v) -> values.put(k, slashes(Path.of(v))));
         values.put("java", ProcessHandle.current().info().command().map(c -> c.replace('\\', '/')).orElse("java"));
         values.put("workspace", slashes(workspace));

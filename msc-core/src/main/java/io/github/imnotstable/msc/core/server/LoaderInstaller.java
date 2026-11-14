@@ -9,10 +9,7 @@ import java.net.URI;
 import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
-import java.util.HexFormat;
 import java.util.List;
 
 /**
@@ -26,11 +23,14 @@ public final class LoaderInstaller {
      * Says which loader and versions the server directory holds, so another version is installed again, and the
      * SHA-256 of each file that loader's start reads, so a file another platform wrote since under the same name
      * (NeoForge, Minestom and the vanilla jar of Fabric and Quilt all use {@code server.jar}) is not taken for its own
-     * (#513). First line the id, then one {@code <sha256> <file>} line per file.
+     * (#513). First line the id, then one {@code <sha256> <file>} line per file, or {@link #UNWRITTEN} for a
+     * {@link #claimSharedJar claimed} {@code server.jar} that the platform's own start or deploy writes later.
      */
     static final String MARKER = ".msc-loader";
     /** The one start file name several platforms share: see {@link #claimSharedJar}. */
     static final String SHARED_JAR = "server.jar";
+    /** The marker line of a claim: the folder held no {@code server.jar}, and the next one there is the caller's. */
+    static final String UNWRITTEN = "- " + SHARED_JAR;
 
     /** Where each project publishes. Tests point these at a local server. */
     public record Urls(String neoforgeMaven, String forgeMaven, String quiltMaven, String purpurApi) {
@@ -193,7 +193,7 @@ public final class LoaderInstaller {
         }
         for (String file : files) {
             Path path = dir.resolve(file);
-            if (!Files.isRegularFile(path) || !lines.contains(sha256(path) + " " + file)) {
+            if (!Files.isRegularFile(path) || !lines.contains(Downloads.sha256(path) + " " + file)) {
                 return false;
             }
         }
@@ -210,7 +210,7 @@ public final class LoaderInstaller {
     static void mark(Path dir, String id, String... files) throws IOException {
         StringBuilder text = new StringBuilder(id).append('\n');
         for (String file : files) {
-            text.append(sha256(dir.resolve(file))).append(' ').append(file).append('\n');
+            text.append(Downloads.sha256(dir.resolve(file))).append(' ').append(file).append('\n');
         }
         AtomicFile.write(dir.resolve(MARKER), to -> Files.writeString(to, text));
     }
@@ -219,26 +219,28 @@ public final class LoaderInstaller {
      * For a platform whose start reads {@code server.jar} without its setup installing it: the Fabric launcher
      * downloads the vanilla server there on first start, and Minestom's dev_cycle deploys the project jar there. The
      * one entry point both server_setup and the Minestom deploy go through, so the folder always says whose
-     * {@code server.jar} it holds. The jar is kept only when the marker names {@code id} and records the jar's
-     * SHA-256; anything else (no marker, another id, the old one-line marker, a changed jar) is unknown and removed
-     * (#524), so the launcher downloads its own or server_start asks for a dev_cycle. Then the folder is marked as
-     * {@code id}'s, vouching for the jar only when it was kept. Returns why a jar was removed, for
-     * {@link #removedLine}, or null when none was.
+     * {@code server.jar} it holds. The jar is kept when the marker names {@code id} and either records the jar's
+     * SHA-256 or is this claim's own {@link #UNWRITTEN} line (the jar came since, from the launcher or the deploy), and
+     * its hash is recorded. Anything else (no marker, another id, the old one-line marker, a changed jar) is unknown and
+     * removed (#524), so the launcher downloads its own or server_start asks for a dev_cycle, and the folder is marked
+     * as {@code id}'s with no jar yet. Returns why a jar was removed, for {@link #removedLine}, or null when none was.
      */
     public static String claimSharedJar(Path dir, String id) throws IOException {
         Path jar = dir.resolve(SHARED_JAR);
-        if (Files.isRegularFile(jar) && marked(dir, id, SHARED_JAR)) {
+        List<String> lines = markerLines(dir);
+        boolean own = !lines.isEmpty() && lines.getFirst().equals(id);
+        if (Files.isRegularFile(jar) && (own && lines.contains(UNWRITTEN) || marked(dir, id, SHARED_JAR))) {
+            markSharedJar(dir, id);
             return null;
         }
         String reason = null;
         if (Files.exists(jar)) {
-            List<String> lines = markerLines(dir);
             reason = lines.isEmpty() ? ": no marker says which platform it belongs to"
-                    : !lines.getFirst().equals(id) ? ", which the folder held for " + lines.getFirst()
+                    : !own ? ", which the folder held for " + lines.getFirst()
                     : ": the marker for " + id + " records no matching hash for it";
             Files.delete(jar);
         }
-        mark(dir, id);
+        AtomicFile.write(dir.resolve(MARKER), to -> Files.writeString(to, id + "\n" + UNWRITTEN + "\n"));
         return reason;
     }
 
@@ -250,19 +252,6 @@ public final class LoaderInstaller {
     /** The line a tool reply gives a jar {@link #claimSharedJar} removed, or "" when it removed none. */
     public static String removedLine(String reason, String next) {
         return reason == null ? "" : "removed " + SHARED_JAR + reason + "; " + next + "\n";
-    }
-
-    private static String sha256(Path file) throws IOException {
-        try (var in = Files.newInputStream(file)) {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] buffer = new byte[64 * 1024];
-            for (int n; (n = in.read(buffer)) > 0; ) {
-                digest.update(buffer, 0, n);
-            }
-            return HexFormat.of().formatHex(digest.digest());
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException("every JDK has SHA-256", e);
-        }
     }
 
     private Path installer(String name, String url, String notFound) throws IOException, InterruptedException {

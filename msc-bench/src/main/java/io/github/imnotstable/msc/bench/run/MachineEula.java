@@ -3,6 +3,7 @@ package io.github.imnotstable.msc.bench.run;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParseException;
 import com.google.gson.JsonParser;
+import io.github.imnotstable.msc.bench.Text;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -44,7 +45,7 @@ public final class MachineEula {
             return false;
         }
         try {
-            JsonObject o = JsonParser.parseString(Files.readString(file)).getAsJsonObject();
+            JsonObject o = JsonParser.parseString(Text.readOwn(file)).getAsJsonObject();
             return o.has("accepted") && o.get("accepted").getAsBoolean()
                     && o.has("eula") && EULA_URL.equals(o.get("eula").getAsString())
                     && o.has("acceptedBy") && o.has("acceptedAt") && Instant.parse(o.get("acceptedAt").getAsString()) != null;

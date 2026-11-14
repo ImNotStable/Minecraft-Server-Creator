@@ -67,6 +67,24 @@ class ReportWriterTest {
                 .contains("| build-hut | build | 1/1, 200s, 10k | 0/1, -, - | - | - |");
     }
 
+    /**
+     * An error-free record with wallMs 0 (written before wallMs had a floor of 1): the Summary and the Failures line
+     * agree that its agent never ran (#556).
+     */
+    @Test
+    void summaryAndFailuresAgreeOnWhetherTheAgentRan() {
+        String md = ReportWriter.render(List.of(
+                record("baseline", true, 200_000, 9000, 0),
+                record("toolset", true, 100_000, 4000, 12),
+                unmeasured("toolset", 0, false, null)));
+
+        assertThat(md)
+                .contains("| toolset | 1/2 (50%) | 100s (1 of 2) |")
+                .contains(" | 12.0 (1 of 2) |")
+                .contains("- build-hut (toolset #2): ")
+                .doesNotContain("agent output not parsed");
+    }
+
     @Test
     void worksWithOneMode() {
         String md = ReportWriter.render(List.of(record("baseline", true, 1000, 10, 0)));

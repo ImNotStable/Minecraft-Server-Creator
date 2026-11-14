@@ -593,6 +593,27 @@ class LifecycleToolsTest {
         }
     }
 
+    /** #551: eula.txt is read as the server reads it, a properties file; MSC writes nothing to it here. */
+    @Test
+    void startReadsTheEulaAsTheServerDoes() throws Exception {
+        Path ws = Files.createDirectories(workspace.resolve("ws8"));
+        Files.createDirectories(ws.resolve("run"));
+        Files.writeString(ws.resolve("run/paper.jar"), "not a jar");
+        Path eula = ws.resolve("run/eula.txt");
+        try (CoreHarness s = new CoreHarness(ws)) {
+            for (String text : List.of("eula=false\n", "eula=yes\n", "#eula=true\n", "eula.txt=true\n")) {
+                Files.writeString(eula, text);
+                assertThat(s.error("server_start")).as(text).contains("EULA is not accepted");
+                assertThat(eula).as(text).hasContent(text.strip());
+            }
+            for (String text : List.of("eula = true\n", "eula=TRUE\n", "#comment\n  eula:true\n")) {
+                Files.writeString(eula, text);
+                assertThat(s.call("server_start", "timeoutSeconds", 20).text()).as(text).doesNotContain("EULA");
+                assertThat(eula).as(text).hasContent(text.strip());
+            }
+        }
+    }
+
     @Test
     void setupDownloadsTheNewestStableBuildAndInstallsTheAgent() throws Exception {
         byte[] jar = "paper jar bytes".getBytes(StandardCharsets.UTF_8);
