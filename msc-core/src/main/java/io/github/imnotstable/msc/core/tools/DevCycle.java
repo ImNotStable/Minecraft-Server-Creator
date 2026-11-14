@@ -1,6 +1,7 @@
 package io.github.imnotstable.msc.core.tools;
 
 import io.github.imnotstable.msc.core.CoreConfig;
+import io.github.imnotstable.msc.core.files.AtomicFile;
 import io.github.imnotstable.msc.core.server.LogCondenser;
 import io.github.imnotstable.msc.core.server.Platform;
 import io.github.imnotstable.msc.core.server.ProjectBuilder;
@@ -20,6 +21,7 @@ import java.util.List;
 import java.util.Properties;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
+import java.util.function.BiPredicate;
 
 /**
  * {@code dev_cycle}: build, deploy, restart, report. The jar is built first ({@code mscJar}: only the jar, and on
@@ -213,8 +215,8 @@ final class DevCycle {
         }
         String stopped = stopping ? "; the server is stopped: server_start starts it with what is deployed" : "";
         steps.ifFails(DEPLOY, "the earlier jar is still deployed" + stopped)
-                .ifFails(REMOVE_EARLIER, "the new jar is deployed as " + shown + ", but the earlier one is still beside "
-                        + "it: delete it, or dev_cycle again" + stopped)
+                .ifFails(REMOVE_EARLIER, "the new jar is deployed as " + shown + "; the earlier deploy may still be "
+                        + "beside it: delete it if it is another file, or dev_cycle again" + stopped)
                 .ifFails(LIBS, "the jar is deployed, libs/ is partly updated: dev_cycle again mirrors it" + stopped)
                 .ifFails(RECORD, "the jar is deployed; dev_cycle again records it" + stopped)
                 .ifFails(REMEMBER, "the jar is deployed; the workspace platform is still " + server.platform().id()
@@ -234,7 +236,8 @@ final class DevCycle {
         }
         steps.run(DEPLOY, () -> copy(build.jar(), target));
         if (platform.addonDir() != null) {
-            steps.ran(REMOVE_EARLIER, () -> removeEarlierDeploy(platform, project, target.getParent(), target));
+            steps.ran(REMOVE_EARLIER, () -> removeEarlierDeploy(platform, project, target.getParent(), target,
+                    () -> copy(build.jar(), target)));
         }
         if (build.libs() != null) {
             steps.run(LIBS, () -> mirror(build.libs(), libs, false));
@@ -317,7 +320,7 @@ final class DevCycle {
         if (Files.isDirectory(dest)) {
             try (var files = Files.list(dest)) {
                 for (Path old : files.toList()) {
-                    if (!keep.contains(old.getFileName().toString())) {
+                    if (!keep.contains(old.getFileName().toString()) && !kept(old, dest, keep)) {
                         changed++;
                         if (!dryRun) {
                             Files.delete(old);
@@ -327,6 +330,14 @@ final class DevCycle {
             }
         }
         return changed;
+    }
+
+    /**
+     * True when {@code old} is the file of a jar {@code keep} names, under another spelling: on a case-insensitive
+     * volume {@code Dep.jar} is {@code dep.jar}, and deleting it would delete the kept jar (#398).
+     */
+    private static boolean kept(Path old, Path dest, java.util.Set<String> keep) {
+        return keep.stream().anyMatch(name -> AtomicFile.sameFile(old, dest.resolve(name)));
     }
 
     private static void copy(Path from, Path to) {
@@ -358,7 +369,8 @@ final class DevCycle {
      * two copies (Paper: ambiguous plugin name; Fabric: duplicate mod id). Without a record, the folder-named jar
      * that earlier cores deployed is the earlier one.
      */
-    private boolean removeEarlierDeploy(Platform platform, Path project, Path addons, Path target) throws IOException {
+    private boolean removeEarlierDeploy(Platform platform, Path project, Path addons, Path target,
+                                        Redeploy redeploy) throws IOException {
         String recorded = deployed().getProperty(project.toAbsolutePath().normalize().toString());
         Path earlier;
         if (recorded != null) {
@@ -368,17 +380,40 @@ final class DevCycle {
             earlier = folder == null ? null : addons.resolve(folder + ".jar");
         }
         // Never the agent's jar: a project folder named msc-agent-paper, or a record from before #311, names it.
-        if (earlier != null && !earlier.equals(target) && earlier.startsWith(addons) && Files.isRegularFile(earlier)
-                && !isAgentJar(platform, earlier.getFileName().toString())) {
-            try {
-                Files.delete(earlier);
-                return true;
-            } catch (IOException e) {
-                throw new ToolException("cannot remove the earlier deploy " + earlier + " (" + e.getMessage()
-                        + "). A running server holds the jar open: call server_stop, then dev_cycle.");
-            }
+        if (earlier == null || !earlier.startsWith(addons) || isAgentJar(platform, earlier.getFileName().toString())) {
+            return false;
         }
-        return false;
+        return removeEarlier(earlier, target, AtomicFile::sameFile, redeploy);
+    }
+
+    /** Puts the new jar in place again. */
+    @FunctionalInterface
+    interface Redeploy {
+        void run() throws IOException;
+    }
+
+    /**
+     * Deletes {@code earlier} unless the file system says it is {@code target}'s file (#398: on a case-insensitive
+     * volume {@code Lobby.jar} is {@code lobby.jar}, which a path comparison cannot see). Then checks the new jar is
+     * still there; if the delete took it anyway, deploys it again and fails loudly. Returns whether it deleted.
+     */
+    static boolean removeEarlier(Path earlier, Path target, BiPredicate<Path, Path> sameFile, Redeploy redeploy)
+            throws IOException {
+        if (!Files.isRegularFile(earlier) || sameFile.test(earlier, target)) {
+            return false;
+        }
+        try {
+            Files.delete(earlier);
+        } catch (IOException e) {
+            throw new ToolException("cannot remove the earlier deploy " + earlier + " (" + e.getMessage()
+                    + "). A running server holds the jar open: call server_stop, then dev_cycle.");
+        }
+        if (!Files.isRegularFile(target)) {
+            redeploy.run();
+            throw new ToolException("removing the earlier deploy " + earlier + " also removed the jar just deployed as "
+                    + target + ": this file system names them as one file. The jar is deployed again.");
+        }
+        return true;
     }
 
     private void rememberDeploy(Path project, Path target) throws IOException {

@@ -1,6 +1,7 @@
 package io.github.imnotstable.msc.core.tools;
 
 import io.github.imnotstable.msc.core.CoreConfig;
+import io.github.imnotstable.msc.core.files.AtomicFile;
 import io.github.imnotstable.msc.core.tool.Budget;
 import io.github.imnotstable.msc.core.tool.Schema;
 import io.github.imnotstable.msc.core.tool.Tool;
@@ -198,11 +199,14 @@ public final class WorldTools {
         return out;
     }
 
-    /** Deletes the oldest {@code render-*.png} in {@code dir} beyond {@code keep}, never {@code latest}. */
+    /**
+     * Deletes the oldest {@code render-*.png} in {@code dir} beyond {@code keep}, never {@code latest}, whatever path
+     * spells it (#398).
+     */
     static void pruneRenders(Path dir, Path latest, int keep) throws IOException {
         List<Path> older;
         try (Stream<Path> list = Files.list(dir)) {
-            older = list.filter(p -> !p.equals(latest))
+            older = list.filter(p -> !AtomicFile.sameFile(p, latest))
                     .filter(p -> p.getFileName().toString().startsWith("render-") && p.getFileName().toString().endsWith(".png"))
                     .toList();
         }

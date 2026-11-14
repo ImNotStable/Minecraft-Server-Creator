@@ -1,11 +1,10 @@
 package io.github.imnotstable.msc.core.tools;
 
+import io.github.imnotstable.msc.core.files.AtomicFile;
 import io.github.imnotstable.msc.core.tool.ToolException;
 import java.io.IOException;
-import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 
 /**
  * A file a tool writes: checked before the call changes anything ({@link #check}), then written whole or not at all
@@ -67,25 +66,24 @@ final class OutputFile {
         return dir;
     }
 
-    /** Writes {@code target} through a temp file beside it, moved into place once complete. */
+    /**
+     * Writes {@code target} through a temp file beside it, moved into place once complete, as writing it in place
+     * would: a symbolic link is followed, a file that was there keeps its permissions, a new one gets the default ones.
+     */
     static Path write(Path target, Writer writer) throws IOException {
-        Path dir = Files.createDirectories(target.toAbsolutePath().normalize().getParent());
-        Path temp = Files.createTempFile(dir, "." + target.getFileName(), ".part");
-        try {
-            writer.write(temp);
-            try {
-                Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-            } catch (AtomicMoveNotSupportedException e) {
-                Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING);
-            }
-            return target;
-        } finally {
-            Files.deleteIfExists(temp);
-        }
+        return AtomicFile.write(target, writer::write);
     }
 
-    /** Copies {@code source} to {@code target}, whole or not at all. */
+    /**
+     * Like {@link #write}, but as {@link Files#copy} with {@code REPLACE_EXISTING} or {@code ImageIO.write} would: a
+     * symbolic link at {@code target} is replaced by the new file.
+     */
+    static Path replace(Path target, Writer writer) throws IOException {
+        return AtomicFile.replace(target, writer::write);
+    }
+
+    /** Copies {@code source} to {@code target}, whole or not at all, as {@link #replace} writes. */
     static Path copy(Path source, Path target) throws IOException {
-        return write(target, to -> Files.copy(source, to, StandardCopyOption.REPLACE_EXISTING));
+        return AtomicFile.copy(source, target);
     }
 }
