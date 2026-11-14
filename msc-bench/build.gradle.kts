@@ -65,5 +65,7 @@ repoInputs.set("runFolderDocs", file("README.md"), root.file("docs/wiki/Benchmar
 repoInputs.set("bundledTasks", fileTree("tasks"))
 // The README whose Tasks table TaskLoaderTest checks against the bundled tasks (#395).
 repoInputs.set("benchReadme", file("README.md"))
+// The shipped bench.json with the files it names, which must pass BenchConfig's load-time checks (#406).
+repoInputs.set("shippedConfig", file("bench.json"), file("mcp-toolset.template.json"), root.file("gradlew"))
 // The repository's CLAUDE.md, which a run folder inside the repository would sit under (RunIsolationTest).
 repoInputs.set("repoClaudeMd", root.file("CLAUDE.md"))

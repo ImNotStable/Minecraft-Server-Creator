@@ -59,6 +59,36 @@ Before the first run:
 
 The agent command runs Claude Code with `--setting-sources project,local`, so your own plugins, skills and memory stay out of the runs, with a pinned `--model` so runs compare like with like, and with `--dangerously-skip-permissions`, because nobody is there to answer prompts. Each attempt works in its own folder under the run folder, `~/.msc/bench-runs` by default. That folder must be outside any project: Claude Code loads `CLAUDE.md`, `CLAUDE.local.md` and `.claude/CLAUDE.md` from the working folder and every folder above it, and takes the enclosing git repository as the project, so attempts inside this repository would give both modes its instructions and the toolset's sources and the baseline would no longer be Claude Code alone. `run` refuses an `--out` folder with such a file or a `.git` in it or above it, after resolving symbolic links and `..` the way the system does, and writes to the folder it checked. When your home folder is itself inside a project (a dotfiles repository at `~`, or a `~/CLAUDE.md`), the default moves to `msc-bench-runs` in the system's temporary folder, and `run` says so: pass `--out` to keep the results somewhere the system does not clear. The agent can still run any command on the machine, though, so run the bench on a machine (or VM) where that is acceptable. Ports used: game 25566, RCON 25576, core 25590. A server already answering on those ports when a server task starts is a leftover from another run: the runner stops it before the setup, and the attempt fails if the ports stay taken. Stopping a run (Ctrl-C) kills the agent with its children (msc-core), the server and any check process, and sends `stop` over RCON to a server the agent started outside its own process tree.
 
+## Config
+
+`bench.json` (`--config` picks another file). Relative paths resolve against the config file's folder, and a missing key gets its default. A value that can never work is refused when the config loads, before any server or agent starts, with each key and the reason, so a bad config fails at once instead of after a server's start timeout.
+
+| Key | Default | Refused |
+| --- | --- | --- |
+| `agent.command` | `claude -p {prompt} --output-format json` | empty list, empty entries, no `{prompt}` here or in each mode's `extraArgs` or `env` |
+| `agent.timeoutSeconds` | 1800 | 0 or less |
+| `modes` | `{"baseline": {}}` | empty, a `null` mode, a name other than letters, digits, `.`, `_`, `-` |
+| `modes.<name>.extraArgs` | none | `null` entries |
+| `modes.<name>.env` | none | names with `=` or NUL, empty names, `null` values, NUL in values |
+| `modes.<name>.mcpConfigTemplate` | none | blank, no such file |
+| `modes.<name>.serverEnv` | none | as `env` |
+| `modes.<name>.serverPlugins` | none | blank entries, a `{placeholder}` that is neither a `paths` key nor one the runner fills |
+| `modes.<name>.paperCacheSeed` | none | blank, absolute, or outside the workspace (`..`) |
+| `modes.<name>.requireMcp` | none | blank |
+| `server.command` | `java -Xmx2G -jar paper.jar --nogui` | empty list, blank entries |
+| `server.paperJar` | newest cached jar, else downloaded | blank, no such file |
+| `server.paperCacheDirs` | `.cache`, `../.msc/cache` | empty list, blank entries |
+| `server.downloadsUrl` | `https://fill.papermc.io` | not an http or https URL with a host |
+| `server.acceptEula` | from `~/.msc/eula.json` | never read from the file |
+| `server.serverPort` | 25566 | outside 1 to 65535, the same as `server.rconPort` or `corePort` |
+| `server.rconPort` | 25576 | outside 1 to 65535, the same as `server.serverPort` or `corePort` |
+| `server.rconPassword` | `msc-bench` | empty or blank (the server turns RCON off), over 1446 bytes in UTF-8 (the server drops the login), a NUL or a lone surrogate (the server would read another password) |
+| `server.startTimeoutSeconds` | 180 | 0 or less |
+| `gradleWrapperFrom` | none | blank, a folder without `gradlew` |
+| `paths` | none | blank or `null` paths, names other than letters, digits, `.`, `_`, `-`, names the runner fills itself (`workspace`, `rconPort`, `prompt`...) |
+| `corePort` | 25590 | outside 1 to 65535, the same as a server port |
+| `minecraftVersion` | 26.3 | blank, characters other than letters, digits, `.`, `_`, `-` |
+
 ## Depends on
 
 - `msc-core`'s tool log and `~/.msc/eula.json`, read at runtime only (no compile dependency).
