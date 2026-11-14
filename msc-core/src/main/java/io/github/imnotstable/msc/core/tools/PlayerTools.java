@@ -135,14 +135,17 @@ public final class PlayerTools implements AutoCloseable {
                     throw ToolException.workspaceClosed("the test player was disconnected");
                 }
             }
-            throw new ToolException("the test player was kicked" + (why != null ? ": " + why : "") + "\n"
-                    + Budget.truncate(out.toString(), Budget.DEFAULT_CHARS, "Use fewer actions per call."));
+            // One budget (#473): the kick line and "error: " are kept, what happened before it gets the rest.
+            throw new ToolException(new Budget.Parts()
+                    .add("the test player was kicked" + (why != null ? ": " + why : "") + "\n").cut(cut(out))
+                    .text(Budget.DEFAULT_CHARS - "error: ".length(), null, FEWER));
         }
+        String left = null;
         if (args.bool("leave", false)) {
             drop(bot);
-            out.append("\nleft the server");
+            left = "left the server";
         }
-        return Budget.truncate(out.toString(), Budget.DEFAULT_CHARS, "Use fewer actions per call.");
+        return new Budget.Parts().cut(cut(out)).text(Budget.DEFAULT_CHARS, left, FEWER);
     }
 
     /** Lists the entities of one type in a region; the agent's {@code world.entities}. */
@@ -266,5 +269,12 @@ public final class PlayerTools implements AutoCloseable {
         if (left != null) {
             left.close();
         }
+    }
+
+    private static final String FEWER = "Use fewer actions per call.";
+
+    private static java.util.function.IntFunction<String> cut(StringBuilder out) {
+        String text = out.toString();
+        return n -> Budget.truncate(text, n, FEWER);
     }
 }

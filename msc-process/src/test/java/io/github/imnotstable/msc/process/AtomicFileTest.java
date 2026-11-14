@@ -79,6 +79,40 @@ class AtomicFileTest {
         assertThat(AtomicFile.isTempName("lobby.jar")).isFalse();
     }
 
+    /** #474: the temp name is short and fixed, so a 255-byte name (the most a file system holds) is written. */
+    @Test
+    void aNameOfTheLongestLengthIsWrittenByEveryWriter() throws IOException {
+        for (String how : WRITERS) {
+            for (int bytes : new int[] {1, 200, 235, 254, 255}) {
+                Path file = dir.resolve(how.charAt(0) + "x".repeat(bytes - 1));
+                put(how, file, "new");
+                put(how, file, "again");
+                assertThat(file).as("%s, %d bytes", how, bytes).hasContent("again");
+            }
+        }
+        assertNoParts();
+    }
+
+    /** #474: every temp name has one length, is told apart per target, and the shape before #474 is still known. */
+    @Test
+    void tempNamesHaveOneLengthAndTellTheirTarget() {
+        for (String target : List.of("a", "lobby.jar", "x".repeat(255), "deployed.properties")) {
+            for (long random : new long[] {0, 1, -1, Long.MIN_VALUE, 123_456_789}) {
+                String temp = AtomicFile.tempName(target, random);
+                assertThat(temp).hasSize(AtomicFile.TEMP_LENGTH);
+                assertThat(AtomicFile.isTempName(temp)).as(temp).isTrue();
+                assertThat(AtomicFile.isTempFor(target, temp)).as(temp).isTrue();
+                assertThat(AtomicFile.isTempFor(target + "2", temp)).as(temp).isFalse();
+            }
+        }
+        // Left by a version before #474.
+        assertThat(AtomicFile.isTempName(".lobby.jar.k3x9.part")).isTrue();
+        assertThat(AtomicFile.isTempFor("lobby.jar", ".lobby.jar.k3x9.part")).isTrue();
+        assertThat(AtomicFile.isTempFor("lobby.jar", ".other.jar.k3x9.part")).isFalse();
+        assertThat(AtomicFile.isTempName("lobby.jar")).isFalse();
+        assertThat(AtomicFile.isTempName("lobby.jar.part")).isFalse();
+    }
+
     @Test
     void anExistingFileKeepsItsPermissionsWhateverTheWriterDoes() throws IOException {
         assumePosix();

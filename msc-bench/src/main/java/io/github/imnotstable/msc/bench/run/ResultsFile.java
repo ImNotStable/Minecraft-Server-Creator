@@ -16,6 +16,7 @@ import java.io.StringReader;
 import java.lang.reflect.RecordComponent;
 import java.nio.ByteBuffer;
 import java.nio.CharBuffer;
+import java.nio.channels.FileChannel;
 import java.nio.charset.Charset;
 import java.nio.charset.CharsetDecoder;
 import java.nio.charset.CoderResult;
@@ -49,7 +50,9 @@ import java.util.regex.Pattern;
  * <p>One exception: a last line that is half-written, because a run was killed while appending it, is left out with a
  * warning naming it, so the attempts before it still make a report. Such a line has no line break after it and is no
  * complete JSON value (or its bytes end inside a character). The same line anywhere else, or as the file's only line,
- * is refused.
+ * is refused. So is the one other mark such a line leaves: joined with {@code cat} before the next file, the half line
+ * runs straight into that file's first run on one line; the half is left out with a warning and the run is read (see
+ * {@link #joinedAt}).
  *
  * <p>The writer cannot fail over a record's content: every string of the line is made writable first
  * ({@link Text#writable}), since a lone surrogate, as a cut through an emoji leaves, is the one thing UTF-8 cannot
@@ -73,8 +76,48 @@ public final class ResultsFile {
      * written as U+FFFD, so only the file system can make this fail, never the record.
      */
     public static void append(Path file, RunRecord record) throws IOException {
-        Files.writeString(file, Text.writable(GSON.toJson(record)) + "\n", StandardCharsets.UTF_8, StandardOpenOption.CREATE,
-                StandardOpenOption.APPEND);
+        append(file, record, Disk.REAL);
+    }
+
+    /**
+     * {@link #append(Path, RunRecord)} through {@code disk}. The file always ends on a whole line after it: the line
+     * starts a new line when the file does not end with one (a run killed while writing its last line), and a write
+     * that fails part way (a full disk takes the first bytes and refuses the rest) is cut back to the size the file
+     * had, as the "not recorded" stop says (#477). When even that cut fails, the exception says so.
+     */
+    static void append(Path file, RunRecord record, Disk disk) throws IOException {
+        String line = Text.writable(GSON.toJson(record)) + "\n";
+        try (FileChannel channel = FileChannel.open(file, StandardOpenOption.CREATE, StandardOpenOption.READ,
+                StandardOpenOption.WRITE)) {
+            long size = channel.size();
+            ByteBuffer bytes = StandardCharsets.UTF_8.encode(endsOpen(channel, size) ? "\n" + line : line);
+            channel.position(size);
+            try {
+                disk.write(file, channel, bytes);
+            } catch (IOException e) {
+                try {
+                    disk.truncate(file, channel, size);
+                } catch (IOException | RuntimeException cut) {
+                    IOException both = new IOException(e.getMessage() + "; " + file + " could not be cut back to its "
+                            + "last whole line either (" + cut.getMessage() + "), so its last line is half-written", e);
+                    both.addSuppressed(cut);
+                    throw both;
+                }
+                throw e;
+            }
+        }
+    }
+
+    /** Whether the file's last byte, of {@code size}, is something other than a line break. */
+    private static boolean endsOpen(FileChannel channel, long size) throws IOException {
+        if (size == 0) {
+            return false;
+        }
+        ByteBuffer last = ByteBuffer.allocate(1);
+        while (last.hasRemaining() && channel.read(last, size - 1) >= 0) {
+            // read the one byte
+        }
+        return last.get(0) != '\n';
     }
 
     /**
@@ -106,6 +149,12 @@ public final class ResultsFile {
             String content = !line.isEmpty() && line.charAt(0) == BOM ? line.substring(1) : line;
             if (content.isBlank()) {
                 continue;
+            }
+            int joined = joinedAt(content);
+            if (joined > 0) {
+                warnings.accept("warning: " + file + " line " + (i + 1) + " starts with a half-written run (a run was "
+                        + "stopped while writing it, and the next file was joined after it); left that part out");
+                content = content.substring(content.charAt(joined) == BOM ? joined + 1 : joined);
             }
             if (openEnd && !undecodableTail && i == lines.size() - 1 && !records.isEmpty() && !isJson(content)) {
                 warnings.accept(halfWritten(file, i + 1));
@@ -155,6 +204,29 @@ public final class ResultsFile {
     private static boolean utf16(byte[] bytes) {
         return bytes.length >= 2 && (bytes[0] == (byte) 0xFF && bytes[1] == (byte) 0xFE
                 || bytes[0] == (byte) 0xFE && bytes[1] == (byte) 0xFF);
+    }
+
+    /**
+     * Where the second part of {@code line} starts when the line is a half-written run with the next file's first run
+     * joined straight after it ({@code cat} of a file whose last line a stopped run cut), or -1. The line is that only
+     * when it is no JSON value, starts as an object, and ends in a complete JSON object that starts at a {@code {}
+     * (after the next file's byte-order mark, if any) with text before it that is no JSON value either. Nothing is
+     * guessed: at most one place in a line can start a complete JSON value that runs to the line's end (one starting
+     * inside it would have to close the outer value's brace before its own end, and one starting inside a string
+     * would meet the string's escaped quotes as bare text), so the split is that place or there is none.
+     */
+    private static int joinedAt(String line) {
+        if (line.isEmpty() || line.charAt(0) != '{' || isJson(line)) {
+            return -1;
+        }
+        for (int i = line.indexOf('{', 1); i > 0; i = line.indexOf('{', i + 1)) {
+            int start = line.charAt(i - 1) == BOM ? i - 1 : i;
+            String rest = line.substring(i);
+            if (isJson(rest) && tree(rest).isJsonObject() && !isJson(line.substring(0, start))) {
+                return start;
+            }
+        }
+        return -1;
     }
 
     /** Whether {@code line} is one complete JSON value, whatever its shape. */

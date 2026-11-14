@@ -98,6 +98,7 @@ final class ServerConsole {
 
     /** Most commands one server_command call runs. */
     static final int MAX_COMMANDS = 64;
+    private static final String CUT = "Output cut.";
 
     /** One command, or several (one per line) run in order, each output under its command, in one tool call. */
     String command(Args args) throws IOException, InterruptedException {
@@ -106,13 +107,15 @@ final class ServerConsole {
             throw new ToolException("at most " + MAX_COMMANDS + " commands per call; got " + commands.size());
         }
         if (commands.size() <= 1) {
-            return one(commands.isEmpty() ? "" : commands.getFirst());
+            return Budget.truncate(one(commands.isEmpty() ? "" : commands.getFirst()), Budget.DEFAULT_CHARS, CUT);
         }
-        StringBuilder out = new StringBuilder();
+        // One budget (#473): every command keeps its line, the outputs share what is left.
+        Budget.Parts out = new Budget.Parts();
         for (String command : commands) {
-            out.append(out.isEmpty() ? "" : "\n").append("> ").append(command).append('\n').append(one(command));
+            String output = one(command);
+            out.add((out.isEmpty() ? "" : "\n") + "> " + command + "\n").cut(n -> Budget.truncate(output, n, CUT));
         }
-        return Budget.truncate(out.toString(), Budget.DEFAULT_CHARS, "Output cut.");
+        return out.text(Budget.DEFAULT_CHARS, null, "Run fewer commands per call.");
     }
 
     private String one(String command) throws IOException, InterruptedException {
@@ -132,7 +135,7 @@ final class ServerConsole {
                 text.append(output.isEmpty() ? "" : "\n").append("console during the command:\n")
                         .append(String.join("\n", console));
             }
-            return Budget.truncate(text.toString(), Budget.DEFAULT_CHARS, "Output cut.");
+            return text.toString();
         }
         long mark = server.log().mark();
         marks.waitFrom = mark;
@@ -140,7 +143,7 @@ final class ServerConsole {
         Thread.sleep(700);
         List<String> lines = server.log().since(mark);
         return lines.isEmpty() ? "sent (no output within 0.7s)"
-                : Budget.truncate(LogText.tail(lines, 30), Budget.DEFAULT_CHARS, "Output cut.");
+                : LogText.tail(lines, 30);
     }
 
     /**

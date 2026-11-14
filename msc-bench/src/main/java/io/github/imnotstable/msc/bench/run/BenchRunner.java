@@ -40,6 +40,7 @@ public final class BenchRunner {
     private final Path runDir;
     private final Map<String, String> preambles;
     private final PrintStream log;
+    private final Disk disk;
     /** The agent, servers and check processes of the attempt under way, killed if the run is cut short. */
     private final ChildProcesses children = new ChildProcesses();
     /** True while an attempt whose task has a Paper server is under way. */
@@ -63,7 +64,13 @@ public final class BenchRunner {
      * before each task's prompt.
      */
     public BenchRunner(BenchConfig config, Path runDir, Map<String, String> preambles, PrintStream log) {
+        this(config, runDir, preambles, log, Disk.REAL);
+    }
+
+    /** A runner that writes {@code results.jsonl} through {@code disk}. */
+    public BenchRunner(BenchConfig config, Path runDir, Map<String, String> preambles, PrintStream log, Disk disk) {
         this.config = config;
+        this.disk = disk;
         this.runDir = runDir;
         this.preambles = new LinkedHashMap<>();
         preambles.forEach((platform, text) -> this.preambles.put(platform, text == null ? "" : text.strip()));
@@ -154,7 +161,7 @@ public final class BenchRunner {
                         return records;
                     }
                     try {
-                        ResultsFile.append(runDir.resolve(RESULTS_FILE), record);
+                        ResultsFile.append(runDir.resolve(RESULTS_FILE), record, disk);
                     } catch (IOException e) {
                         // The file system refused the write: later attempts would be lost the same way, so the run
                         // stops with the records the file holds, and the caller still writes their report.

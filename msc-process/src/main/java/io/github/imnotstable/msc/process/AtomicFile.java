@@ -1,6 +1,7 @@
 package io.github.imnotstable.msc.process;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.FileSystemException;
@@ -13,7 +14,10 @@ import java.nio.file.attribute.AclFileAttributeView;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.nio.file.attribute.PosixFileAttributeView;
 import java.nio.file.attribute.PosixFileAttributes;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
+import java.util.HexFormat;
 import java.util.Random;
 import java.util.regex.Pattern;
 
@@ -66,10 +70,29 @@ public final class AtomicFile {
         return target;
     }
 
-    /** True for the name of a temp file this class makes: {@code .<target name>.<random>.part}. */
+    /**
+     * True for the name of a temp file this class makes, {@code .<tag>.<random>.part} ({@link #tempName}), or made
+     * before #474, {@code .<target name>.<random>.part}: a sweep removes what an older version left too.
+     */
     public static boolean isTempName(String name) {
         return TEMP_NAME.matcher(name).matches();
     }
+
+    /**
+     * True for a temp file this class makes (or made before #474) for a target named {@code target}. The tag of the
+     * current shape is a hash of the name, so another target's temp is only taken in the rare case of a collision.
+     */
+    public static boolean isTempFor(String target, String name) {
+        return isTempName(name) && (name.startsWith("." + tag(target) + ".") && name.length() == TEMP_LENGTH
+                || name.startsWith("." + target + "."));
+    }
+
+    /**
+     * The length of every temp name this class makes now: fixed and short, so any name a file system holds can be
+     * written, a 255-byte one included (#474). It used to be {@code .<target name>.<random>.part}, about 20 bytes
+     * longer than the name.
+     */
+    public static final int TEMP_LENGTH = 1 + 12 + 1 + 13 + 5;
 
     private static final Pattern TEMP_NAME = Pattern.compile("\\..+\\.[0-9a-z]{1,13}\\.part");
 
@@ -132,7 +155,7 @@ public final class AtomicFile {
     /** A new empty file beside the target, created as a plain write creates one: default permissions, no 0600. */
     private static Path createTemp(Path dir, String name) throws IOException {
         for (int attempt = 0; ; attempt++) {
-            Path temp = dir.resolve("." + name + "." + Long.toUnsignedString(RANDOM.nextLong(), 36) + ".part");
+            Path temp = dir.resolve(tempName(name, RANDOM.nextLong()));
             try {
                 return Files.createFile(temp);
             } catch (FileAlreadyExistsException e) {
@@ -140,6 +163,24 @@ public final class AtomicFile {
                     throw e;
                 }
             }
+        }
+    }
+
+    /**
+     * {@code .<tag>.<random>.part}: the tag is 12 hex digits of the target name's SHA-256, so a sweep can tell which
+     * target a temp was for without the name in it; the random part is 13 base-36 digits. Always {@link #TEMP_LENGTH}.
+     */
+    static String tempName(String target, long random) {
+        String r = Long.toUnsignedString(random, 36);
+        return "." + tag(target) + "." + "0".repeat(13 - r.length()) + r + ".part";
+    }
+
+    private static String tag(String target) {
+        try {
+            byte[] hash = MessageDigest.getInstance("SHA-256").digest(target.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(hash, 0, 6);
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException(e);
         }
     }
 
