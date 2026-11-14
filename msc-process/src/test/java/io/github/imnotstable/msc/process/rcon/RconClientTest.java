@@ -55,8 +55,9 @@ class RconClientTest {
     @Test
     void refusesAWrongPassword() throws IOException {
         try (FakeRconServer server = new FakeRconServer("secret", cmd -> "")) {
+            // #393: its own type, so a caller can tell "refused" from "not up yet".
             assertThatThrownBy(() -> RconClient.connect("127.0.0.1", server.port(), "nope", Duration.ofSeconds(5)))
-                    .isInstanceOf(IOException.class)
+                    .isInstanceOf(RconRefusedException.class)
                     .hasMessageContaining("refused");
         }
     }
@@ -165,7 +166,7 @@ class RconClientTest {
         String password = "p".repeat(RconClient.MAX_BODY + 1);
         try (FakeRconServer server = new FakeRconServer(password, cmd -> "")) {
             assertThatThrownBy(() -> RconClient.connect("127.0.0.1", server.port(), password, Duration.ofSeconds(30)))
-                    .isInstanceOf(IOException.class).hasMessageContaining("password").hasMessageContaining("1446");
+                    .isInstanceOf(RconRefusedException.class).hasMessageContaining("password").hasMessageContaining("1446");
             assertThat(server.connections()).isZero();
         }
     }
@@ -188,7 +189,8 @@ class RconClientTest {
         // The listener's backlog completes the connection, but nothing ever reads or answers it.
         try (ServerSocket silent = new ServerSocket(0, 10, InetAddress.getLoopbackAddress())) {
             assertThatThrownBy(() -> RconClient.connect("127.0.0.1", silent.getLocalPort(), "pw",
-                    Duration.ofMillis(200))).isInstanceOf(SocketTimeoutException.class);
+                    Duration.ofMillis(200))).isInstanceOf(SocketTimeoutException.class)
+                    .isNotInstanceOf(RconRefusedException.class);
         }
     }
 }
