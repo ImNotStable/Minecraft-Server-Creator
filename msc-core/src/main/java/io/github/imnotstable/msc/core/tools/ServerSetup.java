@@ -257,7 +257,7 @@ final class ServerSetup {
         if (accept) {
             out.append(eula.recordForMachine());
         }
-        Optional<MachineEula.Acceptance> machine = MachineEula.applyTo(config.eulaFile(), file);
+        Optional<MachineEula.Acceptance> machine = config.machineEula().applyTo(file);
         if (machine.isPresent()) {
             out.append("eula.txt has eula=true from the owner's one-time acceptance for this machine (")
                     .append(machine.get().describe()).append(")\n");

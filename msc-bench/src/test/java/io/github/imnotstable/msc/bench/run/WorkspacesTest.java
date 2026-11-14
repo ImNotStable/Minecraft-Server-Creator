@@ -95,9 +95,9 @@ class WorkspacesTest {
         BenchConfig without = BenchConfig.load(dir.resolve("bench.json"), home);
 
         Files.createDirectories(home.resolve(".msc"));
-        Files.writeString(MachineEula.file(home), "{\"accepted\":true,\"eula\":\"https://aka.ms/MinecraftEULA\"}");
+        Files.writeString(home.resolve(".msc").resolve("eula.json"), "{\"accepted\":true,\"eula\":\"https://aka.ms/MinecraftEULA\"}");
         boolean incomplete = MachineEula.accepted(home);
-        Files.writeString(MachineEula.file(home), "{\"accepted\":true,\"eula\":\"https://aka.ms/MinecraftEULA\","
+        Files.writeString(home.resolve(".msc").resolve("eula.json"), "{\"accepted\":true,\"eula\":\"https://aka.ms/MinecraftEULA\","
                 + "\"acceptedBy\":\"owner\",\"acceptedAt\":\"2026-11-12T00:00:00Z\"}");
         BenchConfig with = BenchConfig.load(dir.resolve("bench.json"), home);
 
