@@ -50,6 +50,20 @@ class WorkspaceAndPackTest {
         return packBuild.lines().filter(l -> l.startsWith("url: ")).findFirst().orElseThrow().substring(5);
     }
 
+    /** #457: a folder msc_workspace cannot create is a one-line refusal naming it, never an internal error. */
+    @Test
+    void aFolderThatCannotBeCreatedIsRefusedInOneLine() throws Exception {
+        Files.writeString(first.resolve("version.txt"), "1.0");
+        assertThat(h.error("msc_workspace", "path", "version.txt/sub", "create", true))
+                .startsWith("error: folder " + first.resolve("version.txt/sub") + " could not be created: ")
+                .doesNotContain("internal").doesNotContain("\n");
+        assertThat(h.error("msc_workspace", "path", "a".repeat(300), "create", true))
+                .isEqualTo("error: argument path has a name of 300 bytes (" + "a".repeat(24)
+                        + "...); file systems hold at most 255. Use a shorter name.");
+        assertThat(h.error("msc_workspace", "path", "a\u0000b")).contains("control character (U+0000)");
+        assertThat(h.ok("msc_workspace")).isEqualTo("workspace: " + first);
+    }
+
     @Test
     void switchingMovesEveryToolToTheNewFolderAndStopsTheOldServer() throws Exception {
         h.close();

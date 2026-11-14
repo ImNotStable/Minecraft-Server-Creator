@@ -63,7 +63,7 @@ public final class TaskLoader {
             String prompt = Files.readString(promptFile).strip();
 
             List<Path> fixtures = new ArrayList<>();
-            for (String shared : strings(json, "fixtures")) {
+            for (String shared : json.exactStrings("fixtures")) {
                 Path fixture = taskDir.getParent().resolve(shared).normalize();
                 if (!Files.isDirectory(fixture)) {
                     throw new IllegalArgumentException("shared fixture not found: " + shared);
@@ -74,24 +74,24 @@ public final class TaskLoader {
                 fixtures.add(taskDir.resolve("fixture"));
             }
 
-            String platform = json.has("platform") ? json.string("platform") : TaskDef.PAPER;
+            String platform = json.exactString("platform", TaskDef.PAPER);
             if (!platform.equals(TaskDef.PAPER) && !platform.equals(TaskDef.MINESTOM)) {
                 throw new IllegalArgumentException("platform must be paper or minestom, not " + platform);
             }
             Scaffold scaffold = null;
-            if (json.has("scaffold")) {
-                UserJson s = json.object("scaffold");
+            UserJson s = json.exactObject("scaffold");
+            if (s != null) {
                 scaffold = new Scaffold(requireString(s, "template"), requireString(s, "name"), requireString(s, "package"));
             }
 
             ServerSpec server = ServerSpec.NONE;
-            if (json.has("server")) {
-                UserJson s = json.object("server");
-                server = new ServerSpec(s.has("startBefore") && s.bool("startBefore"), strings(s, "setup"));
+            UserJson spec = json.exactObject("server");
+            if (spec != null) {
+                server = new ServerSpec(spec.exactBool("startBefore", false), spec.exactStrings("setup"));
             }
 
             List<Check> checks = new ArrayList<>();
-            for (UserJson check : json.has("checks") ? json.objects("checks") : List.<UserJson>of()) {
+            for (UserJson check : json.exactObjects("checks")) {
                 checks.add(Checks.parse(check, taskDir));
             }
             if (checks.isEmpty()) {
@@ -115,13 +115,10 @@ public final class TaskLoader {
     }
 
     private static String requireString(UserJson json, String key) {
-        if (!json.has(key)) {
+        String value = json.exactString(key, null);
+        if (value == null) {
             throw new IllegalArgumentException("missing \"" + key + "\"");
         }
-        return json.string(key);
-    }
-
-    private static List<String> strings(UserJson json, String key) {
-        return json.has(key) ? json.strings(key) : List.of();
+        return value;
     }
 }

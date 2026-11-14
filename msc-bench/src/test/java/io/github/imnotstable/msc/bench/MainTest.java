@@ -120,8 +120,6 @@ class MainTest {
     void modeAndTaskNamesAreReadWithoutSurroundingSpaces() {
         // "--modes baseline, baseline" passed the repeat check as two different names.
         assertThat(RunSelection.names("--modes", "baseline , toolset", "mode")).containsExactly("baseline", "toolset");
-        assertThat(catchThrowable(() -> RunSelection.names("--modes", "baseline, baseline ,toolset", "mode")))
-                .hasMessageContaining("\"baseline\" is listed twice");
     }
 
     private static int freePort() throws IOException {

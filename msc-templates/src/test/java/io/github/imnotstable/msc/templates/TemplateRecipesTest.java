@@ -14,8 +14,8 @@ import org.junit.jupiter.api.Test;
 /**
  * Follows the "add a setting" and "add a stage" steps of each game template's CLAUDE.md on a scaffolded project, the
  * way the doc words them, and runs the project's tests: a documented change must not turn an unrelated test red
- * (#401). For paper-game also settings with three kinds of range, a {@code /game} subcommand that parses its own
- * number and a score in {@code Progress} (#431, #432). Only runs via
+ * (#401). For paper-game also settings with three kinds of range, a range open on one side, an unranged decimal
+ * (#450), a {@code /game} subcommand that parses its own number and a score in {@code Progress} (#431, #432). Only runs via
  * {@code ./gradlew :msc-templates:verifyTemplates}. When a template's text changes, an edit below that no longer
  * matches fails with the file and the text it looked for.
  */
@@ -37,24 +37,29 @@ class TemplateRecipesTest {
                 // defaults test, and a bad-value case. One plain whole number, and three with their own range (a Need
                 // and its row in ConfigNumbersTest): 1 to 10, 1 to 3 (which leaves out 5) and a decimal 0 to 1.
                 new Edit(MAIN + "GameConfig.java", "\"kit\", \"stages\");",
-                        "\"kit\", \"stages\", \"rounds\", \"teams\", \"lives\", \"drop-chance\");"),
+                        "\"kit\", \"stages\", \"rounds\", \"teams\", \"lives\", \"drop-chance\", \"speed\", \"gravity\");"),
                 new Edit(MAIN + "GameConfig.java", "Kit kit, List<Stage> stages)",
-                        "Kit kit, List<Stage> stages, int rounds, int teams, int lives, double dropChance)"),
+                        "Kit kit, List<Stage> stages, int rounds, int teams, int lives, double dropChance, double speed,"
+                                + " double gravity)"),
                 new Edit(MAIN + "GameConfig.java", "    static final Need<Double> PITCH = number(-90, 90);\n",
                         "    static final Need<Double> PITCH = number(-90, 90);\n"
                                 + "    static final Need<Integer> TEAMS = wholeNumber(1, 10);\n"
                                 + "    static final Need<Integer> LIVES = wholeNumber(1, 3);\n"
                                 + "    static final Need<Double> DROP_CHANCE = number(0, 1);\n"
-                                + "    static final Need<Integer> WAVES = wholeNumber(1, 50);\n"),
+                                + "    static final Need<Integer> WAVES = wholeNumber(1, 50);\n"
+                                + "    static final Need<Double> SPEED = number(0, Double.POSITIVE_INFINITY);\n"),
                 new Edit(MAIN + "GameConfig.java", "stages(list(c, \"stages\")));",
                         "stages(list(c, \"stages\")),\n                wholeNumber(c, \"rounds\", 3),\n"
                                 + "                TEAMS.get(value(c, \"teams\"), \"teams\", 2),\n"
                                 + "                LIVES.get(value(c, \"lives\"), \"lives\", 3),\n"
-                                + "                DROP_CHANCE.get(value(c, \"drop-chance\"), \"drop-chance\", 0.5));"),
+                                + "                DROP_CHANCE.get(value(c, \"drop-chance\"), \"drop-chance\", 0.5),\n"
+                                + "                SPEED.get(value(c, \"speed\"), \"speed\", 1.0),\n"
+                                + "                number(c, \"gravity\", 1.0));"),
                 new Edit("src/main/resources/config.yml", "keep-inventory: true\n",
                         "keep-inventory: true\n# Rounds per game.\nrounds: 3\n# Teams, 1 to 10.\nteams: 2\n"
-                                + "# Lives, 1 to 3.\nlives: 3\n# Chance a mob drops loot, 0 to 1.\ndrop-chance: 0.5\n"),
-                new Edit(TEST + "GameConfigTest.java", "defaults.stages()));", "defaults.stages(), 3, 2, 3, 0.5));"),
+                                + "# Lives, 1 to 3.\nlives: 3\n# Chance a mob drops loot, 0 to 1.\ndrop-chance: 0.5\n"
+                                + "# Run speed, 0 or more.\nspeed: 1.0\n# Gravity, any number.\ngravity: 1.0\n"),
+                new Edit(TEST + "GameConfigTest.java", "defaults.stages()));", "defaults.stages(), 3, 2, 3, 0.5, 1.0, 1.0));"),
                 new Edit(TEST + "GameConfigTest.java", "Bad.top(\"world\", \"5\"",
                         "Bad.top(\"rounds\", \"many\", \"rounds: needs a whole number, got the text 'many'\"),\n"
                                 + "            Bad.top(\"teams\", \"11\","
@@ -63,12 +68,16 @@ class TemplateRecipesTest {
                                 + " \"lives: needs a whole number from 1 to 3, got the text '5'\"),\n"
                                 + "            Bad.top(\"drop-chance\", \"1.5\","
                                 + " \"drop-chance: needs a number from 0 to 1, got the decimal 1.5\"),\n"
+                                + "            Bad.top(\"speed\", \"-1\","
+                                + " \"speed: needs a number from 0 (no upper limit), got the whole number -1\"),\n"
+                                + "            Bad.top(\"gravity\", \".inf\", \"gravity: needs a number, got infinity (.inf)\"),\n"
                                 + "            Bad.top(\"world\", \"5\""),
                 new Edit(TEST + "ConfigNumbersTest.java", "setting(\"time\", GameConfig.TIME, 0, 23999),\n",
                         "setting(\"time\", GameConfig.TIME, 0, 23999),\n"
                                 + "            setting(\"teams\", GameConfig.TEAMS, 1, 10),\n"
                                 + "            setting(\"lives\", GameConfig.LIVES, 1, 3),\n"
                                 + "            setting(\"drop-chance\", GameConfig.DROP_CHANCE, 0, 1),\n"
+                                + "            setting(\"speed\", GameConfig.SPEED, 0, Double.POSITIVE_INFINITY),\n"
                                 + "            stageSetting(\"waves\", GameConfig.WAVES, 1, 50),\n"),
                 // A stage setting with a range: its key in STAGE_KEYS, a Stage component read in stages with its Need,
                 // and a bad-value case.

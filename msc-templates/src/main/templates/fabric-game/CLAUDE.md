@@ -18,7 +18,7 @@ The base every game needs, so you only write the game itself. All of it is set i
 - World: time frozen at `time`, weather clear, `difficulty` applied (the dev server starts peaceful; this overrides it), natural mob spawns off (`naturalSpawns`). Mobs your code, commands and spawner blocks create still spawn.
 - Stages: an ordered list, each with a `spawn` and an optional `goal` box. Stepping into the goal moves the player to the next stage. Progress is saved per player (by UUID) in `run/{{projectId}}-progress.properties` and survives restarts.
 - `/game` admin command (ops, console, RCON): `status`, `stage <name|n> [player]`, `next [player]`, `reset [player]`, `kit [player]`.
-- A bad setting (duplicate stage name, no stages, kit count 0) fails on start with a message naming it.
+- A bad setting (a stage name with a space, a duplicate stage name, no stages, a kit count of 0, a time past 23999) fails on start with a message naming it. The rules are below.
 
 ## Layout
 
@@ -28,9 +28,20 @@ The base every game needs, so you only write the game itself. All of it is set i
 - `GameEvents.java`: hands Fabric API events to `Game`. `GameCommand.java`: `/game`; `handle(...)` returns the reply.
 - `Stage`, `Spot`, `Box`, `Kit`: settings values. `Progress`: saved progress. `WorldRules`: gamerules, time, weather, difficulty.
 - `src/main/resources/fabric.mod.json`: mod metadata, entry points and dependencies.
-- `src/test/java/`: plain unit tests (`BoxTest`, `ProgressTest`, `GameConfigTest`) and a command test that runs the real Brigadier tree (`GameCommandTest`). Tests play `TestGames`, a fixed two-stage game, not `GameConfig.game()`, so editing your stages, kit or rules does not break them; `GameConfigTest.theGameIsValid` checks that your `game()` passes its checks. Fabric Loader runs inside the test JVM (`fabric-loader-junit`), so Minecraft and Fabric API classes work in tests.
+- `src/test/java/`: plain unit tests (`BoxTest`, `ProgressTest`, `GameConfigTest`, `SharedRulesTest`) and a command test that runs the real Brigadier tree (`GameCommandTest`). Tests play `TestGames`, a fixed two-stage game, not `GameConfig.game()`, so editing your stages, kit or rules does not break them; `GameConfigTest.theGameIsValid` checks that your `game()` passes its checks. Fabric Loader runs inside the test JVM (`fabric-loader-junit`), so Minecraft and Fabric API classes work in tests.
 - `gradle/libs.versions.toml`: every dependency version. Add versions there, never inline in `build.gradle.kts`.
 - `run/`: dev server. `server.properties` and `eula.txt` are committed; the world, logs and jars are not.
+
+## Rules every game template shares
+
+paper-game, fabric-game and minestom-game check names and values the same way, and `SharedRulesTest` holds the same table of cases in each (the same inputs, the same outcome). Change a rule in all three or in none.
+
+- Stage names: one word of visible characters, so `/game stage <name>` can select it and chat can type it. No whitespace (not even a no-break space), no control or invisible formatting character, no `§`. A whole number is allowed: `/game stage 2` picks the stage named `2` first, then the second stage. Two names may not differ only in case (`arena` and `ARENA`), because `/game stage` ignores case (`Stage.sameName`).
+- `/game` arguments are split on runs of whitespace, so `game  stage  arena  Steve` works; tab completion (paper-game, fabric-game) completes the word being typed. Player names are matched exactly, ignoring case. Subcommands ignore case.
+- Values: `time` 0 to 23999; a kit amount 1 to 2304 (a full inventory); spawns finite, x and z within 30000000, y -2032 to 2031, yaw within 360, pitch within 90; goal corners whole numbers inside the same limits, in any order.
+- A bad value stops the game on start with one message naming it and the rule it broke; there is no fallback.
+
+Where this template differs, and why: the game is set in Java (`GameConfig.game()`), so the compiler checks names and types, and there are no config keys; a message names the rule and the value (`stage name must be one word of visible characters (no spaces, no §), got 'boss room'`). paper-game reads `config.yml` and names the key path instead.
 
 ## Building the game
 

@@ -6,6 +6,7 @@ import io.github.imnotstable.msc.core.fixture.FakeBuildMain;
 import io.github.imnotstable.msc.core.tools.StepsAccess;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -25,7 +26,8 @@ import org.junit.jupiter.params.provider.ValueSource;
  * it, every other record kept, and nothing an interrupted call left, anywhere in the workspace.
  *
  * <p>A kill is simulated with the steps' kill-point seam: at the n-th point the disk is copied as it is (what a killed
- * process leaves; the cleanup the dying thread would still run is not part of it), and the call stops there.
+ * process leaves; the cleanup the dying thread would still run is not part of it), and the call stops there. The
+ * project lives inside each workspace, as dev_cycle requires (#457), so the copy moves the records' project path along.
  */
 class DevCycleCrashTest {
     @TempDir
@@ -49,13 +51,14 @@ class DevCycleCrashTest {
 
     /** A project whose jar now deploys as arena.jar, and a workspace where it was deployed as oldname.jar. */
     private Path workspace(String name, String addons, String descriptor) throws IOException {
-        Path project = root.resolve("demo");
+        Path ws = root.resolve(name);
+        Path project = ws.resolve("demo");
         if (!Files.exists(project)) {
             Files.writeString(Files.createDirectories(project.resolve("src/main/resources")).resolve(descriptor), "{}");
             Files.writeString(project.resolve("version.txt"), "2.0");
             Files.writeString(project.resolve("name.txt"), "arena");
         }
-        Path ws = Files.createDirectories(root.resolve(name));
+        Files.createDirectories(ws);
         Path folder = Files.createDirectories(ws.resolve("run").resolve(addons));
         Files.writeString(folder.resolve("oldname.jar"), "1.0");
         Files.writeString(folder.resolve("other.jar"), "other");
@@ -72,7 +75,7 @@ class DevCycleCrashTest {
     }
 
     private String devCycle(CoreHarness h) {
-        var r = h.call("dev_cycle", "project", root.resolve("demo").toString(), "restart", false);
+        var r = h.call("dev_cycle", "project", "demo", "restart", false);
         assertThat(r.ok()).as(r.text()).isTrue();
         return r.text();
     }
@@ -105,6 +108,7 @@ class DevCycleCrashTest {
                 StepsAccess.killPoints(where -> {
                     if (reached[0]++ == at) {
                         copyTree(ws, snapshot);
+                        moveRecords(snapshot, ws);
                         throw new Killed();
                     }
                 });
@@ -145,7 +149,7 @@ class DevCycleCrashTest {
         Map<String, String> records = new java.util.HashMap<>();
         record.stringPropertyNames().forEach(k -> records.put(k, record.getProperty(k)));
         assertThat(records).containsExactlyInAnyOrderEntriesOf(Map.of(
-                root.resolve("demo").toAbsolutePath().normalize().toString(), addons + "/arena.jar",
+                ws.resolve("demo").toAbsolutePath().normalize().toString(), addons + "/arena.jar",
                 "/elsewhere/Other", addons + "/other.jar"));
         try (Stream<Path> tree = Files.walk(ws)) {
             assertThat(tree.map(p -> ws.relativize(p).toString().replace('\\', '/')))
@@ -153,6 +157,30 @@ class DevCycleCrashTest {
                     .noneMatch(p -> p.endsWith(".part") || p.contains("msc-removing"))
                     .noneMatch(p -> p.startsWith("run/.msc/staging/"));
         }
+    }
+
+    /** The copy's deploy records (and any half-written one) name its own project, as if the folder had been moved. */
+    private static void moveRecords(Path copy, Path from) {
+        try (Stream<Path> files = Files.list(copy.resolve(".msc"))) {
+            String was = key(from.resolve("demo"));
+            String now = key(copy.resolve("demo"));
+            for (Path file : files.filter(f -> f.getFileName().toString().startsWith("deployed")).toList()) {
+                String text = Files.readString(file, StandardCharsets.ISO_8859_1);
+                Files.writeString(file, text.replace(was, now), StandardCharsets.ISO_8859_1);
+            }
+        } catch (IOException e) {
+            throw new java.io.UncheckedIOException(e);
+        }
+    }
+
+    /** A project path as a deploy record's key is written. */
+    private static String key(Path project) throws IOException {
+        Properties p = new Properties();
+        p.setProperty(project.toAbsolutePath().normalize().toString(), "x");
+        java.io.StringWriter out = new java.io.StringWriter();
+        p.store(out, null);
+        String line = out.toString().lines().filter(l -> l.endsWith("=x")).findFirst().orElseThrow();
+        return line.substring(0, line.length() - 2);
     }
 
     private static List<String> entries(Path dir) throws IOException {

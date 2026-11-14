@@ -1,0 +1,214 @@
+package {{packageName}};
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+import java.util.Arrays;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+import org.bukkit.configuration.InvalidConfigurationException;
+import org.bukkit.configuration.file.YamlConfiguration;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DynamicTest;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestFactory;
+import org.mockbukkit.mockbukkit.MockBukkit;
+
+/**
+ * The rules for names and values that every game template (paper-game, fabric-game, minestom-game) shares: stage
+ * names, command words, time, kit amounts, spawns and goal boxes. The tables at the bottom are the same in all three
+ * templates, with the same inputs and the same outcome; only the adapters at the top differ, because here every value comes from config.yml.
+ * Changing one of these rules is a change to all three templates.
+ */
+class SharedRulesTest {
+    @BeforeEach
+    void setUp() {
+        MockBukkit.mock(); // the item registry, for the kit
+    }
+
+    @AfterEach
+    void tearDown() {
+        MockBukkit.unmock();
+    }
+
+    private static final String STAGE = "stages: [{name: a, spawn: [0, 0, 0]}]\n";
+
+    private static GameConfig parse(String yaml) throws InvalidConfigurationException {
+        YamlConfiguration c = new YamlConfiguration();
+        c.loadFromString(yaml);
+        return GameConfig.from(c);
+    }
+
+    /** The text as a YAML double-quoted string, every character outside printable ASCII escaped. */
+    private static String quoted(String text) {
+        StringBuilder out = new StringBuilder("\"");
+        text.chars().forEach(c -> out.append(c == '"' || c == '\\' ? "\\" + (char) c
+                : c < ' ' || c > '~' ? String.format("\\u%04x", c) : Character.toString(c)));
+        return out.append('"').toString();
+    }
+
+    private static String yaml(double d) {
+        return Double.isNaN(d) ? ".nan" : Double.isInfinite(d) ? (d > 0 ? ".inf" : "-.inf") : GameConfig.plainNumber(d);
+    }
+
+    private void stageNamed(String name) throws InvalidConfigurationException {
+        parse("stages: [{name: " + quoted(name) + ", spawn: [0, 0, 0]}]\n");
+    }
+
+    private void stagesNamed(List<String> names) throws InvalidConfigurationException {
+        parse("stages: [" + names.stream().map(n -> "{name: " + quoted(n) + ", spawn: [0, 0, 0]}")
+                .collect(Collectors.joining(", ")) + "]\n");
+    }
+
+    private void time(long time) throws InvalidConfigurationException {
+        parse("time: " + time + "\n" + STAGE);
+    }
+
+    private void kitAmount(int amount) throws InvalidConfigurationException {
+        parse("kit: ['bread:" + amount + "']\n" + STAGE);
+    }
+
+    private void spawn(double[] v) throws InvalidConfigurationException {
+        parse("stages: [{name: a, spawn: [" + Arrays.stream(v).mapToObj(SharedRulesTest::yaml)
+                .collect(Collectors.joining(", ")) + "]}]\n");
+    }
+
+    private void goal(int[] corners) throws InvalidConfigurationException {
+        parse("stages: [{name: a, spawn: [0, 0, 0], goal: " + Arrays.toString(corners) + "}]\n");
+    }
+
+    // ---- The shared tables: the same text in paper-game, fabric-game and minestom-game. ----
+
+    /** An input and whether the game takes it. */
+    record Case<T>(T input, boolean taken) {
+        @Override
+        public String toString() {
+            String shown = input instanceof double[] d ? Arrays.toString(d)
+                    : input instanceof int[] i ? Arrays.toString(i) : String.valueOf(input);
+            return (taken ? "takes " : "refuses ") + shown.codePoints()
+                    .mapToObj(c -> c < ' ' || c > '~' ? String.format("\\u%04x", c) : Character.toString(c))
+                    .collect(Collectors.joining());
+        }
+    }
+
+    static <T> Case<T> ok(T input) {
+        return new Case<>(input, true);
+    }
+
+    static <T> Case<T> no(T input) {
+        return new Case<>(input, false);
+    }
+
+    /** Stage names: one word that /game stage can select and chat can type (Stage.isName). */
+    static final List<Case<String>> STAGE_NAMES = List.of(
+            ok("start"), ok("Boss_Room"), ok("boss-room"), ok("level.2"), ok("2"), ok("été"), ok("竜"),
+            no(""), no(" "), no("boss room"), no(" start"), no("start "), no("boss\troom"), no("boss\nroom"),
+            no("boss room"), no("boss​room"), no("§cboss"), no("boss\u0007"));
+
+    /** Two stages' names in one game: /game stage ignores case, so names that differ only in case clash. */
+    static final List<Case<List<String>>> NAME_PAIRS = List.of(
+            ok(List.of("start", "arena")), ok(List.of("arena", "arena2")), no(List.of("arena", "ARENA")),
+            no(List.of("Arena", "arena")), no(List.of("I", "ı")));
+
+    /** Command lines as /game splits them: on runs of whitespace. */
+    static final Map<String, List<String>> LINES = Map.of(
+            "", List.of(),
+            "status", List.of("status"),
+            "  stage   arena  Steve ", List.of("stage", "arena", "Steve"),
+            "stage\tarena", List.of("stage", "arena"));
+
+    /** Lines being typed (tab completion): a trailing space starts the next, empty word. */
+    static final Map<String, List<String>> TYPING = Map.of(
+            "", List.of(""),
+            "st", List.of("st"),
+            "stage ", List.of("stage", ""),
+            "  stage   ar", List.of("stage", "ar"));
+
+    /** Time of day: 0 to 23999. */
+    static final List<Case<Long>> TIMES = List.of(no(-1L), ok(0L), ok(6000L), ok(23999L), no(24000L));
+
+    /** Kit amounts: 1 to 2304, a full inventory. */
+    static final List<Case<Integer>> AMOUNTS = List.of(no(-1), no(0), ok(1), ok(64), ok(2304), no(2305));
+
+    /**
+     * Spawns, {x, y, z, yaw, pitch}: inside the world and finite. Yaw within 360 and pitch within 90 are not in this
+     * table: Minestom's Pos wraps yaw and clamps pitch itself, so minestom-game cannot see an out-of-range one.
+     */
+    static final List<Case<double[]>> SPAWNS = List.of(
+            ok(new double[] {0.5, -60, 0.5, 0, 0}),
+            ok(new double[] {30000000, 2031, -30000000, 360, 90}),
+            ok(new double[] {-30000000, -2032, 30000000, -360, -90}),
+            no(new double[] {30000000.5, 0, 0, 0, 0}),
+            no(new double[] {0, 0, -30000001, 0, 0}),
+            no(new double[] {0, 2031.5, 0, 0, 0}),
+            no(new double[] {0, -2033, 0, 0, 0}),
+            no(new double[] {Double.NaN, 0, 0, 0, 0}),
+            no(new double[] {0, Double.POSITIVE_INFINITY, 0, 0, 0}));
+
+    /** Goal boxes, {x1, y1, z1, x2, y2, z2}: whole block corners inside the world, in any order. */
+    static final List<Case<int[]>> GOALS = List.of(
+            ok(new int[] {-2, -61, 10, 2, -58, 12}),
+            ok(new int[] {2, -58, 12, -2, -61, 10}),
+            ok(new int[] {30000000, 2031, 30000000, -30000000, -2032, -30000000}),
+            no(new int[] {30000001, 0, 0, 0, 0, 0}),
+            no(new int[] {0, 0, 0, 0, 0, -30000001}),
+            no(new int[] {0, 2032, 0, 0, 0, 0}),
+            no(new int[] {0, 0, 0, 0, -2033, 0}));
+
+    @TestFactory
+    Stream<DynamicTest> stageNames() {
+        return cases(STAGE_NAMES, this::stageNamed, Stage.NAME_RULE);
+    }
+
+    @TestFactory
+    Stream<DynamicTest> stageNamesDifferInMoreThanCase() {
+        return cases(NAME_PAIRS, this::stagesNamed, "duplicate stage name");
+    }
+
+    @TestFactory
+    Stream<DynamicTest> timeOfDay() {
+        return cases(TIMES, this::time, "from 0 to 23999");
+    }
+
+    @TestFactory
+    Stream<DynamicTest> kitAmounts() {
+        return cases(AMOUNTS, this::kitAmount, "from 1 to 2304");
+    }
+
+    @TestFactory
+    Stream<DynamicTest> spawns() {
+        return cases(SPAWNS, this::spawn, "");
+    }
+
+    @TestFactory
+    Stream<DynamicTest> goals() {
+        return cases(GOALS, this::goal, "");
+    }
+
+    @Test
+    void commandLinesSplitOnRunsOfWhitespace() {
+        LINES.forEach((line, words) -> assertThat(GameCommand.words(line, false)).as(line).containsExactlyElementsOf(words));
+        TYPING.forEach((line, words) -> assertThat(GameCommand.words(line, true)).as(line).containsExactlyElementsOf(words));
+    }
+
+    /** Builds something from an input; throws IllegalArgumentException when the input is refused. */
+    interface Build<T> {
+        void accept(T input) throws Exception;
+    }
+
+    /** Each case as a test: a taken input builds, a refused one fails with a message that contains {@code says}. */
+    private static <T> Stream<DynamicTest> cases(List<Case<T>> table, Build<T> build, String says) {
+        return table.stream().map(c -> DynamicTest.dynamicTest(c.toString(), () -> {
+            if (c.taken()) {
+                assertThatCode(() -> build.accept(c.input())).doesNotThrowAnyException();
+            } else {
+                assertThatThrownBy(() -> build.accept(c.input())).isInstanceOf(IllegalArgumentException.class)
+                        .hasMessageContaining(says);
+            }
+        }));
+    }
+}

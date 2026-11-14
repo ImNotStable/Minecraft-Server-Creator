@@ -1,10 +1,7 @@
 package {{packageName}};
 
-import java.util.HashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Objects;
-import java.util.Set;
 import net.minecraft.world.Difficulty;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.GameType;
@@ -24,6 +21,9 @@ import net.minecraft.world.level.GameType;
  */
 public record GameConfig(GameType gameMode, Difficulty difficulty, long time, boolean naturalSpawns,
                          boolean keepInventory, Kit kit, List<Stage> stages) {
+    /** The last tick of a day: {@code time} is 0 to this, as in every game template. */
+    public static final long MAX_TIME = 23999;
+
     public GameConfig {
         Objects.requireNonNull(gameMode, "gameMode");
         Objects.requireNonNull(difficulty, "difficulty");
@@ -32,10 +32,14 @@ public record GameConfig(GameType gameMode, Difficulty difficulty, long time, bo
         if (stages.isEmpty()) {
             throw new IllegalArgumentException("stages: add at least one stage");
         }
-        Set<String> names = new HashSet<>();
-        for (Stage s : stages) {
-            if (!names.add(s.name().toLowerCase(Locale.ROOT))) {
-                throw new IllegalArgumentException("stages: duplicate stage name " + s.name());
+        if (time < 0 || time > MAX_TIME) {
+            throw new IllegalArgumentException("time: needs a whole number from 0 to " + MAX_TIME + ", got " + time);
+        }
+        for (int i = 0; i < stages.size(); i++) {
+            for (int j = 0; j < i; j++) {
+                if (Stage.sameName(stages.get(j).name(), stages.get(i).name())) {
+                    throw new IllegalArgumentException("stages[" + i + "]: duplicate stage name " + stages.get(i).name());
+                }
             }
         }
     }
@@ -57,7 +61,7 @@ public record GameConfig(GameType gameMode, Difficulty difficulty, long time, bo
     /** Index of the stage with this name or 1-based number, or -1. */
     public int stageIndex(String nameOrNumber) {
         for (int i = 0; i < stages.size(); i++) {
-            if (stages.get(i).name().equalsIgnoreCase(nameOrNumber)) {
+            if (Stage.sameName(stages.get(i).name(), nameOrNumber)) {
                 return i;
             }
         }

@@ -36,7 +36,7 @@ public final class LifecycleTools {
         registry.add("project_scaffold",
                 "Create a new project from a template (Gradle KTS, tests wired in). Target directory must be empty.",
                 Schema.of().req("name", "string", "Project name, for example MyPlugin")
-                        .opt("dir", "string", "Target directory, relative to the workspace. Default: the workspace itself")
+                        .opt("dir", "string", "Target directory in the workspace. Default: the workspace itself")
                         .opt("template", "string", "paper-plugin (default), fabric-mod (also Quilt), neoforge-mod, forge-mod, minestom-server, or a minigame base (kit, stages, saved progress, /game debug "
                                 + "commands): paper-game, fabric-game, minestom-game")
                         .opt("package", "string", "Java package. Default com.example.<name>")
@@ -50,7 +50,7 @@ public final class LifecycleTools {
                         .opt("acceptEula", "boolean", EulaPrompts.EULA_ARG),
                 setup::run);
         registry.add("server_start", "Start the dev server and wait until it is ready. Returns startup errors only.",
-                Schema.of().opt("timeoutSeconds", "integer", "Default 180").opt("acceptEula", "boolean", EulaPrompts.EULA_ARG),
+                Schema.of().opt("timeoutSeconds", "integer", "Default 180, 1 to " + ServerRun.MAX_START_SECONDS).opt("acceptEula", "boolean", EulaPrompts.EULA_ARG),
                 run::start);
         registry.add("server_stop", "Stop the dev server.", Schema.of(), run::stop);
         registry.add("server_detach",
@@ -60,7 +60,7 @@ public final class LifecycleTools {
         registry.add("dev_cycle",
                 "Build, deploy and restart in one call: the edit-test loop. Tests run during the restart; an unchanged "
                         + "jar skips it. Returns build, test and startup errors, and phase times.",
-                Schema.of().opt("project", "string", "Project directory, relative to the workspace. Default: the workspace")
+                Schema.of().opt("project", "string", "Project directory in the workspace. Default: the workspace")
                         .opt("restart", "boolean", "Restart the server after deploying. Default true")
                         .opt("maxChars", "integer", "Result size cap. Default 6000"),
                 cycle::run);
@@ -78,6 +78,6 @@ public final class LifecycleTools {
                 console::command);
         registry.add("server_wait", "Wait until a log or chat line matches a regex, instead of polling.",
                 Schema.of().req("until", "string", "Regex, case-insensitive")
-                        .opt("timeoutSeconds", "integer", "Default 60"), console::await);
+                        .opt("timeoutSeconds", "integer", "Default 60, 1 to " + ServerConsole.MAX_WAIT_SECONDS), console::await);
     }
 }

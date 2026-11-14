@@ -7,10 +7,14 @@ import org.bukkit.inventory.ItemStack;
 
 /** The items a player gets on join and on {@code /game kit}, read from config as {@code item} or {@code item:amount}. */
 public record Kit(List<Entry> items) {
+    /** The most of one item a kit entry gives: a full inventory, 36 stacks of 64. The same in every game template. */
+    public static final int MAX_AMOUNT = 36 * 64;
+
     public record Entry(Material material, int amount) {
         public Entry {
-            if (amount < 1) {
-                throw new IllegalArgumentException("kit: amount must be at least 1 for " + material);
+            if (amount < 1 || amount > MAX_AMOUNT) {
+                throw new IllegalArgumentException("kit: amount must be a whole number from 1 to " + MAX_AMOUNT + " for "
+                        + material + ", got " + amount);
             }
         }
     }

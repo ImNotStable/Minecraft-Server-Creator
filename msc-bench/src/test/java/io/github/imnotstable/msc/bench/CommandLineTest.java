@@ -78,6 +78,11 @@ class CommandLineTest {
         bad("two-objects", RUN + RUN, "line 1: is not valid JSON: unexpected text at column");
         bad("single-quotes", RUN.replace('"', '\''), "line 1: is not valid JSON: unexpected text at column 3");
         bad("deep-list", "[".repeat(300), "line 1: is not valid JSON: Nesting limit 255 reached at column");
+        // #462: a half-written line is left out only as the last line of a file with runs before it.
+        bad("half-line-middle", RUN + "\n" + RUN.substring(0, 20) + "\n" + RUN + "\n",
+                "line 2: is not valid JSON: Unterminated string");
+        bad("half-line-ended", RUN + "\n" + RUN.substring(0, 20) + "\n", "line 2: is not valid JSON");
+        bad("half-line-complete", RUN + "\n{\"task\":\"t1\"}", "line 2: category: is missing");
         bad("blank", "\n  \n", "holds no runs");
         bad("empty", "", "holds no runs");
 
@@ -86,7 +91,31 @@ class CommandLineTest {
         good("utf16le-bom", bom(new byte[] {(byte) 0xFF, (byte) 0xFE}, RUN + "\r\n", StandardCharsets.UTF_16LE));
         good("utf16be-bom", bom(new byte[] {(byte) 0xFE, (byte) 0xFF}, RUN + "\n", StandardCharsets.UTF_16BE));
         good("joined-with-boms", ("\uFEFF" + RUN + "\n\uFEFF" + RUN + "\n").getBytes(StandardCharsets.UTF_8));
+        good("half-written-last", (RUN + "\n" + RUN.substring(0, 20)).getBytes(StandardCharsets.UTF_8));
         good("non-ascii", RUN.replace("code", "caf\u00e9 \u2014").getBytes(StandardCharsets.UTF_8));
+    }
+
+    /** bench.json files with one value of the wrong type: name to {contents, what the refusal says}. */
+    private static final Map<String, String[]> BAD_CONFIGS = new TreeMap<>();
+    /** task.json files with one value of the wrong type: name to {contents, what the refusal says}. */
+    private static final Map<String, String[]> BAD_TASKS = new TreeMap<>();
+
+    static {
+        BAD_CONFIGS.put("password-number", new String[] {"{\"server\":{\"rconPassword\":5}}",
+                "server.rconPassword: 5 is not a string"});
+        BAD_CONFIGS.put("command-string", new String[] {"{\"agent\":{\"command\":\"claude\"}}",
+                "agent.command: \"claude\" is not a list"});
+        BAD_CONFIGS.put("eula-yes", new String[] {"{\"server\":{\"acceptEula\":\"yes\"}}",
+                "server.acceptEula: \"yes\" is not true or false"});
+        BAD_CONFIGS.put("modes-list", new String[] {"{\"modes\":[]}", "modes: [] is not an object"});
+        String check = "\"checks\":[{\"type\":\"file\",\"path\":\"a.txt\"}]";
+        BAD_TASKS.put("server-true", new String[] {"{\"category\":\"code\",\"title\":\"t\",\"server\":true," + check
+                + "}", "server: true is not an object"});
+        BAD_TASKS.put("start-before-yes", new String[] {"{\"category\":\"code\",\"title\":\"t\","
+                + "\"server\":{\"startBefore\":\"yes\"}," + check + "}",
+                "server.startBefore: \"yes\" is not true or false"});
+        BAD_TASKS.put("title-number", new String[] {"{\"category\":\"code\",\"title\":7," + check + "}",
+                "title: 7 is not a string"});
     }
 
     private static void bad(String name, String text, String says) {
@@ -132,6 +161,15 @@ class CommandLineTest {
         for (Map.Entry<String, Results> bad : BAD_RESULTS.entrySet()) {
             Path runDir = Files.createDirectories(dir.resolve("runs").resolve(bad.getKey()));
             Files.write(runDir.resolve("results.jsonl"), bad.getValue().bytes());
+        }
+        for (Map.Entry<String, String[]> config : BAD_CONFIGS.entrySet()) {
+            Files.createDirectories(dir.resolve("configs"));
+            Files.writeString(dir.resolve("configs").resolve(config.getKey() + ".json"), config.getValue()[0]);
+        }
+        for (Map.Entry<String, String[]> task : BAD_TASKS.entrySet()) {
+            Path folder = Files.createDirectories(dir.resolve("bad-tasks").resolve(task.getKey()).resolve("t1"));
+            Files.writeString(folder.resolve("task.json"), task.getValue()[0]);
+            Files.writeString(folder.resolve("prompt.md"), "write a.txt");
         }
         for (Map.Entry<String, byte[]> good : GOOD_RESULTS.entrySet()) {
             Path runDir = Files.createDirectories(dir.resolve("good").resolve(good.getKey()));
@@ -183,6 +221,15 @@ class CommandLineTest {
         rows.add(row("run --config missing", "missing.json does not exist", "run", "--tasks-dir", "@tasks", "--config",
                 "@missing.json"));
         rows.add(row("run --config folder", "is not a file", "run", "--tasks-dir", "@tasks", "--config", "@empty"));
+        // #462: a bench.json or task.json value of the wrong type, named with the type its key takes.
+        BAD_CONFIGS.forEach((name, config) -> rows.add(row("run bench.json " + name, config[1], "run", "--tasks-dir",
+                "@tasks", "--config", "@configs/" + name + ".json")));
+        BAD_TASKS.forEach((name, task) -> {
+            for (String command : List.of("list", "run")) {
+                rows.add(row(command + " task.json " + name, "Task t1: task.json " + task[1], command, "--tasks-dir",
+                        "@bad-tasks/" + name, "--config", "@bench.json"));
+            }
+        });
         // check: its task, its workspace and its --config.
         String[] check = {"check", "--tasks-dir", "@tasks"};
         rows.add(row("check task ''", "the task \"\" names no task", with(check, "", "@ws")));
@@ -237,6 +284,13 @@ class CommandLineTest {
         assertThat(outcome.err()).isEmpty();
         String report = Files.readString(dir.resolve("good").resolve(name).resolve("report.md"));
         assertThat(report).contains("| t1 | ").contains(name.equals("non-ascii") ? "caf\u00e9 \u2014" : "| code |");
+        // A half-written last line is left out with one warning naming it; nothing else warns.
+        List<String> warnings = outcome.out().lines().filter(l -> l.startsWith("warning: ")).toList();
+        if (name.equals("half-written-last")) {
+            assertThat(warnings).singleElement().asString().contains("results.jsonl line 2 is half-written");
+        } else {
+            assertThat(warnings).isEmpty();
+        }
     }
 
     static Stream<String> goodResults() {
@@ -261,7 +315,7 @@ class CommandLineTest {
         });
 
         assertThat(exit).isEqualTo(Main.INTERNAL_ERROR).isNotIn(Main.OK, Main.USAGE, Main.BAD_INPUT, Main.FAILED,
-                Main.USAGE_LIMIT);
+                Main.USAGE_LIMIT, Main.NOT_RECORDED);
         assertThat(err.toString(StandardCharsets.UTF_8).lines().toList()).singleElement().asString()
                 .isEqualTo("msc-bench: internal error (java.lang.IllegalStateException: broken); please report it");
     }

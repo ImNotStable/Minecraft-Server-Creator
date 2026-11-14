@@ -1,6 +1,7 @@
 package io.github.imnotstable.msc.bench.run;
 
 import io.github.imnotstable.msc.bench.JsonNumbers;
+import io.github.imnotstable.msc.bench.Text;
 import io.github.imnotstable.msc.process.rcon.RconClient;
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -34,8 +35,8 @@ final class BenchConfigRules {
     private static final Pattern PLACEHOLDER = Pattern.compile("\\{([^{}]*)}");
 
     /**
-     * The number keys of {@code bench.json}, each with the values it takes: read exactly as written before the file is
-     * bound, so the config binds the very number checked (#416, {@link io.github.imnotstable.msc.bench.UserJson#bind}).
+     * The number keys of {@code bench.json}, each with the values it takes, read exactly as written (#416,
+     * {@link BenchConfig#read}).
      */
     static final Map<String, JsonNumbers.Range> NUMBERS = numbers();
 
@@ -54,7 +55,7 @@ final class BenchConfigRules {
 
     /**
      * Problems visible before defaults are filled in: null or blank entries and lists and maps given empty. Numbers
-     * are checked before binding, by {@link #NUMBERS}.
+     * are checked as they are read, by {@link #NUMBERS}.
      */
     static List<String> beforeDefaults(BenchConfig raw) {
         List<String> problems = new ArrayList<>();
@@ -156,21 +157,9 @@ final class BenchConfigRules {
         if (password.indexOf('\0') >= 0) {
             problems.add(key + "holds a NUL character; the server reads the password only up to it");
         }
-        if (hasLoneSurrogate(password)) {
+        if (Text.hasLoneSurrogate(password)) {
             problems.add(key + "holds a lone surrogate, which cannot be sent in UTF-8");
         }
-    }
-
-    private static boolean hasLoneSurrogate(String text) {
-        for (int i = 0; i < text.length(); i++) {
-            char c = text.charAt(i);
-            if (Character.isHighSurrogate(c) && i + 1 < text.length() && Character.isLowSurrogate(text.charAt(i + 1))) {
-                i++;
-            } else if (Character.isSurrogate(c)) {
-                return true;
-            }
-        }
-        return false;
     }
 
     private static void mode(List<String> problems, String name, BenchConfig.Mode mode) {

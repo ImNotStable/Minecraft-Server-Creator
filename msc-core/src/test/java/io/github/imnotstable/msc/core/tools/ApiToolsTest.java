@@ -27,15 +27,15 @@ class ApiToolsTest {
         CoreConfig config = CoreConfig.forWorkspace(dir.resolve("ws"));
         ApiTools api = new ApiTools(config, dir.resolve("gradle"));
 
-        assertThat(api.index().search("thing", null, 5)).contains("org.bukkit.PaperThing");
+        assertThat(api.index().search("thing", null, 5, 100)).contains("org.bukkit.PaperThing");
         Platform.remember(config, Platform.MINESTOM);
-        assertThat(api.index().search("thing", null, 5)).contains("net.minestom.MinestomThing").doesNotContain("Paper");
+        assertThat(api.index().search("thing", null, 5, 100)).contains("net.minestom.MinestomThing").doesNotContain("Paper");
 
         Platform.remember(config, Platform.PAPER);
         api.index();
         Path newer = jar(files.resolve("io.papermc.paper/paper-api/2.0/h/paper-api-2.0.jar"), "org.bukkit.NewerThing");
         Files.setLastModifiedTime(newer, FileTime.fromMillis(Files.getLastModifiedTime(paper).toMillis() + 60_000));
-        assertThat(api.index().search("thing", null, 5)).contains("org.bukkit.NewerThing");
+        assertThat(api.index().search("thing", null, 5, 100)).contains("org.bukkit.NewerThing");
     }
 
     private static Path jar(Path jar, String className) throws Exception {

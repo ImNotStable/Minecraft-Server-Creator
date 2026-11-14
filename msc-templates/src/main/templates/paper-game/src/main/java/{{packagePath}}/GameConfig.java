@@ -4,7 +4,6 @@ import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -41,7 +40,7 @@ public record GameConfig(String world, GameMode gameMode, Difficulty difficulty,
     /** Time of day: 0 sunrise, 6000 noon, 13000 night, 18000 midnight. */
     static final Need<Integer> TIME = wholeNumber(0, 23999);
     /** A kit amount: at most a full inventory (36 stacks of 64). */
-    static final Need<Integer> AMOUNT = wholeNumber(1, 36 * 64);
+    static final Need<Integer> AMOUNT = wholeNumber(1, Kit.MAX_AMOUNT);
     /** A block coordinate (a goal corner). */
     static final Need<Integer> BLOCK_XZ = wholeNumber(-Box.MAX_XZ, Box.MAX_XZ);
     static final Need<Integer> BLOCK_Y = wholeNumber(Box.MIN_Y, Box.MAX_Y);
@@ -66,15 +65,16 @@ public record GameConfig(String world, GameMode gameMode, Difficulty difficulty,
 
     private static List<Stage> stages(List<?> raw) {
         List<Stage> stages = new ArrayList<>();
-        Set<String> names = new HashSet<>();
         for (int i = 0; i < raw.size(); i++) {
             String where = "stages[" + i + "]";
             Map<?, ?> s = STAGE.get(raw.get(i), where);
-            String name = TEXT.get(s.get("name"), where + ".name");
+            String name = STAGE_NAME.get(s.get("name"), where + ".name");
             where += " (" + name + ")";
             unknownKeys(s.keySet(), STAGE_KEYS, where + ": ");
-            if (!names.add(name.toLowerCase(Locale.ROOT))) {
-                throw new IllegalArgumentException("stages[" + i + "]: duplicate stage name " + name);
+            for (Stage earlier : stages) {
+                if (Stage.sameName(earlier.name(), name)) {
+                    throw new IllegalArgumentException("stages[" + i + "]: duplicate stage name " + name);
+                }
             }
             Object goal = s.get("goal");
             stages.add(new Stage(name, spot(s.get("spawn"), where + ".spawn"),
@@ -163,6 +163,14 @@ public record GameConfig(String world, GameMode gameMode, Difficulty difficulty,
         return WHOLE_NUMBER.get(v, key, def);
     }
 
+    private static double number(ConfigurationSection c, String key, double def) {
+        return NUMBER.get(value(c, key), key, def);
+    }
+
+    private static double number(@Nullable Object v, String key, double def) {
+        return NUMBER.get(v, key, def);
+    }
+
     private static boolean bool(ConfigurationSection c, String key, boolean def) {
         return TRUE_OR_FALSE.get(value(c, key), key, def);
     }
@@ -227,23 +235,54 @@ public record GameConfig(String world, GameMode gameMode, Difficulty difficulty,
     static final Need<String> KIT_LINE = new Need<>("item or item:amount", TEXT.read());
     static final Need<Boolean> TRUE_OR_FALSE = new Need<>("true or false", v -> v instanceof Boolean b ? b : null);
     static final Need<Integer> WHOLE_NUMBER = wholeNumber(Integer.MIN_VALUE, Integer.MAX_VALUE);
+    /** Any finite number, whole or decimal. */
+    static final Need<Double> NUMBER = number(Double.NEGATIVE_INFINITY, Double.POSITIVE_INFINITY);
+    /** A stage name: the rule every game template shares ({@link Stage#isName}). */
+    static final Need<String> STAGE_NAME = new Need<>("a stage name, " + Stage.NAME_RULE,
+            v -> v instanceof String s && Stage.isName(s) ? s : null);
     static final Need<List<?>> LIST = list("a list");
     static final Need<List<?>> SPOT = list("[x, y, z] or [x, y, z, yaw, pitch]", 3, 5);
     static final Need<List<?>> BOX = list("[x1, y1, z1, x2, y2, z2]", 6);
     static final Need<Map<?, ?>> STAGE = new Need<>("{name: ..., spawn: [x, y, z]}",
             v -> v instanceof Map<?, ?> m ? m : null);
 
-    /** A whole number from {@code min} to {@code max}: a decimal, a too-big number or text is refused. */
+    /**
+     * A whole number from {@code min} to {@code max}: a decimal, a too-big number or text is refused. {@link #WHOLE_NUMBER}
+     * takes any int. Fails at once when {@code min > max}.
+     */
     static Need<Integer> wholeNumber(int min, int max) {
+        if (min > max) {
+            throw new IllegalArgumentException("wholeNumber(" + min + ", " + max + "): min is above max");
+        }
         String what = min == Integer.MIN_VALUE && max == Integer.MAX_VALUE
                 ? "a whole number" : "a whole number from " + min + " to " + max;
         return new Need<>(what, v -> (v instanceof Integer || v instanceof Long)
                 && ((Number) v).longValue() >= min && ((Number) v).longValue() <= max ? (int) ((Number) v).longValue() : null);
     }
 
-    /** A number, whole or decimal, from {@code min} to {@code max}: NaN, infinity and text are refused. */
+    /**
+     * A finite number, whole or decimal, from {@code min} to {@code max}: NaN, infinity and text are refused. An infinite
+     * bound means no limit on that side ({@code number(0, Double.POSITIVE_INFINITY)} is "a number from 0 (no upper
+     * limit)"); {@link #NUMBER} has none. Fails at once, so the plugin cannot start, when a bound is NaN, when
+     * {@code min > max}, or when the range holds no finite number.
+     */
     static Need<Double> number(double min, double max) {
-        return new Need<>("a number from " + plainNumber(min) + " to " + plainNumber(max), v -> {
+        String declared = "number(" + min + ", " + max + "): ";
+        if (Double.isNaN(min) || Double.isNaN(max)) {
+            throw new IllegalArgumentException(declared + "a bound is NaN; for no limit on a side use"
+                    + " Double.NEGATIVE_INFINITY or Double.POSITIVE_INFINITY, or NUMBER for no limit at all");
+        }
+        if (min > max) {
+            throw new IllegalArgumentException(declared + "min is above max");
+        }
+        if (min == Double.POSITIVE_INFINITY || max == Double.NEGATIVE_INFINITY) {
+            throw new IllegalArgumentException(declared + "no finite number is in this range");
+        }
+        String what = min == Double.NEGATIVE_INFINITY
+                ? (max == Double.POSITIVE_INFINITY ? "a number" : "a number up to " + plainNumber(max) + " (no lower limit)")
+                : max == Double.POSITIVE_INFINITY ? "a number from " + plainNumber(min) + " (no upper limit)"
+                : "a number from " + plainNumber(min) + " to " + plainNumber(max);
+        return new Need<>(what, v -> {
             if (!(v instanceof Number n)) {
                 return null;
             }
@@ -260,8 +299,18 @@ public record GameConfig(String world, GameMode gameMode, Difficulty difficulty,
 
     // ---- End of typed readers. ----
 
-    /** The number as the messages show it: {@code 5}, {@code 0.5}, {@code 0.0001}. */
+    /**
+     * The number as the messages show it: {@code 5}, {@code 0.5}, {@code 0.0001}, never in E notation, so YAML reads
+     * it back as the same number. NaN and infinity, which have no such form, are {@code NaN}, {@code infinity} and
+     * {@code minus infinity}.
+     */
     static String plainNumber(double d) {
+        if (Double.isNaN(d)) {
+            return "NaN";
+        }
+        if (Double.isInfinite(d)) {
+            return d > 0 ? "infinity" : "minus infinity";
+        }
         return BigDecimal.valueOf(d).stripTrailingZeros().toPlainString();
     }
 
@@ -333,7 +382,7 @@ public record GameConfig(String world, GameMode gameMode, Difficulty difficulty,
     /** Index of the stage with this name or else this 1-based number, or -1. A name wins over a number. */
     int stageIndex(String nameOrNumber) {
         for (int i = 0; i < stages.size(); i++) {
-            if (stages.get(i).name().equalsIgnoreCase(nameOrNumber)) {
+            if (Stage.sameName(stages.get(i).name(), nameOrNumber)) {
                 return i;
             }
         }

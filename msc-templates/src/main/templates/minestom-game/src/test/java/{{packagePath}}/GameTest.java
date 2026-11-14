@@ -105,6 +105,18 @@ class GameTest {
         assertThat(missing).containsExactly(new GameCommand.Reply(false, "name a player: next <player>"));
     }
 
+    /** Words are split on runs of spaces, as in every game template: empty words do not count. */
+    @Test
+    void extraSpacesBetweenWordsAreIgnored(Env env) {
+        Game game = game(env);
+        Player player = join(env, game, "Steve");
+        GameCommand command = new GameCommand(game, name -> name.equalsIgnoreCase("Steve") ? player : null);
+
+        List<GameCommand.Reply> moved = command.handle(null, new String[] {"", "stage", "", "arena", "Steve", ""});
+
+        assertThat(moved).containsExactly(new GameCommand.Reply(true, "Steve is on stage 2 arena"));
+    }
+
     @Test
     void gameCommandNeedsTheExactPlayerName(Env env) {
         Game game = game(env);

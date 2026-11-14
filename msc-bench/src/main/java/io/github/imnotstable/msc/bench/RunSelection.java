@@ -14,7 +14,8 @@ import java.util.Set;
  * task) and the modes of {@code --modes} (or every mode {@code bench.json} defines). Every way a selection can end up
  * empty or wrong is refused here with an {@link IllegalArgumentException} naming what was empty or wrong, which the
  * command line turns into exit code 2: a tasks folder without tasks, a list without names or with an empty one
- * ({@code --tasks ,}, {@code --modes a,,b}), an unknown name and a name listed twice.
+ * ({@code --tasks ,}, {@code --modes a,,b}), an unknown name and a name listed twice. These rules live only here:
+ * {@link io.github.imnotstable.msc.bench.run.BenchRunner#run} runs a selection as given.
  *
  * @param tasks the tasks to run, never empty
  * @param modes the modes to run each task in, never empty
@@ -28,7 +29,8 @@ public record RunSelection(List<TaskDef> tasks, List<String> modes) {
 
     /**
      * The selection of {@code run}: the tasks {@code tasksValue} names from {@code all} (every task when null) and the
-     * modes {@code modesValue} names from {@code configured} (every one, sorted, when null).
+     * modes {@code modesValue} names from {@code configured} (every one, sorted, when null). {@code configured} is
+     * never empty: a config refuses an empty {@code modes} and defaults an absent one to {@code baseline}.
      */
     public static RunSelection resolve(Path tasksDir, List<TaskDef> all, String tasksValue, Collection<String> configured,
             Path configFile, String modesValue) {
@@ -44,9 +46,6 @@ public record RunSelection(List<TaskDef> tasks, List<String> modes) {
                             + configured.stream().sorted().toList());
                 }
             }
-        }
-        if (modes.isEmpty()) {
-            throw new IllegalArgumentException(configFile + " defines no mode");
         }
         return new RunSelection(tasks, modes);
     }

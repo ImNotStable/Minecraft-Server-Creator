@@ -23,7 +23,9 @@ import org.mockbukkit.mockbukkit.MockBukkit;
  * Every ranged number in config.yml crossed with every bad shape: each must fail naming the key path and what it got.
  * When you add a setting with its own range ({@code Need}) in GameConfig, add one row to {@link #POSITIONS}:
  * {@code setting("rounds", GameConfig.ROUNDS, 1, 10)} for a top-level key, {@code stageSetting(...)} for a stage key.
- * What each shape must do there follows from the row's range and from whether the reader takes decimals.
+ * What each shape must do there follows from the row's range and from whether the reader takes decimals. A side with
+ * no limit is {@code Double.NEGATIVE_INFINITY} or {@code Double.POSITIVE_INFINITY}, as in the reader:
+ * {@code setting("speed", GameConfig.SPEED, 0, Double.POSITIVE_INFINITY)}.
  */
 class ConfigNumbersTest {
     @BeforeEach
@@ -50,7 +52,30 @@ class ConfigNumbersTest {
 
         /** Whether the reader takes this number. */
         boolean takes(double d) {
-            return d >= min && d <= max && (!whole() || d == Math.rint(d));
+            return Double.isFinite(d) && d >= min && d <= max && (!whole() || d == Math.rint(d));
+        }
+
+        /** A whole number in the range: the low end, else the high end, else 0. */
+        double inside() {
+            return Double.isFinite(min) ? Math.ceil(min) : Double.isFinite(max) ? Math.floor(max) : 0;
+        }
+
+        /** A decimal in the range: the middle, else half past the end that has a limit, else 0.5. */
+        double decimalInside() {
+            if (Double.isFinite(min) && Double.isFinite(max)) {
+                return Math.floor((min + max) / 2) + 0.5;
+            }
+            return Double.isFinite(min) ? Math.floor(min) + 0.5 : Double.isFinite(max) ? Math.ceil(max) - 0.5 : 0.5;
+        }
+
+        /** How the reader states the range: {@code from 0 to 1}, {@code from 0 (no upper limit)}, ... */
+        String range() {
+            String low = GameConfig.plainNumber(min);
+            String high = GameConfig.plainNumber(max);
+            if (Double.isFinite(min)) {
+                return Double.isFinite(max) ? " from " + low + " to " + high : " from " + low + " (no upper limit)";
+            }
+            return Double.isFinite(max) ? " up to " + high + " (no lower limit)" : "";
         }
     }
 
@@ -106,25 +131,31 @@ class ConfigNumbersTest {
     }
 
     private static List<Shape> shapes(Position p) {
-        String min = GameConfig.plainNumber(p.min());
+        String inside = GameConfig.plainNumber(p.inside());
         String hintWhenTaken = p.takes(99999999999d) ? "; remove the quotes" : "";
-        return List.of(
+        List<Shape> shapes = new ArrayList<>();
+        if (Double.isFinite(p.max())) {
+            shapes.add(number(p, "above the range", GameConfig.plainNumber(p.max() + 1)));
+        }
+        if (Double.isFinite(p.min())) {
+            shapes.add(number(p, "below the range", GameConfig.plainNumber(p.min() - 1)));
+        }
+        shapes.addAll(List.of(
                 // Loads where decimals are taken, and fails as a decimal where only whole numbers are.
-                number(p, "decimal", GameConfig.plainNumber(Math.floor((p.min() + p.max()) / 2) + 0.5)),
-                number(p, "above the range", GameConfig.plainNumber(p.max() + 1)),
-                number(p, "below the range", GameConfig.plainNumber(p.min() - 1)),
+                number(p, "decimal", GameConfig.plainNumber(p.decimalInside())),
                 number(p, "too big for an int", "99999999999"),
                 number(p, "too big for a long", "99999999999999999999"),
                 new Shape("NaN", ".nan", "not a number (.nan)"),
                 new Shape("infinity", ".inf", "infinity (.inf)"),
                 new Shape("minus infinity", "-.inf", "minus infinity (-.inf)"),
-                new Shape("quoted", "'" + min + "'", "the text '" + min + "'; remove the quotes"),
+                new Shape("quoted", "'" + inside + "'", "the text '" + inside + "'; remove the quotes"),
                 new Shape("quoted octal", "'010'", "the text '010'"),
                 new Shape("leading zero", "09", "the text '09'"),
                 new Shape("quoted out of range", "'99999999999'", "the text '99999999999'" + hintWhenTaken),
                 new Shape("list", "[1]", "the list [1]"),
                 new Shape("map", "{}", "the map {}"),
-                new Shape("null", "~", p.hasDefault() ? null : "nothing"));
+                new Shape("null", "~", p.hasDefault() ? null : "nothing")));
+        return shapes;
     }
 
     private static GameConfig parse(String yaml) throws InvalidConfigurationException {
@@ -147,15 +178,16 @@ class ConfigNumbersTest {
                 })));
     }
 
-    /** Both ends load, and the row's range is the one its reader says (fix the row when this fails). */
+    /** Both ends that have a limit load, and the row's range is the one its reader says (fix the row when this fails). */
     @Test
     void theEndsOfEachRangeLoad() throws InvalidConfigurationException {
         for (Position p : POSITIONS) {
-            String min = GameConfig.plainNumber(p.min());
-            String max = GameConfig.plainNumber(p.max());
-            assertThat(p.need().what()).as(p.key()).endsWith(" from " + min + " to " + max);
-            assertThat(parse(p.yaml().apply(max))).as(p.key()).isNotNull();
-            assertThat(parse(p.yaml().apply(min))).as(p.key()).isNotNull();
+            assertThat(p.need().what()).as(p.key()).endsWith(p.range());
+            for (double end : new double[] {p.min(), p.max()}) {
+                if (Double.isFinite(end)) {
+                    assertThat(parse(p.yaml().apply(GameConfig.plainNumber(end)))).as(p.key()).isNotNull();
+                }
+            }
         }
     }
 
@@ -165,7 +197,7 @@ class ConfigNumbersTest {
         Set<GameConfig.Need<?>> declared = new HashSet<>();
         for (Field f : GameConfig.class.getDeclaredFields()) {
             if (f.getType() == GameConfig.Need.class && f.get(null) instanceof GameConfig.Need<?> need
-                    && need.what().matches("a (whole )?number from .*")) {
+                    && need.what().matches("a (whole )?number (from|up to) .*")) {
                 declared.add(need);
             }
         }

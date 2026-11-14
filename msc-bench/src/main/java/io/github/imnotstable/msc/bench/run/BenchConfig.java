@@ -12,6 +12,7 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Supplier;
 
 /**
  * Bench settings, read from {@code bench.json}. Relative paths are resolved against the folder
@@ -114,7 +115,8 @@ public record BenchConfig(
      * Reads the config, taking {@code server.acceptEula} from {@code <home>/.msc/eula.json} (see {@link MachineEula})
      * and never from the file, so no config can accept the EULA for anyone. Refuses, naming each key and why, every
      * value that can never work ({@link BenchConfigRules}), so a run fails here and not after a server's start timeout.
-     * Numbers are checked as written before the file is bound, and the config binds the checked numbers (#416).
+     * Every key is read by its type through {@link UserJson}'s exact reads (#416, #462): a value of another type, such
+     * as {@code "acceptEula": "yes"} or {@code "command": "claude"}, is refused naming the key and the type it takes.
      */
     public static BenchConfig load(Path file, Path home) throws IOException {
         BenchConfig raw;
@@ -125,7 +127,7 @@ public record BenchConfig(
                 throw new IOException("Empty bench config " + file);
             }
             problems = new ArrayList<>();
-            raw = UserJson.of(parsed.getAsJsonObject(), "").bind(BenchConfig.class, BenchConfigRules.NUMBERS, problems);
+            raw = read(UserJson.of(parsed.getAsJsonObject(), ""), problems);
         } catch (JsonParseException | IllegalStateException e) {
             throw new IOException("Bad bench config " + file + ": " + e.getMessage(), e);
         }
@@ -136,9 +138,75 @@ public record BenchConfig(
             problems = BenchConfigRules.afterDefaults(full);
         }
         if (!problems.isEmpty()) {
-            throw new IOException("Bad bench config " + file + ":\n  " + String.join("\n  ", problems));
+            // One problem stays one line, as every other refusal of the command line is.
+            throw new IOException("Bad bench config " + file + ":" + (problems.size() == 1 ? " " : "\n  ")
+                    + String.join("\n  ", problems));
         }
         return full;
+    }
+
+    /**
+     * The config as the file writes it, every key read by its type; a refused key goes to {@code problems} and reads
+     * as absent, so the rest of the file is still read and checked. Null entries of lists and maps are kept for
+     * {@link BenchConfigRules} to name.
+     */
+    static BenchConfig read(UserJson json, List<String> problems) {
+        UserJson a = field(problems, () -> json.exactObject("agent"));
+        Agent agent = a == null ? null : new Agent(
+                field(problems, () -> a.stringsOrNulls("command")),
+                number(problems, a, "agent.", "timeoutSeconds"));
+        Map<String, UserJson> m = field(problems, () -> json.objectMapOrNulls("modes"));
+        Map<String, Mode> modes = null;
+        if (m != null) {
+            modes = new LinkedHashMap<>();
+            for (Map.Entry<String, UserJson> e : m.entrySet()) {
+                UserJson mode = e.getValue();
+                modes.put(e.getKey(), mode == null ? null : new Mode(
+                        field(problems, () -> mode.stringsOrNulls("extraArgs")),
+                        field(problems, () -> mode.stringMapOrNulls("env")),
+                        field(problems, () -> mode.exactString("mcpConfigTemplate", null)),
+                        field(problems, () -> mode.stringMapOrNulls("serverEnv")),
+                        field(problems, () -> mode.stringsOrNulls("serverPlugins")),
+                        field(problems, () -> mode.exactString("paperCacheSeed", null)),
+                        field(problems, () -> mode.exactString("requireMcp", null))));
+            }
+        }
+        UserJson s = field(problems, () -> json.exactObject("server"));
+        Server server = s == null ? null : new Server(
+                field(problems, () -> s.stringsOrNulls("command")),
+                field(problems, () -> s.exactString("paperJar", null)),
+                field(problems, () -> s.stringsOrNulls("paperCacheDirs")),
+                field(problems, () -> s.exactString("downloadsUrl", null)),
+                // Read only for its type: the EULA choice comes from the machine, never from this file.
+                Boolean.TRUE.equals(field(problems, () -> s.exactBool("acceptEula", false))),
+                number(problems, s, "server.", "serverPort"),
+                number(problems, s, "server.", "rconPort"),
+                field(problems, () -> s.exactString("rconPassword", null)),
+                number(problems, s, "server.", "startTimeoutSeconds"));
+        return new BenchConfig(
+                agent,
+                modes,
+                server,
+                field(problems, () -> json.exactString("gradleWrapperFrom", null)),
+                field(problems, () -> json.stringMapOrNulls("paths")),
+                number(problems, json, "", "corePort"),
+                field(problems, () -> json.exactString("minecraftVersion", null)));
+    }
+
+    /** The value {@code read} gives, or null with its refusal added to {@code problems}. */
+    private static <T> T field(List<String> problems, Supplier<T> read) {
+        try {
+            return read.get();
+        } catch (IllegalArgumentException e) {
+            problems.add(e.getMessage());
+            return null;
+        }
+    }
+
+    /** The whole number {@code field} of {@code holder} in its {@link BenchConfigRules#NUMBERS} range, 0 when absent. */
+    private static int number(List<String> problems, UserJson holder, String prefix, String field) {
+        Integer value = field(problems, () -> holder.wholeNumber(field, BenchConfigRules.NUMBERS.get(prefix + field), 0));
+        return value == null ? 0 : value;
     }
 
     /** Fills defaults and turns relative paths into absolute ones. */
