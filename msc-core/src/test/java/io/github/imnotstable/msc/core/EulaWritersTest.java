@@ -7,6 +7,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.MatchResult;
 import java.util.regex.Pattern;
 import org.junit.jupiter.api.Test;
 
@@ -16,6 +17,11 @@ import org.junit.jupiter.api.Test;
  * -Pmsc.acceptEula=true} (msc-core/build.gradle.kts) and the first {@code acceptEula=true} on {@code server_setup} or
  * {@code server_start} (EulaPrompts.recordForMachine). Runs in msc-core's repoChecks task over every module's
  * production sources and build scripts.
+ * <p>A tripwire for ordinary changes, not a proof against deliberate evasion (ADR 0035): it follows the JDK and
+ * msc-core calls that write a file ({@code Files}, {@code java.io} writers, {@code AtomicFile}, {@code OutputFile}, a
+ * copy or move to or from the file, Kotlin's file writers) to a path that names the file, directly or through a local
+ * or field. A name built at run time or reflection is out of its reach. The tables in
+ * {@link #detectorFindsEachKindOfWriter} and {@link #detectorIgnoresReadersAndOtherWrites} show its reach.
  */
 class EulaWritersTest {
     /** Declared in msc-core/build.gradle.kts, which makes these files the repoChecks task's inputs too. */
@@ -43,13 +49,21 @@ class EulaWritersTest {
             Pattern.compile("(?<![\\w#]|String\\s)recordForMachine\\s*\\(|::\\s*recordForMachine\\b");
     /** Any string literal. */
     private static final Pattern LITERAL = Pattern.compile("\"(?:[^\"\\\\\\n]|\\\\.)*\"");
-    /** A call whose first argument is the file it writes. */
+    /**
+     * A call whose first argument is the file it writes: a JDK writer, or msc-core's AtomicFile and OutputFile (by
+     * simple name, wherever the class lives), whose writer lambda writes a temp file that then replaces the target.
+     */
     private static final Pattern WRITE_TO_ARGUMENT = Pattern.compile("\\b(?:Files\\s*\\.\\s*(?:writeString|write"
             + "|newBufferedWriter|newOutputStream)|new\\s+(?:FileWriter|FileOutputStream|PrintWriter"
-            + "|RandomAccessFile))\\s*\\(");
+            + "|RandomAccessFile)|(?:AtomicFile|OutputFile)\\s*\\.\\s*(?:write|replace))\\s*\\(");
+    /** A copy or move: its source and its target both count, as either carries the acceptance to a new place. */
+    private static final Pattern COPY_OR_MOVE = Pattern.compile(
+            "\\b(?:Files|AtomicFile|OutputFile)\\s*\\.\\s*(?:copy|move)\\s*\\(");
     /** A Kotlin call whose receiver is the file it writes. */
     private static final Pattern WRITE_TO_RECEIVER = Pattern.compile(
             "\\.\\s*(?:writeText|writeBytes|appendText|appendBytes|outputStream|bufferedWriter|printWriter|writer)\\s*\\(");
+    /** A Kotlin copy or rename: the receiver and the first argument both count. */
+    private static final Pattern COPY_RECEIVER = Pattern.compile("\\.\\s*(?:copyTo|renameTo)\\s*\\(");
     /** Code that names the machine EULA file: its helpers, or the file name. */
     private static final Pattern NAMES_EULA_FILE = Pattern.compile(
             "\\beulaFile\\s*\\(|\\bdefaultFile\\s*\\(|\\bMachineEula\\s*\\.\\s*file\\s*\\(|eula\\.json");
@@ -77,16 +91,19 @@ class EulaWritersTest {
             found.addAll(writers(f, Files.readString(RepoFiles.path(SET, f))));
         }
         assertThat(found).as("the code that writes ~/.msc/eula.json changed. Every writer must be an explicit opt-in "
-                        + "by the owner (never a default, never installing or using MSC alone). If this change is "
-                        + "meant, update ADR 0020 (msc-docs/docs/adr/0020-machine-eula.md), the EULA step in "
-                        + "msc-docs/docs/tools.md and DOCUMENTED in this test")
+                        + "by the owner (never a default, never installing or using MSC alone, never an acceptance "
+                        + "in a tracked file). Write it only through MachineEula.write from one of the documented "
+                        + "opt-ins. If this change is meant, update ADR 0020 "
+                        + "(msc-docs/docs/adr/0020-machine-eula.md), the EULA step in msc-docs/docs/tools.md and "
+                        + "DOCUMENTED in this test. If an entry is not a write of that file, the path was taken for "
+                        + "it: rename the variable or add the shape to detectorIgnoresReadersAndOtherWrites (ADR 0035)")
                 .containsExactlyInAnyOrderElementsOf(DOCUMENTED);
     }
 
     @Test
     void machineEulaWriteDoesOnlyWhatItDid() throws IOException {
         // #397: MachineEula.write is the one place every documented opt-in goes through; its body is pinned.
-        assertThat(body(withoutComments(Files.readString(RepoFiles.path(SET, MACHINE_EULA))), "void write(")
+        assertThat(body(SourceText.mask(Files.readString(RepoFiles.path(SET, MACHINE_EULA)), false), "void write(")
                 .replaceAll("\\s+", "")).isEqualTo(MACHINE_EULA_WRITE_BODY);
     }
 
@@ -120,6 +137,23 @@ class EulaWritersTest {
                 .containsExactly("a/X.java: writes eula.json");
         assertThat(writers("a/X.java", "String name = \"eula.json\";\nFiles.write(dir.resolve(name), bytes);"))
                 .containsExactly("a/X.java: writes eula.json");
+        // #410: msc-core's own atomic writers, wherever AtomicFile lives, and a copy or move to or from the file.
+        for (String write : List.of("AtomicFile.write(config.eulaFile(), to -> Files.writeString(to, json));",
+                "io.github.imnotstable.msc.process.AtomicFile.replace(MachineEula.file(home), w);",
+                "OutputFile.write(config.eulaFile(), to -> Files.writeString(to, json));",
+                "OutputFile.replace(\n    config.eulaFile(),\n    to -> Files.write(to, bytes));",
+                "Path f = config.eulaFile();\nAtomicFile.write(f, w);",
+                "Files.copy(staged, MachineEula.defaultFile(home), StandardCopyOption.REPLACE_EXISTING);",
+                "Files.move(temp, config.eulaFile(), StandardCopyOption.ATOMIC_MOVE);",
+                "Files.copy(config.eulaFile(), server.resolve(\"eula-copy.json\"));",
+                "Files.move(config.eulaFile(), backup);",
+                "AtomicFile.copy(staged, config.eulaFile());",
+                "OutputFile.copy(config.eulaFile(), target);",
+                "Files.copy(in, home.resolve(\".msc/eula.json\"));")) {
+            assertThat(writers("a/X.java", write)).as(write).containsExactly("a/X.java: writes eula.json");
+        }
+        assertThat(writers("a/b.gradle.kts", "val f = home.resolve(\".msc/eula.json\")\nstaged.copyTo(f, true)\n"
+                + "f.renameTo(old)")).containsExactly("a/b.gradle.kts: writes eula.json", "a/b.gradle.kts: writes eula.json");
     }
 
     @Test
@@ -135,11 +169,21 @@ class EulaWritersTest {
                 + "rootDir.resolve(\"eula-accept.txt\").writeText(cmd)\nmarker.get().asFile.writeText(\"ok\")")).isEmpty();
         assertThat(writers("a/X.java", "if (MachineEula.read(config.eulaFile()).isPresent()) {}\n"
                 + "Files.writeString(file, Files.readString(file).replace(\"eula=false\", \"eula=true\"));")).isEmpty();
+        // #410: atomic writes, copies and moves of other files, and the file's name only in a string or a comment.
+        assertThat(writers("a/X.java", """
+                AtomicFile.write(zipFile(), to -> Files.write(to, data));
+                OutputFile.write(properties, to -> Files.write(to, offeredBefore));
+                Files.copy(jar, plugins.resolve(jar.getFileName()), StandardCopyOption.REPLACE_EXISTING);
+                Files.move(temp, target, StandardCopyOption.ATOMIC_MOVE);
+                // Files.copy(staged, config.eulaFile())
+                String hint = "AtomicFile.write(config.eulaFile(), w)";""")).isEmpty();
+        assertThat(writers("a/b.gradle.kts", "val f = home.resolve(\".msc/eula.json\")\njar.copyTo(dest)")).isEmpty();
     }
 
     /** The writers of the machine EULA file in {@code text}, the source of {@code file}, one entry per site. */
     private static List<String> writers(String file, String text) {
-        String code = withoutComments(text);
+        String code = SourceText.mask(text, false);
+        String bare = SourceText.mask(text, true);
         List<String> out = new ArrayList<>();
         WRITE_CALL.matcher(code).results().forEach(m -> out.add(file + ": MachineEula.write"));
         RECORD_CALL.matcher(code).results().forEach(m -> out.add(file + ": recordForMachine"));
@@ -151,7 +195,7 @@ class EulaWritersTest {
         List<String> tainted = new ArrayList<>();
         TAINTED.matcher(code).results().filter(m -> NAMES_EULA_FILE.matcher(m.group(2)).find())
                 .forEach(m -> tainted.add(m.group(1)));
-        for (String target : writeTargets(code, writeBody)) {
+        for (String target : writeTargets(code, bare, writeBody)) {
             boolean otherFile = LITERAL.matcher(target).results().map(m -> m.group())
                     .anyMatch(l -> !l.contains("eula.json"));
             boolean eulaTxt = file.equals(MACHINE_EULA) && target.strip().equals("eulaTxt");
@@ -167,31 +211,24 @@ class EulaWritersTest {
     }
 
     /** The file each write call in {@code code} writes to, as source text; writes inside {@code skip} are left out. */
-    private static List<String> writeTargets(String code, String skip) {
+    private static List<String> writeTargets(String code, String bare, String skip) {
         int skipFrom = skip.isEmpty() ? -1 : code.indexOf(skip);
         int skipTo = skipFrom < 0 ? -1 : skipFrom + skip.length();
         List<String> out = new ArrayList<>();
-        WRITE_TO_ARGUMENT.matcher(code).results().filter(m -> m.start() < skipFrom || m.start() >= skipTo)
-                .forEach(m -> out.add(firstArgument(code, m.end())));
-        WRITE_TO_RECEIVER.matcher(code).results().filter(m -> m.start() < skipFrom || m.start() >= skipTo)
-                .forEach(m -> out.add(receiver(code, m.start())));
-        return out;
-    }
-
-    /** The text from {@code from} to the first comma or closing parenthesis outside brackets and literals. */
-    private static String firstArgument(String code, int from) {
-        int depth = 0;
-        for (int i = from; i < code.length(); i++) {
-            char c = code.charAt(i);
-            if (c == '"') {
-                i = closingQuote(code, i);
-            } else if (c == '(' || c == '[' || c == '{') {
-                depth++;
-            } else if ((c == ')' || c == ']' || c == '}') && depth-- == 0 || c == ',' && depth == 0) {
-                return code.substring(from, i);
+        for (Pattern p : List.of(WRITE_TO_ARGUMENT, COPY_OR_MOVE, WRITE_TO_RECEIVER, COPY_RECEIVER)) {
+            for (MatchResult m : p.matcher(bare).results().toList()) {
+                if (m.start() >= skipFrom && m.start() < skipTo) {
+                    continue;
+                }
+                List<int[]> args = SourceText.arguments(bare, m.end() - 1);
+                int count = p == COPY_OR_MOVE ? 2 : p == WRITE_TO_ARGUMENT || p == COPY_RECEIVER ? 1 : 0;
+                args.stream().limit(count).forEach(a -> out.add(code.substring(a[0], a[1])));
+                if (p == WRITE_TO_RECEIVER || p == COPY_RECEIVER) {
+                    out.add(receiver(code, m.start()));
+                }
             }
         }
-        return code.substring(from);
+        return out;
     }
 
     /** The receiver expression that ends just before {@code dot}: names, dots, calls and literals. */
@@ -248,35 +285,5 @@ class EulaWritersTest {
             }
         }
         return code.substring(open + 1);
-    }
-
-    /** {@code code} with its line and block comments blanked out, literals kept. */
-    private static String withoutComments(String code) {
-        StringBuilder sb = new StringBuilder(code.length());
-        for (int i = 0; i < code.length(); i++) {
-            char c = code.charAt(i);
-            if (c == '"') {
-                int end = Math.min(closingQuote(code, i), code.length() - 1);
-                sb.append(code, i, end + 1);
-                i = end;
-            } else if (c == '\'' && i + 1 < code.length() && code.charAt(i + 1) == '\\') {
-                int end = code.indexOf('\'', i + 3); // an escaped char literal such as '\"'
-                end = end < 0 ? code.length() - 1 : end;
-                sb.append(code, i, end + 1);
-                i = end;
-            } else if (c == '\'' && i + 2 < code.length() && code.charAt(i + 2) == '\'') {
-                sb.append(code, i, i + 3); // a char literal such as '"' must not open a string
-                i += 2;
-            } else if (code.startsWith("//", i)) {
-                int end = code.indexOf('\n', i);
-                i = (end < 0 ? code.length() : end) - 1;
-            } else if (code.startsWith("/*", i)) {
-                int end = code.indexOf("*/", i + 2);
-                i = end < 0 ? code.length() : end + 1;
-            } else {
-                sb.append(c);
-            }
-        }
-        return sb.toString();
     }
 }
