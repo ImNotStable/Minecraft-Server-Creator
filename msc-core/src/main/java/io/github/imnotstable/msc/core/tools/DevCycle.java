@@ -390,7 +390,7 @@ final class DevCycle {
             } catch (IllegalArgumentException malformed) {
                 // A malformed unicode escape: unreadable, so no record. The deploy writes a fresh one, which otherwise
                 // every dev_cycle would fail to read and to write (#405).
-                return new Properties();
+                p.clear();
             }
         }
         return p;
