@@ -157,12 +157,12 @@ class LoaderInstallerTest {
         Path server = Files.createDirectories(dir.resolve("server"));
         Files.writeString(server.resolve("server.jar"), "vanilla");
         LoaderInstaller.mark(server, "fabric 26.3");
-        assertThat(LoaderInstaller.claimSharedJar(server, "fabric 26.3")).isFalse();
+        assertThat(LoaderInstaller.claimSharedJar(server, "fabric 26.3")).isNull();
         assertThat(server.resolve("server.jar")).hasContent("vanilla");
-        assertThat(LoaderInstaller.claimSharedJar(server, "minestom")).isTrue();
+        assertThat(LoaderInstaller.claimSharedJar(server, "minestom")).isEqualTo("fabric 26.3");
         assertThat(server.resolve("server.jar")).doesNotExist();
         Files.writeString(server.resolve("server.jar"), "project");
-        assertThat(LoaderInstaller.claimSharedJar(server, "fabric 26.4")).isTrue();
+        assertThat(LoaderInstaller.claimSharedJar(server, "fabric 26.4")).isEqualTo("minestom");
         assertThat(server.resolve("server.jar")).doesNotExist();
     }
 
