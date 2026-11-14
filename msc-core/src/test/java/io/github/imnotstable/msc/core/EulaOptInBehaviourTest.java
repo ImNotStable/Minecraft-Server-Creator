@@ -8,7 +8,10 @@ import io.github.imnotstable.msc.core.server.EulaCommand;
 import io.github.imnotstable.msc.core.server.MachineEula;
 import io.github.imnotstable.msc.core.server.Platform;
 import io.github.imnotstable.msc.core.tool.Tool;
+import io.github.imnotstable.msc.core.tool.ToolRegistry;
+import io.github.imnotstable.msc.process.ClosedPort;
 import java.io.IOException;
+import java.net.URISyntaxException;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -18,6 +21,7 @@ import java.time.Clock;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.AfterAll;
@@ -33,7 +37,8 @@ import org.junit.jupiter.params.provider.EnumSource;
  * ADR 0020's promise, checked by running the product (ADR 0036): installing or using MSC alone never accepts the
  * Minecraft EULA. Every tool, the {@code eula} command short of a typed yes and the other {@code Main} subcommand run
  * against a temporary home and workspace with fake builds, fake servers and fake downloads; afterwards there is no
- * machine acceptance under the home and no {@code eula.txt} in the workspace says {@code eula=true}. Then each
+ * machine acceptance under the home and no {@code eula.txt} in the workspace says {@code eula=true}. Each tool row's
+ * outcome is asserted too, so a row that stops before the tool's own work shows. Then each
  * documented opt-in that runs in-process does write it, so the check is not passing for an unrelated reason.
  * installMsc's {@code -Pmsc.acceptEula=true} runs in Gradle and is pinned by EulaWritersTest instead.
  */
@@ -59,14 +64,17 @@ class EulaOptInBehaviourTest {
 
     /**
      * The calls that need a running server and an agent: a Minestom workspace (no EULA) with a stand-in server
-     * process ({@link FakeServerMain}), so every world, build, player and pack tool reaches its agent call.
+     * process ({@link FakeServerMain}) and a real API jar (JUnit's), so every world, build, pack and API tool does its
+     * work. player_test runs its checks and its agent call, then stops at the join: the game port is held closed
+     * ({@link CoreHarness#noGameServer}), since a test player must never join a real server on this machine. That is
+     * as far as MSC's own code goes: a joined player only talks to the server, and writes no file.
      */
     private static final List<Row> RUNNING = List.of(
             new Row("server_setup", "platform", "minestom"), new Row("dev_cycle", "project", "demo"),
             new Row("server_start", "timeoutSeconds", 60),
             new Row("server_logs"), new Row("server_command", "command", "list"),
             new Row("server_wait", "until", "Starting", "timeoutSeconds", 1),
-            new Row("api_search", "query", "player"), new Row("api_class", "name", "Player"),
+            new Row("api_search", "query", "timeout"), new Row("api_class", "name", "Assertions"),
             new Row("world_summary", REGION.toArray()), new Row("world_slice", REGION.toArray()),
             new Row("world_entities", REGION.toArray()), new Row("world_heightmap", "area", "0,0 3,3"),
             new Row("world_render", "region", REGION.get(1), "size", 64),
@@ -111,6 +119,17 @@ class EulaOptInBehaviourTest {
         System.setProperty("user.home", userHome);
     }
 
+    /** A real jar to index for api_search and api_class: JUnit's API, on the test class path. */
+    private static final Path API_JAR;
+
+    static {
+        try {
+            API_JAR = Path.of(Test.class.getProtectionDomain().getCodeSource().getLocation().toURI());
+        } catch (URISyntaxException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
     private static List<String> java(Class<?> main) {
         return List.of(Path.of(System.getProperty("java.home"), "bin", "java").toString(),
                 "-cp", System.getProperty("java.class.path"), main.getName());
@@ -120,7 +139,7 @@ class EulaOptInBehaviourTest {
     private CoreHarness harness(Path workspace, boolean fakeServer) throws Exception {
         return new CoreHarness(workspace, c -> {
             CoreConfig config = downloads.apply(c).withMachineEula(MachineEula.forHome(home))
-                    .withBuildCommand(java(FakeBuildMain.class));
+                    .withBuildCommand(java(FakeBuildMain.class)).withApiJars(List.of(API_JAR));
             return fakeServer ? config.withServerCommand(java(FakeServerMain.class)) : config;
         });
     }
@@ -142,13 +161,29 @@ class EulaOptInBehaviourTest {
                 "name: Demo\n");
         Files.writeString(demo.resolve("version.txt"), "1.0");
         Files.writeString(demo.resolve("name.txt"), "demo");
-        for (boolean fakeServer : new boolean[] {false, true}) {
-            try (CoreHarness h = harness(ws, fakeServer)) {
-                for (Row row : fakeServer ? RUNNING : GATED) {
-                    h.call(row.tool(), row.args());
-                    assertNothingAccepted(row.tool() + " " + List.of(row.args()));
+        try (ClosedPort gamePort = CoreHarness.noGameServer(ws.resolve("run"))) {
+            for (boolean fakeServer : new boolean[] {false, true}) {
+                // The rows that fail, and with what; every other row succeeds. In GATED the EULA gate stops every
+                // start, which is the point. In RUNNING server_start finds the server dev_cycle started, and
+                // player_test stops at the join (see RUNNING).
+                String noEula = "the Minecraft EULA is not accepted";
+                Map<String, String> stops = fakeServer
+                        ? Map.of("server_start", "server is already running",
+                                "player_test", "no Minecraft server answers at 127.0.0.1:" + gamePort.port())
+                        : Map.of("server_start", noEula, "dev_cycle", noEula);
+                try (CoreHarness h = harness(ws, fakeServer)) {
+                    for (Row row : fakeServer ? RUNNING : GATED) {
+                        ToolRegistry.Result result = h.call(row.tool(), row.args());
+                        String what = row.tool() + " " + List.of(row.args());
+                        String stop = stops.get(row.tool());
+                        assertThat(result.ok()).as(what + ": " + result.text()).isEqualTo(stop == null);
+                        if (stop != null) {
+                            assertThat(result.text()).as(what).contains(stop);
+                        }
+                        assertNothingAccepted(what);
+                    }
+                    h.call("server_stop");
                 }
-                h.call("server_stop");
             }
         }
         assertNothingAccepted("after the session");
