@@ -24,6 +24,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.IntFunction;
 
 /** Starting, stopping and detaching the dev server, and the start report the AI reads. */
 final class ServerRun {
@@ -37,9 +38,15 @@ final class ServerRun {
     private final EulaPrompts eula;
     private final LogMarks marks;
 
-    /** A start report, and how long the start took and when the agent connected (for dev_cycle's timings). */
-    record Report(String text, ServerManager.StartResult result) {
+    /**
+     * A start report as parts of a result (#473): its header lines, then the startup log cut to its share; and how
+     * long the start took and when the agent connected (for dev_cycle's timings).
+     */
+    record Report(Budget.Parts parts, ServerManager.StartResult result) {
     }
+
+    /** The hint of a cut of a start report's header lines, which no later call shows again. */
+    static final String HEADER_CUT = "The startup log is in server_logs.";
 
     ServerRun(CoreConfig config, AgentHub hub, ServerManager server, ResourcePack pack, ServerSetup setup,
               EulaPrompts eula, LogMarks marks) {
@@ -90,7 +97,8 @@ final class ServerRun {
                 return eula.recordForMachine();
             });
         }
-        return accepted + startAndReport(steps, true, timeoutSeconds, Budget.DEFAULT_CHARS).text();
+        return new Budget.Parts().add(accepted).add(startAndReport(steps, true, timeoutSeconds).parts())
+                .text(Budget.DEFAULT_CHARS, null, HEADER_CUT);
     }
 
     /**
@@ -185,7 +193,7 @@ final class ServerRun {
      * in the scan folders, as housekeeping ({@link Steps#optional}) that changes no result unless it fails (dev_cycle
      * does that itself, before it deploys).
      */
-    Report startAndReport(Steps steps, boolean sweep, int timeoutSeconds, int maxChars)
+    Report startAndReport(Steps steps, boolean sweep, int timeoutSeconds)
             throws IOException, InterruptedException {
         if (!steps.planned(START)) {
             plan(steps);
@@ -209,7 +217,9 @@ final class ServerRun {
         ServerManager.StartResult r = steps.run(START, () -> server.start(Duration.ofSeconds(timeoutSeconds)));
         marks.started(r.logMark());
         List<String> lines = server.log().since(r.logMark());
-        LogCondenser.Condensed analysis = LogCondenser.analyze(lines, maxChars);
+        LogCondenser.Condensed analysis = LogCondenser.analyze(lines, Integer.MAX_VALUE);
+        IntFunction<String> condensed = n -> LogCondenser.analyze(lines, n).text();
+        Budget.Parts parts = new Budget.Parts();
         StringBuilder out = new StringBuilder();
         if (leftover != null) {
             out.append(leftover).append('\n');
@@ -241,21 +251,29 @@ final class ServerRun {
             if (s != null) {
                 out.append(resendPack());
             }
-            out.append('\n').append(analysis.clean() ? "no errors or warnings"
-                    + (analysis.hidden() > 0 ? " (" + analysis.hidden() + " known-harmless hidden)" : "")
-                    : analysis.text());
+            out.append('\n');
+            if (analysis.clean()) {
+                out.append("no errors or warnings")
+                        .append(analysis.hidden() > 0 ? " (" + analysis.hidden() + " known-harmless hidden)" : "");
+            } else {
+                parts.add(out.toString()).cut(condensed);
+                out.setLength(0);
+            }
         } else if (r.exited()) {
             out.append(r.sawDone() ? "server exited right after it was ready, " : "server exited during startup ")
-                    .append("after ").append(LogText.seconds(r.millis())).append('\n')
-                    .append(analysis.text());
+                    .append("after ").append(LogText.seconds(r.millis())).append('\n');
+            parts.add(out.toString()).cut(condensed);
+            out.setLength(0);
             if (analysis.clean()) {
-                out.append("\nlast lines:\n").append(LogText.tail(lines, 15));
+                String tail = LogText.tail(lines, 15);
+                parts.add("\nlast lines:\n").cut(n -> Budget.truncate(tail, n, "Use server_logs to see more."));
             }
         } else {
-            out.append("server not ready after ").append(timeoutSeconds).append("s (still starting)\n")
-                    .append(analysis.text());
+            out.append("server not ready after ").append(timeoutSeconds).append("s (still starting)\n");
+            parts.add(out.toString()).cut(condensed);
+            out.setLength(0);
         }
-        return new Report(out.toString(), r);
+        return new Report(parts.add(out.toString()), r);
     }
 
     /**

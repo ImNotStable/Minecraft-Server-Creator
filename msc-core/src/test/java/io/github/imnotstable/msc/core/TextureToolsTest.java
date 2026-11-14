@@ -68,6 +68,17 @@ class TextureToolsTest {
         assertThat(h.ok("texture_view", "name", "block/big", "maxChars", 400)).hasSizeLessThanOrEqualTo(400);
     }
 
+    /** #473: the largest drawing a texture call shows fits the cap with its closing line, in the pack and outside. */
+    @Test
+    void theLargestDrawingFitsTheCapWithItsClosingLine() {
+        String noise = h.ok("texture", "name", "block/" + "n".repeat(200), "kind", "noise", "color", "#7f7f7f",
+                "accent", "#d4263a", "size", 64, "contrast", 1);
+        assertThat(noise).hasSizeLessThanOrEqualTo(6000).endsWith("\nnext: pack").doesNotContain("Narrow the call.");
+        String loose = h.ok("texture", "name", "n".repeat(200) + ".png", "kind", "noise", "color", "#7f7f7f",
+                "accent", "#d4263a", "size", 64, "contrast", 1);
+        assertThat(loose).hasSizeLessThanOrEqualTo(6000).doesNotContain("Narrow the call.");
+    }
+
     /** #474: a pack description is shown on two lines, so one line break is taken; more, or a tab, is refused. */
     @Test
     void aPackDescriptionMayHaveTwoLines() throws Exception {

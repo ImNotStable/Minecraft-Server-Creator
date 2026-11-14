@@ -283,6 +283,7 @@ public final class TextureTools {
                     : "the texture is written as a still image; texture name=" + id + " animate=... animates it");
         }
         StringBuilder out = new StringBuilder();
+        Budget.Parts parts = new Budget.Parts();
         if (t != null) {
             Texture written = t;
             String finalModel = model;
@@ -299,7 +300,10 @@ public final class TextureTools {
                 out.append("\nwarning: ").append(warning);
             }
             if (kind != null && animation == null) {
-                out.append('\n').append(Budget.truncate(PaletteText.render(t), Budget.DEFAULT_CHARS, "Use texture_view."));
+                // One budget (#473): the drawing gets what the lines around it leave, "next: pack" stays last.
+                parts.add(out.append('\n').toString())
+                        .cut(n -> Budget.truncate(PaletteText.render(written), n, "Use texture_view."));
+                out.setLength(0);
             }
         }
         if (animation != null) {
@@ -308,7 +312,7 @@ public final class TextureTools {
                     .append(animation.frames().size()).append(" frames, ").append(args.integer("frametime", 2))
                     .append(" ticks each");
         }
-        return out.append("\nnext: pack").toString();
+        return parts.add(out.toString()).text(Budget.DEFAULT_CHARS, "next: pack", "Use texture_view.");
     }
 
     /** The longest file name a texture call writes, the animation's {@code <name>.png.mcmeta}. */
@@ -359,10 +363,11 @@ public final class TextureTools {
         }));
         StringBuilder out = new StringBuilder("wrote ").append(file).append(": ").append(Stats.of(t));
         warnings.forEach(w -> out.append("\nwarning: ").append(w));
+        Budget.Parts parts = new Budget.Parts().add(out.toString());
         if (args.has("kind")) {
-            out.append('\n').append(Budget.truncate(PaletteText.render(t), Budget.DEFAULT_CHARS, "Too large to show."));
+            parts.add("\n").cut(n -> Budget.truncate(PaletteText.render(t), n, "Too large to show."));
         }
-        return out.toString();
+        return parts.text(Budget.DEFAULT_CHARS, null, "Too large to show.");
     }
 
     /** The texture of {@code kind}: a 16x16 shape or a tiling pattern. */
