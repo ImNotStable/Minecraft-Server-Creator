@@ -1,10 +1,9 @@
 package io.github.imnotstable.msc.bench.run;
 
-import com.google.gson.Gson;
 import com.google.gson.JsonElement;
-import com.google.gson.JsonObject;
 import com.google.gson.JsonParseException;
 import com.google.gson.JsonParser;
+import io.github.imnotstable.msc.bench.UserJson;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -125,9 +124,8 @@ public record BenchConfig(
             if (parsed.isJsonNull()) {
                 throw new IOException("Empty bench config " + file);
             }
-            JsonObject json = parsed.getAsJsonObject();
-            problems = BenchConfigRules.numbers(json);
-            raw = new Gson().fromJson(json, BenchConfig.class);
+            problems = new ArrayList<>();
+            raw = UserJson.of(parsed.getAsJsonObject(), "").bind(BenchConfig.class, BenchConfigRules.NUMBERS, problems);
         } catch (JsonParseException | IllegalStateException e) {
             throw new IOException("Bad bench config " + file + ": " + e.getMessage(), e);
         }

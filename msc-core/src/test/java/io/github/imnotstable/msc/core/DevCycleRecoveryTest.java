@@ -113,7 +113,10 @@ class DevCycleRecoveryTest {
         assertThat(h.core.server().running()).isTrue();
     }
 
-    /** A record no Properties reader can load (a broken unicode escape) is replaced, not read again at every call. */
+    /**
+     * A record no Properties reader can load (a broken unicode escape) is kept as a comment, so it is not read again
+     * at every call and not lost.
+     */
     @Test
     void anUnreadableRecordIsReplaced() throws Exception {
         Files.createDirectories(record().getParent());
@@ -125,5 +128,29 @@ class DevCycleRecoveryTest {
         Files.writeString(project.resolve("version.txt"), "3.0");
         h.ok("dev_cycle", "project", "demo", "restart", false);
         assertThat(plugins.resolve("arena.jar")).hasContent("3.0");
+        assertThat(record()).content().contains("# unreadable, kept as written: broken=\\uZZZZ");
+    }
+
+    /**
+     * #418: a hand-edited line for another project (a Windows path with single backslashes) cannot be read. This
+     * project's readable record still counts, so its earlier jar goes; the other lines stay; the result says so.
+     */
+    @Test
+    void oneUnreadableLineCostsOnlyThatLine() throws Exception {
+        char bs = '\\';
+        String other = "D" + bs + ":" + bs + "projects" + bs + "ui" + bs + "Other=plugins/other.jar";
+        String third = "/elsewhere/Third=plugins/third.jar";
+        Files.createDirectories(record().getParent());
+        Files.writeString(record(), project.toAbsolutePath().normalize() + "=plugins/oldname.jar\n" + other + "\n"
+                + third + "\n");
+        Files.writeString(plugins.resolve("oldname.jar"), "1.0");
+        Files.writeString(plugins.resolve("other.jar"), "other");
+        String out = h.ok("dev_cycle", "project", "demo", "restart", false);
+        assertThat(out).contains("deploy record: line 2 of " + record() + " could not be read");
+        assertThat(jars()).containsExactlyInAnyOrder("arena.jar", "other.jar");
+        assertThat(recorded()).isEqualTo("plugins/arena.jar");
+        assertThat(Files.readAllLines(record())).contains("# unreadable, kept as written: " + other, third);
+        Files.writeString(project.resolve("version.txt"), "3.0");
+        assertThat(h.ok("dev_cycle", "project", "demo", "restart", false)).doesNotContain("deploy record");
     }
 }

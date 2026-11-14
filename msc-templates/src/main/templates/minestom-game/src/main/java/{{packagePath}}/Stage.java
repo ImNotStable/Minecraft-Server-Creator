@@ -12,6 +12,11 @@ public record Stage(String name, Pos spawn, Box goal) {
     public Stage {
         Objects.requireNonNull(name, "name");
         Objects.requireNonNull(spawn, "spawn");
+        if (!Box.inWorld(spawn.x(), spawn.y(), spawn.z(), spawn.yaw(), spawn.pitch())) {
+            throw new IllegalArgumentException("stage " + name + ": spawn " + spawn
+                    + " is not finite or outside the world (x and z within " + Box.MAX_XZ + ", y " + Box.MIN_Y + " to "
+                    + Box.MAX_Y + ", yaw within 360, pitch within 90)");
+        }
         if (name.isBlank() || name.contains(" ")) {
             throw new IllegalArgumentException("stage name must be one word, got '" + name + "'");
         }

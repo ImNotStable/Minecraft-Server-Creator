@@ -136,8 +136,8 @@ class TaskNumbersTest {
 
     @Test
     void everyNumberAReaderTakesFromATaskIsInTheTable() throws IOException {
-        // A key read with JsonNumbers but missing here would have no refused-value cases.
-        Pattern call = Pattern.compile("JsonNumbers\\.(?:wholeNumber|number)\\(\\w+,\\s*\"(\\w+)\"");
+        // A key read with UserJson's number reads but missing here would have no refused-value cases.
+        Pattern call = Pattern.compile("\\.(?:wholeNumber|number)\\(\\s*\"(\\w+)\"");
         Set<String> read = new TreeSet<>();
         for (String file : RepoFiles.list("benchSources")) {
             if (file.contains("/check/") || file.contains("/task/")) {

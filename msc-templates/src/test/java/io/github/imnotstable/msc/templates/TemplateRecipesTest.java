@@ -35,7 +35,7 @@ class TemplateRecipesTest {
                 // defaults test, and a bad-value case.
                 new Edit(MAIN + "GameConfig.java", "\"kit\", \"stages\");", "\"kit\", \"stages\", \"rounds\");"),
                 new Edit(MAIN + "GameConfig.java", "Kit kit, List<Stage> stages)",
-                        "Kit kit, List<Stage> stages, long rounds)"),
+                        "Kit kit, List<Stage> stages, int rounds)"),
                 new Edit(MAIN + "GameConfig.java", "stages(list(c, \"stages\")));",
                         "stages(list(c, \"stages\")),\n                wholeNumber(c, \"rounds\", 3));"),
                 new Edit("src/main/resources/config.yml", "keep-inventory: true\n",
@@ -47,7 +47,7 @@ class TemplateRecipesTest {
                 // A stage setting: its key in STAGE_KEYS, a Stage component read in stages, and a bad-value case.
                 new Edit(MAIN + "GameConfig.java", "List.of(\"name\", \"spawn\", \"goal\");",
                         "List.of(\"name\", \"spawn\", \"goal\", \"waves\");"),
-                new Edit(MAIN + "Stage.java", "@Nullable Box goal)", "@Nullable Box goal, long waves)"),
+                new Edit(MAIN + "Stage.java", "@Nullable Box goal)", "@Nullable Box goal, int waves)"),
                 new Edit(MAIN + "GameConfig.java", "where + \".goal\")));",
                         "where + \".goal\"), wholeNumber(s.get(\"waves\"), where + \".waves\", 1)));"),
                 new Edit(TEST + "GameConfigTest.java", "Bad.stage(\"spawn\", \"{name: a}\"",
