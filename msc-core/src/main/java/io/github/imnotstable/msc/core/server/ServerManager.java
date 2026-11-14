@@ -231,22 +231,22 @@ public final class ServerManager implements AutoCloseable {
     /**
      * Stop a server that an earlier core started and left running (on Windows a core killed with its Claude Code
      * session cannot stop its server, which then holds the world lock). It is asked to stop over RCON so it saves
-     * the world, and killed only if that fails. The pid file's start time must match, so a
-     * reused pid is never touched. Returns a one-line note, or null when there was none.
+     * the world, and killed only if that fails. The pid file's start time must match, so a reused pid is never
+     * touched. The pid file is kept until the server is known to be gone, and nothing thrown while asking it to stop
+     * skips the kill (#394). Returns a one-line note, or null when there was none.
      */
     public synchronized String stopLeftover() throws InterruptedException {
         if (running()) {
             return null;
         }
-        ProcessHandle h = PidFile.take(pidFile()).orElse(null);
+        ProcessHandle h = PidFile.peek(pidFile()).orElse(null);
         if (h == null) {
+            PidFile.take(pidFile()); // a stale file: its process is gone or the pid was reused
             return null;
         }
         long pid = h.pid();
         // Its console belonged to the dead core, so ask over RCON first: "stop" saves the world. Then kill.
-        RconTarget rcon = RconTarget.of(config.serverDir());
-        boolean asked = rcon != null && rcon.askToStop();
-        boolean saved = asked && exits(h, Duration.ofSeconds(60));
+        boolean saved = askToStop() && exits(h, Duration.ofSeconds(60));
         if (!saved) {
             h.destroy();
             if (!exits(h, Duration.ofSeconds(20))) {
@@ -254,8 +254,22 @@ public final class ServerManager implements AutoCloseable {
                 exits(h, Duration.ofSeconds(10));
             }
         }
+        if (h.isAlive()) {
+            return "could not stop a server left running by an earlier session (pid " + pid + "); stop it by hand";
+        }
+        PidFile.take(pidFile());
         return "stopped a server left running by an earlier session (pid " + pid + ", "
                 + (saved ? "saved over RCON)" : "killed: world changes since its last autosave may be lost)");
+    }
+
+    /** Asks the leftover server over RCON to stop; false when there is no RCON target or anything goes wrong. */
+    private boolean askToStop() {
+        try {
+            RconTarget rcon = RconTarget.of(config.serverDir());
+            return rcon != null && rcon.askToStop();
+        } catch (RuntimeException e) {
+            return false;
+        }
     }
 
     private static boolean exits(ProcessHandle h, Duration timeout) throws InterruptedException {
