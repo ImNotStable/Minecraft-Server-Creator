@@ -181,9 +181,9 @@ tasks.test {
 // they run on their own task, part of `check`: an edit elsewhere reruns these few seconds, not all of msc-core:test,
 // whose own inputs stay msc-core's. Each set is both what the tests read and that task's input (msc.repo-inputs).
 val repoCheckClasses = listOf("io.github.imnotstable.msc.core.DocumentedCommandsTest",
-    "io.github.imnotstable.msc.core.RepoInputsTest")
+    "io.github.imnotstable.msc.core.RepoInputsTest", "io.github.imnotstable.msc.core.EulaWritersTest")
 val repoChecks = tasks.register<Test>("repoChecks") {
-    description = "Runs the tests that scan the whole repository (documented commands, test-source reads)."
+    description = "Runs the tests that scan the whole repository (documented commands, test-source reads, EULA writers)."
     group = "verification"
     testClassesDirs = sourceSets.test.get().output.classesDirs
     classpath = sourceSets.test.get().runtimeClasspath
@@ -202,6 +202,12 @@ repoInputs.on(repoChecks).set("documentedCommands", rootProject.fileTree(rootDir
 // RepoInputsTest: every module's test sources, checked for reads that bypass these sets.
 repoInputs.on(repoChecks).set("testSources", rootProject.fileTree(rootDir) {
     include("msc-*/src/test/**/*.java", "msc-*/src/test/**/*.kt")
+})
+// EulaWritersTest: every module's production sources and every build script, checked for code that writes the
+// owner's machine EULA acceptance (~/.msc/eula.json; ADR 0020, #383).
+repoInputs.on(repoChecks).set("eulaWriters", rootProject.fileTree(rootDir) {
+    include("msc-*/src/main/**/*.java", "msc-*/src/main/**/*.kt", "**/*.gradle.kts", "build-logic/src/main/**")
+    exclude("**/build/**", "**/.gradle/**", "**/node_modules/**", "graphify-out/**")
 })
 
 tasks.register<Test>("e2eTest") {
