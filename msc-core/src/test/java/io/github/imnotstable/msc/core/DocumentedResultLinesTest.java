@@ -6,6 +6,9 @@ import io.github.imnotstable.msc.buildlogic.RepoFiles;
 import io.github.imnotstable.msc.core.fixture.FakeBuildMain;
 import io.github.imnotstable.msc.core.fixture.FakeServerMain;
 import io.github.imnotstable.msc.core.server.MachineEula;
+import io.github.imnotstable.msc.core.tool.Args;
+import io.github.imnotstable.msc.core.tool.Budget;
+import io.github.imnotstable.msc.core.tool.Tool;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -63,6 +66,31 @@ class DocumentedResultLinesTest {
     private static List<String> java(Class<?> main) {
         return List.of(Path.of(System.getProperty("java.home"), "bin", "java").toString(),
                 "-cp", System.getProperty("java.class.path"), main.getName());
+    }
+
+    /**
+     * #458: tools.md's cap rule is the one every tool's result obeys. The registry applies {@link Budget#cap} to every
+     * result (ToolRegistryTest), so here each registered tool's largest possible result, asked with the largest
+     * maxChars, is the documented cap: 24,000 for a tool whose row lists {@code maxChars}, 6,000 for every other.
+     */
+    @Test
+    void everyToolsLargestResultIsTheDocumentedCap() throws Exception {
+        String doc = doc();
+        assertThat(doc).contains("The default cap is " + String.format("%,d", Budget.DEFAULT_CHARS) + " characters")
+                .contains("accept 200 to " + String.format("%,d", Budget.MAX_CHARS));
+        com.google.gson.JsonObject huge = new com.google.gson.JsonObject();
+        huge.addProperty("maxChars", 1_000_000);
+        try (CoreHarness h = new CoreHarness(Files.createDirectories(root.resolve("caps")))) {
+            for (Tool tool : h.core.registry().tools()) {
+                Matcher row = Pattern.compile("(?m)^\\| `" + tool.name() + "` \\|.*$").matcher(doc);
+                assertThat(row.find()).as("tools.md has a row for " + tool.name()).isTrue();
+                boolean documented = row.group().contains("`maxChars`? (integer)");
+                assertThat(Budget.takesMaxChars(tool)).as(tool.name() + " takes maxChars as tools.md says")
+                        .isEqualTo(documented);
+                assertThat(Budget.cap(tool, new Args(huge))).as(tool.name() + "'s largest result")
+                        .isEqualTo(documented ? Budget.MAX_CHARS : Budget.DEFAULT_CHARS);
+            }
+        }
     }
 
     @Test
@@ -185,7 +213,7 @@ class DocumentedResultLinesTest {
             new SetupLine("`quilt loader <version> (installed)`", "quilt loader \\S+ \\((installed|already there)\\)"),
             new SetupLine("`fabric api <version>`", "fabric api \\S+ \\((downloaded|cached)\\)"),
             new SetupLine("`agent installed in mods/` (or `plugins/`)", "agent installed in (mods|plugins)/"),
-            new SetupLine("`warning: msc <platform> agent not found ...`", "warning: msc \\w+ agent not found\\b.*"),
+            new SetupLine("`warning: msc <agent> agent not found ...`", "warning: msc \\w+ agent not found\\b.*"),
             new SetupLine("`eula.txt has eula=true from the owner's one-time acceptance for this machine (...)`",
                     "eula\\.txt has eula=true from the owner's one-time acceptance for this machine \\(.*\\)"),
             new SetupLine("`note: eula.txt has eula=true; ...`", "note: eula\\.txt has eula=true; .*"),

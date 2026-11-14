@@ -14,6 +14,28 @@ class ServerSetupTest {
         assertThat(Platform.NEOFORGE.agentJar()).isEqualTo("msc-agent-neoforge.jar");
     }
 
+    /** #460: the warning names the agent jar a build produces, which for Quilt and Purpur is another platform's. */
+    @Test
+    void theMissingAgentWarningNamesTheAgentEachPlatformRuns() {
+        Path dir = Path.of("ws", ".msc", "agent");
+        for (Platform platform : Platform.values()) {
+            String warning = ServerSetup.missingAgent(platform, dir);
+            String jar = switch (platform) {
+                case PAPER, PURPUR -> "msc-agent-paper";
+                case FABRIC, QUILT -> "msc-agent-fabric";
+                case NEOFORGE -> "msc-agent-neoforge";
+                case FORGE -> "msc-agent-forge";
+                case MINESTOM -> "msc-agent-minestom";
+            };
+            assertThat(warning).as(platform.id()).startsWith("warning: msc " + platform.agent() + " agent not found")
+                    .contains("Put " + jar + ".jar in " + dir).doesNotContain("\n");
+        }
+        assertThat(ServerSetup.missingAgent(Platform.QUILT, dir)).contains("Quilt runs the fabric agent")
+                .doesNotContain("msc quilt");
+        assertThat(ServerSetup.missingAgent(Platform.PURPUR, dir)).contains("Purpur runs the paper agent")
+                .doesNotContain("msc purpur");
+    }
+
     @Test
     void agentJarsMatchByWholeWordSoNeoForgeIsNotForge() {
         assertThat(ServerSetup.namesAgent(Path.of("msc-agent-neoforge-0.1.0.jar"), "forge")).isFalse();

@@ -46,14 +46,14 @@ public final class BuildTools {
                         .opt("dryRun", "boolean", DRY_RUN),
                 args -> {
                     String w = world.world(args.str("world", null));
-                    List<Step> steps = new BuildScript(w, files).parse(args.str("steps"));
+                    List<Step> steps = new BuildScript(w, files).parse(args.text("steps"));
                     return builder.run(w, steps, args.bool("physics", false), args.bool("dryRun", false), "build_batch");
                 });
     }
 
     /** A structure file from the workspace: a Sponge schematic, or anything else as text structure. */
     private static BlockGrid load(CoreConfig config, String path, String world) throws java.io.IOException {
-        Path file = config.resolve(path);
+        Path file = config.inWorkspace().resolve("structure file", path);
         if (!Files.isRegularFile(file)) {
             throw new ToolException("no file " + file);
         }

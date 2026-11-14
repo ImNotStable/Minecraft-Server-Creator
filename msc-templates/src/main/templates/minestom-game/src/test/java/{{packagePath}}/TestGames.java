@@ -24,7 +24,12 @@ final class TestGames {
 
     /** These stages, a wooden sword and 8 bread as the kit, and Steve as the one admin. */
     static GameConfig withStages(List<Stage> stages) {
-        return new GameConfig(GameMode.ADVENTURE, Difficulty.NORMAL, 6000,
+        return with(6000, stages);
+    }
+
+    /** As {@link #withStages}, at this time of day. */
+    static GameConfig with(long time, List<Stage> stages) {
+        return new GameConfig(GameMode.ADVENTURE, Difficulty.NORMAL, time,
                 Kit.of(Kit.item(Material.WOODEN_SWORD, 1), Kit.item(Material.BREAD, 8)), stages, Set.of("Steve"));
     }
 }

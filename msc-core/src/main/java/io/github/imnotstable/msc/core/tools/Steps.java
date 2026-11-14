@@ -1,15 +1,10 @@
 package io.github.imnotstable.msc.core.tools;
 
+import io.github.imnotstable.msc.core.tool.PathArg;
 import io.github.imnotstable.msc.core.tool.ToolException;
 import io.github.imnotstable.msc.protocol.transport.OpException;
 import io.github.imnotstable.msc.textures.TextureException;
 import java.io.IOException;
-import java.nio.file.AccessDeniedException;
-import java.nio.file.DirectoryNotEmptyException;
-import java.nio.file.FileAlreadyExistsException;
-import java.nio.file.FileSystemException;
-import java.nio.file.NoSuchFileException;
-import java.nio.file.NotDirectoryException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -186,13 +181,7 @@ final class Steps {
             case ToolException t -> t.getMessage();
             case TextureException t -> t.getMessage();
             case OpException op -> "agent answered " + op.code() + ": " + op.detail();
-            case DirectoryNotEmptyException d -> "a folder that is not empty is in the way: " + d.getFile();
-            case NoSuchFileException n -> "no such file or folder: " + n.getFile();
-            case NotDirectoryException n -> "not a folder: " + n.getFile();
-            case FileAlreadyExistsException f -> "already exists: " + f.getFile();
-            case AccessDeniedException a -> "access denied: " + a.getFile();
-            case FileSystemException f -> f.getMessage();
-            case IOException io -> io.getMessage() == null ? io.getClass().getSimpleName() : io.getMessage();
+            case IOException io -> PathArg.reason(io);
             default -> e.getClass().getSimpleName() + (e.getMessage() == null ? "" : ": " + e.getMessage());
         };
     }

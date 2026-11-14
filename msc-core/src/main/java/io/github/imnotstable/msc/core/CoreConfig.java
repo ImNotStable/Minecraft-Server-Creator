@@ -2,6 +2,7 @@ package io.github.imnotstable.msc.core;
 
 import io.github.imnotstable.msc.core.server.LoaderInstaller;
 import io.github.imnotstable.msc.core.server.MachineEula;
+import io.github.imnotstable.msc.core.tool.PathArg;
 import io.github.imnotstable.msc.protocol.Limits;
 import java.nio.file.Path;
 import java.util.List;
@@ -189,8 +190,8 @@ public record CoreConfig(Path workspace, Path serverDir, int agentPort, String t
                 fabricMavenUrl, installDir, packPort, machineEula, urls);
     }
 
-    /** Resolve a path argument against the workspace. */
-    public Path resolve(String path) {
-        return workspace.resolve(path).normalize();
+    /** The rule for a path argument: relative to the workspace and inside it (see {@link PathArg}). */
+    public PathArg inWorkspace() {
+        return PathArg.inside(workspace);
     }
 }

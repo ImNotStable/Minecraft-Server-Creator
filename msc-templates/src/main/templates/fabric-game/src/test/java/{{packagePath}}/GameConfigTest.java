@@ -41,6 +41,6 @@ class GameConfigTest {
         assertThatThrownBy(() -> TestGames.withStages(List.of(new Stage("a", p), new Stage("A", p))))
                 .hasMessageContaining("duplicate stage name A");
         assertThatThrownBy(() -> new Stage("two words", p)).hasMessageContaining("one word");
-        assertThatThrownBy(() -> new Kit.Entry(Items.BREAD, 0)).hasMessageContaining("at least 1");
+        assertThatThrownBy(() -> new Kit.Entry(Items.BREAD, 0)).hasMessageContaining("from 1 to 2304");
     }
 }

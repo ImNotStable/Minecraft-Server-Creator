@@ -43,11 +43,18 @@ final class ServerSetup {
         this.eula = eula;
     }
 
+    /** What a Minecraft or loader version can be, so it goes into a download URL as it is. */
+    private static final java.util.regex.Pattern VERSION = java.util.regex.Pattern.compile("[A-Za-z0-9][A-Za-z0-9._+-]*");
+
     String run(Args args) throws IOException, InterruptedException {
         if (server.running()) {
             throw new ToolException("stop the server before server_setup");
         }
-        String version = args.str("version", config.minecraft());
+        String version = args.str("version", config.minecraft()).strip();
+        if (!VERSION.matcher(version).matches()) {
+            throw new ToolException("version must look like " + config.minecraft()
+                    + " (letters, digits, '.', '-', '_' and '+'), not \"" + version + "\"");
+        }
         boolean acceptEula = args.bool("acceptEula", false);
         ServerProperties.Mode mode;
         try {
@@ -245,10 +252,19 @@ final class ServerSetup {
             ScanFolders.copy(agent, addons.resolve(platform.agentJar()), addons.getParent());
             out.append("agent installed in ").append(platform.addonDir()).append("/\n");
         } else {
-            out.append("warning: msc ").append(platform.id()).append(" agent not found, so world and build tools will "
-                    + "not work. Put its jar in ").append(config.dataDir().resolve("agent"))
-                    .append(" or set MSC_AGENT_JAR, then run server_setup again\n");
+            out.append(missingAgent(platform, config.dataDir().resolve("agent"))).append('\n');
         }
+    }
+
+    /**
+     * The warning when no agent jar was found, naming the agent the platform runs ({@link Platform#agent()}) and the
+     * jar a build produces for it, never the platform: Quilt runs the Fabric agent, Purpur the Paper one.
+     */
+    static String missingAgent(Platform platform, Path agentDir) {
+        String agent = platform.agent();
+        String shared = agent.equals(platform.id()) ? "" : " (" + platform.displayName() + " runs the " + agent + " agent)";
+        return "warning: msc " + agent + " agent not found" + shared + ", so world and build tools will not work. Put "
+                + platform.agentJar() + " in " + agentDir + " or set MSC_AGENT_JAR, then run server_setup again";
     }
 
     private void eulaStep(Path file, boolean accept, StringBuilder out) throws IOException {

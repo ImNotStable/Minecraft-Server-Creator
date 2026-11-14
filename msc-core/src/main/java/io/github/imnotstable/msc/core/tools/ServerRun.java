@@ -58,6 +58,8 @@ final class ServerRun {
     static final String TAKE_OVER_PACK = "take over the pack an earlier session served";
     static final String REFRESH_AGENT = "update the installed agent jar";
     static final String START = "start the server";
+    /** Longest server_start may wait for the server to be ready. */
+    static final int MAX_START_SECONDS = 3600;
     static final String DETACH = "detach the server";
     static final String KEEP_SERVING = "hand the pack to a standalone host";
     static final String OFFER_PACK = "offer the pack in " + ServerPropertiesFile.NAME;
@@ -67,6 +69,7 @@ final class ServerRun {
      * writable. Then: accept the EULA, then {@link #startAndReport}.
      */
     String start(Args args) throws IOException, InterruptedException {
+        int timeoutSeconds = args.integer("timeoutSeconds", 180, 1, MAX_START_SECONDS);
         if (server.running()) {
             throw new ToolException("server is already running. Use server_stop or dev_cycle.");
         }
@@ -87,7 +90,7 @@ final class ServerRun {
                 return eula.recordForMachine();
             });
         }
-        return accepted + startAndReport(steps, true, args.integer("timeoutSeconds", 180), Budget.DEFAULT_CHARS).text();
+        return accepted + startAndReport(steps, true, timeoutSeconds, Budget.DEFAULT_CHARS).text();
     }
 
     /**
