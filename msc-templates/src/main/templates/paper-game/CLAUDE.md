@@ -27,7 +27,7 @@ The base every game needs, so you only write the game itself. All of it is set i
 - `Game.java`: game state and rules (stages, joining, advancing). Put game logic here or in classes it calls.
 - `GameListener.java`: hands Bukkit events to `Game`. `GameCommand.java`: `/game`.
 - `Stage`, `Spot`, `Box`, `Kit`: config values. `Progress`: saved progress. `WorldRules`: world-wide rules.
-- `src/test/java/`: plain unit tests (`BoxTest`, `ProgressTest`) and MockBukkit tests (`GameConfigTest`, `ConfigNumbersTest`, `{{mainClass}}Test`). `ConfigNumbersTest` tries every bad shape at every number in the config and fails when a value is read outside `GameConfig`'s typed readers. `{{mainClass}}Test` plays its own two-stage game (`CONFIG`), not your `config.yml`, so editing your stages, kit or rules does not break it.
+- `src/test/java/`: plain unit tests (`BoxTest`, `ProgressTest`) and MockBukkit tests (`GameConfigTest`, `ConfigNumbersTest`, `{{mainClass}}Test`). `ConfigNumbersTest` tries every bad shape at every ranged number in the config. `{{mainClass}}Test` plays its own two-stage game (`CONFIG`), not your `config.yml`, so editing your stages, kit or rules does not break it.
 - `gradle/libs.versions.toml`: every dependency version. `run/`: dev server config.
 
 ## Building the game

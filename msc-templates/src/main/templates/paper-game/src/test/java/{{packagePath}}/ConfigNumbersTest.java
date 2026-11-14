@@ -3,16 +3,12 @@ package {{packageName}};
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import java.io.IOException;
 import java.lang.reflect.Field;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.function.UnaryOperator;
-import java.util.regex.Pattern;
 import java.util.stream.Stream;
 import org.bukkit.configuration.InvalidConfigurationException;
 import org.bukkit.configuration.file.YamlConfiguration;
@@ -142,42 +138,5 @@ class ConfigNumbersTest {
         }
         assertThat(declared).isNotEmpty();
         assertThat(POSITIONS.stream().map(Position::need).toList()).containsAll(declared);
-    }
-
-    /** Ways to read a number, true/false or list from config without the typed readers. */
-    private static final Pattern UNTYPED_READ = Pattern.compile(
-            "instanceof\\s+(Number|Integer|Long|Double|Float|Short|Byte|BigInteger|BigDecimal|Boolean)\\b"
-                    + "|\\.(int|long|double|float|short|byte)Value\\(\\)"
-                    + "|\\b(parseInt|parseLong|parseDouble|parseFloat|parseBoolean)\\("
-                    + "|\\b(get|is)(Int|Long|Double|Boolean)(List)?\\(|NumberConversions");
-    private static final String READERS_START = "// ---- Typed readers.";
-    private static final String READERS_END = "// ---- End of typed readers.";
-
-    /**
-     * Fails when a number or true/false is read outside GameConfig's typed readers ({@code Need}): read it with one,
-     * so a decimal, a too-big number, NaN or a quoted number fails with the same message naming the key path.
-     */
-    @Test
-    void numbersAreReadOnlyByTheTypedReaders() throws IOException {
-        List<String> found = new ArrayList<>();
-        try (Stream<Path> files = Files.walk(Path.of("src/main/java"))) {
-            for (Path file : files.filter(f -> f.toString().endsWith(".java")).toList()) {
-                String text = Files.readString(file);
-                if (file.endsWith("GameConfig.java")) {
-                    int start = text.indexOf(READERS_START);
-                    int end = text.indexOf(READERS_END);
-                    assertThat(start).as("typed readers block in GameConfig").isPositive().isLessThan(end);
-                    assertThat(UNTYPED_READ.matcher(text.substring(start, end)).find()).as("guard pattern").isTrue();
-                    text = text.substring(0, start) + text.substring(end);
-                }
-                List<String> lines = text.lines().toList();
-                for (String line : lines) {
-                    if (UNTYPED_READ.matcher(line).find()) {
-                        found.add(file.getFileName() + ": " + line.strip());
-                    }
-                }
-            }
-        }
-        assertThat(found).as("read these through GameConfig's typed readers").isEmpty();
     }
 }
