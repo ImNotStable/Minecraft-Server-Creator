@@ -9,7 +9,10 @@ import java.net.URI;
 import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
+import java.util.HexFormat;
 import java.util.List;
 
 /**
@@ -19,8 +22,15 @@ import java.util.List;
  */
 public final class LoaderInstaller {
     private static final Duration INSTALL_TIMEOUT = Duration.ofMinutes(10);
-    /** Says which loader and versions the server directory holds, so another version is installed again. */
+    /**
+     * Says which loader and versions the server directory holds, so another version is installed again, and the
+     * SHA-256 of each file that loader's start reads, so a file another platform wrote since under the same name
+     * (NeoForge, Minestom and the vanilla jar of Fabric and Quilt all use {@code server.jar}) is not taken for its own
+     * (#513). First line the id, then one {@code <sha256> <file>} line per file.
+     */
     static final String MARKER = ".msc-loader";
+    /** The one start file name several platforms share: see {@link #claimSharedJar}. */
+    static final String SHARED_JAR = "server.jar";
 
     /** Where each project publishes. Tests point these at a local server. */
     public record Urls(String neoforgeMaven, String forgeMaven, String quiltMaven, String purpurApi) {
@@ -101,19 +111,19 @@ public final class LoaderInstaller {
     /** NeoForge's server, with its server starter jar as {@code server.jar}. */
     public Result neoforge(String version, Path dir) throws IOException, InterruptedException {
         String id = "neoforge " + version;
-        if (marked(dir, id) && Files.isDirectory(dir.resolve("libraries/net/neoforged/neoforge/" + version))
-                && Files.exists(dir.resolve(Platform.NEOFORGE.serverJar()))) {
+        if (marked(dir, id, Platform.NEOFORGE.serverJar())
+                && Files.isDirectory(dir.resolve("libraries/net/neoforged/neoforge/" + version))) {
             return new Result(version, true);
         }
         Path installer = installer("neoforge-" + version + "-installer.jar",
                 urls.neoforgeMaven() + "/net/neoforged/neoforge/" + version + "/neoforge-" + version + "-installer.jar",
                 "NeoForge has no version " + version);
         String output = install(dir, List.of(java, "-jar", installer.toString(), "--install-server", dir.toString(),
-                "--server-jar"), "NeoForge");
+                "--server-jar"), "NeoForge", Platform.NEOFORGE.serverJar());
         if (!Files.exists(dir.resolve(Platform.NEOFORGE.serverJar()))) {
             throw wroteNothing("NeoForge", Platform.NEOFORGE.serverJar(), output);
         }
-        mark(dir, id);
+        mark(dir, id, Platform.NEOFORGE.serverJar());
         return new Result(version, false);
     }
 
@@ -144,8 +154,9 @@ public final class LoaderInstaller {
     public Result quilt(String minecraft, String loader, String installerVersion, Path dir)
             throws IOException, InterruptedException {
         String id = "quilt " + minecraft + " " + loader;
-        if (marked(dir, id) && Files.isDirectory(dir.resolve("libraries/org/quiltmc/quilt-loader/" + loader))
-                && Files.exists(dir.resolve(Platform.QUILT.serverJar()))) {
+        // The launcher starts the vanilla jar the installer downloaded as server.jar.
+        if (marked(dir, id, Platform.QUILT.serverJar(), SHARED_JAR)
+                && Files.isDirectory(dir.resolve("libraries/org/quiltmc/quilt-loader/" + loader))) {
             return new Result(loader, true);
         }
         Path installer = installer("quilt-installer-" + installerVersion + ".jar",
@@ -155,22 +166,76 @@ public final class LoaderInstaller {
         String output = install(dir, List.of(java, "-jar", installer.toString(), "install", "server", minecraft,
                 loader,
                 // Relative: the installer splits its options on spaces, so a folder like "MSC Quilt Test" broke it.
-                "--download-server", "--install-dir=."), "Quilt");
-        if (!Files.exists(dir.resolve(Platform.QUILT.serverJar()))) {
-            throw wroteNothing("Quilt", Platform.QUILT.serverJar(), output);
+                "--download-server", "--install-dir=."), "Quilt", Platform.QUILT.serverJar(), SHARED_JAR);
+        for (String jar : List.of(Platform.QUILT.serverJar(), SHARED_JAR)) {
+            if (!Files.exists(dir.resolve(jar))) {
+                throw wroteNothing("Quilt", jar, output);
+            }
         }
-        mark(dir, id);
+        mark(dir, id, Platform.QUILT.serverJar(), SHARED_JAR);
         return new Result(loader, false);
     }
 
-    private static boolean marked(Path dir, String id) throws IOException {
-        Path marker = dir.resolve(MARKER);
-        return Files.exists(marker) && Files.readString(marker).strip().equals(id);
+    /**
+     * True when the marker names {@code id} and each of {@code files} is still the file that install recorded: same
+     * name, same SHA-256. Existing is not enough, since another platform's setup or deploy may have written the name.
+     */
+    private static boolean marked(Path dir, String id, String... files) throws IOException {
+        List<String> lines = markerLines(dir);
+        if (lines.isEmpty() || !lines.getFirst().equals(id)) {
+            return false;
+        }
+        for (String file : files) {
+            Path path = dir.resolve(file);
+            if (!Files.isRegularFile(path) || !lines.contains(sha256(path) + " " + file)) {
+                return false;
+            }
+        }
+        return true;
     }
 
-    /** Whole or not at all ({@link AtomicFile}), so a marker is never a cut-off id. */
-    static void mark(Path dir, String id) throws IOException {
-        AtomicFile.write(dir.resolve(MARKER), to -> Files.writeString(to, id + "\n"));
+    private static List<String> markerLines(Path dir) throws IOException {
+        Path marker = dir.resolve(MARKER);
+        return Files.isRegularFile(marker) ? Files.readString(marker).strip().lines().map(String::strip).toList()
+                : List.of();
+    }
+
+    /** Whole or not at all ({@link AtomicFile}), so a marker is never a cut-off id. Records each file's hash. */
+    static void mark(Path dir, String id, String... files) throws IOException {
+        StringBuilder text = new StringBuilder(id).append('\n');
+        for (String file : files) {
+            text.append(sha256(dir.resolve(file))).append(' ').append(file).append('\n');
+        }
+        AtomicFile.write(dir.resolve(MARKER), to -> Files.writeString(to, text));
+    }
+
+    /**
+     * For a platform whose start reads {@code server.jar} without its setup installing it: the Fabric launcher
+     * downloads the vanilla server there on first start, and Minestom's dev_cycle deploys the project jar there. A
+     * {@code server.jar} in a folder the marker does not give to {@code id} came from another platform (NeoForge's
+     * starter, Quilt's vanilla jar, Minestom's project, another version's vanilla jar) and is removed, so the
+     * launcher downloads its own or server_start asks for a dev_cycle; then the folder is marked as {@code id}'s.
+     * Returns true when a jar was removed.
+     */
+    public static boolean claimSharedJar(Path dir, String id) throws IOException {
+        List<String> lines = markerLines(dir);
+        boolean removed = (lines.isEmpty() || !lines.getFirst().equals(id))
+                && Files.deleteIfExists(dir.resolve(SHARED_JAR));
+        mark(dir, id);
+        return removed;
+    }
+
+    private static String sha256(Path file) throws IOException {
+        try (var in = Files.newInputStream(file)) {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] buffer = new byte[64 * 1024];
+            for (int n; (n = in.read(buffer)) > 0; ) {
+                digest.update(buffer, 0, n);
+            }
+            return HexFormat.of().formatHex(digest.digest());
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("every JDK has SHA-256", e);
+        }
     }
 
     private Path installer(String name, String url, String notFound) throws IOException, InterruptedException {
@@ -182,10 +247,15 @@ public final class LoaderInstaller {
     }
 
     /** Runs an installer and returns its output; a failed or timed-out run throws with the output's tail. */
-    private String install(Path dir, List<String> command, String what) throws IOException, InterruptedException {
+    private String install(Path dir, List<String> command, String what, String... starts)
+            throws IOException, InterruptedException {
         Files.createDirectories(dir);
         // An install that fails half way must not leave the old marker saying the old version is complete.
         Files.deleteIfExists(dir.resolve(MARKER));
+        // Nor an installer that keeps an existing file leave another platform's jar under its start name (#513).
+        for (String start : starts) {
+            Files.deleteIfExists(dir.resolve(start));
+        }
         ProcessRunner.Result r = ProcessRunner.run(command, dir, INSTALL_TIMEOUT);
         if (!r.ok()) {
             throw new ToolException("the " + what + " installer " + (r.timedOut() ? "timed out" : "failed (exit "
