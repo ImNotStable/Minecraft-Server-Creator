@@ -17,6 +17,7 @@ import java.util.List;
  *                       task's own {@code fixture/} folder if present)
  * @param server         what the task needs from the dev server
  * @param checks         all must pass for the task to pass
+ * @param reset          what the bench puts back after the agent and before the checks
  * @param timeoutSeconds limit for the agent run, or 0 for the bench default
  */
 public record TaskDef(
@@ -29,6 +30,7 @@ public record TaskDef(
         List<Path> fixtures,
         ServerSpec server,
         List<Check> checks,
+        Reset reset,
         int timeoutSeconds) {
 
     public TaskDef {

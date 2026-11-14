@@ -411,6 +411,15 @@ public final class Main {
             }
         };
         try {
+            if (!task.reset().isEmpty()) {
+                // As in a run: a server answering on the bench's ports holds in memory what the reset deletes, so it
+                // is stopped first, and the RCON checks start the workspace's own server on the reset files.
+                if (config != null && task.needsServer()) {
+                    ServerManager.clearPorts(config.server());
+                }
+                task.reset().apply(workspace);
+                out.printf("reset before checks: deleted %s%n", String.join(", ", task.reset().delete()));
+            }
             boolean allPassed = true;
             for (Check check : task.checks()) {
                 CheckResult result = check.run(context);

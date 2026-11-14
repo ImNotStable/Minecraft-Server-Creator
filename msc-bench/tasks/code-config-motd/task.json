@@ -3,6 +3,7 @@
   "title": "Add a config-backed /benchmotd command that can be changed in game",
   "fixtures": ["_fixtures/paper-server", "_fixtures/paper-plugin"],
   "timeoutSeconds": 1200,
+  "resetBeforeChecks": {"delete": ["server/plugins/BenchPlugin/config.yml"]},
   "checks": [
     {"type": "command", "name": "plugin builds", "run": ["{gradlew}", "build", "--quiet"], "timeoutSeconds": 900},
     {"type": "rcon", "name": "default message", "command": "benchmotd", "expect": "^Welcome to MSC$"},

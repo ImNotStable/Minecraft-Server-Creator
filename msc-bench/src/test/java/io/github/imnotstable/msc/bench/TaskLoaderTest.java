@@ -28,7 +28,7 @@ class TaskLoaderTest {
     void bundledTasksLoadAndCoverEveryArea() throws IOException {
         List<TaskDef> tasks = TaskLoader.loadAll(BUNDLED);
 
-        assertThat(tasks).hasSizeBetween(5, 10);
+        assertThat(tasks).hasSize(9);
         assertThat(tasks).extracting(TaskDef::category).contains("code", "build", "world", "texture");
         for (TaskDef task : tasks) {
             assertThat(task.prompt()).as(task.id()).isNotBlank();
@@ -43,6 +43,10 @@ class TaskLoaderTest {
 
         assertThat(tasks).filteredOn(t -> t.category().equals("build") || t.category().equals("world"))
                 .allMatch(t -> t.server().startBefore() && t.needsServer());
+        // #495: the motd checks ask for the shipped default, so the config the agent's testing saved is reset.
+        TaskDef motd = tasks.stream().filter(t -> t.id().equals("code-config-motd")).findFirst().orElseThrow();
+        assertThat(motd.reset().delete()).containsExactly("server/plugins/BenchPlugin/config.yml");
+        assertThat(tasks).filteredOn(t -> !t.id().equals("code-config-motd")).allMatch(t -> t.reset().isEmpty());
         TaskDef fix = tasks.stream().filter(t -> t.id().equals("code-fix-startup")).findFirst().orElseThrow();
         assertThat(fix.fixtures().getLast()).endsWith(Path.of("code-fix-startup", "fixture"));
     }
