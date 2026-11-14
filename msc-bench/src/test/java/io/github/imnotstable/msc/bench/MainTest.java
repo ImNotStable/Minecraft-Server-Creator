@@ -8,6 +8,7 @@ import io.github.imnotstable.msc.bench.run.BenchRunner;
 import io.github.imnotstable.msc.bench.task.TaskDef;
 import io.github.imnotstable.msc.bench.task.TaskLoader;
 import io.github.imnotstable.msc.buildlogic.RepoFiles;
+import io.github.imnotstable.msc.process.ClosedPort;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.PrintStream;

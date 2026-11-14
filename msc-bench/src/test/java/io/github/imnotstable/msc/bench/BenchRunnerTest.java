@@ -9,6 +9,7 @@ import io.github.imnotstable.msc.bench.run.ResultsFile;
 import io.github.imnotstable.msc.bench.run.RunRecord;
 import io.github.imnotstable.msc.bench.task.TaskDef;
 import io.github.imnotstable.msc.bench.task.TaskLoader;
+import io.github.imnotstable.msc.process.ClosedPort;
 import io.github.imnotstable.msc.process.rcon.FakeRconServer;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;

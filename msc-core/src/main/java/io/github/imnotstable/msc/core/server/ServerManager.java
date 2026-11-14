@@ -98,28 +98,53 @@ public final class ServerManager implements AutoCloseable {
             return config.serverCommand();
         }
         Platform platform = platform();
-        if (serverJar() == null) {
-            throw new ToolException("no " + platform.id() + " server in " + config.serverDir() + ". "
-                    + (platform == Platform.MINESTOM ? "Run dev_cycle to build the project and put its jar there."
-                    : "Run server_setup first."));
-        }
+        checkStartable(platform, false);
         if (platform.needsEula()) {
             // The EULA is the user's to accept: eula.txt in the server directory decides, or the owner's own
             // one-time acceptance for this machine (ADR 0020), never a flag set here.
-            Path eula = config.serverDir().resolve("eula.txt");
+            Path eula = eulaFile();
             try {
                 config.machineEula().applyTo(eula);
             } catch (IOException e) {
                 throw new ToolException("could not write " + eula + ": " + e.getMessage());
             }
             if (!eulaAccepted(eula)) {
-                throw new ToolException("the Minecraft EULA is not accepted (no eula=true in " + eula + "): once the "
-                        + "user agrees to https://aka.ms/MinecraftEULA, run server_start with acceptEula=true (that "
-                        + "also covers later servers on this machine), or the user runs once in their own terminal: "
-                        + MachineEula.acceptCommand(config.installDir()));
+                throw eulaRefusal();
             }
         }
         return platform.launchCommand(config.javaCommand());
+    }
+
+    /**
+     * Refuses a start of {@code platform} that cannot go ahead: no server jar, or (unless {@code acceptingEula}, the
+     * user's yes on this very call) the EULA neither in eula.txt nor accepted for this machine. Reads only, so a tool
+     * decides its refusals before its first side effect (the Steps rule). A configured server command skips both.
+     */
+    public void checkStartable(Platform platform, boolean acceptingEula) {
+        if (config.serverCommand() != null) {
+            return;
+        }
+        if (!Files.exists(config.serverDir().resolve(platform.serverJar()))) {
+            throw new ToolException("no " + platform.id() + " server in " + config.serverDir() + ". "
+                    + (platform == Platform.MINESTOM ? "Run dev_cycle to build the project and put its jar there."
+                    : "Run server_setup first."));
+        }
+        if (platform.needsEula() && !acceptingEula && !eulaAccepted(eulaFile())
+                && config.machineEula().read().isEmpty()) {
+            throw eulaRefusal();
+        }
+    }
+
+    /** The server's eula.txt. */
+    public Path eulaFile() {
+        return config.serverDir().resolve("eula.txt");
+    }
+
+    private ToolException eulaRefusal() {
+        return new ToolException("the Minecraft EULA is not accepted (no eula=true in " + eulaFile() + "): once the "
+                + "user agrees to https://aka.ms/MinecraftEULA, run server_start with acceptEula=true (that "
+                + "also covers later servers on this machine), or the user runs once in their own terminal: "
+                + MachineEula.acceptCommand(config.installDir()));
     }
 
     /** True when {@code eulaFile} exists and has an {@code eula=true} line. */
