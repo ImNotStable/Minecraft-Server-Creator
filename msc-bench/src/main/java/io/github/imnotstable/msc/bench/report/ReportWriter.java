@@ -119,7 +119,7 @@ public final class ReportWriter {
             md.append("\n## Failures\n\n");
             for (RunRecord r : failures) {
                 md.append("- ").append(r.task()).append(" (").append(r.mode()).append(" #").append(r.repeat()).append("): ");
-                md.append(r.failureReason()).append('\n');
+                md.append(markdownInline(r.failureReason())).append('\n');
             }
         }
         return md.toString();
@@ -174,6 +174,14 @@ public final class ReportWriter {
             return "-";
         }
         return String.format(Locale.ROOT, "%+.0f%%", 100.0 * (median(with, metric) - b) / b);
+    }
+
+    /**
+     * {@code text} (one line, from {@link RunRecord#failureReason()}) safe inside a Markdown list item: every character
+     * Markdown could read as emphasis, code, a link, HTML, a table cell or a heading is backslash-escaped.
+     */
+    static String markdownInline(String text) {
+        return text.replaceAll("[\\\\`*_\\[\\]<>|#~!]", "\\\\$0");
     }
 
     private static String seconds(long millis) {

@@ -236,16 +236,20 @@ public final class BenchRunner {
 
         ServerManager server = null;
         serverTask = task.needsServer();
+        // The step a failure before the agent starts is named after; null once the agent has started.
+        String setupStep = "preparing the workspace";
         try {
             if (task.needsServer()) {
                 ServerManager.clearPorts(config.server());
             }
             Workspaces.prepare(task, workspace, config, mode, task.needsServer() ? paperJar() : null, values);
             if (task.needsServer()) {
+                setupStep = "starting the server";
                 ServerFiles.restore(sharedServerFiles(), workspace.resolve("server"));
                 server = new ServerManager(workspace.resolve("server"), config.server(), serverEnv, children);
             }
             if (task.server().startBefore()) {
+                setupStep = "running the server setup commands";
                 RconClient rcon = server.rcon();
                 for (String command : task.server().setup()) {
                     rcon.command(Placeholders.fill(command, values));
@@ -254,6 +258,7 @@ public final class BenchRunner {
                 server.disconnect();
             }
 
+            setupStep = "starting the agent";
             values.put("prompt", fullPrompt(task, values));
             List<String> command = new ArrayList<>(Placeholders.fill(config.agent().command(), values));
             command.addAll(Placeholders.fill(mode.extraArgs(), values));
@@ -268,6 +273,7 @@ public final class BenchRunner {
             int timeout = task.timeoutSeconds() > 0 ? task.timeoutSeconds() : config.agent().timeoutSeconds();
             long start = System.nanoTime();
             Process process = children.start(builder);
+            setupStep = null;
             try {
                 if (process.waitFor(timeout, TimeUnit.SECONDS)) {
                     exitCode = process.exitValue();
@@ -280,7 +286,8 @@ public final class BenchRunner {
                 Thread.currentThread().interrupt();
                 throw new IOException("interrupted", e);
             }
-            wallMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
+            // At least 1: a wallMs of 0 means the agent never started (RunRecord.agentRan).
+            wallMs = Math.max(1, TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start));
             // Lenient UTF-8 (Text.read): one stray byte in the agent's output must not cost the whole attempt.
             String stdout = Text.read(attemptDir.resolve("agent-stdout.json"));
             String limit = ClaudeResultParser.usageLimit(stdout);
@@ -329,7 +336,8 @@ public final class BenchRunner {
         } catch (UsageLimitReached e) {
             throw e;
         } catch (IOException | RuntimeException e) {
-            error = e.getMessage() == null ? e.toString() : e.getMessage();
+            String message = e.getMessage() == null ? e.toString() : e.getMessage();
+            error = setupStep == null ? message : setupStep + ": " + message;
         } finally {
             if (server != null) {
                 server.close();
