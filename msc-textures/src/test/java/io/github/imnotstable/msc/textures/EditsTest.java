@@ -1,7 +1,9 @@
 package io.github.imnotstable.msc.textures;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 
+import java.time.Duration;
 import java.util.HashSet;
 import java.util.Random;
 import java.util.Set;
@@ -42,8 +44,15 @@ class EditsTest {
         assertThat(Edits.quantize(q, 8)).isEqualTo(q);
     }
 
+    /**
+     * The work is bounded by {@link Edits#MAX_CLUSTERS}, not by the number of distinct colours: merging
+     * 65536 colours down to 65535 ends with MAX_CLUSTERS of them, so pair merging started from at most that
+     * many clusters. That bound is what keeps quantize from going quadratic; asserting it needs no clock. The
+     * timeout only catches a hang (an unbounded merge of 65536 colours runs for hours); a healthy run takes
+     * about a second, so it holds however loaded the machine is.
+     */
     @Test
-    void quantizeAndViewStayFastOnManyDistinctColors() {
+    void quantizeAndViewStayBoundedOnManyDistinctColors() {
         Texture small = new Texture(64, 64);
         Texture large = new Texture(256, 256);
         for (int i = 0; i < 256 * 256; i++) {
@@ -53,15 +62,16 @@ class EditsTest {
             }
             large.set(i % 256, i / 256, c);
         }
-        long start = System.nanoTime();
-        assertThat(PaletteText.view(small)).startsWith("4096 colors merged to ");
-        assertThat(Edits.quantize(large, 16).colors()).hasSize(16);
-        Texture glass = large.copy();
-        for (int i = 0; i < 256 * 256; i++) {
-            glass.set(i % 256, i / 256, (1 + i % 254) << 24 | large.get(i % 256, i / 256) & 0xFFFFFF);
-        }
-        assertThat(PaletteText.view(glass)).startsWith("65536 colors merged to ");
-        assertThat((System.nanoTime() - start) / 1_000_000).isLessThan(5_000);
+        assertTimeoutPreemptively(Duration.ofMinutes(2), () -> {
+            assertThat(Edits.quantize(large, large.colors().size() - 1).colors()).hasSize(Edits.MAX_CLUSTERS);
+            assertThat(PaletteText.view(small)).startsWith("4096 colors merged to ");
+            assertThat(Edits.quantize(large, 16).colors()).hasSize(16);
+            Texture glass = large.copy();
+            for (int i = 0; i < 256 * 256; i++) {
+                glass.set(i % 256, i / 256, (1 + i % 254) << 24 | large.get(i % 256, i / 256) & 0xFFFFFF);
+            }
+            assertThat(PaletteText.view(glass)).startsWith("65536 colors merged to ");
+        });
     }
 
     @Test
