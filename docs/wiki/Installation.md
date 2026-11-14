@@ -91,3 +91,19 @@ To update: unzip the new release into `~/.msc/core` too, then reconnect msc in `
 | `MSC_AGENT_JAR` | Use a different agent jar | a jar in `<your folder>/.msc/agent`, else the one in `~/.msc/core/agents` |
 
 The full list is in [tools.md](https://github.com/ImNotStable/Minecraft-Server-Creator/blob/main/msc-docs/docs/tools.md#configuration-environment-variables).
+
+## A Linux server (Ubuntu or Debian)
+
+`scripts/setup-ubuntu.sh` sets up a whole machine in one go: system packages, JDK 25 in `/opt/jdk25`, Claude Code,
+the repository, `installMsc` and the `msc` plugin. With `--service` it also keeps `claude remote-control` running as
+the systemd user service `msc-remote-control`, so you can drive sessions on that machine from claude.ai or the Claude
+app. Run it again any time; it skips what is done.
+
+```
+git clone https://github.com/ImNotStable/Minecraft-Server-Creator.git
+cd Minecraft-Server-Creator
+scripts/setup-ubuntu.sh            # add --service for Remote Control; --help for the options
+```
+
+Sign in once with `claude` (`/login`) before `--service`. The script never accepts the Minecraft EULA.
+
