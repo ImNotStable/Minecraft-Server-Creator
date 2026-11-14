@@ -19,10 +19,6 @@ public final class LogBuffer {
     private long chars;
     private long next;
 
-    public LogBuffer(int capacity) {
-        this(capacity, Long.MAX_VALUE);
-    }
-
     public LogBuffer(int capacity, long maxChars) {
         this.capacity = capacity;
         this.maxChars = maxChars;
