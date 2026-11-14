@@ -143,7 +143,6 @@ public final class Game {
     public void reset(Player player) {
         checkThread();
         progress.clear(player.getUuid());
-        onProgressChange.run();
         config.kit().give(player);
         moveTo(player, 0, "reset");
     }

@@ -3,6 +3,12 @@ package {{packageName}};
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.stream.Stream;
 import org.bukkit.Difficulty;
 import org.bukkit.GameMode;
 import org.bukkit.Material;
@@ -10,7 +16,9 @@ import org.bukkit.configuration.InvalidConfigurationException;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DynamicTest;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestFactory;
 import org.mockbukkit.mockbukkit.MockBukkit;
 
 /** Config parsing. MockBukkit only provides the item registry for the kit. */
@@ -54,13 +62,83 @@ class GameConfigTest {
     }
 
     @Test
-    void badValuesNameTheKey() {
-        String stage = "stages: [{name: a, spawn: [0, 0, 0]}]\n";
-        assertThatThrownBy(() -> parse("difficulty: brutal\n" + stage)).hasMessage("difficulty: unknown value brutal");
-        assertThatThrownBy(() -> parse("kit: [laser]\n" + stage)).hasMessage("kit: unknown item laser");
-        assertThatThrownBy(() -> parse("stages: []")).hasMessageContaining("at least one stage");
-        assertThatThrownBy(() -> parse("stages: [{name: a}]")).hasMessage("stages[0] (a) needs a spawn");
-        assertThatThrownBy(() -> parse("stages: [{name: a, spawn: [0,0,0]}, {name: A, spawn: [0,0,0]}]"))
-                .hasMessage("stages[1]: duplicate stage name A");
+    void theShippedConfigLoadsAndMissingKeysTakeDefaults() throws IOException, InvalidConfigurationException {
+        GameConfig shipped = parse(Files.readString(Path.of("src/main/resources/config.yml")));
+        assertThat(shipped.stages()).isNotEmpty();
+        GameConfig defaults = parse(STAGE);
+        assertThat(defaults).isEqualTo(new GameConfig("world", GameMode.ADVENTURE, Difficulty.NORMAL, 6000, false,
+                true, new Kit(List.of()), defaults.stages()));
+        assertThat(defaults.stages().get(0).goal()).isNull();
+    }
+
+    private static final String STAGE = "stages: [{name: a, spawn: [0, 0, 0]}]\n";
+
+    /** A bad value for a key: the config text and the whole message it must fail with. */
+    private record Bad(String key, String yaml, String message) {
+        /** A bad top-level value next to a valid stage. */
+        static Bad top(String key, String value, String message) {
+            return new Bad(key, key + ": " + value + "\n" + STAGE, message);
+        }
+
+        /** A stage that is bad in {@code key}; the stage is written in full. */
+        static Bad stage(String key, String stage, String message) {
+            return new Bad("stages[]." + key, "stages: [" + stage + "]\n", message);
+        }
+    }
+
+    private static final List<Bad> BAD = List.of(
+            Bad.top("world", "5", "world: needs text, got 5"),
+            Bad.top("game-mode", "hover", "game-mode: unknown value hover"),
+            Bad.top("game-mode", "[adventure]", "game-mode: needs text, got [adventure]"),
+            Bad.top("difficulty", "brutal", "difficulty: unknown value brutal"),
+            Bad.top("time", "night", "time: needs a whole number, got night"),
+            Bad.top("time", "6000.5", "time: needs a whole number, got 6000.5"),
+            Bad.top("natural-spawns", "nope", "natural-spawns: needs true or false, got nope"),
+            Bad.top("keep-inventory", "no way", "keep-inventory: needs true or false, got no way"),
+            Bad.top("kit", "bread", "kit: needs a list, got bread"),
+            Bad.top("kit", "[laser]", "kit: unknown item laser"),
+            Bad.top("kit", "[{bread: 8}]", "kit: needs item or item:amount, got {bread=8}"),
+            Bad.top("kit", "['bread:0']", "kit: amount must be between 1 and 2147483647 in bread:0"),
+            Bad.top("kit", "['bread:99999999999']", "kit: amount must be between 1 and 2147483647 in bread:99999999999"),
+            new Bad("stages", "stages: []", "stages: add at least one stage"),
+            new Bad("stages", "stages: start", "stages: needs a list, got start"),
+            new Bad("stages", "stages: [start]", "stages[0] needs {name: ..., spawn: [x, y, z]}, got start"),
+            Bad.stage("name", "{spawn: [0, 0, 0]}", "stages[0] needs a name"),
+            Bad.stage("name", "{name: a, spawn: [0, 0, 0]}, {name: A, spawn: [0, 0, 0]}",
+                    "stages[1]: duplicate stage name A"),
+            Bad.stage("spawn", "{name: a}", "stages[0] (a) needs a spawn"),
+            Bad.stage("spawn", "{name: a, spawn: 0 0 0}", "stages[0] (a).spawn needs [x, y, z], got 0 0 0"),
+            Bad.stage("spawn", "{name: a, spawn: [0, 0]}",
+                    "stages[0] (a).spawn needs [x, y, z] or [x, y, z, yaw, pitch], got [0, 0]"),
+            Bad.stage("goal", "{name: a, spawn: [0, 0, 0], goal: 1 2 3 4 5 6}",
+                    "stages[0] (a).goal needs [x1, y1, z1, x2, y2, z2], got 1 2 3 4 5 6"),
+            Bad.stage("goal", "{name: a, spawn: [0, 0, 0], goal: {from: [0, 0, 0], to: [1, 1, 1]}}",
+                    "stages[0] (a).goal needs [x1, y1, z1, x2, y2, z2], got {from=[0, 0, 0], to=[1, 1, 1]}"),
+            Bad.stage("goal", "{name: a, spawn: [0, 0, 0], goal: [0, 0, x, 1, 1, 1]}",
+                    "stages[0] (a).goal has a non-number: x"));
+
+    @TestFactory
+    Stream<DynamicTest> badValuesNameTheKey() {
+        return BAD.stream().map(bad -> DynamicTest.dynamicTest(bad.key() + ": " + bad.yaml().lines().findFirst().orElseThrow(),
+                () -> assertThatThrownBy(() -> parse(bad.yaml()))
+                        .isInstanceOf(IllegalArgumentException.class)
+                        .hasMessage(bad.message())));
+    }
+
+    /** Fails when GameConfig learns a key with no bad-value case above: add one to BAD. */
+    @Test
+    void everyKeyHasABadValueCase() {
+        List<String> keys = new ArrayList<>(GameConfig.KEYS);
+        GameConfig.STAGE_KEYS.forEach(k -> keys.add("stages[]." + k));
+        assertThat(BAD.stream().map(Bad::key).distinct().toList()).containsExactlyInAnyOrderElementsOf(keys);
+    }
+
+    @Test
+    void unknownKeysAreNamed() {
+        assertThatThrownBy(() -> parse("keep-inventry: false\n" + STAGE)).hasMessage(
+                "unknown key keep-inventry (known: world, game-mode, difficulty, time, natural-spawns, keep-inventory,"
+                        + " kit, stages)");
+        assertThatThrownBy(() -> parse("stages: [{name: a, spawn: [0, 0, 0], goals: [0, 0, 0, 1, 1, 1]}]"))
+                .hasMessage("stages[0] (a): unknown key goals (known: name, spawn, goal)");
     }
 }
