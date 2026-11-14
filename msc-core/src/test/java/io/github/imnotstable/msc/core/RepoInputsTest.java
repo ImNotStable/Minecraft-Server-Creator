@@ -58,7 +58,20 @@ class RepoInputsTest {
             "void m() { Path p = RF.path(\"s\", \"a\"); list.forEach(x -> read(p.getParent())); }",
             "void m() { java.nio.file.Path p = RF.path(\"s\", \"a\"); return p.getParentFile(); }",
             "void m() { Path p; p = RF.path(\"s\", \"a\"); read(p.getParent()); }",
-            "void m() { var p = RF.path(\"s\", \"a\"); read(tmp); read(p.resolveSibling(\"b\")); }"})
+            "void m() { var p = RF.path(\"s\", \"a\"); read(tmp); read(p.resolveSibling(\"b\")); }",
+            // #410: a working-folder path kept in a variable and walked up, and a relative path made absolute and
+            // walked above the folder it names.
+            "void m() { Path here = Path.of(\"\").toAbsolutePath(); Path root = here.getParent(); read(root); }",
+            "void m() { Path here = Path.of(\"\").toAbsolutePath();\n read(here.resolveSibling(\"msc-docs\")); }",
+            "void m() { Path w = Paths.get(\".\"); read(w.toAbsolutePath().normalize().getParent()); }",
+            "void m() { File f = new File(\"\").getAbsoluteFile(); read(f.getParentFile()); }",
+            "void m() { Path b = Path.of(\"build\").toAbsolutePath(); read(b.getParent().getParent()); }",
+            "void m() { Path b = Path.of(\"build\"); read(b.toAbsolutePath().resolve(\"../../README.md\")); }",
+            "Path.of(\"build\").toAbsolutePath().getParent().getParent()",
+            "Path.of(\"build\", \"tmp\").toAbsolutePath().getParent().getParent().resolveSibling(\"msc-docs\")",
+            "new File(\"build\").getAbsoluteFile().getParentFile().getParentFile()",
+            "Path.of(\"src/../..\")",
+            "class T { static final Path HERE = Path.of(\"\").toAbsolutePath(); Path m() { return HERE.getParent(); } }"})
     void recognisesABypass(String code) {
         assertThat(bypasses(code.replace("RF.", "RepoFiles."))).isNotEmpty();
     }
@@ -89,7 +102,16 @@ class RepoInputsTest {
             "// Path.of(\"..\"), user.dir: q = RF.path(\"s\", \"a\"); q.getParent()\nq.getParent();",
             "/* p = RF.path(\"s\", \"a\"); */ p.getParent();",
             "String s = \"p = RF.path(a)\"; p.getParent();",
-            "Path f = RF.path(\"s\", \"a\"); f2.getParent(); g.f.getParent(); f.getFileName();"})
+            "Path f = RF.path(\"s\", \"a\"); f2.getParent(); g.f.getParent(); f.getFileName();",
+            // #410: walks that stay inside the module's own folder.
+            "Path.of(\"build\").toAbsolutePath().getParent()",
+            "Path.of(\"build/tmp/x\").toAbsolutePath().getParent().getParent().resolve(\"reports\")",
+            "void m() { Path out = Path.of(\"build\", \"tmp\").toAbsolutePath(); read(out.getParent()); }",
+            "void m() { Path here = Path.of(\"\").toAbsolutePath(); read(here.resolve(\"src/test/resources\")); }",
+            "void m() { Path here = Path.of(\"\").toAbsolutePath(); String s = here.toString(); }",
+            "void m() { Path p = Path.of(name).toAbsolutePath(); read(p.getParent()); }",
+            "void m() { Path p = Path.of(\"\").toAbsolutePath(); } void n(Path p) { read(p.getParent()); }",
+            "void m() { Path f = Path.of(\"build/x.txt\"); Files.createDirectories(f.getParent()); }"})
     void allowsModuleLocalPaths(String code) {
         assertThat(bypasses(code.replace("RF.", "RepoFiles."))).isEmpty();
     }
@@ -101,7 +123,7 @@ class RepoInputsTest {
                 .startsWith("line 4: doc.getParent( -- ").contains("RepoFiles.dir(set, folder)")
                 .contains("'doc' holds the RepoFiles path from line 3").contains("rename one of them");
         assertThat(bypasses("x = Path.of(\"..\");")).singleElement().asString()
-                .startsWith("line 1: Path.of(\"..\" -- ").contains("repoInputs.set(").contains("RepoFiles.path(");
+                .startsWith("line 1: Path.of(\"..\") -- ").contains("repoInputs.set(").contains("RepoFiles.path(");
     }
 
     @Test

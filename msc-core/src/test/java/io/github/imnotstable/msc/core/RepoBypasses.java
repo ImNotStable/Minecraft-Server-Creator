@@ -1,22 +1,25 @@
 package io.github.imnotstable.msc.core;
 
-import java.util.ArrayDeque;
 import java.util.ArrayList;
-import java.util.Deque;
 import java.util.List;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Finds the places in a test's source that reach repository files around its declared repoInputs sets (#370, #381).
- * Two kinds: a direct reach (a {@code ..} path, the working folder's parent, {@code user.dir}, {@code msc.repoRoot},
- * or a walk up chained onto a {@code RepoFiles} call), found textually; and a walk up from a variable that holds a
- * {@code RepoFiles} path, which follows Java scoping: only uses of that variable inside the block it is declared in
- * count, and a parameter, local or lambda parameter of the same name (or a reassignment) hides it.
+ * Finds the places in a test's source that reach repository files around its declared repoInputs sets (#370, #381,
+ * #410). Three kinds: a direct reach ({@code user.dir}, {@code msc.repoRoot}, or a walk up chained onto a
+ * {@code RepoFiles} call), found textually; a path built from a literal ({@code Path.of}, {@code Paths.get},
+ * {@code new File}) whose chain of {@code getParent}, {@code resolveSibling} and {@code resolve("..")} steps climbs
+ * above the folder the literal starts in, the module's own folder for a test; and a walk up from a variable that holds
+ * a {@code RepoFiles} path or such a literal path, which follows Java scoping: only uses of that variable inside the
+ * block it is declared in count, and a parameter, local or lambda parameter of the same name (or a reassignment) hides
+ * it.
  * <p>A source check, not a run-time one: tests hand {@code RepoFiles} paths to the code under test (the bench reads
  * CLAUDE.md under {@code RepoFiles.dir(set, "")}), Java 25 has no security manager to refuse a read, and a confining
- * Path of its own file system would break {@code toFile}, {@code toRealPath} and equality with ordinary paths.
+ * Path of its own file system would break {@code toFile}, {@code toRealPath} and equality with ordinary paths. A
+ * tripwire for ordinary code, not a proof against deliberate evasion (ADR 0035): a path name built at run time, a
+ * variable copied into another, or reflection is out of its reach.
  */
 final class RepoBypasses {
     /** A reach around the sets: its line, the matched text and what to change. */
@@ -32,12 +35,19 @@ final class RepoBypasses {
     private static final String WALK = "(?:\\s*\\.\\w+\\(" + ARGS + "\\))*?\\s*\\.(?:getParent\\(|getParentFile\\("
             + "|resolveSibling\\(|resolve\\(\"(?:[^\"]*/)?\\.\\.(?:/|\"))";
     private static final Pattern WALK_AT = Pattern.compile(WALK);
-    private static final Pattern OUTSIDE = Pattern.compile(
-            "(?:Path\\.of|Paths\\.get|new File)\\(\"\\.\\.(?:\"|/)"
-            + "|(?:Path\\.of|Paths\\.get|new File)\\(\"\\.?\"\\)" + WALK
-            + "|getProperty\\(\"user\\.dir\"\\)|\"msc\\.repoRoot\"");
+    private static final Pattern OUTSIDE = Pattern.compile("getProperty\\(\"user\\.dir\"\\)|\"msc\\.repoRoot\"");
     private static final Pattern CHAINED = Pattern.compile("RepoFiles\\.(?:path|dir)\\(" + ARGS + "\\)" + WALK);
-    private static final Pattern DECLARED = Pattern.compile("(?<![\\w$.])([\\w$]+)\\s*=\\s*RepoFiles\\.(?:path|dir)\\(");
+    /** A path built from the working folder: the start of a {@code Path.of}, {@code Paths.get} or {@code new File}. */
+    private static final String LITERAL_PATH = "(?:Path\\s*\\.\\s*of|Paths\\s*\\.\\s*get|new\\s+File)\\s*\\(";
+    private static final Pattern LITERAL_START = Pattern.compile("(?<![\\w$.])" + LITERAL_PATH);
+    private static final Pattern DECLARED = Pattern.compile(
+            "(?<![\\w$.])([\\w$]+)\\s*=\\s*(?:RepoFiles\\.(?:path|dir)\\(|" + LITERAL_PATH + ")");
+    private static final Pattern REASSIGNED_FROM_SEED = Pattern.compile(
+            "(?s)\\s*=\\s*(?:RepoFiles\\.|" + LITERAL_PATH + ").*");
+    private static final Pattern STRING = Pattern.compile("\"((?:[^\"\\\\\\n]|\\\\.)*)\"");
+    /** Steps that keep a path where it is. */
+    private static final Set<String> STAY = Set.of("toAbsolutePath", "getAbsoluteFile", "normalize", "toRealPath",
+            "getCanonicalFile", "toFile", "toPath");
     private static final Pattern TYPE_BODY = Pattern.compile(
             "(?s).*(?:\\b(?:class|interface|enum|record)\\b[^;{}]*|\\bnew\\s+[\\w$.<>]+\\s*\\([^;{}]*\\)\\s*)$");
     private static final Pattern LAMBDA_PARAM = Pattern.compile("\\s*(?:,\\s*[\\w$]+\\s*)*\\)?\\s*->");
@@ -56,19 +66,33 @@ final class RepoBypasses {
 
     /** The reaches around the declared sets in {@code source}, in source order per kind. */
     static List<Bypass> find(String source) {
-        String code = mask(source, false);
-        String bare = mask(source, true);
-        int[] braces = pairs(bare, '{', '}');
-        int[] parens = pairs(bare, '(', ')');
+        String code = SourceText.mask(source, false);
+        String bare = SourceText.mask(source, true);
+        int[] braces = SourceText.pairs(bare, '{', '}');
+        int[] parens = SourceText.pairs(bare, '(', ')');
         List<Bypass> found = new ArrayList<>();
         OUTSIDE.matcher(code).results().forEach(m -> found.add(new Bypass(line(source, m.start()), m.group(),
                 OUTSIDE_FIX)));
+        Matcher literal = LITERAL_START.matcher(bare);
+        while (literal.find()) {
+            Walk w = literalPath(code, bare, parens, literal.end() - 1);
+            if (w.out() >= 0) {
+                found.add(new Bypass(line(source, literal.start()), code.substring(literal.start(), w.out()),
+                        OUTSIDE_FIX));
+            }
+        }
         CHAINED.matcher(code).results().forEach(m -> found.add(new Bypass(line(source, m.start()), m.group(),
                 WALK_FIX)));
         Matcher d = DECLARED.matcher(bare);
         while (d.find()) {
             String var = d.group(1);
             int at = d.start(1);
+            boolean repoFiles = bare.substring(d.end(1), d.end()).contains("RepoFiles");
+            Walk rhs = repoFiles ? null : literalPath(code, bare, parens, d.end() - 1);
+            if (rhs != null && (rhs.depth() == Walk.UNKNOWN || rhs.out() >= 0
+                    || !bare.substring(rhs.end()).matches("(?s)\\s*[;,)].*"))) {
+                continue; // not a path the variable holds, or already reported where it is built
+            }
             int block = enclosing(braces, at);
             int end = block < 0 ? bare.length() : braces[block];
             int start = block >= 0 && isDeclaration(bare, at) && TYPE_BODY.matcher(bare.substring(0, block)).matches()
@@ -93,15 +117,113 @@ final class RepoBypasses {
                 if (hidden.stream().anyMatch(h -> h[0] <= u && u < h[1])) {
                     continue;
                 }
-                Matcher w = WALK_AT.matcher(code).region(u + var.length(), code.length());
-                if (w.lookingAt()) {
-                    found.add(new Bypass(line(source, u), var + w.group(), WALK_FIX + " ('" + var + "' holds the "
-                            + "RepoFiles path from line " + line(source, at) + "; if this '" + var + "' is another "
-                            + "variable this check cannot tell apart, rename one of them)"));
+                String held = repoFiles ? "RepoFiles path" : "working-folder path";
+                String text = null;
+                if (repoFiles) {
+                    Matcher w = WALK_AT.matcher(code).region(u + var.length(), code.length());
+                    text = w.lookingAt() ? var + w.group() : null;
+                } else {
+                    Walk w = walk(code, bare, parens, u + var.length(), rhs.depth());
+                    text = w.out() >= 0 ? code.substring(u, w.out()) : null;
+                }
+                if (text != null) {
+                    found.add(new Bypass(line(source, u), text, WALK_FIX + " ('" + var + "' holds the " + held
+                            + " from line " + line(source, at) + "; if this '" + var + "' is another variable this "
+                            + "check cannot tell apart, rename one of them)"));
                 }
             }
         }
         return found;
+    }
+
+    /**
+     * How far a chain of path steps went: {@code depth} folders below where it started ({@link #UNKNOWN} when a step
+     * is not a path step), {@code end} where the chain stopped, and {@code out} the end of the step that climbed above
+     * the start, or -1.
+     */
+    private record Walk(int depth, int end, int out) {
+        static final int UNKNOWN = Integer.MIN_VALUE;
+    }
+
+    /** The walk of the literal path whose {@code (} is at {@code open}: its own segments, then its chain. */
+    private static Walk literalPath(String code, String bare, int[] parens, int open) {
+        int close = parens[open];
+        int depth = 0;
+        for (int[] arg : SourceText.arguments(bare, open)) {
+            Matcher s = STRING.matcher(code.substring(arg[0], arg[1]).strip());
+            if (!s.matches()) {
+                return new Walk(Walk.UNKNOWN, close, -1);
+            }
+            depth = descend(depth, s.group(1));
+            if (depth < 0) {
+                return new Walk(depth, close + 1, Math.min(close + 1, code.length()));
+            }
+        }
+        return walk(code, bare, parens, close + 1, depth);
+    }
+
+    /** The walk of the chain of calls at {@code from} on a path {@code depth} folders below the start. */
+    private static Walk walk(String code, String bare, int[] parens, int from, int depth) {
+        int i = from;
+        int d = depth;
+        while (true) {
+            int dot = skipSpace(bare, i);
+            if (dot >= bare.length() || bare.charAt(dot) != '.') {
+                return new Walk(d, i, -1);
+            }
+            int nameAt = skipSpace(bare, dot + 1);
+            int nameEnd = nameAt;
+            while (nameEnd < bare.length() && Character.isJavaIdentifierPart(bare.charAt(nameEnd))) {
+                nameEnd++;
+            }
+            int open = skipSpace(bare, nameEnd);
+            if (nameEnd == nameAt || open >= bare.length() || bare.charAt(open) != '(') {
+                return new Walk(d, i, -1);
+            }
+            String name = bare.substring(nameAt, nameEnd);
+            int close = parens[open];
+            int next = Math.min(close + 1, bare.length());
+            List<int[]> args = SourceText.arguments(bare, open);
+            if (name.equals("getParent") || name.equals("getParentFile") || name.equals("resolveSibling")) {
+                d--;
+                if (d < 0) {
+                    return new Walk(d, next, next);
+                }
+                d += name.equals("resolveSibling") ? 1 : 0;
+            } else if (name.equals("resolve") && args.size() == 1) {
+                Matcher s = STRING.matcher(code.substring(args.get(0)[0], args.get(0)[1]).strip());
+                d = s.matches() ? descend(d, s.group(1)) : d + 1;
+                if (d < 0) {
+                    return new Walk(d, next, next);
+                }
+            } else if (!STAY.contains(name)) {
+                return new Walk(Walk.UNKNOWN, i, -1);
+            }
+            i = next;
+        }
+    }
+
+    /** {@code depth} after the segments of {@code path}, or the first negative depth a {@code ..} reaches. */
+    private static int descend(int depth, String path) {
+        int d = depth;
+        for (String segment : path.split("[/\\\\]")) {
+            if (segment.equals("..")) {
+                if (--d < 0) {
+                    return d;
+                }
+            } else if (!segment.isEmpty() && !segment.equals(".")) {
+                d++;
+            }
+        }
+        return d;
+    }
+
+    private static int skipSpace(String bare, int from) {
+        int i = from;
+        while (i < bare.length() && Character.isWhitespace(bare.charAt(i))) {
+            i++;
+        }
+        return i;
     }
 
     /**
@@ -123,7 +245,7 @@ final class RepoBypasses {
             return new int[] {u, block < 0 ? bare.length() : braces[block]};
         }
         String rest = bare.substring(after);
-        if (rest.matches("(?s)\\s*=(?!=).*") && !rest.matches("(?s)\\s*=\\s*RepoFiles\\..*")) {
+        if (rest.matches("(?s)\\s*=(?!=).*") && !REASSIGNED_FROM_SEED.matcher(rest).matches()) {
             return new int[] {u, scopeEnd};
         }
         return null;
@@ -214,65 +336,7 @@ final class RepoBypasses {
         return best;
     }
 
-    /** For each opening character, the index of its closing one (the text's end if unclosed); 0 elsewhere. */
-    private static int[] pairs(String bare, char open, char close) {
-        int[] pairs = new int[bare.length()];
-        Deque<Integer> stack = new ArrayDeque<>();
-        for (int i = 0; i < bare.length(); i++) {
-            if (bare.charAt(i) == open) {
-                stack.push(i);
-            } else if (bare.charAt(i) == close && !stack.isEmpty()) {
-                pairs[stack.pop()] = i;
-            }
-        }
-        stack.forEach(i -> pairs[i] = bare.length());
-        return pairs;
-    }
-
-    /** {@code source} with comments, and string and char contents if {@code strings}, blanked (newlines kept). */
-    static String mask(String source, boolean strings) {
-        char[] out = source.toCharArray();
-        int n = source.length();
-        int i = 0;
-        while (i < n) {
-            char c = source.charAt(i);
-            if (source.startsWith("//", i)) {
-                int e = source.indexOf('\n', i);
-                i = blank(out, i, e < 0 ? n : e);
-            } else if (source.startsWith("/*", i)) {
-                int e = source.indexOf("*/", i + 2);
-                i = blank(out, i, e < 0 ? n : e + 2);
-            } else if (source.startsWith("\"\"\"", i)) {
-                int j = i + 3;
-                while (j < n && !source.startsWith("\"\"\"", j)) {
-                    j += source.charAt(j) == '\\' ? 2 : 1;
-                }
-                j = Math.min(j, n);
-                i = (strings ? blank(out, i + 3, j) : j) + 3;
-            } else if (c == '"' || c == '\'') {
-                int j = i + 1;
-                while (j < n && source.charAt(j) != c && source.charAt(j) != '\n') {
-                    j += source.charAt(j) == '\\' ? 2 : 1;
-                }
-                j = Math.min(j, n);
-                i = (strings ? blank(out, i + 1, j) : j) + 1;
-            } else {
-                i++;
-            }
-        }
-        return new String(out);
-    }
-
-    private static int blank(char[] out, int from, int to) {
-        for (int k = from; k < to; k++) {
-            if (out[k] != '\n') {
-                out[k] = ' ';
-            }
-        }
-        return to;
-    }
-
     private static int line(String source, int at) {
-        return (int) source.substring(0, at).chars().filter(c -> c == '\n').count() + 1;
+        return SourceText.line(source, at);
     }
 }
