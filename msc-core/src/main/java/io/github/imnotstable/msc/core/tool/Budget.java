@@ -1,5 +1,6 @@
 package io.github.imnotstable.msc.core.tool;
 
+import io.github.imnotstable.msc.protocol.Limits;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -49,7 +50,7 @@ public final class Budget {
         int keep = Math.max(0, maxChars - (MARK_CHARS + hint.length()));
         int cut = text.lastIndexOf('\n', keep);
         if (cut <= 0) {
-            cut = keep;
+            cut = Limits.head(text, keep).length(); // never half an emoji
         }
         int droppedLines = 0;
         for (int i = cut; i < text.length(); i++) {

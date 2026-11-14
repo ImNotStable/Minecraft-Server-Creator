@@ -1,5 +1,6 @@
 package io.github.imnotstable.msc.bot;
 
+import io.github.imnotstable.msc.protocol.Limits;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -43,7 +44,7 @@ final class ChatLine {
         while (t.length() > MAX) {
             int cut = t.lastIndexOf(' ', MAX);
             if (cut <= 0) {
-                cut = MAX; // one word longer than a message
+                cut = Limits.head(t, MAX).length(); // one word longer than a message; never half an emoji
             }
             parts.add(t.substring(0, cut).strip());
             t = t.substring(cut).strip();
@@ -77,6 +78,6 @@ final class ChatLine {
     }
 
     private static String start(String text) {
-        return text.length() <= 60 ? text : text.substring(0, 60) + "...";
+        return Limits.shorten(text, 63);
     }
 }

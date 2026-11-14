@@ -38,6 +38,21 @@ class ChatLineTest {
     }
 
     @Test
+    void aLongWordOfEmojiSplitsBetweenPairsAndPreviewsKeepPairsWhole() {
+        for (int pad = 0; pad < 2; pad++) {
+            String text = "x".repeat(pad) + "\uD83D\uDE00".repeat(200);
+            List<String> parts = ChatLine.say(text);
+            assertThat(String.join("", parts)).isEqualTo(text);
+            assertThat(parts).hasSize(2).allSatisfy(p -> {
+                assertThat(p.length()).isLessThanOrEqualTo(ChatLine.MAX);
+                assertThat(Character.isLowSurrogate(p.charAt(0))).isFalse();
+                assertThat(Character.isHighSurrogate(p.charAt(p.length() - 1))).isFalse();
+            });
+            assertThatThrownBy(() -> ChatLine.command("/" + text)).hasMessageNotContaining("\uD83D...");
+        }
+    }
+
+    @Test
     void aCommandIsNeverSplit() {
         String command = "/say " + "z".repeat(251);
         assertThat(ChatLine.command(command)).isEqualTo(command);

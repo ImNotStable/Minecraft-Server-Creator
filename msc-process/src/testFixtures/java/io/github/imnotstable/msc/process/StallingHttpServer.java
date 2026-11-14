@@ -21,6 +21,7 @@ public final class StallingHttpServer implements AutoCloseable {
     private final int length;
     private final int sent;
     private final Duration pause;
+    private final CountDownLatch answered = new CountDownLatch(1);
     private final CountDownLatch hungUp = new CountDownLatch(1);
     private final Thread thread;
 
@@ -37,6 +38,11 @@ public final class StallingHttpServer implements AutoCloseable {
         return "http://127.0.0.1:" + socket.getLocalPort() + path;
     }
 
+    /** True once the server has sent its response headers, within {@code wait}. */
+    public boolean answered(Duration wait) throws InterruptedException {
+        return answered.await(wait.toMillis(), TimeUnit.MILLISECONDS);
+    }
+
     /** True once the client closed the connection, within {@code wait}. */
     public boolean hungUp(Duration wait) throws InterruptedException {
         return hungUp.await(wait.toMillis(), TimeUnit.MILLISECONDS);
@@ -51,6 +57,7 @@ public final class StallingHttpServer implements AutoCloseable {
             out.write(("HTTP/1.1 200 OK\r\nContent-Length: " + length + "\r\nContent-Type: application/octet-stream"
                     + "\r\n\r\n").getBytes(StandardCharsets.US_ASCII));
             out.flush();
+            answered.countDown();
             for (int i = 0; i < sent; i++) {
                 out.write('x');
                 out.flush();

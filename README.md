@@ -44,7 +44,7 @@ To update after pulling new code, run `installMsc` again, then reconnect msc in 
 | [msc-textures](msc-textures/README.md) | Texture and resource pack generation |
 | [msc-bot](msc-bot/) | Headless test player behind `player_test` |
 | [msc-bench](msc-bench/README.md) | Benchmark tasks and runner |
-| [msc-process](msc-process/README.md) | Server process control shared by msc-core and msc-bench: the process tree kill, the RCON client, the `server.properties` reader and writer (`ServerPropertiesFile`), the server address read from it (`ServerAddress`), the HTTP stall rule (`HttpStall`) and the atomic file writer (`AtomicFile`) |
+| [msc-process](msc-process/README.md) | Server process control shared by msc-core, msc-bench and msc-bot: the process tree kill, the RCON client, the `server.properties` reader and writer (`ServerPropertiesFile`), the server address read from it (`ServerAddress`), the HTTP stall rule (`HttpStall`), the UTF-8 console flags of a server's Java (`ServerJava`) and the atomic file writer (`AtomicFile`) |
 | [msc-plugin](msc-plugin/README.md) | The Claude Code plugin and its launcher |
 
 ## Build (developing this repo)

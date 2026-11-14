@@ -20,6 +20,9 @@ import java.util.UUID;
  * @param toolLog       JSON Lines file for tool calls, or null for none
  * @param javaCommand   java executable used to run the game server
  * @param serverCommand full command that starts the server, or null for {@code java -jar <paper jar> --nogui}
+ *                      ({@code ServerJava.withEncoding} adds the UTF-8 console flags when its program is
+ *                      {@code java}; a command that starts anything else, such as a script, must pass
+ *                      {@code ServerJava.ENCODING_FLAGS} to its Java itself, or non-ASCII output arrives garbled)
  * @param buildCommand  full command that builds a project, or null for its Gradle wrapper
  * @param downloadsUrl  base URL of the Paper downloads service
  * @param minecraft     Minecraft version used when a tool is not given one
