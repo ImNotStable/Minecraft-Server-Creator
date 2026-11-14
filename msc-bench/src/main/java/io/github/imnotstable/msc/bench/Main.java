@@ -12,7 +12,6 @@ import io.github.imnotstable.msc.bench.run.RunIsolation;
 import io.github.imnotstable.msc.bench.run.ResultsFile;
 import io.github.imnotstable.msc.bench.run.RunRecord;
 import io.github.imnotstable.msc.bench.run.ServerManager;
-import io.github.imnotstable.msc.bench.run.Workspaces;
 import io.github.imnotstable.msc.bench.task.TaskDef;
 import io.github.imnotstable.msc.bench.task.TaskLoader;
 import io.github.imnotstable.msc.process.AtomicFile;
@@ -33,9 +32,11 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 /**
@@ -235,6 +236,13 @@ public final class Main {
         RunSelection selection = RunSelection.resolve(tasksDir, TaskLoader.loadAll(tasksDir), flags.get("--tasks"),
                 config.modes().keySet(), configFile, flags.get("--modes"));
         config.requirePaths(configFile, selection.modes());
+        Map<String, String> preambles = new HashMap<>();
+        preambles.put(TaskDef.PAPER, readIfPresent(tasksDir.resolve("_preamble.md")));
+        preambles.put(TaskDef.MINESTOM, readIfPresent(tasksDir.resolve("_preamble-minestom.md")));
+        Path noServer = tasksDir.resolve("_preamble-no-server.md");
+        if (Files.exists(noServer)) {
+            preambles.put(BenchRunner.PAPER_NO_SERVER, Text.readOwn(noServer));
+        }
         // Attempts run in the run folder: inside this repository both modes would load its CLAUDE.md and sources.
         // The checked folder is the resolved one, and the run writes to that same folder (links, .. and all).
         Path runsDir = flags.containsKey("--out")
@@ -246,13 +254,6 @@ public final class Main {
                     + "them elsewhere");
         }
         Path runDir = runsDir.resolve(LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss")));
-        Map<String, String> preambles = new HashMap<>();
-        preambles.put(TaskDef.PAPER, readIfPresent(tasksDir.resolve("_preamble.md")));
-        preambles.put(TaskDef.MINESTOM, readIfPresent(tasksDir.resolve("_preamble-minestom.md")));
-        Path noServer = tasksDir.resolve("_preamble-no-server.md");
-        if (Files.exists(noServer)) {
-            preambles.put(BenchRunner.PAPER_NO_SERVER, Files.readString(noServer));
-        }
 
         BenchRunner runner = new BenchRunner(config, runDir, preambles, out);
         List<RunRecord> records = runner.run(selection, repeat);
@@ -331,7 +332,7 @@ public final class Main {
     }
 
     private static String readIfPresent(Path file) throws IOException {
-        return Files.isRegularFile(file) ? Files.readString(file) : "";
+        return Files.isRegularFile(file) ? Text.readOwn(file) : "";
     }
 
     private static int check(Path tasksDir, String taskId, Path workspace, Map<String, String> flags, Path home,
@@ -355,13 +356,11 @@ public final class Main {
      * started for the checks and stopped after them, as in a run.
      */
     static int check(TaskDef task, Path workspace, BenchConfig config, PrintStream out) throws IOException {
-        boolean windows = System.getProperty("os.name", "").toLowerCase().startsWith("windows");
-        Map<String, String> values = Map.of(
-                "workspace", workspace.toAbsolutePath().toString(),
-                "gradlew", workspace.toAbsolutePath().resolve(windows ? "gradlew.bat" : "gradlew").toString(),
-                "java", ProcessHandle.current().info().command().orElse("java"),
-                "serverPort", Integer.toString(config == null ? 25566 : config.server().serverPort()),
-                "scaffoldVersion", Workspaces.SCAFFOLD_VERSION);
+        // The run's own placeholders (#554); an attempt's workspace sits in its attempt folder.
+        Path absolute = workspace.toAbsolutePath();
+        Map<String, String> values = Collections.unmodifiableMap(BenchRunner.placeholders(
+                config == null ? BenchConfig.defaults() : config, Objects.requireNonNullElse(absolute.getParent(), absolute),
+                absolute));
         // Ctrl-C skips the finally blocks: the hook kills the server and command processes this check started.
         ChildProcesses children = new ChildProcesses();
         Thread hook = Thread.ofPlatform().name("msc-bench-check-abort").unstarted(children::killAll);

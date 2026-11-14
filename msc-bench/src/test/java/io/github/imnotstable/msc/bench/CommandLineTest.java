@@ -210,6 +210,25 @@ class CommandLineTest {
             Files.writeString(folder.resolve("task.json"), task.getValue()[0]);
             Files.writeString(folder.resolve("prompt.md"), "write a.txt");
         }
+        // #555: each of the bench's own files saved as Latin-1, as a Windows editor may.
+        byte[] cafe = "{\"category\":\"caf\u00e9\",\"title\":\"t\",\"checks\":[{\"type\":\"file\",\"path\":\"a\"}]}"
+                .getBytes(StandardCharsets.ISO_8859_1);
+        Path latin1Task = Files.createDirectories(dir.resolve("latin1/task-json/t1"));
+        Files.write(latin1Task.resolve("task.json"), cafe);
+        Files.writeString(latin1Task.resolve("prompt.md"), "write a.txt");
+        Path latin1Prompt = Files.createDirectories(dir.resolve("latin1/prompt-md/t1"));
+        Files.copy(dir.resolve("tasks/t1/task.json"), latin1Prompt.resolve("task.json"));
+        Files.write(latin1Prompt.resolve("prompt.md"), "caf\u00e9".getBytes(StandardCharsets.ISO_8859_1));
+        Path latin1Preamble = Files.createDirectories(dir.resolve("latin1/preamble/t1"));
+        Files.copy(dir.resolve("tasks/t1/task.json"), latin1Preamble.resolve("task.json"));
+        Files.copy(dir.resolve("tasks/t1/prompt.md"), latin1Preamble.resolve("prompt.md"));
+        Files.write(dir.resolve("latin1/preamble/_preamble.md"), "caf\u00e9".getBytes(StandardCharsets.ISO_8859_1));
+        Files.write(dir.resolve("latin1/bench.json"), "{\"minecraftVersion\":\"caf\u00e9\"}"
+                .getBytes(StandardCharsets.ISO_8859_1));
+        Files.writeString(dir.resolve("latin1/mcp-bench.json"),
+                "{\"modes\":{\"toolset\":{\"mcpConfigTemplate\":\"mcp.template.json\"}}}");
+        Files.write(dir.resolve("latin1/mcp.template.json"), "{\"name\":\"caf\u00e9\"}"
+                .getBytes(StandardCharsets.ISO_8859_1));
         for (Map.Entry<String, byte[]> good : GOOD_RESULTS.entrySet()) {
             Path runDir = Files.createDirectories(dir.resolve("good").resolve(good.getKey()));
             Files.write(runDir.resolve("results.jsonl"), good.getValue());
@@ -269,6 +288,22 @@ class CommandLineTest {
                         "@bad-tasks/" + name, "--config", "@bench.json"));
             }
         });
+        // #555: a file of the bench's own that is not UTF-8 is named, with where its first bad byte is.
+        String notUtf8 = " is not UTF-8 text; save the file as UTF-8";
+        for (String command : List.of("list", "run")) {
+            rows.add(row(command + " Latin-1 task.json", "task.json: the byte at offset 16" + notUtf8, command,
+                    "--tasks-dir", "@latin1/task-json", "--config", "@bench.json"));
+            rows.add(row(command + " Latin-1 prompt.md", "prompt.md: the byte at offset 3" + notUtf8, command,
+                    "--tasks-dir", "@latin1/prompt-md", "--config", "@bench.json"));
+        }
+        rows.add(row("run Latin-1 bench.json", "bench.json: the byte at offset 24" + notUtf8, "run", "--tasks-dir",
+                "@tasks", "--config", "@latin1/bench.json"));
+        rows.add(row("run Latin-1 preamble", "_preamble.md: the byte at offset 3" + notUtf8, "run", "--tasks-dir",
+                "@latin1/preamble", "--config", "@bench.json"));
+        rows.add(row("run Latin-1 MCP template", "mcp.template.json: the byte at offset 12" + notUtf8, "run",
+                "--tasks-dir", "@tasks", "--modes", "toolset", "--config", "@latin1/mcp-bench.json"));
+        rows.add(row("check Latin-1 bench.json", "bench.json: the byte at offset 24" + notUtf8, "check", "t1", "@ws",
+                "--tasks-dir", "@tasks", "--config", "@latin1/bench.json"));
         rows.add(row("run shipped bench.json unbuilt", "bench.json: paths.coreLib: no such file or folder ",
                 "run", "--tasks-dir", "@tasks", "--config", "@fresh/msc-bench/bench.json"));
         rows.add(row("run --modes toolset unbuilt", "run ./gradlew :msc-core:installDist first", "run", "--tasks-dir",
