@@ -1,0 +1,12 @@
+[12:00:00] [main/INFO]: Loading Minecraft 26.3 with Fabric Loader 0.17.2
+[12:00:00] [main/ERROR]: Incompatible mods found!
+net.fabricmc.loader.impl.FormattedException: Some of your mods are incompatible with the game or each other!
+A potential solution has been determined, this may resolve your problem:
+	 - Install fabric-api, any version.
+	 - Install geckolib, version 4.7 or later.
+More details:
+	 - Mod 'My Mod' (mymod) 1.0.0 requires any version of fabric-api, which is missing!
+	 - Mod 'My Mod' (mymod) 1.0.0 requires version 4.7 or later of geckolib, which is missing!
+	at net.fabricmc.loader.impl.FormattedException.ofLocalized(FormattedException.java:51) ~[fabric-loader-0.17.2.jar:?]
+	at net.fabricmc.loader.impl.FabricLoaderImpl.load(FabricLoaderImpl.java:205) ~[fabric-loader-0.17.2.jar:?]
+	at net.fabricmc.loader.impl.launch.knot.KnotServer.main(KnotServer.java:23) ~[fabric-loader-0.17.2.jar:?]

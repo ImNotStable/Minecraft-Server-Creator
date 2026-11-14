@@ -1,0 +1,7 @@
+[12:00:03 INFO]: Done (3.112s)! For help, type "help"
+[12:01:03 ERROR]: ------------------------------
+[12:01:03 ERROR]: The server has stopped responding! This is (probably) not a Paper bug.
+[12:01:03 ERROR]: If you see a plugin in the Server thread dump below, then please report it to that author
+[12:01:03 ERROR]: Server thread dump (Look for plugins here before reporting to Paper!):
+[12:01:03 ERROR]: Current Thread: Server thread
+[12:01:03 ERROR]: 	com.example.myplugin.Arena.fill(Arena.java:88)

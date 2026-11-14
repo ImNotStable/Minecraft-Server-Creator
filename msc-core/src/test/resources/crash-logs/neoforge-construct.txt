@@ -1,0 +1,11 @@
+[12:00:00] [main/INFO] [cp.mo.mo.Launcher/MODLAUNCHER]: ModLauncher running: args [--launchTarget, neoforgeserver]
+[12:00:04] [main/ERROR] [ne.ne.fm.ModLoader/LOADING]: Failed to create mod instance. ModID: mymod
+java.lang.reflect.InvocationTargetException: null
+	at java.base/jdk.internal.reflect.DirectConstructorHandleAccessor.newInstance(DirectConstructorHandleAccessor.java:74) ~[?:?]
+	at TRANSFORMER/neoforge@21.11.1/net.neoforged.fml.javafmlmod.FMLModContainer.constructMod(FMLModContainer.java:112) ~[neoforge-21.11.1.jar%23190!/:?]
+Caused by: java.lang.IllegalStateException: Registry is already frozen
+	at TRANSFORMER/neoforge@21.11.1/net.neoforged.neoforge.registries.DeferredRegister.register(DeferredRegister.java:300) ~[neoforge-21.11.1.jar%23190!/:?]
+	at TRANSFORMER/mymod@1.0/com.example.mymod.ModItems.<clinit>(ModItems.java:14) ~[mymod-1.0.jar%23191!/:?]
+	at TRANSFORMER/mymod@1.0/com.example.mymod.MyMod.<init>(MyMod.java:22) ~[mymod-1.0.jar%23191!/:?]
+	... 4 more
+[12:00:04] [main/FATAL] [ne.ne.fm.ModLoader/]: Crash report saved to ./crash-reports/crash-2026-11-14_12.00.04-fml.txt
