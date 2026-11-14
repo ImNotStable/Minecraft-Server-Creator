@@ -1,5 +1,6 @@
 package io.github.imnotstable.msc.bot;
 
+import io.github.imnotstable.msc.process.HttpStall;
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -993,10 +994,17 @@ public final class TestPlayer implements Bot {
     /** Download a pack like the client: follow redirects, need HTTP 200, the hash (when given) and pack.mcmeta. */
     static PackCheck checkPack(String url, String hash) throws IOException, InterruptedException,
             java.security.NoSuchAlgorithmException {
+        return checkPack(url, hash, Duration.ofSeconds(10));
+    }
+
+    /** As {@link #checkPack(String, String)}, failing once no byte has come for {@code stall} (#454). */
+    static PackCheck checkPack(String url, String hash, Duration stall) throws IOException, InterruptedException,
+            java.security.NoSuchAlgorithmException {
         try (HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5))
                 .followRedirects(HttpClient.Redirect.NORMAL).build()) {
-            HttpResponse<byte[]> r = http.send(HttpRequest.newBuilder(URI.create(url))
-                    .timeout(Duration.ofSeconds(10)).build(), HttpResponse.BodyHandlers.ofByteArray());
+            HttpResponse<byte[]> r = HttpStall.send(http, HttpRequest.newBuilder(URI.create(url))
+                    .timeout(Duration.ofSeconds(10)).build(), HttpResponse.BodyHandlers.ofByteArray(), stall,
+                    "have the server offer the pack again");
             String sha1 = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-1").digest(r.body()));
             boolean ok = r.statusCode() == 200 && (hash == null || hash.isEmpty() || hash.equalsIgnoreCase(sha1));
             boolean pack = ok && hasPackMeta(r.body());

@@ -410,6 +410,16 @@ class TestPlayerTest {
     }
 
     @Test
+    void aPackDownloadThatStallsFailsInsteadOfHanging() throws Exception {
+        try (io.github.imnotstable.msc.process.StallingHttpServer server =
+                     new io.github.imnotstable.msc.process.StallingHttpServer(100_000, 10, java.time.Duration.ZERO)) {
+            org.assertj.core.api.Assertions.assertThatThrownBy(() -> TestPlayer.checkPack(server.url("/pack.zip"),
+                    null, java.time.Duration.ofMillis(500)))
+                    .hasMessageStartingWith("download from 127.0.0.1 stalled");
+        }
+    }
+
+    @Test
     void aPackBehindARedirectLoadsLikeOnAClient() throws Exception {
         byte[] pack = zip("pack.mcmeta");
         com.sun.net.httpserver.HttpServer server = com.sun.net.httpserver.HttpServer.create(

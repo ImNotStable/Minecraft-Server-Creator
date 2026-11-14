@@ -1,10 +1,12 @@
 package io.github.imnotstable.msc.process.rcon;
 
 import java.io.DataInputStream;
+import java.io.EOFException;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.net.Socket;
+import java.net.SocketTimeoutException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
@@ -37,6 +39,12 @@ import java.time.Duration;
  *   so far. The connection is then dropped, so no late packet can reach the next command, and the next command
  *   connects and logs in again.</li>
  * </ol>
+ *
+ * <p>When a reply goes wrong. Any other failure while sending a command or reading its reply (the server closed the
+ * connection, no complete reply within the timeout, a bad packet) closes the connection before the error is thrown,
+ * and so does finding bytes nobody asked for waiting before a command: the stream is out of step with the replies,
+ * so the next command connects and logs in again instead of reading leftovers (#455). Packets with other ids are
+ * skipped only until the command's timeout runs out, counted once for the whole reply.
  */
 public final class RconClient implements AutoCloseable {
 
@@ -141,14 +149,27 @@ public final class RconClient implements AutoCloseable {
             throw new IOException("RCON client is closed");
         }
         checkFits("command", command);
-        if (socket == null) {
-            open(); // dropped after a long reply whose end marker went unanswered
+        if (socket != null && stale()) {
+            discard(); // bytes nobody asked for: the connection is out of step with its replies
         }
-        int id = send(TYPE_COMMAND, command);
+        if (socket == null) {
+            open(); // dropped after a failed or long reply
+        }
+        int id;
         Packet first;
-        do {
-            first = read();
-        } while (first.id() != id || first.type() != TYPE_RESPONSE);
+        try {
+            id = send(TYPE_COMMAND, command);
+            long deadline = System.nanoTime() + timeoutMillis * 1_000_000L;
+            do {
+                first = readBy(deadline);
+            } while (first.id() != id || first.type() != TYPE_RESPONSE);
+        } catch (SocketTimeoutException e) {
+            discard();
+            throw new SocketTimeoutException("no RCON reply within " + timeoutMillis + " ms");
+        } catch (IOException e) {
+            discard();
+            throw e;
+        }
         if (first.size() < CHUNK) {
             return first.body();
         }
@@ -159,7 +180,6 @@ public final class RconClient implements AutoCloseable {
             while (true) {
                 Packet packet = read();
                 if (packet.id() == end) {
-                    socket.setSoTimeout(timeoutMillis);
                     return reply.toString();
                 }
                 if (packet.id() == id && packet.type() == TYPE_RESPONSE) {
@@ -169,9 +189,40 @@ public final class RconClient implements AutoCloseable {
         } catch (IOException e) {
             // No answer to the end marker in time, or the server closed the connection on it: the reply is complete
             // as far as anyone can tell, and the connection is no longer in a known state.
-            socket.close();
-            drop();
+            discard();
             return reply.toString();
+        }
+    }
+
+    /** Reads the next packet, waiting no later than {@code deadline} ({@link System#nanoTime}) for it to start. */
+    private Packet readBy(long deadline) throws IOException {
+        long left = Math.ceilDiv(deadline - System.nanoTime(), 1_000_000L);
+        if (left <= 0) {
+            throw new SocketTimeoutException("no RCON reply in time");
+        }
+        socket.setSoTimeout((int) Math.min(left, timeoutMillis));
+        return read();
+    }
+
+    /** True when bytes nobody asked for are waiting, or the connection cannot even say. */
+    private boolean stale() {
+        try {
+            return in.available() > 0;
+        } catch (IOException e) {
+            return true;
+        }
+    }
+
+    /** Closes the connection and forgets it, so the next command connects afresh. */
+    private void discard() {
+        Socket open = socket;
+        drop();
+        if (open != null) {
+            try {
+                open.close();
+            } catch (IOException e) {
+                // closing a broken connection: nothing more to do
+            }
         }
     }
 
@@ -202,12 +253,18 @@ public final class RconClient implements AutoCloseable {
     }
 
     private Packet read() throws IOException {
-        int length = Integer.reverseBytes(in.readInt());
-        if (length < 10 || length > MAX_PACKET) {
-            throw new IOException("Bad RCON packet length " + length);
+        int length;
+        byte[] data;
+        try {
+            length = Integer.reverseBytes(in.readInt());
+            if (length < 10 || length > MAX_PACKET) {
+                throw new IOException("Bad RCON packet length " + length);
+            }
+            data = new byte[length];
+            in.readFully(data);
+        } catch (EOFException e) {
+            throw new EOFException("server closed the RCON connection");
         }
-        byte[] data = new byte[length];
-        in.readFully(data);
         ByteBuffer buffer = ByteBuffer.wrap(data).order(ByteOrder.LITTLE_ENDIAN);
         int id = buffer.getInt();
         int type = buffer.getInt();

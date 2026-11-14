@@ -39,6 +39,10 @@ class LoaderInstallerTest {
         Map<String, String> files = Map.of(
                 "/purpur/v2/purpur/26.3/latest", "{\"project\":\"purpur\",\"version\":\"26.3\",\"build\":\"2658\"}",
                 "/purpur/v2/purpur/26.3/2658/download", "purpur jar",
+                "/purpur/v2/purpur/26.4/latest", "{\"build\":\"7\",\"md5\":\"d062b7110636df72b4e22b7aaed97484\"}",
+                "/purpur/v2/purpur/26.4/7/download", "purpur jar",
+                "/purpur/v2/purpur/26.5/latest", "{\"build\":\"8\",\"md5\":\"00000000000000000000000000000000\"}",
+                "/purpur/v2/purpur/26.5/8/download", "purpur jar",
                 "/neo/net/neoforged/neoforge/26.3.0.1/neoforge-26.3.0.1-installer.jar", "not a jar");
         http = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         http.createContext("/", ex -> {
@@ -71,6 +75,16 @@ class LoaderInstallerTest {
         assertThat(requests).containsOnlyOnce("/purpur/v2/purpur/26.3/2658/download");
         assertThatThrownBy(() -> installer.purpur("1.0", server)).isInstanceOf(ToolException.class)
                 .hasMessage("Purpur has no version 1.0");
+    }
+
+    /** #454: a jar that does not match the MD5 Purpur's answer names is never kept. */
+    @Test
+    void purpurJarsAreCheckedAgainstTheMd5OfTheAnswer() throws Exception {
+        Path server = Files.createDirectories(dir.resolve("server"));
+        assertThat(installer.purpur("26.4", server)).isEqualTo(new LoaderInstaller.Result("26.4 build 7", false));
+        assertThatThrownBy(() -> installer.purpur("26.5", server)).isInstanceOf(ToolException.class)
+                .hasMessageStartingWith("checksum mismatch for ").hasMessageEndingWith("/26.5/8/download");
+        assertThat(dir.resolve("cache/purpur-26.5-8.jar")).doesNotExist();
     }
 
     /** #428: with Purpur's API unreachable, the cached build with the highest number, digits counted. */

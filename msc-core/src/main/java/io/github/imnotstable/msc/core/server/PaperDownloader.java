@@ -66,7 +66,8 @@ public final class PaperDownloader {
         if (Files.exists(jar) && (sha256 == null || sha256.equalsIgnoreCase(Downloads.sha256(jar)))) {
             return new Download(jar, version, build, true);
         }
-        downloads.fetch(URI.create(url), jar, "download of " + url + " answered 404", sha256);
+        downloads.fetch(URI.create(url), jar, "download of " + url + " answered 404",
+                Downloads.Checksum.of("SHA-256", sha256));
         return new Download(jar, version, build, false);
     }
 

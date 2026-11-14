@@ -15,6 +15,8 @@ import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.UnaryOperator;
@@ -53,7 +55,16 @@ public final class FakeRconServer implements AutoCloseable {
         }
     }
 
+    /**
+     * A broken answer to one command (#455). {@code CLOSE_MID_PACKET} sends half the reply packet and closes the
+     * connection; {@code STALL_MID_PACKET} sends half and then nothing until the client hangs up;
+     * {@code JUNK_AFTER_END_ANSWER} answers normally but sends junk bytes right behind the end marker's answer;
+     * {@code ENDLESS_OTHER_IDS} sends packets with other ids, one every few milliseconds, until the client hangs up.
+     */
+    public enum Fault { CLOSE_MID_PACKET, STALL_MID_PACKET, JUNK_AFTER_END_ANSWER, ENDLESS_OTHER_IDS }
+
     private static final long LATE_READ_MILLIS = 50;
+    private static final long OTHER_ID_PAUSE_MILLIS = 5;
     private static final long PIECE_PAUSE_MILLIS = 20;
 
     private final ServerSocket socket;
@@ -62,6 +73,8 @@ public final class FakeRconServer implements AutoCloseable {
     private final Quirks quirks;
     private final List<String> commands = new CopyOnWriteArrayList<>();
     private final AtomicInteger connections = new AtomicInteger();
+    private final AtomicInteger open = new AtomicInteger();
+    private final Map<String, Fault> faults = new ConcurrentHashMap<>();
     private final Thread thread;
 
     public FakeRconServer(String password, UnaryOperator<String> replies) throws IOException {
@@ -99,6 +112,16 @@ public final class FakeRconServer implements AutoCloseable {
         return connections.get();
     }
 
+    /** How many connections are open now, from the server's side. */
+    public int openConnections() {
+        return open.get();
+    }
+
+    /** Answers the next {@code command} with {@code fault}, and later ones normally again. */
+    public void fault(String command, Fault fault) {
+        faults.put(command, fault);
+    }
+
     private void acceptLoop() {
         while (!socket.isClosed()) {
             try {
@@ -112,6 +135,8 @@ public final class FakeRconServer implements AutoCloseable {
     }
 
     private void serve(Socket client) {
+        open.incrementAndGet();
+        boolean junk = false;
         try (client) {
             PushbackInputStream in = new PushbackInputStream(client.getInputStream());
             OutputStream out = client.getOutputStream();
@@ -136,6 +161,12 @@ public final class FakeRconServer implements AutoCloseable {
                     send(in, out, List.of(packet(body.equals(password) ? id : -1, 2, "")));
                 } else if (type == 2) {
                     commands.add(body);
+                    Fault fault = faults.remove(body);
+                    if (fault != null && fault != Fault.JUNK_AFTER_END_ANSWER) {
+                        misbehave(fault, in, out, id, replies.apply(body));
+                        return;
+                    }
+                    junk = fault == Fault.JUNK_AFTER_END_ANSWER;
                     // Like the vanilla server: a long reply goes out in packets of 4096 characters, no end marker.
                     String reply = replies.apply(body);
                     List<byte[]> packets = new ArrayList<>();
@@ -147,14 +178,55 @@ public final class FakeRconServer implements AutoCloseable {
                     } while (offset < reply.length());
                     send(in, out, packets);
                 } else if (quirks.other() == Other.ANSWER) {
-                    write(out, id, 0, "Unknown request " + Integer.toHexString(type));
+                    byte[] answer = packet(id, 0, "Unknown request " + Integer.toHexString(type));
+                    out.write(junk ? concat(answer, "junk!!!!".getBytes(StandardCharsets.US_ASCII)) : answer);
+                    out.flush();
+                    junk = false;
                 } else if (quirks.other() == Other.CLOSE) {
                     return;
                 }
             }
         } catch (IOException e) {
             // client went away
+        } finally {
+            open.decrementAndGet();
         }
+    }
+
+    private static void misbehave(Fault fault, InputStream in, OutputStream out, int id, String reply)
+            throws IOException {
+        byte[] packet = packet(id, 0, reply);
+        switch (fault) {
+            case CLOSE_MID_PACKET -> out.write(packet, 0, packet.length / 2);
+            case STALL_MID_PACKET -> {
+                out.write(packet, 0, packet.length / 2);
+                out.flush();
+                while (in.read() >= 0) {
+                    // wait for the client to hang up
+                }
+            }
+            case ENDLESS_OTHER_IDS -> {
+                for (int other = id + 1000; ; other++) {
+                    out.write(packet(other, 0, "noise"));
+                    out.flush();
+                    try {
+                        Thread.sleep(OTHER_ID_PAUSE_MILLIS);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        return;
+                    }
+                }
+            }
+            case JUNK_AFTER_END_ANSWER -> throw new IllegalArgumentException("answered in serve");
+        }
+        out.flush();
+    }
+
+    private static byte[] concat(byte[] a, byte[] b) {
+        byte[] all = new byte[a.length + b.length];
+        System.arraycopy(a, 0, all, 0, a.length);
+        System.arraycopy(b, 0, all, a.length, b.length);
+        return all;
     }
 
     /** One vanilla read: a fresh buffered stream and a single {@code read} of up to {@link #READ} bytes. */
@@ -236,11 +308,6 @@ public final class FakeRconServer implements AutoCloseable {
             Thread.currentThread().interrupt();
             throw new InterruptedIOException("interrupted between two pieces");
         }
-    }
-
-    private static void write(OutputStream out, int id, int type, String body) throws IOException {
-        out.write(packet(id, type, body));
-        out.flush();
     }
 
     private static byte[] packet(int id, int type, String body) {
