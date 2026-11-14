@@ -121,11 +121,49 @@ class LoaderInstallerTest {
         Files.createDirectories(server.resolve("libraries/org/quiltmc/quilt-loader/0.30.2"));
         Files.writeString(server.resolve("quilt-server-launch.jar"), "launcher");
 
-        Files.writeString(server.resolve(LoaderInstaller.MARKER), "neoforge 26.3.0.1");
+        LoaderInstaller.mark(server, "neoforge 26.3.0.1", "server.jar");
         assertThat(installer.neoforge("26.3.0.1", server).cached()).isTrue();
-        Files.writeString(server.resolve(LoaderInstaller.MARKER), "quilt 26.3 0.30.2");
+        LoaderInstaller.mark(server, "quilt 26.3 0.30.2", "quilt-server-launch.jar", "server.jar");
         assertThat(installer.quilt("26.3", "0.30.2", "0.15.1", server).cached()).isTrue();
         assertThat(requests).isEmpty();
+    }
+
+    /** #513: a start file another platform rewrote since the install, even at the same size, is not the loader's. */
+    @Test
+    void aStartFileReplacedSinceTheInstallIsInstalledAgain() throws Exception {
+        Path server = Files.createDirectories(dir.resolve("server"));
+        Files.createDirectories(server.resolve("libraries/net/neoforged/neoforge/26.3.0.1"));
+        Files.writeString(server.resolve("server.jar"), "starter");
+        LoaderInstaller.mark(server, "neoforge 26.3.0.1", "server.jar");
+        Files.writeString(server.resolve("server.jar"), "project");
+        assertThatThrownBy(() -> installer.neoforge("26.3.0.1", server))
+                .hasMessageStartingWith("the NeoForge installer failed (exit 1)");
+        assertThat(server.resolve("server.jar")).as("the old jar is not left for a failed install").doesNotExist();
+
+        Files.createDirectories(server.resolve("libraries/org/quiltmc/quilt-loader/0.30.2"));
+        Files.writeString(server.resolve("quilt-server-launch.jar"), "launcher");
+        Files.writeString(server.resolve("server.jar"), "vanilla");
+        LoaderInstaller.mark(server, "quilt 26.3 0.30.2", "quilt-server-launch.jar", "server.jar");
+        Files.writeString(server.resolve("server.jar"), "starter");
+        assertThatThrownBy(() -> installer.quilt("26.3", "0.30.2", "0.15.1", server))
+                .hasMessage("Quilt has no installer 0.15.1");
+        Files.delete(server.resolve(LoaderInstaller.MARKER));
+        assertThatThrownBy(() -> installer.quilt("26.3", "0.30.2", "0.15.1", server))
+                .hasMessage("Quilt has no installer 0.15.1");
+    }
+
+    @Test
+    void aSharedJarIsKeptOnlyForThePlatformTheFolderIsMarkedFor() throws Exception {
+        Path server = Files.createDirectories(dir.resolve("server"));
+        Files.writeString(server.resolve("server.jar"), "vanilla");
+        LoaderInstaller.mark(server, "fabric 26.3");
+        assertThat(LoaderInstaller.claimSharedJar(server, "fabric 26.3")).isFalse();
+        assertThat(server.resolve("server.jar")).hasContent("vanilla");
+        assertThat(LoaderInstaller.claimSharedJar(server, "minestom")).isTrue();
+        assertThat(server.resolve("server.jar")).doesNotExist();
+        Files.writeString(server.resolve("server.jar"), "project");
+        assertThat(LoaderInstaller.claimSharedJar(server, "fabric 26.4")).isTrue();
+        assertThat(server.resolve("server.jar")).doesNotExist();
     }
 
     @Test

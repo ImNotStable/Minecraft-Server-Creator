@@ -28,6 +28,8 @@ public final class FakeLoaderInstaller {
             Path dir = Path.of("").toAbsolutePath();
             Files.createDirectories(dir.resolve("libraries/org/quiltmc/quilt-loader/" + a.get(3)));
             Files.writeString(dir.resolve("quilt-server-launch.jar"), "quilt server");
+            // --download-server: the vanilla jar the launcher starts.
+            Files.writeString(dir.resolve("server.jar"), "quilt vanilla");
         } else if (a.getFirst().equals("--install-server")) {
             Path dir = Path.of(a.get(1));
             String version = jar.substring("neoforge-".length(), jar.length() - "-installer.jar".length());

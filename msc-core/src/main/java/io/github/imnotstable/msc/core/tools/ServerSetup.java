@@ -77,7 +77,8 @@ final class ServerSetup {
             if (chosen != null) {
                 steps.then(REMEMBER).ifFails(REMEMBER, rememberFails);
             }
-            steps.run(CREATE_FOLDER, () -> Files.createDirectories(dir));
+            // A server.jar another platform left (NeoForge's starter, a vanilla jar) is not this project: dev_cycle puts it.
+            steps.run(CREATE_FOLDER, () -> LoaderInstaller.claimSharedJar(Files.createDirectories(dir), "minestom"));
             remember(steps, chosen);
             return (mode == null ? "" : "mode ignored: a Minestom server sets game mode and difficulty in its own code\n")
                     + "minestom needs no server download and has no EULA step: the project's own jar is the server and "
@@ -186,6 +187,8 @@ final class ServerSetup {
         FabricDownloader.Download launcher = fabric.launcher(version, loader);
         FabricDownloader.Download apiJar = fabric.api(api);
         ServerFiles.place(launcher.jar(), dir, Platform.FABRIC.serverJar());
+        // The launcher starts server.jar as the vanilla server and downloads it only when it is missing (#513).
+        LoaderInstaller.claimSharedJar(dir, "fabric " + version);
         out.append("fabric launcher for ").append(version).append(", loader ").append(loader)
                 .append(launcher.cached() ? " (cached)" : " (downloaded)")
                 .append("; it downloads the Minecraft server on first start\n");
