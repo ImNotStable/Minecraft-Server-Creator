@@ -39,6 +39,12 @@ import java.util.Map;
 
 /** Pixel-art textures drawn as text, and the resource pack that carries them. */
 public final class TextureTools {
+    /**
+     * Fewest frames texture animates: a one-frame animation is the still texture plus an mcmeta that changes nothing
+     * (#511). msc-textures still reads one-frame strips, which a pack may hold.
+     */
+    static final int MIN_FRAMES = 2;
+
     private TextureTools() {
     }
 
@@ -59,9 +65,9 @@ public final class TextureTools {
                         .opt("accent", "string", "kind's second color: ore's ore, bricks' mortar, a tool's handle, food's bone")
                         .opt("size", "integer", "Patterns: 16 (default), 32 or 64")
                         .opt("seed", "integer", "Pattern seed. Default 1")
-                        .opt("contrast", "number", "0.2 to 1.5. Default 1 for shapes, 0.6 for patterns")
+                        .range("contrast", Ramp.MIN_CONTRAST, Ramp.MAX_CONTRAST, "Default 1 for shapes, 0.6 for patterns")
                         .opt("animate", "string", "scroll (flows down), \"scroll dx,dy\" or pulse (glows)")
-                        .opt("frames", "integer", "Animation frames, 2 to 64. Default: one full loop for scroll, 8 for pulse")
+                        .range("frames", MIN_FRAMES, Animation.MAX_FRAMES, "Default: one full loop for scroll, 8 for pulse")
                         .opt("frametime", "integer", "Ticks per frame. Default 2")
                         .opt("model", "string", "Also write a model and item definition: item (flat), handheld (tools), "
                                 + "block (cube) or none. Default block for patterns, handheld for sword and pickaxe, none for minecraft:, else item"),
@@ -69,7 +75,7 @@ public final class TextureTools {
         registry.add("texture_view",
                 "Show a pack texture as a palette and pixel rows, the format texture draws. Animations show frame 1.",
                 Schema.of().req("name", "string", "Texture name such as item/ruby")
-                        .opt("maxChars", "integer", "Result size cap. Default 6000"),
+                        .maxChars(),
                 textures(args -> {
                     int maxChars = Budget.of(args);
                     ResourceId id = ResourceId.parse(args.str("name"));
@@ -105,18 +111,18 @@ public final class TextureTools {
         registry.add("pack",
                 "Zip the project's resource pack, serve it over HTTP, send it to the server's players and list "
                         + "its problems. check=true: only list problems.",
-                Schema.of().opt("check", "boolean", "Only check the pack, do not build it. Default false")
-                        .opt("limit", "integer", "Most problems to list. Default 30 with check, 5 on a build")
+                Schema.of().opt("check", "boolean", "Only check the pack, do not build it")
+                        .range("limit", 0, Integer.MAX_VALUE, "Problems to list. Default 30 with check, 5 on a build")
                         .opt("description", "string", "Pack description, up to two lines")
                         .opt("file", "string", "Also save the zip here, such as ruby-pack.zip")
                         .opt("apply", "boolean", "Send to the running server. Default true")
-                        .opt("required", "boolean", "Kick players who decline. Default false"),
+                        .opt("required", "boolean", "Kick players who decline"),
                 args -> {
                     if (args.bool("check", false)) {
                         if (!Files.isDirectory(pack.root())) {
                             throw new ToolException("the pack is empty. Add a texture first.");
                         }
-                        return check(pack, Math.max(0, args.integer("limit", 30)));
+                        return check(pack, args.integer("limit", 30));
                     }
                     return pack(args, hub, pack, config, serverDir.resolve(ServerPropertiesFile.NAME));
                 });
@@ -135,7 +141,7 @@ public final class TextureTools {
      */
     private static String pack(Args args, AgentHub hub, ResourcePack pack, CoreConfig config, Path properties)
             throws IOException, InterruptedException {
-        int limit = Math.max(0, args.integer("limit", 5));
+        int limit = args.integer("limit", 5);
         String description = args.lines("description", LifecycleTools.DEFAULT_PACK_DESCRIPTION, 2);
         boolean required = args.bool("required", false);
         Path copy = args.has("file") ? OutputFile.check(args.path("file", config.inWorkspace()), "file") : null;
@@ -377,7 +383,7 @@ public final class TextureTools {
         if (!shape && !Patterns.NAMES.contains(kind)) {
             throw new ToolException("kind must be noise, ore, planks, bricks, gem, ingot, orb, sword, pickaxe or food");
         }
-        Ramp ramp = Ramp.from(color(args), 5, number(args, "contrast", shape ? 1.0 : 0.6));
+        Ramp ramp = Ramp.from(color(args), 5, args.number("contrast", shape ? 1.0 : 0.6));
         Integer accent = args.has("accent") ? Colors.parse(args.str("accent")) : null;
         if (shape) {
             if (args.integer("size", 16) != 16) {
@@ -482,17 +488,6 @@ public final class TextureTools {
             r = new PackLint.Report(r.findings().stream().filter(f -> !f.path().equals("pack.mcmeta")).toList(), r.files());
         }
         return r.text(limit);
-    }
-
-    private static double number(Args args, String name, double fallback) {
-        if (!args.has(name)) {
-            return fallback;
-        }
-        try {
-            return Double.parseDouble(args.str(name).trim());
-        } catch (NumberFormatException e) {
-            throw new ToolException("argument " + name + " must be a number");
-        }
     }
 
     /**

@@ -7,8 +7,7 @@ import io.github.imnotstable.msc.core.building.Step;
 import io.github.imnotstable.msc.core.tool.Schema;
 import io.github.imnotstable.msc.core.tool.ToolException;
 import io.github.imnotstable.msc.core.tool.ToolRegistry;
-import io.github.imnotstable.msc.core.world.Schematic;
-import io.github.imnotstable.msc.core.world.TextGrid;
+import io.github.imnotstable.msc.core.world.StructureFile;
 import io.github.imnotstable.msc.core.world.WorldService;
 import io.github.imnotstable.msc.protocol.world.BlockGrid;
 import io.github.imnotstable.msc.protocol.world.BlockPos;
@@ -51,14 +50,13 @@ public final class BuildTools {
                 });
     }
 
-    /** A structure file from the workspace: a Sponge schematic, or anything else as text structure. */
+    /** A structure file from the workspace, read by {@link StructureFile}'s rule. */
     private static BlockGrid load(CoreConfig config, String path, String world) throws java.io.IOException {
         Path file = config.inWorkspace().resolve("structure file", path);
         if (!Files.isRegularFile(file)) {
             throw new ToolException("no file " + file);
         }
         BlockPos origin = new BlockPos(0, 0, 0);
-        return path.endsWith(".schem") ? Schematic.load(file, world, origin)
-                : TextGrid.parse(Files.readString(file), world, origin);
+        return StructureFile.load(file, world, origin);
     }
 }

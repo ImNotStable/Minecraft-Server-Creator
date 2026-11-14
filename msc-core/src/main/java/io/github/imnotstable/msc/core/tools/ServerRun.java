@@ -76,7 +76,7 @@ final class ServerRun {
      * writable. Then: accept the EULA, then {@link #startAndReport}.
      */
     String start(Args args) throws IOException, InterruptedException {
-        int timeoutSeconds = args.integer("timeoutSeconds", 180, 1, MAX_START_SECONDS);
+        int timeoutSeconds = args.integer("timeoutSeconds", 180);
         if (server.running()) {
             throw new ToolException("server is already running. Use server_stop or dev_cycle.");
         }

@@ -204,7 +204,7 @@ class WorldOperationsPropertyTest {
             Region source = box(rnd, 9);
             scatter(rnd, source);
             Map<BlockPos, String> src = snapshot(source);
-            String slice = h.ok("world_slice", "region", corners(source), "states", true, "maxChars", 1_000_000);
+            String slice = h.ok("world_slice", "region", corners(source), "states", true, "maxChars", 24_000);
             BlockPos to = source.min().offset(0, 0, 60);
             h.ok("build_batch", "steps", "structure " + show(to) + "\n" + slice.substring(slice.indexOf("legend:")) + "\nend");
             for (BlockPos p : src.keySet()) {
@@ -225,7 +225,7 @@ class WorldOperationsPropertyTest {
             String schem = "snap/s" + seed + ".schem";
             h.ok("structure_save", "region", corners(region), "file", schem);
             String text = "snap/s" + seed + ".txt";
-            String slice = h.ok("world_slice", "region", corners(region), "states", true, "maxChars", 1_000_000);
+            String slice = h.ok("world_slice", "region", corners(region), "states", true, "maxChars", 24_000);
             Files.createDirectories(workspace.resolve("snap"));
             Files.writeString(workspace.resolve(text), slice);
             for (String snap : List.of(schem, text)) {
