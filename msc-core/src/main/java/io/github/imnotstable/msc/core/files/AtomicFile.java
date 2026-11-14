@@ -6,9 +6,11 @@ import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.FileSystemException;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.AclFileAttributeView;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.nio.file.attribute.PosixFileAttributeView;
 import java.nio.file.attribute.PosixFileAttributes;
 import java.security.SecureRandom;
@@ -55,6 +57,32 @@ public final class AtomicFile {
     /** Copies {@code source} to {@code target} as {@link #replace} writes. */
     public static Path copy(Path source, Path target) throws IOException {
         return replace(target, to -> Files.copy(source, to, StandardCopyOption.REPLACE_EXISTING));
+    }
+
+    /**
+     * True when {@code a} and {@code b} are one directory entry's file as the file system sees it, so deleting
+     * {@code a} deletes {@code b}: {@code Lobby.jar} and {@code lobby.jar} on a case-insensitive volume (macOS by
+     * default, Windows), two spellings of one Unicode name, or a path through a linked folder. Never decided by
+     * comparing the paths. A path that does not exist is no file, so false. When the file system cannot tell, true:
+     * a caller that deletes "the other file" then keeps one rather than lose the one it just wrote (#398).
+     */
+    public static boolean sameFile(Path a, Path b) {
+        try {
+            BasicFileAttributes x = Files.readAttributes(a, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
+            BasicFileAttributes y = Files.readAttributes(b, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
+            if (x.fileKey() != null && y.fileKey() != null) {
+                // The entry itself, not what a link names: deleting a link to b leaves b.
+                return x.fileKey().equals(y.fileKey());
+            }
+            if (x.isSymbolicLink() != y.isSymbolicLink()) {
+                return false;
+            }
+            return Files.isSameFile(a, b);
+        } catch (NoSuchFileException e) {
+            return false;
+        } catch (IOException | RuntimeException e) {
+            return true;
+        }
     }
 
     private static void put(Path file, Writer writer) throws IOException {
