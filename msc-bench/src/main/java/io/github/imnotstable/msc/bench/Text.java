@@ -1,6 +1,10 @@
 package io.github.imnotstable.msc.bench;
 
 import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.CharBuffer;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -26,9 +30,11 @@ import java.util.regex.Pattern;
  * several writers in a row: the JVM's {@code Picked up JAVA_TOOL_OPTIONS} line, then a tool printing a file that
  * starts with a mark, or two such files joined; a U+FEFF there is never part of the text.
  *
- * <p>The bench's own files stay strict on purpose and are not read here: {@code task.json}, {@code prompt.md} and the
- * preambles, {@code bench.json}, the machine's {@code eula.json} and {@code results.jsonl} are refused with a clear
- * message when they are not UTF-8, since a garbled task, config or record must not run quietly.
+ * <p>The bench's own files stay strict on purpose: {@code task.json}, {@code prompt.md} and the preambles,
+ * {@code bench.json}, a mode's MCP config template and the machine's {@code eula.json} are read by {@link #readOwn},
+ * which refuses one that is not UTF-8 naming the file and the first bad byte (#555), since a garbled task or config
+ * must not run quietly. {@code results.jsonl} has its own strict reader, which also takes the UTF-16 a Windows join
+ * writes ({@code ResultsFile}).
  */
 public final class Text {
 
@@ -133,6 +139,25 @@ public final class Text {
     /** The text of {@code file}, decoded as {@link #decode} does; only an I/O error throws, never its bytes. */
     public static String read(Path file) throws IOException {
         return decode(Files.readAllBytes(file));
+    }
+
+    /**
+     * The text of one of the bench's own files ({@code task.json}, {@code bench.json}...), which must be UTF-8: a file
+     * that is not is refused with an {@link IOException} naming it and the offset of its first bad byte, never the bare
+     * {@code Input length = 1} of {@link Files#readString} (#555).
+     */
+    public static String readOwn(Path file) throws IOException {
+        ByteBuffer in = ByteBuffer.wrap(Files.readAllBytes(file));
+        try {
+            CharBuffer text = StandardCharsets.UTF_8.newDecoder()
+                    .onMalformedInput(CodingErrorAction.REPORT)
+                    .onUnmappableCharacter(CodingErrorAction.REPORT)
+                    .decode(in);
+            return text.toString();
+        } catch (CharacterCodingException e) {
+            throw new IOException(file + ": the byte at offset " + in.position() + " is not UTF-8 text; save the file "
+                    + "as UTF-8", e);
+        }
     }
 
     /** Whether {@code text} holds a surrogate that is not part of a pair, which UTF-8 cannot encode. */

@@ -147,9 +147,9 @@ public final class ReportWriter {
         return runs.stream().filter(r -> r.agent().parsed()).toList();
     }
 
-    /** Runs that started the agent; a bench-side error before it leaves wallMs at 0. */
+    /** Runs that started the agent, by {@link RunRecord#agentRan()}: the rule the Failures section uses too. */
     static List<RunRecord> started(List<RunRecord> runs) {
-        return runs.stream().filter(r -> r.wallMs() > 0 || r.error() == null).toList();
+        return runs.stream().filter(RunRecord::agentRan).toList();
     }
 
     /** {@code value}, marked when it comes from only some of the runs, or - when from none. */

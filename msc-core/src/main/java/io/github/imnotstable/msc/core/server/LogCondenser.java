@@ -142,7 +142,13 @@ public final class LogCondenser {
                 errors, warnings, hidden);
     }
 
-    private static boolean expected(LogReader.Entry e) {
+    /** True when {@code where}, a frame's class and method, is in a framework package (JDK, server, loader). */
+    static boolean framework(String where) {
+        return FRAMEWORK.stream().anyMatch(where::startsWith);
+    }
+
+    /** True when {@code e} is an entry every dev server prints and the AI can do nothing about. */
+    static boolean expected(LogReader.Entry e) {
         if (EXPECTED.stream().anyMatch(p -> p.matcher(e.text()).matches())) {
             return true;
         }

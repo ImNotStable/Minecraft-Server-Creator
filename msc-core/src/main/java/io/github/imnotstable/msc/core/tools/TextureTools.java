@@ -54,9 +54,9 @@ public final class TextureTools {
         Path serverDir = config.serverDir();
         PackSource source = pack.source();
         registry.add("texture",
-                "Add a pixel-art texture to the project's resource pack, in one of three ways: draw it as text "
+                "Add a pixel-art texture to the project's resource pack: draw it as text "
                         + "(palette, rows), generate it (kind, color) or recolor a pack texture (copy, color). "
-                        + "animate makes it an animation; with only name and animate, animates the texture already there.",
+                        + "animate animates it; with only name and animate, the texture already there.",
                 Schema.of().req("name", "string", "Texture name such as item/ruby or myplugin:block/ruby_ore, or a .png path for a file outside the pack")
                         .opt("palette", "strings", "Draw: symbol=#rrggbb or #rrggbbaa entries, for example \"r=#d4263a\". \".\" is transparent")
                         .opt("rows", "strings", "Draw: pixel rows, top first, all the same length (16 is standard)")
@@ -69,7 +69,7 @@ public final class TextureTools {
                         .opt("seed", "integer", "Pattern seed. Default 1")
                         .range("contrast", Ramp.MIN_CONTRAST, Ramp.MAX_CONTRAST, "Default 1 for shapes, 0.6 for patterns")
                         .opt("animate", "string", "scroll (flows down), \"scroll dx,dy\" or pulse (glows)")
-                        .range("frames", MIN_FRAMES, Animation.MAX_FRAMES, "Default: one full loop for scroll (refused if over 64), 8 for pulse")
+                        .range("frames", MIN_FRAMES, Animation.MAX_FRAMES, "Default: one full loop for scroll, 8 for pulse")
                         .opt("frametime", "integer", "Ticks per frame. Default 2")
                         .opt("model", "string", "Also write a model and item definition: item (flat), handheld (tools), "
                                 + "block (cube) or none. Default block for patterns, handheld for sword and pickaxe, none for minecraft:, else item"),
@@ -112,8 +112,8 @@ public final class TextureTools {
                 }));
         registry.add("pack",
                 "Zip the project's resource pack, serve it over HTTP, send it to the server's players and list "
-                        + "its problems.",
-                Schema.of().opt("check", "boolean", "Only check the pack, do not build it")
+                        + "its problems. check=true: only list problems.",
+                Schema.of().opt("check", "boolean", "Only check, do not build")
                         .range("limit", 0, Integer.MAX_VALUE, "Problems to list. Default 30 with check, 5 on a build")
                         .opt("description", "string", "Pack description, up to two lines")
                         .opt("file", "string", "Also save the zip here, such as ruby-pack.zip")

@@ -3,6 +3,7 @@ package io.github.imnotstable.msc.bench.task;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import io.github.imnotstable.msc.bench.JsonNumbers;
+import io.github.imnotstable.msc.bench.Text;
 import io.github.imnotstable.msc.bench.UserJson;
 import io.github.imnotstable.msc.bench.check.Check;
 import io.github.imnotstable.msc.bench.check.Checks;
@@ -65,7 +66,7 @@ public final class TaskLoader {
         String id = taskDir.getFileName().toString();
         JsonObject tree;
         try {
-            tree = JsonParser.parseString(Files.readString(taskDir.resolve("task.json"))).getAsJsonObject();
+            tree = JsonParser.parseString(Text.readOwn(taskDir.resolve("task.json"))).getAsJsonObject();
         } catch (RuntimeException e) {
             throw new IOException("Task " + id + ": task.json is not a JSON object: " + e.getMessage(), e);
         }
@@ -75,7 +76,7 @@ public final class TaskLoader {
             if (!Files.isRegularFile(promptFile)) {
                 throw new IllegalArgumentException("prompt.md is missing");
             }
-            String prompt = Files.readString(promptFile).strip();
+            String prompt = Text.readOwn(promptFile).strip();
 
             List<Path> fixtures = new ArrayList<>();
             for (String shared : json.paths("fixtures")) {

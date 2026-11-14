@@ -112,6 +112,41 @@ class BenchRunnerTest {
         assertThat(log.toString(StandardCharsets.UTF_8)).contains("[toolset] write-file #1 PASS");
     }
 
+    @Test
+    void checkFillsTheSamePlaceholdersAsTheRun() throws IOException {
+        // #554: check filled 5 of the run's placeholders and left {minecraftVersion} and the rest as written, so a
+        // command check that passed in the run failed when the kept attempt was checked again.
+        Path task = Files.createDirectories(dir.resolve("tasks/placeholders/fixture"));
+        Files.writeString(task.resolve("27.1-%d-%d.txt".formatted(rconPort.port(), gamePort.port())), "named by values");
+        Files.writeString(dir.resolve("marker.txt"), "a paths key");
+        Files.writeString(dir.resolve("tasks/placeholders/task.json"), """
+                {"category":"code","title":"placeholders","checks":[
+                  {"type":"command","name":"values","outputMatches":"named by values","run":["{java}","-cp","%s",
+                   "io.github.imnotstable.msc.bench.CatFile","{attemptDir}/workspace/{minecraftVersion}-{rconPort}-{serverPort}.txt"]},
+                  {"type":"command","name":"paths","outputMatches":"a paths key","run":["{java}","-cp","%s",
+                   "io.github.imnotstable.msc.bench.CatFile","{marker}"]}]}
+                """.formatted(CLASSPATH, CLASSPATH));
+        Files.writeString(dir.resolve("tasks/placeholders/prompt.md"), "p");
+        Path configFile = dir.resolve("bench.json");
+        Files.writeString(configFile, """
+                {"agent":{"command":["%s","-cp","%s","io.github.imnotstable.msc.bench.FakeAgent","{prompt}"]},
+                 "minecraftVersion":"27.1","paths":{"marker":"marker.txt"},
+                 "server":{"rconPort":%d,"serverPort":%d}}
+                """.formatted(JAVA, CLASSPATH, rconPort.port(), gamePort.port()));
+        BenchConfig config = BenchConfig.load(configFile, dir);
+        List<TaskDef> tasks = TaskLoader.loadAll(dir.resolve("tasks"));
+
+        List<RunRecord> records = new BenchRunner(config, dir.resolve("run"), "",
+                new PrintStream(new ByteArrayOutputStream(), true, StandardCharsets.UTF_8))
+                .run(new RunSelection(tasks, List.of("baseline")), 1);
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        int exit = Main.check(tasks.getFirst(), dir.resolve("run/attempts/placeholders/baseline-1/workspace"), config,
+                new PrintStream(out, true, StandardCharsets.UTF_8));
+
+        assertThat(records).singleElement().satisfies(r -> assertThat(r.passed()).as(r.failureReason()).isTrue());
+        assertThat(exit).as(out.toString(StandardCharsets.UTF_8)).isZero();
+    }
+
     private Path worldTask() throws IOException {
         Files.createDirectories(dir.resolve("tasks/world/fixture/server"));
         Files.writeString(dir.resolve("tasks/world/task.json"), """
@@ -157,7 +192,11 @@ class BenchRunnerTest {
                 new PrintStream(new ByteArrayOutputStream(), true, StandardCharsets.UTF_8))
                 .run(new RunSelection(TaskLoader.loadAll(dir.resolve("tasks")), List.of("baseline")), 1);
 
-        assertThat(records).singleElement().satisfies(r -> assertThat(r.passed()).isFalse());
+        // The fake jar never starts, and the task has no setup commands: the failure names the start (#553).
+        assertThat(records).singleElement().satisfies(r -> {
+            assertThat(r.passed()).isFalse();
+            assertThat(r.error()).startsWith("starting the server: ");
+        });
         Path server = dir.resolve("run/attempts/world/baseline-1/workspace/server");
         assertThat(Files.readString(server.resolve("server.properties"))).contains("enable-rcon=true", "rcon.port=" + rconPort.port());
         assertThat(server.resolve("paper.jar")).hasContent("not really a jar");

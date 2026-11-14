@@ -50,8 +50,8 @@ The tool list is at its guard (30 tools, under 16,000 characters), so no new too
    history covers the edits in between; 5 minutes keeps a series of big builds from copying the world each time). The
    build result says `backup <name> taken first`. A failed backup does not stop the build; the result says so.
 7. **On `build_undo`, one argument**: `backup` takes `list`, `save [label]` or a backup to restore. To fit the guard,
-   five texts lost words that repeated their arguments (`server_logs`, `server_detach`, `pack`,
-   `world_summary`, `project_scaffold`'s `dir`): 15,979 characters.
+   two texts lost words that said nothing new (`world_summary`'s "in a few lines", `project_scaffold`'s `dir`
+   default): the list as the client receives it is 15,973 characters (`McpBridgeTest`'s guard is 16,000).
 8. **Windows.** The running server holds a lock on `session.lock`, which is never copied (the server writes a new one
    on start). Region files are opened shared, so reading them while the server runs works. Renames and deletes are
    retried for 5 seconds while Windows reports a file in use (a virus scanner, Explorer, a server still exiting).

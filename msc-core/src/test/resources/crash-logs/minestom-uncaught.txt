@@ -1,0 +1,9 @@
+[main] INFO net.minestom.server.MinecraftServer - Starting Minestom
+Exception in thread "main" java.lang.RuntimeException: java.net.BindException: Address already in use
+	at net.minestom.server.network.socket.Server.init(Server.java:58)
+	at net.minestom.server.MinecraftServer.start(MinecraftServer.java:310)
+	at com.example.lobby.Main.main(Main.java:21)
+Caused by: java.net.BindException: Address already in use
+	at java.base/sun.nio.ch.Net.bind0(Native Method)
+	at java.base/sun.nio.ch.Net.bind(Net.java:565)
+	... 3 more

@@ -1,0 +1,19 @@
+#
+# A fatal error has been detected by the Java Runtime Environment:
+#
+#  SIGSEGV (0xb) at pc=0x00007f3c2a4b1c3d, pid=41234, tid=41250
+#
+# JRE version: OpenJDK Runtime Environment Temurin-25+36 (25.0+36) (build 25+36-LTS)
+# Java VM: OpenJDK 64-Bit Server VM Temurin-25+36 (25+36-LTS, mixed mode, sharing, tiered, compressed oops, compressed class ptrs, g1 gc, linux-amd64)
+# Problematic frame:
+# C  [libnoise.so+0x1c3d]  fbm_sample+0x2d
+#
+# Core dump will be written. Default location: /run/core
+#
+# If you would like to submit a bug report, please visit:
+#   https://github.com/adoptium/adoptium-support/issues
+#
+
+---------------  S U M M A R Y ------------
+
+Command Line: -Xmx2G paper.jar --nogui

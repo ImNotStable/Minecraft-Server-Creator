@@ -158,7 +158,7 @@ final class BenchConfigRules {
             }
             Map<String, String> uses = new LinkedHashMap<>();
             if (mode.mcpConfigTemplate() != null) {
-                for (String key : placeholders(Files.readString(Path.of(mode.mcpConfigTemplate())))) {
+                for (String key : placeholders(Text.readOwn(Path.of(mode.mcpConfigTemplate())))) {
                     uses.putIfAbsent(key, "modes." + name + ".mcpConfigTemplate");
                 }
             }

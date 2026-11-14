@@ -593,6 +593,27 @@ class LifecycleToolsTest {
         }
     }
 
+    /** #551: eula.txt is read as the server reads it, a properties file; MSC writes nothing to it here. */
+    @Test
+    void startReadsTheEulaAsTheServerDoes() throws Exception {
+        Path ws = Files.createDirectories(workspace.resolve("ws8"));
+        Files.createDirectories(ws.resolve("run"));
+        Files.writeString(ws.resolve("run/paper.jar"), "not a jar");
+        Path eula = ws.resolve("run/eula.txt");
+        try (CoreHarness s = new CoreHarness(ws)) {
+            for (String text : List.of("eula=false\n", "eula=yes\n", "#eula=true\n", "eula.txt=true\n")) {
+                Files.writeString(eula, text);
+                assertThat(s.error("server_start")).as(text).contains("EULA is not accepted");
+                assertThat(eula).as(text).hasContent(text.strip());
+            }
+            for (String text : List.of("eula = true\n", "eula=TRUE\n", "#comment\n  eula:true\n")) {
+                Files.writeString(eula, text);
+                assertThat(s.call("server_start", "timeoutSeconds", 20).text()).as(text).doesNotContain("EULA");
+                assertThat(eula).as(text).hasContent(text.strip());
+            }
+        }
+    }
+
     @Test
     void setupDownloadsTheNewestStableBuildAndInstallsTheAgent() throws Exception {
         byte[] jar = "paper jar bytes".getBytes(StandardCharsets.UTF_8);
@@ -913,9 +934,27 @@ class LifecycleToolsTest {
         Files.createDirectories(workspace.resolve("run/plugins"));
         Files.writeString(workspace.resolve("run/plugins/msc-agent-paper.jar"), "agent");
         Files.writeString(workspace.resolve("run/done-crash.flag"), "");
+        String fix = "  fix: fix the code at Demo.java:30 (com.example.demo.Demo.tick)\n";
         assertThat(h.ok("server_start", "timeoutSeconds", 30)).startsWith("server exited right after it was ready, after ")
+                .contains("s\nfatal exception in plugin or mod code [log 12:00:03]\n  culprit: com.example.demo.Demo.tick\n")
+                .contains(fix)
                 .contains("12:00:03 ERROR Encountered an unexpected exception\njava.lang.IllegalStateException: tick failed")
                 .doesNotContain("server ready");
+        // The same triage on its own, with the crash report the server wrote; the report adds its file name.
+        Files.createDirectories(workspace.resolve("run/crash-reports"));
+        Files.writeString(workspace.resolve("run/crash-reports/crash-1-server.txt"), "Description: Ticking world\n\n"
+                + "java.lang.IllegalStateException: tick failed\n\tat com.example.demo.Demo.tick(Demo.java:30)\n");
+        assertThat(h.ok("server_logs", "mode", "triage")).startsWith("crash report: Ticking world "
+                + "[crash-reports/crash-1-server.txt, log 12:00:03]").endsWith(fix.strip());
+        Files.delete(workspace.resolve("run/done-crash.flag"));
+        h.ok("server_start", "timeoutSeconds", 30);
+        try {
+            // The crash report is from before this start, so it is not this server's problem.
+            assertThat(h.ok("server_logs", "mode", "triage")).startsWith("no crash or startup failure found in ")
+                    .endsWith("; server running");
+        } finally {
+            h.ok("server_stop");
+        }
     }
 
     @Test
