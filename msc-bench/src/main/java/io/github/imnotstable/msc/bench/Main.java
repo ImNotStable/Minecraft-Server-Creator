@@ -8,6 +8,7 @@ import io.github.imnotstable.msc.bench.run.BenchConfig;
 import io.github.imnotstable.msc.bench.run.BenchRunner;
 import io.github.imnotstable.msc.bench.run.ChildProcesses;
 import io.github.imnotstable.msc.bench.run.RunIsolation;
+import io.github.imnotstable.msc.bench.run.ResultsFile;
 import io.github.imnotstable.msc.bench.run.RunRecord;
 import io.github.imnotstable.msc.bench.run.ServerManager;
 import io.github.imnotstable.msc.bench.run.Workspaces;
@@ -296,7 +297,7 @@ public final class Main {
                     + "folder that `run` prints after Report:, such as " + RunIsolation.DEFAULT_RUNS_SHOWN
                     + "/<timestamp>");
         }
-        List<RunRecord> records = ReportWriter.readResults(results);
+        List<RunRecord> records = ResultsFile.read(results);
         Path reportFile = runDir.resolve("report.md");
         Files.writeString(reportFile, ReportWriter.render(records));
         out.println("Report: " + reportFile.toAbsolutePath());
