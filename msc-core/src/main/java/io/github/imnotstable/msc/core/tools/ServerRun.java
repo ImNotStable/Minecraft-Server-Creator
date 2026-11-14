@@ -19,6 +19,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -52,6 +53,7 @@ final class ServerRun {
 
     static final String ACCEPT_EULA = "write the user's EULA acceptance";
     static final String LEFTOVER_SERVER = "stop the server an earlier session left running";
+    static final String SWEEP = "remove what an interrupted earlier call left in plugins/, mods/ and libs/";
     static final String TAKE_OVER_PACK = "take over the pack an earlier session served";
     static final String REFRESH_AGENT = "update the installed agent jar";
     static final String START = "start the server";
@@ -69,7 +71,7 @@ final class ServerRun {
         if (args.bool("acceptEula", false) && server.platform().needsEula()) {
             Path file = OutputFile.check(config.serverDir().resolve("eula.txt"), "eula.txt");
             steps.then(ACCEPT_EULA);
-            plan(steps);
+            plan(steps, true);
             accepted = steps.run(ACCEPT_EULA, () -> {
                 if (!ServerManager.eulaAccepted(file)) {
                     Files.createDirectories(config.serverDir());
@@ -81,9 +83,16 @@ final class ServerRun {
         return accepted + startAndReport(steps, args.integer("timeoutSeconds", 180), Budget.DEFAULT_CHARS).text();
     }
 
-    /** Declares the steps of {@link #startAndReport}, with what a failure of each leaves. */
-    static Steps plan(Steps steps) {
-        return steps.then(LEFTOVER_SERVER).then(TAKE_OVER_PACK).then(REFRESH_AGENT).then(START)
+    /**
+     * Declares the steps of {@link #startAndReport}, with what a failure of each leaves. {@code sweep}: also remove
+     * what interrupted calls left in the scan folders (dev_cycle does that itself, before it deploys).
+     */
+    static Steps plan(Steps steps, boolean sweep) {
+        steps.then(LEFTOVER_SERVER);
+        if (sweep) {
+            steps.then(SWEEP);
+        }
+        return steps.then(TAKE_OVER_PACK).then(REFRESH_AGENT).then(START)
                 .ifFails(TAKE_OVER_PACK, "the server is not started; if the earlier session's pack host was stopped, "
                         + "server.properties may offer a pack no one serves: server_start again serves it")
                 .ifFails(REFRESH_AGENT, "the server is not started; the installed agent jar is still the earlier "
@@ -159,9 +168,14 @@ final class ServerRun {
      */
     Report startAndReport(Steps steps, int timeoutSeconds, int maxChars) throws IOException, InterruptedException {
         if (!steps.planned(START)) {
-            plan(steps);
+            plan(steps, true);
         }
         String leftoverServer = steps.note(LEFTOVER_SERVER, server::stopLeftover);
+        // After the leftover stop, which may hold them open: an aside copy (x.jar.msc-removing, from cores before
+        // #430) is a second copy of the mod on Quilt, which loads any file in mods/ (#434).
+        List<Path> swept = new ArrayList<>();
+        String unswept = !steps.planned(SWEEP) ? "" : steps.optionalRan(SWEEP,
+                () -> swept.addAll(ScanFolders.sweep(config.serverDir(), ScanFolders.all(config.serverDir()))));
         String[] packNotes = new String[2];
         steps.note(TAKE_OVER_PACK, () -> {
             packNotes[0] = pack.stopLeftoverHost();
@@ -179,6 +193,13 @@ final class ServerRun {
         StringBuilder out = new StringBuilder();
         if (leftover != null) {
             out.append(leftover).append('\n');
+        }
+        if (!swept.isEmpty()) {
+            out.append("removed ").append(swept.size()).append(swept.size() == 1 ? " file" : " files")
+                    .append(" an interrupted earlier call left\n");
+        }
+        if (!unswept.isEmpty()) {
+            out.append(unswept.strip()).append('\n');
         }
         if (packNote != null) {
             out.append(packNote).append('\n');
