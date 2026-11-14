@@ -76,6 +76,51 @@ class PackHostTest {
         }
     }
 
+    /** #512: clients that send part of a request and then nothing hold none of the download turns. */
+    @Test
+    void halfSentRequestsDoNotHoldUpADownload() throws Exception {
+        PackHost.Served pack = served(1000, 4);
+        PackHost.Host host = PackHost.start("127.0.0.1", 0, () -> pack, NEVER);
+        List<Socket> halfSent = new ArrayList<>();
+        try {
+            for (int i = 0; i < PackHost.MAX_DOWNLOADS * 2; i++) {
+                halfSent.add(halfSentRequest(host));
+            }
+            assertThat(download(host, pack)).isEqualTo(pack.data());
+            assertThat(halfSent).noneMatch(Socket::isClosed);
+        } finally {
+            for (Socket s : halfSent) {
+                s.close();
+            }
+            host.stop();
+        }
+    }
+
+    @Test
+    void aHalfSentRequestIsClosedAfterTheStallLimit() throws Exception {
+        PackHost.Served pack = served(1000, 5);
+        PackHost.Host host = PackHost.start("127.0.0.1", 0, () -> pack, Duration.ofMillis(200));
+        try (Socket halfSent = halfSentRequest(host)) {
+            while (host.unfinished() == 0) {
+                Thread.sleep(20); // polls state; the class timeout fails a host that never cuts it
+            }
+            assertThat(readToEnd(halfSent)).isZero();
+            assertThat(download(host, pack)).isEqualTo(pack.data());
+            assertThat(host.stalled()).isZero();
+        } finally {
+            host.stop();
+        }
+    }
+
+    /** Opens a connection and sends the first byte of a request, and nothing more. */
+    private static Socket halfSentRequest(PackHost.Host host) throws IOException {
+        Socket socket = new Socket();
+        socket.connect(new java.net.InetSocketAddress("127.0.0.1", host.port()));
+        socket.getOutputStream().write('G');
+        socket.getOutputStream().flush();
+        return socket;
+    }
+
     @Test
     void parallelDownloadsOfTheStandaloneHostsFileAllComplete(@TempDir Path dir) throws Exception {
         PackHost.Served pack = served(2 * 1024 * 1024, 2);
