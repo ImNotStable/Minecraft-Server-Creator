@@ -1,6 +1,7 @@
 package io.github.imnotstable.msc.bench.run;
 
 import com.google.gson.Gson;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParseException;
 import com.google.gson.JsonParser;
@@ -114,20 +115,23 @@ public record BenchConfig(
      * Reads the config, taking {@code server.acceptEula} from {@code <home>/.msc/eula.json} (see {@link MachineEula})
      * and never from the file, so no config can accept the EULA for anyone. Refuses, naming each key and why, every
      * value that can never work ({@link BenchConfigRules}), so a run fails here and not after a server's start timeout.
+     * Numbers are checked as written before the file is bound, and the config binds the checked numbers (#416).
      */
     public static BenchConfig load(Path file, Path home) throws IOException {
         BenchConfig raw;
-        JsonObject json;
+        List<String> problems;
         try {
-            json = JsonParser.parseString(Files.readString(file)).getAsJsonObject();
+            JsonElement parsed = JsonParser.parseString(Files.readString(file));
+            if (parsed.isJsonNull()) {
+                throw new IOException("Empty bench config " + file);
+            }
+            JsonObject json = parsed.getAsJsonObject();
+            problems = BenchConfigRules.numbers(json);
             raw = new Gson().fromJson(json, BenchConfig.class);
         } catch (JsonParseException | IllegalStateException e) {
             throw new IOException("Bad bench config " + file + ": " + e.getMessage(), e);
         }
-        if (raw == null) {
-            throw new IOException("Empty bench config " + file);
-        }
-        List<String> problems = BenchConfigRules.beforeDefaults(raw, json);
+        problems.addAll(BenchConfigRules.beforeDefaults(raw));
         BenchConfig full = null;
         if (problems.isEmpty()) {
             full = raw.withDefaults(file.toAbsolutePath().getParent(), MachineEula.accepted(home));

@@ -4,6 +4,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import io.github.imnotstable.msc.bench.JsonNumbers;
 import io.github.imnotstable.msc.bench.check.Check;
 import io.github.imnotstable.msc.bench.check.Checks;
 import java.io.IOException;
@@ -92,8 +93,8 @@ public final class TaskLoader {
 
             List<Check> checks = new ArrayList<>();
             JsonArray checkArray = json.has("checks") ? json.getAsJsonArray("checks") : new JsonArray();
-            for (JsonElement element : checkArray) {
-                checks.add(Checks.parse(element.getAsJsonObject(), taskDir));
+            for (int i = 0; i < checkArray.size(); i++) {
+                checks.add(Checks.parse(checkArray.get(i).getAsJsonObject(), taskDir, "task.json checks[" + i + "]"));
             }
             if (checks.isEmpty()) {
                 throw new IllegalArgumentException("a task needs at least one check");
@@ -109,7 +110,7 @@ public final class TaskLoader {
                     fixtures,
                     server,
                     checks,
-                    json.has("timeoutSeconds") ? json.get("timeoutSeconds").getAsInt() : 0);
+                    JsonNumbers.wholeNumber(json, "timeoutSeconds", "task.json timeoutSeconds", JsonNumbers.SECONDS, 0));
         } catch (RuntimeException e) {
             throw new IOException("Task " + id + ": " + e.getMessage(), e);
         }
