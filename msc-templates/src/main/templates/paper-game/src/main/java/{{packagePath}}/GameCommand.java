@@ -43,6 +43,7 @@ public final class GameCommand implements BasicCommand {
     @Override
     public void execute(CommandSourceStack source, String[] args) {
         CommandSender sender = source.getSender();
+        args = words(String.join(" ", args), false);
         String sub = args.length == 0 ? "" : args[0].toLowerCase(Locale.ROOT);
         switch (sub) {
             case "status" -> game.status(List.copyOf(server.getOnlinePlayers())).forEach(sender::sendMessage);
@@ -89,7 +90,13 @@ public final class GameCommand implements BasicCommand {
     }
 
     @Override
-    public Collection<String> suggest(CommandSourceStack source, String[] args) {
+    public Collection<String> suggest(CommandSourceStack source, String[] typed) {
+        return suggestions(typed);
+    }
+
+    /** Suggestions for the word being typed: subcommands first, then stage names, then player names. */
+    List<String> suggestions(String[] typed) {
+        String[] args = words(String.join(" ", typed), true);
         if (args.length <= 1) {
             return filter(SUBCOMMANDS, args);
         }
@@ -120,6 +127,19 @@ public final class GameCommand implements BasicCommand {
         }
         error(sender, "name a player: " + String.join(" ", Arrays.copyOf(args, i)) + " <player>");
         return null;
+    }
+
+    /**
+     * The words of a command line, split on runs of whitespace, so {@code stage  arena} is two words: the same in every
+     * game template. With {@code typing} (tab completion), a trailing space starts an empty last word, the one being
+     * typed, and there is always a last word.
+     */
+    static String[] words(String line, boolean typing) {
+        String s = typing ? line.stripLeading() : line.strip();
+        if (s.isEmpty()) {
+            return typing ? new String[] {""} : new String[0];
+        }
+        return s.split("\\s+", typing ? -1 : 0);
     }
 
     private List<String> stageNames() {

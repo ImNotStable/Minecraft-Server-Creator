@@ -4,7 +4,6 @@ import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -41,7 +40,7 @@ public record GameConfig(String world, GameMode gameMode, Difficulty difficulty,
     /** Time of day: 0 sunrise, 6000 noon, 13000 night, 18000 midnight. */
     static final Need<Integer> TIME = wholeNumber(0, 23999);
     /** A kit amount: at most a full inventory (36 stacks of 64). */
-    static final Need<Integer> AMOUNT = wholeNumber(1, 36 * 64);
+    static final Need<Integer> AMOUNT = wholeNumber(1, Kit.MAX_AMOUNT);
     /** A block coordinate (a goal corner). */
     static final Need<Integer> BLOCK_XZ = wholeNumber(-Box.MAX_XZ, Box.MAX_XZ);
     static final Need<Integer> BLOCK_Y = wholeNumber(Box.MIN_Y, Box.MAX_Y);
@@ -66,15 +65,16 @@ public record GameConfig(String world, GameMode gameMode, Difficulty difficulty,
 
     private static List<Stage> stages(List<?> raw) {
         List<Stage> stages = new ArrayList<>();
-        Set<String> names = new HashSet<>();
         for (int i = 0; i < raw.size(); i++) {
             String where = "stages[" + i + "]";
             Map<?, ?> s = STAGE.get(raw.get(i), where);
-            String name = TEXT.get(s.get("name"), where + ".name");
+            String name = STAGE_NAME.get(s.get("name"), where + ".name");
             where += " (" + name + ")";
             unknownKeys(s.keySet(), STAGE_KEYS, where + ": ");
-            if (!names.add(name.toLowerCase(Locale.ROOT))) {
-                throw new IllegalArgumentException("stages[" + i + "]: duplicate stage name " + name);
+            for (Stage earlier : stages) {
+                if (Stage.sameName(earlier.name(), name)) {
+                    throw new IllegalArgumentException("stages[" + i + "]: duplicate stage name " + name);
+                }
             }
             Object goal = s.get("goal");
             stages.add(new Stage(name, spot(s.get("spawn"), where + ".spawn"),
@@ -237,6 +237,9 @@ public record GameConfig(String world, GameMode gameMode, Difficulty difficulty,
     static final Need<Integer> WHOLE_NUMBER = wholeNumber(Integer.MIN_VALUE, Integer.MAX_VALUE);
     /** Any finite number, whole or decimal. */
     static final Need<Double> NUMBER = number(Double.NEGATIVE_INFINITY, Double.POSITIVE_INFINITY);
+    /** A stage name: the rule every game template shares ({@link Stage#isName}). */
+    static final Need<String> STAGE_NAME = new Need<>("a stage name, " + Stage.NAME_RULE,
+            v -> v instanceof String s && Stage.isName(s) ? s : null);
     static final Need<List<?>> LIST = list("a list");
     static final Need<List<?>> SPOT = list("[x, y, z] or [x, y, z, yaw, pitch]", 3, 5);
     static final Need<List<?>> BOX = list("[x1, y1, z1, x2, y2, z2]", 6);
@@ -379,7 +382,7 @@ public record GameConfig(String world, GameMode gameMode, Difficulty difficulty,
     /** Index of the stage with this name or else this 1-based number, or -1. A name wins over a number. */
     int stageIndex(String nameOrNumber) {
         for (int i = 0; i < stages.size(); i++) {
-            if (stages.get(i).name().equalsIgnoreCase(nameOrNumber)) {
+            if (Stage.sameName(stages.get(i).name(), nameOrNumber)) {
                 return i;
             }
         }
