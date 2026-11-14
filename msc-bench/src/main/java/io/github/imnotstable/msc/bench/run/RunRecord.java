@@ -1,6 +1,7 @@
 package io.github.imnotstable.msc.bench.run;
 
 import io.github.imnotstable.msc.bench.check.CheckResult;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -45,6 +46,35 @@ public record RunRecord(
     public RunRecord failed(String reason) {
         return new RunRecord(task, category, mode, repeat, startedAt, false, wallMs, timedOut, exitCode, reason,
                 agent, tools, checks);
+    }
+
+    /**
+     * Why this attempt failed, or null when it passed: the one text the terminal's progress line and the report's
+     * Failures section both show, so they cannot differ. Lists the bench error, the timeout, how the agent ended
+     * (non-zero exit, an error it reported, output the bench could not read) and every failed check.
+     */
+    public String failureReason() {
+        if (passed) {
+            return null;
+        }
+        List<String> reasons = new ArrayList<>();
+        if (error != null) {
+            reasons.add(error);
+        }
+        if (timedOut) {
+            reasons.add("timed out after " + wallMs / 1000 + "s");
+        }
+        if (exitCode > 0) {
+            reasons.add("agent exited with code " + exitCode);
+        }
+        if (agent.isError()) {
+            reasons.add("agent reported an error");
+        }
+        if (!agent.parsed()) {
+            reasons.add("agent output not parsed");
+        }
+        checks.stream().filter(c -> !c.passed()).forEach(c -> reasons.add(c.name() + ": " + c.detail()));
+        return reasons.isEmpty() ? "no checks ran" : String.join("; ", reasons);
     }
 
     public long checksPassed() {

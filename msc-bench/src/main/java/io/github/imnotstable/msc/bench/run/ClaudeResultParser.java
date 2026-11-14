@@ -43,6 +43,15 @@ public final class ClaudeResultParser {
         if (result == null) {
             return AgentResult.UNKNOWN;
         }
+        try {
+            return agentResult(result, model, mcpConnected);
+        } catch (NumberFormatException e) {
+            // A count that is not a number ("num_turns":"abc"): the output is as unreadable as invalid JSON.
+            return AgentResult.UNKNOWN;
+        }
+    }
+
+    private static AgentResult agentResult(JsonObject result, String model, List<String> mcpConnected) {
         JsonObject usage = result.has("usage") && result.get("usage").isJsonObject()
                 ? result.getAsJsonObject("usage")
                 : new JsonObject();
@@ -77,13 +86,22 @@ public final class ClaudeResultParser {
                 result = o;
             }
         }
-        if (result == null || !(bool(result, "is_error") || number(result, "api_error_status") == 429)) {
+        if (result == null) {
+            return null;
+        }
+        long status;
+        try {
+            status = number(result, "api_error_status");
+        } catch (NumberFormatException e) {
+            status = 0;
+        }
+        if (!(bool(result, "is_error") || status == 429)) {
             return null;
         }
         String text = result.has("result") && result.get("result").isJsonPrimitive()
                 ? result.get("result").getAsString().strip()
                 : "";
-        if (number(result, "api_error_status") == 429 || USAGE_LIMIT.matcher(text).find()) {
+        if (status == 429 || USAGE_LIMIT.matcher(text).find()) {
             return text.isEmpty() ? "API error 429" : text.lines().findFirst().orElse(text);
         }
         return null;

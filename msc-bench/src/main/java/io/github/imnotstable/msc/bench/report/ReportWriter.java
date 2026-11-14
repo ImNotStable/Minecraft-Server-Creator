@@ -119,15 +119,7 @@ public final class ReportWriter {
             md.append("\n## Failures\n\n");
             for (RunRecord r : failures) {
                 md.append("- ").append(r.task()).append(" (").append(r.mode()).append(" #").append(r.repeat()).append("): ");
-                List<String> reasons = new ArrayList<>();
-                if (r.error() != null) {
-                    reasons.add(r.error());
-                }
-                if (r.timedOut()) {
-                    reasons.add("timed out");
-                }
-                r.checks().stream().filter(c -> !c.passed()).forEach(c -> reasons.add(c.name() + ": " + c.detail()));
-                md.append(reasons.isEmpty() ? "no checks ran" : String.join("; ", reasons)).append('\n');
+                md.append(r.failureReason()).append('\n');
             }
         }
         return md.toString();

@@ -21,6 +21,7 @@ import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
@@ -171,11 +172,7 @@ public final class BenchRunner {
                         return records;
                     }
                     records.add(record);
-                    log.printf("[%s] %s #%d %s in %ds, %d tokens, %d/%d checks%s%n",
-                            mode, task.id(), repeat, record.passed() ? "PASS" : "FAIL",
-                            record.wallMs() / 1000, record.agent().totalTokens(),
-                            record.checksPassed(), record.checks().size(),
-                            record.error() == null ? "" : " (" + record.error() + ")");
+                    log.println(progressLine(record));
                 }
             }
         }
@@ -353,6 +350,15 @@ public final class BenchRunner {
                 && results.stream().allMatch(CheckResult::passed);
         return new RunRecord(task.id(), task.category(), modeName, repeat, startedAt, passed, wallMs, timedOut,
                 exitCode, error, agent, tools, results);
+    }
+
+    /** The terminal line for one finished attempt; a failed one ends with {@link RunRecord#failureReason()}. */
+    static String progressLine(RunRecord record) {
+        String reason = record.failureReason();
+        return String.format(Locale.ROOT, "[%s] %s #%d %s in %ds, %d tokens, %d/%d checks%s",
+                record.mode(), record.task(), record.repeat(), record.passed() ? "PASS" : "FAIL",
+                record.wallMs() / 1000, record.agent().totalTokens(), record.checksPassed(), record.checks().size(),
+                reason == null ? "" : " (" + reason + ")");
     }
 
     /** The agent's run ended on an account usage limit; carries its error text. */
