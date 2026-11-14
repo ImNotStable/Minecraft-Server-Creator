@@ -22,3 +22,6 @@ servers/
 
 # Kotlin DSL / build-logic
 .kotlin/
+
+# Claude Code worktrees of parallel agents
+.claude/worktrees/

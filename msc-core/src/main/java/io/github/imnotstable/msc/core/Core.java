@@ -144,7 +144,8 @@ public final class Core implements AutoCloseable {
             ApiTools api = new ApiTools(config);
             MetaTools.register(tools, config, hub, server, log, api);
             LifecycleTools.register(tools, config, hub, server, pack, new ProjectBuilder(config),
-                    new PaperDownloader(config.downloadsUrl(), config.dataDir().resolve("cache")),
+                    new PaperDownloader(config.downloadsUrl(), config.dataDir().resolve("cache"),
+                            config.downloadStore()),
                     new FabricDownloader(config.fabricMetaUrl(), config.fabricMavenUrl(),
                             config.dataDir().resolve("cache")), background);
             api.register(tools);
