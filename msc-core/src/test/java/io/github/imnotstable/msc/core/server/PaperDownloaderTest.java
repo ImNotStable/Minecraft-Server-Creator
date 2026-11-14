@@ -5,10 +5,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.sun.net.httpserver.HttpServer;
 import io.github.imnotstable.msc.core.tool.ToolException;
+import io.github.imnotstable.msc.process.ClosedPort;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
-import java.net.ServerSocket;
-import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -23,11 +22,12 @@ class PaperDownloaderTest {
 
     @Test
     void anUnreachableJarHostIsReportedAndLeavesNoPartFile() throws Exception {
-        int deadPort;
-        try (ServerSocket s = new ServerSocket(0)) {
-            deadPort = s.getLocalPort();
+        try (ClosedPort dead = ClosedPort.reserve()) {
+            reportsUnreachable("http://127.0.0.1:" + dead.port() + "/paper.jar");
         }
-        String jarUrl = "http://127.0.0.1:" + deadPort + "/paper.jar";
+    }
+
+    private void reportsUnreachable(String jarUrl) throws Exception {
         byte[] builds = ("[{\"id\":7,\"channel\":\"STABLE\",\"downloads\":{\"server:default\":{\"url\":\"" + jarUrl
                 + "\"}}}]").getBytes(StandardCharsets.UTF_8);
         HttpServer http = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
@@ -57,10 +57,8 @@ class PaperDownloaderTest {
         for (String build : builds.split(" ")) {
             Files.writeString(cache.resolve("paper-26.3-" + build + ".jar"), build);
         }
-        // Bound but not listening: every connection is refused, and no other process can take the port meanwhile.
-        try (Socket unreachable = new Socket()) {
-            unreachable.bind(new InetSocketAddress("127.0.0.1", 0));
-            PaperDownloader paper = new PaperDownloader("http://127.0.0.1:" + unreachable.getLocalPort(), cache);
+        try (ClosedPort unreachable = ClosedPort.reserve()) {
+            PaperDownloader paper = new PaperDownloader("http://127.0.0.1:" + unreachable.port(), cache);
             assertThat(paper.download("26.3"))
                     .isEqualTo(new PaperDownloader.Download(cache.resolve("paper-26.3-" + newest + ".jar"), "26.3",
                             newest, true));

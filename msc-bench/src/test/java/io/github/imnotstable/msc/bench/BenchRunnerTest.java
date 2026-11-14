@@ -3,9 +3,9 @@ package io.github.imnotstable.msc.bench;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
 
-import io.github.imnotstable.msc.bench.report.ReportWriter;
 import io.github.imnotstable.msc.bench.run.BenchConfig;
 import io.github.imnotstable.msc.bench.run.BenchRunner;
+import io.github.imnotstable.msc.bench.run.ResultsFile;
 import io.github.imnotstable.msc.bench.run.RunRecord;
 import io.github.imnotstable.msc.bench.task.TaskDef;
 import io.github.imnotstable.msc.bench.task.TaskLoader;
@@ -101,7 +101,7 @@ class BenchRunnerTest {
         assertThat(Files.readString(attempt.resolve("workspace/done.txt"))).startsWith("Bench preamble.\n\nWrite done.txt in");
         assertThat(Files.readString(attempt.resolve("mcp.json"))).contains("tool-calls.jsonl").doesNotContain("{workspace}");
 
-        List<RunRecord> reread = ReportWriter.readResults(runDir.resolve(BenchRunner.RESULTS_FILE));
+        List<RunRecord> reread = ResultsFile.read(runDir.resolve(BenchRunner.RESULTS_FILE));
         assertThat(reread).isEqualTo(records);
         assertThat(log.toString(StandardCharsets.UTF_8)).contains("[toolset] write-file #1 PASS");
     }

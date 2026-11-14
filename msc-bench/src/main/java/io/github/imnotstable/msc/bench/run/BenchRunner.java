@@ -14,7 +14,6 @@ import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
 import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -34,7 +33,7 @@ import java.util.concurrent.TimeUnit;
 public final class BenchRunner {
 
     /** Results file inside a run folder. */
-    public static final String RESULTS_FILE = "results.jsonl";
+    public static final String RESULTS_FILE = ResultsFile.NAME;
 
     private static final Gson GSON = new GsonBuilder().disableHtmlEscaping().create();
 
@@ -158,8 +157,7 @@ public final class BenchRunner {
                         return records;
                     }
                     records.add(record);
-                    Files.writeString(runDir.resolve(RESULTS_FILE), GSON.toJson(record) + "\n",
-                            StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+                    ResultsFile.append(runDir.resolve(RESULTS_FILE), record);
                     log.printf("[%s] %s #%d %s in %ds, %d tokens, %d/%d checks%s%n",
                             mode, task.id(), repeat, record.passed() ? "PASS" : "FAIL",
                             record.wallMs() / 1000, record.agent().totalTokens(),

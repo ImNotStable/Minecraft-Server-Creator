@@ -31,6 +31,15 @@ public final class JsonNumbers {
     /** A block y: a Minecraft dimension spans at most y -2032 to 2031. */
     public static final Range BLOCK_Y = whole(-2032, 2031,
             "a block y inside a Minecraft world, a whole number from -2032 to 2031");
+    /** A count in a run record, such as agent turns or tool calls. */
+    public static final Range COUNT = whole(0, 1_000_000, "a count, a whole number from 0 to 1000000");
+    /** A per-tool call count in a run record, which the report divides by. */
+    public static final Range CALLS = whole(1, 1_000_000, "a count of calls, a whole number from 1 to 1000000");
+    /** Tokens, characters or milliseconds in a run record: large, but small enough that totals stay exact. */
+    public static final Range AMOUNT = new Range(BigDecimal.ZERO, BigDecimal.valueOf(1_000_000_000_000_000L), true,
+            "a whole number from 0 to 1000000000000000");
+    /** A cost in US dollars. */
+    public static final Range COST = decimal(0, 1_000_000, "an amount in US dollars from 0 to 1000000");
     /** A share, such as a fraction of pixels. */
     public static final Range FRACTION = decimal(0, 1, "a number from 0 to 1");
     /** A hue in degrees. */
@@ -41,7 +50,8 @@ public final class JsonNumbers {
      *
      * @param min   lowest value
      * @param max   highest value
-     * @param whole whether only whole numbers are allowed; then min and max lie within {@code int}
+     * @param whole whether only whole numbers are allowed; then min and max lie within {@code long}, and within
+     *              {@code int} for an {@code int} read
      * @param text  what the key takes, as the refusal says it: "is not {@code text}"
      */
     public record Range(BigDecimal min, BigDecimal max, boolean whole, String text) {
@@ -61,7 +71,19 @@ public final class JsonNumbers {
         if (!range.whole()) {
             throw new IllegalArgumentException(key + ": " + range.text() + " is not a whole number range");
         }
+        if (range.min().compareTo(BigDecimal.valueOf(Integer.MIN_VALUE)) < 0
+                || range.max().compareTo(BigDecimal.valueOf(Integer.MAX_VALUE)) > 0) {
+            throw new IllegalArgumentException(key + ": " + range.text() + " does not fit an int");
+        }
         return exact(value, key, range).intValueExact();
+    }
+
+    /** The whole number {@code value} of {@code key} as a {@code long}, refused unless it is within {@code range}. */
+    static long wholeLong(JsonElement value, String key, Range range) {
+        if (!range.whole()) {
+            throw new IllegalArgumentException(key + ": " + range.text() + " is not a whole number range");
+        }
+        return exact(value, key, range).longValueExact();
     }
 
     /** The number {@code value} of {@code key}, refused unless it is a number within {@code range}. */
@@ -88,7 +110,7 @@ public final class JsonNumbers {
     }
 
     /** The value as the file spells it: a number's own text, anything else as JSON, cut when long. */
-    private static String written(JsonElement value) {
+    static String written(JsonElement value) {
         String text = value instanceof JsonPrimitive primitive && primitive.isNumber()
                 ? primitive.getAsString()
                 : String.valueOf(value);

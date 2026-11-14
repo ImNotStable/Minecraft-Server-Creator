@@ -58,7 +58,10 @@ class SideEffectStepsTest {
         /** Holds whatever happened: after a failed call at {@code step} (null: after a successful one). */
         void consistent(CoreHarness h, Path ws, String step) throws Exception;
 
-        /** Steps whose failure only adds a note: the call still succeeds. */
+        /**
+         * Housekeeping steps ({@code Steps.optional}): a failure only adds a note and the call still succeeds, and a
+         * failure of another step never lists them as done or not done.
+         */
         default List<String> optional() {
             return List.of();
         }
@@ -112,9 +115,9 @@ class SideEffectStepsTest {
                         "remember the workspace platform")),
                 Arguments.of("server_start", new StartScenario(), List.of(
                         "stop the server an earlier session left running",
+                        "take over the pack an earlier session served", "update the installed agent jar",
                         "remove what an interrupted earlier call left in plugins/, mods/ and libs/",
-                        "take over the pack an earlier session served",
-                        "update the installed agent jar", "start the server")),
+                        "start the server")),
                 Arguments.of("dev_cycle", new DevCycleScenario(), List.of(
                         "stop a server an earlier session left holding the jar", "stop the server",
                         "remove what an interrupted earlier call left", "deploy the jar",
@@ -174,13 +177,19 @@ class SideEffectStepsTest {
                     assertThat(r.ok()).as("%s at %s: %s", name, step, r.text()).isTrue();
                     assertThat(r.text()).contains("not done: " + step + " (injected failure)");
                 } else {
+                    List<String> planned = steps.stream().filter(s -> !scenario.optional().contains(s)).toList();
                     assertThat(r.ok()).as("%s at %s", name, step).isFalse();
                     assertThat(r.text()).as("%s at %s", name, step).doesNotContain("internal")
                             .contains("injected failure\n" + tool(args) + " stopped at: " + step + "\n")
-                            .contains("\nnot done: " + String.join("; ", steps.subList(i, steps.size())));
+                            .contains("\nnot done: " + String.join("; ", planned.subList(planned.indexOf(step),
+                                    planned.size())));
                     String done = r.text().lines().filter(l -> l.startsWith("done: ")).findFirst().orElseThrow();
                     for (String later : steps.subList(i, steps.size())) {
                         assertThat(done).as("%s at %s", name, step).doesNotContain(later);
+                    }
+                    for (String extra : scenario.optional()) {
+                        assertThat(r.text()).as("%s at %s: housekeeping is never listed", name, step)
+                                .doesNotContain(extra);
                     }
                 }
                 scenario.consistent(f, ws, step);

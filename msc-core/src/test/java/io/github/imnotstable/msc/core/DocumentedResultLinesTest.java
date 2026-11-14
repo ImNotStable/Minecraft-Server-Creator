@@ -173,6 +173,8 @@ class DocumentedResultLinesTest {
             new SetupLine("`wrote N default config files`", "wrote \\d+ default config files"),
             new SetupLine("`mode game: survival, normal difficulty from the next start`",
                     "mode game: survival, normal difficulty from the next start"),
+            new SetupLine("`mode build: creative, peaceful difficulty from the next start`",
+                    "mode build: creative, peaceful difficulty from the next start"),
             new SetupLine("`paper <version> build <n> (downloaded)` or `(cached)`",
                     "paper \\S+ build \\d+ \\((downloaded|cached)\\)"),
             new SetupLine("`purpur <version> build <n> (installed)` or `(already there)`",
@@ -217,7 +219,7 @@ class DocumentedResultLinesTest {
             Files.writeString(purpur.resolve("run/eula.txt"), "eula=true\n");
             try (CoreHarness h = new CoreHarness(purpur, c -> downloads.apply(c)
                     .withMachineEula(MachineEula.forHome(root.resolve("nobody"))))) {
-                results.add(h.ok("server_setup", "platform", "purpur"));
+                results.add(h.ok("server_setup", "platform", "purpur", "mode", "build"));
             }
             for (String platform : List.of("fabric", "quilt", "neoforge", "forge")) {
                 Path ws = agents(Files.createDirectories(root.resolve(platform)));

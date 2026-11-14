@@ -47,6 +47,11 @@ public final class FakeLeftover implements ProcessHandle {
         diesWhenKilled = true;
     }
 
+    /** Exits now, as a server asked to stop over RCON does once it saved. */
+    public void exit() {
+        exit.complete(this);
+    }
+
     /** The pid file {@code server} reads and writes. */
     public static Path pidFile(ServerManager server) {
         return server.pidFile();
