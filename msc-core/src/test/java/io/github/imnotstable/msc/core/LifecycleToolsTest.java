@@ -1043,6 +1043,52 @@ class LifecycleToolsTest {
         h.ok("server_stop");
     }
 
+    /**
+     * #667: dev_cycle with an unchanged jar sends the workspace's pack only when it differs from what the running
+     * server's agent connection was last sent; a new connection (a restart) always gets it (#660).
+     */
+    @Test
+    void anUnchangedPackIsSentOncePerConnection() throws Exception {
+        assertThat(h.ok("dev_cycle", "project", "demo")).contains("server ready");
+        h.ok("texture", "name", "item/dot", "palette", List.of("a=#ff0000"), "rows", List.of("a"));
+        assertThat(h.ok("pack")).contains("applied: sent to 1 players");
+        assertThat(packSends()).isEqualTo(1);
+
+        for (int cycle = 0; cycle < 2; cycle++) {
+            assertThat(h.ok("dev_cycle", "project", "demo")).as("cycle %d", cycle)
+                    .contains("jar unchanged").doesNotContain("resource pack");
+        }
+        assertThat(packSends()).as("the same pack to the same connection").isEqualTo(1);
+
+        // A reconnect: a changed jar restarts the server, and its new connection gets the pack.
+        Files.writeString(project.resolve("version.txt"), "2.0");
+        assertThat(h.ok("dev_cycle", "project", "demo")).contains("server ready")
+                .contains("\nresource pack sent: players who join get it\n");
+        assertThat(packSends()).isEqualTo(2);
+        assertThat(h.ok("dev_cycle", "project", "demo")).contains("jar unchanged").doesNotContain("resource pack");
+        assertThat(packSends()).isEqualTo(2);
+
+        // A changed pack still reaches the players of a server that keeps running.
+        h.ok("texture", "name", "item/dot", "palette", List.of("a=#00ff00"), "rows", List.of("a"));
+        assertThat(h.ok("dev_cycle", "project", "demo")).contains("jar unchanged")
+                .contains("\nresource pack sent: players who join get it\n");
+        assertThat(packSends()).isEqualTo(3);
+        h.ok("server_stop");
+    }
+
+    private int fences;
+
+    /**
+     * The packs the fake server was sent so far: its log is read up to a console line sent now, which it prints after
+     * any send that already happened.
+     */
+    private long packSends() throws Exception {
+        String fence = "fence " + ++fences;
+        h.core.server().console(fence);
+        awaitLogLine("console: " + fence);
+        return h.core.server().log().since(0).stream().filter(l -> l.contains("[fake] pack sent ")).count();
+    }
+
     /** Waits (generously: a loaded machine) until the server log holds a line containing {@code text}. */
     private void awaitLogLine(String text) throws InterruptedException {
         long deadline = System.nanoTime() + java.time.Duration.ofSeconds(60).toNanos();

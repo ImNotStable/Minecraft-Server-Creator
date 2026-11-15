@@ -300,7 +300,7 @@ final class DevCycle {
             return Deployed.not(new Budget.Parts().add(out.append("build ok in ").append(LogText.seconds(build.millis()))
                     .append(", jar unchanged: ").append(shown)
                     .append(" kept, server not restarted (server_stop then server_start restarts it)")
-                    .append(run.resendPack()).toString()));
+                    .append(run.packIfChanged()).toString()));
         }
         Steps steps = new Steps("dev_cycle").then(STOP_LEFTOVER);
         boolean stopping = wasRunning && restart;

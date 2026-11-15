@@ -13,6 +13,7 @@ import io.github.imnotstable.msc.core.tool.ToolException;
 import io.github.imnotstable.msc.core.tool.ToolRegistry;
 import io.github.imnotstable.msc.process.ServerPropertiesFile;
 import io.github.imnotstable.msc.protocol.op.Ops;
+import io.github.imnotstable.msc.protocol.transport.CoreServer;
 import io.github.imnotstable.msc.textures.Animation;
 import io.github.imnotstable.msc.textures.Colors;
 import io.github.imnotstable.msc.textures.Edits;
@@ -185,8 +186,11 @@ public final class TextureTools {
             }
             if (connected) {
                 Ops.PackResult r = steps.run(APPLY, () -> {
+                    CoreServer.AgentSession to = hub.current();
                     Ops.PackResult sent = hub.call(Ops.PACK_APPLY,
                             new Ops.PackParams(built.url(), built.sha1(), required));
+                    // So dev_cycle does not send this connection the same pack again (#667).
+                    pack.sent(to, built, required);
                     pack.applied(new ResourcePack.Applied(description, required));
                     return sent;
                 });
