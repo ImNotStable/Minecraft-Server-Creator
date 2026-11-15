@@ -31,12 +31,20 @@ public class MscAgentPlugin extends JavaPlugin implements Listener {
 
     @Override
     public void onEnable() {
-        MainThread main = new BukkitMainThread(this, AgentDefaults.TICK_BUDGET, AgentDefaults.OP_TIMEOUT);
-        PaperServer server = new PaperServer(getServer(), new PaperServerFacts(getServer()));
+        // Folia has no main thread and refuses Bukkit's scheduler: server work goes to its global region thread, and
+        // the world operations are not offered there (ADR 0045).
+        boolean folia = PaperServer.isFolia(getServer().getClass().getClassLoader());
+        MainThread main = folia
+                ? new GlobalRegionMainThread(task -> org.bukkit.Bukkit.getGlobalRegionScheduler().execute(this, task),
+                        org.bukkit.Bukkit::isGlobalTickThread, AgentDefaults.OP_TIMEOUT)
+                : new BukkitMainThread(this, AgentDefaults.TICK_BUDGET, AgentDefaults.OP_TIMEOUT);
+        PaperServer server = new PaperServer(getServer(), new PaperServerFacts(getServer()),
+                folia ? PaperServer.FOLIA : PaperServer.PLATFORM);
         serverOps = new ServerOps(server, main);
-        WorldOps<?> worldOps = new WorldOps<>(new PaperWorlds(getServer(), new DataCommands(server::runCommand)), main, new EditHistory<>(AgentDefaults.UNDO_BLOCKS));
-        OpRouter router = AgentRoutes.router(serverOps, worldOps);
-        AgentInfo info = new AgentInfo(PaperServer.PLATFORM, server.platformVersion(), server.minecraftVersion(),
+        OpRouter router = folia ? AgentRoutes.serverOnly(serverOps) : AgentRoutes.router(serverOps, new WorldOps<>(
+                new PaperWorlds(getServer(), new DataCommands(server::runCommand)), main,
+                new EditHistory<>(AgentDefaults.UNDO_BLOCKS)));
+        AgentInfo info = new AgentInfo(server.platform(), server.platformVersion(), server.minecraftVersion(),
                 router.operations());
         getServer().getPluginManager().registerEvents(this, this);
         link = new AgentLink(info, router, log(getLogger()));
