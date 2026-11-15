@@ -108,7 +108,7 @@ public final class ResourcePack implements AutoCloseable {
     }
 
     /**
-     * The workspace's built pack, served:the last one built in this session, else the zip an earlier build left in
+     * The workspace's built pack, served: the last one built in this session, else the zip an earlier build left in
      * {@code .msc/build} (another session's, or this one's before an {@code msc_workspace} switch away and back),
      * served as it is. Null when there is none.
      */
