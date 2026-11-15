@@ -11,6 +11,14 @@ public interface Check {
         return false;
     }
 
+    /**
+     * True when the check starts a server of its own on the bench's game port, as the {@code player} check starts the
+     * jar the workspace built: whatever holds the bench's ports must be stopped before it runs (#577).
+     */
+    default boolean startsServer() {
+        return false;
+    }
+
     /** Runs the check. Implementations report problems as a failed result instead of throwing. */
     CheckResult run(CheckContext context);
 }

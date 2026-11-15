@@ -5,6 +5,7 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonNull;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonPrimitive;
+import io.github.imnotstable.msc.bench.check.Placeholders;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -14,6 +15,8 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 
@@ -27,22 +30,50 @@ import java.util.regex.PatternSyntaxException;
  * a misspelt {@code "contain"} whose check would then pass for any file, is refused when the object is made, at any
  * depth, before any of its values is read. A reader that reads a key its {@link Keys} leave out fails at once
  * ({@link IllegalStateException}), so the key set and the reads cannot drift apart.
+ *
+ * <p>An object {@link #filled} with placeholder values fills {@code {name}} in every string it reads, at any depth
+ * (#578): a regex gets each value quoted, so it matches the value literally. Since every string read goes through
+ * here, no reader can leave a key unfilled.
  */
 public final class UserJson {
 
     private final JsonObject tree;
     private final String at;
     private final List<String> allowed;
+    /** The placeholder values filled into every string read, and the same quoted for regexes; empty when not filled. */
+    private final Map<String, String> values;
+    private final Map<String, String> quoted;
 
     private UserJson(JsonObject tree, String at, Keys keys) {
         this.tree = tree;
         this.at = at;
         this.allowed = keys.of(this);
+        this.values = Map.of();
+        this.quoted = Map.of();
         for (String field : tree.keySet()) {
             if (!allowed.contains(field)) {
                 throw new IllegalArgumentException(key(field) + ": unknown key; the keys are " + allowed);
             }
         }
+    }
+
+    private UserJson(UserJson keysFrom, JsonObject tree, String at, Map<String, String> values) {
+        this.tree = tree;
+        this.at = at;
+        this.allowed = keysFrom.allowed;
+        this.values = values;
+        Map<String, String> quoted = new LinkedHashMap<>();
+        values.forEach((name, value) -> quoted.put(name, Pattern.quote(value)));
+        this.quoted = Collections.unmodifiableMap(quoted);
+    }
+
+    /**
+     * This object read with {@code values} filled in: every string read from it or from an object inside it has each
+     * {@code {name}} of {@code values} replaced, and a regex has it replaced by the value quoted. Names {@code values}
+     * lacks stay as written.
+     */
+    public UserJson filled(Map<String, String> values) {
+        return new UserJson(this, tree, at, Collections.unmodifiableMap(new LinkedHashMap<>(values)));
     }
 
     /**
@@ -183,11 +214,19 @@ public final class UserJson {
 
     /** The string {@code field}, or {@code absent}; any other JSON value is refused. */
     public String exactString(String field, String absent) {
-        if (absent(field)) {
-            return absent;
-        }
-        JsonElement value = tree.get(field);
-        return requireString(value, key(field));
+        String raw = rawString(field);
+        // A default stands for what the file could have written, so it is filled as well.
+        String out = raw == null ? absent : raw;
+        return out == null ? null : fill(out, values);
+    }
+
+    /** The string {@code field} as written, or null when absent. */
+    private String rawString(String field) {
+        return absent(field) ? null : requireString(tree.get(field), key(field));
+    }
+
+    private static String fill(String text, Map<String, String> values) {
+        return values.isEmpty() ? text : Placeholders.fill(text, values);
     }
 
     /** The boolean {@code field}, or {@code absent}; any other JSON value, such as {@code "true"}, is refused. */
@@ -215,8 +254,15 @@ public final class UserJson {
 
     /** The list of strings {@code field}, or {@code absent}; a list entry that is not a string, null too, is refused. */
     public List<String> exactStrings(String field, List<String> absent) {
+        List<String> raw = rawStrings(field);
+        List<String> out = raw == null ? absent : raw;
+        return out == null ? null : new ArrayList<>(out.stream().map(s -> fill(s, values)).toList());
+    }
+
+    /** The list of strings {@code field} as written, or null when absent. */
+    private List<String> rawStrings(String field) {
         if (absent(field)) {
-            return absent;
+            return null;
         }
         List<String> out = new ArrayList<>();
         JsonArray array = exactArray(field);
@@ -232,16 +278,16 @@ public final class UserJson {
 
     /** The regex {@code field} compiled with {@code flags}, or null when absent; a string that is no regex is refused. */
     public Pattern pattern(String field, int flags) {
-        String regex = exactString(field, null);
-        return regex == null ? null : compile(regex, key(field), flags);
+        String regex = rawString(field);
+        return regex == null ? null : compile(fill(regex, quoted), key(field), flags);
     }
 
     /** The list of regexes {@code field} compiled with {@code flags}, empty when absent; entry {@code i} is {@code field[i]}. */
     public List<Pattern> patterns(String field, int flags) {
-        List<String> regexes = exactStrings(field);
+        List<String> regexes = Objects.requireNonNullElse(rawStrings(field), List.of());
         List<Pattern> out = new ArrayList<>();
         for (int i = 0; i < regexes.size(); i++) {
-            out.add(compile(regexes.get(i), key(field) + "[" + i + "]", flags));
+            out.add(compile(fill(regexes.get(i), quoted), key(field) + "[" + i + "]", flags));
         }
         return out;
     }
@@ -285,9 +331,13 @@ public final class UserJson {
         return paths;
     }
 
+    /** A {@code {name}} left after filling: no regex syntax (a repetition takes digits), so it matches as written. */
+    private static final Pattern NAME = Pattern.compile("(?<!\\\\)\\{[A-Za-z_][A-Za-z0-9._-]*}");
+
     private static Pattern compile(String regex, String key, int flags) {
         try {
-            return Pattern.compile(regex, flags);
+            return Pattern.compile(NAME.matcher(regex).replaceAll(m -> Matcher.quoteReplacement(
+                    Pattern.quote(m.group()))), flags);
         } catch (PatternSyntaxException e) {
             throw new IllegalArgumentException(key + ": " + quoted(regex)
                     + " is not a regex: " + firstLine(e.getDescription())
@@ -325,7 +375,8 @@ public final class UserJson {
         List<String> out = new ArrayList<>();
         JsonArray array = exactArray(field);
         for (int i = 0; i < array.size(); i++) {
-            out.add(array.get(i).isJsonNull() ? null : requireString(array.get(i), key(field) + "[" + i + "]"));
+            out.add(array.get(i).isJsonNull() ? null
+                    : fill(requireString(array.get(i), key(field) + "[" + i + "]"), values));
         }
         return out;
     }
@@ -341,7 +392,7 @@ public final class UserJson {
         String at = key(field) + ".";
         Map<String, String> out = new LinkedHashMap<>();
         requireObject(tree.get(field), key(field)).entrySet().forEach(e -> out.put(e.getKey(),
-                e.getValue().isJsonNull() ? null : requireString(e.getValue(), at + e.getKey())));
+                e.getValue().isJsonNull() ? null : fill(requireString(e.getValue(), at + e.getKey()), values)));
         return out;
     }
 
@@ -394,8 +445,9 @@ public final class UserJson {
         return out;
     }
 
-    private static UserJson child(JsonElement value, String at, Keys keys) {
-        return new UserJson(requireObject(value, at), at + ".", keys);
+    private UserJson child(JsonElement value, String at, Keys keys) {
+        UserJson child = new UserJson(requireObject(value, at), at + ".", keys);
+        return values.isEmpty() ? child : child.filled(values);
     }
 
     private boolean absent(String field) {

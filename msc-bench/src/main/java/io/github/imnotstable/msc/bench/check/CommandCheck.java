@@ -13,8 +13,8 @@ import java.util.regex.Pattern;
 
 /**
  * Runs a command in the workspace and passes on the expected exit code (and output pattern, if
- * given). The {@code {gradlew}} placeholder resolves to the workspace's Gradle wrapper for the
- * current OS. {@code addFiles} is a folder of the task copied into the workspace first, such as tests
+ * given). The {@code {gradlew}} placeholder (filled, like every check key, by {@link Checks}) is the workspace's
+ * Gradle wrapper for the current OS. {@code addFiles} is a folder of the task copied into the workspace first, such as tests
  * the agent never saw.
  */
 record CommandCheck(String name, List<String> run, int timeoutSeconds, int expectExit, Pattern outputMatches,
@@ -29,7 +29,7 @@ record CommandCheck(String name, List<String> run, int timeoutSeconds, int expec
 
     @Override
     public CheckResult run(CheckContext context) {
-        List<String> command = Placeholders.fill(run, context.placeholders());
+        List<String> command = run;
         Path log = null;
         try {
             if (addFiles != null) {
