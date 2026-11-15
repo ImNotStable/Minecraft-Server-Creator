@@ -81,3 +81,18 @@ No protocol change.
 - The console path of decision 3 (no agent: wait for "Saved the game", refuse and still send `save-on` when it never
   comes) and the Minestom note have behaviour tests (`WorldBackupToolsTest`, with `FakeServerMain` answering
   `save-all flush`).
+
+## Amendment, 2026-11-15: a server an earlier session left running (#583)
+
+- Decision 4's "start again if it was running" asked only whether this session's server ran, so a server an earlier
+  session left running (`msc_status`: `running, left by an earlier session`) was stopped, often killed, without a
+  word, and the answer said `server not started (it was not running)`.
+- Now the rollback stops the server the way `server_start` does, through one `ServerRun.stopAny`: the leftover's stop
+  is the step `stop the server an earlier session left running`, and its note (`stopped a server left running by an
+  earlier session (pid N, saved over RCON)` or `killed: ...`) is a line of the answer.
+- **Decision: a stopped leftover counts as running, so the server is started again, now under this session.** It was
+  serving the world a moment before, `msc_status` called it running, and `server_start` and `dev_cycle` take a
+  leftover over the same way; leaving it stopped would make a rollback change more than the world. Its start report
+  follows, as for this session's server.
+- `WorldBackupToolsTest` pins it over every state: none, this session's, an earlier session's, an attached one
+  (refused before anything stops), and Minestom's this session's and earlier session's.

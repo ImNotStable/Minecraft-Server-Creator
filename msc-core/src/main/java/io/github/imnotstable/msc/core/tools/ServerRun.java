@@ -117,6 +117,24 @@ final class ServerRun {
         }
     }
 
+    /**
+     * What {@link #stopAny} found: whether a server was running, this session's or one an earlier session left (so a
+     * call that stops it to change the world starts it again), and the leftover's stop note, or null.
+     */
+    record Stopped(boolean wasRunning, String leftover) {
+    }
+
+    /**
+     * Stops whichever server runs in the server folder, as steps of {@code steps}: one an earlier session left running
+     * ({@link #LEFTOVER_SERVER}, with the note server_start and dev_cycle report), then this session's ({@code stop}).
+     * The caller has refused another live session's server ({@link ServerManager#checkNoOtherSession}).
+     */
+    Stopped stopAny(Steps steps, String stop) throws InterruptedException {
+        String leftover = steps.note(LEFTOVER_SERVER, server::stopLeftover);
+        boolean own = steps.run(stop, () -> server.stop(Duration.ofSeconds(30)));
+        return new Stopped(own || leftover != null, leftover);
+    }
+
     /** Declares the steps of {@link #startAndReport}, with what a failure of each leaves. */
     static Steps plan(Steps steps) {
         return steps.then(LEFTOVER_SERVER).then(TAKE_OVER_PACK).then(REFRESH_AGENT).then(START)
