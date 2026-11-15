@@ -1478,6 +1478,48 @@ class LifecycleToolsTest {
     }
 
     @Test
+    void serverCommandWhileTheServerStopsIsRefusedAsTheWorldToolsAre() throws Exception {
+        // #716: the server closed its console on stop and server_command failed with an internal broken pipe.
+        Files.createDirectories(workspace.resolve("run"));
+        Files.writeString(workspace.resolve("run/close-console-stop.flag"), "");
+        String stopping = "error: " + io.github.imnotstable.msc.core.agent.AgentHub.STOPPING;
+        for (String stop : List.of("server_stop", "a stop typed into the server")) {
+            Files.deleteIfExists(workspace.resolve("run/release.flag"));
+            h.ok("server_start", "timeoutSeconds", 30);
+            var stopped = stop.equals("server_stop")
+                    ? java.util.concurrent.CompletableFuture.supplyAsync(() -> h.call("server_stop")) : null;
+            if (stopped == null) {
+                h.core.server().console("stop"); // MSC's stop not asked: the closed console is the only sign
+            }
+            try {
+                awaitLogLine("console closed, lingering");
+                long deadline = System.nanoTime() + java.time.Duration.ofSeconds(20).toNanos();
+                while (h.core.hub().current() != null) {
+                    assertThat(System.nanoTime()).as("the agent leaves").isLessThan(deadline);
+                    Thread.sleep(10);
+                }
+                assertThat(h.core.server().running()).as("the process lingers").isTrue();
+                assertThat(h.error("server_command", "command", "list")).as(stop).isEqualTo(stopping);
+                assertThat(h.error("world_summary", "region", "0,60,0 1,61,1")).as(stop).isEqualTo(stopping);
+                assertThat(h.error("build_undo", "backup", "save")).as(stop).isEqualTo(stopping);
+            } finally {
+                Files.writeString(workspace.resolve("run/release.flag"), "");
+            }
+            if (stopped != null) {
+                assertThat(stopped.get(60, java.util.concurrent.TimeUnit.SECONDS).text()).isEqualTo("server stopped");
+            } else {
+                long deadline = System.nanoTime() + java.time.Duration.ofSeconds(60).toNanos();
+                while (h.core.server().running()) {
+                    assertThat(System.nanoTime()).as("the server exits").isLessThan(deadline);
+                    Thread.sleep(10);
+                }
+            }
+            assertThat(h.error("server_command", "command", "list")).as(stop)
+                    .isEqualTo("error: " + io.github.imnotstable.msc.core.agent.AgentHub.NOT_RUNNING);
+        }
+    }
+
+    @Test
     void anAttachedCoreSaysNotRunningOnceTheStoppedServerIsGone() throws Exception {
         // #711: with MSC_CORE_ADDRESS set an agent is always expected (Core leaves agentExpected true), and the
         // server.stopping its agent sent made every world tool say "stopping" after server_stop said "stopped".

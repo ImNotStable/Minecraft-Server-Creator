@@ -456,11 +456,23 @@ public final class ServerManager implements AutoCloseable {
         childEnvironment = Map.copyOf(env);
     }
 
-    /** Type a line into the server console. */
-    public synchronized void console(String line) throws IOException {
-        if (!running()) {
+    /**
+     * Type a line into the server console. A server that is not running or is being stopped is refused as the world
+     * tools refuse it ({@link #notRunning}), and so is one that no longer reads its console: it closes it on its way
+     * down, as the Minestom template's does on {@code stop}, or has just exited (#716).
+     */
+    public synchronized void console(String line) {
+        if (!running() || stopping) {
             throw new ToolException(notRunning());
         }
+        try {
+            write(line);
+        } catch (IOException e) {
+            throw new ToolException(notRunning());
+        }
+    }
+
+    private void write(String line) throws IOException {
         OutputStream in = process.getOutputStream();
         in.write((line + "\n").getBytes(StandardCharsets.UTF_8));
         in.flush();
@@ -612,7 +624,7 @@ public final class ServerManager implements AutoCloseable {
             detached = false;
             stopping = true;
             try {
-                console("stop");
+                write("stop");
             } catch (IOException e) {
                 p.destroy();
             }

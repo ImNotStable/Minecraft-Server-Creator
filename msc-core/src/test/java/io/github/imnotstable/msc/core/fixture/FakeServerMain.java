@@ -96,10 +96,14 @@ public final class FakeServerMain {
                 if (session != null && Files.exists(Path.of("linger-stop.flag"))) {
                     session.connection().close();
                     System.out.println("[12:00:09 INFO]: agent gone, lingering");
-                    long end = System.nanoTime() + Duration.ofMinutes(1).toNanos();
-                    while (!Files.exists(Path.of("release.flag")) && System.nanoTime() < end) {
-                        Thread.sleep(20);
-                    }
+                    linger();
+                } else if (session != null && Files.exists(Path.of("close-console-stop.flag"))) {
+                    // As the Minestom template does (#716): its agent says so and leaves, its console closes stdin.
+                    session.connection().sendEvent(Events.SERVER_STOPPING, new JsonObject());
+                    session.connection().close();
+                    in.close();
+                    System.out.println("[12:00:09 INFO]: console closed, lingering");
+                    linger();
                 } else if (session != null) {
                     // As a real agent does when its server begins to stop (#711).
                     session.connection().sendEvent(Events.SERVER_STOPPING, new JsonObject());
@@ -119,6 +123,14 @@ public final class FakeServerMain {
             }
         }
         System.exit(0);
+    }
+
+    /** Until release.flag exists, at most a minute. */
+    private static void linger() throws InterruptedException {
+        long end = System.nanoTime() + Duration.ofMinutes(1).toNanos();
+        while (!Files.exists(Path.of("release.flag")) && System.nanoTime() < end) {
+            Thread.sleep(20);
+        }
     }
 
     /** Connects like a real agent's CoreAddress does, or returns null when started without a core. */
