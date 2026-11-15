@@ -171,11 +171,13 @@ public final class ServerManager implements AutoCloseable {
 
     /**
      * Why this session has no server to send to, the same answer as msc_status's server line (#705): this session's
-     * server is stopping, another live session runs one, an earlier session left one running, or none runs.
+     * server is stopping, another live session runs one, an earlier session left one running, or none runs. A running
+     * server is asked this only once no agent of it is awaited: it was asked to stop, by {@link #stop} or by a
+     * {@code stop} its agent announced ({@link AgentHub#refusal}), and "stopping" ends when its process does (#711).
      */
     public synchronized String notRunning() {
         if (running()) {
-            return stopping ? AgentHub.STOPPING : AgentHub.NOT_RUNNING;
+            return AgentHub.STOPPING;
         }
         Optional<OtherSession> other = otherSession();
         if (other.isPresent()) {

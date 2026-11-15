@@ -100,6 +100,9 @@ public final class FakeServerMain {
                     while (!Files.exists(Path.of("release.flag")) && System.nanoTime() < end) {
                         Thread.sleep(20);
                     }
+                } else if (session != null) {
+                    // As a real agent does when its server begins to stop (#711).
+                    session.connection().sendEvent(Events.SERVER_STOPPING, new JsonObject());
                 }
                 break;
             }

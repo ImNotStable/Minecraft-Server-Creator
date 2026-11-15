@@ -47,7 +47,11 @@ public final class AgentHub implements AutoCloseable {
      * (#710).
      */
     private long generation;
-    /** The last agent said {@code server.stopping}: its run is ending, so none comes back until a new one connects. */
+    /**
+     * The last agent said {@code server.stopping}: its run is ending, so none comes back until a new one connects or a
+     * server is launched. While it is set and none is connected, {@link #refusal} answers {@link #notRunning}, which
+     * says "stopping" only while this session's server process still runs (#711).
+     */
     private boolean ending;
     /** Set by {@link #close()} under {@link #lock}: no agent can arrive after it, so nobody waits for one. */
     private boolean closed;
@@ -281,7 +285,8 @@ public final class AgentHub implements AutoCloseable {
     /**
      * Why no agent can come now, or null while one may: the one answer for {@link #require} and for a tool that does
      * not wait (player_test). Asked without the hub lock: the answer may need another lock (ServerManager's monitor),
-     * whose holder may be waiting for this one.
+     * whose holder may be waiting for this one. After a {@code server.stopping} the answer is {@link #notRunning}'s,
+     * as msc_status says it: "stopping" while this session's server still exits, else why none runs (#711).
      */
     public String refusal() {
         boolean stopping;
@@ -301,7 +306,7 @@ public final class AgentHub implements AutoCloseable {
         if (!agentExpected.getAsBoolean()) {
             return notRunning.get();
         }
-        return stopping ? STOPPING : null;
+        return stopping ? notRunning.get() : null;
     }
 
     private static ToolException timedOut(String op) {

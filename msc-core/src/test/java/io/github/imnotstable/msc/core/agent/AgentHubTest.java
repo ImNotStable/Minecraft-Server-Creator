@@ -37,7 +37,11 @@ class AgentHubTest {
                 assertThat(Duration.ofNanos(System.nanoTime() - start)).isLessThan(Duration.ofSeconds(20));
                 Thread.sleep(10);
             }
+            // The answer is the session's own (#711): ServerManager says "stopping" only while its process runs.
+            assertThatThrownBy(hub::require).hasMessage(AgentHub.NOT_RUNNING);
+            hub.notRunning(() -> AgentHub.STOPPING);
             assertThatThrownBy(hub::require).hasMessage(AgentHub.STOPPING);
+            hub.notRunning(() -> AgentHub.NOT_RUNNING);
             assertThat(Duration.ofNanos(System.nanoTime() - start)).isLessThan(Duration.ofSeconds(20));
 
             // A new agent (a new server run) is waited for and used again.
