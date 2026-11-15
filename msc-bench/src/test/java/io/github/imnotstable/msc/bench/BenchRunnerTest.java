@@ -512,7 +512,7 @@ class BenchRunnerTest {
                 throw new AssertionError(w);
             })).isEqualTo(records);
             List<String> lines = log.toString(StandardCharsets.UTF_8).lines().toList();
-            if (exit == Main.NOT_RECORDED) {
+            if (exit == Main.NOT_WRITTEN) {
                 Path file = fails.equals("toolset-1") ? runDir.resolve("attempts/write/toolset-1")
                         : fails.equals(ResultsFile.NAME) ? runDir.resolve(fails)
                         : runDir.resolve("attempts/write/toolset-1").resolve(fails);
@@ -577,7 +577,7 @@ class BenchRunnerTest {
             })).isEqualTo(records);
         }
         // The stop comes first, then the report or the one warning that says how to rebuild it.
-        if (exit == Main.NOT_RECORDED) {
+        if (exit == Main.NOT_WRITTEN) {
             assertThat(lines.getFirst()).startsWith("Stopped early: " + results + " could not be written "
                     + "(No space left on device); results.jsonl holds the " + recorded + " attempts recorded.");
         }
@@ -591,7 +591,7 @@ class BenchRunnerTest {
             assertThat(last).startsWith("Report: ");
             assertThat(Files.readString(runDir.resolve(Main.REPORT))).contains("# ");
         }
-        assertThat(lines).hasSize(exit == Main.NOT_RECORDED ? 2 : 1);
+        assertThat(lines).hasSize(exit == Main.NOT_WRITTEN ? 2 : 1);
         try (var files = Files.list(runDir)) {
             assertThat(files.map(f -> f.getFileName().toString())).noneMatch(f -> f.endsWith(".part"));
         }

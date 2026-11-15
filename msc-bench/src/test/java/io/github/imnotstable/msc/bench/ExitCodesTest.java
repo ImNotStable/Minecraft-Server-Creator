@@ -3,6 +3,7 @@ package io.github.imnotstable.msc.bench;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
+import io.github.imnotstable.msc.bench.run.FullDisk;
 import io.github.imnotstable.msc.process.ClosedPort;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -12,6 +13,8 @@ import java.net.ServerSocket;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
+import java.util.Set;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -22,7 +25,7 @@ import org.junit.jupiter.api.io.TempDir;
  * #639: every exit code the README lists for {@code check} and {@code run}, through the command line. A step of the
  * bench's own work on accepted input (freeing the ports, the reset) fails the same way in both: a failed check or
  * attempt (3), never a bad argument (2). #638: the path {@code run} prints after {@code Report:} is one
- * {@code report} takes.
+ * {@code report} takes. #644: an output file a command cannot write (5) is named, never a bad argument (2).
  */
 class ExitCodesTest {
 
@@ -202,8 +205,86 @@ class ExitCodesTest {
 
         Outcome run = exec("run", "--tasks", "file", "--tasks-dir", "@tasks", "--config", "@bench.json", "--out", "@runs");
 
-        assertThat(run.exit()).as(run.out() + run.err()).isEqualTo(Main.NOT_RECORDED);
+        assertThat(run.exit()).as(run.out() + run.err()).isEqualTo(Main.NOT_WRITTEN);
         assertThat(run.out()).contains("Stopped early: ").contains("results.jsonl could not be written");
+    }
+
+    @Test
+    void runThatCannotCreateItsRunFolderExits5NamingIt() throws IOException {
+        // #644: a file stands where the runs folder goes. The arguments were fine: no exit 2.
+        Files.writeString(dir.resolve("runs"), "not a folder");
+
+        Outcome run = exec("run", "--tasks", "file", "--tasks-dir", "@tasks", "--config", "@bench.json", "--out", "@runs");
+
+        assertThat(run.exit()).as(run.out() + run.err()).isEqualTo(Main.NOT_WRITTEN);
+        assertThat(run.err().lines().toList()).singleElement().asString()
+                .isEqualTo("msc-bench: " + dir.resolve("runs").toRealPath() + " could not be written (a file is in the way)");
+        assertThat(dir.resolve("runs")).content().isEqualTo("not a folder");
+    }
+
+    @Test
+    void runThatCannotWriteItsReportWarnsNamingItAndKeepsItsExitCode() throws IOException {
+        // #476 with a write that really fails: the agent leaves a folder, not empty, where report.md goes.
+        config("{\"FAKE_LEAVE\":\"../../../../report.md/x=y\"}");
+
+        Outcome run = exec("run", "--tasks", "file", "--tasks-dir", "@tasks", "--config", "@bench.json", "--out", "@runs");
+
+        assertThat(run.exit()).as(run.out() + run.err()).isEqualTo(Main.OK);
+        List<Path> made;
+        try (Stream<Path> runs = Files.list(dir.resolve("runs"))) {
+            made = runs.toList();
+        }
+        assertThat(made).hasSize(1);
+        Path runDir = made.getFirst();
+        assertThat(run.out().strip().lines().reduce((a, b) -> b).orElse(""))
+                .startsWith("warning: " + runDir.resolve(Main.REPORT).toAbsolutePath() + " could not be written (")
+                .endsWith("`report " + runDir.toAbsolutePath() + "` writes it from results.jsonl");
+        assertThat(run.err()).isEmpty();
+    }
+
+    @Test
+    void reportThatCannotWriteItsReportExits5NamingIt() throws IOException {
+        // #644: a folder that is not empty stands where report.md goes, so moving the new report there fails.
+        Path runDir = resultsFolder();
+        Files.writeString(Files.createDirectories(runDir.resolve(Main.REPORT)).resolve("keep"), "kept");
+
+        Outcome report = exec("report", runDir.toString());
+
+        assertThat(report.exit()).as(report.err()).isEqualTo(Main.NOT_WRITTEN);
+        assertThat(report.err().lines().toList()).singleElement().asString()
+                .startsWith("msc-bench: " + runDir.resolve(Main.REPORT).toAbsolutePath() + " could not be written (");
+        assertThat(report.out()).isEmpty();
+        assertThat(runDir.resolve(Main.REPORT).resolve("keep")).content().isEqualTo("kept");
+        try (Stream<Path> files = Files.list(runDir)) {
+            assertThat(files.map(f -> f.getFileName().toString())).containsExactlyInAnyOrder("results.jsonl", "report.md");
+        }
+    }
+
+    @Test
+    void reportOnAFullDiskExits5NamingTheFileAndKeepsTheOldReport() throws IOException {
+        // #644's repro: the disk is full when report writes report.md.
+        Path runDir = resultsFolder();
+        Files.writeString(runDir.resolve(Main.REPORT), "the earlier report");
+        ByteArrayOutputStream err = new ByteArrayOutputStream();
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+
+        int exit = Main.guarded(new PrintStream(err, true, StandardCharsets.UTF_8), () -> Main.report(runDir,
+                new PrintStream(out, true, StandardCharsets.UTF_8), new FullDisk(Set.of(Main.REPORT), 0, false)));
+
+        assertThat(exit).isEqualTo(Main.NOT_WRITTEN);
+        assertThat(err.toString(StandardCharsets.UTF_8)).isEqualTo("msc-bench: "
+                + runDir.resolve(Main.REPORT).toAbsolutePath() + " could not be written (No space left on device)"
+                + System.lineSeparator());
+        assertThat(out.toString(StandardCharsets.UTF_8)).isEmpty();
+        assertThat(runDir.resolve(Main.REPORT)).content().isEqualTo("the earlier report");
+    }
+
+    /** A run folder holding a results.jsonl with one run. */
+    private Path resultsFolder() throws IOException {
+        Path runDir = Files.createDirectories(dir.resolve("runs/20261115-000000"));
+        Files.writeString(runDir.resolve("results.jsonl"),
+                "{\"task\":\"t\",\"category\":\"code\",\"mode\":\"baseline\",\"repeat\":1,\"passed\":true}\n");
+        return runDir;
     }
 
     private int gamePort() throws IOException {
