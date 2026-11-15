@@ -1,6 +1,7 @@
 package io.github.imnotstable.msc.bench.check;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
@@ -251,6 +252,15 @@ class PlaceholderFillTest {
                 new RegexRow("^[\\p{IsLatin}]+$", "abc"),
                 new RegexRow("^\\x{FF}$", "ÿ"),
                 new RegexRow("^\\N{LATIN SMALL LETTER A}$", "a"),
+                // #595: \b{g} is a grapheme boundary, \c takes the next character (\c{ is ";").
+                new RegexRow("^a\\b{g}$", "a"),
+                new RegexRow("^\\b{g}{plus}\\b{g}$", "a+b"),
+                new RegexRow("^\\c{x}$", ";x}"),
+                new RegexRow("^\\c[{plus}]$", "\u001Ba+b]"),
+                new RegexRow("^[\\c{]{plus}$", ";a+b"),
+                new RegexRow("^\\x{41}{plus}$", "Aa+b"),
+                new RegexRow("^\\\\{plus}$", "\\a+b"),
+                new RegexRow("^\\d{2}{plus}$", "12a+b"),
                 new RegexRow("^a{2}b{1,2}$", "aab"),
                 new RegexRow("^\\{plus}$", "{plus}"),
                 new RegexRow("^\\Q{plus}*\\E$", "a+b*"),
@@ -277,6 +287,23 @@ class PlaceholderFillTest {
         // Loaded as written (the task's load), then run filled.
         CheckResult result = run(Checks.parse(UserJson.of(check, "check.", Checks.KEYS), taskDir));
         assertThat(result.passed()).as(result.toString()).isTrue();
+    }
+
+    /**
+     * #595: a brace right after a letter escape belongs to the escape (its argument, or a repetition), whichever letter
+     * it is, so no placeholder is read there; only {@code \Q} opens a section where names are filled.
+     */
+    @Test
+    void aBraceAfterALetterEscapeIsNeverAPlaceholder() {
+        for (char letter = 'A'; letter <= 'z'; letter++) {
+            if (Character.isLetter(letter) && letter != 'Q') {
+                String regex = "\\" + letter + "{plus}";
+                assertThat(Placeholders.fillRegex(regex, VALUES)).as(regex).isEqualTo(regex);
+            }
+        }
+        // Not a placeholder and no repetition: refused when the task loads, not read as something else.
+        assertThatThrownBy(() -> Checks.parse(json("{\"type\":\"file\",\"path\":\"plus.txt\","
+                + "\"contains\":\"\\\\s{plus}\"}"), taskDir)).hasMessageContaining("is not a regex");
     }
 
     @Test

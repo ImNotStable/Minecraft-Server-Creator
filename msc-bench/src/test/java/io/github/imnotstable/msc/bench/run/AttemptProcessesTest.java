@@ -11,6 +11,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assumptions;
@@ -92,6 +93,87 @@ class AttemptProcessesTest {
         assertThat(run.kill(attempts)).as("the whole run: toolset-1-try2, never the daemon").isEqualTo(1);
         assertThat(retry.onExit().get(10, TimeUnit.SECONDS).isAlive()).isFalse();
         assertThat(daemon.isAlive()).isTrue();
+    }
+
+    /**
+     * #595: where the system shows no environment (Windows, macOS; here a stand-in reader that shows none), a process
+     * is the run's only when its whole arguments carry this run's id and an attempt inside the folder.
+     */
+    @Test
+    void withoutEnvironmentsOnlyTheRunsWholeArgumentMarksProveAProcess() throws Exception {
+        AttemptProcesses blind = new AttemptProcesses(run.run(), pid -> Optional.empty(), ProcessArguments::snapshot);
+        Path elsewhere = Files.createDirectories(dir.resolve("elsewhere"));
+        String runMark = AttemptProcesses.RUN_ARGUMENT + run.run();
+        String attemptMark = AttemptProcesses.ATTEMPT_ARGUMENT + attempt;
+        Path retryDir = Files.createDirectories(attempts.resolve("t/toolset-1-try2"));
+        // Must survive.
+        ProcessHandle otherRun = marked(elsewhere, AttemptProcesses.newRun().argumentMarks(attempt));
+        ProcessHandle namesTheFolder = marked(elsewhere, List.of(attemptMark));
+        ProcessHandle tail = start(elsewhere, Map.of(), "tail", "-f", attempt.resolve("agent-stdout.json").toString())
+                .toHandle();
+        ProcessHandle oneArgument = marked(elsewhere, List.of(runMark + " " + attemptMark));
+        ProcessHandle longerArgument = marked(elsewhere, List.of("x" + runMark, attemptMark));
+        ProcessHandle inScript = start(elsewhere, Map.of(), "sh", "-c", "sleep 300; echo " + runMark + " "
+                + attemptMark).toHandle();
+        ProcessHandle noAttempt = marked(elsewhere, List.of(runMark));
+        ProcessHandle alsoOutside = marked(elsewhere, List.of(runMark, attemptMark,
+                AttemptProcesses.ATTEMPT_ARGUMENT + elsewhere));
+        ProcessHandle retry = marked(elsewhere, run.argumentMarks(retryDir));
+        // Must die: the core this run started for toolset-1, marked as the MCP config marks it.
+        ProcessHandle core = marked(elsewhere, run.argumentMarks(attempt));
+
+        assertThat(blind.in(attempt)).extracting(ProcessHandle::pid).containsExactly(core.pid());
+        assertThat(blind.kill(attempt)).isEqualTo(1);
+        assertThat(core.onExit().get(10, TimeUnit.SECONDS).isAlive()).isFalse();
+        for (ProcessHandle alive : List.of(otherRun, namesTheFolder, tail, oneArgument, longerArgument, inScript,
+                noAttempt, alsoOutside, retry)) {
+            assertThat(alive.isAlive()).as(alive.info().commandLine().orElse("pid " + alive.pid())).isTrue();
+        }
+        assertThat(blind.kill(attempts)).as("the whole run: toolset-1-try2").isEqualTo(1);
+        assertThat(retry.onExit().get(10, TimeUnit.SECONDS).isAlive()).isFalse();
+
+        // Where the environment is shown it decides alone: command-line marks without the environment's prove nothing.
+        ProcessHandle argumentsOnly = marked(elsewhere, run.argumentMarks(attempt));
+        assertThat(run.in(attempt)).extracting(ProcessHandle::pid).doesNotContain(argumentsOnly.pid());
+    }
+
+    /**
+     * #595 on Windows' terms: the command lines come from a {@code Win32_Process} query (here its JSON, for real
+     * stand-in processes), quoted as Windows quotes them, and the same whole-argument rule picks the run's core.
+     */
+    @Test
+    void windowsCommandLinesProveTheRunsCoreByTheSameRule() throws Exception {
+        Path spaced = Files.createDirectories(attempts.resolve("t/tool set 1"));
+        ProcessHandle core = start(dir, Map.of(), "sleep", "300").toHandle();
+        ProcessHandle otherRun = start(dir, Map.of(), "sleep", "300").toHandle();
+        ProcessHandle shell = start(dir, Map.of(), "sleep", "300").toHandle();
+        String java = "\\\"C:\\\\Program Files\\\\Java\\\\bin\\\\java.exe\\\"";
+        String json = "[{\"ProcessId\":" + core.pid() + ",\"CommandLine\":\"" + java + " -Dmsc.bench.run=" + run.run()
+                + " \\\"-Dmsc.bench.attempt=" + jsonText(spaced.toString()) + "\\\" -cp lib/* Main\"},"
+                + "{\"ProcessId\":" + otherRun.pid() + ",\"CommandLine\":\"" + java + " -Dmsc.bench.run=other"
+                + " \\\"-Dmsc.bench.attempt=" + jsonText(spaced.toString()) + "\\\" Main\"},"
+                + "{\"ProcessId\":" + shell.pid() + ",\"CommandLine\":\"cmd /c \\\"echo -Dmsc.bench.run=" + run.run()
+                + " -Dmsc.bench.attempt=" + jsonText(spaced.toString()) + "\\\"\"},"
+                + "{\"ProcessId\":4,\"CommandLine\":null}]";
+        Map<Long, List<String>> commandLines = ProcessArguments.parseWindows(json);
+        AttemptProcesses windows = new AttemptProcesses(run.run(), pid -> Optional.empty(),
+                () -> p -> Optional.ofNullable(commandLines.get(p.pid())));
+
+        assertThat(commandLines.get(core.pid())).containsExactly("-Dmsc.bench.run=" + run.run(),
+                "-Dmsc.bench.attempt=" + spaced, "-cp", "lib/*", "Main");
+        assertThat(windows.in(attempts)).extracting(ProcessHandle::pid).containsExactly(core.pid());
+        assertThat(windows.in(attempt)).as("tool set 1 is not inside toolset-1").isEmpty();
+    }
+
+    private static String jsonText(String text) {
+        return text.replace("\\", "\\\\").replace("\"", "\\\"");
+    }
+
+    /** A stand-in process that runs until killed with {@code marks} as whole arguments after its script. */
+    private ProcessHandle marked(Path cwd, List<String> marks) throws IOException {
+        List<String> command = new ArrayList<>(List.of("sh", "-c", "sleep 300; true", "x"));
+        command.addAll(marks);
+        return start(cwd, Map.of(), command.toArray(String[]::new)).toHandle();
     }
 
     @Test

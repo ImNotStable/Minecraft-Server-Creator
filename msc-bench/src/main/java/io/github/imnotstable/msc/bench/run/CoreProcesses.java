@@ -3,6 +3,9 @@ package io.github.imnotstable.msc.bench.run;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.Socket;
+import java.util.List;
+import java.util.Optional;
+import java.util.function.Function;
 import java.util.function.IntSupplier;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
@@ -10,8 +13,9 @@ import java.util.stream.Collectors;
 /**
  * The core port of toolset attempts. Claude Code starts msc-core as its MCP server, and a core it leaves running after
  * it exits (no longer its child, so no tree kill reaches it) keeps the core port, which breaks every later toolset
- * attempt. Such a core carries the run's marks ({@link AttemptProcesses}; the MCP config template sets them), so the
- * run's leftovers step stops it, and never a core the run did not start (ADR 0044).
+ * attempt. Such a core carries the run's marks ({@link AttemptProcesses}; the runner adds them to the MCP config, in
+ * its {@code env} and, for a Java server, on its command line), so the run's leftovers step stops it, and never a core
+ * the run did not start (ADR 0044).
  */
 public final class CoreProcesses {
 
@@ -44,14 +48,15 @@ public final class CoreProcesses {
         if (!listening(port)) {
             return;
         }
+        Function<ProcessHandle, Optional<List<String>>> arguments = ProcessArguments.snapshot();
         String others = ProcessHandle.allProcesses()
-                .filter(p -> AttemptProcesses.runs(p, CORE_MAIN) && !ours.test(p))
+                .filter(p -> arguments.apply(p).map(a -> a.contains(CORE_MAIN)).orElse(false) && !ours.test(p))
                 .map(p -> Long.toString(p.pid()))
                 .collect(Collectors.joining(", "));
         throw new IOException("core port " + port + " is in use by a program this bench run did not start"
                 + (others.isEmpty() ? "" : " (msc-core running as pid " + others + ")")
-                + (AttemptProcesses.canProve() ? "" : "; this system does not show which processes the bench "
-                        + "started, so it kills none")
+                + (AttemptProcesses.canProve() ? "" : "; this system shows no process's environment, so the "
+                        + "bench stops only the msc-core processes this run marked on their command line")
                 + "; stop it, or set corePort in bench.json to a free port");
     }
 

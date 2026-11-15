@@ -198,8 +198,8 @@ public final class ServerManager implements AutoCloseable {
                 throw new IOException("port " + port + " is still taken by a process the bench cannot prove its own "
                         + "(no stop over RCON ended it, and this run started it for no attempt: a server left from "
                         + "an earlier run, or one started by hand?"
-                        + (AttemptProcesses.canProve() ? "" : " This system does not show which processes the bench "
-                                + "started, so it kills none.")
+                        + (AttemptProcesses.canProve() ? "" : " This system shows no process's environment, so the "
+                                + "bench proves only msc-core its own, by its command line, and kills no server.")
                         + "); stop it and run again");
             }
         }

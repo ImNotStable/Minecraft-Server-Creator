@@ -85,3 +85,29 @@ anything the bench can see, and a start time alone also matches a user's shell o
 Not verified: that Claude Code passes its own environment to stdio MCP servers (the config `env` covers it either
 way), and that a reused Gradle daemon gives a forked server the current build's environment rather than its own start
 environment (if not, that server is still the run's, and the Ctrl-C hook or the next ports step kills it).
+
+## Amendment, 2026-11-15: a command-line proof where no environment is shown (#595)
+
+The amendment above left Windows and macOS with no proof at all, so an msc-core that Claude Code leaves running there
+failed every later toolset attempt of the run, a regression from decision 3's command-line marker. The owner's full
+reruns are made on Windows.
+
+The run now also marks msc-core's command line, with the same strictness as the environment:
+
+- `BenchRunner.withMarks` puts `-Dmsc.bench.run=<run id>` and `-Dmsc.bench.attempt=<attempt folder>` first in the
+  `args` of every server of the filled MCP config whose command is the Java launcher (`java`, `javaw`, with or without
+  a folder and `.exe`), next to the `env` marks. Other commands are left as they are, since only Java reads `-D`.
+- `AttemptProcesses` reads the environment first. Only when the system shows none of a process does it look at the
+  process's whole arguments: the process is the run's when one argument is exactly this run's `-Dmsc.bench.run=` and
+  it has at least one `-Dmsc.bench.attempt=` argument, each naming an attempt inside the folder being cleared. Text
+  that merely contains a marker (a shell script naming it, a longer argument, the old `line.contains` test) never
+  counts, and another run's id never matches. Where the environment is shown it decides alone.
+- The arguments come from `ProcessHandle.Info.arguments()` (Linux, macOS). Windows gives Java no argument list, so
+  there one `Get-CimInstance Win32_Process` query through `powershell.exe` per pass gives each process's command line,
+  split by the C runtime's rules (the Java launcher's own). A failed query proves nothing, and nothing is killed.
+- Only msc-core is marked this way: the other processes of an attempt (the agent, a server it detached) are still
+  proven only by their environment, so on Windows and macOS a server left on the bench's ports still fails the next
+  attempt naming the port.
+
+Tested on Linux with stand-in processes and a reader that shows no environment, and with a `Win32_Process` answer for
+real stand-ins. Not verified: the query and the kill on a real Windows machine, and macOS.
