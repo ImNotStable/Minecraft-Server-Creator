@@ -18,7 +18,7 @@ It works with **Paper**, **Purpur**, **Fabric**, **Quilt**, **NeoForge**, **Forg
 
 1. [Installation](Installation): build MSC and add it to Claude Code.
 2. [Quick start](Quick-start): make your first Paper server.
-3. [Platforms](Platforms): Paper, Purpur, Fabric, Quilt, NeoForge, Forge or Minestom.
+3. [Platforms](Platforms): Paper, Purpur, Folia, Fabric, Quilt, NeoForge, Forge, Minestom or the Velocity proxy.
 
 ## More pages
 
@@ -30,4 +30,4 @@ It works with **Paper**, **Purpur**, **Fabric**, **Quilt**, **NeoForge**, **Forg
 
 ## One thing only you can do
 
-Every server but Minestom runs Mojang's server software, so Paper, Purpur, Fabric, Quilt, NeoForge and Forge need you to accept the [Minecraft EULA](https://aka.ms/MinecraftEULA). MSC never accepts it for you, and the AI should not either. Read it, and if you agree, tell the AI so (see [Quick start](Quick-start), steps 2 and 3).
+Every server but Minestom (and the Velocity proxy) runs Mojang's server software, so Paper, Purpur, Folia, Fabric, Quilt, NeoForge and Forge need you to accept the [Minecraft EULA](https://aka.ms/MinecraftEULA). MSC never accepts it for you, and the AI should not either. Read it, and if you agree, tell the AI so (see [Quick start](Quick-start), steps 2 and 3).
