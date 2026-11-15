@@ -103,4 +103,26 @@ class StrictJsonTest {
         assertThat(catchThrowable(() -> StrictJson.parse(json.replace("\\n", "\n"), "f ")))
                 .isInstanceOf(IllegalArgumentException.class).hasMessage(refusal);
     }
+
+    /**
+     * #671: a syntax error inside a secret shows only its kind, its place and the key path, never Gson's own text,
+     * which quotes the file, and never a name's text after an "=", whatever it holds. Nor is Gson's exception kept as
+     * the cause, since its message holds the same text.
+     */
+    @ParameterizedTest(name = "{0}")
+    @CsvSource(delimiter = '|', textBlock = """
+            bad escape in a password | {"server":{"rconPassword":"hunter2\\uZZZZtopsecret"}}               | Malformed Unicode escape at column 37 (in server.rconPassword) | ZZZZ
+            bad escape in an env value | {"modes":{"m":{"env":{"ANTHROPIC_API_KEY":"sk-ant-\\uapi03-abcdef"}}}} | Malformed Unicode escape at column 53 (in modes.m.env.ANTHROPIC_API_KEY) | api0
+            dots after the =         | {"modes":{"m":{"env":{"GH_TOKEN=ghp_x.eyJhbGciOi.SIGNATURE": 1,}}}}  | Expected name at column 65 (in modes.m.env."GH_TOKEN="<26 hidden characters>) | eyJhbGciOi
+            brackets after the =     | {"env":{"K=a[0].b\\\\c\\u00e9":1 2}}                                 | Unterminated object at column 32 (in env."K="<9 hidden characters>) | a[0]
+            bad escape in a name     | {"env":{"A":"1","K=se\\qcret":2}}                                   | Invalid escape sequence at column 24 (in env.A) | cret
+            unterminated password    | {"server":{"rconPassword":"hunter2topsecret                         | Unterminated string at column 44 (in server.rconPassword) | hunter2
+            a raw tab in a password  | {"server":{"rconPassword":"hunter2\ttopsecret"}}                     | Unescaped control characters (\\u0000-\\u001F) are not allowed in strict mode at column 28 (in server.rconPassword) | hunter2
+            """)
+    void aSyntaxErrorInASecretShowsOnlyItsKindAndPlace(String name, String json, String refusal, String secret) {
+        Throwable thrown = catchThrowable(() -> StrictJson.parse(json.strip().replace("\\t", "\t"), "f "));
+        assertThat(thrown).isInstanceOf(IllegalArgumentException.class).hasMessage("f is not valid JSON: " + refusal)
+                .hasNoCause();
+        assertThat(thrown.getMessage()).doesNotContain(secret);
+    }
 }
