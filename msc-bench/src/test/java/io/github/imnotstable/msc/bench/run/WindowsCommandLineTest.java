@@ -12,14 +12,19 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.function.Function;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /**
  * #624: every argument the bench starts a Windows program with reaches it whole. Runs on any OS: the encoded list is
@@ -35,7 +40,9 @@ class WindowsCommandLineTest {
                 "a b\\", "a b\\\\", "\\\"", "a\\\"b", "a\\\\\"b", "C:\\Program Files\\x\\", "\\\\server\\share",
                 "tab\there", " leading", "trailing ", "-Dx=\"a b\"", "100%", "%PATH%", "%%", "%a%b%", "%PATH",
                 "^", "a^b", "^\"", "x & calc", "a|b", "<in >out", "(paren)", ")", "!PATH!", "a!b", "\u00e9 \u2713",
-                "\u00a0nbsp", "--flag=%TEMP%\\\"x\"^&y");
+                "\u00a0nbsp", "--flag=%TEMP%\\\"x\"^&y", "%PATH:a=b%", "-Pdir=%TEMP:\\=/%", "%TEMP:~0,2%",
+                "%PATH:~-3%", "%PATH:*\\=x%", "%A:~1%", "%A", "a%A%b", "%%A%%", "%A%A%", "%TEMP:~0,2%PATH%",
+                "%:%", "%A:%", "%^A%", "%^^^A%", "100%:x=y%", "%~1", "%*");
     }
 
     @ParameterizedTest
@@ -138,6 +145,62 @@ class WindowsCommandLineTest {
         assertThat(WindowsCommandLine.prepare(new ProcessBuilder(command)).command()).isEqualTo(command);
     }
 
+    /**
+     * #630: the encoder before the fix, which escaped a {@code %} but not the character after it, let cmd.exe expand
+     * {@code %NAME:old=new%} and {@code %NAME:~start,length%}, since the name ends at the {@code :}. The model catches
+     * it, with only the issue's ordinary variables defined; the fixed encoder passes the same arguments whole. Only the
+     * search and replace form shows it here: the old encoder put {@code ^^^} before the closing {@code %}, so a
+     * substring's bound ended in carets, and how cmd.exe reads such a number is not modelled.
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {"-Pdir=%TEMP:\\=/%", "%PATH:a=b%", "%PATH:*\\=x%", "%Path:WINDOWS=x%"})
+    void theOldEncoderLetAColonFormExpand(String argument) {
+        Function<String, String> env = Map.of("PATH", "C:\\Windows", "TEMP", "C:\\Temp")::get;
+        String script = "C:/ws/gradlew.bat";
+        String oldText = "\"" + script + "\" "
+                + oldEscapeForCmd(oldEscapeForCmd(WindowsCommandLine.quoteAlways(argument)));
+        assertThat(throughScriptText(script, oldText, env)).hasSize(1).first().isNotEqualTo(argument);
+        assertThat(throughScript(List.of(script, argument), env)).containsExactly(argument);
+    }
+
+    /** The issue's trace: TEMP's backslashes became slashes, PATH came through as written. */
+    @Test
+    void theIssuesCommandReachesGradleAsWritten() {
+        List<String> command = List.of("C:/ws/gradlew.bat", "-Pdir=%TEMP:\\=/%", "%PATH%");
+        Function<String, String> env = Map.of("PATH", "C:\\Windows", "TEMP", "C:\\Users\\me\\Temp")::get;
+        assertThat(throughScript(command, env)).containsExactly("-Pdir=%TEMP:\\=/%", "%PATH%");
+        String oldText = "\"C:/ws/gradlew.bat\" " + oldEscapeForCmd(oldEscapeForCmd("\"-Pdir=%TEMP:\\=/%\""));
+        assertThat(throughScriptText("C:/ws/gradlew.bat", oldText, env)).containsExactly("-Pdir=C:/Users/me/Temp");
+    }
+
+    @Test
+    void everyPercentIsFollowedByACaretTwiceOver() {
+        assertThat(WindowsCommandLine.escapeForCmd(WindowsCommandLine.escapeForCmd("%PATH:a=b%")))
+                .isEqualTo("^^^%^^PATH:a=b^^^%");
+        assertThat(WindowsCommandLine.escapeForCmd(WindowsCommandLine.escapeForCmd("\"%%\"")))
+                .isEqualTo("^^^\"^^^%^^^%^^^\"");
+    }
+
+    /** cmd.exe could look up a name starting with ^ after a %, so a script's cmd.exe gets no such variable. */
+    @Test
+    void aScriptsEnvironmentLosesVariablesNamedWithACaret() {
+        Map<String, String> env = new HashMap<>(Map.of("PATH", "p", "^^^A", "x", "^", "y", "A^", "z"));
+        WindowsCommandLine.dropCaretVariables(env);
+        assertThat(env).containsOnlyKeys("PATH", "A^");
+    }
+
+    /** The encoder before #630: a caret before each metacharacter only. */
+    private static String oldEscapeForCmd(String text) {
+        StringBuilder out = new StringBuilder();
+        for (char c : text.toCharArray()) {
+            if ("\"%!^&|<>()".indexOf(c) >= 0) {
+                out.append('^');
+            }
+            out.append(c);
+        }
+        return out.toString();
+    }
+
     /** What an .exe started with {@code command} gets as its arguments (without the program). */
     private static List<String> throughExe(List<String> command) {
         List<String> parsed = ProcessArguments.splitWindows(jdkCommandLine(WindowsCommandLine.forJdk(command, "true",
@@ -145,13 +208,24 @@ class WindowsCommandLineTest {
         return parsed.subList(1, parsed.size());
     }
 
-    /**
-     * What the real program behind a forwarding launcher started with {@code command} gets: cmd.exe reads the
-     * {@code /s /c} line (variables, then carets and quotes), runs the script with the rest as {@code %*}, the
-     * script's line {@code "node" "cli.js" %*} is read again (its {@code %*} is not expanded twice), and node splits
-     * it by the C runtime's rules.
-     */
+    /** {@link #throughScript(List, Function)} in the worst environment, {@link #EVERY_NAME_BUT_CARET}. */
     private static List<String> throughScript(List<String> command) {
+        return throughScript(command, EVERY_NAME_BUT_CARET);
+    }
+
+    /**
+     * The worst environment a script's cmd.exe can have: every variable is defined, except a name starting with
+     * {@code ^}, which {@link WindowsCommandLine#prepare} removes from a script's environment and cmd.exe never defines
+     * itself. Each value is the name in angle brackets.
+     */
+    private static final Function<String, String> EVERY_NAME_BUT_CARET = name -> name.startsWith("^") ? null
+            : "<" + name + ">";
+
+    /**
+     * What the real program behind a forwarding launcher started with {@code command} gets, with {@code env} giving
+     * each defined variable's value by its upper-case name (null when undefined).
+     */
+    private static List<String> throughScript(List<String> command, Function<String, String> env) {
         List<String> jdk = WindowsCommandLine.forJdk(command, "true", null);
         assertThat(jdk.subList(0, 5)).containsExactly("cmd.exe", "/d", "/v:off", "/s", "/c");
         assertThat(jdk).hasSize(6);
@@ -159,36 +233,97 @@ class WindowsCommandLineTest {
         assertThat(line).as("the JDK passes the /c text verbatim").endsWith(" /c " + jdk.get(5));
         String text = jdk.get(5);
         assertThat(text).startsWith("\"").endsWith("\"");
-        text = text.substring(1, text.length() - 1);
-        String first = cmdEscapes(expandVariables(text));
-        assertThat(first).startsWith("\"" + command.getFirst() + "\"");
-        String forwarded = first.substring(command.getFirst().length() + 2);
+        return throughScriptText(command.getFirst(), text.substring(1, text.length() - 1), env);
+    }
+
+    /**
+     * What the real program gets from the {@code /s /c} text {@code text}, its outer quotes already taken off: cmd.exe
+     * reads it (variables, then carets and quotes), runs the script with the rest as {@code %*}, the script's line
+     * {@code "node" "cli.js" %*} is read again for carets and quotes (cmd.exe expands {@code %*} there but does not
+     * look for variables again in the text {@code %*} puts in), and node splits it by the C runtime's rules.
+     */
+    private static List<String> throughScriptText(String script, String text, Function<String, String> env) {
+        String first = cmdEscapes(expandVariables(text, env));
+        assertThat(first).startsWith("\"" + script + "\"");
+        String forwarded = first.substring(script.length() + 2);
         String nodeLine = "node.exe" + cmdEscapes(forwarded);
         List<String> parsed = ProcessArguments.splitWindows(nodeLine);
         return parsed.subList(1, parsed.size());
     }
 
     /**
-     * cmd.exe's first step on a command line: {@code %NAME%} of a defined variable becomes its value, anything else
-     * stays as written (a command line, not a script, keeps an undefined one).
+     * cmd.exe's first step on a command line, before any caret or quote is read, by the rules {@code set /?} documents
+     * (a command line, not a script: there is no {@code %*}, {@code %1}, {@code %~1} and no {@code %%} escape):
+     * <ul>
+     *   <li>from a {@code %} to the next {@code %} is one expression; the variable name is its text up to the first
+     *       {@code :}, or all of it, matched without regard to case;</li>
+     *   <li>{@code %NAME%} becomes the value;</li>
+     *   <li>{@code %NAME:~start%} and {@code %NAME:~start,length%} the substring, a negative start counting from the
+     *       end and a negative length leaving that many characters off the end;</li>
+     *   <li>{@code %NAME:old=new%} the value with every {@code old} replaced by {@code new}, ignoring case, and
+     *       {@code %NAME:*old=new%} with everything up to and including the first {@code old} replaced;</li>
+     *   <li>an undefined name, or a {@code %} with no second one, leaves the {@code %} as written (on a command line,
+     *       unlike in a script).</li>
+     * </ul>
+     * Not modelled, and failing the test if reached with a defined name: a substring bound that is not a plain integer,
+     * a {@code :} form with no {@code =} or an empty {@code old}, and the hidden {@code =C:} names, whose {@code :} is
+     * part of the name. Where cmd.exe resumes after an undefined name (after its opening or at its closing {@code %})
+     * is not pinned down either: the model resumes right after the opening one, so it tries every {@code %} as the
+     * start of an expression, which covers both. Delayed {@code !NAME!} expansion is off ({@code /v:off}).
      */
-    private static String expandVariables(String text) {
-        Map<String, String> env = Map.of("PATH", "C:\\Windows", "TEMP", "C:\\Temp", "A", "<a>", "", "<empty>");
+    private static String expandVariables(String text, Function<String, String> env) {
         StringBuilder out = new StringBuilder();
         int i = 0;
         while (i < text.length()) {
             char c = text.charAt(i);
             int close = c == '%' ? text.indexOf('%', i + 1) : -1;
-            String name = close < 0 ? null : text.substring(i + 1, close).toUpperCase(Locale.ROOT);
-            if (name != null && env.containsKey(name)) {
-                out.append(env.get(name));
-                i = close + 1;
-            } else {
+            String body = close < 0 ? null : text.substring(i + 1, close);
+            int colon = body == null ? -1 : body.indexOf(':');
+            String value = body == null ? null
+                    : env.apply((colon < 0 ? body : body.substring(0, colon)).toUpperCase(Locale.ROOT));
+            if (value == null) {
                 out.append(c);
                 i++;
+            } else {
+                out.append(colon < 0 ? value : modify(value, body.substring(colon + 1), text));
+                i = close + 1;
             }
         }
         return out.toString();
+    }
+
+    /** {@code value} after the text following the {@code :} of {@code %NAME:...%}, as {@code set /?} describes it. */
+    private static String modify(String value, String modifier, String text) {
+        if (modifier.startsWith("~")) {
+            Matcher m = Pattern.compile("(-?\\d+)(?:,(-?\\d+))?").matcher(modifier.substring(1));
+            assertThat(m.matches()).as("substring form not modelled: %s in %s", modifier, text).isTrue();
+            int length = value.length();
+            int start = Integer.parseInt(m.group(1));
+            start = Math.clamp(start < 0 ? length + start : start, 0, length);
+            int end = length;
+            if (m.group(2) != null) {
+                int count = Integer.parseInt(m.group(2));
+                end = count < 0 ? length + count : start + count;
+            }
+            return value.substring(start, Math.clamp(end, start, length));
+        }
+        int equals = modifier.indexOf('=');
+        String old = equals < 0 ? "" : modifier.substring(modifier.startsWith("*") ? 1 : 0, equals);
+        assertThat(old).as("search and replace form not modelled: %s in %s", modifier, text).isNotEmpty();
+        String replacement = modifier.substring(equals + 1);
+        String lower = value.toLowerCase(Locale.ROOT);
+        String oldLower = old.toLowerCase(Locale.ROOT);
+        if (modifier.startsWith("*")) {
+            int at = lower.indexOf(oldLower);
+            return at < 0 ? value : replacement + value.substring(at + old.length());
+        }
+        StringBuilder out = new StringBuilder();
+        int from = 0;
+        for (int at = lower.indexOf(oldLower); at >= 0; at = lower.indexOf(oldLower, from)) {
+            out.append(value, from, at).append(replacement);
+            from = at + old.length();
+        }
+        return out.append(value.substring(from)).toString();
     }
 
     /**
