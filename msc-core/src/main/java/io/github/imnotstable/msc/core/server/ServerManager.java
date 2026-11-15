@@ -37,8 +37,11 @@ public final class ServerManager implements AutoCloseable {
 
     private final CoreConfig config;
     private final AgentHub hub;
-    /** At most 20,000 lines of at most {@link LogReader#MAX_LINE_CHARS} chars, and 4M chars in all. */
-    private final LogBuffer log = new LogBuffer(20_000, 4_000_000);
+    /**
+     * At most 20,000 lines of at most {@link LogReader#MAX_LINE_CHARS} chars, and 4M chars in all. Replaced only by
+     * {@link #adopt}, before any tool reads it.
+     */
+    private volatile LogBuffer log = new LogBuffer(20_000, 4_000_000);
     /** Changed under this monitor; volatile for {@link #serverRun} and {@link #lastRun}. */
     private volatile Process process;
     /** Reads {@link #process}'s output; null before the first start. */
@@ -734,6 +737,33 @@ public final class ServerManager implements AutoCloseable {
         // stop too, but a detach once granted holds through one: the announce is a hint (#733).
         detached = running() && !stopRequested();
         return detached;
+    }
+
+    /**
+     * Takes over the server this session detached in this workspace before a switch closed it ({@code kept}, that
+     * workspace's closed manager): its process, console and log, still detached (#735). So a switch back finds its own
+     * server, not "a server left by an earlier session". Call it before anything else uses this manager. False when
+     * there is none to take: it exited, or this manager already has one.
+     */
+    public boolean adopt(ServerManager kept) {
+        Process p;
+        // This monitor, then the kept one's: a closed manager takes no other manager's monitor.
+        synchronized (this) {
+            synchronized (kept) {
+                if (process != null || !kept.detached()) {
+                    return false;
+                }
+                p = kept.process;
+                process = p;
+                pump = kept.pump;
+                log = kept.log;
+                launchedAt = kept.launchedAt;
+                sawDone = kept.sawDone;
+                detached = true;
+            }
+        }
+        p.onExit().thenRun(hub::serverChanged);
+        return true;
     }
 
     /**

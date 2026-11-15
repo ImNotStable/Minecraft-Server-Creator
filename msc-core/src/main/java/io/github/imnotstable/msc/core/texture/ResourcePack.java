@@ -412,6 +412,21 @@ public final class ResourcePack implements AutoCloseable {
         return true;
     }
 
+    /**
+     * Takes over the standalone host {@code kept} (this workspace's closed pack, before a switch) started for this
+     * session's detached server, so a server_stop after a switch back stops it as its own (#735).
+     */
+    public void adoptHost(ResourcePack kept) {
+        synchronized (this) {
+            synchronized (kept) {
+                if (hostProcess == null && kept.hostProcess != null && kept.hostProcess.isAlive()) {
+                    hostProcess = kept.hostProcess;
+                    hostPort = kept.hostPort;
+                }
+            }
+        }
+    }
+
     /** Stop a pack host an earlier, detached session left running. Returns a note, or null when there was none. */
     public synchronized String stopLeftoverHost() {
         if (hostProcess != null && hostProcess.isAlive()) {

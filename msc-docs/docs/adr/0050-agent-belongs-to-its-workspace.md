@@ -45,7 +45,14 @@ Option 3.
 4. An agent connected while this session runs no server (an attached one) is marked in `msc_status` with
    `of a server started outside this session`, so `server: stopped` beside a live agent is explained.
 5. The same workspace reopened later (a switch back, or a new session with the same `MSC_TOKEN`) derives the same token,
-   so its own server could attach again: that is the workspace it belongs to.
+   so its own server could attach again: that is the workspace it belongs to. Amended 2026-11-15 (#735): on a switch
+   back that is not enough, as the agent had already reconnected to the next workspace's hub and given up once
+   refused (and an agent gives up after about 20 s of failed reconnects anyway). So a switch away from a workspace
+   whose server this session detached keeps that server's agent connection open: the closed workspace stops listening,
+   so a fixed port is free, but the session keeps the connection with the server's process and pack host, and the
+   workspace opened again takes all three over. The agent never reconnects, so the next workspace never sees it, and
+   the switch back finds its own detached server, agent connected, with a random or a fixed address. The session end
+   closes the kept connections as it closes any workspace's.
 
 Rejected: option 1 (a protocol change in every agent for what the token already does); option 2 (ends attach mode).
 

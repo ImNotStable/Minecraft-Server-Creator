@@ -79,6 +79,11 @@ public final class AgentHub implements AutoCloseable {
     private volatile java.util.function.Supplier<Object> lastRun = () -> null;
     private volatile java.util.function.BooleanSupplier serverStopping = () -> false;
     private volatile Runnable onReady = () -> { };
+    /**
+     * The hub that {@link #adopt adopted} this one's agent connection after a switch back, or null: what that agent
+     * sends goes there from then on (#735).
+     */
+    private volatile AgentHub successor;
 
     public AgentHub(int port, String token) throws IOException {
         this(port, token, token);
@@ -115,13 +120,7 @@ public final class AgentHub implements AutoCloseable {
 
             @Override
             public void event(CoreServer.AgentSession s, Event event) {
-                if (Events.SERVER_STOPPING.equals(event.name())) {
-                    Object run = lastRun.get();
-                    update(() -> ending = new Ending(run));
-                } else if (Events.SERVER_READY.equals(event.name())) {
-                    update(() -> readyCount++);
-                    onReady.run();
-                }
+                target().agentEvent(event);
             }
 
             @Override
@@ -133,11 +132,7 @@ public final class AgentHub implements AutoCloseable {
 
             @Override
             public void disconnected(CoreServer.AgentSession s, Throwable cause) {
-                update(() -> {
-                    if (session == s) {
-                        session = null;
-                    }
-                });
+                target().agentLeft(s);
             }
         };
         // The port may have been let go a moment ago: by the workspace a switch just closed (#721), or by a core that
@@ -150,6 +145,53 @@ public final class AgentHub implements AutoCloseable {
             Thread.currentThread().interrupt();
             throw new InterruptedIOException("interrupted while waiting for port " + port);
         }
+    }
+
+    /** The hub an agent of this one reports to: this one, or the one that adopted its connection (#735). */
+    private AgentHub target() {
+        AgentHub h = this;
+        while (h.successor != null) {
+            h = h.successor;
+        }
+        return h;
+    }
+
+    private void agentEvent(Event event) {
+        if (Events.SERVER_STOPPING.equals(event.name())) {
+            Object run = lastRun.get();
+            update(() -> ending = new Ending(run));
+        } else if (Events.SERVER_READY.equals(event.name())) {
+            update(() -> readyCount++);
+            onReady.run();
+        }
+    }
+
+    private void agentLeft(CoreServer.AgentSession s) {
+        update(() -> {
+            if (session == s) {
+                session = null;
+            }
+        });
+    }
+
+    /**
+     * Takes over the agent connection of {@code kept}, this workspace's hub that a switch away {@link #park parked}
+     * with the server this session detached (#735): the agent stays connected through the switch, so it needs no
+     * reconnect, which a fixed address would have sent to the next workspace's hub (ADR 0050). Its announced stop
+     * comes along. Call it once the hub is wired, before any tool uses it.
+     */
+    public void adopt(AgentHub kept) {
+        kept.successor = this;
+        CoreServer.AgentSession s = kept.current();
+        Ending e = kept.ending;
+        update(() -> {
+            if (session == null && s != null && s.connection().isOpen()) {
+                session = s;
+            }
+            if (ending == null) {
+                ending = e;
+            }
+        });
     }
 
     private void update(Runnable change) {
@@ -166,6 +208,11 @@ public final class AgentHub implements AutoCloseable {
     /** Value for {@code MSC_CORE_ADDRESS}. */
     public String address() {
         return server.address();
+    }
+
+    /** The port it listens on, or listened on once {@link #park parked}. */
+    public int port() {
+        return server.port();
     }
 
     public String token() {
@@ -403,6 +450,16 @@ public final class AgentHub implements AutoCloseable {
     private static ToolException timedOut(String op) {
         return new ToolException("the server did not answer " + op + " within " + CALL_TIMEOUT.toSeconds()
                 + "s. Try a smaller region, or check server_logs: the server may be overloaded or stopped.");
+    }
+
+    /**
+     * Stop listening, so a fixed port is free for the next workspace, but keep the agent session for {@link #adopt}
+     * (#735): the connection of the server this session detached. Wakes a caller waiting for an agent, which then
+     * fails at once. {@link #close()} later closes the session too.
+     */
+    public void park() throws IOException {
+        update(() -> closed = true);
+        server.close();
     }
 
     /** Close the agent session and stop listening. Wakes a caller waiting for an agent, which then fails at once. */
