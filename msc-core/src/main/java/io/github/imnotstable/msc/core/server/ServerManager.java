@@ -180,9 +180,14 @@ public final class ServerManager implements AutoCloseable {
 
     /**
      * The one answer to "is this session's server stopping" (#723): it runs, and {@link #stop} asked it to stop or its
-     * agent announced a stop of this run ({@code server.stopping}, {@link AgentHub#stopAnnounced}). Every call that
-     * needs the server goes by it: the world tools, server_command, server_detach, server_start and msc_status. It
-     * takes no hub lock ({@link AgentHub#stopAnnounced} reads one field), so the hub may ask it at any time.
+     * agent announced a stop of this run ({@code server.stopping}, {@link AgentHub#stopAnnounced}). The world tools,
+     * server_detach, server_start and msc_status go by it. It takes no hub lock ({@link AgentHub#stopAnnounced} reads
+     * one field), so the hub may ask it at any time.
+     *
+     * <p>The announce is only a hint, kept until a new agent connects or the process exits: an agent also says it
+     * when only the agent stops (Paper's {@code /reload}, a plugin manager, Minestom's {@code MscAgent.stop()}) and the
+     * server runs on (#729). So the console goes by this session's own stop alone: server_command still types into it
+     * ({@link #command}), and {@link #stop} still types {@code stop} unless it already did.
      */
     public synchronized boolean stopping() {
         return running() && (stopping || hub.stopAnnounced(process));
@@ -481,7 +486,20 @@ public final class ServerManager implements AutoCloseable {
      * down, as the Minestom template's does on {@code stop}, or has just exited (#716).
      */
     public synchronized void console(String line) {
-        if (!running() || stopping()) {
+        console(line, stopping());
+    }
+
+    /**
+     * server_command's {@link #console}: refused only once this session's own {@link #stop} asked the server to stop.
+     * A stop only its agent announced does not refuse it, as the server may run on without its agent (#729); a console
+     * the server closed on its way down is still refused.
+     */
+    public synchronized void command(String line) {
+        console(line, stopping);
+    }
+
+    private void console(String line, boolean refused) {
+        if (!running() || refused) {
             throw new ToolException(notRunning());
         }
         try {
@@ -641,15 +659,20 @@ public final class ServerManager implements AutoCloseable {
             }
             p = process;
             detached = false;
-            // A server already stopping is only waited for: a second "stop" into a closed console would kill it (#723).
-            boolean asked = stopping();
+            // Only this session's own stop is waited for without asking again (#723). A stop its agent announced may
+            // be no stop at all (Paper's /reload, a disabled agent): "stop" is typed, or the server would be killed
+            // unsaved (#729). A console it closed on its way down is no reason to kill it.
+            boolean asked = stopping;
+            boolean announced = stopping();
             stopping = true;
             try {
                 if (!asked) {
                     write("stop");
                 }
             } catch (IOException e) {
-                p.destroy();
+                if (!announced) {
+                    p.destroy();
+                }
             }
         }
         // Its agent leaves before the process exits: a call waiting for one fails now, not after the wait (#703).

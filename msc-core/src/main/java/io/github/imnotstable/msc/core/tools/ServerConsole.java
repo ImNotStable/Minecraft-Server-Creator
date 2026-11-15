@@ -166,7 +166,9 @@ final class ServerConsole {
         if (command.startsWith("/")) {
             command = command.substring(1);
         }
-        if (hub.current() != null) {
+        // The agent of a stopping server is not asked, its console is: it refuses this session's own stop as the agent
+        // would (#723), and still takes a command after a stop only the agent announced (#729).
+        if (hub.current() != null && !server.stopping()) {
             long before = server.log().mark();
             marks.waitFrom = before;
             Ops.CommandResult r = hub.call(Ops.SERVER_COMMAND, new Ops.CommandParams(command));
@@ -180,7 +182,7 @@ final class ServerConsole {
         }
         long mark = server.log().mark();
         marks.waitFrom = mark;
-        server.console(command);
+        server.command(command);
         Thread.sleep(700);
         List<String> lines = server.log().since(mark);
         return lines.isEmpty() ? new Output("sent (no output within 0.7s)", "", "")
