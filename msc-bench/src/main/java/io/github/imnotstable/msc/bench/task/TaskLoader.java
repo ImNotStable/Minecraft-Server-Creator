@@ -95,8 +95,8 @@ public final class TaskLoader {
                 unfilled(json.key("fixtures") + "[" + i + "]", shared);
                 Path fixture = taskDir.getParent().resolve(shared).normalize();
                 if (!Files.isDirectory(fixture)) {
-                    throw new IllegalArgumentException(json.key("fixtures") + ": no folder " + shared + " next to the task "
-                            + "folders");
+                    throw new IllegalArgumentException(json.key("fixtures") + ": no folder " + Quoted.text(shared)
+                            + " next to the task folders");
                 }
                 fixtures.add(fixture);
             }

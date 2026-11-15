@@ -95,10 +95,8 @@ public final class Checks {
 
     /** The check {@code json} describes, read as it is (filled or not). */
     static Check read(UserJson json, Path taskDir) {
-        String type = string(json, "type", null);
-        if (type == null) {
-            throw new IllegalArgumentException("check without \"type\": " + json);
-        }
+        // The keys refuse a check without a type before it is read.
+        String type = string(json, "type", "");
         String name = string(json, "name", null);
         return switch (type) {
             case "file" -> new FileCheck(
@@ -143,7 +141,7 @@ public final class Checks {
         }
         Path dir = taskDir.resolve(folder).normalize();
         if (!dir.startsWith(taskDir.normalize()) || !java.nio.file.Files.isDirectory(dir)) {
-            throw new IllegalArgumentException(json.key(key) + ": no folder " + folder + " in the task");
+            throw new IllegalArgumentException(json.key(key) + ": no folder " + Quoted.text(folder) + " in the task");
         }
         return dir;
     }
@@ -167,7 +165,7 @@ public final class Checks {
     static String require(UserJson json, String key) {
         String value = string(json, key, null);
         if (value == null) {
-            throw new IllegalArgumentException("check is missing \"" + key + "\": " + json);
+            throw new IllegalArgumentException(json.key(key) + ": is missing");
         }
         return value;
     }
@@ -191,7 +189,7 @@ public final class Checks {
     static List<String> strings(UserJson json, String key) {
         List<String> value = json.exactStrings(key, null);
         if (value == null) {
-            throw new IllegalArgumentException("check is missing \"" + key + "\": " + json);
+            throw new IllegalArgumentException(json.key(key) + ": is missing");
         }
         return value;
     }

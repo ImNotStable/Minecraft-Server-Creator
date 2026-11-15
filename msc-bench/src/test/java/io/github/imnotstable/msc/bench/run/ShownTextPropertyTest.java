@@ -29,8 +29,11 @@ class ShownTextPropertyTest {
         "\u0080", "\u0085", "\u009B", "\u009F", " ", " ", "　", " ", " ",
         "​", "‌", "‍", "‎", "‏", "‪", "‮", "⁦", "⁧", "⁨", "⁩",
         "؜", "﻿", "­", "\uD800", "\uDFFF", "", "󰀀", "͸",
+        "\u3164", "\uFFA0", "\u034F", "\uFE0F", "\uDB40\uDD00", "\u180B",
         "&", "&amp;", "&lt;", "&#x202E;", "&#124;", "<b>", "</td>", ">", "`", "``", "*", "**", "_", "__", "~~", "[", "]",
         "[x](y)", "![i](j)", "$", "$x$", "\\", "\\|", "#", "- ", "+ ", "= ", "1. ", "2) ", "!", "\"", "'",
+        "https://", "http://x.org/a#b_c", "HTTP://", "ftp://y", "www.", "www.x.org/q?a=1&b=[2]", "(www.", "://", ":",
+        "//", "a@b.co",
         "a", "b", "z", "_x_", "world_render", "é", "😀", " ", "  ", "0", "-"};
 
     private static final AgentResult NO_USAGE = AgentResult.UNKNOWN;
@@ -138,12 +141,12 @@ class ShownTextPropertyTest {
             String shown = unescapeMarkdown(line.substring(2));
             assertThat(shown).startsWith(expected(r.task().strip()) + " (" + expected(r.mode().strip()) + " #"
                     + r.repeat() + "): ");
-            // the same text as the progress line, read back from its Markdown escapes
-            assertThat(shown).endsWith("): " + r.failureReason());
+            // the same text as the progress line, read back from its Markdown escapes (report.md strips its ends)
+            assertThat(shown).endsWith("): " + r.failureReason().strip());
             for (CheckResult check : r.checks()) {
                 if (!check.passed()) {
                     String part = expected(check.name().strip()) + ": " + expected(check.detail());
-                    assertThat(shown).contains(part);
+                    assertThat(shown).contains(part.strip());
                     assertThat(check.shown()).isEqualTo(part);
                 }
             }

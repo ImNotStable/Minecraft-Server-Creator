@@ -2,7 +2,11 @@ package io.github.imnotstable.msc.bench.report;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.imnotstable.msc.bench.Quoted;
+import io.github.imnotstable.msc.bench.ReaderView;
+import java.util.List;
 import java.util.stream.Stream;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -31,12 +35,32 @@ class MarkdownTest {
                 Arguments.of("code\nplugins", "code\\\\nplugins"),
                 Arguments.of("a​b‮c", "a\\\\u200bb\\\\u202ec"),
                 Arguments.of("a⁦b⁩\u0085", "a\\\\u2066b\\\\u2069\\\\u0085"),
-                Arguments.of(null, ""));
+                Arguments.of(null, ""),
+                // #685: no autolink may start, since GitHub would keep the backslashes inside it
+                Arguments.of("see https://example.com/q?a=1&b=[2] here", "see https\\://example.com/q?a=1\\&b=\\[2\\] here"),
+                Arguments.of("www.x.org/a_b FTP://y WWW.z", "www\\.x.org/a_b FTP\\://y WWW\\.z"));
     }
 
     @ParameterizedTest
     @MethodSource("texts")
     void escapesWhatMarkdownWouldRead(String text, String markdown) {
         assertThat(Markdown.text(text)).isEqualTo(markdown);
+    }
+
+    @Test
+    void aUrlReadsBackExactlyAsWritten() {
+        // #685's Gradle failure: its URL holds a # Markdown.text escapes
+        String detail = "command: exit 1: Deprecated Gradle features were used. For more on this, please refer to "
+                + "https://docs.gradle.org/9.1.0/userguide/command_line_interface.html#sec:command_line_warnings in the "
+                + "Gradle documentation.";
+        for (String text : List.of(detail, "see https://example.com/q?a=1&b=[2] here", "(www.x.org/a_b#c|d)",
+                "*http://a.b/`c`*")) {
+            assertThat(ReaderView.unescapeMarkdown(Markdown.text(text))).isEqualTo(Quoted.visible(text));
+        }
+        // the reader model sees the backslashes a bare URL keeps
+        assertThat(ReaderView.unescapeMarkdown("see https://x.org/a\\#b and www.y.org/\\[c")).isEqualTo(
+                "see https://x.org/a\\#b and www.y.org/\\[c");
+        assertThat(ReaderView.unescapeMarkdown("xhttps://x.org/a\\#b awww.y.org/\\[c")).isEqualTo(
+                "xhttps://x.org/a#b awww.y.org/[c");
     }
 }

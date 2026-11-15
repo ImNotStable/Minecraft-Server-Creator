@@ -309,10 +309,10 @@ public final class Main {
             exit = records.stream().allMatch(RunRecord::passed) ? OK : FAILED;
         }
         try {
-            out.println("Report: " + Quoted.path(writeReport(runDir, records, disk).toString()));
+            out.println("Report: " + Quoted.pastable(writeReport(runDir, records, disk).toString()));
         } catch (RunFolderUnwritable e) {
-            out.println("warning: " + e.getMessage() + "; once that is fixed, `report " + runDir.toAbsolutePath()
-                    + "` writes it from " + ResultsFile.NAME);
+            out.println("warning: " + e.getMessage() + "; once that is fixed, `report "
+                    + Quoted.pastable(runDir.toAbsolutePath().toString()) + "` writes it from " + ResultsFile.NAME);
         }
         return exit;
     }
@@ -510,7 +510,7 @@ public final class Main {
                     + "prints after Report:");
         }
         List<RunRecord> records = ResultsFile.read(results, out::println);
-        out.println("Report: " + Quoted.path(writeReport(runDir, records, disk).toString()));
+        out.println("Report: " + Quoted.pastable(writeReport(runDir, records, disk).toString()));
         return OK;
     }
 }
