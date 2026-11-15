@@ -61,6 +61,29 @@ class ResultParsingTest {
     }
 
     @Test
+    void namesTheStatusOfAnMcpServerThatWasNotConnected() {
+        AgentResult pending = ClaudeResultParser.parse("""
+                {"type":"system","subtype":"init","mcp_servers":[{"name":"msc","status":"failed"},{"name":"x"}]}
+                {"type":"result","num_turns":1}
+                """);
+        assertThat(pending.mcpNotConnected()).containsExactly("msc (failed)", "x (no status)");
+        assertThat(pending.mcpProblem("msc")).isEqualTo("MCP server msc was failed when the agent started");
+        assertThat(pending.mcpProblem("other")).contains("was not among the agent's MCP servers");
+    }
+
+    @Test
+    void aResultWithoutInitEventSaysToUseStreamJson() {
+        // Claude Code in a cloud session: --output-format json prints one result object and no init event.
+        AgentResult r = ClaudeResultParser.parse("{\"type\":\"result\",\"num_turns\":3}");
+        assertThat(r.mcpProblem("msc")).contains("names no MCP server").contains("stream-json --verbose");
+        AgentResult connected = ClaudeResultParser.parse("""
+                {"type":"system","subtype":"init","mcp_servers":[{"name":"msc","status":"connected"}]}
+                {"type":"result","num_turns":1}
+                """);
+        assertThat(connected.mcpProblem("msc")).isNull();
+    }
+
+    @Test
     void prefersModelUsageForTheModel() {
         AgentResult r = ClaudeResultParser.parse("""
                 {"type":"result","num_turns":1,"modelUsage":{"claude-opus-4-7":{},"claude-haiku-4-5":{}}}

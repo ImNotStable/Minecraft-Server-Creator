@@ -258,7 +258,7 @@ public record BenchConfig(
         Agent a = agent == null ? new Agent(null, 0) : agent;
         Agent fullAgent = new Agent(
                 a.command() == null || a.command().isEmpty()
-                        ? List.of("claude", "-p", "{prompt}", "--output-format", "json")
+                        ? List.of("claude", "-p", "{prompt}", "--output-format", "stream-json", "--verbose")
                         : List.copyOf(a.command()),
                 a.timeoutSeconds() > 0 ? a.timeoutSeconds() : 1800);
 
@@ -304,6 +304,34 @@ public record BenchConfig(
                 Map.copyOf(fullPaths),
                 corePort > 0 ? corePort : 25590,
                 minecraftVersion == null ? "26.3" : minecraftVersion);
+    }
+
+    /**
+     * This config with the agent run on {@code model}: the value after {@code --model} in {@code agent.command} is
+     * replaced, or {@code --model model} is added when the command has none (the {@code run --model} option).
+     */
+    public BenchConfig withModel(String model) {
+        if (model == null || model.isBlank() || model.startsWith("-")) {
+            throw new IllegalArgumentException("--model \"" + model + "\" is no model name, such as claude-sonnet-4-6");
+        }
+        List<String> command = new ArrayList<>(agent.command());
+        int at = command.indexOf("--model");
+        if (at >= 0 && at + 1 < command.size()) {
+            command.set(at + 1, model);
+        } else {
+            command.remove("--model");
+            command.addAll(List.of("--model", model));
+        }
+        return new BenchConfig(new Agent(List.copyOf(command), agent.timeoutSeconds()), modes, server,
+                gradleWrapperFrom, paths, corePort, minecraftVersion);
+    }
+
+    /** This config with {@code prefix} put in front of {@code agent.command} (the {@code run --isolate} option). */
+    public BenchConfig withAgentPrefix(List<String> prefix) {
+        List<String> command = new ArrayList<>(prefix);
+        command.addAll(agent.command());
+        return new BenchConfig(new Agent(List.copyOf(command), agent.timeoutSeconds()), modes, server,
+                gradleWrapperFrom, paths, corePort, minecraftVersion);
     }
 
     private static String resolve(Path base, String path) {
