@@ -27,8 +27,7 @@ class TextTest {
                 assertThat(tail.length()).isLessThanOrEqualTo(max).isGreaterThanOrEqualTo(Math.min(max, text.length()) - 1);
                 assertThat(text).startsWith(head).endsWith(tail);
                 assertThat(Text.cut(text, max).length()).isLessThanOrEqualTo(max);
-                for (String cut : new String[] {head, tail, Text.headWithEllipsis(text, max + 3),
-                        Text.tailWithEllipsis(text, max + 3), Text.cut(text, max), Text.headWithEllipsis(text, max),
+                for (String cut : new String[] {head, tail, Text.tailWithEllipsis(text, max + 3), Text.cut(text, max),
                         Text.tailWithEllipsis(text, max)}) {
                     assertThat(Text.hasLoneSurrogate(cut)).as("%d %d %s", at, max, cut).isFalse();
                 }

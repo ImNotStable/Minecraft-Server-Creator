@@ -77,17 +77,6 @@ public final class Text {
     }
 
     /**
-     * {@code text} cut to {@code max} chars and {@code "..."} when longer, the marker within the limit (a limit of 3
-     * or less has no room for it and keeps the plain head).
-     */
-    public static String headWithEllipsis(String text, int max) {
-        if (text.length() <= max) {
-            return text;
-        }
-        return max <= 3 ? head(text, max) : head(text, max - 3) + "...";
-    }
-
-    /**
      * {@code "..."} and the end of {@code text} when longer than {@code max} chars, the marker within the limit (a
      * limit of 3 or less has no room for it and keeps the plain tail).
      */

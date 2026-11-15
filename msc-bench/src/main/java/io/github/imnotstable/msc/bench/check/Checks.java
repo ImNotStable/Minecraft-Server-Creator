@@ -1,6 +1,7 @@
 package io.github.imnotstable.msc.bench.check;
 
 import io.github.imnotstable.msc.bench.JsonNumbers;
+import io.github.imnotstable.msc.bench.Quoted;
 import io.github.imnotstable.msc.bench.UserJson;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -127,7 +128,7 @@ public final class Checks {
                     requirePattern(json, "expect", 0));
             case "blocks" -> BlocksCheck.parse(orDefault(name, "blocks"), json);
             case "player" -> PlayerCheck.parse(orDefault(name, "player"), json);
-            default -> throw new IllegalArgumentException("unknown check type " + UserJson.quoted(type));
+            default -> throw new IllegalArgumentException("unknown check type " + Quoted.text(type));
         };
     }
 

@@ -447,11 +447,6 @@ public final class UserJson {
         }
     }
 
-    /** {@code text} as a refusal shows a string value: {@link Quoted#text}, the one quoting there is. */
-    public static String quoted(String text) {
-        return Quoted.text(text);
-    }
-
     private static String firstLine(String text) {
         return text == null ? "" : text.strip().lines().findFirst().orElse("");
     }

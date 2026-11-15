@@ -3,6 +3,7 @@ package io.github.imnotstable.msc.bench.task;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import io.github.imnotstable.msc.bench.JsonNumbers;
+import io.github.imnotstable.msc.bench.Quoted;
 import io.github.imnotstable.msc.bench.StrictJson;
 import io.github.imnotstable.msc.bench.Text;
 import io.github.imnotstable.msc.bench.UserJson;
@@ -105,7 +106,7 @@ public final class TaskLoader {
 
             String platform = json.exactString("platform", TaskDef.PAPER);
             if (!platform.equals(TaskDef.PAPER) && !platform.equals(TaskDef.MINESTOM)) {
-                throw new IllegalArgumentException(json.key("platform") + ": " + UserJson.quoted(platform)
+                throw new IllegalArgumentException(json.key("platform") + ": " + Quoted.text(platform)
                         + " is no platform; use paper or minestom");
             }
             Scaffold scaffold = null;
@@ -113,7 +114,7 @@ public final class TaskLoader {
             if (s != null) {
                 String template = requireString(s, "template");
                 if (!Templates.ids().contains(template)) {
-                    throw new IllegalArgumentException(s.key("template") + ": " + UserJson.quoted(template)
+                    throw new IllegalArgumentException(s.key("template") + ": " + Quoted.text(template)
                             + " is no template; use one of " + String.join(", ", Templates.ids()));
                 }
                 scaffold = new Scaffold(template, requireString(s, "name"), requireString(s, "package"));
@@ -139,7 +140,7 @@ public final class TaskLoader {
             for (UserJson check : json.exactObjects("checks", Checks.KEYS)) {
                 Check parsed = Checks.parse(check, taskDir);
                 if (parsed.needsServer() && platform.equals(TaskDef.MINESTOM)) {
-                    throw new IllegalArgumentException(check.key("type") + ": " + UserJson.quoted(check.exactString(
+                    throw new IllegalArgumentException(check.key("type") + ": " + Quoted.text(check.exactString(
                             "type", "")) + " checks the Paper server, and a minestom task runs none");
                 }
                 checks.add(parsed);
@@ -192,7 +193,7 @@ public final class TaskLoader {
         Matcher m = PLACEHOLDER.matcher(value);
         while (m.find()) {
             if (BenchConfig.RUNNER_PLACEHOLDERS.contains(m.group(1))) {
-                throw new IllegalArgumentException(key + ": " + UserJson.quoted(value) + " holds " + m.group()
+                throw new IllegalArgumentException(key + ": " + Quoted.text(value) + " holds " + m.group()
                         + ", and placeholders are filled only in server.setup and in checks");
             }
         }

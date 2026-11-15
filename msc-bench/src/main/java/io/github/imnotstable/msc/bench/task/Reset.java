@@ -1,5 +1,6 @@
 package io.github.imnotstable.msc.bench.task;
 
+import io.github.imnotstable.msc.bench.Quoted;
 import io.github.imnotstable.msc.bench.UserJson;
 import java.io.IOException;
 import java.nio.file.FileVisitResult;
@@ -53,7 +54,7 @@ public record Reset(List<String> delete) {
     /** {@code path} normalized, refused unless it names something strictly inside the workspace. */
     private static String insideWorkspace(String path, String key) {
         String slashes = path.replace('\\', '/');
-        String refused = key + ": " + UserJson.quoted(path) + " ";
+        String refused = key + ": " + Quoted.text(path) + " ";
         if (slashes.isBlank()) {
             throw new IllegalArgumentException(refused + "is blank; give a path inside the workspace");
         }
