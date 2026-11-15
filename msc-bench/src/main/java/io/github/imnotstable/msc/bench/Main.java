@@ -430,12 +430,14 @@ public final class Main {
             }
         };
         try {
+            if (task.freesPortsBeforeChecks()) {
+                // As in a run: a server answering on the bench's ports holds in memory what a reset deletes, and a
+                // check's own server needs the game port, so it is stopped first (#577); the RCON checks then start
+                // the workspace's own server. Nothing is killed by its folder: the command that started this check
+                // names the workspace too.
+                ServerManager.clearPorts((config == null ? BenchConfig.defaults() : config).server(), null);
+            }
             if (!task.reset().isEmpty()) {
-                // As in a run: a server answering on the bench's ports holds in memory what the reset deletes, so it
-                // is stopped first, and the RCON checks start the workspace's own server on the reset files.
-                if (config != null && task.needsServer()) {
-                    ServerManager.clearPorts(config.server());
-                }
                 task.reset().apply(workspace);
                 out.printf("reset before checks: deleted %s%n", String.join(", ", task.reset().delete()));
             }

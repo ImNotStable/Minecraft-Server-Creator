@@ -67,5 +67,5 @@ Even when the bench runs inside a Claude Code session, each attempt's agent runs
 ## Good to know
 
 - Paper is downloaded once and cached in `msc-bench/.cache/`.
-- Ports used: game 25566, RCON 25576, MSC 25590.
+- Ports used: game 25566, RCON 25576, MSC 25590. Before each attempt that uses the game or RCON port, a server an earlier attempt left there is stopped (a Minestom one too), and anything else holding them fails the attempt at once, naming the port. What an attempt leaves running in its folder is stopped when it ends.
 - Your own Claude Code plugins, skills and memory are kept out of runs.

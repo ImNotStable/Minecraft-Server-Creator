@@ -18,6 +18,10 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.io.UncheckedIOException;
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
+import java.net.ServerSocket;
+import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -658,5 +662,107 @@ class BenchRunnerTest {
         assertThat(silent.agent().parsed()).isFalse();
         assertThat(silent.error()).as("no init event read, so nothing says MCP was missing").isNull();
         assertThat(dir.resolve("run/attempts/write-file/silent-1-try2")).doesNotExist();
+    }
+
+    /** A Minestom task whose agent leaves a server it started on the game port running when it exits (#577). */
+    private Path minestomTaskLeavingAServer() throws IOException {
+        Path task = Files.createDirectories(dir.resolve("tasks/game"));
+        Files.writeString(task.resolve("task.json"), """
+                {"category":"game","title":"a Minestom game","platform":"minestom",
+                 "checks":[{"type":"file","name":"this attempt's server bound the game port","path":"left-server.port"}]}
+                """);
+        Files.writeString(task.resolve("prompt.md"), "make a game");
+        return task.getParent();
+    }
+
+    private BenchConfig minestomConfig(int serverPort) throws IOException {
+        Files.writeString(dir.resolve("bench.json"), """
+                {"agent":{"command":["%s","-cp","%s","io.github.imnotstable.msc.bench.FakeAgent","{prompt}"],"timeoutSeconds":120},
+                 "modes":{"baseline":{"env":{"FAKE_LEAVE_SERVER":"{serverPort}"}},
+                          "toolset":{"env":{"FAKE_LEAVE_SERVER":"{serverPort}"}}},
+                 "server":{"rconPort":%d,"serverPort":%d}}
+                """.formatted(JAVA, CLASSPATH, rconPort.port(), serverPort));
+        return BenchConfig.load(dir.resolve("bench.json"), dir.resolve("home"));
+    }
+
+    private static boolean listening(int port) {
+        try (Socket socket = new Socket()) {
+            socket.connect(new InetSocketAddress(InetAddress.getLoopbackAddress(), port), 1000);
+            return true;
+        } catch (IOException e) {
+            return false;
+        }
+    }
+
+    /**
+     * #577: a Minestom server the baseline agent left on the game port held it into the toolset attempt (and every
+     * later Paper task), whose own server could not bind it. Each attempt that uses the bench's ports now finds them
+     * free, and nothing the run started outlives it.
+     */
+    @Test
+    void aServerTheAgentLeftOnTheGamePortIsGoneBeforeTheNextAttempt() throws IOException {
+        Path tasks = minestomTaskLeavingAServer();
+        int serverPort = gamePort.port();
+        gamePort.close(); // the agents' servers bind it
+        ByteArrayOutputStream log = new ByteArrayOutputStream();
+        Path runDir = dir.resolve("run");
+
+        List<RunRecord> records = new BenchRunner(minestomConfig(serverPort), runDir, "",
+                new PrintStream(log, true, StandardCharsets.UTF_8))
+                .run(new RunSelection(TaskLoader.loadAll(tasks), List.of("baseline", "toolset")), 1);
+
+        assertThat(records).as("the toolset attempt's server bound the port too").hasSize(2)
+                .allSatisfy(r -> assertThat(r.passed()).as(r.toString()).isTrue());
+        assertThat(listening(serverPort)).as("no server outlives the run").isFalse();
+        assertThat(ProcessHandle.allProcesses().filter(p -> p.info().commandLine().orElse("")
+                .contains(PortHolder.class.getName())).filter(p -> p.info().commandLine().orElse("")
+                .contains(runDir.toString()))).isEmpty();
+    }
+
+    /**
+     * #577: a port held by a program the bench cannot prove its own (it answers no RCON stop and runs outside the
+     * run's attempt folders) fails the attempt at once, naming the port, before the agent works for nothing.
+     */
+    @Test
+    void aPortTheBenchCannotFreeFailsAMinestomAttemptBeforeItsAgent() throws IOException {
+        Path tasks = minestomTaskLeavingAServer();
+        try (ServerSocket taken = new ServerSocket(0, 50, InetAddress.getLoopbackAddress())) {
+            List<RunRecord> records = new BenchRunner(minestomConfig(taken.getLocalPort()), dir.resolve("run"), "",
+                    new PrintStream(new ByteArrayOutputStream(), true, StandardCharsets.UTF_8))
+                    .run(new RunSelection(TaskLoader.loadAll(tasks), List.of("baseline")), 1);
+
+            assertThat(records).singleElement().satisfies(r -> {
+                assertThat(r.passed()).isFalse();
+                assertThat(r.error()).startsWith("freeing the bench's ports: port " + taken.getLocalPort());
+                assertThat(r.wallMs()).as("the agent never started").isZero();
+            });
+        }
+    }
+
+    /** #577: whatever an attempt left running in its folder is stopped when it ends, even for a task without ports. */
+    @Test
+    void whatAnAttemptLeftRunningInItsFolderEndsWithIt() throws IOException {
+        Path task = Files.createDirectories(dir.resolve("tasks/texture"));
+        Files.writeString(task.resolve("task.json"), """
+                {"category":"texture","title":"a texture","checks":[{"type":"file","path":"left-server.port"}]}
+                """);
+        Files.writeString(task.resolve("prompt.md"), "draw");
+        Files.writeString(dir.resolve("bench.json"), """
+                {"agent":{"command":["%s","-cp","%s","io.github.imnotstable.msc.bench.FakeAgent","{prompt}"],"timeoutSeconds":120},
+                 "modes":{"baseline":{"env":{"FAKE_LEAVE_SERVER":"0"}}},
+                 "server":{"rconPort":%d,"serverPort":%d}}
+                """.formatted(JAVA, CLASSPATH, rconPort.port(), gamePort.port()));
+        ByteArrayOutputStream log = new ByteArrayOutputStream();
+        Path workspace = dir.resolve("run/attempts/texture/baseline-1/workspace");
+
+        List<RunRecord> records = new BenchRunner(BenchConfig.load(dir.resolve("bench.json"), dir.resolve("home")),
+                dir.resolve("run"), "", new PrintStream(log, true, StandardCharsets.UTF_8))
+                .run(new RunSelection(TaskLoader.loadAll(task.getParent()), List.of("baseline")), 1);
+
+        assertThat(records).singleElement().satisfies(r -> assertThat(r.passed()).as(r.toString()).isTrue());
+        assertThat(log.toString(StandardCharsets.UTF_8))
+                .contains("[baseline] texture #1: stopped 1 process(es) the attempt left running");
+        assertThat(listening(Integer.parseInt(Files.readString(workspace.resolve("left-server.port")).strip())))
+                .isFalse();
     }
 }

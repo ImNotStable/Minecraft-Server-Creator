@@ -25,6 +25,8 @@ public final class ServerManager implements AutoCloseable {
     private static final Duration STOP_TIMEOUT = Duration.ofSeconds(60);
     /** How long {@link #sendStop} waits for an RCON login from whatever holds the RCON port. */
     static final Duration LOGIN_TIMEOUT = Duration.ofSeconds(5);
+    /** How long {@link #clearPorts} waits for the ports after killing what an attempt left on them. */
+    private static final Duration KILL_WAIT = Duration.ofSeconds(5);
 
     private final Path serverDir;
     private final BenchConfig.Server config;
@@ -165,26 +167,41 @@ public final class ServerManager implements AutoCloseable {
     }
 
     /**
-     * Stops a server left on the bench's ports from before this attempt (a run cut short, or a server an agent
-     * started outside its own process tree), so the setup commands and checks cannot reach another workspace's
-     * world, and waits until the ports are free. Throws when they stay taken.
+     * The one "ports are free" step (#577), before every attempt and check that uses the bench's game or RCON port,
+     * whatever its platform. A server left on them (a run cut short, a server an agent started outside its own process
+     * tree, a Minestom server, which has no RCON) is stopped, so the setup commands and checks cannot reach another
+     * workspace's world and a check's own server can bind the game port: first with {@code stop} over RCON, then, if
+     * the ports are still taken, by killing the processes that belong to {@code leftoversIn} (an attempt folder, or the
+     * run's folder of attempts; {@link AttemptProcesses}; null to kill nothing). Throws, naming the port, when they
+     * stay taken.
      */
-    public static void clearPorts(BenchConfig.Server config) throws IOException {
-        clearPorts(config, STOP_TIMEOUT);
+    public static void clearPorts(BenchConfig.Server config, Path leftoversIn) throws IOException {
+        clearPorts(config, leftoversIn, STOP_TIMEOUT);
     }
 
-    static void clearPorts(BenchConfig.Server config, Duration wait) throws IOException {
-        if (!accepts(config.rconPort()) && !accepts(config.serverPort())) {
+    static void clearPorts(BenchConfig.Server config, Path leftoversIn, Duration wait) throws IOException {
+        if (!portsTaken(config)) {
             return;
         }
-        sendStop(config, loginTimeout(wait));
-        awaitPortsFree(config, wait);
+        if (sendStop(config, loginTimeout(wait))) {
+            awaitPortsFree(config, wait);
+        }
+        if (portsTaken(config) && leftoversIn != null && AttemptProcesses.kill(leftoversIn) > 0) {
+            // Each was waited for; the system frees a dead process's ports at once, so a port still taken a moment
+            // later belongs to something else.
+            awaitPortsFree(config, wait.compareTo(KILL_WAIT) < 0 ? wait : KILL_WAIT);
+        }
         for (int port : new int[] {config.rconPort(), config.serverPort()}) {
             if (accepts(port)) {
-                throw new IOException("port " + port + " is still taken by a process the bench did not start "
-                        + "(a server left from an earlier run?); stop it and run again");
+                throw new IOException("port " + port + " is still taken by a process the bench cannot prove its own "
+                        + "(no stop over RCON ended it, and it runs in no attempt folder of this run: a server left "
+                        + "from an earlier run?); stop it and run again");
             }
         }
+    }
+
+    private static boolean portsTaken(BenchConfig.Server config) {
+        return accepts(config.rconPort()) || accepts(config.serverPort());
     }
 
     /** The RCON login wait within a caller's {@code wait}: never longer than the caller asked for. */
@@ -205,16 +222,18 @@ public final class ServerManager implements AutoCloseable {
         }
     }
 
-    private static void sendStop(BenchConfig.Server config, Duration loginTimeout) throws RconRefusedException {
+    /** Sends {@code stop} over RCON; false when nothing answered there, so nothing was told to stop. */
+    private static boolean sendStop(BenchConfig.Server config, Duration loginTimeout) throws RconRefusedException {
         RconClient client = tryConnect(config, loginTimeout);
         if (client == null) {
-            return;
+            return false;
         }
         try (client) {
             client.command("stop");
         } catch (IOException ignored) {
             // the server may close the connection before replying
         }
+        return true;
     }
 
     /**
@@ -263,7 +282,7 @@ public final class ServerManager implements AutoCloseable {
     /** Waits (bounded) until nothing accepts connections on the RCON or game port any more. */
     private static void awaitPortsFree(BenchConfig.Server config, Duration wait) {
         long deadline = System.nanoTime() + wait.toNanos();
-        while ((accepts(config.rconPort()) || accepts(config.serverPort())) && System.nanoTime() < deadline) {
+        while (portsTaken(config) && System.nanoTime() < deadline) {
             try {
                 Thread.sleep(500);
             } catch (InterruptedException e) {

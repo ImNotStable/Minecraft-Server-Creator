@@ -13,6 +13,7 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Supplier;
 
 /**
@@ -39,6 +40,9 @@ public record BenchConfig(
         Map<String, String> paths,
         int corePort,
         String minecraftVersion) {
+
+    /** The placeholder names the runner fills itself, such as {@code {workspace}} and {@code {scaffoldVersion}}. */
+    public static final Set<String> RUNNER_PLACEHOLDERS = BenchConfigRules.BUILT_IN_PLACEHOLDERS;
 
     /**
      * @param command        program and arguments; {@code {prompt}} is replaced by the full prompt
