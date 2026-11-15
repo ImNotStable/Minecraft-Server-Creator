@@ -488,11 +488,11 @@ class LifecycleToolsTest {
                 .startsWith("created paper-plugin project in ").doesNotContain("assword").doesNotContain("eula=")
                 .contains("next: ask the user exactly: \"To run a Minecraft server you must agree to the Minecraft "
                         + "EULA (https://aka.ms/MinecraftEULA). Do you agree to it? (yes/no)\"")
-                .endsWith("On yes: server_setup acceptEula=true, then edit the code and dev_cycle");
+                .endsWith("On yes: server_setup acceptEula=true, then edit the code and dev_cycle project=fresh");
         Files.createDirectories(workspace.resolve("run"));
         Files.writeString(workspace.resolve("run/paper.jar"), "set up");
         assertThat(h.ok("project_scaffold", "name", "Other", "dir", "second"))
-                .endsWith("next: edit the code, then dev_cycle");
+                .endsWith("next: edit the code, then dev_cycle project=second");
         assertThat(workspace.resolve("fresh")).isNotEmptyDirectory();
         assertThat(h.error("project_scaffold", "name", "MyPlugin", "dir", "fresh")).startsWith("error: ");
         assertThat(h.error("project_scaffold", "name", "X", "template", "nope")).contains("unknown template nope");
@@ -506,18 +506,18 @@ class LifecycleToolsTest {
     void scaffoldSaysWhatEachPlatformNeedsBeforeTheFirstDevCycle() throws Exception {
         // #627: Velocity has no EULA but needs server_setup (velocity.jar, velocity.toml, the forwarding secret).
         assertThat(h.ok("project_scaffold", "name", "Proxy", "dir", "proxy", "template", "velocity-plugin"))
-                .doesNotContain("EULA").endsWith("\nnext: server_setup platform=velocity, then edit the code and dev_cycle");
+                .doesNotContain("EULA").endsWith("\nnext: server_setup platform=velocity, then edit the code and dev_cycle project=proxy");
         Files.writeString(Files.createDirectories(workspace.resolve("run")).resolve("velocity.jar"), "set up");
         assertThat(h.ok("project_scaffold", "name", "Proxy", "dir", "proxy2", "template", "velocity-plugin"))
-                .endsWith("\nnext: edit the code, then dev_cycle");
+                .endsWith("\nnext: edit the code, then dev_cycle project=proxy2");
         // The workspace is Velocity now: a Minestom project in a subfolder needs the switch first (#636).
         assertThat(h.ok("project_scaffold", "name", "Game", "dir", "game", "template", "minestom-server"))
                 .contains("\nthe workspace stays Velocity, which never loads this Minestom project: ")
-                .endsWith("\nnext: server_setup platform=minestom, then edit the code and dev_cycle");
+                .endsWith("\nnext: server_setup platform=minestom, then edit the code and dev_cycle project=game");
         // Minestom's server is the project's own jar, which dev_cycle builds: nothing to set up first.
         try (CoreHarness s = new CoreHarness(Files.createDirectories(workspace.resolve("ws-minestom")))) {
             assertThat(s.ok("project_scaffold", "name", "Game", "dir", "game", "template", "minestom-server"))
-                    .endsWith("\nnext: edit the code, then dev_cycle");
+                    .endsWith("\nnext: edit the code, then dev_cycle project=game");
         }
     }
 
@@ -536,7 +536,7 @@ class LifecycleToolsTest {
                 + "platform=fabric switches it (Paper projects then need server_setup platform=paper)\n";
         assertThat(h.ok("project_scaffold", "name", "Foo", "dir", "foo", "template", "fabric-mod"))
                 .contains(switches + "next: ask the user exactly: ")
-                .endsWith("\nOn yes: server_setup platform=fabric acceptEula=true, then edit the code and dev_cycle");
+                .endsWith("\nOn yes: server_setup platform=fabric acceptEula=true, then edit the code and dev_cycle project=foo");
         assertThat(h.core.server().platform()).isEqualTo(Platform.PAPER);
         // Even with the loader's server jar in the folder, Paper is what starts.
         Files.writeString(run.resolve("fabric-server-launch.jar"), "set up");
@@ -651,7 +651,7 @@ class LifecycleToolsTest {
             Files.writeString(run.resolve("eula.txt"), "eula=true\n");
             try (CoreHarness s = new CoreHarness(ws)) {
                 assertThat(s.ok("project_scaffold", "name", "Foo", "dir", "foo", "template", c[2]))
-                        .doesNotContain("EULA").endsWith("\nnext: edit the code, then dev_cycle");
+                        .doesNotContain("EULA").endsWith("\nnext: edit the code, then dev_cycle project=foo");
             }
             assertThat(ws.resolve(".msc/platform")).hasContent(c[0]);
         }
@@ -921,7 +921,7 @@ class LifecycleToolsTest {
             String first = s.ok("server_setup", "platform", "fabric");
             assertThat(first).contains("fabric launcher for " + minecraft + ", loader " + loader + " (downloaded)")
                     .contains("fabric api " + api + " (downloaded)").contains("warning: msc fabric agent not found")
-                    .contains("EULA is not accepted").endsWith("next: server_start or dev_cycle");
+                    .contains("EULA is not accepted").endsWith("next: server_start or project_scaffold then dev_cycle");
             Path run = ws.resolve("run");
             assertThat(run.resolve("fabric-server-launch.jar")).hasContent("launcher");
             assertThat(run.resolve("mods/fabric-api.jar")).hasContent("fabric api");
