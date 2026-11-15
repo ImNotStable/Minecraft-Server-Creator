@@ -9,6 +9,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Stands in for a server that speaks no RCON, such as a Minestom game server (#577): listens on loopback port
@@ -38,6 +39,12 @@ public final class PortHolder {
      * path names a folder); returns once it listens.
      */
     public static Process start(Path dir, int port, Path portFile, String... extra) throws IOException {
+        return start(dir, port, portFile, Map.of(), extra);
+    }
+
+    /** {@link #start(Path, int, Path, String...)} with {@code env} added to its environment. */
+    public static Process start(Path dir, int port, Path portFile, Map<String, String> env, String... extra)
+            throws IOException {
         // The extra arguments come first, as system properties: the system cuts long command lines (the class path).
         List<String> command = new ArrayList<>(List.of(ProcessHandle.current().info().command().orElse("java")));
         for (String argument : extra) {
@@ -45,8 +52,10 @@ public final class PortHolder {
         }
         command.addAll(List.of("-cp", System.getProperty("java.class.path"), PortHolder.class.getName(),
                 Integer.toString(port), portFile.toAbsolutePath().toString()));
-        Process process = new ProcessBuilder(command).directory(dir.toFile())
-                .redirectOutput(ProcessBuilder.Redirect.DISCARD).redirectErrorStream(true).start();
+        ProcessBuilder builder = new ProcessBuilder(command).directory(dir.toFile())
+                .redirectOutput(ProcessBuilder.Redirect.DISCARD).redirectErrorStream(true);
+        builder.environment().putAll(env);
+        Process process = builder.start();
         awaitPort(process, portFile);
         return process;
     }

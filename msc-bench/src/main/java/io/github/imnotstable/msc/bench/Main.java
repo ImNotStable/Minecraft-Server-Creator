@@ -435,7 +435,7 @@ public final class Main {
                 // check's own server needs the game port, so it is stopped first (#577); the RCON checks then start
                 // the workspace's own server. Nothing is killed by its folder: the command that started this check
                 // names the workspace too.
-                ServerManager.clearPorts((config == null ? BenchConfig.defaults() : config).server(), null);
+                ServerManager.clearPorts((config == null ? BenchConfig.defaults() : config).server(), null, null);
             }
             if (!task.reset().isEmpty()) {
                 task.reset().apply(workspace);
