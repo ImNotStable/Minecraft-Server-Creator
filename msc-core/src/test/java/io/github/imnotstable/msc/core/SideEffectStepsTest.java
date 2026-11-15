@@ -101,8 +101,8 @@ class SideEffectStepsTest {
 
     static Stream<Arguments> tools() {
         return Stream.of(
-                Arguments.of("pack", new PackScenario(), List.of("build the pack and serve it",
-                        "point server.properties at this build", "send it to the server's players", "save the zip")),
+                Arguments.of("pack", new PackScenario(), List.of("build the pack", "serve the pack",
+                        "offer the pack in server.properties", "send it to the server's players", "save the zip")),
                 Arguments.of("texture", new TextureScenario(), List.of("write the texture and its model",
                         "write the animation")),
                 Arguments.of("texture .png", new LoosePngScenario(), List.of("write the png")),
@@ -135,8 +135,8 @@ class SideEffectStepsTest {
                         "remember the workspace platform", "stop the server an earlier session left running",
                         "take over the pack an earlier session served", "update the installed agent jar",
                         "start the server")),
-                Arguments.of("server_detach", new DetachScenario(), List.of("detach the server",
-                        "hand the pack to a standalone host", "offer the pack in server.properties")));
+                Arguments.of("server_detach", new DetachScenario(), List.of("detach the server", "serve the pack",
+                        "offer the pack in server.properties")));
     }
 
     @ParameterizedTest(name = "{0}")

@@ -16,6 +16,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
+import java.util.function.BooleanSupplier;
 import java.util.regex.Pattern;
 
 /**
@@ -94,10 +95,14 @@ public final class ResourcePack implements AutoCloseable {
     private Process hostProcess;
     private int hostPort;
     /**
-     * The command that starts the standalone host, from {@link #keepServing} until {@link #stopOwnHost}: while set,
-     * a detached server's pack must outlive this session, so {@link #servingPort} hands every build to that host.
+     * Whether this workspace's server is detached ({@code ServerManager.detached}), the one state {@link #serve} goes
+     * by: while it is, the pack must outlive this session, so the standalone host serves it (ADR 0051).
      */
-    private List<String> standalone;
+    private final BooleanSupplier detached;
+    /** The command that starts the standalone host, before its host, port and zip arguments. */
+    private List<String> hostCommand = List.of(ProcessHandle.current().info().command()
+                    .orElse(Path.of(System.getProperty("java.home"), "bin", "java").toString()),
+            "-cp", System.getProperty("java.class.path"), PackHost.class.getName());
     /** Set by {@link #close(boolean)} under this monitor; whatever starts a host checks it under the same one. */
     private boolean closed;
 
@@ -106,15 +111,26 @@ public final class ResourcePack implements AutoCloseable {
      *             URL, and with it what {@code server.properties} offers, stays the same from session to session
      */
     public ResourcePack(Path root, Path outDir, String host, int port, int packFormat) {
+        this(root, outDir, host, port, packFormat, () -> false);
+    }
+
+    /** @param detached whether this workspace's server is detached, so its pack must outlive the session */
+    public ResourcePack(Path root, Path outDir, String host, int port, int packFormat, BooleanSupplier detached) {
         this.source = new PackSource(root);
         this.outDir = outDir;
         this.host = host;
         this.preferredPort = port;
         this.packFormat = packFormat;
+        this.detached = detached;
     }
 
     public ResourcePack(Path root, Path outDir, String host, int packFormat) {
         this(root, outDir, host, 0, packFormat);
+    }
+
+    /** Replace the command that starts the standalone host (up to its arguments); tests use a stand-in. */
+    public synchronized void hostCommand(List<String> command) {
+        this.hostCommand = List.copyOf(command);
     }
 
     /** The pack_format every build writes into pack.mcmeta. */
@@ -155,37 +171,64 @@ public final class ResourcePack implements AutoCloseable {
         return lastBuilt;
     }
 
-    /** The URL of the build with {@code sha1}, served as {@link #servingPort} decides. */
-    private String url(String sha1) throws IOException {
-        return "http://" + host + ":" + servingPort() + "/pack-" + sha1 + ".zip";
-    }
-
     /**
-     * The one place that decides who serves the pack, returning its port: the standalone host while a detached
-     * server's pack must outlive this session (started here, as server_detach does, when nothing served the pack at
-     * the detach, #741), else the in-process host. The standalone host serves the zip file itself.
+     * The URL of the build with {@code sha1} where it is served now: by the standalone host while it runs (it serves
+     * the zip file itself), else by the in-process host, started here. Who should serve it is decided only by
+     * {@link #serve}.
      */
-    private int servingPort() throws IOException {
+    private String url(String sha1) throws IOException {
+        int port;
         if (hostAlive()) {
-            return hostPort;
-        }
-        if (server == null) {
-            server = startHost();
-        }
-        if (standalone != null) {
-            try {
-                moveToStandalone();
-                return hostPort;
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                throw new java.io.InterruptedIOException("interrupted while starting the standalone pack host");
+            port = hostPort;
+        } else {
+            if (server == null) {
+                server = startHost();
             }
+            port = server.port();
         }
-        return server.port();
+        return "http://" + host + ":" + port + "/pack-" + sha1 + ".zip";
     }
 
     private boolean hostAlive() {
         return hostProcess != null && hostProcess.isAlive();
+    }
+
+    /**
+     * Who serves the workspace's pack after {@link #serve}: the build ({@code null} when there is none), whether the
+     * standalone host serves it (so it outlives this session), and why that host did not come up when it should have,
+     * as one line (null otherwise).
+     */
+    public record Serving(Built built, boolean outlives, String trouble) {
+    }
+
+    /**
+     * The one place that decides who serves the workspace's pack (ADR 0051), from one state: while the server is
+     * detached the standalone host serves it, started here when it is not running (also after it ended meanwhile);
+     * otherwise this session does, and a standalone host it started earlier is stopped. A host that does not come up
+     * is an answer, not a failure: the pack is then served in-process ({@link Serving#trouble} says why), and the next
+     * call tries again.
+     */
+    public synchronized Serving serve() throws IOException, InterruptedException {
+        if (closed) {
+            throw ToolException.workspaceClosed("the pack was not served");
+        }
+        boolean outlive = detached.getAsBoolean();
+        if (!outlive && hostProcess != null) {
+            stopOwnHost();
+        }
+        Built built = current();
+        String trouble = null;
+        if (built != null && outlive && !hostAlive()) {
+            trouble = startStandalone();
+        }
+        if (built != null) {
+            String url = url(built.sha1());
+            if (!url.equals(built.url())) {
+                built = new Built(built.zip(), built.sha1(), url, built.files(), built.bytes());
+            }
+            lastBuilt = built;
+        }
+        return new Serving(built, built != null && hostAlive(), trouble);
     }
 
     /** True when {@code url} has the shape of a URL an MSC pack host hands out on this host. */
@@ -237,9 +280,8 @@ public final class ResourcePack implements AutoCloseable {
         PackSource.Zipped zipped = source.zip(zipFile());
         byte[] data = Files.readAllBytes(zipped.zip());
         String sha1 = zipped.sha1();
-        String url = url(sha1);
         served = new PackHost.Served(data, sha1);
-        Built built = new Built(zipped.zip(), sha1, url, zipped.files(), data.length);
+        Built built = new Built(zipped.zip(), sha1, url(sha1), zipped.files(), data.length);
         lastBuilt = built;
         return built;
     }
@@ -328,40 +370,30 @@ public final class ResourcePack implements AutoCloseable {
     }
 
     /**
-     * Move serving to a standalone process on the same port, so players who were sent the pack can still fetch it
-     * after this core exits. Later builds in this session are served by it too, also the first one when nothing was
-     * built yet (#741): then this returns false, as there is no pack to keep up now.
+     * Start the standalone host on the in-process host's port (started first when none runs, so the port is the one
+     * this workspace's pack is served on) and stop that one. Returns null when it came up, else why not, in one line;
+     * the pack is then served in-process again.
      */
-    public synchronized boolean keepServing(String java, String classPath) throws IOException, InterruptedException {
-        if (closed) {
-            throw ToolException.workspaceClosed("no standalone pack host was started");
-        }
-        standalone = List.of(java, "-cp", classPath, PackHost.class.getName(), host);
-        if (hostAlive()) {
-            return true;
-        }
+    private String startStandalone() throws IOException, InterruptedException {
         if (server == null) {
-            return false;
+            server = startHost();
         }
-        moveToStandalone();
-        return true;
-    }
-
-    /**
-     * Start the standalone host on the in-process host's port and stop that one. One that does not come up leaves the
-     * pack served in-process, by this session only, from then on.
-     */
-    private void moveToStandalone() throws IOException, InterruptedException {
         int port = server.port();
         server.stop();
         server = null;
-        List<String> command = new java.util.ArrayList<>(standalone);
-        command.addAll(List.of(String.valueOf(port), zipFile().toString()));
-        // Its log is read as UTF-8 when it does not come up (#478).
-        Process p = ServerJava.processBuilder(command)
-                .redirectOutput(ProcessBuilder.Redirect.DISCARD)
-                .redirectError(hostLog().toFile())
-                .start();
+        List<String> command = new java.util.ArrayList<>(hostCommand);
+        command.addAll(List.of(host, String.valueOf(port), zipFile().toString()));
+        Process p;
+        try {
+            // Its log is read as UTF-8 when it does not come up (#478).
+            p = ServerJava.processBuilder(command)
+                    .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+                    .redirectError(hostLog().toFile())
+                    .start();
+        } catch (IOException e) {
+            server = startHost();
+            return failed(e.getMessage());
+        }
         // Owned from the moment it exists, so an interrupt below (the session ending while the host starts) leaves
         // it where close and a later session's stopLeftoverHost find it, never as an orphan with no pid file (#297).
         hostProcess = p;
@@ -374,29 +406,33 @@ public final class ResourcePack implements AutoCloseable {
                 Thread.sleep(100);
             }
         } catch (IOException | RuntimeException e) {
-            abandonHost(p, port);
-            throw e;
+            abandonHost(p);
+            return failed(e.getMessage());
         }
-        if (!p.isAlive() || !accepts(port)) {
-            abandonHost(p, port);
-            String why = lastLine(hostLog());
-            throw new ToolException("could not start a standalone pack host" + (why.isEmpty() ? "" : " (" + why + ")")
-                    + "; the pack is still served by this session");
+        if (p.isAlive() && accepts(port)) {
+            return null;
         }
+        abandonHost(p);
+        String why = reason(readLog());
+        return failed(!why.isEmpty() ? why : p.isAlive() ? "it did not listen within 15 s"
+                : "it exited with code " + p.exitValue());
     }
 
-    /** Kill a standalone host that did not come up, and serve in-process again on its port. */
-    private void abandonHost(Process p, int port) throws IOException, InterruptedException {
+    private static String failed(String why) {
+        return "could not start a standalone pack host (" + why + ")";
+    }
+
+    /** Kill a standalone host that did not come up, and serve in-process again, on its port when it is free. */
+    private void abandonHost(Process p) throws IOException, InterruptedException {
         p.destroyForcibly();
         hostProcess = null;
-        standalone = null;
         try {
             Files.deleteIfExists(hostPidFile());
         } catch (IOException ignored) {
             // A stale file is checked against the process start time anyway.
         }
         p.waitFor(5, TimeUnit.SECONDS);
-        server = PackHost.startWithin(host, port, () -> served, PackHost.PORT_PATIENCE);
+        server = startHost();
     }
 
     /** {@code .msc/pack-host.log}: what the standalone host printed, so a failed start can say why. */
@@ -404,13 +440,36 @@ public final class ResourcePack implements AutoCloseable {
         return outDir.resolveSibling("pack-host.log");
     }
 
-    private static String lastLine(Path log) {
+    private List<String> readLog() {
         try {
-            List<String> lines = Files.readAllLines(log).stream().map(String::strip).filter(l -> !l.isEmpty()).toList();
-            return lines.isEmpty() ? "" : lines.getLast();
+            return Files.readAllLines(hostLog());
         } catch (IOException e) {
-            return "";
+            return List.of();
         }
+    }
+
+    /** A line that starts a stack trace: {@code Exception in thread "main" java.net.BindException: why}. */
+    private static final Pattern THROWN = Pattern.compile("(?:Exception in thread \"[^\"]*\" )?"
+            + "(?:[a-z_$][\\w$]*\\.)+[A-Z][\\w$]*(?:Exception|Error)(?:: (.*))?");
+    /** Lines that never say why: the launcher's notes and a stack trace's frames and tail. */
+    private static final Pattern NOISE = Pattern.compile("(?:NOTE: )?Picked up |WARNING: |at |\\.\\.\\. \\d+ more"
+            + "|Caused by: ");
+
+    /**
+     * Why a host that did not come up failed, in one line (#744): the message of the exception a stack trace starts
+     * with, else the first line that is neither a launcher note nor part of a trace ({@link PackHost#main} writes the
+     * reason alone). Never a trace line such as {@code ... 2 more}.
+     */
+    static String reason(List<String> log) {
+        List<String> lines = log.stream().map(String::strip)
+                .filter(l -> !l.isEmpty() && !NOISE.matcher(l).lookingAt()).toList();
+        for (String line : lines) {
+            java.util.regex.Matcher m = THROWN.matcher(line);
+            if (m.matches()) {
+                return m.group(1) != null && !m.group(1).isBlank() ? m.group(1).strip() : line;
+            }
+        }
+        return lines.isEmpty() ? "" : lines.getFirst();
     }
 
     private boolean accepts(int port) {
@@ -427,7 +486,6 @@ public final class ResourcePack implements AutoCloseable {
      * all. The next build serves in-process again, on the same port. Returns true when there was one.
      */
     public synchronized boolean stopOwnHost() {
-        standalone = null;
         if (hostProcess == null) {
             return false;
         }
@@ -450,12 +508,11 @@ public final class ResourcePack implements AutoCloseable {
     }
 
     /**
-     * A switch away from a workspace kept for its detached server (#735): stop the in-process host, so a fixed pack
-     * port is free for the next workspace, and keep the standalone host, which a detached server's pack goes to first
-     * (#741). A build after the switch back serves again.
+     * A switch away from a workspace kept for its detached server (#735), after {@link #serve} handed its pack to the
+     * standalone host: stop the in-process host, so a fixed pack port is free for the next workspace. A pack that
+     * host serves is kept; the switch back serves again whatever it did not.
      */
     public synchronized void park() {
-        handOver();
         if (server != null) {
             server.stop();
             server = null;
@@ -482,41 +539,8 @@ public final class ResourcePack implements AutoCloseable {
         }).orElse(null);
     }
 
-    /**
-     * The switch back to a workspace kept for its detached server: a pack that host should serve and nothing does
-     * (it ended meanwhile) is served again, as {@link #servingPort} decides. Best effort: the next build tries again.
-     */
-    public synchronized void unpark() {
-        if (standalone != null && !hostAlive() && Files.isRegularFile(zipFile())) {
-            lastBuilt = null;
-            try {
-                current();
-            } catch (IOException | RuntimeException e) {
-                // Not served until the next build.
-            }
-        }
-    }
-
-    /**
-     * Before the in-process host stops while a detached server's pack must outlive it: hand that pack to the
-     * standalone host, as {@link #servingPort} would. Best effort: one that does not come up stops with the
-     * in-process host.
-     */
-    private void handOver() {
-        if (standalone != null && server != null && lastBuilt != null) {
-            try {
-                servingPort();
-            } catch (IOException | RuntimeException e) {
-                // Then nothing serves it, as before a detach that could not start the host.
-            }
-        }
-    }
-
     /** Stop serving. {@code keepHost} leaves a standalone host running for a detached server. */
     public synchronized void close(boolean keepHost) {
-        if (keepHost) {
-            handOver();
-        }
         closed = true;
         if (server != null) {
             server.stop();
@@ -525,7 +549,6 @@ public final class ResourcePack implements AutoCloseable {
         if (!keepHost && hostProcess != null) {
             hostProcess.destroy();
             hostProcess = null;
-            standalone = null;
             try {
                 Files.deleteIfExists(hostPidFile());
             } catch (IOException ignored) {

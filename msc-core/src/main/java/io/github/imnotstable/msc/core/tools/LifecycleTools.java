@@ -26,14 +26,15 @@ public final class LifecycleTools {
 
     /** Declares the tools; returns the world backups, which share the server start ({@code build_undo backup=}). */
     public static WorldBackups register(ToolRegistry registry, CoreConfig config, AgentHub hub, ServerManager server,
-                                        ResourcePack pack, ProjectBuilder builder, PaperDownloader downloader,
-                                        FabricDownloader fabric, BackgroundWork background, WorldService world) {
+                                        ResourcePack pack, PackPublisher publisher, ProjectBuilder builder,
+                                        PaperDownloader downloader, FabricDownloader fabric, BackgroundWork background,
+                                        WorldService world) {
         EulaPrompts eula = new EulaPrompts(config);
         LogMarks marks = new LogMarks();
         BuildWarmup warmup = new BuildWarmup(builder, background);
         Scaffold scaffold = new Scaffold(config, eula, warmup);
         ServerSetup setup = new ServerSetup(config, server, downloader, fabric, eula);
-        ServerRun run = new ServerRun(config, hub, server, pack, setup, eula, marks);
+        ServerRun run = new ServerRun(config, hub, server, pack, publisher, setup, eula, marks);
         // An agent that becomes ready after its start was reported (a slow start, a restart outside MSC) gets the
         // workspace's pack too, beside the call that runs then (#655).
         hub.onReady(() -> {

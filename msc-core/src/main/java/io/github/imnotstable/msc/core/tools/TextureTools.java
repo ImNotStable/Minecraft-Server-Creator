@@ -2,8 +2,6 @@ package io.github.imnotstable.msc.core.tools;
 
 import io.github.imnotstable.msc.core.CoreConfig;
 import io.github.imnotstable.msc.core.agent.AgentHub;
-import io.github.imnotstable.msc.core.server.Platform;
-import io.github.imnotstable.msc.core.texture.PackProperties;
 import io.github.imnotstable.msc.core.texture.ResourcePack;
 import io.github.imnotstable.msc.core.tool.Args;
 import io.github.imnotstable.msc.core.tool.Budget;
@@ -13,8 +11,6 @@ import io.github.imnotstable.msc.core.tool.Tool;
 import io.github.imnotstable.msc.core.tool.ToolException;
 import io.github.imnotstable.msc.core.tool.ToolRegistry;
 import io.github.imnotstable.msc.process.ServerPropertiesFile;
-import io.github.imnotstable.msc.protocol.op.Ops;
-import io.github.imnotstable.msc.protocol.transport.CoreServer;
 import io.github.imnotstable.msc.textures.Animation;
 import io.github.imnotstable.msc.textures.Colors;
 import io.github.imnotstable.msc.textures.Edits;
@@ -52,8 +48,8 @@ public final class TextureTools {
     private TextureTools() {
     }
 
-    public static void register(ToolRegistry registry, AgentHub hub, ResourcePack pack, CoreConfig config) {
-        Path serverDir = config.serverDir();
+    public static void register(ToolRegistry registry, AgentHub hub, ResourcePack pack, PackPublisher publisher,
+                                CoreConfig config) {
         PackSource source = pack.source();
         registry.add("texture",
                 "Add a pixel-art texture to the project's resource pack: draw it as text "
@@ -123,7 +119,8 @@ public final class TextureTools {
                         }
                         return check(pack, args.integer("limit", 30));
                     }
-                    return pack(args, hub, pack, config, serverDir.resolve(ServerPropertiesFile.NAME));
+                    return pack(args, hub, pack, publisher, config,
+                            config.serverDir().resolve(ServerPropertiesFile.NAME));
                 });
     }
 
@@ -161,80 +158,76 @@ public final class TextureTools {
         return slots;
     }
 
-    static final String BUILD = "build the pack and serve it";
-    static final String OFFER = "point " + ServerPropertiesFile.NAME + " at this build";
-    static final String APPLY = "send it to the server's players";
+    static final String BUILD = "build the pack";
     static final String SAVE = "save the zip";
 
     /**
      * The pack build. Checked first: the arguments, the file= target and server.properties. Then, in this order:
-     * build and serve (the pack host then serves only this build), point server.properties at it (so what the file
-     * offers is always what is served), send it to the players, save the zip copy (last: it is the least important,
-     * and a failed apply then writes nothing into the workspace).
+     * build, then publish it as every pack change is (ADR 0051): serve (by the standalone host while the server is
+     * detached), offer it in server.properties (where it offers the pack, or the server is detached; so what the file
+     * offers is always what is served), send it to the players; then save the zip copy (last: it is the least
+     * important, and a failed apply then writes nothing into the workspace).
      */
-    private static String pack(Args args, AgentHub hub, ResourcePack pack, CoreConfig config, Path properties)
-            throws IOException, InterruptedException {
+    private static String pack(Args args, AgentHub hub, ResourcePack pack, PackPublisher publisher, CoreConfig config,
+                               Path properties) throws IOException, InterruptedException {
         int limit = args.integer("limit", 5);
         String description = args.lines("description", LifecycleTools.DEFAULT_PACK_DESCRIPTION, 2);
         boolean required = args.bool("required", false);
         Path copy = args.has("file") ? OutputFile.check(args.path("file", config.inWorkspace()), "file") : null;
-        Platform platform = Platform.current(config);
-        boolean offered = pack.ours(PackProperties.url(platform, properties));
-        if (offered) {
+        boolean offers = publisher.offers();
+        if (offers) {
             OutputFile.check(properties, ServerPropertiesFile.NAME);
         }
         boolean apply = args.bool("apply", true);
         boolean connected = apply && hub.current() != null;
-        Steps steps = new Steps("pack").then(BUILD);
-        if (offered) {
-            steps.then(OFFER);
+        Steps steps = new Steps("pack").then(BUILD).then(PackPublisher.SERVE);
+        if (offers) {
+            steps.then(PackPublisher.OFFER);
         }
         if (connected) {
-            steps.then(APPLY);
+            steps.then(PackPublisher.SEND);
         }
         if (copy != null) {
             steps.then(SAVE).ifFails(SAVE, "no file was written at " + copy + "; run pack file=... again to save it");
         }
         ResourcePack.Snapshot before = pack.snapshot();
-        byte[] offeredBefore = offered ? Files.readAllBytes(properties) : null;
-        ResourcePack.Built built = steps.run(BUILD, () -> {
+        byte[] offeredBefore = offers ? Files.readAllBytes(properties) : null;
+        steps.run(BUILD, () -> {
             ResourcePack.Built b = pack.build(description);
-            if (apply && !connected) {
+            if (apply) {
                 // The workspace's pack to send: the next start that connects an agent sends it (#655).
                 pack.applied(new ResourcePack.Applied(description, required));
             }
             return b;
         });
+        // Until the players have it, a failure takes the build back: what they were sent, what the host serves and
+        // what server.properties offers then agree again.
+        PackPublisher.Published published;
+        try {
+            published = publisher.publish(steps, connected ? PackPublisher.Send.ALWAYS : PackPublisher.Send.NEVER,
+                    required);
+        } catch (ToolException e) {
+            throw new ToolException(e.getMessage() + "\n" + takeBack(pack, before, properties, offeredBefore));
+        }
+        ResourcePack.Built built = published.built();
         StringBuilder out = new StringBuilder();
         out.append("pack built: ").append(built.files()).append(" files, ").append(built.bytes())
                 .append(" bytes, pack_format ").append(pack.packFormat()).append("\nurl: ").append(built.url())
                 .append("\nsha1: ").append(built.sha1());
-        // Until the players have it, a failure takes the build back: what they were sent, what the host serves and
-        // what server.properties offers then agree again.
-        try {
-            if (offered && steps.run(OFFER, () -> PackProperties.write(platform, properties, built.url(), built.sha1(),
-                    required))) {
-                out.append("\n").append(ServerPropertiesFile.NAME).append(" updated to offer this build");
-            }
-            if (connected) {
-                Ops.PackResult r = steps.run(APPLY, () -> {
-                    CoreServer.AgentSession to = hub.current();
-                    Ops.PackResult sent = hub.call(Ops.PACK_APPLY,
-                            new Ops.PackParams(built.url(), built.sha1(), required));
-                    // So dev_cycle does not send this connection the same pack again (#667).
-                    pack.sent(to, built, required);
-                    pack.applied(new ResourcePack.Applied(description, required));
-                    return sent;
-                });
-                out.append("\napplied: sent to ").append(r.playersSent())
-                        .append(" players; players who join later get it too, also after a restart");
-            } else if (apply) {
-                String never = hub.noAgentReason();
-                out.append(never != null ? "\nnot sent: " + never
-                        : "\nnot sent yet: no server agent connected; the next server_start or dev_cycle sends it");
-            }
-        } catch (ToolException e) {
-            throw new ToolException(e.getMessage() + "\n" + takeBack(pack, before, properties, offeredBefore));
+        String hosting = published.hosting(false);
+        if (hosting != null) {
+            out.append('\n').append(hosting);
+        }
+        if (published.offered()) {
+            out.append("\n").append(ServerPropertiesFile.NAME).append(" updated to offer this build");
+        }
+        if (published.sent() != null) {
+            out.append("\napplied: sent to ").append(published.sent().playersSent())
+                    .append(" players; players who join later get it too, also after a restart");
+        } else if (apply) {
+            String never = hub.noAgentReason();
+            out.append(never != null ? "\nnot sent: " + never
+                    : "\nnot sent yet: no server agent connected; the next server_start or dev_cycle sends it");
         }
         if (copy != null) {
             steps.run(SAVE, () -> OutputFile.copy(built.zip(), copy));
@@ -265,16 +258,6 @@ public final class TextureTools {
             return "taking it back failed too (" + Steps.reason(e) + "): the pack host serves the new build, which the "
                     + "players were not sent; run pack again";
         }
-    }
-
-    /**
-     * After any build that changed what the pack host serves: keep a server.properties that offers our pack pointing
-     * at that build. Returns true when it did.
-     */
-    static boolean keepOffered(ResourcePack pack, Platform platform, Path properties, ResourcePack.Built built,
-                               boolean required) throws IOException {
-        return pack.ours(PackProperties.url(platform, properties))
-                && PackProperties.write(platform, properties, built.url(), built.sha1(), required);
     }
 
     /** The texture tool: one of draw, generate or recolor, then an optional animation; or only animate. */
