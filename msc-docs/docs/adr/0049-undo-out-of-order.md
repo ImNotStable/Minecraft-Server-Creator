@@ -41,6 +41,9 @@ blocks it kept would belong to no edit.
 - After any sequence of builds and undos, the world is what replaying the edits still applied, oldest first, gives
   (a seeded property test checks this, and another sends overlapping builds and undos at once). Undoing newest first always works, so the default (the latest edit) is never
   refused.
-- Each remembered edit costs its footprint in memory for the life of the core process, as its agent ids do.
+- Each remembered edit costs its footprint in memory until it is undone or its server run ends, as its agent ids do.
+  The agent's undo history lives in the server process, so the core forgets every edit made before the server last
+  stopped or started (a server_stop, a dev_cycle restart, a server that stopped on its own; #699): such an id is
+  unknown to build_undo, and it no longer refuses older edits it overlaps.
 - An edit whose later overlapping edits were lost to the agent's bounded undo history stays refused until those are
   undone (partly); `build_undo backup=` rolls back further.

@@ -35,6 +35,7 @@ public final class WorldService {
      * {@link #edits}, so they run one at a time (ADR 0049). Never taken while this object's monitor is held.
      */
     private final java.util.concurrent.locks.ReentrantLock editing = new java.util.concurrent.locks.ReentrantLock(true);
+    private volatile java.util.function.Supplier<Object> serverRun = () -> null;
     /** The agents' undo budget ({@code AgentDefaults.UNDO_BLOCKS}), for messages. */
     private static final String UNDO_BLOCKS_TEXT = String.format(java.util.Locale.ROOT, "%,d", 8 * Limits.MAX_REGION_VOLUME);
     private int editCounter;
@@ -448,7 +449,25 @@ public final class WorldService {
         edits.clear();
     }
 
-    private record Edit(List<String> parts, Footprint where) {
+    /**
+     * The server run edits are made in: an object that changes when the server stops or starts again, read without a
+     * lock (ServerManager's). Null when the core started no server, such as one attached through its address.
+     */
+    public void serverRun(java.util.function.Supplier<Object> run) {
+        this.serverRun = run;
+    }
+
+    /** {@code run}: the {@link #serverRun} the edit was made in. */
+    private record Edit(List<String> parts, Footprint where, Object run) {
+    }
+
+    /**
+     * Forget the edits of a server run that has ended (#699): the agent's undo history ended with that server, so
+     * they could undo nothing, and they would block undoing older edits they overlap. Under this monitor.
+     */
+    private void forgetEnded() {
+        Object run = serverRun.get();
+        edits.values().removeIf(e -> e.run() != run);
     }
 
     /**
@@ -456,8 +475,9 @@ public final class WorldService {
      * that id.
      */
     public synchronized String remember(List<String> agentEdits, Footprint where) {
+        forgetEnded();
         String id = "e" + (++editCounter);
-        edits.put(id, new Edit(new ArrayList<>(agentEdits), where));
+        edits.put(id, new Edit(new ArrayList<>(agentEdits), where, serverRun.get()));
         return id;
     }
 
@@ -496,6 +516,7 @@ public final class WorldService {
         List<String> agentEdits;
         String target = id;
         synchronized (this) {
+            forgetEnded();
             if (target == null) {
                 if (edits.isEmpty()) {
                     throw new ToolException("nothing to undo");
@@ -506,7 +527,8 @@ public final class WorldService {
             }
             Edit edit = edits.get(target);
             if (edit == null) {
-                throw new ToolException("unknown edit " + target + " (already undone, or from an earlier session)");
+                throw new ToolException("unknown edit " + target + " (already undone, or made before the server last "
+                        + "stopped: build_undo backup= rolls the world back)");
             }
             List<String> over = new ArrayList<>();
             boolean later = false;
