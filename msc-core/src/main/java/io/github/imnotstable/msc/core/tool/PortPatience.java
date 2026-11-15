@@ -24,7 +24,8 @@ public final class PortPatience {
 
     /**
      * Runs {@code bind} until it does not throw a {@link BindException}, for up to {@code patience}. Port 0 (any free
-     * port) is tried once: waiting would not help.
+     * port) is tried once: waiting would not help. The exception it gives up with names the port, so a user knows which
+     * one to free (#727).
      */
     public static <T> T bind(int port, Duration patience, Bind<T> bind) throws IOException, InterruptedException {
         long deadline = System.nanoTime() + patience.toNanos();
@@ -33,7 +34,9 @@ public final class PortPatience {
                 return bind.bind();
             } catch (BindException e) {
                 if (port == 0 || System.nanoTime() >= deadline) {
-                    throw e;
+                    BindException named = new BindException("port " + port + " is taken: " + e.getMessage());
+                    named.initCause(e);
+                    throw named;
                 }
                 Thread.sleep(100);
             }

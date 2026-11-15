@@ -25,6 +25,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
@@ -477,14 +478,27 @@ class WorkspaceOwnershipTest {
         }
 
         @Test
-        void aSwitchThatCannotReopenTheOldFolderLeavesOneTheNextSwitchOpens() {
+        void aSwitchThatCannotReopenTheOldFolderLeavesOneTheNextSwitchOpens() throws Exception {
+            List<Path> opens = new CopyOnWriteArrayList<>();
             h.core.openCheck((config, hub) -> {
+                opens.add(config.workspace());
                 throw new IOException("refused by the test");
             });
             assertThat(h.error("msc_workspace", "path", "other", "create", true))
                     .contains(", nor reopen " + workspace + " (refused by the test), so no workspace is open")
                     .endsWith("\nmsc_workspace path=" + workspace + " opens it again");
             assertThat(h.error("server_start")).startsWith(CLOSED);
+            // #727: every status says no workspace is open, and how to open it again.
+            String closed = "none open (" + workspace + " was closed; msc_workspace path=" + workspace
+                    + " opens it again)";
+            assertThat(h.ok("msc_workspace")).isEqualTo("workspace: " + closed);
+            assertThat(h.ok("msc_status")).contains("\nworkspace: " + closed + "\n");
+            // Following the hint while the folder still cannot open tries it once and names it once.
+            opens.clear();
+            assertThat(h.error("msc_workspace", "path", workspace.toString())).isEqualTo("error: could not open "
+                    + workspace + " (refused by the test), so no workspace is open\nmsc_workspace path=" + workspace
+                    + " opens it again");
+            assertThat(opens).containsExactly(workspace);
             h.core.openCheck((config, hub) -> {
             });
             assertThat(h.ok("msc_workspace", "path", workspace.toString())).startsWith("workspace: ");

@@ -14,14 +14,23 @@ import java.net.URISyntaxException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.temporal.ChronoUnit;
+import java.util.function.BooleanSupplier;
 
 /** Health and usage tools. */
 public final class MetaTools {
     private MetaTools() {
     }
 
+    /**
+     * How msc_status and msc_workspace name a workspace whose bench is closed: a switch failed and could not reopen
+     * it, so no workspace is open until a switch opens one (#727).
+     */
+    public static String closedWorkspace(Path workspace) {
+        return "none open (" + workspace + " was closed; msc_workspace path=" + workspace + " opens it again)";
+    }
+
     public static void register(ToolRegistry registry, CoreConfig config, AgentHub hub, ServerManager server,
-                                ToolLog log, ApiTools api) {
+                                ToolLog log, ApiTools api, BooleanSupplier closed) {
         registry.add("msc_status", "Where things stand: workspace, platform, server, agent, API index. stats=true: this "
                         + "session's calls, errors, time and result tokens per tool instead.",
                 Schema.of().opt("stats", "boolean", "Show call stats"), args -> {
@@ -30,7 +39,8 @@ public final class MetaTools {
                     }
                     StringBuilder out = new StringBuilder();
                     out.append("msc-core ").append(Core.VERSION).append(built()).append('\n');
-                    out.append("workspace: ").append(config.workspace()).append('\n');
+                    out.append("workspace: ").append(closed.getAsBoolean() ? closedWorkspace(config.workspace())
+                            : config.workspace()).append('\n');
                     out.append("platform: ").append(server.platform().id()).append('\n');
                     out.append("server: ").append(serverState(server)).append(" (").append(config.serverDir())
                             .append(")\n");
