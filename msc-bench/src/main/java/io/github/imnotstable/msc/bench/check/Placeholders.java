@@ -39,9 +39,9 @@ public final class Placeholders {
     /**
      * The regex {@code regex} with its placeholders filled so each value matches literally (#578). Every {@code {name}}
      * of the regex's own text becomes a quoted literal: the value of a known name, the text {@code {name}} itself for
-     * an unknown one (a repetition takes digits, so it is no regex syntax). Escape sequences are copied as written:
-     * {@code \p{L}}, {@code \P{Lu}}, {@code \x{FF}}, {@code \N{...}}, {@code \{}; inside {@code \Q...\E} the text is
-     * literal already, and a known name there is filled as a literal too (#588).
+     * an unknown one (a repetition takes digits, so it is no regex syntax). Escape sequences are copied as written,
+     * each with its argument ({@link #escapeEnd}); inside {@code \Q...\E} the text is literal already, and a known name
+     * there is filled as a literal too (#588).
      */
     public static String fillRegex(String regex, Map<String, String> values) {
         StringBuilder out = new StringBuilder(regex.length() + 16);
@@ -53,14 +53,10 @@ public final class Placeholders {
                 char next = regex.charAt(i + 1);
                 if (next == 'Q') {
                     i = quotedSection(regex, i + 2, values, out);
-                } else if ("pPxN".indexOf(next) >= 0 && i + 2 < n && regex.charAt(i + 2) == '{') {
-                    int close = regex.indexOf('}', i + 3);
-                    int end = close < 0 ? n : close + 1;
+                } else {
+                    int end = escapeEnd(regex, i);
                     out.append(regex, i, end);
                     i = end;
-                } else {
-                    out.append(c).append(next);
-                    i += 2;
                 }
                 continue;
             }
@@ -79,6 +75,34 @@ public final class Placeholders {
             }
         }
         return out.toString();
+    }
+
+    /**
+     * The index after the escape sequence whose backslash is at {@code i} (any but {@code \Q}), with its argument, so
+     * no placeholder is read inside it (#595). {@code \c} takes the next character, a brace included (the control
+     * character {@code ;}), but not a backslash. After a letter, a {@code {...}} belongs to the escape: an argument ({@code \p{L}},
+     * {@code \P{Lu}}, {@code \x{FF}}, {@code \N{...}}, {@code \b{g}}, and any escape Java adds later, since it
+     * reserves every other letter for escapes) or a repetition ({@code \d{2}}), never a placeholder. After anything
+     * else ({@code \\}, an escaped brace, {@code \.}, a digit) the escape is those two characters, and a {@code {name}} after
+     * it is filled.
+     */
+    private static int escapeEnd(String regex, int i) {
+        int n = regex.length();
+        char next = regex.charAt(i + 1);
+        if (next == 'c') {
+            // A backslash after \c starts an escape of its own, as Java's \Q...\E pass reads it.
+            return i + 2 < n && regex.charAt(i + 2) != '\\' ? i + 2 + Character.charCount(regex.codePointAt(i + 2))
+                    : i + 2;
+        }
+        if (asciiLetter(next) && i + 2 < n && regex.charAt(i + 2) == '{') {
+            int close = regex.indexOf('}', i + 3);
+            return close < 0 ? n : close + 1;
+        }
+        return i + 2;
+    }
+
+    private static boolean asciiLetter(char c) {
+        return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z');
     }
 
     /**
