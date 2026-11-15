@@ -21,8 +21,9 @@ import java.nio.file.Path;
  *   <li>serve: the standalone host serves the build while the server is detached, else this session does
  *       ({@link ResourcePack#serve}); a host that does not come up leaves it served by this session, and says why;</li>
  *   <li>offer: where the platform reads {@code server.properties}, the file offers the build while it outlives the
- *       session, and keeps following the build once it offers this workspace's pack (ADR 0017); with no build left,
- *       such an offer is cleared;</li>
+ *       session; once it offers this workspace's pack it keeps following the build (ADR 0017) while the server ends
+ *       with the session, and a detached server's offer is withdrawn while no standalone host serves the build past
+ *       it (#747); with no build left, such an offer is cleared;</li>
  *   <li>send: the connected agent gets the build, unless it already has exactly this one ({@link Send}).</li>
  * </ol>
  */
@@ -41,20 +42,72 @@ public final class PackPublisher {
     static final String OFFER = "offer the pack in " + ServerPropertiesFile.NAME;
     static final String SEND = "send it to the server's players";
 
+    /** What a publish did to the offer in {@code server.properties}. */
+    public enum Offer {
+        /** Not touched: the platform does not read it, or the file offers no pack of this workspace's. */
+        NONE,
+        /** It offers the build now. */
+        OFFERED,
+        /** It offered this workspace's pack, but no longer: no standalone host serves the build past the session. */
+        WITHDRAWN,
+        /** It offered this workspace's pack, but no longer: there is no build. */
+        CLEARED
+    }
+
     /**
-     * What a publish did: the build served (null when there is none), whether the standalone host serves it, why that
-     * host did not come up (null when it did or was not needed), whether {@code server.properties} offers it now, and
-     * the agent's answer when it was sent (else null).
+     * What a publish did: the build served (null when there is none), whether the standalone host serves it past the
+     * session, why that host did not come up (null when it did or was not needed), what became of the offer in
+     * {@code server.properties}, and the agent's answer when it was sent (else null). Every answer line on the pack
+     * host and the offer is made here, from what outlives the session (#747), so no answer promises a host or an
+     * offer that ends with the session.
      */
-    public record Published(ResourcePack.Built built, boolean outlives, String trouble, boolean offered,
+    public record Published(ResourcePack.Built built, boolean outlives, String trouble, Offer offer,
                             Ops.PackResult sent) {
+        /** True when {@code server.properties} offers the build now. */
+        public boolean offered() {
+            return offer == Offer.OFFERED;
+        }
+
         /**
          * The line on a standalone host that did not come up, or null. {@code leaving}: the in-process host stops
-         * right after (a switch away), so nothing serves the pack.
+         * right after (a switch away), so nothing serves the pack. It says when the offer was withdrawn.
          */
         String hosting(boolean leaving) {
-            return trouble == null ? null : trouble + (leaving ? ", so nothing serves the resource pack until the "
-                    + "switch back" : ", so the resource pack is served by this session only, until it ends");
+            String withdrawn = offer != Offer.WITHDRAWN ? null
+                    : ServerPropertiesFile.NAME + " offers no pack until a standalone host serves it";
+            if (trouble == null) {
+                return withdrawn;
+            }
+            return trouble + (leaving ? ", so nothing serves the resource pack until the switch back"
+                    : ", so the resource pack is served by this session only, until it ends")
+                    + (withdrawn == null ? "" : "; " + withdrawn);
+        }
+
+        /**
+         * server_detach's line on a restart outside MSC, or null: the offer only when the standalone host serves it
+         * past the session; on a platform that does not read the file, that it is not offered there.
+         */
+        String restart(Platform platform) {
+            if (!outlives) {
+                return null;
+            }
+            if (offered()) {
+                return ServerPropertiesFile.NAME + " now offers the pack too, so a restart outside MSC keeps it.";
+            }
+            return platform.readsPackProperties() ? null : platform.displayName() + " does not read the pack from "
+                    + ServerPropertiesFile.NAME + ", so a restart outside MSC does not offer it.";
+        }
+
+        /** server_detach's first line, on what keeps running after this session ends. */
+        String detached() {
+            return "server detached: it keeps running after this session ends"
+                    + (built == null ? " (no pack built yet; the pack tool starts a pack host that does too)"
+                    : outlives ? ", and so does the resource pack host" : "") + ".";
+        }
+
+        /** What the next session's start or stop stops beside the server: the pack host, when one outlives this one. */
+        String alsoStops() {
+            return outlives ? " and the pack host" : "";
         }
     }
 
@@ -104,11 +157,17 @@ public final class PackPublisher {
         boolean req = required != null ? required : applied != null ? applied.required()
                 : PackProperties.required(platform, properties);
         boolean ours = pack.ours(PackProperties.url(platform, properties));
-        boolean offered = false;
-        if (built != null && (serving.outlives() || ours)) {
-            offered = ran(steps, OFFER, () -> PackProperties.write(platform, properties, built.url(), built.sha1(), req));
-        } else if (built == null && ours) {
-            ran(steps, OFFER, () -> PackProperties.clear(platform, properties));
+        Offer offer = Offer.NONE;
+        if (built != null && (serving.outlives() || ours && !server.detached())) {
+            // Served past the session, or followed for the next MSC start of a server that ends with the session.
+            if (ran(steps, OFFER, () -> PackProperties.write(platform, properties, built.url(), built.sha1(), req))) {
+                offer = Offer.OFFERED;
+            }
+        } else if (ours) {
+            // No build left, or a detached server, which outlives the session, would offer a URL that does not (#747).
+            if (ran(steps, OFFER, () -> PackProperties.clear(platform, properties))) {
+                offer = built == null ? Offer.CLEARED : Offer.WITHDRAWN;
+            }
         }
         Ops.PackResult sent = null;
         CoreServer.AgentSession to = hub.current();
@@ -121,7 +180,7 @@ public final class PackPublisher {
                 return r;
             });
         }
-        return new Published(built, serving.outlives(), serving.trouble(), offered, sent);
+        return new Published(built, serving.outlives(), serving.trouble(), offer, sent);
     }
 
     /**
