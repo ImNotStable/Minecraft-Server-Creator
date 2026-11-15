@@ -12,6 +12,7 @@ import io.github.imnotstable.msc.core.server.MachineEula;
 import io.github.imnotstable.msc.core.server.MachineEulaAccess;
 import io.github.imnotstable.msc.core.server.PidFile;
 import io.github.imnotstable.msc.core.server.PidFileAccess;
+import io.github.imnotstable.msc.core.server.Platform;
 import io.github.imnotstable.msc.core.tools.LifecycleToolsAccess;
 import io.github.imnotstable.msc.core.tools.StepsAccess;
 import io.github.imnotstable.msc.process.rcon.FakeRconServer;
@@ -509,9 +510,51 @@ class LifecycleToolsTest {
         Files.writeString(Files.createDirectories(workspace.resolve("run")).resolve("velocity.jar"), "set up");
         assertThat(h.ok("project_scaffold", "name", "Proxy", "dir", "proxy2", "template", "velocity-plugin"))
                 .endsWith("\nnext: edit the code, then dev_cycle");
-        // Minestom's server is the project's own jar, which dev_cycle builds: nothing to set up first.
+        // The workspace is Velocity now: a Minestom project in a subfolder needs the switch first (#636).
         assertThat(h.ok("project_scaffold", "name", "Game", "dir", "game", "template", "minestom-server"))
-                .endsWith("\nnext: edit the code, then dev_cycle");
+                .contains("\nthe workspace stays Velocity, which never loads this Minestom project: ")
+                .endsWith("\nnext: server_setup platform=minestom, then edit the code and dev_cycle");
+        // Minestom's server is the project's own jar, which dev_cycle builds: nothing to set up first.
+        try (CoreHarness s = new CoreHarness(Files.createDirectories(workspace.resolve("ws-minestom")))) {
+            assertThat(s.ok("project_scaffold", "name", "Game", "dir", "game", "template", "minestom-server"))
+                    .endsWith("\nnext: edit the code, then dev_cycle");
+        }
+    }
+
+    /**
+     * #636 (ADR 0048): a subfolder project of another family than the workspace's server keeps the workspace's
+     * platform; the scaffold names server_setup platform= for the switch, and dev_cycle refuses until it is made.
+     */
+    @Test
+    void aProjectTheWorkspaceServerDoesNotRunIsNotDeployedThere() throws Exception {
+        Files.createDirectories(workspace.resolve(".msc"));
+        Files.writeString(workspace.resolve(".msc/platform"), "paper\n");
+        Path run = Files.createDirectories(workspace.resolve("run"));
+        Files.writeString(run.resolve("paper.jar"), "set up");
+        Files.writeString(run.resolve("eula.txt"), "eula=true\n");
+        String switches = "\nthe workspace stays Paper, which never loads this Fabric project: server_setup "
+                + "platform=fabric switches it (Paper projects then need server_setup platform=paper)\n";
+        assertThat(h.ok("project_scaffold", "name", "Foo", "dir", "foo", "template", "fabric-mod"))
+                .contains(switches + "next: ask the user exactly: ")
+                .endsWith("\nOn yes: server_setup platform=fabric acceptEula=true, then edit the code and dev_cycle");
+        assertThat(h.core.server().platform()).isEqualTo(Platform.PAPER);
+        // Even with the loader's server jar in the folder, Paper is what starts.
+        Files.writeString(run.resolve("fabric-server-launch.jar"), "set up");
+        assertThat(h.ok("project_scaffold", "name", "Bar", "dir", "bar", "template", "fabric-mod"))
+                .contains(switches).doesNotContain("next: edit the code");
+
+        Path mod = workspace.resolve("foo");
+        Files.writeString(mod.resolve("version.txt"), "1.0");
+        assertThat(h.error("dev_cycle", "project", "foo", "restart", false)).isEqualTo("error: foo is a Fabric "
+                + "project, but this workspace runs Paper, which never loads it; nothing was built or deployed. "
+                + "server_setup platform=fabric switches the workspace to Fabric (Paper projects then need "
+                + "server_setup platform=paper), or msc_workspace gives the project its own workspace.");
+        assertThat(mod.resolve("tasks.log")).doesNotExist();
+        assertThat(run.resolve("mods")).doesNotExist();
+        // A Paper plugin beside it still deploys, and after the switch the mod does.
+        assertThat(h.ok("dev_cycle", "project", "demo", "restart", false)).contains("as plugins/demo.jar");
+        Platform.remember(h.core.config(), Platform.FABRIC);
+        assertThat(h.ok("dev_cycle", "project", "foo", "restart", false)).contains("as mods/demo.jar");
     }
 
     /** #631: Quilt runs Fabric mods and Purpur Paper plugins, so the workspace's own server counts as set up. */
