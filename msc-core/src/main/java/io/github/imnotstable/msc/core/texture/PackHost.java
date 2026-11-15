@@ -2,11 +2,11 @@ package io.github.imnotstable.msc.core.texture;
 
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
+import io.github.imnotstable.msc.core.tool.PortPatience;
 import io.github.imnotstable.msc.process.HttpStall;
 import io.github.imnotstable.msc.textures.PackSource;
 import java.io.IOException;
 import java.io.OutputStream;
-import java.net.BindException;
 import java.net.InetSocketAddress;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -32,7 +32,7 @@ public final class PackHost {
     }
 
     /** How long a host waits for a port that was just let go. */
-    static final Duration PORT_PATIENCE = Duration.ofSeconds(5);
+    static final Duration PORT_PATIENCE = PortPatience.PATIENCE;
 
     private PackHost() {
     }
@@ -220,17 +220,7 @@ public final class PackHost {
      */
     public static Host startWithin(String host, int port, Supplier<Served> source, Duration patience)
             throws IOException, InterruptedException {
-        long deadline = System.nanoTime() + patience.toNanos();
-        while (true) {
-            try {
-                return start(host, port, source);
-            } catch (BindException e) {
-                if (port == 0 || System.nanoTime() >= deadline) {
-                    throw e;
-                }
-                Thread.sleep(100);
-            }
-        }
+        return PortPatience.bind(port, patience, () -> start(host, port, source));
     }
 
     /** Serves whatever {@code zip} holds now, so a later pack is picked up without a restart. */

@@ -260,6 +260,14 @@ public record CoreConfig(Path workspace, Path serverDir, int agentPort, String t
                 fabricMavenUrl, installDir, packPort, machineEula, loaderUrls, downloadStore, file, gradleUserHome);
     }
 
+    /** The same settings with a fixed agent port, as {@code MSC_CORE_ADDRESS} gives one. */
+    public CoreConfig withAgentPort(int port) {
+        return new CoreConfig(workspace, serverDir, port, token, toolLog, javaCommand, serverCommand,
+                buildCommand, downloadsUrl, minecraft, apiJars, packHost, packFormat, agentJar, fabricMetaUrl,
+                fabricMavenUrl, installDir, packPort, machineEula, loaderUrls, downloadStore, proxySecret,
+                gradleUserHome);
+    }
+
     public CoreConfig withGradleUserHome(Path dir) {
         return new CoreConfig(workspace, serverDir, agentPort, token, toolLog, javaCommand, serverCommand,
                 buildCommand, downloadsUrl, minecraft, apiJars, packHost, packFormat, agentJar, fabricMetaUrl,

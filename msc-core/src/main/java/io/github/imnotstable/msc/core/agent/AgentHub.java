@@ -1,5 +1,6 @@
 package io.github.imnotstable.msc.core.agent;
 
+import io.github.imnotstable.msc.core.tool.PortPatience;
 import io.github.imnotstable.msc.core.tool.ToolException;
 import io.github.imnotstable.msc.protocol.Limits;
 import io.github.imnotstable.msc.protocol.message.Event;
@@ -10,6 +11,7 @@ import io.github.imnotstable.msc.protocol.transport.CoreServer;
 import io.github.imnotstable.msc.protocol.transport.OpException;
 import io.github.imnotstable.msc.protocol.transport.RequestHandler;
 import java.io.IOException;
+import java.io.InterruptedIOException;
 import java.time.Duration;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -67,7 +69,7 @@ public final class AgentHub implements AutoCloseable {
 
     public AgentHub(int port, String token) throws IOException {
         this.token = token;
-        this.server = CoreServer.start(port, token, RequestHandler.none(), new CoreServer.AgentListener() {
+        CoreServer.AgentListener listener = new CoreServer.AgentListener() {
             @Override
             public void connected(CoreServer.AgentSession s) {
                 boolean late;
@@ -111,7 +113,16 @@ public final class AgentHub implements AutoCloseable {
                     }
                 });
             }
-        }, Duration.ofSeconds(10));
+        };
+        // The port may have been let go a moment ago: by the workspace a switch just closed (#721), or by a core that
+        // is just exiting.
+        try {
+            this.server = PortPatience.bind(port, PortPatience.PATIENCE,
+                    () -> CoreServer.start(port, token, RequestHandler.none(), listener, Duration.ofSeconds(10)));
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new InterruptedIOException("interrupted while waiting for port " + port);
+        }
     }
 
     private void update(Runnable change) {

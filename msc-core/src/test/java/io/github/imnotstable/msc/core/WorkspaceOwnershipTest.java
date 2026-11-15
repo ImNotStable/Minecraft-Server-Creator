@@ -15,7 +15,9 @@ import io.github.imnotstable.msc.core.tools.PlayerTools;
 import io.github.imnotstable.msc.core.tools.PlayerToolsAccess;
 import java.io.IOException;
 import java.net.HttpURLConnection;
+import java.net.InetAddress;
 import java.net.Proxy;
+import java.net.ServerSocket;
 import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -78,7 +80,7 @@ class WorkspaceOwnershipTest {
             }
         });
         assertThat(h.error("msc_workspace", "path", "other", "create", true))
-                .startsWith("error: could not open ").endsWith("still in " + workspace);
+                .startsWith("error: could not open ").contains("; still in " + workspace);
         assertThat(agentCanConnect(halfOpen)).as("the half-opened agent socket was closed").isFalse();
         assertThat(h.core.config().workspace()).isEqualTo(workspace);
     }
@@ -420,6 +422,74 @@ class WorkspaceOwnershipTest {
             failedSwitch();
             assertThat(h.ok("msc_workspace")).isEqualTo("workspace: " + workspace);
             assertThat(h.ok("msc_status")).startsWith("msc-core ");
+        }
+    }
+
+    /**
+     * #721: with a fixed agent port (MSC_CORE_ADDRESS, as msc-bench sets it) every switch binds the port the old
+     * workspace just let go, and a failed one says what its close stopped and never leaves the session stuck.
+     */
+    @Nested
+    class FixedAgentPort {
+        private int port;
+
+        @BeforeEach
+        void fixedPort() throws Exception {
+            h.close();
+            try (ServerSocket free = new ServerSocket(0, 50, InetAddress.getLoopbackAddress())) {
+                port = free.getLocalPort();
+            }
+            h = new CoreHarness(workspace, c -> c.withAgentPort(port).withServerCommand(java(FakeServerMain.class)));
+            h.core.lockWait(Duration.ofMillis(300));
+        }
+
+        private void agentConnects() {
+            assertThat(h.core.hub().address()).endsWith(":" + port);
+            assertThat(agentCanConnect(h.core.hub().address())).isTrue();
+        }
+
+        @Test
+        void switchesBackAndForth() throws Exception {
+            Path other = Files.createDirectories(workspace.resolve("other"));
+            for (int i = 0; i < 20; i++) {
+                Path target = i % 2 == 0 ? other : workspace;
+                assertThat(h.ok("msc_workspace", "path", target.toString()))
+                        .startsWith("workspace: " + target.toRealPath());
+            }
+            assertThat(h.ok("msc_workspace", "path", workspace.toString())).startsWith("workspace is already ");
+            agentConnects();
+        }
+
+        @Test
+        void aFailedSwitchSaysWhatItsCloseStoppedAndKeepsThePort() {
+            h.ok("server_start", "timeoutSeconds", 30);
+            PlayerToolsAccess.adopt(h.core.players(), new FakeBot());
+            h.core.openCheck((config, hub) -> {
+                if (config.workspace().endsWith("other")) {
+                    throw new IOException("refused by the test");
+                }
+            });
+            assertThat(h.error("msc_workspace", "path", "other", "create", true)).isEqualTo("error: could not open "
+                    + workspace.resolve("other") + " (refused by the test); still in " + workspace
+                    + "\nstopped the dev server of " + workspace + "; the test player left");
+            agentConnects();
+            assertThat(h.ok("server_start", "timeoutSeconds", 30)).startsWith("server ready");
+        }
+
+        @Test
+        void aSwitchThatCannotReopenTheOldFolderLeavesOneTheNextSwitchOpens() {
+            h.core.openCheck((config, hub) -> {
+                throw new IOException("refused by the test");
+            });
+            assertThat(h.error("msc_workspace", "path", "other", "create", true))
+                    .contains(", nor reopen " + workspace + " (refused by the test), so no workspace is open")
+                    .endsWith("\nmsc_workspace path=" + workspace + " opens it again");
+            assertThat(h.error("server_start")).startsWith(CLOSED);
+            h.core.openCheck((config, hub) -> {
+            });
+            assertThat(h.ok("msc_workspace", "path", workspace.toString())).startsWith("workspace: ");
+            agentConnects();
+            assertThat(h.ok("server_start", "timeoutSeconds", 30)).startsWith("server ready");
         }
     }
 

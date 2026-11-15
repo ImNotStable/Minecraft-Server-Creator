@@ -217,8 +217,10 @@ final class ServerRun {
         }
         return "server detached: it keeps running after this session ends"
                 + (hosting ? ", and so does the resource pack host" : " (no pack built yet, so no pack host)")
-                + "." + properties + "\nWorld tools and server_command work until this session ends; the next session's "
-                + "server_start, dev_cycle or server_stop stops the server (world saved) and the pack host.";
+                + "." + properties + "\n" + (platform.proxy() ? "server_command works" // a proxy has no world (#722)
+                : "World tools and server_command work") + " until this session ends; the next session's server_start, "
+                + "dev_cycle or server_stop stops the server" + (platform.proxy() ? "" : " (world saved)")
+                + " and the pack host.";
     }
 
     /**
