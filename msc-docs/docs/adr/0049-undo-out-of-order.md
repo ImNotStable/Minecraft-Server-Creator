@@ -1,6 +1,6 @@
 # ADR 0049: Undoing an edit that is not the latest
 
-Status: accepted, 2026-11-15, decided by Claude (#695).
+Status: accepted, 2026-11-15, decided by Claude (#695). Amended 2026-11-15 (#701, #702, #704; see the end).
 
 ## Context
 
@@ -25,13 +25,13 @@ edit's positions (`Footprint`: its box and one bit per cell, at most 1 MiB for t
 parts. A build that failed half-way and left parts under a new id keeps the whole build's positions, which only refuses
 more.
 
-World-changing edits run one at a time per server (#697): a build from its first write to its new id, an undo from
+World-changing edits run one at a time per server (#697): a build from its first read of the world to its new id, an undo from
 its overlap check to its id leaving the list, each under one lock in `WorldService`. A call sent while another runs
 waits for it. Without this, an undo checked overlap before a running build was remembered, and a build wrote while an
 undo of the same blocks ran, so parallel tool calls broke the rule above, and ids went out in the order builds
 finished rather than wrote. Reserving each build's footprint before its writes was not chosen: it needs the same check
 for builds and a wait or refusal for each overlapping pair, which is more code to get right for little gain: builds
-on one server rarely run in parallel on purpose. A build's reads and block-name check run outside the lock.
+on one server rarely run in parallel on purpose. Only a build's argument checks run outside the lock (#704).
 
 Skipping the overlapped positions was not chosen: the edit would be half undone under an id that is gone, and the
 blocks it kept would belong to no edit.
@@ -47,3 +47,24 @@ blocks it kept would belong to no edit.
   unknown to build_undo, and it no longer refuses older edits it overlaps.
 - An edit whose later overlapping edits were lost to the agent's bounded undo history stays refused until those are
   undone (partly); `build_undo backup=` rolls back further.
+
+## Amendment, 2026-11-15: an edit belongs to one server run (#701, #702, #704)
+
+Three findings each came from a step of an edit that did not belong to the same run or the same turn as the rest:
+a build masked `replace=` against the world before it waited for the lock (#704), the clean-up of a build cut off by a
+stop sent its agent ids to whatever agent connected next (#702), and a build or undo cut off by a stop offered its id
+again although the id ended with that run (#701). One rule now covers them:
+
+- **An edit has one run.** A run is the server process the core started (none for an attached server) and the agent
+  connection to it (`WorldService.Run`). A build takes the run when it gets the lock and sends every write, name check
+  and clean-up undo of its parts on that connection only; an undo sends on the run its edit was made in. A call never
+  waits for, or reaches, a later agent: a restarted agent numbers its edits from the start again, so an old id could
+  undo another edit there. The edit ends when its process stops or is replaced, or its connection closes; an agent
+  that reconnects to a running server also ends it, which only loses ids, never undoes the wrong blocks.
+- **Everything that decides what a build writes runs under the lock**: its `replace=` masks and `copy` reads, its block
+  name check, its backup, its writes and its new id. So the edits apply in id order, and the replay rule in
+  Consequences holds for parallel calls too (the concurrency test sends a `replace=` build during another one).
+- **An id is named only while its run lasts.** A build whose clean-up fails or an undo that stops half-way while the
+  run goes on (a timeout) names the id that undoes the rest, as before. Once the run has ended, the answer names no id:
+  it says what stays placed (for a build, how many blocks and where), and that `build_undo backup=` rolls it back (a
+  build can also be run again).

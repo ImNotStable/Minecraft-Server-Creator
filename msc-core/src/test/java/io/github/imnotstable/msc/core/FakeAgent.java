@@ -219,6 +219,12 @@ public final class FakeAgent {
         writesBeforeTimeout = skip;
     }
 
+    /** A new server process on the same world: the blocks stay, the undo history and its numbering start again. */
+    synchronized void restart() {
+        undo.clear();
+        editCounter = 0;
+    }
+
     /** Make the undo after {@code skip} more undos fail, as a timeout would. */
     synchronized void failUndo(int skip) {
         undosBeforeFailure = skip;

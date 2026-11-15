@@ -243,7 +243,11 @@ public final class AgentHub implements AutoCloseable {
 
     /** Run one operation on the agent and wait for the answer. */
     public <P, R> R call(OpSpec<P, R> op, P params) throws InterruptedException {
-        CoreServer.AgentSession s = require();
+        return call(require(), op, params);
+    }
+
+    /** As {@link #call(OpSpec, Object)}, on {@code s} only: never on an agent that connected after it (#702). */
+    public <P, R> R call(CoreServer.AgentSession s, OpSpec<P, R> op, P params) throws InterruptedException {
         if (!s.agent().operations().contains(op.name())) {
             throw new ToolException("the " + s.agent().platform() + " agent does not support " + op.name()
                     + "; server_command still works");

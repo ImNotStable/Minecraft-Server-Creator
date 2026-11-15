@@ -21,7 +21,8 @@ import java.util.Map;
  * then write the canvas in protocol-sized parts under a single undo id. If a part fails, the parts
  * already written are undone, and so are the blocks the failed part changed before it failed when the agent names
  * their undo id ({@link PartialEdit}), so a build is placed whole or not at all; what a failed undo leaves gets a
- * build_undo id.
+ * build_undo id while the server run lasts, and is named with its way back once it has ended. Everything after the
+ * argument checks runs in one {@link WorldService#oneAtATime} and talks to one {@link WorldService.Run}.
  */
 public final class Builder {
     /** Largest box one build may cover. */
@@ -65,93 +66,120 @@ public final class Builder {
             throw new ToolException("the steps span " + Coords.show(bounds) + " = " + bounds.volume() + " blocks; "
                     + tool + " covers at most " + MAX_VOLUME + ". Split it into calls over smaller areas.");
         }
+        if (dryRun) {
+            Canvas canvas = draw(bounds, steps, tool);
+            Region used = canvas.used();
+            if (used == null) {
+                return NOTHING;
+            }
+            String check = hub.current() == null ? "block names not checked: the server is not running"
+                    : check(world.run(), canvas, used) == null ? "block names: all valid" : null;
+            return "dry run, nothing placed: " + canvas.placed() + " blocks in " + Coords.show(used) + " size "
+                    + used.sizeX() + "x" + used.sizeY() + "x" + used.sizeZ() + "\n" + counts(canvas.counts()) + "\n"
+                    + check;
+        }
+        // From the first read of the world (replace=, copy) to the new id, no other edit is written or undone, so the
+        // world is what the edits give applied in id order (ADR 0049, #704).
+        Region box = bounds;
+        return world.oneAtATime(() -> build(box, steps, physics, tool));
+    }
+
+    private static final String NOTHING = "nothing to place: every step was empty or masked out by replace=";
+
+    /** Draw the steps, reading the world where a step needs it. */
+    private Canvas draw(Region bounds, List<Step> steps, String tool) throws InterruptedException {
         Canvas canvas = new Canvas(bounds, r -> world.readAll(r, MAX_VOLUME, tool));
         for (Step s : steps) {
             s.draw(canvas);
         }
+        return canvas;
+    }
+
+    private String build(Region bounds, List<Step> steps, boolean physics, String tool) throws InterruptedException {
+        Canvas canvas = draw(bounds, steps, tool);
         Region used = canvas.used();
         if (used == null) {
-            return "nothing to place: every step was empty or masked out by replace=";
+            return NOTHING;
         }
-        String counts = counts(canvas.counts());
-        if (dryRun) {
-            String check = hub.current() == null ? "block names not checked: the server is not running"
-                    : check(canvas, used) == null ? "block names: all valid" : null;
-            return "dry run, nothing placed: " + canvas.placed() + " blocks in " + Coords.show(used) + " size "
-                    + used.sizeX() + "x" + used.sizeY() + "x" + used.sizeZ() + "\n" + counts + "\n" + check;
-        }
-        check(canvas, used);
+        WorldService.Run run = world.run();
+        check(run, canvas, used);
         String backup = beforeWrite.before(canvas.placed());
-        // Written and remembered while no other edit is written or undone (ADR 0049).
-        Written written = world.oneAtATime(() -> write(canvas, used, physics));
-        String id = written.id();
-        long changed = written.changed();
-        // One kind of block, or nothing left unchanged: the extra numbers say nothing new.
-        return "edit " + id + ": " + changed + " blocks changed"
-                + (changed == canvas.placed() ? "" : " (" + canvas.placed() + " placed)") + ", region "
-                + Coords.show(used) + (canvas.counts().size() > 1 ? "\n" + counts : "")
-                + (backup.isEmpty() ? "" : "\n" + backup);
-    }
-
-    private record Written(String id, long changed) {
-    }
-
-    /** Write the canvas in protocol-sized parts and remember them under one new edit id. */
-    private Written write(Canvas canvas, Region used, boolean physics) throws InterruptedException {
         Footprint where = canvas.footprint(used);
         List<String> ids = new ArrayList<>();
+        List<Long> sizes = new ArrayList<>();
         long changed = 0;
         try {
             for (Region part : Coords.split(used)) {
                 BlockGrid grid = canvas.grid(part);
                 if (grid != null) {
-                    Ops.EditResult r = hub.call(Ops.WORLD_WRITE, new Ops.WriteParams(grid, physics));
+                    Ops.EditResult r = world.call(run, Ops.WORLD_WRITE, new Ops.WriteParams(grid, physics));
                     ids.add(r.editId());
+                    sizes.add(r.changed());
                     changed += r.changed();
                 }
             }
         } catch (RuntimeException | InterruptedException e) {
             if (e instanceof OpException op) {
-                PartialEdit.editId(op.detail()).ifPresent(ids::add);
+                PartialEdit.editId(op.detail()).ifPresent(id -> {
+                    ids.add(id);
+                    sizes.add(-1L);
+                });
             }
-            throw cleanUp(ids, where, e);
+            throw cleanUp(run, ids, sizes, where, used, e);
         }
-        return new Written(world.remember(ids, where), changed);
+        String counts = counts(canvas.counts());
+        // One kind of block, or nothing left unchanged: the extra numbers say nothing new.
+        return "edit " + world.remember(ids, where, run) + ": " + changed + " blocks changed"
+                + (changed == canvas.placed() ? "" : " (" + canvas.placed() + " placed)") + ", region "
+                + Coords.show(used) + (canvas.counts().size() > 1 ? "\n" + counts : "")
+                + (backup.isEmpty() ? "" : "\n" + backup);
     }
 
     /**
-     * Undo the parts a failed build changed, newest first, and return the error to throw. The agent's undo id in
-     * {@code failure} is stripped: build_undo does not know it. Parts whose undo fails go under a core id that the
-     * error names, so no block the build changed is left without a build_undo id (#292). {@code where}: the whole
-     * build's positions, which hold those parts' (ADR 0049).
+     * Undo the parts a failed build changed, newest first, on the run that wrote them, and return the error to throw.
+     * The agent's undo id in {@code failure} is stripped: build_undo does not know it. Parts whose undo fails go under
+     * a core id that the error names, so no block the build changed is left without a build_undo id (#292), while the
+     * run lasts; once it has ended no id can undo them (#701, #702), so the error says what stays and how to roll it
+     * back. {@code sizes}: the blocks each part changed, -1 when not known. {@code where}: the whole build's positions,
+     * which hold those parts' (ADR 0049).
      */
-    private RuntimeException cleanUp(List<String> ids, Footprint where, Exception failure)
-            throws InterruptedException {
+    private RuntimeException cleanUp(WorldService.Run run, List<String> ids, List<Long> sizes, Footprint where,
+                                     Region used, Exception failure) throws InterruptedException {
         List<String> kept = new ArrayList<>();
+        long left = 0;
+        boolean leftUnknown = false;
         String why = null;
         boolean interrupted = false;
         for (int i = ids.size() - 1; i >= 0; i--) {
             try {
-                hub.call(Ops.WORLD_UNDO, new Ops.UndoParams(ids.get(i)));
+                world.call(run, Ops.WORLD_UNDO, new Ops.UndoParams(ids.get(i)));
+                continue;
             } catch (OpException e) {
-                if (!e.code().equals(ErrorCodes.NOT_FOUND)) {
-                    kept.addFirst(ids.get(i));
-                    why = why == null ? e.detail() : why;
+                if (e.code().equals(ErrorCodes.NOT_FOUND)) {
+                    continue;
                 }
+                why = why == null ? e.detail() : why;
             } catch (RuntimeException | InterruptedException e) {
                 interrupted |= e instanceof InterruptedException;
-                kept.addFirst(ids.get(i));
                 why = why == null ? String.valueOf(e.getMessage()) : why;
             }
+            kept.addFirst(ids.get(i));
+            leftUnknown |= sizes.get(i) < 0;
+            left += Math.max(0, sizes.get(i));
         }
         if (interrupted || failure instanceof InterruptedException && !kept.isEmpty()) {
             Thread.currentThread().interrupt();
         }
         String reason = failure instanceof OpException op ? "agent answered " + op.code() + ": " + PartialEdit.strip(op.detail())
                 : failure instanceof InterruptedException ? "interrupted" : String.valueOf(failure.getMessage());
+        if (!kept.isEmpty() && world.ended(run)) {
+            return new ToolException(reason + "; the server stopped before the build was undone, so "
+                    + (left == 0 ? "some" : (leftUnknown ? "at least " : "") + left) + " blocks it changed stay in "
+                    + Coords.show(used) + ": " + WorldService.ROLL_BACK + ", or the same build_batch completes it");
+        }
         if (!kept.isEmpty()) {
             return new ToolException(reason + "; undoing it failed (" + why + "), build_undo edit="
-                    + world.remember(kept, where) + " removes the rest");
+                    + world.remember(kept, where, run) + " removes the rest");
         }
         if (failure instanceof OpException op) {
             return new OpException(op.code(), PartialEdit.strip(op.detail()));
@@ -167,12 +195,12 @@ public final class Builder {
      * one column spanning the build's height, carrying the full palette. On a bad name, probe each
      * block alone so the error lists every bad one. Returns null when all is well.
      */
-    private String check(Canvas canvas, Region used) throws InterruptedException {
+    private String check(WorldService.Run run, Canvas canvas, Region used) throws InterruptedException {
         List<String> palette = canvas.palette();
         Region column = Region.of(used.world(), used.min().x(), used.min().y(), used.min().z(), used.min().x(),
                 used.max().y(), used.min().z());
         try {
-            probe(column, palette);
+            probe(run, column, palette);
             return null;
         } catch (OpException e) {
             if (!e.code().equals(ErrorCodes.INVALID_PARAMS) || palette.size() == 1 || e.detail().contains("build height")) {
@@ -184,7 +212,7 @@ public final class Builder {
         List<String> bad = new ArrayList<>();
         for (String state : palette) {
             try {
-                probe(one, List.of(state));
+                probe(run, one, List.of(state));
             } catch (OpException e) {
                 bad.add(e.detail());
             }
@@ -193,10 +221,10 @@ public final class Builder {
                 + " not valid:\n" + String.join("\n", bad));
     }
 
-    private void probe(Region region, List<String> palette) throws InterruptedException {
+    private void probe(WorldService.Run run, Region region, List<String> palette) throws InterruptedException {
         int[] none = new int[Math.toIntExact(region.volume())];
         Arrays.fill(none, -1);
-        hub.call(Ops.WORLD_WRITE, new Ops.WriteParams(new BlockGrid(region, palette, none), false));
+        world.call(run, Ops.WORLD_WRITE, new Ops.WriteParams(new BlockGrid(region, palette, none), false));
     }
 
     private static String counts(Map<String, Long> counts) {
