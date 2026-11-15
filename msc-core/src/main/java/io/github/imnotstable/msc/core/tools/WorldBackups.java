@@ -61,6 +61,14 @@ public final class WorldBackups {
                     all.stream().map(Backups.Backup::describe).toList()), Budget.DEFAULT_CHARS, "");
         }
         if (w.equals("save") || w.startsWith("save ")) {
+            // A server another session runs or left running can be neither flushed nor trusted to have saved: refused
+            // as every call that needs this session's server is (#705, #709). A stopped one is copied as it is.
+            if (!server.running() && hub.current() == null) {
+                String why = server.notRunning();
+                if (!why.equals(AgentHub.NOT_RUNNING)) {
+                    throw new ToolException(why);
+                }
+            }
             Taken t = take(w.substring(4).strip(), null, true);
             return "backup " + t.backup().describe() + t.note();
         }

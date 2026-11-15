@@ -30,6 +30,18 @@ public final class WorldService {
     /** The way back for blocks an edit left whose run has ended: its id is gone (#701). */
     public static final String ROLL_BACK = "build_undo backup= rolls the world back";
 
+    /**
+     * The one answer for a build or an undo cut off by its server run ending (#708). The agent applies each part over
+     * several ticks, so the part in flight may be half applied, and what stays depends on what the server saved
+     * (Minestom saves only when it stops, so after a crash none of it may stay): no count would be true, and the
+     * edit's id ended with the run. {@code what}: "the build", "the undo of eN".
+     */
+    public static String cutOff(String what, Region box) {
+        return what + " was cut off by the server stopping: " + Coords.show(box) + " may be partly changed, by an "
+                + "amount that depends on what the server saved. world_summary there shows what stayed; then " + ROLL_BACK
+                + " if a backup exists, or a build_batch over it sets the blocks you want";
+    }
+
     private final AgentHub hub;
     /** The edits still applied, oldest first: each one's agent parts and the positions it set. */
     private final Map<String, Edit> edits = new LinkedHashMap<>();
@@ -543,6 +555,7 @@ public final class WorldService {
     private String undoNow(String id) throws InterruptedException {
         List<String> agentEdits;
         Run run;
+        Region box;
         String target = id;
         synchronized (this) {
             forgetEnded();
@@ -575,6 +588,7 @@ public final class WorldService {
             }
             agentEdits = edit.parts();
             run = edit.run();
+            box = edit.where().box();
         }
         // Only an undo changes an edit's parts, and undos run one at a time.
         long changed = 0;
@@ -585,11 +599,11 @@ public final class WorldService {
                 changed += call(run, Ops.WORLD_UNDO, new Ops.UndoParams(agentEdits.get(i))).changed();
             } catch (OpException e) {
                 if (!e.code().equals(ErrorCodes.NOT_FOUND)) {
-                    throw stopped(target, changed, run, e);
+                    throw stopped(target, changed, run, box, e);
                 }
                 lost++;
             } catch (RuntimeException e) {
-                throw stopped(target, changed, run, e);
+                throw stopped(target, changed, run, box, e);
             }
             agentEdits.remove(i);
         }
@@ -605,16 +619,18 @@ public final class WorldService {
 
     /**
      * An undo that failed after restoring {@code changed} blocks. While the edit's run lasts, the same id undoes the
-     * rest; once it has ended, the id is gone (#701), so the answer says what stays and how to roll it back.
+     * rest; once it has ended, the id is gone (#701) and the part in flight may be half undone (#708), so the answer
+     * is {@link #cutOff} for the edit's {@code box}.
      */
-    private RuntimeException stopped(String target, long changed, Run run, RuntimeException e) {
-        boolean ended = ended(run);
-        if (changed == 0 && !ended) {
+    private RuntimeException stopped(String target, long changed, Run run, Region box, RuntimeException e) {
+        if (ended(run)) {
+            return new ToolException(cutOff("the undo of " + target, box));
+        }
+        if (changed == 0) {
             return e;
         }
-        return new ToolException((changed == 0 ? target + " not undone: " : "undo of " + target + " stopped after "
-                + changed + " blocks restored: ") + (e instanceof OpException op ? op.detail() : e.getMessage())
-                + (ended ? "; the server that made " + target + " has stopped, so " + (changed == 0 ? "its blocks" : "the rest")
-                + " stay placed: " + ROLL_BACK : "; build_undo edit=" + target + " again undoes the rest"));
+        return new ToolException("undo of " + target + " stopped after " + changed + " blocks restored: "
+                + (e instanceof OpException op ? op.detail() : e.getMessage()) + "; build_undo edit=" + target
+                + " again undoes the rest");
     }
 }

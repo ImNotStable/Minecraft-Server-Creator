@@ -1,6 +1,6 @@
 # ADR 0049: Undoing an edit that is not the latest
 
-Status: accepted, 2026-11-15, decided by Claude (#695). Amended 2026-11-15 (#701, #702, #704; see the end).
+Status: accepted, 2026-11-15, decided by Claude (#695). Amended 2026-11-15 (#701, #702, #704, #708; see the end).
 
 ## Context
 
@@ -65,6 +65,11 @@ again although the id ended with that run (#701). One rule now covers them:
   name check, its backup, its writes and its new id. So the edits apply in id order, and the replay rule in
   Consequences holds for parallel calls too (the concurrency test sends a `replace=` build during another one).
 - **An id is named only while its run lasts.** A build whose clean-up fails or an undo that stops half-way while the
-  run goes on (a timeout) names the id that undoes the rest, as before. Once the run has ended, the answer names no id:
-  it says what stays placed (for a build, how many blocks and where), and that `build_undo backup=` rolls it back (a
-  build can also be run again).
+  run goes on (a timeout) names the id that undoes the rest, as before. Once the run has ended, the answer names no id
+  and no count (#708): the agent applies each part over several ticks, so the part in flight may be half applied, and
+  what stays is what the server saved (Minestom saves only when it stops, so after a crash none of it may stay). A
+  build or undo cut off this way, before its first part finished or after any part, gives one answer: the box (the
+  build's, or the undone edit's) may be partly changed, by an amount that depends on what the server saved;
+  `world_summary` shows what stayed, then `build_undo backup=` rolls the world back if a backup exists, or a
+  `build_batch` over it sets the blocks wanted. A closed agent connection is never the answer: any call it cuts off
+  says the server stopped or restarted.

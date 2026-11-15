@@ -4,7 +4,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.imnotstable.msc.core.fixture.FakeServerMain;
 import io.github.imnotstable.msc.core.fixture.SleepMain;
+import io.github.imnotstable.msc.core.server.FakeLeftover;
 import io.github.imnotstable.msc.core.server.PidFile;
+import io.github.imnotstable.msc.core.server.PidFileAccess;
 import io.github.imnotstable.msc.core.server.Platform;
 import io.github.imnotstable.msc.core.tools.WorldBackupsAccess;
 import java.time.Duration;
@@ -93,6 +95,42 @@ class WorldBackupToolsTest {
             assertThat(h.ok("build_undo", "backup", "save")).startsWith("backup ").contains(" (world; ").endsWith(
                     "\nMinestom saves the world only when it stops: this backup is the world as last stopped");
             assertThat(h.agent.commands).isEmpty();
+        }
+    }
+
+    /**
+     * #709: a save copied the world of a server this session neither started nor reaches, unflushed and with no note.
+     * It is refused as every call that needs this session's server is (#705), for one an earlier session left running
+     * and one another live session runs, on Minestom too; once that server has stopped, the save works again.
+     */
+    @Test
+    void saveRefusesAServerOfAnotherSessionAsEveryCallThatNeedsTheServerDoes() throws Exception {
+        minestomWorld("v1");
+        Platform.remember(CoreConfig.forWorkspace(workspace), Platform.MINESTOM);
+        try (CoreHarness h = new CoreHarness(workspace)) {
+            // Another session's core, still running, standing as its own server too (ADR 0037).
+            Process other = new ProcessBuilder(Path.of(System.getProperty("java.home"), "bin", "java").toString(),
+                    "-cp", System.getProperty("java.class.path"), SleepMain.class.getName(), "60").start();
+            try {
+                PidFileAccess.write(Files.createDirectories(workspace.resolve(".msc")).resolve("server.pid"),
+                        other.toHandle(), PidFile.Identity.of(other.toHandle()));
+                String why = h.error("world_slice", "region", "0,60,0 1,60,1");
+                assertThat(why).contains("another session that is still running");
+                assertThat(h.error("build_undo", "backup", "save x")).isEqualTo(why);
+                assertThat(h.error("build_undo", "backup", "x")).as("a restore, as before").isEqualTo(why);
+            } finally {
+                other.destroyForcibly().waitFor(10, TimeUnit.SECONDS);
+            }
+            FakeLeftover leftover = FakeLeftover.install(h.core.server(), Duration.ofMillis(1));
+            try {
+                String why = h.error("world_slice", "region", "0,60,0 1,60,1");
+                assertThat(why).contains("pid " + leftover.pid() + ") was left by an earlier session");
+                assertThat(h.error("build_undo", "backup", "save y")).isEqualTo(why);
+            } finally {
+                leftover.exit();
+            }
+            assertThat(h.ok("build_undo", "backup", "list")).isEqualTo("no backups yet");
+            assertThat(h.ok("build_undo", "backup", "save z")).matches("backup \\d{8}-\\d{6}-z \\(world; 0\\.0 MB\\)");
         }
     }
 

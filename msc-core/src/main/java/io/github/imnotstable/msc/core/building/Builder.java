@@ -106,7 +106,6 @@ public final class Builder {
         String backup = beforeWrite.before(canvas.placed());
         Footprint where = canvas.footprint(used);
         List<String> ids = new ArrayList<>();
-        List<Long> sizes = new ArrayList<>();
         long changed = 0;
         try {
             for (Region part : Coords.split(used)) {
@@ -114,18 +113,14 @@ public final class Builder {
                 if (grid != null) {
                     Ops.EditResult r = world.call(run, Ops.WORLD_WRITE, new Ops.WriteParams(grid, physics));
                     ids.add(r.editId());
-                    sizes.add(r.changed());
                     changed += r.changed();
                 }
             }
         } catch (RuntimeException | InterruptedException e) {
             if (e instanceof OpException op) {
-                PartialEdit.editId(op.detail()).ifPresent(id -> {
-                    ids.add(id);
-                    sizes.add(-1L);
-                });
+                PartialEdit.editId(op.detail()).ifPresent(ids::add);
             }
-            throw cleanUp(run, ids, sizes, where, used, e);
+            throw cleanUp(run, ids, where, used, e);
         }
         String counts = counts(canvas.counts());
         // One kind of block, or nothing left unchanged: the extra numbers say nothing new.
@@ -139,15 +134,13 @@ public final class Builder {
      * Undo the parts a failed build changed, newest first, on the run that wrote them, and return the error to throw.
      * The agent's undo id in {@code failure} is stripped: build_undo does not know it. Parts whose undo fails go under
      * a core id that the error names, so no block the build changed is left without a build_undo id (#292), while the
-     * run lasts; once it has ended no id can undo them (#701, #702), so the error says what stays and how to roll it
-     * back. {@code sizes}: the blocks each part changed, -1 when not known. {@code where}: the whole build's positions,
-     * which hold those parts' (ADR 0049).
+     * run lasts; once it has ended no id can undo them (#701, #702), and no count of what stays is true (#708), so the
+     * error is {@link WorldService#cutOff} for {@code used}. {@code where}: the whole build's positions, which hold
+     * those parts' (ADR 0049).
      */
-    private RuntimeException cleanUp(WorldService.Run run, List<String> ids, List<Long> sizes, Footprint where,
-                                     Region used, Exception failure) throws InterruptedException {
+    private RuntimeException cleanUp(WorldService.Run run, List<String> ids, Footprint where, Region used,
+                                     Exception failure) throws InterruptedException {
         List<String> kept = new ArrayList<>();
-        long left = 0;
-        boolean leftUnknown = false;
         String why = null;
         boolean interrupted = false;
         for (int i = ids.size() - 1; i >= 0; i--) {
@@ -164,19 +157,18 @@ public final class Builder {
                 why = why == null ? String.valueOf(e.getMessage()) : why;
             }
             kept.addFirst(ids.get(i));
-            leftUnknown |= sizes.get(i) < 0;
-            left += Math.max(0, sizes.get(i));
         }
-        if (interrupted || failure instanceof InterruptedException && !kept.isEmpty()) {
+        // Once the run has ended, no count is true: the part in flight may be half written, and what stays is what the
+        // server saved (#708). Also with no part finished: the first one may have written some blocks.
+        boolean ended = world.ended(run);
+        if (interrupted || failure instanceof InterruptedException && (ended || !kept.isEmpty())) {
             Thread.currentThread().interrupt();
+        }
+        if (ended) {
+            return new ToolException(WorldService.cutOff("the build", used));
         }
         String reason = failure instanceof OpException op ? "agent answered " + op.code() + ": " + PartialEdit.strip(op.detail())
                 : failure instanceof InterruptedException ? "interrupted" : String.valueOf(failure.getMessage());
-        if (!kept.isEmpty() && world.ended(run)) {
-            return new ToolException(reason + "; the server stopped before the build was undone, so "
-                    + (left == 0 ? "some" : (leftUnknown ? "at least " : "") + left) + " blocks it changed stay in "
-                    + Coords.show(used) + ": " + WorldService.ROLL_BACK + ", or the same build_batch completes it");
-        }
         if (!kept.isEmpty()) {
             return new ToolException(reason + "; undoing it failed (" + why + "), build_undo edit="
                     + world.remember(kept, where, run) + " removes the rest");
