@@ -16,6 +16,7 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Stream;
@@ -151,9 +152,9 @@ class UserJsonTest {
     @Test
     void collectingUnknownKeysNamesEachAndReadsTheRest() {
         List<String> unknown = new ArrayList<>();
-        UserJson json = UserJson.collectingUnknownKeys(JsonParser.parseString(
+        UserJson json = UserJson.collecting(JsonParser.parseString(
                 "{\"a\":1,\"timeoutSeconds\":5,\"b\":2,\"checks\":[{\"widht\":3,\"width\":4}]}").getAsJsonObject(),
-                "task.json ", UserJson.Keys.of("checks", "timeoutSeconds"), unknown);
+                "task.json ", UserJson.Keys.of("checks", "timeoutSeconds"), unknown, new HashSet<>());
         assertThat(json.wholeNumber("timeoutSeconds", JsonNumbers.SECONDS, 0)).isEqualTo(5);
         assertThat(json.exactObjects("checks", CHECK).getFirst().wholeNumber("width", JsonNumbers.POSITIVE, 0))
                 .isEqualTo(4);

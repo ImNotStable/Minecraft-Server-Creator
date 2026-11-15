@@ -136,15 +136,17 @@ public record BenchConfig(
     /**
      * The keys bench.json may have, and those of each object in it (#502): a misspelt key at any depth is refused
      * instead of left out silently. The names under {@code modes}, {@code paths}, {@code env} and {@code serverEnv}
-     * are the file's own.
+     * are the file's own. The secret keys are marked once, here (#661): {@code server.rconPassword}, and the
+     * {@code env} and {@code serverEnv} objects of each mode, where API keys and tokens go; a refusal shows only the
+     * type and length of a value under them, at any depth and whatever its type.
      */
     static final UserJson.Keys KEYS = UserJson.Keys.of("minecraftVersion", "agent", "modes", "paths",
             "gradleWrapperFrom", "corePort", "server");
     static final UserJson.Keys AGENT = UserJson.Keys.of("command", "timeoutSeconds");
     static final UserJson.Keys MODE = UserJson.Keys.of("extraArgs", "env", "mcpConfigTemplate", "serverEnv",
-            "serverPlugins", "paperCacheSeed", "requireMcp");
+            "serverPlugins", "paperCacheSeed", "requireMcp").secret("env", "serverEnv");
     static final UserJson.Keys SERVER = UserJson.Keys.of("command", "paperJar", "paperCacheDirs", "downloadsUrl",
-            "acceptEula", "serverPort", "rconPort", "rconPassword", "startTimeoutSeconds");
+            "acceptEula", "serverPort", "rconPort", "rconPassword", "startTimeoutSeconds").secret("rconPassword");
 
     /** Reads the config; the EULA choice comes from the owner's machine-wide acceptance in {@code ~/.msc/eula.json}. */
     public static BenchConfig load(Path file) throws IOException {
@@ -158,34 +160,24 @@ public record BenchConfig(
      * Every key is read by its type through {@link UserJson}'s exact reads (#416, #462): a value of another type, such
      * as {@code "acceptEula": "yes"} or {@code "command": "claude"}, is refused naming the key and the type it takes.
      *
-     * <p>Every problem of the file is listed in one refusal (#653): unknown keys, values of the wrong type, the rules
-     * on the values as written and the rules on the filled-in config all run in one pass. A rule of the filled-in
-     * config leaves out only what depends on a value refused already: the port clashes of a port that could not be
-     * read (every {@code server} port when {@code server} could not be), and the {@code serverPlugins} placeholders
-     * when {@code paths} could not be read; a blank path is not looked for on disk either. Every refusal quotes a
-     * string value as the file writes it (#652); a file that is not found also names the absolute path it was looked
-     * for at.
+     * <p>Every problem of the file is listed in one refusal (#653, #663): keys given twice, unknown keys, values of
+     * the wrong type, the rules on the values as written and the rules on the filled-in config all run in one pass,
+     * and a list or object is read entry by entry, so one refused entry hides none of the others. What is left out
+     * is only what depends on a value refused already: the entries of a list or object refused as a whole (an
+     * {@code env} that is no object), the port clashes of a port that could not be read (every {@code server} port
+     * when {@code server} could not be), the {@code serverPlugins} placeholders when {@code paths} is no object, and
+     * those naming a refused {@code paths} entry; a blank path is not looked for on disk either. Text that is no JSON
+     * is refused alone. Every refusal shows a value through {@link io.github.imnotstable.msc.bench.Quoted} (#662):
+     * quoted as the file writes it, escaped onto one line; a file that is not found also names the absolute path it
+     * was looked for at; a secret is shown only by its type and length (#661).
      */
     public static BenchConfig load(Path file, Path home) throws IOException {
-        BenchConfig raw;
         List<String> problems = new ArrayList<>();
-        Set<String> unread = new HashSet<>();
-        String text = Text.readOwn(file);
-        if (text.isBlank()) {
-            throw new IOException("Empty bench config " + file);
-        }
-        try {
-            JsonElement parsed = StrictJson.parse(text, "");
-            if (!parsed.isJsonObject()) {
-                throw new IllegalArgumentException("is not a JSON object");
-            }
-            raw = read(UserJson.collectingUnknownKeys(parsed.getAsJsonObject(), "", KEYS, problems), problems, unread);
-        } catch (IllegalArgumentException | IllegalStateException e) {
-            throw new IOException("Bad bench config " + file + ": " + e.getMessage(), e);
-        }
-        problems.addAll(BenchConfigRules.beforeDefaults(raw));
+        Set<String> refused = new HashSet<>();
+        BenchConfig raw = written(file, problems, refused);
+        problems.addAll(BenchConfigRules.beforeDefaults(raw, refused));
         BenchConfig full = raw.withDefaults(file.toAbsolutePath().getParent(), MachineEula.accepted(home));
-        problems.addAll(BenchConfigRules.afterDefaults(raw, full, unread));
+        problems.addAll(BenchConfigRules.afterDefaults(raw, full, refused));
         if (!problems.isEmpty()) {
             // One problem stays one line, as every other refusal of the command line is.
             throw new IOException("Bad bench config " + file + ":" + (problems.size() == 1 ? " " : "\n  ")
@@ -201,17 +193,43 @@ public record BenchConfig(
      * {@code check} and {@code report} work before the toolset is built.
      */
     public void requirePaths(Path file, Collection<String> modes) throws IOException {
-        List<String> problems = BenchConfigRules.missingPaths(this, modes);
+        // The file as written, which loaded already, so that a missing path is quoted as the file writes it (#662).
+        BenchConfig written = written(file, new ArrayList<>(), new HashSet<>());
+        List<String> problems = BenchConfigRules.missingPaths(this, written.paths(), modes);
         if (!problems.isEmpty()) {
-            throw new IOException("Bad bench config " + file + ": " + String.join("; ", problems));
+            // One problem stays one line; several are listed one per line under it, as load lists them.
+            throw new IOException("Bad bench config " + file + ":" + (problems.size() == 1 ? " " : "\n  ")
+                    + String.join("\n  ", problems));
+        }
+    }
+
+    /**
+     * The config {@code file} writes, read with every problem added to {@code problems} and every refused key to
+     * {@code refused} ({@link #read}); text that is no JSON object is refused at once.
+     */
+    private static BenchConfig written(Path file, List<String> problems, Set<String> refused) throws IOException {
+        String text = Text.readOwn(file);
+        if (text.isBlank()) {
+            throw new IOException("Empty bench config " + file);
+        }
+        try {
+            JsonElement parsed = StrictJson.parse(text, "", problems);
+            if (!parsed.isJsonObject()) {
+                throw new IllegalArgumentException("is not a JSON object");
+            }
+            return read(UserJson.collecting(parsed.getAsJsonObject(), "", KEYS, problems, refused), problems,
+                    refused);
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            throw new IOException("Bad bench config " + file + ": " + e.getMessage(), e);
         }
     }
 
     /**
      * The config as the file writes it, every key read by its type; a refused key goes to {@code problems} and reads
      * as absent, so the rest of the file is still read and checked. A refused key a later rule depends on
-     * ({@code server}, {@code paths} and the number keys) is also added to {@code unread}. Null entries of lists and
-     * maps are kept for {@link BenchConfigRules} to name.
+     * ({@code server}, {@code paths} and the number keys) is also added to {@code unread}, as {@code json} adds each
+     * refused entry of a list or object ({@link UserJson#collecting}). Null entries of lists and maps are kept for
+     * {@link BenchConfigRules} to name, and so is a refused entry, as null, which the rules leave to its refusal.
      */
     static BenchConfig read(UserJson json, List<String> problems, Set<String> unread) {
         UserJson a = field(problems, () -> json.exactObject("agent", AGENT));
@@ -266,14 +284,18 @@ public record BenchConfig(
         }
     }
 
-    /** {@link #field}, adding {@code key} to {@code unread} when its value is refused. */
+    /**
+     * {@link #field}, adding {@code key} to {@code unread} when its value is refused as a whole; a refused entry of it
+     * (#663) is not, so the rules still check what does not depend on that entry.
+     */
     private static <T> T field(List<String> problems, Set<String> unread, String key, Supplier<T> read) {
-        int before = problems.size();
-        T value = field(problems, read);
-        if (problems.size() > before) {
+        try {
+            return read.get();
+        } catch (IllegalArgumentException e) {
+            problems.add(e.getMessage());
             unread.add(key);
+            return null;
         }
-        return value;
     }
 
     /**
@@ -365,7 +387,7 @@ public record BenchConfig(
      */
     public BenchConfig withModel(String model) {
         if (model == null || model.isBlank() || model.startsWith("-")) {
-            throw new IllegalArgumentException("--model \"" + model + "\" is no model name, such as claude-sonnet-4-6");
+            throw new IllegalArgumentException("--model " + (model == null ? "null" : UserJson.quoted(model)) + " is no model name, such as claude-sonnet-4-6");
         }
         List<String> command = new ArrayList<>(agent.command());
         int at = command.indexOf("--model");
