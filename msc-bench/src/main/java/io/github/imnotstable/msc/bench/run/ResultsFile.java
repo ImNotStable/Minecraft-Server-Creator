@@ -3,16 +3,12 @@ package io.github.imnotstable.msc.bench.run;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonElement;
-import com.google.gson.JsonParseException;
-import com.google.gson.Strictness;
-import com.google.gson.TypeAdapter;
-import com.google.gson.stream.JsonReader;
 import io.github.imnotstable.msc.bench.JsonNumbers;
+import io.github.imnotstable.msc.bench.StrictJson;
 import io.github.imnotstable.msc.bench.Text;
 import io.github.imnotstable.msc.bench.UserJson;
 import io.github.imnotstable.msc.bench.check.CheckResult;
 import java.io.IOException;
-import java.io.StringReader;
 import java.lang.reflect.RecordComponent;
 import java.nio.ByteBuffer;
 import java.nio.CharBuffer;
@@ -31,8 +27,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 /**
  * {@code results.jsonl}, one {@link RunRecord} as JSON per line: the one writer and the one reader of the file. A run
@@ -41,8 +35,10 @@ import java.util.regex.Pattern;
  *
  * <p>The reader decodes strictly and refuses every line it cannot take as a run with an {@link IOException} naming the
  * file, the line and what is wrong, never a record with holes that the report would trip over: text that is not UTF-8,
- * a line that is not one JSON object, an unknown key, a missing {@code task}, {@code category}, {@code mode},
- * {@code repeat} or {@code passed}, a value of the wrong type, a list entry that is null, a number out of range. Keys a
+ * a line that is not one strict JSON object ({@link StrictJson}), an unknown key, a missing {@code task},
+ * {@code category}, {@code mode}, {@code repeat} or {@code passed}, a value of the wrong type, a list entry that is
+ * null, a number out of range (the ranges of {@link AgentResult} and {@link ToolStats}, which the run's parsers keep
+ * too, so a run never writes a line this refuses, #602). Keys a
  * record from an older bench may lack take their empty value. A byte-order mark is taken as what it says: UTF-8, or
  * UTF-16 as Windows PowerShell 5.1's {@code >} and {@code Out-File} write; one at the start of a line (files joined
  * byte for byte) is skipped.
@@ -64,9 +60,7 @@ public final class ResultsFile {
     public static final String NAME = "results.jsonl";
 
     private static final Gson GSON = new GsonBuilder().disableHtmlEscaping().create();
-    private static final TypeAdapter<JsonElement> TREE = GSON.getAdapter(JsonElement.class);
     private static final char BOM = '\uFEFF';
-    private static final Pattern JSON_PROBLEM = Pattern.compile("^(.*?) at line \\d+ column (\\d+)");
 
     private ResultsFile() {
     }
@@ -222,7 +216,7 @@ public final class ResultsFile {
         for (int i = line.indexOf('{', 1); i > 0; i = line.indexOf('{', i + 1)) {
             int start = line.charAt(i - 1) == BOM ? i - 1 : i;
             String rest = line.substring(i);
-            if (isJson(rest) && tree(rest).isJsonObject() && !isJson(line.substring(0, start))) {
+            if (isJson(rest) && StrictJson.syntax(rest).isJsonObject() && !isJson(line.substring(0, start))) {
                 return start;
             }
         }
@@ -232,7 +226,7 @@ public final class ResultsFile {
     /** Whether {@code line} is one complete JSON value, whatever its shape. */
     private static boolean isJson(String line) {
         try {
-            tree(line);
+            StrictJson.syntax(line);
             return true;
         } catch (IllegalArgumentException e) {
             return false;
@@ -279,7 +273,7 @@ public final class ResultsFile {
             throw new IllegalArgumentException("holds a NUL character; is the file UTF-16 without a byte-order mark? "
                     + "Save it as UTF-8");
         }
-        JsonElement tree = tree(line);
+        JsonElement tree = StrictJson.parse(line, "");
         if (tree == null || !tree.isJsonObject()) {
             throw new IllegalArgumentException("is " + (tree == null || tree.isJsonNull() ? "null" : tree.isJsonArray()
                     ? "a list" : "a single value") + ", not a JSON object; each line is one run");
@@ -302,20 +296,6 @@ public final class ResultsFile {
                 json.exactObjects("checks", keys(CheckResult.class)).stream().map(ResultsFile::check).toList());
     }
 
-    /** The line as one strict JSON value, refused with Gson's problem and column. */
-    private static JsonElement tree(String line) {
-        try {
-            JsonReader reader = new JsonReader(new StringReader(line));
-            reader.setStrictness(Strictness.STRICT);
-            JsonElement tree = TREE.read(reader);
-            // In strict mode a second value or other text after the first is a syntax error.
-            reader.peek();
-            return tree;
-        } catch (IOException | JsonParseException e) {
-            throw new IllegalArgumentException("is not valid JSON: " + jsonProblem(e.getMessage()), e);
-        }
-    }
-
     private static AgentResult agent(UserJson json) {
         if (json == null) {
             return AgentResult.UNKNOWN;
@@ -323,13 +303,13 @@ public final class ResultsFile {
         return new AgentResult(
                 json.exactBool("parsed", false),
                 json.exactBool("isError", false),
-                json.wholeNumber("turns", JsonNumbers.COUNT, 0),
-                json.wholeLong("apiDurationMs", JsonNumbers.AMOUNT, 0),
-                json.wholeLong("inputTokens", JsonNumbers.AMOUNT, 0),
-                json.wholeLong("cacheCreationTokens", JsonNumbers.AMOUNT, 0),
-                json.wholeLong("cacheReadTokens", JsonNumbers.AMOUNT, 0),
-                json.wholeLong("outputTokens", JsonNumbers.AMOUNT, 0),
-                json.number("costUsd", JsonNumbers.COST, 0),
+                json.wholeNumber("turns", AgentResult.TURNS, 0),
+                json.wholeLong("apiDurationMs", AgentResult.AMOUNT, 0),
+                json.wholeLong("inputTokens", AgentResult.AMOUNT, 0),
+                json.wholeLong("cacheCreationTokens", AgentResult.AMOUNT, 0),
+                json.wholeLong("cacheReadTokens", AgentResult.AMOUNT, 0),
+                json.wholeLong("outputTokens", AgentResult.AMOUNT, 0),
+                json.number("costUsd", AgentResult.COST, 0),
                 json.exactString("model", ""),
                 json.exactStrings("mcpConnected"),
                 json.exactStrings("mcpNotConnected"));
@@ -343,18 +323,18 @@ public final class ResultsFile {
         json.exactObjectEntries("perTool", keys(ToolStats.PerTool.class)).forEach((tool, t) -> {
             t.require("calls");
             perTool.put(tool, new ToolStats.PerTool(
-                    t.wholeNumber("calls", JsonNumbers.CALLS, 1),
-                    t.wholeNumber("errors", JsonNumbers.COUNT, 0),
-                    t.wholeLong("tokens", JsonNumbers.AMOUNT, 0),
-                    t.wholeLong("durationMs", JsonNumbers.AMOUNT, 0)));
+                    t.wholeNumber("calls", ToolStats.PerTool.CALLS, 1),
+                    t.wholeNumber("errors", ToolStats.COUNT, 0),
+                    t.wholeLong("tokens", ToolStats.AMOUNT, 0),
+                    t.wholeLong("durationMs", ToolStats.AMOUNT, 0)));
         });
         return new ToolStats(
-                json.wholeNumber("calls", JsonNumbers.COUNT, 0),
-                json.wholeNumber("errors", JsonNumbers.COUNT, 0),
-                json.wholeLong("resultTokens", JsonNumbers.AMOUNT, 0),
-                json.wholeLong("imageTokens", JsonNumbers.AMOUNT, 0),
-                json.wholeLong("resultChars", JsonNumbers.AMOUNT, 0),
-                json.wholeLong("durationMs", JsonNumbers.AMOUNT, 0),
+                json.wholeNumber("calls", ToolStats.COUNT, 0),
+                json.wholeNumber("errors", ToolStats.COUNT, 0),
+                json.wholeLong("resultTokens", ToolStats.AMOUNT, 0),
+                json.wholeLong("imageTokens", ToolStats.AMOUNT, 0),
+                json.wholeLong("resultChars", ToolStats.AMOUNT, 0),
+                json.wholeLong("durationMs", ToolStats.AMOUNT, 0),
                 perTool);
     }
 
@@ -375,19 +355,5 @@ public final class ResultsFile {
     /** The JSON keys of a record type: the names Gson writes its components under. */
     private static UserJson.Keys keys(Class<? extends Record> type) {
         return UserJson.Keys.of(Arrays.stream(type.getRecordComponents()).map(RecordComponent::getName).toList());
-    }
-
-    /** Gson's message without its advice to read leniently or its path: what is wrong and the column. */
-    private static String jsonProblem(String message) {
-        if (message == null) {
-            return "it ends too early";
-        }
-        String first = message.lines().findFirst().orElse("");
-        Matcher at = JSON_PROBLEM.matcher(first);
-        if (!at.find()) {
-            return first;
-        }
-        return (at.group(1).startsWith("Use JsonReader") ? "unexpected text" : at.group(1)) + " at column "
-                + at.group(2);
     }
 }

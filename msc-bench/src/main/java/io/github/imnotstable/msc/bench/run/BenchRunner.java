@@ -5,9 +5,8 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
-import com.google.gson.JsonParseException;
-import com.google.gson.JsonParser;
 import io.github.imnotstable.msc.bench.RunSelection;
+import io.github.imnotstable.msc.bench.StrictJson;
 import io.github.imnotstable.msc.bench.Text;
 import io.github.imnotstable.msc.bench.check.Check;
 import io.github.imnotstable.msc.bench.check.CheckContext;
@@ -495,8 +494,8 @@ public final class BenchRunner {
     static String withMarks(String json, Map<String, String> marks, List<String> argumentMarks) {
         JsonElement tree;
         try {
-            tree = JsonParser.parseString(json);
-        } catch (JsonParseException e) {
+            tree = StrictJson.parse(json, "");
+        } catch (IllegalArgumentException e) {
             return json;
         }
         if (!tree.isJsonObject() || !(tree.getAsJsonObject().get("mcpServers") instanceof JsonObject servers)) {

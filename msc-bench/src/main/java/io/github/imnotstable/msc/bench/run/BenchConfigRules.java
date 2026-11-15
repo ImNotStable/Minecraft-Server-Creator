@@ -1,6 +1,7 @@
 package io.github.imnotstable.msc.bench.run;
 
 import io.github.imnotstable.msc.bench.JsonNumbers;
+import io.github.imnotstable.msc.bench.StrictJson;
 import io.github.imnotstable.msc.bench.Text;
 import io.github.imnotstable.msc.process.rcon.RconClient;
 import java.io.IOException;
@@ -147,7 +148,9 @@ final class BenchConfigRules {
      * #519: the {@code paths} entries the selected modes use, in their MCP config template or server plugins, that do
      * not exist. Checked by {@code run} only, before the run folder is made, so {@code list}, {@code check} and
      * {@code report} still load a config whose toolset parts are not built yet; with such a path every toolset attempt
-     * would run the agent without its tools.
+     * would run the agent without its tools. A selected mode's MCP config template is read here too, by the bench's
+     * one strict JSON reader (#601): a template that is no strict JSON, or that gives a key twice, is refused naming
+     * the file and the key, since Claude Code would read it its own way. Placeholders go inside JSON strings.
      */
     static List<String> missingPaths(BenchConfig full, Collection<String> modes) throws IOException {
         List<String> problems = new ArrayList<>();
@@ -158,7 +161,13 @@ final class BenchConfigRules {
             }
             Map<String, String> uses = new LinkedHashMap<>();
             if (mode.mcpConfigTemplate() != null) {
-                for (String key : placeholders(Text.readOwn(Path.of(mode.mcpConfigTemplate())))) {
+                String template = Text.readOwn(Path.of(mode.mcpConfigTemplate()));
+                try {
+                    StrictJson.parse(template, mode.mcpConfigTemplate() + " ");
+                } catch (IllegalArgumentException e) {
+                    problems.add("modes." + name + ".mcpConfigTemplate: " + e.getMessage());
+                }
+                for (String key : placeholders(template)) {
                     uses.putIfAbsent(key, "modes." + name + ".mcpConfigTemplate");
                 }
             }
