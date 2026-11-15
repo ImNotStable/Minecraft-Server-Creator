@@ -195,12 +195,16 @@ public final class ServerManager implements AutoCloseable {
         }
         for (int port : new int[] {config.rconPort(), config.serverPort()}) {
             if (accepts(port)) {
+                // check passes no processes: it kills nothing and runs no attempts, so it names neither (#639).
+                boolean killsLeftovers = processes != null && leftoversIn != null;
                 throw new IOException("port " + port + " is still taken by a process the bench cannot prove its own "
-                        + "(no stop over RCON ended it, and this run started it for no attempt: a server left from "
-                        + "an earlier run, or one started by hand?"
-                        + (AttemptProcesses.canProve() ? "" : " This system shows no process's environment, so the "
-                                + "bench proves only msc-core its own, by its command line, and kills no server.")
-                        + "); stop it and run again");
+                        + "(no stop over RCON ended it"
+                        + (killsLeftovers ? ", and this run started it for no attempt" : ", and check kills no process")
+                        + ": a server left from an earlier run, or one started by hand?"
+                        + (!killsLeftovers || AttemptProcesses.canProve() ? "" : " This system shows no process's "
+                                + "environment, so the bench proves only msc-core its own, by its command line, and "
+                                + "kills no server.")
+                        + "); stop it and " + (killsLeftovers ? "run" : "check") + " again");
             }
         }
     }

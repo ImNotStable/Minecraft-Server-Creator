@@ -198,7 +198,7 @@ class MainTest {
                 new PrintStream(new ByteArrayOutputStream(), true, StandardCharsets.UTF_8)));
 
         assertThat(refused).isInstanceOf(IOException.class)
-                .hasMessageContaining("has no " + BenchRunner.RESULTS_FILE, "the run folder that `run` prints");
+                .hasMessageContaining("has no " + BenchRunner.RESULTS_FILE, "or the path that `run` prints after Report:");
         assertThat(dir.resolve("report.md")).doesNotExist();
     }
 

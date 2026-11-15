@@ -403,7 +403,7 @@ public final class BenchRunner {
                 freePortsBeforeChecks(attemptDir);
             }
             if (!task.reset().isEmpty()) {
-                task.reset().apply(workspace);
+                StepFailed.during(StepFailed.RESET_BEFORE_CHECKS, () -> task.reset().apply(workspace));
             }
             for (Check check : task.checks()) {
                 results.add(check.run(context));
@@ -443,11 +443,8 @@ public final class BenchRunner {
     }
 
     private void freePortsBeforeChecks(Path attemptDir) throws IOException {
-        try {
-            ServerManager.clearPorts(config.server(), processes, attemptDir);
-        } catch (IOException e) {
-            throw new IOException("freeing the bench's ports before the checks: " + e.getMessage(), e);
-        }
+        StepFailed.during(StepFailed.FREEING_PORTS_BEFORE_CHECKS,
+                () -> ServerManager.clearPorts(config.server(), processes, attemptDir));
     }
 
     /** The terminal line for one finished attempt; a failed one ends with {@link RunRecord#failureReason()}. */
