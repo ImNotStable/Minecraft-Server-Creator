@@ -2,6 +2,7 @@ package io.github.imnotstable.msc.core.tools;
 
 import io.github.imnotstable.msc.core.CoreConfig;
 import io.github.imnotstable.msc.core.agent.AgentHub;
+import io.github.imnotstable.msc.core.server.Platform;
 import io.github.imnotstable.msc.core.texture.PackProperties;
 import io.github.imnotstable.msc.core.texture.ResourcePack;
 import io.github.imnotstable.msc.core.tool.Args;
@@ -177,7 +178,8 @@ public final class TextureTools {
         String description = args.lines("description", LifecycleTools.DEFAULT_PACK_DESCRIPTION, 2);
         boolean required = args.bool("required", false);
         Path copy = args.has("file") ? OutputFile.check(args.path("file", config.inWorkspace()), "file") : null;
-        boolean offered = pack.ours(PackProperties.url(properties));
+        Platform platform = Platform.current(config);
+        boolean offered = pack.ours(PackProperties.url(platform, properties));
         if (offered) {
             OutputFile.check(properties, ServerPropertiesFile.NAME);
         }
@@ -210,7 +212,8 @@ public final class TextureTools {
         // Until the players have it, a failure takes the build back: what they were sent, what the host serves and
         // what server.properties offers then agree again.
         try {
-            if (offered && steps.run(OFFER, () -> PackProperties.write(properties, built.url(), built.sha1(), required))) {
+            if (offered && steps.run(OFFER, () -> PackProperties.write(platform, properties, built.url(), built.sha1(),
+                    required))) {
                 out.append("\n").append(ServerPropertiesFile.NAME).append(" updated to offer this build");
             }
             if (connected) {
@@ -268,10 +271,10 @@ public final class TextureTools {
      * After any build that changed what the pack host serves: keep a server.properties that offers our pack pointing
      * at that build. Returns true when it did.
      */
-    static boolean keepOffered(ResourcePack pack, Path properties, ResourcePack.Built built, boolean required)
-            throws IOException {
-        return pack.ours(PackProperties.url(properties)) && PackProperties.write(properties, built.url(), built.sha1(),
-                required);
+    static boolean keepOffered(ResourcePack pack, Platform platform, Path properties, ResourcePack.Built built,
+                               boolean required) throws IOException {
+        return pack.ours(PackProperties.url(platform, properties))
+                && PackProperties.write(platform, properties, built.url(), built.sha1(), required);
     }
 
     /** The texture tool: one of draw, generate or recolor, then an optional animation; or only animate. */

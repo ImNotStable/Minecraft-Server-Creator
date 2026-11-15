@@ -141,6 +141,18 @@ public enum Platform {
         return addonDir != null;
     }
 
+    /**
+     * True when the server reads its resource pack from {@code server.properties}, so MSC offers the pack there and a
+     * restart outside MSC still sends it (ADR 0017). Minestom sends only the pack MSC's agent hands it, and Velocity is
+     * a proxy: neither reads that file for a pack, so nothing is written there for them ({@code PackProperties}, #718).
+     */
+    public boolean readsPackProperties() {
+        return switch (this) {
+            case PAPER, PURPUR, FOLIA, FABRIC, QUILT, NEOFORGE, FORGE -> true;
+            case MINESTOM, VELOCITY -> false;
+        };
+    }
+
     /** True when the server is Mojang's and so needs an accepted {@code eula.txt}. */
     public boolean needsEula() {
         return eula;

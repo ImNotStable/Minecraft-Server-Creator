@@ -165,20 +165,26 @@ final class ServerRun {
     }
 
     /**
-     * Checked first: running, server.properties writable when a pack was built. Then: detach the server, hand the
-     * pack to a standalone host, offer it in server.properties. A host that does not come up leaves the pack served
-     * by this session, which the message says; the call still detaches.
+     * Checked first: running, server.properties writable when a pack was built and the platform reads it there. Then:
+     * detach the server, hand the pack to a standalone host, offer it in server.properties (only where the platform
+     * reads it, #718). A host that does not come up leaves the pack served by this session, which the message says;
+     * the call still detaches.
      */
     String detach(Args args) throws IOException, InterruptedException {
         if (!server.running()) {
             throw new ToolException(server.notRunning());
         }
+        Platform platform = server.platform();
+        boolean offers = platform.readsPackProperties();
         // The workspace's built pack: this session's last build, or the zip an earlier build left (#655).
-        if (pack.hasBuild() && Files.exists(serverProperties())) {
+        if (offers && pack.hasBuild() && Files.exists(serverProperties())) {
             OutputFile.check(serverProperties(), ServerPropertiesFile.NAME);
         }
-        Steps steps = new Steps("server_detach").then(DETACH).then(KEEP_SERVING).then(OFFER_PACK)
-                .ifFails(KEEP_SERVING, "the server is detached, but the pack is served by this session only, until it "
+        Steps steps = new Steps("server_detach").then(DETACH).then(KEEP_SERVING);
+        if (offers) {
+            steps.then(OFFER_PACK);
+        }
+        steps.ifFails(KEEP_SERVING, "the server is detached, but the pack is served by this session only, until it "
                         + "ends; server_stop then server_start and server_detach again keeps it up")
                 .ifFails(OFFER_PACK, "the server and the pack host run on, but a restart outside MSC offers no pack");
         if (!steps.run(DETACH, server::detach)) {
@@ -202,8 +208,11 @@ final class ServerRun {
         String properties = "";
         ResourcePack.Built built = pack.lastBuilt();
         ResourcePack.Applied applied = pack.applied();
-        if (hosting && built != null && steps.run(OFFER_PACK, () -> PackProperties.write(serverProperties(),
-                built.url(), built.sha1(), applied != null && applied.required()))) {
+        if (hosting && !offers) {
+            properties = "\n" + platform.displayName() + " does not read the pack from " + ServerPropertiesFile.NAME
+                    + ", so a restart outside MSC does not offer it.";
+        } else if (hosting && built != null && steps.run(OFFER_PACK, () -> PackProperties.write(platform,
+                serverProperties(), built.url(), built.sha1(), applied != null && applied.required()))) {
             properties = "\n" + ServerPropertiesFile.NAME + " now offers the pack too, so a restart outside MSC keeps it.";
         }
         return "server detached: it keeps running after this session ends"
@@ -228,7 +237,7 @@ final class ServerRun {
         String[] packNotes = new String[2];
         steps.note(TAKE_OVER_PACK, () -> {
             packNotes[0] = pack.stopLeftoverHost();
-            boolean offered = pack.ours(PackProperties.url(serverProperties()));
+            boolean offered = pack.ours(PackProperties.url(server.platform(), serverProperties()));
             packNotes[1] = syncPackProperties();
             return packNotes[0] != null || offered ? "" : null;
         });
@@ -416,10 +425,11 @@ final class ServerRun {
         try {
             ResourcePack.Snapshot before = pack.snapshot();
             Path file = serverProperties();
-            byte[] offeredBefore = pack.ours(PackProperties.url(file)) ? Files.readAllBytes(file) : null;
+            byte[] offeredBefore = pack.ours(PackProperties.url(server.platform(), file)) ? Files.readAllBytes(file)
+                    : null;
             ResourcePack.Built built = pack.build(applied.description());
             // The host now serves only this build: a server.properties that offers our pack follows it first.
-            TextureTools.keepOffered(pack, file, built, applied.required());
+            TextureTools.keepOffered(pack, server.platform(), file, built, applied.required());
             if (onlyChanged && pack.wasSent(to, built, applied.required())) {
                 return "";
             }
@@ -458,19 +468,20 @@ final class ServerRun {
      */
     private String syncPackProperties() {
         Path file = serverProperties();
-        if (!pack.ours(PackProperties.url(file))) {
+        Platform platform = server.platform();
+        if (!pack.ours(PackProperties.url(platform, file))) {
             return null;
         }
         try {
             ResourcePack.Applied applied = pack.applied();
             ResourcePack.Built built = pack.build(applied != null ? applied.description()
                     : LifecycleTools.DEFAULT_PACK_DESCRIPTION);
-            PackProperties.write(file, built.url(), built.sha1(),
-                    applied != null ? applied.required() : PackProperties.required(file));
+            PackProperties.write(platform, file, built.url(), built.sha1(),
+                    applied != null ? applied.required() : PackProperties.required(platform, file));
             return null;
         } catch (IOException | RuntimeException e) {
             try {
-                PackProperties.clear(file);
+                PackProperties.clear(platform, file);
             } catch (IOException ignored) {
                 // Best effort: the server then shows players a failed pack download.
             }
