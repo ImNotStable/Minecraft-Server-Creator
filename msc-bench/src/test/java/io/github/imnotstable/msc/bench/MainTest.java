@@ -16,7 +16,19 @@ import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import io.github.imnotstable.msc.bench.run.ResultsFile;
 import io.github.imnotstable.msc.bench.run.RunIsolation;
+import io.github.imnotstable.msc.bench.run.RunRecord;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.stream.Stream;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -238,6 +250,73 @@ class MainTest {
                 assertThat(mention.startsWith(RunIsolation.DEFAULT_RUNS_SHOWN) || mention.endsWith(RunIsolation.TEMP_RUNS_NAME)
                         || history).as(doc + ": " + mention).isTrue();
             }
+        }
+    }
+
+    @Test
+    void runsStartedTogetherEachGetANewFolderAndTheirOwnReport() throws Exception {
+        // #621: two runs started in the same second shared one folder; report.md listed only the run that ended last.
+        for (String task : List.of("a", "b")) {
+            Files.createDirectories(dir.resolve("tasks/" + task));
+            Files.writeString(dir.resolve("tasks/" + task + "/task.json"), """
+                    {"category":"code","title":"%s","checks":[{"type":"file","path":"done.txt"}]}
+                    """.formatted(task));
+            Files.writeString(dir.resolve("tasks/" + task + "/prompt.md"), "Write done.txt.");
+        }
+        Files.writeString(dir.resolve("bench.json"), """
+                {"agent":{"command":["%s","-cp","%s","io.github.imnotstable.msc.bench.FakeAgent","{prompt}"]},
+                 "modes":{"baseline":{}}}
+                """.formatted(ProcessHandle.current().info().command().orElse("java").replace("\\", "\\\\"),
+                System.getProperty("java.class.path").replace("\\", "\\\\")));
+        Path runs = Files.createDirectories(dir.resolve("runs"));
+        // Folders already named for every second these runs can start in: each run must still make a new one.
+        LocalDateTime now = LocalDateTime.now();
+        List<Path> earlier = new ArrayList<>();
+        for (int s = -1; s < 120; s++) {
+            Path old = Files.createDirectory(runs.resolve(now.plusSeconds(s)
+                    .format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss"))));
+            Files.writeString(old.resolve(BenchRunner.RESULTS_FILE), "an earlier run's line\n");
+            earlier.add(old);
+        }
+        CountDownLatch go = new CountDownLatch(1);
+        Map<String, Future<Integer>> exits = new LinkedHashMap<>();
+        try (ExecutorService pool = Executors.newFixedThreadPool(2)) {
+            for (String task : List.of("a", "b")) {
+                exits.put(task, pool.submit(() -> {
+                    go.await();
+                    return Main.run(new String[] {"run", "--out", runs.toString(), "--tasks-dir",
+                            dir.resolve("tasks").toString(), "--config", dir.resolve("bench.json").toString(),
+                            "--tasks", task}, new PrintStream(new ByteArrayOutputStream(), true,
+                            StandardCharsets.UTF_8), dir.resolve("home"), dir, dir);
+                }));
+            }
+            go.countDown();
+            for (Future<Integer> exit : exits.values()) {
+                assertThat(exit.get()).isZero();
+            }
+        }
+
+        List<Path> made;
+        try (Stream<Path> all = Files.list(runs)) {
+            made = all.filter(f -> !earlier.contains(f)).toList();
+        }
+        assertThat(made).hasSize(2);
+        List<String> tasksRun = new ArrayList<>();
+        for (Path run : made) {
+            List<RunRecord> records = ResultsFile.read(run.resolve(BenchRunner.RESULTS_FILE), w -> {
+                throw new AssertionError(w);
+            });
+            assertThat(records).hasSize(1);
+            tasksRun.add(records.getFirst().task());
+            assertThat(Files.readString(run.resolve("report.md"))).contains("Runs: 1. Tasks: 1")
+                    .contains(records.getFirst().task());
+        }
+        assertThat(tasksRun).containsExactlyInAnyOrder("a", "b");
+        for (Path old : earlier) {
+            try (Stream<Path> files = Files.list(old)) {
+                assertThat(files.toList()).as(old.toString()).containsExactly(old.resolve(BenchRunner.RESULTS_FILE));
+            }
+            assertThat(old.resolve(BenchRunner.RESULTS_FILE)).hasContent("an earlier run's line");
         }
     }
 }
