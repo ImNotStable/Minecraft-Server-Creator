@@ -17,6 +17,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Properties;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
@@ -57,6 +58,11 @@ public final class ServerManager implements AutoCloseable {
     private volatile PidFile.Identity self = PidFile.Identity.current();
     /** {@code .msc/server.pid}: every change to it goes through its lock ({@link ServerPidFile#locked}). */
     private final ServerPidFile record;
+    /**
+     * Held for a whole {@link #stopLeftover}, so two stops of one leftover in this core run one after the other. Taken
+     * before this monitor, never inside it: the wait for the leftover to exit holds only this lock (#712).
+     */
+    private final ReentrantLock leftoverStop = new ReentrantLock();
 
     public ServerManager(CoreConfig config, AgentHub hub) {
         this.config = config;
@@ -480,22 +486,39 @@ public final class ServerManager implements AutoCloseable {
         return stopLeftover(false);
     }
 
-    /** {@link #stopLeftover()}; {@code whole} tries every way again, also on a leftover that resisted before. */
-    public synchronized String stopLeftover(boolean whole) throws InterruptedException {
-        if (running() || !Files.exists(pidFile())) {
-            return null;
+    /**
+     * {@link #stopLeftover()}; {@code whole} tries every way again, also on a leftover that resisted before. The
+     * leftover is claimed under this monitor, so no start of this core's own server comes in between; the wait for it
+     * to exit (up to 90 s) is outside it, so msc_status and the refusals answer meanwhile (#712). The pid file still
+     * names it then, so a start in that window refuses ({@link #launch}).
+     */
+    public String stopLeftover(boolean whole) throws InterruptedException {
+        leftoverStop.lockInterruptibly();
+        try {
+            return stopLeftoverHeld(whole);
+        } finally {
+            leftoverStop.unlock();
         }
+    }
+
+    private String stopLeftoverHeld(boolean whole) throws InterruptedException {
         Leftovers l = leftovers;
-        // Claimed in the pid file's critical section: whose it is, and a stale file removed, with no other core's
-        // start in between (#490). The wait for it to exit is outside: the file names it until it is gone.
-        ProcessHandle h = record.locked(held -> {
-            refuseOtherSession();
-            ProcessHandle found = l.find().apply(pidFile()).orElse(null);
-            if (found == null) {
-                held.delete(); // a stale file: its process is gone or the pid was reused
+        ProcessHandle h;
+        synchronized (this) {
+            if (running() || !Files.exists(pidFile())) {
+                return null;
             }
-            return found;
-        });
+            // Claimed in the pid file's critical section: whose it is, and a stale file removed, with no other core's
+            // start in between (#490). The wait for it to exit is outside: the file names it until it is gone.
+            h = record.locked(held -> {
+                refuseOtherSession();
+                ProcessHandle found = l.find().apply(pidFile()).orElse(null);
+                if (found == null) {
+                    held.delete(); // a stale file: its process is gone or the pid was reused
+                }
+                return found;
+            });
+        }
         if (h == null) {
             return null;
         }
