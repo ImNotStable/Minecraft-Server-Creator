@@ -3,8 +3,6 @@ package io.github.imnotstable.msc.core.server;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import io.github.imnotstable.msc.core.tool.ToolException;
-import io.github.imnotstable.msc.process.HttpStall;
 import io.github.imnotstable.msc.process.StallingHttpServer;
 import java.net.URI;
 import java.nio.file.Files;
@@ -27,7 +25,7 @@ class DownloadsTest {
             Path jar = cache.resolve("paper.jar");
             assertThatThrownBy(() -> new Downloads(Duration.ofMillis(500))
                     .fetch(URI.create(server.url("/paper.jar")), jar, "gone", null))
-                    .isInstanceOf(ToolException.class)
+                    .isInstanceOf(Downloads.Unavailable.class)
                     .hasMessage("download from 127.0.0.1 stalled (no data for 500 ms); check the network connection "
                             + "and run server_setup again");
             try (var left = Files.list(cache)) {
@@ -39,8 +37,8 @@ class DownloadsTest {
     @Test
     void aBuildListThatStallsFailsLikeAnUnreachableHost() throws Exception {
         try (StallingHttpServer server = new StallingHttpServer(100_000, 10, Duration.ZERO)) {
-            assertThatThrownBy(() -> new Downloads(Duration.ofMillis(500)).text(URI.create(server.url("/builds"))))
-                    .isInstanceOf(HttpStall.StalledException.class);
+            assertThatThrownBy(() -> new Downloads(Duration.ofMillis(500)).text(URI.create(server.url("/builds")),
+                    "Paper downloads")).isInstanceOf(Downloads.Unavailable.class).hasMessageContaining("stalled");
         }
     }
 

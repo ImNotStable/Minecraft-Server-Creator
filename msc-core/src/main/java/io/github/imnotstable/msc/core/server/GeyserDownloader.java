@@ -15,7 +15,8 @@ import java.util.regex.Pattern;
 /**
  * Downloads the Spigot builds of Geyser and Floodgate (Paper and Purpur load them as plugins) from GeyserMC's download
  * API (v2) into {@code .msc/cache} as {@code <project>-spigot-<build>.jar}, checked against the sha256 the API names
- * and kept in the machine's {@link DownloadStore} (ADR 0046). The newest build wins; offline, the newest cached one.
+ * and kept in the machine's {@link DownloadStore} (ADR 0046). The newest build wins; while the API is unavailable,
+ * the newest cached one ({@link Downloads#orCached}).
  */
 public final class GeyserDownloader {
     /** The two plugins, by their GeyserMC project id and the file name they get in {@code plugins/}. */
@@ -41,8 +42,11 @@ public final class GeyserDownloader {
         }
     }
 
-    /** A downloaded jar; {@code version} is null for an offline fallback, whose name keeps only the build. */
-    public record Download(Project project, Path jar, String version, int build, boolean cached) {
+    /**
+     * A downloaded jar; {@code version} is null for a cached fallback, whose name keeps only the build, and
+     * {@code note} then says in one line why the API was not used (#589).
+     */
+    public record Download(Project project, Path jar, String version, int build, boolean cached, String note) {
         /** {@code geyser 2.12.1 build 1302}, or {@code geyser build 1302} offline. */
         public String describe() {
             return project.id() + (version == null ? "" : " " + version) + " build " + build;
@@ -65,30 +69,28 @@ public final class GeyserDownloader {
 
     public Download download(Project project) throws IOException, InterruptedException {
         URI latest = URI.create(baseUrl + "/v2/projects/" + project.id() + "/versions/latest/builds/latest");
-        HttpResponse<String> response;
-        try {
-            response = downloads.text(latest);
-        } catch (IOException e) {
+        return Downloads.orCached(() -> newest(project, latest), note -> {
             CachedBuild offline = CachedBuild.newest(cacheDir, project.id(), PLATFORM);
-            if (offline != null) {
-                return new Download(project, offline.jar(), null, offline.build(), true);
-            }
-            throw new ToolException("cannot reach " + latest + ": " + e.getMessage());
-        }
+            return offline == null ? null : new Download(project, offline.jar(), null, offline.build(), true, note);
+        });
+    }
+
+    private Download newest(Project project, URI latest) throws IOException, InterruptedException {
+        HttpResponse<String> response = downloads.text(latest, "GeyserMC downloads");
         if (response.statusCode() != 200) {
             throw new ToolException("GeyserMC downloads answered " + response.statusCode() + " for " + latest);
         }
         Build b = parse(project, response.body());
         Path jar = cacheDir.resolve(project.id() + "-" + PLATFORM + "-" + b.build() + ".jar");
         if (Files.exists(jar) && b.sha256().equalsIgnoreCase(Downloads.sha256(jar))) {
-            return new Download(project, jar, b.version(), b.build(), true);
+            return new Download(project, jar, b.version(), b.build(), true, null);
         }
         URI file = URI.create(baseUrl + "/v2/projects/" + project.id() + "/versions/" + b.version() + "/builds/"
                 + b.build() + "/downloads/" + PLATFORM);
         Files.createDirectories(cacheDir);
         boolean stored = downloads.fetch(file, jar, "download of " + file + " answered 404",
                 Downloads.Checksum.of("SHA-256", b.sha256()));
-        return new Download(project, jar, b.version(), b.build(), stored);
+        return new Download(project, jar, b.version(), b.build(), stored, null);
     }
 
     /** The build an API answer names: version and build as they go into the download URL, and the jar's sha256. */

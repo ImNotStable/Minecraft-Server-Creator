@@ -105,7 +105,7 @@ class LoaderInstallerTest {
             String base = "http://127.0.0.1:" + unreachable.getLocalPort();
             LoaderInstaller offline = new LoaderInstaller(new LoaderInstaller.Urls(base, base, base, base, base), cache,
                     "java");
-            assertThat(offline.purpur("26.3", server))
+            assertThat(offline.purpur("26.3", server)).usingRecursiveComparison().ignoringFields("note")
                     .isEqualTo(new LoaderInstaller.Result("26.3 build " + newest, true));
             assertThat(server.resolve("purpur.jar")).hasContent("build " + newest);
             assertThatThrownBy(() -> offline.purpur("1.0", server)).isInstanceOf(ToolException.class)

@@ -48,8 +48,14 @@ public final class LoaderInstaller {
         }
     }
 
-    /** What a step did, in one line for the tool result. */
-    public record Result(String version, boolean cached) {
+    /**
+     * What a step did, in one line for the tool result; {@code note} is null, or one line saying why the newest
+     * cached build is used: the source was unavailable (#589).
+     */
+    public record Result(String version, boolean cached, String note) {
+        public Result(String version, boolean cached) {
+            this(version, cached, null);
+        }
     }
 
     private final Urls urls;
@@ -72,34 +78,28 @@ public final class LoaderInstaller {
     /** The newest Purpur build for a Minecraft version, as {@code purpur.jar}. */
     public Result purpur(String minecraft, Path dir) throws IOException, InterruptedException {
         URI latest = URI.create(urls.purpurApi() + "/v2/purpur/" + minecraft + "/latest");
-        String build;
-        String md5;
-        try {
-            HttpResponse<String> response = downloads.text(latest);
+        record Jar(Path file, String build, boolean cached, String note) {
+        }
+        Jar jar = Downloads.orCached(() -> {
+            HttpResponse<String> response = downloads.text(latest, "Purpur");
             if (response.statusCode() == 404) {
                 throw new ToolException("Purpur has no version " + minecraft);
             }
             if (response.statusCode() != 200) {
                 throw new ToolException("Purpur answered " + response.statusCode() + " for " + latest);
             }
-            build = latestBuild(response.body());
-            md5 = md5(response.body());
-        } catch (IOException e) {
+            String build = latestBuild(response.body());
+            Path file = cacheDir.resolve("purpur-" + minecraft + "-" + build + ".jar");
+            boolean cached = Files.exists(file) || downloads.fetch(URI.create(urls.purpurApi() + "/v2/purpur/"
+                    + minecraft + "/" + build + "/download"), file, "Purpur has no build " + build + " of " + minecraft,
+                    Downloads.Checksum.of("MD5", md5(response.body())));
+            return new Jar(file, build, cached, null);
+        }, note -> {
             CachedBuild offline = CachedBuild.newest(cacheDir, "purpur", minecraft);
-            if (offline == null) {
-                throw new ToolException("cannot reach " + latest + ": " + e.getMessage());
-            }
-            ServerFiles.place(offline.jar(), dir, Platform.PURPUR.serverJar());
-            return new Result(minecraft + " build " + offline.build(), true);
-        }
-        Path jar = cacheDir.resolve("purpur-" + minecraft + "-" + build + ".jar");
-        boolean cached = Files.exists(jar);
-        if (!cached) {
-            cached = downloads.fetch(URI.create(urls.purpurApi() + "/v2/purpur/" + minecraft + "/" + build + "/download"), jar,
-                    "Purpur has no build " + build + " of " + minecraft, Downloads.Checksum.of("MD5", md5));
-        }
-        ServerFiles.place(jar, dir, Platform.PURPUR.serverJar());
-        return new Result(minecraft + " build " + build, cached);
+            return offline == null ? null : new Jar(offline.jar(), String.valueOf(offline.build()), true, note);
+        });
+        ServerFiles.place(jar.file(), dir, Platform.PURPUR.serverJar());
+        return new Result(minecraft + " build " + jar.build(), jar.cached(), jar.note());
     }
 
     static String latestBuild(String json) {
@@ -295,6 +295,6 @@ public final class LoaderInstaller {
     }
 
     private void fetch(URI uri, Path jar, String notFound) throws IOException, InterruptedException {
-        downloads.fetch(uri, jar, notFound, null);
+        Downloads.fresh(() -> downloads.fetch(uri, jar, notFound, null));
     }
 }
