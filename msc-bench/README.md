@@ -68,7 +68,7 @@ The bench needs no desktop: a Linux box set up with `scripts/setup-ubuntu.sh` (J
 
 The agent runs as Claude Code started from a plain shell even when the bench itself runs inside a Claude Code session (Remote Control, a cloud session): the runner drops that session's `CLAUDECODE`, `CLAUDE_*` and `CCR_*` variables from the agent's environment, keeping the ones that pick the account or provider (`CLAUDE_CODE_OAUTH_TOKEN`, `CLAUDE_CONFIG_DIR`, `CLAUDE_SESSION_INGRESS_TOKEN_FILE`, `CLAUDE_CODE_USE_*`, `CLAUDE_CODE_SKIP_*`); a mode's `env` can set any back. If that session's msc plugin holds the core port (25590), the toolset attempt says so: set `corePort` in a copy of `bench.json` and pass it with `--config`.
 
-A leading `~` in a path argument (`check`'s workspace, `report`'s run folder, `--out`, `--config`, `--tasks-dir`) is your home folder: the bench expands it itself, because neither Gradle's `--args` nor a quoted shell argument does. The path `run` prints after `Report:` works too.
+A leading `~` in a path argument (`check`'s workspace, `report`'s run folder, `--out`, `--config`, `--tasks-dir`) is your home folder: the bench expands it itself, because neither Gradle's `--args` nor a quoted shell argument does. `report` takes the run folder or the path `run` and `report` print after `Report:` (`<runDir>/report.md`), which names that folder (#638).
 
 Each command takes only its own flags, and each flag at most once (#609):
 

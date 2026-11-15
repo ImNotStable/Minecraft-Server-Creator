@@ -21,7 +21,8 @@ import org.junit.jupiter.api.io.TempDir;
 /**
  * #639: every exit code the README lists for {@code check} and {@code run}, through the command line. A step of the
  * bench's own work on accepted input (freeing the ports, the reset) fails the same way in both: a failed check or
- * attempt (3), never a bad argument (2).
+ * attempt (3), never a bad argument (2). #638: the path {@code run} prints after {@code Report:} is one
+ * {@code report} takes.
  */
 class ExitCodesTest {
 
@@ -110,11 +111,33 @@ class ExitCodesTest {
     }
 
     @Test
-    void runPassesWith0() {
+    void runPassesWith0AndReportTakesThePathItPrints() throws IOException {
+        // #638: run prints the report file's path after Report:, and report takes it back, as the README says.
         Outcome run = exec("run", "--tasks", "file", "--tasks-dir", "@tasks", "--config", "@bench.json", "--out", "@runs");
 
         assertThat(run.exit()).as(run.out() + run.err()).isEqualTo(Main.OK);
-        assertThat(run.out().strip().lines().reduce((x, y) -> y).orElse("")).startsWith("Report: ");
+        String printed = reportPath(run);
+        Files.writeString(Path.of(printed), "stale");
+        Outcome report = exec("report", printed);
+        assertThat(report.exit()).as(report.err()).isEqualTo(Main.OK);
+        assertThat(reportPath(report)).isEqualTo(printed);
+        assertThat(Path.of(printed)).content().startsWith("# Benchmark report");
+        Outcome folder = exec("report", Path.of(printed).getParent().toString());
+        assertThat(folder.exit()).as(folder.err()).isEqualTo(Main.OK);
+        assertThat(reportPath(folder)).isEqualTo(printed);
+    }
+
+    @Test
+    void reportTakesTheReportPathBeforeAReportIsWritten() throws IOException {
+        // After a report the disk refused, the printed path's file is missing; it still names the run folder.
+        Path runDir = Files.createDirectories(dir.resolve("runs/20261115-000000"));
+        Files.writeString(runDir.resolve("results.jsonl"),
+                "{\"task\":\"t\",\"category\":\"code\",\"mode\":\"baseline\",\"repeat\":1,\"passed\":true}\n");
+
+        Outcome report = exec("report", runDir.resolve(Main.REPORT).toString());
+
+        assertThat(report.exit()).as(report.err()).isEqualTo(Main.OK);
+        assertThat(runDir.resolve(Main.REPORT)).content().startsWith("# Benchmark report");
     }
 
     @Test
@@ -203,6 +226,12 @@ class ExitCodesTest {
                  "modes":{"baseline":{"env":%s}},
                  "server":{"rconPort":%d,"serverPort":%d}}
                 """.formatted(JAVA, CLASSPATH, env, rconPort.port(), gamePort.port()));
+    }
+
+    private static String reportPath(Outcome outcome) {
+        String last = outcome.out().strip().lines().reduce((a, b) -> b).orElse("");
+        assertThat(last).startsWith("Report: ");
+        return last.substring("Report: ".length());
     }
 
     private static boolean link(Path link, Path target) {

@@ -46,7 +46,8 @@ import java.util.Objects;
  *     [--config FILE]
  * check &lt;task&gt; &lt;workspace&gt; [--tasks-dir DIR] [--config FILE]
  *                                        run one task's checks on a folder (starts its server for RCON checks)
- * report &lt;runDir&gt;                         rewrite report.md from results.jsonl
+ * report &lt;runDir&gt;                         rewrite report.md from results.jsonl; the report.md path that run
+ *                                        prints after Report: names its run folder too
  * --tasks-dir defaults to tasks, --config to bench.json, --out to ~/.msc/bench-runs (or &lt;temp&gt;/msc-bench-runs
  * when the home folder is inside a repository; it must be outside any repository or CLAUDE.md folder). Each command
  * takes only its own flags, each at most once ({@link CommandLine}).
@@ -192,7 +193,7 @@ public final class Main {
                 if (rest.size() != 1) {
                     throw new IllegalArgumentException("usage: report <runDir>");
                 }
-                yield report(expandHome(rest.getFirst(), home), out);
+                yield report(runFolder(expandHome(rest.getFirst(), home)), out);
             }
             default -> throw new IllegalStateException("no case for command " + line.command());
         };
@@ -460,16 +461,28 @@ public final class Main {
         }
     }
 
+    /**
+     * The run folder {@code report} is given (#638): the folder itself, or the {@code report.md} path that {@code run}
+     * and {@code report} print after {@code Report:}, which names its folder. That path names it even before a
+     * {@code report.md} is written there, as after a report the disk refused.
+     */
+    static Path runFolder(Path arg) {
+        Path parent = arg.toAbsolutePath().getParent();
+        boolean reportPath = arg.getFileName() != null && arg.getFileName().toString().equals(REPORT)
+                && !Files.isDirectory(arg) && parent != null;
+        return reportPath ? parent : arg;
+    }
+
     private static int report(Path runDir, PrintStream out) throws IOException {
         if (!Files.isDirectory(runDir)) {
             throw new IOException("run folder " + runDir.toAbsolutePath() + (Files.exists(runDir) ? " is not a folder"
-                    : " does not exist") + ": give the run folder that `run` prints after Report:");
+                    : " does not exist") + ": give the run folder, or the path that `run` prints after Report:");
         }
         Path results = runDir.resolve(ResultsFile.NAME);
         if (!Files.isRegularFile(results)) {
             throw new IOException(runDir.toAbsolutePath() + " has no " + BenchRunner.RESULTS_FILE + ": give the run "
-                    + "folder that `run` prints after Report:, such as " + RunIsolation.DEFAULT_RUNS_SHOWN
-                    + "/<timestamp>");
+                    + "folder, such as " + RunIsolation.DEFAULT_RUNS_SHOWN + "/<timestamp>, or the path that `run` "
+                    + "prints after Report:");
         }
         List<RunRecord> records = ResultsFile.read(results, out::println);
         Path reportFile = runDir.resolve(REPORT);
