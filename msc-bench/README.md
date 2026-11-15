@@ -149,6 +149,10 @@ The agent reads its prompt on stdin, from the attempt's `prompt.md`, as `claude 
 
 - `msc-core`'s tool log and `~/.msc/eula.json`, read at runtime only (no compile dependency).
 - `msc-templates` to scaffold Minestom tasks, and `msc-bot` for the `player` check.
+- `msc-protocol` for the `player` check's block and region types (`BlockGrid`, `Region`).
+- `msc-process` for the server process control shared with msc-core: the process tree kill, `RconClient`,
+  `ServerPropertiesFile`, `ServerJava`, the atomic file writer `AtomicFile` (ADR 0031 to 0034) and the download stall
+  guard `HttpStall`.
 - Claude Code's `--output-format stream-json --verbose` events (or `json`) for tokens, turns, cost and MCP status.
 
 ## Stack
