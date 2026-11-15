@@ -8,6 +8,8 @@ import io.github.imnotstable.msc.core.FakeAgent;
 import io.github.imnotstable.msc.protocol.Limits;
 import io.github.imnotstable.msc.protocol.op.Events;
 import io.github.imnotstable.msc.protocol.transport.AgentClient;
+import java.net.InetAddress;
+import java.net.ServerSocket;
 import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
@@ -20,6 +22,24 @@ class AgentHubTest {
     void theCallTimeoutOutlastsEveryWaitOfOneAgentOperation() {
         // Else the core gives up on a write the agent still finishes, and its undo id is lost (#275).
         assertThat(AgentHub.CALL_TIMEOUT).isGreaterThan(Limits.AGENT_WAIT.multipliedBy(Limits.AGENT_WAITS_PER_OP));
+    }
+
+    @Test
+    void aFixedPortThatIsLetGoSoonIsWaitedFor() throws Exception {
+        // #721: the port a switch's old workspace, or an exiting core, is still letting go.
+        ServerSocket holder = new ServerSocket(0, 50, InetAddress.getLoopbackAddress());
+        int port = holder.getLocalPort();
+        Thread release = Thread.ofVirtual().start(() -> {
+            try (holder) {
+                Thread.sleep(300);
+            } catch (Exception e) {
+                throw new AssertionError(e);
+            }
+        });
+        try (AgentHub hub = new AgentHub(port, "t")) {
+            assertThat(hub.address()).endsWith(":" + port);
+        }
+        release.join();
     }
 
     @Test
