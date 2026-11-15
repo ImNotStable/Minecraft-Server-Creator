@@ -17,6 +17,9 @@ import java.util.function.ToLongFunction;
  * timed out, crashed or never started has no usage, and counting it as 0 would make a mode look
  * cheaper. Time and tool calls leave out only runs that never started the agent. A figure taken from
  * fewer than all runs says so, for example {@code 12k (2 of 3)}; a figure no run measured is {@code -}.
+ *
+ * <p>Every text the report takes from a record (task id, category, mode, model, tool name, failure reason) goes through
+ * {@link Markdown#text}, so a {@code |} or a line break cannot add a cell or end a row, and nothing in it is hidden.
  */
 public final class ReportWriter {
 
@@ -30,9 +33,9 @@ public final class ReportWriter {
 
         StringBuilder md = new StringBuilder("# Benchmark report\n\n");
         md.append("Runs: ").append(records.size()).append(". Tasks: ").append(byTask.size())
-                .append(". Modes: ").append(String.join(", ", modes)).append(".");
+                .append(". Modes: ").append(String.join(", ", modes.stream().map(Markdown::text).toList())).append(".");
         String models = String.join(", ", records.stream().map(r -> r.agent().model()).filter(m -> !m.isEmpty())
-                .distinct().toList());
+                .distinct().map(Markdown::text).toList());
         md.append(models.isEmpty() ? "" : " Models: " + models + ".").append("\n\n");
 
         md.append("## Summary\n\n");
@@ -42,7 +45,7 @@ public final class ReportWriter {
             List<RunRecord> runs = byMode.get(mode);
             List<RunRecord> started = started(runs);
             List<RunRecord> measured = measured(runs);
-            md.append("| ").append(mode)
+            md.append("| ").append(Markdown.text(mode))
                     .append(" | ").append(passRate(runs))
                     .append(" | ").append(figure(runs, started, seconds(median(started, RunRecord::wallMs))))
                     .append(" | ").append(figure(runs, measured, Long.toString(median(measured, r -> r.agent().turns()))))
@@ -62,11 +65,12 @@ public final class ReportWriter {
         md.append("Each cell: passes/runs, median time, median tokens."
                 + " (k of n) marks a figure from the k runs that measured it; - means none did.");
         if (compare) {
-            md.append(" Change columns compare ").append(other).append(" with baseline (negative is better).");
+            md.append(" Change columns compare ").append(Markdown.text(other))
+                    .append(" with baseline (negative is better).");
         }
         md.append("\n\n| Task | Category |");
         for (String mode : modes) {
-            md.append(' ').append(mode).append(" |");
+            md.append(' ').append(Markdown.text(mode)).append(" |");
         }
         if (compare) {
             md.append(" Time change | Token change |");
@@ -74,7 +78,8 @@ public final class ReportWriter {
         md.append("\n| --- | --- |").append(" --- |".repeat(modes.size() + (compare ? 2 : 0))).append('\n');
         for (Map.Entry<String, List<RunRecord>> task : byTask.entrySet()) {
             Map<String, List<RunRecord>> taskModes = group(task.getValue(), RunRecord::mode);
-            md.append("| ").append(task.getKey()).append(" | ").append(task.getValue().getFirst().category()).append(" |");
+            md.append("| ").append(Markdown.text(task.getKey()))
+                    .append(" | ").append(Markdown.text(task.getValue().getFirst().category())).append(" |");
             for (String mode : modes) {
                 List<RunRecord> runs = taskModes.getOrDefault(mode, List.of());
                 if (runs.isEmpty()) {
@@ -106,7 +111,7 @@ public final class ReportWriter {
                     .sorted((a, b) -> Long.compare(b.getValue().tokens(), a.getValue().tokens()))
                     .forEach(e -> {
                         ToolStats.PerTool t = e.getValue();
-                        md.append("| ").append(e.getKey()).append(" | ").append(t.calls()).append(" | ").append(t.errors())
+                        md.append("| ").append(Markdown.text(e.getKey())).append(" | ").append(t.calls()).append(" | ").append(t.errors())
                                 .append(" | ").append(thousands(t.tokens())).append(" | ").append(t.tokens() / t.calls())
                                 .append(" | ").append(seconds(t.durationMs()))
                                 .append(" | ").append(String.format(Locale.ROOT, "%.1fs", t.durationMs() / 1000.0 / t.calls()))
@@ -118,8 +123,9 @@ public final class ReportWriter {
         if (!failures.isEmpty()) {
             md.append("\n## Failures\n\n");
             for (RunRecord r : failures) {
-                md.append("- ").append(r.task()).append(" (").append(r.mode()).append(" #").append(r.repeat()).append("): ");
-                md.append(markdownInline(r.failureReason())).append('\n');
+                md.append("- ").append(Markdown.text(r.task())).append(" (").append(Markdown.text(r.mode()))
+                        .append(" #").append(r.repeat()).append("): ");
+                md.append(Markdown.text(r.failureReason())).append('\n');
             }
         }
         return md.toString();
@@ -174,14 +180,6 @@ public final class ReportWriter {
             return "-";
         }
         return String.format(Locale.ROOT, "%+.0f%%", 100.0 * (median(with, metric) - b) / b);
-    }
-
-    /**
-     * {@code text} (one line, from {@link RunRecord#failureReason()}) safe inside a Markdown list item: every character
-     * Markdown could read as emphasis, code, a link, HTML, a table cell or a heading is backslash-escaped.
-     */
-    static String markdownInline(String text) {
-        return text.replaceAll("[\\\\`*_\\[\\]<>|#~!]", "\\\\$0");
     }
 
     private static String seconds(long millis) {
