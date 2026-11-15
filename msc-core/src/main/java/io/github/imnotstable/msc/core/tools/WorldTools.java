@@ -187,7 +187,8 @@ public final class WorldTools {
         Region overlap = Region.of(region.world(), region.min().x(), region.min().y(), region.min().z(),
                 Math.min(region.max().x(), b.max().x()), Math.min(region.max().y(), b.max().y()),
                 Math.min(region.max().z(), b.max().z()));
-        return Diff.compare(before, world.readAll(overlap, WorldService.MAX_BULK_VOLUME, "world_summary diff"), name);
+        return Diff.compare(before, world.readAll(overlap, WorldService.MAX_BULK_VOLUME, "world_summary diff"), region,
+                name);
     }
 
     /**
