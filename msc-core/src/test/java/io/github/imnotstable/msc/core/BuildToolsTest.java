@@ -299,6 +299,7 @@ class BuildToolsTest {
     private String stoppedDuring(int nth, List<Object> undos, Runnable atStop, Callable<String> call) throws Exception {
         CountDownLatch reached = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
+        CountDownLatch stopped = new CountDownLatch(1);
         AtomicInteger changes = new AtomicInteger();
         h.agent.beforeChange = p -> {
             if (p instanceof Ops.UndoParams) {
@@ -313,7 +314,11 @@ class BuildToolsTest {
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                 }
-                atStop.run();
+                try {
+                    atStop.run();
+                } finally {
+                    stopped.countDown();
+                }
             }
         };
         try (var calls = Executors.newVirtualThreadPerTaskExecutor()) {
@@ -321,7 +326,9 @@ class BuildToolsTest {
             assertThat(reached.await(30, TimeUnit.SECONDS)).as("the call reached the agent").isTrue();
             h.stopServer(true);
             release.countDown();
-            return answer.get(30, TimeUnit.SECONDS);
+            String text = answer.get(30, TimeUnit.SECONDS);
+            assertThat(stopped.await(30, TimeUnit.SECONDS)).as("the agent let the change go").isTrue();
+            return text;
         } finally {
             h.agent.beforeChange = p -> { };
         }
