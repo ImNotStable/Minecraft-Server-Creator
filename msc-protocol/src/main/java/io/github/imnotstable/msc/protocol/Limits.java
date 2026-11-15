@@ -22,6 +22,13 @@ public final class Limits {
     /** Longest single text in a result (an entity's name, a scoreboard tag), cut with {@link #cut}. */
     public static final int MAX_TEXT_CHARS = 1024;
 
+    /**
+     * Most characters of block entity data (SNBT) one {@code world.read} with {@code includeBlockData} carries. Data is
+     * never cut, since a cut SNBT would place wrong data: a read over it fails with {@code too_large}, so the caller
+     * reads a smaller region.
+     */
+    public static final int MAX_BLOCK_DATA_CHARS = MAX_RESULT_TEXT_CHARS;
+
     /** Longest sign line in a result: a read carries up to 1000 signs of eight lines. */
     public static final int MAX_SIGN_LINE_CHARS = 256;
 
@@ -42,6 +49,12 @@ public final class Limits {
      * timeout error always arrives first and the undo id of a write's changed blocks is never lost.
      */
     public static final Duration CORE_CALL_TIMEOUT = AGENT_WAIT.multipliedBy(AGENT_WAITS_PER_OP).plusSeconds(10);
+
+    /**
+     * Largest handshake frame either side reads, in bytes: a hello with its operation list is well under 1 KiB. A
+     * peer that has not proved it holds the token gets no {@link #MAX_FRAME_BYTES} buffer (ADR 0043).
+     */
+    public static final int MAX_HANDSHAKE_FRAME_BYTES = 64 * 1024;
 
     /** Environment variable the core sets for the agent: {@code host:port} to connect to. */
     public static final String ENV_CORE_ADDRESS = "MSC_CORE_ADDRESS";

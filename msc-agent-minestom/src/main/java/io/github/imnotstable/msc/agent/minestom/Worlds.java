@@ -59,4 +59,9 @@ final class Worlds implements AgentWorlds<Block> {
     public Block parse(String state) {
         return BlockStates.parse(state);
     }
+
+    @Override
+    public Object parseData(Block state, String snbt) {
+        return BlockNbt.parse(state, snbt);
+    }
 }

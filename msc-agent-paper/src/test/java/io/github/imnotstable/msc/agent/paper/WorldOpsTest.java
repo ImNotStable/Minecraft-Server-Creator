@@ -43,7 +43,7 @@ class WorldOpsTest {
         w.setName("world");
         server.addWorld(w);
         world = w;
-        ops = new WorldOps<>(new PaperWorlds(server), MainThread.inline(), new EditHistory<>(1_000_000));
+        ops = new WorldOps<>(new PaperWorlds(server, new DataCommands((line, out) -> false)), MainThread.inline(), new EditHistory<>(1_000_000));
     }
 
     @AfterEach
@@ -75,7 +75,7 @@ class WorldOpsTest {
         WorldMock arena = new WorldMock(Material.AIR, 0);
         arena.setName("Arena");
         server.addWorld(arena);
-        PaperWorlds worlds = new PaperWorlds(server);
+        PaperWorlds worlds = new PaperWorlds(server, new DataCommands((line, out) -> false));
 
         assertThat(worlds.byName(arena.getKey().asString())).isPresent();
         assertThat(worlds.byName("world")).isPresent();

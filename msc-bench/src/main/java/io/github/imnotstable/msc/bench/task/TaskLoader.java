@@ -116,11 +116,21 @@ public final class TaskLoader {
                     throw new IllegalArgumentException(spec.key("setup") + ": runs only before the agent, so it needs "
                             + "\"startBefore\": true");
                 }
+                // A Minestom task runs no Paper server, so the runner would start one the agent never touched (#570).
+                if (server.startBefore() && platform.equals(TaskDef.MINESTOM)) {
+                    throw new IllegalArgumentException(spec.key("startBefore") + ": starts the Paper server, and a "
+                            + "minestom task runs none");
+                }
             }
 
             List<Check> checks = new ArrayList<>();
             for (UserJson check : json.exactObjects("checks", Checks.KEYS)) {
-                checks.add(Checks.parse(check, taskDir));
+                Check parsed = Checks.parse(check, taskDir);
+                if (parsed.needsServer() && platform.equals(TaskDef.MINESTOM)) {
+                    throw new IllegalArgumentException(check.key("type") + ": " + UserJson.quoted(check.exactString(
+                            "type", "")) + " checks the Paper server, and a minestom task runs none");
+                }
+                checks.add(parsed);
             }
             if (checks.isEmpty()) {
                 throw new IllegalArgumentException("a task needs at least one check");

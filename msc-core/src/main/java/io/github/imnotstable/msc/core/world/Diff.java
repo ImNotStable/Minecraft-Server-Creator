@@ -33,7 +33,9 @@ public final class Diff {
         for (int y = r.min().y(); y <= r.max().y(); y++) {
             for (int z = r.min().z(); z <= r.max().z(); z++) {
                 for (int x = r.min().x(); x <= r.max().x(); x++) {
+                    // Blocks only: a snapshot keeps block entity data (ADR 0042), the read it is compared with does not.
                     String a = before.region().contains(x, y, z) ? before.stateAt(x, y, z) : null;
+                    a = a == null ? null : BlockNames.withoutData(a);
                     String b = now.stateAt(x, y, z);
                     if (a == null || b == null || same(a, b)) {
                         continue;

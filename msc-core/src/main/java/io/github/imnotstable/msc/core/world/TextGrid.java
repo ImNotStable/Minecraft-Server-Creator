@@ -44,6 +44,12 @@ public final class TextGrid {
     /** A row written once for N equal rows: {@code #...# (x3)}. */
     private static final Pattern REPEAT = Pattern.compile("^(.*\\S) \\(x(\\d{1,4})\\)$");
 
+    /** The lowest x and z of a slice's {@code region} line, which its {@code data} lines count from. */
+    private static final Pattern FRAME = Pattern.compile("^region \\S+ (-?\\d+),-?\\d+,(-?\\d+) ");
+
+    /** {@code data X,Y,Z {SNBT}}: block entity data for the block there (ADR 0042). */
+    private static final Pattern DATA = Pattern.compile("^data (-?\\d{1,9}),(-?\\d{1,9}),(-?\\d{1,9}) +(\\{.*})\\s*$");
+
     /** Most layers a structure may have: taller than any world. */
     static final int MAX_LAYERS = 4096;
 
@@ -65,7 +71,7 @@ public final class TextGrid {
         Map<String, Integer> nameIndex = new HashMap<>();
         int[] toName = new int[grid.palette().size()];
         for (int i = 0; i < toName.length; i++) {
-            String state = grid.palette().get(i);
+            String state = BlockNames.withoutData(grid.palette().get(i));
             String name = BlockNames.isAir(state) ? "air" : BlockNames.brief(states ? state : BlockNames.id(state));
             Integer idx = nameIndex.get(name);
             if (idx == null) {
@@ -162,8 +168,34 @@ public final class TextGrid {
             }
         }
         appendRun(out, pending, runStart, runEnd);
+        appendData(out, grid);
         return Budget.truncate(out.toString().stripTrailing(), maxChars,
                 "Ask for fewer layers or a smaller area, or raise maxChars.");
+    }
+
+    /**
+     * One {@code data X,Y,Z {SNBT}} line per block with block entity data (ADR 0042), in the slice's own coordinates,
+     * so a structure step puts the data back on the block it came from.
+     */
+    private static void appendData(StringBuilder out, BlockGrid grid) {
+        String[] data = new String[grid.palette().size()];
+        boolean any = false;
+        for (int i = 0; i < data.length; i++) {
+            data[i] = BlockNames.data(grid.palette().get(i));
+            any |= data[i] != null;
+        }
+        if (!any) {
+            return;
+        }
+        Region r = grid.region();
+        int[] blocks = grid.blocks();
+        for (int i = 0; i < blocks.length; i++) {
+            if (blocks[i] >= 0 && data[blocks[i]] != null) {
+                out.append("data ").append(r.min().x() + i % r.sizeX()).append(',')
+                        .append(r.min().y() + i / (r.sizeX() * r.sizeZ())).append(',')
+                        .append(r.min().z() + i / r.sizeX() % r.sizeZ()).append(' ').append(data[blocks[i]]).append('\n');
+            }
+        }
     }
 
     /** Whether every layer shows one symbol only. */
@@ -234,9 +266,24 @@ public final class TextGrid {
         TreeMap<Integer, Layer> layers = new TreeMap<>();
         Layer current = null;
         long rowCells = 0;
+        int frameX = 0;
+        int frameZ = 0;
+        List<String> dataLines = new ArrayList<>();
         for (String raw : text.split("\\R")) {
             String line = raw.stripTrailing();
-            if (line.isBlank() || line.startsWith("region ") || line.startsWith("[")) {
+            if (line.startsWith("region ")) {
+                Matcher frame = FRAME.matcher(line);
+                if (frame.find()) {
+                    frameX = layerNumber(frame.group(1));
+                    frameZ = layerNumber(frame.group(2));
+                }
+                continue;
+            }
+            if (line.startsWith("data ")) {
+                dataLines.add(line);
+                continue;
+            }
+            if (line.isBlank() || line.startsWith("[")) {
                 continue;
             }
             if (line.startsWith("legend:")) {
@@ -349,6 +396,25 @@ public final class TextGrid {
             done.put(e.getKey(), cells);
             System.arraycopy(cells, 0, blocks, yi * sx * sz, sx * sz);
             yi++;
+        }
+        for (String line : dataLines) {
+            Matcher m = DATA.matcher(line);
+            if (!m.matches()) {
+                throw new ToolException("bad data line \"" + Limits.shorten(line, 60) + "\"; use data X,Y,Z {SNBT}");
+            }
+            long col = Long.parseLong(m.group(1)) - frameX;
+            long ly = Long.parseLong(m.group(2)) - layers.firstKey();
+            long row = Long.parseLong(m.group(3)) - frameZ;
+            if (col < 0 || col >= sx || ly < 0 || ly >= sy || row < 0 || row >= sz) {
+                throw new ToolException("data at " + m.group(1) + "," + m.group(2) + "," + m.group(3)
+                        + " is outside the structure");
+            }
+            int i = (int) ((ly * sz + row) * sx + col);
+            if (blocks[i] < 0) {
+                throw new ToolException("data at " + m.group(1) + "," + m.group(2) + "," + m.group(3)
+                        + " needs a block there, not \"_\"");
+            }
+            blocks[i] = index(BlockNames.withoutData(palette.get(blocks[i])) + m.group(4), palette, paletteIndex);
         }
         return new BlockGrid(region, palette, blocks);
     }

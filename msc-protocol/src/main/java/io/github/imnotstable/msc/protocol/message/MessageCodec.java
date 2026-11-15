@@ -21,6 +21,8 @@ import java.util.Map;
 public final class MessageCodec {
     private static final Map<String, Class<? extends Message>> TYPES = Map.of(
             "hello", Hello.class,
+            "challenge", Challenge.class,
+            "proof", Proof.class,
             "welcome", Welcome.class,
             "goodbye", Goodbye.class,
             "request", Request.class,
@@ -173,6 +175,8 @@ public final class MessageCodec {
     private static String typeOf(Message message) {
         return switch (message) {
             case Hello h -> "hello";
+            case Challenge c -> "challenge";
+            case Proof p -> "proof";
             case Welcome w -> "welcome";
             case Goodbye g -> "goodbye";
             case Request r -> "request";

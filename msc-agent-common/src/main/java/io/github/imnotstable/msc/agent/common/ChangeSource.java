@@ -22,6 +22,14 @@ public interface ChangeSource<S> {
         return null;
     }
 
+    /**
+     * Block entity data to merge after the target is set (from {@link AgentWorlds#parseData}), or null. The block is
+     * written even when its state is already there.
+     */
+    default Object dataPatch() {
+        return null;
+    }
+
     /** Upper bound on the number of changes, used to size buffers. */
     long size();
 }

@@ -1,6 +1,7 @@
 package io.github.imnotstable.msc.core.building;
 
 import io.github.imnotstable.msc.core.tool.ToolException;
+import io.github.imnotstable.msc.core.world.BlockNames;
 import io.github.imnotstable.msc.protocol.world.BlockGrid;
 import io.github.imnotstable.msc.protocol.world.BlockPos;
 import io.github.imnotstable.msc.protocol.world.Region;
@@ -92,6 +93,10 @@ public final class Turn {
 
     /** One block state turned {@code quarters} times clockwise. */
     public static String state(String state, int quarters) {
+        String data = BlockNames.data(state);
+        if (data != null) { // block entity data does not turn (ADR 0042); the state in front of it does
+            return state(BlockNames.withoutData(state), quarters) + data;
+        }
         int q = Math.floorMod(quarters, 4);
         Matcher m = PROPS.matcher(state);
         if (q == 0 || !m.matches()) {
