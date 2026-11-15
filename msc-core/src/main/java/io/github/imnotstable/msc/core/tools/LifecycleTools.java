@@ -8,6 +8,7 @@ import io.github.imnotstable.msc.core.server.ProjectBuilder;
 import io.github.imnotstable.msc.core.server.ServerManager;
 import io.github.imnotstable.msc.core.texture.ResourcePack;
 import io.github.imnotstable.msc.core.tool.Schema;
+import io.github.imnotstable.msc.core.tool.ToolException;
 import io.github.imnotstable.msc.core.tool.ToolRegistry;
 import io.github.imnotstable.msc.core.world.WorldService;
 
@@ -33,6 +34,15 @@ public final class LifecycleTools {
         Scaffold scaffold = new Scaffold(config, eula, warmup);
         ServerSetup setup = new ServerSetup(config, server, downloader, fabric, eula);
         ServerRun run = new ServerRun(config, hub, server, pack, setup, eula, marks);
+        // An agent that becomes ready after its start was reported (a slow start, a restart outside MSC) gets the
+        // workspace's pack too, beside the call that runs then (#655).
+        hub.onReady(() -> {
+            try {
+                background.start("msc-pack-send", run::packForAgent);
+            } catch (ToolException closed) {
+                // The workspace is closing: no server of it is left to send to.
+            }
+        });
         DevCycle cycle = new DevCycle(config, server, builder, run, warmup, background);
         ServerConsole console = new ServerConsole(hub, server, marks);
         registry.add("project_scaffold",

@@ -161,7 +161,12 @@ public final class Args {
         throw new ToolException("argument " + name + " must be true or false");
     }
 
-    /** An array of strings; a single string is accepted as a one-element list. Missing means empty. */
+    /**
+     * An array of strings; a single string is accepted as a one-element list. Missing means empty. A line break splits
+     * an item into one item per line, blank lines between them left out, for every array argument of every tool
+     * (#657): {@code actions="say hi\nwait 20"} is two actions, as {@code ["say hi", "wait 20"]} is, never one that
+     * says "hi wait 20". Any other control character is refused.
+     */
     public List<String> strings(String name) {
         List<String> out = new ArrayList<>();
         if (!has(name)) {
@@ -173,13 +178,29 @@ public final class Args {
                 if (!item.isJsonPrimitive()) {
                     throw new ToolException("argument " + name + " must be an array of strings");
                 }
-                out.add(checked(name, item.getAsString(), false));
+                addLines(name, item.getAsString(), out);
             }
         } else if (e.isJsonPrimitive()) {
-            out.add(checked(name, e.getAsString(), false));
+            addLines(name, e.getAsString(), out);
         } else {
             throw new ToolException("argument " + name + " must be an array of strings");
         }
         return out;
+    }
+
+    private static void addLines(String name, String value, List<String> out) {
+        String[] lines = value.split("\r\n|\r|\n", -1);
+        for (String line : lines) {
+            for (int i = 0; i < line.length(); i++) {
+                char c = line.charAt(i);
+                if (Character.isISOControl(c)) {
+                    throw new ToolException(String.format("argument %s has a control character (U+%04X); only line"
+                            + " breaks may be in it, one item per line", name, (int) c));
+                }
+            }
+            if (lines.length == 1 || !line.isBlank()) {
+                out.add(line);
+            }
+        }
     }
 }

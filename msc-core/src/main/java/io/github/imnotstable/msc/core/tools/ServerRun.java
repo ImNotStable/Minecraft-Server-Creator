@@ -173,8 +173,8 @@ final class ServerRun {
         if (!server.running()) {
             throw new ToolException("the server is not running. Start it with server_start first.");
         }
-        ResourcePack.Built built = pack.lastBuilt();
-        if (built != null && Files.exists(serverProperties())) {
+        // The workspace's built pack: this session's last build, or the zip an earlier build left (#655).
+        if (pack.hasBuild() && Files.exists(serverProperties())) {
             OutputFile.check(serverProperties(), ServerPropertiesFile.NAME);
         }
         Steps steps = new Steps("server_detach").then(DETACH).then(KEEP_SERVING).then(OFFER_PACK)
@@ -189,6 +189,7 @@ final class ServerRun {
         String[] noHost = new String[1];
         boolean hosting = steps.run(KEEP_SERVING, () -> {
             try {
+                pack.current();
                 return pack.keepServing(java, System.getProperty("java.class.path"));
             } catch (ToolException e) {
                 noHost[0] = e.getMessage();
@@ -199,6 +200,7 @@ final class ServerRun {
             return "server detached: it keeps running after this session ends\n" + noHost[0];
         }
         String properties = "";
+        ResourcePack.Built built = pack.lastBuilt();
         ResourcePack.Applied applied = pack.applied();
         if (hosting && built != null && steps.run(OFFER_PACK, () -> PackProperties.write(serverProperties(),
                 built.url(), built.sha1(), applied != null && applied.required()))) {
@@ -279,7 +281,7 @@ final class ServerRun {
                 out.append('\n').append(bedrock);
             }
             if (s != null) {
-                out.append(resendPack());
+                out.append(packForAgent());
             }
             out.append('\n');
             if (analysis.clean()) {
@@ -355,10 +357,35 @@ final class ServerRun {
         return best;
     }
 
+    /** Guards {@link #sentTo} and {@link #sentLine}. */
+    private final Object sending = new Object();
+    /** The agent connection the workspace's pack was last sent to by {@link #packForAgent}, and what that said. */
+    private CoreServer.AgentSession sentTo;
+    private String sentLine = "";
+
     /**
-     * A restarted server has forgotten the pack that the pack tool sent, and a detached pack host was just stopped,
-     * so serve and send it again. Best effort, like the ground line. Also used when dev_cycle keeps the server
-     * running: a changed pack still reaches the players.
+     * Send the workspace's pack to the connected agent, once per connection: the start report calls this, and so does
+     * the hub when an agent says its server is ready (whichever comes first sends; the other gets the same line).
+     */
+    String packForAgent() {
+        synchronized (sending) {
+            CoreServer.AgentSession s = hub.current();
+            if (s == null) {
+                return "";
+            }
+            if (s != sentTo) {
+                sentLine = resendPack();
+                sentTo = s;
+            }
+            return sentLine;
+        }
+    }
+
+    /**
+     * The workspace's pack (the one the pack tool built to send, in this session or an earlier one): a started server
+     * never had it or has forgotten it, and a detached pack host was just stopped, so serve and send it. Best effort,
+     * like the ground line. Also used when dev_cycle keeps the server running: a changed pack still reaches the
+     * players.
      */
     String resendPack() {
         ResourcePack.Applied applied = pack.applied();
@@ -375,15 +402,15 @@ final class ServerRun {
             try {
                 hub.call(Ops.PACK_APPLY, new Ops.PackParams(built.url(), built.sha1(), applied.required()));
             } catch (RuntimeException e) {
-                return "\nresource pack not sent again (" + Steps.reason(e) + "); "
+                return "\nresource pack not sent (" + Steps.reason(e) + "); "
                         + TextureTools.takeBack(pack, before, file, offeredBefore);
             }
-            return "\nresource pack sent again: players who join get it";
+            return "\nresource pack sent: players who join get it";
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return "";
         } catch (IOException | RuntimeException e) {
-            return "\nresource pack not sent again (" + e.getMessage() + "): run the pack tool";
+            return "\nresource pack not sent (" + e.getMessage() + "): run the pack tool";
         }
     }
 
