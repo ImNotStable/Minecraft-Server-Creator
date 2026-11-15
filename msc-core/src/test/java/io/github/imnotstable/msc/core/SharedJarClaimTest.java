@@ -73,7 +73,8 @@ class SharedJarClaimTest {
         String out;
         String start;
         try (CoreHarness h = new CoreHarness(ws, downloads::apply)) {
-            out = caller.equals("neoforge") ? h.ok("server_setup", "platform", caller)
+            // NeoForge takes its own version; Minestom takes none (#619).
+            out = caller.equals("neoforge") || caller.equals("minestom") ? h.ok("server_setup", "platform", caller)
                     : h.ok("server_setup", "platform", caller, "version", FakeDownloads.MINECRAFT);
             // Only where nothing would launch: a Minestom folder without a jar refuses before starting anything.
             start = caller.equals("minestom") && !Files.exists(jar) ? h.error("server_start") : null;
