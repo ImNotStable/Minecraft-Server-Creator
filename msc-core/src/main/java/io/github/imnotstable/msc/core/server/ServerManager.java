@@ -203,12 +203,18 @@ public final class ServerManager implements AutoCloseable {
         if (!Files.exists(config.serverDir().resolve(platform.serverJar()))) {
             throw new ToolException("no " + platform.id() + " server in " + config.serverDir() + ". "
                     + (platform.needsServerSetup() ? "Run server_setup first."
-                    : "Run " + WorkspaceProjects.nextDevCycle(config) + " to build the project and put its jar there."));
+                    : startStep()));
         }
         if (platform.needsEula() && !acceptingEula && !eulaAccepted(eulaFile())
                 && config.machineEula().read().isEmpty()) {
             throw eulaRefusal();
         }
+    }
+
+    /** What builds the Minestom server jar, which is the project's own: the next step names the project (#679, #680). */
+    private String startStep() {
+        WorkspaceProjects.Next next = WorkspaceProjects.next(config);
+        return "Run " + next.call() + " to build the project and put its jar there" + next.note() + ".";
     }
 
     /** The server's eula.txt. */

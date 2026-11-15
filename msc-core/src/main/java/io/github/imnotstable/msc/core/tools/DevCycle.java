@@ -291,7 +291,9 @@ final class DevCycle {
         Path earlier = platform.addonDir() == null ? null : earlierDeploy(platform, project, target.getParent(), records);
         boolean wasRunning = server.running();
         StringBuilder out = new StringBuilder(unreadable == null ? "" : unreadable + "\n");
-        if (restart && wasRunning && loaded(build.jar(), target)
+        // Whether or not this call restarts: a jar the running server already loaded is kept, not copied again with a
+        // new time that makes the next dev_cycle restart for nothing, and a changed pack is still sent (#681).
+        if (wasRunning && loaded(build.jar(), target)
                 && (build.libs() == null || mirror(build.libs(), libs, server(), true) == 0)) {
             try {
                 ScanFolders.sweep(server(), ScanFolders.all(server()));
