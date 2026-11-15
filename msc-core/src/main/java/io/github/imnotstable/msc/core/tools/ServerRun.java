@@ -392,8 +392,8 @@ final class ServerRun {
 
     /**
      * dev_cycle that keeps the server running (an unchanged jar, restart=false, or no jar; #690): the workspace's
-     * pack, rebuilt, goes to the connected agent only when it differs from what that connection was last sent (#667), so the players do not download and
-     * reload the same pack on every cycle. Says nothing when it was not sent.
+     * pack, rebuilt, goes to the connected agent only when it differs from what that connection was last sent (#667),
+     * so the players do not download and reload the same pack on every cycle. Says nothing when it was not sent.
      */
     String packIfChanged() {
         synchronized (sending) {
