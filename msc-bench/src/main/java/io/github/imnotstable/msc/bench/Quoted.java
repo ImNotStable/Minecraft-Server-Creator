@@ -99,6 +99,18 @@ public final class Quoted {
     }
 
     /**
+     * {@code path}, a path printed for the user to give back to a command, such as the report after {@code Report:}
+     * (#684): as it is, so a copy pastes back unchanged whatever it holds (a no-break or an ideographic space, a
+     * backslash), unless it holds a control character or a line break, which no copy of the line keeps; then as
+     * {@link #path} shows it.
+     */
+    public static String pastable(String path) {
+        boolean keepsToItsLine = path.codePoints().noneMatch(c -> Character.getType(c) == Character.CONTROL
+                || c == '\u2028' || c == '\u2029');
+        return keepsToItsLine ? path : path(path);
+    }
+
+    /**
      * {@code message}, free text that a library or an exception wrote, such as a regex error's description, as a
      * refusal appends it (#672): without quotes, since it is no value, but with every character that would split the
      * line or hide itself escaped as {@link #text} escapes it (a line break as backslash n, a right-to-left override as

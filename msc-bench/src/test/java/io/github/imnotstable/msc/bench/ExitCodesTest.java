@@ -12,6 +12,7 @@ import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Set;
@@ -20,6 +21,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /**
  * #639: every exit code the README lists for {@code check} and {@code run}, through the command line. A step of the
@@ -128,6 +131,31 @@ class ExitCodesTest {
         Outcome folder = exec("report", Path.of(printed).getParent().toString());
         assertThat(folder.exit()).as(folder.err()).isEqualTo(Main.OK);
         assertThat(reportPath(folder)).isEqualTo(printed);
+    }
+
+    /**
+     * #684: the path after Report: pastes back into {@code report} as it is printed, also when the run folder holds
+     * a character a shell keeps but Quoted would escape, such as the ideographic space of a Japanese user name.
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {"Tanaka\u3000Taro", "my\u00a0runs", "plain runs"})
+    void reportTakesBackThePathItPrintsWhateverTheFolderHolds(String folder) throws IOException {
+        Path runDir;
+        try {
+            runDir = Files.createDirectories(dir.resolve(folder).resolve("20261115-000000"));
+        } catch (InvalidPathException e) {
+            assumeTrue(false, "this system's file names cannot hold " + folder);
+            return;
+        }
+        Files.writeString(runDir.resolve("results.jsonl"),
+                "{\"task\":\"t\",\"category\":\"code\",\"mode\":\"baseline\",\"repeat\":1,\"passed\":true}\n");
+
+        String printed = reportPath(exec("report", runDir.toString()));
+        Outcome again = exec("report", printed);
+
+        assertThat(again.exit()).as(again.err()).isEqualTo(Main.OK);
+        assertThat(printed).isEqualTo(runDir.resolve(Main.REPORT).toAbsolutePath().toString());
+        assertThat(reportPath(again)).isEqualTo(printed);
     }
 
     @Test

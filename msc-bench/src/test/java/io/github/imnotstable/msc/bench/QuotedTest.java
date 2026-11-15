@@ -129,6 +129,18 @@ class QuotedTest {
     }
 
     @Test
+    void aPathToPasteBackIsShownAsItIsUnlessItWouldBreakTheLine() {
+        // #684: a shell passes these through unchanged, so they are printed raw
+        for (String path : new String[] {"/home/Tanaka\u3000Taro/r", "/my\u00a0runs/r", "/plain runs/r ",
+            "C:\\Users\\x\u200by", "/a\"b"}) {
+            assertThat(Quoted.pastable(path)).isEqualTo(path);
+        }
+        assertThat(Quoted.pastable("/home/me/a\nb")).isEqualTo("\"/home/me/a\\nb\"");
+        assertThat(Quoted.pastable("/a\u001b[31m")).isEqualTo("\"/a\\u001b[31m\"");
+        assertThat(Quoted.pastable("/a\u2028b")).isEqualTo("\"/a\\u2028b\"");
+    }
+
+    @Test
     void runTextIsShownUnquotedWithEveryHiddenCharacterEscaped() {
         // #677: what the issue's RCON reply looked like, and C1, ESC and a bidi isolate
         assertThat(Quoted.visible("reply \"Hello\u200bbuilders \u202eabc\" C:\\x")).isEqualTo(
