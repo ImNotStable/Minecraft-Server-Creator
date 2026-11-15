@@ -39,7 +39,7 @@ class TaskTypesTest {
     private static final String VALID = """
             {"category":"code","title":"t","platform":"paper","fixtures":[],
              "scaffold":{"template":"minestom-game","name":"N","package":"p"},
-             "server":{"startBefore":false,"setup":["say hi"]},
+             "server":{"startBefore":true,"setup":["say hi"]},
              "resetBeforeChecks":{"delete":["server/plugins/P/config.yml"]},
              "checks":[
               {"type":"file","name":"f","path":"a","contains":"x"},
@@ -187,11 +187,13 @@ class TaskTypesTest {
     }
 
     @Test
-    void startBeforeTrueStartsTheServer() throws IOException {
-        // The one value besides false: the strict read must not have turned every true into false either.
+    void startBeforeIsReadAsWritten() throws IOException {
+        // The strict read must not have turned every true into false, or every false into true.
         JsonObject json = JsonParser.parseString(VALID).getAsJsonObject();
-        set(json, "server.startBefore", JsonParser.parseString("true"));
         assertThat(load(json).server().startBefore()).isTrue();
+        set(json, "server.startBefore", JsonParser.parseString("false"));
+        set(json, "server.setup", JsonParser.parseString("[]"));
+        assertThat(load(json).server().startBefore()).isFalse();
     }
 
     @Test

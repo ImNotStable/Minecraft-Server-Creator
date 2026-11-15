@@ -60,10 +60,10 @@ public final class WorldTools {
         }
     }
 
-    public static void register(ToolRegistry registry, CoreConfig config, WorldService world) {
+    public static void register(ToolRegistry registry, CoreConfig config, WorldService world, WorldBackups backups) {
         registry.add("world_slice",
                 "See blocks as text: one grid per Y layer with a legend, in the structure text build_batch takes. "
-                        + "Best up to about 32x32 per layer.",
+                        + "Best up to 32x32 per layer.",
                 Schema.of().req("region", "string", REGION).opt("world", "string", WORLD)
                         .opt("states", "boolean", "Show block properties such as facing")
                         .opt("data", "boolean", "Block entity data as SNBT")
@@ -71,7 +71,7 @@ public final class WorldTools {
                 args -> world.slice(Coords.region(world.world(args.str("world", null)), args.str("region")),
                         args.bool("states", false), args.bool("data", false), Budget.of(args)));
         registry.add("world_heightmap", "Surface height per column, as a compact grid.",
-                Schema.of().req("area", "string", "Two corners: \"x1,z1 x2,z2\"").opt("world", "string", WORLD)
+                Schema.of().req("area", "string", "Corners: \"x1,z1 x2,z2\"").opt("world", "string", WORLD)
                         .maxChars(),
                 args -> world.heightmap(Coords.area(world.world(args.str("world", null)), args.str("area")),
                         Budget.of(args)));
@@ -146,8 +146,19 @@ public final class WorldTools {
                 args -> world.entities(Coords.region(world.world(args.str("world", null)), args.str("region")),
                         args.str("type", null), args.integer("limit", 50), args.bool("ids", false), Budget.DEFAULT_CHARS));
         registry.add("build_undo", "Undo a build_batch edit.",
-                Schema.of().opt("edit", "string", "Edit id such as e3. Default: the most recent edit"),
-                args -> world.undo(args.str("edit", null)));
+                Schema.of().opt("edit", "string", "Edit id such as e3. Default: the most recent edit")
+                        .opt("backup", "string", "World backups: list, save [label], or one to restore "
+                                + "(restarts the server). " + WorldBackups.AUTO_BLOCKS / 1000 + "k+ block builds save one"),
+                args -> {
+                    String backup = args.str("backup", null);
+                    if (backup == null) {
+                        return world.undo(args.str("edit", null));
+                    }
+                    if (args.str("edit", null) != null) {
+                        throw new ToolException("give edit or backup, not both");
+                    }
+                    return backups.run(backup);
+                });
         registry.add("structure_save", "Save a region as a Sponge schematic (.schem) file.",
                 Schema.of().req("region", "string", REGION)
                         .req("file", "string", "Path ending .schem")

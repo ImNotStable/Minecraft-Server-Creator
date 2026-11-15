@@ -439,6 +439,11 @@ public final class WorldService {
 
     // ---- edits ------------------------------------------------------------------------------
 
+    /** Forget every edit id: after a world rollback, they name blocks of a world that is gone. */
+    public synchronized void forgetEdits() {
+        edits.clear();
+    }
+
     /** Keep agent edit ids under one new edit id for {@code build_undo}, and return that id. */
     public synchronized String remember(List<String> agentEdits) {
         String id = "e" + (++editCounter);

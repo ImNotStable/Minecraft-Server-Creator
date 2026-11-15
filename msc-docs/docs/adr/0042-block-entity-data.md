@@ -23,7 +23,7 @@ and code for nothing the AI cannot already do. The real gaps were all block enti
 3. Every platform: data set through `server_command` is not part of a `build_batch` edit, so `build_undo` cannot take it
    back, and a build with a few filled chests needs a second tool and one command per chest.
 
-The tool list is capped (no new tools; under 16,000 characters, about 15,850 before this), and `msc-protocol` is shared
+The tool list is capped (no new tools; under 16,000 characters, 15,973 with ADR 0041), and `msc-protocol` is shared
 and must stay backwards compatible.
 
 ## Decision
@@ -50,8 +50,9 @@ and must stay backwards compatible.
    same blocks, and `rotate` turns the block, not the data); `copy` reads with data; `structure_save` writes Sponge
    `BlockEntities` (the block's id as `Id`) and a `.schem` structure step reads them back, version 2 and 3. The new
    text (about 100 characters) is paid for by trimming the world tools' wording without changing its meaning ("Default:
-   main", "Corners, inclusive", shorter `world_render`, `world_heightmap` and `world_summary` lines, no example path on
-   `structure_save`): the tool list is about 85 characters shorter than before (15,852 to 15,768).
+   main", "Corners, inclusive", shorter `world_render`, `world_heightmap`, `world_slice` and `world_summary` lines, no
+   example path on `structure_save`): the tool list is 75 characters shorter than before (15,973 to 15,898 of the
+   16,000 guard, with ADR 0041's backups).
 6. **Entities and items stay with `server_command`** on the vanilla platforms (documented in `tools.md`), and Minestom
    has none to give: its entities and items are the project's own code. That difference is the platform's nature, not
    an MSC gap.
