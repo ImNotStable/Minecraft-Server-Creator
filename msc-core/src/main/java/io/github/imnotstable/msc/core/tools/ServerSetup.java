@@ -140,7 +140,8 @@ final class ServerSetup {
             }
             if (geyser == BedrockRule.Action.INSTALL) {
                 for (GeyserDownloader.Project p : GeyserDownloader.Project.values()) {
-                    bedrockJars.add(note(this.geyser.download(p), GeyserDownloader.Download::note, installed));
+                    bedrockJars.add(note(this.geyser.download(p, BedrockRule.plugins(dir).resolve(p.jarName())),
+                            GeyserDownloader.Download::note, installed));
                 }
             }
         });

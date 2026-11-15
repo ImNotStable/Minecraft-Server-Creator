@@ -47,9 +47,9 @@ public final class GeyserDownloader {
      * {@code note} then says in one line why the API was not used (#589).
      */
     public record Download(Project project, Path jar, String version, int build, boolean cached, String note) {
-        /** {@code geyser 2.12.1 build 1302}, or {@code geyser build 1302} offline. */
+        /** {@code geyser 2.12.1 build 1302}, {@code geyser build 1302} offline, {@code geyser} for a kept jar. */
         public String describe() {
-            return project.id() + (version == null ? "" : " " + version) + " build " + build;
+            return project.id() + (version == null ? "" : " " + version) + (build > 0 ? " build " + build : "");
         }
     }
 
@@ -68,10 +68,23 @@ public final class GeyserDownloader {
     }
 
     public Download download(Project project) throws IOException, InterruptedException {
+        return download(project, null);
+    }
+
+    /**
+     * {@link #download(Project)}, falling back last to {@code installed}, the jar already in {@code plugins/} (its build
+     * unknown, so 0), when the API is unavailable and nothing is cached: a folder that has Geyser keeps it.
+     */
+    public Download download(Project project, Path installed) throws IOException, InterruptedException {
         URI latest = URI.create(baseUrl + "/v2/projects/" + project.id() + "/versions/latest/builds/latest");
         return Downloads.orCached(() -> newest(project, latest), note -> {
             CachedBuild offline = CachedBuild.newest(cacheDir, project.id(), PLATFORM);
-            return offline == null ? null : new Download(project, offline.jar(), null, offline.build(), true, note);
+            if (offline != null) {
+                return new Download(project, offline.jar(), null, offline.build(), true, note);
+            }
+            return installed != null && Files.isRegularFile(installed) ? new Download(project, installed, null, 0, true,
+                    note.substring(0, note.length() - Downloads.CACHED.length()) + "; keeping the jar in plugins/")
+                    : null;
         });
     }
 
