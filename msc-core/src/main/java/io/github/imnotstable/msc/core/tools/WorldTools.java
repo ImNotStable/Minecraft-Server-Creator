@@ -75,7 +75,7 @@ public final class WorldTools {
                         .maxChars(),
                 args -> world.heightmap(Coords.area(world.world(args.str("world", null)), args.str("area")),
                         Budget.of(args)));
-        List<Path> textureRoots = new ArrayList<>(List.of(config.dataDir().resolve("pack")));
+        List<Path> textureRoots = new ArrayList<>(List.of(config.packDir()));
         // shortcut: read straight from the environment, not CoreConfig; move it there if more renderer settings appear.
         String clientJar = System.getenv("MSC_CLIENT_JAR");
         if (clientJar != null && !clientJar.isBlank()) {

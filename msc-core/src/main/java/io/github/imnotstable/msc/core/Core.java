@@ -140,17 +140,17 @@ public final class Core implements AutoCloseable {
                 hub.agentExpected(server::running);
             }
             hub.noAgentReason(() -> server.platform().noWorldTools());
-            ResourcePack pack = new ResourcePack(config.dataDir().resolve("pack"), config.dataDir().resolve("build"),
+            ResourcePack pack = new ResourcePack(config.packDir(), config.packBuildDir(),
                     config.packHost(), config.packPort(), config.packFormat());
             ToolRegistry tools = new ToolRegistry(log);
             WorldService world = new WorldService(hub);
             ApiTools api = new ApiTools(config);
             MetaTools.register(tools, config, hub, server, log, api);
             WorldBackups backups = LifecycleTools.register(tools, config, hub, server, pack, new ProjectBuilder(config),
-                    new PaperDownloader(config.downloadsUrl(), config.dataDir().resolve("cache"),
+                    new PaperDownloader(config.downloadsUrl(), config.cacheDir(),
                             config.downloadStore()),
                     new FabricDownloader(config.fabricMetaUrl(), config.fabricMavenUrl(),
-                            config.dataDir().resolve("cache")), background, world);
+                            config.cacheDir()), background, world);
             api.register(tools);
             WorldTools.register(tools, config, world, backups);
             BuildTools.register(tools, config, world, new Builder(hub, world, backups::beforeBigEdit));

@@ -12,6 +12,7 @@ import io.github.imnotstable.msc.core.server.ProxyForwarding;
 import io.github.imnotstable.msc.core.server.ServerManager;
 import io.github.imnotstable.msc.core.server.ServerFiles;
 import io.github.imnotstable.msc.core.server.ServerProperties;
+import io.github.imnotstable.msc.core.server.WorkspaceProjects;
 import io.github.imnotstable.msc.core.tool.Args;
 import io.github.imnotstable.msc.core.tool.ToolException;
 import io.github.imnotstable.msc.process.ServerPropertiesFile;
@@ -44,9 +45,9 @@ final class ServerSetup {
         this.server = server;
         this.paper = paper;
         this.fabric = fabric;
-        this.loaders = new LoaderInstaller(config.loaderUrls(), config.dataDir().resolve("cache"),
+        this.loaders = new LoaderInstaller(config.loaderUrls(), config.cacheDir(),
                 config.javaCommand(), config.downloadStore());
-        this.geyser = new GeyserDownloader(config.loaderUrls().geyserApi(), config.dataDir().resolve("cache"),
+        this.geyser = new GeyserDownloader(config.loaderUrls().geyserApi(), config.cacheDir(),
                 config.downloadStore());
         this.eula = eula;
     }
@@ -104,7 +105,8 @@ final class ServerSetup {
             remember(steps, chosen);
             return LoaderInstaller.removedLine(removed, "dev_cycle deploys this project's jar there") + geyserOut
                     + "minestom needs no server download and has no EULA step: the project's own jar is the server and "
-                    + "the msc agent is built into it. Server directory: " + dir + "; next: dev_cycle";
+                    + "the msc agent is built into it. Server directory: " + dir + "; next: "
+                    + WorkspaceProjects.nextDevCycle(config);
         }
         // The fallible part first (version checks, downloads, installers); the rest of run/ only once it is through.
         boolean defaults = Templates.ids().contains(Templates.PAPER_SERVER);
@@ -171,7 +173,8 @@ final class ServerSetup {
         runBedrock(steps, geyser, dir, bedrockJars, out);
         steps.run(EULA, () -> eulaStep(dir.resolve("eula.txt"), acceptEula, out));
         remember(steps, chosen);
-        out.append(platform.id()).append(" server ready in ").append(dir).append("; next: server_start or dev_cycle");
+        out.append(platform.id()).append(" server ready in ").append(dir).append("; next: server_start or ")
+                .append(WorkspaceProjects.nextDevCycle(config));
         return out.toString();
     }
 
@@ -230,7 +233,7 @@ final class ServerSetup {
         runBedrock(steps, geyser, dir, List.of(), out);
         remember(steps, chosen);
         return out.append("velocity proxy ready in ").append(dir).append(" (no EULA step, no msc agent); next: "
-                + "server_start or dev_cycle").toString();
+                + "server_start or " + WorkspaceProjects.nextDevCycle(config)).toString();
     }
 
     /** Declares the Geyser step when {@code geyser} does something, with {@code ifFails} when not null. */
