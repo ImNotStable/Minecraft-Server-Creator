@@ -7,6 +7,8 @@ import java.util.List;
 import java.util.Locale;
 import net.minecraft.commands.arguments.blocks.BlockStateParser;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.TagParser;
 import net.minecraft.world.level.block.state.BlockState;
 
 /** Block state strings ({@code minecraft:oak_stairs[facing=east]}) to states and back. */
@@ -20,6 +22,28 @@ final class BlockStates {
      */
     static BlockState parse(String state) {
         return parseResult(state).blockState();
+    }
+
+    /** Keys a block entity's saved data holds that are not its data: its type and position. */
+    static final java.util.Set<String> METADATA = java.util.Set.of("id", "x", "y", "z");
+
+    /**
+     * Block entity data for {@code state} from SNBT, without its id and position, which the block decides.
+     *
+     * @throws IllegalArgumentException when the block keeps no block entity or the SNBT is malformed
+     */
+    static CompoundTag parseData(BlockState state, String snbt) {
+        if (!state.hasBlockEntity()) {
+            throw new IllegalArgumentException(serialize(state) + " has no block entity data; " + snbt + " cannot go on it");
+        }
+        CompoundTag tag;
+        try {
+            tag = TagParser.parseCompoundFully(snbt);
+        } catch (CommandSyntaxException e) {
+            throw new IllegalArgumentException("bad block entity data " + snbt + ": " + e.getMessage(), e);
+        }
+        METADATA.forEach(tag::remove);
+        return tag;
     }
 
     /** The full state string, every property included, as {@code /setblock} accepts it. */

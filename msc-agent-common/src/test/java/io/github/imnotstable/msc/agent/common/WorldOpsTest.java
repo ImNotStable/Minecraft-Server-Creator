@@ -253,6 +253,72 @@ class WorldOpsTest {
         assertThat(world.get(11, 72, 1)).isEqualTo("minecraft:glowstone");
     }
 
+    // ---- block entity data (ADR 0042) ----
+
+    private static final String CHEST = "minecraft:chest[facing=north]";
+
+    @Test
+    void readWithBlockDataGivesEachChestItsDataAndLeavesOtherReadsAlone() {
+        world.set(0, 70, 0, CHEST, false);
+        world.set(1, 70, 0, CHEST, false);
+        world.set(2, 70, 0, CHEST, false);
+        world.data.put(PackedPos.pack(0, 70, 0), "{Items:[a]}");
+        world.data.put(PackedPos.pack(1, 70, 0), "{Items:[a]}");
+
+        BlockGrid with = ops.read(new Ops.ReadParams(box(0, 70, 0, 2, 70, 0), false, false, true)).grid();
+        BlockGrid without = ops.read(new Ops.ReadParams(box(0, 70, 0, 2, 70, 0), false)).grid();
+
+        assertThat(with.stateAt(0, 70, 0)).isEqualTo(CHEST + "{Items:[a]}");
+        assertThat(with.blocks()[1]).as("equal data shares an entry").isEqualTo(with.blocks()[0]);
+        assertThat(with.stateAt(2, 70, 0)).isEqualTo(CHEST);
+        assertThat(without.palette()).containsExactly(CHEST);
+    }
+
+    @Test
+    void writeMergesDataEvenWhereTheStateIsThereAndUndoPutsTheOldDataBack() {
+        world.set(0, 70, 0, CHEST, false);
+        world.data.put(PackedPos.pack(0, 70, 0), "{Items:[old]}");
+        Region r = box(0, 70, 0, 1, 70, 0);
+
+        Ops.EditResult edit = ops.write(new Ops.WriteParams(new BlockGrid(r, List.of(CHEST + "{Items:[new]}"),
+                new int[] {0, 0}), false));
+
+        assertThat(edit.changed()).isEqualTo(2);
+        assertThat(world.blockData(0, 70, 0)).isEqualTo("{Items:[new]}");
+        assertThat(world.blockData(1, 70, 0)).isEqualTo("{Items:[new]}");
+        ops.undo(new Ops.UndoParams(edit.editId()));
+        assertThat(world.blockData(0, 70, 0)).isEqualTo("{Items:[old]}");
+        assertThat(world.get(1, 70, 0)).isEqualTo(MapWorld.AIR);
+        assertThat(world.blockData(1, 70, 0)).isNull();
+    }
+
+    @Test
+    void dataOnABlockThatKeepsNoneIsRefusedBeforeAnythingChanges() {
+        Region r = box(0, 70, 0, 1, 70, 0);
+        BlockGrid grid = new BlockGrid(r, List.of(STONE, STONE + "{a:1}"), new int[] {0, 1});
+
+        assertThatThrownBy(() -> ops.write(new Ops.WriteParams(grid, false)))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("no block entity data");
+        assertThat(world.writes).isZero();
+    }
+
+    @Test
+    void aReadWhoseDataIsTooLargeFailsInsteadOfCuttingIt() {
+        world.set(0, 70, 0, CHEST, false);
+        world.data.put(PackedPos.pack(0, 70, 0), "{a:\"" + "x".repeat(Limits.MAX_BLOCK_DATA_CHARS) + "\"}");
+
+        assertThatThrownBy(() -> ops.read(new Ops.ReadParams(box(0, 70, 0, 0, 70, 0), false, false, true)))
+                .isInstanceOfSatisfying(OpException.class, e -> assertThat(e.code()).isEqualTo(ErrorCodes.TOO_LARGE));
+    }
+
+    @Test
+    void blockDataSplitsAtTheFirstBraceOutsideTheProperties() {
+        assertThat(BlockData.split("minecraft:chest[facing=north]{Items:[{id:\"a[b\"}]}"))
+                .isEqualTo(new BlockData("minecraft:chest[facing=north]", "{Items:[{id:\"a[b\"}]}"));
+        assertThat(BlockData.split("minecraft:stone")).isEqualTo(new BlockData("minecraft:stone", null));
+        assertThat(BlockData.join("minecraft:stone", null)).isEqualTo("minecraft:stone");
+    }
+
     @Test
     void heightmapGivesTheTopBlockPerColumn() {
         world.set(0, 80, 0, STONE, false);

@@ -35,12 +35,20 @@ public final class EditJob<S> implements SlicedJob<UndoRecord<S>> {
             int z = changes.z();
             S target = changes.target();
             S current = world.get(x, y, z);
-            if (!world.sameState(current, target)) {
+            boolean differs = !world.sameState(current, target);
+            Object data = changes.blockEntity();
+            Object patch = changes.dataPatch();
+            // Data alone is a change too: an undo puts a chest's old items back, a write merges new ones (ADR 0042).
+            if (differs || data != null || patch != null) {
                 undo.add(x, y, z, current, world.blockEntity(x, y, z));
-                world.set(x, y, z, target, physics);
-                Object data = changes.blockEntity();
+                if (differs) {
+                    world.set(x, y, z, target, physics);
+                }
                 if (data != null) {
                     world.loadBlockEntity(x, y, z, data);
+                }
+                if (patch != null) {
+                    world.mergeBlockData(x, y, z, patch);
                 }
             }
             if (++n % CHECK_EVERY == 0 && System.nanoTime() - deadlineNanos > 0) {

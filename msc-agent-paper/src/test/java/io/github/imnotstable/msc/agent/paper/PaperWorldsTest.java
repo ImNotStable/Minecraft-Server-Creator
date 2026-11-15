@@ -24,7 +24,7 @@ class PaperWorldsTest {
         WorldMock nether = new WorldMock(WorldCreator.ofKey(NamespacedKey.minecraft("the_nether")));
         nether.setName("world_nether");
         server.addWorld(nether);
-        worlds = new PaperWorlds(server);
+        worlds = new PaperWorlds(server, new DataCommands((line, out) -> false));
     }
 
     @AfterEach

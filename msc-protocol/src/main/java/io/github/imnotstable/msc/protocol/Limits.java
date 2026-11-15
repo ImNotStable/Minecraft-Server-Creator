@@ -22,6 +22,13 @@ public final class Limits {
     /** Longest single text in a result (an entity's name, a scoreboard tag), cut with {@link #cut}. */
     public static final int MAX_TEXT_CHARS = 1024;
 
+    /**
+     * Most characters of block entity data (SNBT) one {@code world.read} with {@code includeBlockData} carries. Data is
+     * never cut, since a cut SNBT would place wrong data: a read over it fails with {@code too_large}, so the caller
+     * reads a smaller region.
+     */
+    public static final int MAX_BLOCK_DATA_CHARS = MAX_RESULT_TEXT_CHARS;
+
     /** Longest sign line in a result: a read carries up to 1000 signs of eight lines. */
     public static final int MAX_SIGN_LINE_CHARS = 256;
 

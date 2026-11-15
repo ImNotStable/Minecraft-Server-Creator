@@ -17,6 +17,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
+import net.kyori.adventure.nbt.CompoundBinaryTag;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import net.minestom.server.component.DataComponents;
@@ -87,6 +88,36 @@ final class MinestomWorld implements AgentWorld<Block> {
     @Override
     public void set(int x, int y, int z, Block state, boolean physics) {
         instance.setBlock(x, y, z, state, physics);
+    }
+
+    /**
+     * The block itself when it has data: {@link #sameState} looks at the state only, so an undo of a change to data
+     * alone (ADR 0042) puts the old block back through {@link #loadBlockEntity}.
+     */
+    @Override
+    public Object blockEntity(int x, int y, int z) {
+        Block block = instance.getBlock(x, y, z);
+        return block.hasNbt() ? block : null;
+    }
+
+    @Override
+    public void loadBlockEntity(int x, int y, int z, Object data) {
+        instance.setBlock(x, y, z, (Block) data, false);
+    }
+
+    @Override
+    public boolean holdsData(Block state) {
+        return BlockNbt.holds(state);
+    }
+
+    @Override
+    public String blockData(int x, int y, int z) {
+        return BlockNbt.read(instance.getBlock(x, y, z));
+    }
+
+    @Override
+    public void mergeBlockData(int x, int y, int z, Object data) {
+        instance.setBlock(x, y, z, BlockNbt.merge(instance.getBlock(x, y, z), (CompoundBinaryTag) data), false);
     }
 
     @Override

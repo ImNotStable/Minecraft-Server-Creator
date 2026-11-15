@@ -18,7 +18,9 @@ import java.util.Map;
 
 /**
  * Sponge schematics ({@code .schem}), the format WorldEdit reads and writes. Writes version 2; reads
- * versions 2 and 3. Blocks only: block entities (chest contents, sign text) and entities are not kept.
+ * versions 2 and 3. Blocks and their block entity data (chest contents, sign text; ADR 0042) are kept, entities are
+ * not. A block entity's {@code Id} is written as its block's id, which is the block entity's own id for most blocks
+ * (not for signs, beds or banners, whose block entity types are shared); readers place the data on the block anyway.
  */
 public final class Schematic {
     /** Data version written to files (26.3's world_version); readers use it only to decide whether to upgrade block names. */
@@ -39,8 +41,10 @@ public final class Schematic {
         // Equal states share one file index: a map keyed by state would otherwise drop the earlier index.
         Map<String, Integer> palette = new LinkedHashMap<>();
         int[] remap = new int[grid.palette().size()];
+        boolean anyData = false;
         for (int i = 0; i < remap.length; i++) {
-            remap[i] = palette.computeIfAbsent(grid.palette().get(i), k -> palette.size());
+            remap[i] = palette.computeIfAbsent(BlockNames.withoutData(grid.palette().get(i)), k -> palette.size());
+            anyData |= BlockNames.data(grid.palette().get(i)) != null;
         }
         int airIndex = -1;
         ByteArrayOutputStream data = new ByteArrayOutputStream(grid.blocks().length);
@@ -69,13 +73,32 @@ public final class Schematic {
         root.put("PaletteMax", palette.size());
         root.put("Palette", palette);
         root.put("BlockData", data.toByteArray());
-        root.put("BlockEntities", List.of());
+        root.put("BlockEntities", anyData ? blockEntities(grid) : List.of());
         if (file.getParent() != null) {
             Files.createDirectories(file.getParent());
         }
         try (OutputStream out = Files.newOutputStream(file)) {
             Nbt.write(out, "Schematic", root);
         }
+    }
+
+    /** Each block with data as {@code {Pos:[I;x,y,z],Id:"...",<data>}}, Sponge version 2's layout. */
+    @SuppressWarnings("unchecked")
+    private static List<Object> blockEntities(BlockGrid grid) {
+        Region r = grid.region();
+        List<Object> out = new ArrayList<>();
+        for (int i = 0; i < grid.blocks().length; i++) {
+            int b = grid.blocks()[i];
+            String data = b < 0 ? null : BlockNames.data(grid.palette().get(b));
+            if (data != null) {
+                Map<String, Object> entry = new LinkedHashMap<>();
+                entry.put("Pos", new int[] {i % r.sizeX(), i / (r.sizeX() * r.sizeZ()), i / r.sizeX() % r.sizeZ()});
+                entry.put("Id", BlockNames.id(grid.palette().get(b)));
+                entry.putAll((Map<String, Object>) Snbt.parse(data));
+                out.add(entry);
+            }
+        }
+        return out;
     }
 
     /** Load a schematic and place its lowest corner at {@code origin}. */
@@ -96,12 +119,15 @@ public final class Schematic {
             int sz = ((Number) root.get("Length")).intValue() & 0xFFFF;
             Map<String, Object> paletteTag;
             byte[] data;
+            Object entities;
             if (root.get("Blocks") instanceof Map<?, ?> blocksTag) {
                 paletteTag = (Map<String, Object>) ((Map<String, Object>) blocksTag).get("Palette");
                 data = (byte[]) ((Map<String, Object>) blocksTag).get("Data");
+                entities = ((Map<String, Object>) blocksTag).get("BlockEntities");
             } else {
                 paletteTag = (Map<String, Object>) root.get("Palette");
                 data = (byte[]) root.get("BlockData");
+                entities = root.get("BlockEntities");
             }
             long volume = (long) sx * sy * sz;
             if (volume == 0 || volume > Limits.MAX_REGION_VOLUME) {
@@ -138,10 +164,46 @@ public final class Schematic {
                 }
                 blocks[i] = value;
             }
+            if (entities instanceof List<?> list) {
+                addData(list, sx, sy, sz, palette, blocks);
+            }
             Region region = new Region(world, origin, origin.offset(sx - 1, sy - 1, sz - 1));
             return new BlockGrid(region, palette, blocks);
         } catch (NullPointerException | ClassCastException | IndexOutOfBoundsException | IllegalArgumentException e) {
             throw new ToolException(file.getFileName() + " is not a Sponge schematic this tool understands (v2 or v3)");
+        }
+    }
+
+    /**
+     * Puts each block entity's data on its block: version 2 keeps the data beside {@code Pos} and {@code Id},
+     * version 3 under {@code Data}. Data on a position outside the schematic is skipped.
+     */
+    @SuppressWarnings("unchecked")
+    private static void addData(List<?> entities, int sx, int sy, int sz, List<String> palette, int[] blocks) {
+        Map<String, Integer> index = new LinkedHashMap<>();
+        for (int i = 0; i < palette.size(); i++) {
+            index.putIfAbsent(palette.get(i), i);
+        }
+        for (Object e : entities) {
+            Map<String, Object> entry = (Map<String, Object>) e;
+            int[] pos = (int[]) entry.get("Pos");
+            if (pos.length != 3 || pos[0] < 0 || pos[0] >= sx || pos[1] < 0 || pos[1] >= sy || pos[2] < 0
+                    || pos[2] >= sz) {
+                continue;
+            }
+            Map<String, Object> fields = new LinkedHashMap<>(entry.get("Data") instanceof Map<?, ?> v3
+                    ? (Map<String, Object>) v3 : entry);
+            fields.remove("Pos");
+            fields.remove("Id");
+            String snbt = Snbt.blockData(Snbt.write(fields));
+            if (snbt != null) {
+                int cell = (pos[1] * sz + pos[2]) * sx + pos[0];
+                String state = BlockNames.withoutData(palette.get(blocks[cell])) + snbt;
+                blocks[cell] = index.computeIfAbsent(state, k -> {
+                    palette.add(k);
+                    return palette.size() - 1;
+                });
+            }
         }
     }
 }

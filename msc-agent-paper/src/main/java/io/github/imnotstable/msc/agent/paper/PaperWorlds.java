@@ -15,9 +15,11 @@ import org.bukkit.block.data.BlockData;
 /** The server's worlds by their Bukkit names (or dimension ids), and Bukkit block data parsing. */
 final class PaperWorlds implements AgentWorlds<BlockData> {
     private final Server server;
+    private final DataCommands data;
 
-    PaperWorlds(Server server) {
+    PaperWorlds(Server server, DataCommands data) {
         this.server = server;
+        this.data = data;
     }
 
     @Override
@@ -33,7 +35,7 @@ final class PaperWorlds implements AgentWorlds<BlockData> {
             NamespacedKey key = NamespacedKey.fromString(name);
             world = key == null ? null : server.getWorld(key);
         }
-        return Optional.ofNullable(world).map(PaperWorld::new);
+        return Optional.ofNullable(world).map(w -> new PaperWorld(w, data));
     }
 
     @Override
@@ -43,6 +45,16 @@ final class PaperWorlds implements AgentWorlds<BlockData> {
         } catch (IllegalArgumentException e) {
             throw new IllegalArgumentException(explain(state, e), e);
         }
+    }
+
+    /** The SNBT as it is: the server's {@code /data merge} reads it, after the core checked it (ADR 0042). */
+    @Override
+    public Object parseData(BlockData state, String snbt) {
+        if (!PaperWorld.holds(state)) {
+            throw new IllegalArgumentException(state.getAsString() + " has no block entity data; " + snbt
+                    + " cannot go on it");
+        }
+        return snbt;
     }
 
     /** Why {@code state} failed: bad properties on a real block, or an unknown id with close names. */

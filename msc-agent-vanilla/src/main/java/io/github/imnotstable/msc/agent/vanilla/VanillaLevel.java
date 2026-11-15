@@ -92,6 +92,40 @@ final class VanillaLevel implements AgentWorld<BlockState> {
         }
     }
 
+    @Override
+    public boolean holdsData(BlockState state) {
+        return state.hasBlockEntity();
+    }
+
+    @Override
+    public String blockData(int x, int y, int z) {
+        BlockEntity entity = level.getBlockEntity(pos.set(x, y, z));
+        return entity == null ? null : data(entity, level.registryAccess());
+    }
+
+    @Override
+    public void mergeBlockData(int x, int y, int z, Object patch) {
+        BlockEntity entity = level.getBlockEntity(pos.set(x, y, z));
+        if (entity == null) {
+            throw new IllegalArgumentException("no block entity at " + x + "," + y + "," + z);
+        }
+        merge(entity, (CompoundTag) patch, level.registryAccess());
+        BlockState state = level.getBlockState(pos);
+        level.sendBlockUpdated(pos, state, state, Block.UPDATE_ALL);
+    }
+
+    /** The data as SNBT without id and position, or null when the block entity saves nothing (an empty chest). */
+    static String data(BlockEntity entity, HolderLookup.Provider registries) {
+        CompoundTag tag = entity.saveWithoutMetadata(registries);
+        return tag.isEmpty() ? null : tag.toString();
+    }
+
+    /** What {@code /data merge block} does: the saved data with the patch merged in, loaded back. */
+    static void merge(BlockEntity entity, CompoundTag patch, HolderLookup.Provider registries) {
+        CompoundTag merged = save(entity, registries).copy().merge(patch);
+        load(entity, merged, registries);
+    }
+
     static CompoundTag save(BlockEntity entity, HolderLookup.Provider registries) {
         return entity.saveWithFullMetadata(registries);
     }

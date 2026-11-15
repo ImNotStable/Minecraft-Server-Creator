@@ -7,6 +7,7 @@ import io.github.imnotstable.msc.protocol.op.PartialEdit;
 import io.github.imnotstable.msc.protocol.transport.OpException;
 import io.github.imnotstable.msc.protocol.world.BlockGrid;
 import io.github.imnotstable.msc.protocol.world.Region;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -82,9 +83,20 @@ public final class WorldOps<S> {
         AgentWorld<S> world = world(region.world());
         requireBuildHeight(world, region.min().y(), region.max().y());
         requireUndoableXz(region);
-        List<S> palette = grid.palette().stream().map(worlds::parse).toList();
+        // Every state and every piece of block entity data is checked before anything changes.
+        List<S> palette = new ArrayList<>(grid.palette().size());
+        List<Object> data = new ArrayList<>(grid.palette().size());
+        boolean anyData = false;
+        for (String entry : grid.palette()) {
+            BlockData split = BlockData.split(entry);
+            S state = worlds.parse(split.state());
+            palette.add(state);
+            data.add(split.snbt() == null ? null : worlds.parseData(state, split.snbt()));
+            anyData |= split.snbt() != null;
+        }
         world.loadArea(region.min().x(), region.min().z(), region.max().x(), region.max().z());
-        EditJob<S> job = new EditJob<>(world, new GridCursor<>(region, grid.blocks(), palette), params.updatePhysics());
+        EditJob<S> job = new EditJob<>(world, new GridCursor<>(region, grid.blocks(), palette, anyData ? data : null),
+                params.updatePhysics());
         try {
             return apply(job);
         } catch (RuntimeException e) {

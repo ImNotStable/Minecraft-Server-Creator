@@ -5,10 +5,13 @@ import io.github.imnotstable.msc.protocol.op.Ops;
 import io.github.imnotstable.msc.protocol.world.Region;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.TreeSet;
+import java.util.concurrent.ConcurrentHashMap;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import org.bukkit.HeightMap;
+import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.attribute.Attribute;
 import org.bukkit.attribute.AttributeInstance;
@@ -27,10 +30,35 @@ import org.bukkit.util.BoundingBox;
 
 /** {@link AgentWorld} on a Bukkit {@link World}. Main thread only. */
 final class PaperWorld implements AgentWorld<BlockData> {
-    private final World world;
+    /** Whether blocks of a material are block entities, found once per material. */
+    private static final Map<Material, Boolean> HOLDS = new ConcurrentHashMap<>();
 
-    PaperWorld(World world) {
+    private final World world;
+    private final DataCommands data;
+
+    PaperWorld(World world, DataCommands data) {
         this.world = world;
+        this.data = data;
+    }
+
+    /** Whether blocks in this state are block entities, which keep data. */
+    static boolean holds(BlockData state) {
+        return HOLDS.computeIfAbsent(state.getMaterial(), m -> state.createBlockState() instanceof TileState);
+    }
+
+    @Override
+    public boolean holdsData(BlockData state) {
+        return holds(state);
+    }
+
+    @Override
+    public String blockData(int x, int y, int z) {
+        return data.get(world.getKey().asString(), x, y, z);
+    }
+
+    @Override
+    public void mergeBlockData(int x, int y, int z, Object snbt) {
+        data.merge(world.getKey().asString(), x, y, z, (String) snbt);
     }
 
     @Override

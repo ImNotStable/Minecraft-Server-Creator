@@ -34,7 +34,7 @@ public class MscAgentPlugin extends JavaPlugin implements Listener {
         MainThread main = new BukkitMainThread(this, AgentDefaults.TICK_BUDGET, AgentDefaults.OP_TIMEOUT);
         PaperServer server = new PaperServer(getServer(), new PaperServerFacts(getServer()));
         serverOps = new ServerOps(server, main);
-        WorldOps<?> worldOps = new WorldOps<>(new PaperWorlds(getServer()), main, new EditHistory<>(AgentDefaults.UNDO_BLOCKS));
+        WorldOps<?> worldOps = new WorldOps<>(new PaperWorlds(getServer(), new DataCommands(server::runCommand)), main, new EditHistory<>(AgentDefaults.UNDO_BLOCKS));
         OpRouter router = AgentRoutes.router(serverOps, worldOps);
         AgentInfo info = new AgentInfo(PaperServer.PLATFORM, server.platformVersion(), server.minecraftVersion(),
                 router.operations());
