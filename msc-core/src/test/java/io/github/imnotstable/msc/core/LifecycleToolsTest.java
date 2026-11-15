@@ -1486,14 +1486,20 @@ class LifecycleToolsTest {
         for (String stop : List.of("server_stop", "a stop typed into the server")) {
             Files.deleteIfExists(workspace.resolve("run/release.flag"));
             h.ok("server_start", "timeoutSeconds", 30);
+            long mark = h.core.server().log().mark();
             var stopped = stop.equals("server_stop")
                     ? java.util.concurrent.CompletableFuture.supplyAsync(() -> h.call("server_stop")) : null;
             if (stopped == null) {
                 h.core.server().console("stop"); // MSC's stop not asked: the closed console is the only sign
             }
             try {
-                awaitLogLine("console closed, lingering");
-                long deadline = System.nanoTime() + java.time.Duration.ofSeconds(20).toNanos();
+                // This run's line: the fake prints it once its stdin is closed.
+                long deadline = System.nanoTime() + java.time.Duration.ofSeconds(60).toNanos();
+                while (h.core.server().log().since(mark).stream().noneMatch(l -> l.contains("console closed"))) {
+                    assertThat(System.nanoTime()).as("the console closes").isLessThan(deadline);
+                    Thread.sleep(10);
+                }
+                deadline = System.nanoTime() + java.time.Duration.ofSeconds(20).toNanos();
                 while (h.core.hub().current() != null) {
                     assertThat(System.nanoTime()).as("the agent leaves").isLessThan(deadline);
                     Thread.sleep(10);
