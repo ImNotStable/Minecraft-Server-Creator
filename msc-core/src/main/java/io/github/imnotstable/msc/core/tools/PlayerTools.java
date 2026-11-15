@@ -69,7 +69,10 @@ public final class PlayerTools implements AutoCloseable {
             }
         }
         if (hub.current() == null) {
-            throw new ToolException("the server is not running with the agent. Start it with server_start first.");
+            // The same reason as the world tools give (#705), else that this session's server has no agent (yet).
+            String why = hub.refusal();
+            throw new ToolException(why != null ? why
+                    : "the server is not running with the agent. Start it with server_start first.");
         }
         List<String> actions = args.strings("actions");
         if (actions.isEmpty()) {

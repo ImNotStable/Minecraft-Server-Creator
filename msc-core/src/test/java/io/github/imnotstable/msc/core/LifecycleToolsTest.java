@@ -1380,6 +1380,77 @@ class LifecycleToolsTest {
     }
 
     @Test
+    void everyToolThatNeedsTheServerNamesOneAnEarlierSessionLeftRunningAsMscStatusDoes() throws Exception {
+        // #705: msc_status said running while world tools and server_command said "the server is not running".
+        FakeLeftover leftover = FakeLeftover.install(h.core.server(), java.time.Duration.ofMillis(1));
+        try {
+            String pid = "pid " + leftover.pid();
+            assertThat(h.ok("msc_status")).contains("server: running, left by an earlier session (" + pid);
+            String why = "the server running here (" + pid + ") was left by an earlier session and has no connection "
+                    + "to this one: server_start or dev_cycle restarts it under this session, server_stop stops it";
+            assertThat(h.error("world_slice", "region", "0,60,0 1,60,1")).isEqualTo("error: " + why);
+            assertThat(h.error("world_summary", "region", "0,60,0 1,60,1")).isEqualTo("error: " + why);
+            assertThat(h.error("server_command", "command", "say hi")).isEqualTo("error: " + why);
+            assertThat(h.error("server_detach")).isEqualTo("error: " + why);
+            assertThat(h.error("player_test", "actions", "say hi")).isEqualTo("error: " + why);
+            assertThat(h.error("server_wait", "until", "x")).contains("none is running; " + why);
+            assertThat(leftover.isAlive()).as("a refusal changes nothing").isTrue();
+        } finally {
+            leftover.exit();
+        }
+        assertThat(h.error("world_slice", "region", "0,60,0 1,60,1"))
+                .isEqualTo("error: " + io.github.imnotstable.msc.core.agent.AgentHub.NOT_RUNNING);
+    }
+
+    @Test
+    void worldToolsFailAtOnceWhileTheServerStopsAfterItsAgentLeft() throws Exception {
+        // #703: the agent left before the process exited, and a call in that window waited 30 s for an agent.
+        Files.createDirectories(workspace.resolve("run"));
+        Files.writeString(workspace.resolve("run/linger-stop.flag"), "");
+        h.ok("server_start", "timeoutSeconds", 30);
+        h.core.hub().connectWait(java.time.Duration.ofSeconds(60));
+        var stop = java.util.concurrent.CompletableFuture.supplyAsync(() -> h.call("server_stop"));
+        try {
+            awaitLogLine("agent gone, lingering");
+            long deadline = System.nanoTime() + java.time.Duration.ofSeconds(60).toNanos();
+            while (h.core.hub().current() != null) {
+                assertThat(System.nanoTime()).as("the agent leaves").isLessThan(deadline);
+                Thread.sleep(10);
+            }
+            assertThat(h.core.server().running()).as("the process lingers").isTrue();
+            long start = System.nanoTime();
+            assertThat(h.error("world_summary", "region", "0,60,0 1,61,1")).contains("the server is stopping");
+            assertThat(h.error("world_slice", "region", "0,60,0 1,60,1")).contains("the server is stopping");
+            assertThat(java.time.Duration.ofNanos(System.nanoTime() - start)).isLessThan(java.time.Duration.ofSeconds(20));
+        } finally {
+            Files.writeString(workspace.resolve("run/release.flag"), "");
+        }
+        assertThat(stop.get(60, java.util.concurrent.TimeUnit.SECONDS).text()).isEqualTo("server stopped");
+    }
+
+    @Test
+    void aCallWaitingForTheAgentFailsAsSoonAsTheServerExits() throws Exception {
+        // #703: only a session coming or going woke the wait, never the process exit.
+        Files.createDirectories(workspace.resolve("run"));
+        Files.writeString(workspace.resolve("run/no-agent.flag"), "");
+        h.ok("server_start", "timeoutSeconds", 30);
+        h.core.hub().connectWait(java.time.Duration.ofSeconds(60));
+        String[] answer = new String[1];
+        Thread caller = new Thread(() -> answer[0] = h.error("world_summary", "region", "0,60,0 1,61,1"));
+        long start = System.nanoTime();
+        caller.start();
+        long deadline = System.nanoTime() + java.time.Duration.ofSeconds(20).toNanos();
+        while (caller.getState() != Thread.State.TIMED_WAITING && System.nanoTime() < deadline) {
+            Thread.sleep(10);
+        }
+        ((Process) h.core.server().serverRun()).destroyForcibly();
+        caller.join(java.time.Duration.ofSeconds(60));
+        assertThat(caller.isAlive()).isFalse();
+        assertThat(answer[0]).contains("the server is not running");
+        assertThat(java.time.Duration.ofNanos(System.nanoTime() - start)).isLessThan(java.time.Duration.ofSeconds(40));
+    }
+
+    @Test
     void aServerAnotherLiveSessionRunsIsNeitherStoppedNorReplaced() throws Exception {
         // #482: a second session on the workspace took the first one's live server for a leftover and killed it.
         Process other = new ProcessBuilder(java(io.github.imnotstable.msc.core.fixture.SleepMain.class)).start();
@@ -1481,7 +1552,8 @@ class LifecycleToolsTest {
         assertThat(ok.get("resultTokens").getAsInt()).isEqualTo((ok.get("resultChars").getAsInt() + 3) / 4);
         JsonObject failed = JsonParser.parseString(lines.get(2)).getAsJsonObject();
         assertThat(failed.get("ok").getAsBoolean()).isFalse();
-        assertThat(failed.get("error").getAsString()).isEqualTo("error: server is not running");
+        assertThat(failed.get("error").getAsString())
+                .isEqualTo("error: " + io.github.imnotstable.msc.core.agent.AgentHub.NOT_RUNNING);
         assertThat(h.ok("msc_status", "stats", true)).startsWith("tool calls errors ms resultTokens\nmsc_status 1 0 ")
                 .contains("\nserver_command 1 1 ").contains("\ntotal 3 2 ");
     }

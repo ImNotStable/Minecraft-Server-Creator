@@ -92,8 +92,10 @@ final class ServerConsole {
         Pattern pattern = pattern(args.str("until"));
         int timeout = args.integer("timeoutSeconds", 60);
         if (!server.running()) {
-            throw new ToolException("server_wait reads the log of a server this session started, and none is running. "
-                    + "Start it with server_start or dev_cycle.");
+            // A server another session runs or left running is named, as msc_status names it (#705).
+            String why = server.notRunning();
+            throw new ToolException("server_wait reads the log of a server this session started, and none is running"
+                    + (why.equals(AgentHub.NOT_RUNNING) ? ". Start it with server_start or dev_cycle." : "; " + why));
         }
         long from = Math.max(marks.waitFrom, marks.start);
         long started = System.nanoTime();
