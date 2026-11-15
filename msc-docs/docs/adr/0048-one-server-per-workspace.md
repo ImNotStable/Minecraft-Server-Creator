@@ -42,3 +42,20 @@ A scaffold into the workspace root still switches the workspace to the template'
   each way; the other server's files stay in the folder, so switching back downloads nothing new. Two servers at once
   take two workspaces.
 - The scaffold's result can be one line longer (up to 8 lines).
+
+## Amendment, 2026-11-15: what a project runs on (#642, #643)
+
+The rule above asked about one platform, the one `Platform.detect` names first. A jar that is both a Paper and a
+Velocity plugin (`plugin.yml` and `velocity-plugin.json`, as ViaVersion ships) is detected as Paper, so a Velocity
+workspace refused it, although Velocity loads it and `dev_cycle` deployed it before.
+
+- The rule now takes every platform the project runs on, `Platform.runsOn(project)`: each platform whose sign
+  (descriptor, Gradle plugin or dependency) the project shows, the detected one first. A Minestom project's jar is the
+  server, so Minestom counts only when nothing else shows. `Platform.serving(config, runsOn)` is the workspace's
+  remembered platform when any of them is of its agent family, else the first; `otherFamily` is the remembered
+  platform when `serving` does not pick it. `dev_cycle` passes what the project's files show, `project_scaffold` the
+  template's platform, which is all a scaffolded template's files show (a test checks every template).
+- `template=paper-server` writes only server files, which every platform uses. It is not a project: the scaffold never
+  remembers its platform, never adds the "never loads" line, and its next step is for the workspace's own server
+  (`Platform.current`), so a set-up Fabric workspace gets `next: edit the code, then dev_cycle`, not the EULA question
+  and `server_setup platform=paper`.
