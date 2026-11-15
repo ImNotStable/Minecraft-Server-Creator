@@ -10,10 +10,12 @@ import io.github.imnotstable.msc.core.fixture.SleepMain;
 import io.github.imnotstable.msc.core.tool.ToolException;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
-import java.net.ServerSocket;
+import java.nio.channels.FileChannel;
+import java.nio.channels.FileLock;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -71,20 +73,23 @@ class ServerPidFileLockTest {
         return Path.of(System.getProperty("java.home"), "bin", "java").toString();
     }
 
-    /** A core's server manager on the shared workspace; its server binds {@code port}, as a real one does. */
-    private ServerManager core(int port) throws Exception {
+    /**
+     * A core's server manager on the shared workspace; its server locks the world, as a real one does. Not a port
+     * (#580): a free port handed to the server is free for every other process too until the server binds it, and
+     * any of them could take it first.
+     */
+    private ServerManager core() throws Exception {
         AgentHub hub = new AgentHub(0, "token");
         ServerManager m = new ServerManager(CoreConfig.forWorkspace(workspace).withServerCommand(List.of(java(), "-cp",
-                System.getProperty("java.class.path"), PortServer.class.getName(), Integer.toString(port))), hub);
+                System.getProperty("java.class.path"), WorldServer.class.getName())), hub);
         closing.add(hub);
         closing.add(m);
         return m;
     }
 
-    private static int freePort() throws Exception {
-        try (ServerSocket s = new ServerSocket(0)) {
-            return s.getLocalPort();
-        }
+    /** Asserts that {@code r} is ready, saying why not with the result and the server's log. */
+    private static void assertReady(ServerManager m, ServerManager.StartResult r) {
+        assertThat(r.ready()).as("%s, log %s", r, m.log().all()).isTrue();
     }
 
     /** Runs each call on its own thread, all released by one latch, and returns what each returned or threw. */
@@ -111,10 +116,9 @@ class ServerPidFileLockTest {
 
     @RepeatedTest(50)
     void twoCoresStartingAtOnceLaunchOneServerAndThePidFileNamesIt() throws Exception {
-        int port = freePort();
-        ServerManager other = core(port);
+        ServerManager other = core();
         other.self(PidFile.Identity.of(otherCore.toHandle()));
-        ServerManager mine = core(port);
+        ServerManager mine = core();
         List<ServerManager> cores = List.of(other, mine);
 
         List<Object> outcomes = race(List.of(() -> other.start(Duration.ofSeconds(120)),
@@ -123,7 +127,7 @@ class ServerPidFileLockTest {
         List<Integer> won = new ArrayList<>();
         for (int i = 0; i < 2; i++) {
             if (outcomes.get(i) instanceof ServerManager.StartResult r) {
-                assertThat(r.ready()).as("the one server started").isTrue();
+                assertReady(cores.get(i), r);
                 won.add(i);
             } else {
                 assertThat(outcomes.get(i)).isInstanceOf(ToolException.class);
@@ -143,11 +147,10 @@ class ServerPidFileLockTest {
 
     @RepeatedTest(20)
     void aStopRacingAnotherCoresStartLeavesTheRecordOfWhateverRuns() throws Exception {
-        int port = freePort();
-        ServerManager other = core(port);
+        ServerManager other = core();
         other.self(PidFile.Identity.of(otherCore.toHandle()));
-        ServerManager mine = core(port);
-        assertThat(other.start(Duration.ofSeconds(120)).ready()).isTrue();
+        ServerManager mine = core();
+        assertReady(other, other.start(Duration.ofSeconds(120)));
 
         List<Object> outcomes = race(List.of(() -> other.stop(Duration.ofSeconds(60)),
                 () -> mine.start(Duration.ofSeconds(120))));
@@ -156,7 +159,7 @@ class ServerPidFileLockTest {
         assertThat(other.running()).isFalse();
         if (outcomes.get(1) instanceof ServerManager.StartResult r) {
             // Started once the other server had exited: its stop must not delete this record.
-            assertThat(r.ready()).isTrue();
+            assertReady(mine, r);
             assertThat(PidFile.peek(mine.pidFile()).map(ProcessHandle::pid)).contains(mine.process().pid());
             assertThat(PidFile.owner(mine.pidFile())).contains(PidFile.Identity.current());
         } else {
@@ -169,7 +172,7 @@ class ServerPidFileLockTest {
 
     @Test
     void anotherProcessHoldingTheLockMakesEveryChangeRefuseAndNothingChanges() throws Exception {
-        ServerManager m = core(freePort());
+        ServerManager m = core();
         ServerLockAccess.refuseQuickly(m);
         Process holder = LockHoldMain.hold(workspace.resolve(".msc/server.lock"));
         processes.add(holder);
@@ -202,7 +205,7 @@ class ServerPidFileLockTest {
      * held, so another core can take the lock there and keep it past the record's update.
      */
     private ServerManager leftoverStoppedWhileTheLockIsTaken(Process server, boolean kills) throws Exception {
-        ServerManager m = core(freePort());
+        ServerManager m = core();
         ServerLockAccess.refuseQuickly(m);
         PidFile.write(m.pidFile(), server.toHandle(), new PidFile.Identity(1_900_000_003L, 1));
         PidFile.markResisting(m.pidFile());
@@ -271,11 +274,23 @@ class ServerPidFileLockTest {
         assertThat(outcome).contains(BUSY);
     }
 
-    /** A server that binds its port as a real one does, so a second one dies on it, then waits for "stop". */
-    public static final class PortServer {
+    /**
+     * A server that locks its world's {@code session.lock} as a real one does, so a second one in the same server
+     * folder dies on it, then waits for "stop". The lock is the test's own: nothing outside it can take it, and the OS
+     * releases it when the server exits.
+     */
+    public static final class WorldServer {
         public static void main(String[] args) throws Exception {
-            try (ServerSocket socket = new ServerSocket(Integer.parseInt(args[0]))) {
-                System.out.println("[12:00:01 INFO]: Listening on port " + socket.getLocalPort());
+            Path file = Path.of("world", "session.lock");
+            Files.createDirectories(file.getParent());
+            try (FileChannel channel = FileChannel.open(file, StandardOpenOption.CREATE, StandardOpenOption.WRITE);
+                    FileLock lock = channel.tryLock()) {
+                if (lock == null) {
+                    System.out.println("[12:00:01 ERROR]: Failed to start the minecraft server: " + file
+                            + " is locked by another server");
+                    System.out.flush();
+                    System.exit(1);
+                }
                 System.out.println("[12:00:02 INFO]: Done (0.1s)! For help, type \"help\"");
                 System.out.flush();
                 BufferedReader in = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8));
