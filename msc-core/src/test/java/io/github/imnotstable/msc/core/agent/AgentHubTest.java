@@ -47,6 +47,11 @@ class AgentHubTest {
             // A new agent (a new server run) is waited for and used again.
             AgentClient.Session second = new FakeAgent().connect(hub.address(), hub.token());
             try {
+                // The client's handshake can end before the hub's: until then the last run's stop still answers.
+                while (hub.current() == null) {
+                    assertThat(Duration.ofNanos(System.nanoTime() - start)).isLessThan(Duration.ofSeconds(20));
+                    Thread.sleep(10);
+                }
                 assertThat(hub.require()).isNotNull();
                 assertThat(hub.refusal()).isNull();
             } finally {
