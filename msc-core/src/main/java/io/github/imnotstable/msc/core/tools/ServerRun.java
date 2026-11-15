@@ -2,7 +2,6 @@ package io.github.imnotstable.msc.core.tools;
 
 import io.github.imnotstable.msc.core.CoreConfig;
 import io.github.imnotstable.msc.core.agent.AgentHub;
-import io.github.imnotstable.msc.core.server.BedrockConfig;
 import io.github.imnotstable.msc.core.server.CrashTriage;
 import io.github.imnotstable.msc.core.server.LogCondenser;
 import io.github.imnotstable.msc.core.server.MachineEula;
@@ -272,10 +271,8 @@ final class ServerRun {
             if (mode != null) {
                 out.append('\n').append(mode);
             }
-            // Geyser loads only as a Paper or Purpur plugin; a folder switched to another platform keeps plugins/.
-            Platform platform = server.platform();
-            String bedrock = platform == Platform.PAPER || platform == Platform.PURPUR
-                    ? BedrockConfig.line(config.serverDir()) : null;
+            // Only where Geyser can run: not after a platform switch that kept plugins/, nor behind a proxy (#590).
+            String bedrock = BedrockRule.startLine(server.platform(), config.serverDir());
             if (bedrock != null) {
                 out.append('\n').append(bedrock);
             }

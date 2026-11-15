@@ -155,6 +155,9 @@ public final class Core implements AutoCloseable {
             BuildTools.register(tools, config, world, new Builder(hub, world, backups::beforeBigEdit));
             TextureTools.register(tools, hub, pack, config);
             PlayerTools players = PlayerTools.register(tools, config, hub, world);
+            // On a proxy every world, build and player tool answers one line before it sends, saves or stops anything,
+            // whether or not it reaches the agent (ADR 0045, #591).
+            tools.gate(WORLD_TOOLS, () -> server.platform().noWorldTools());
             return new Bench(config, hub, server, pack, players, tools, background, new AtomicBoolean());
         }
 
@@ -180,6 +183,10 @@ public final class Core implements AutoCloseable {
     interface OpenCheck {
         void check(CoreConfig config, AgentHub hub) throws IOException;
     }
+
+    /** The tools that need a world (to read, edit, save or roll back, or to join): refused on a proxy. */
+    static final List<String> WORLD_TOOLS = List.of("world_slice", "world_heightmap", "world_render", "world_summary",
+            "world_entities", "build_undo", "structure_save", "build_batch", "player_test");
 
     private final ToolLog log;
     private final ToolRegistry registry;

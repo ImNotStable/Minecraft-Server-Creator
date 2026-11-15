@@ -52,6 +52,12 @@ and port are not settings: Geyser fronts the server it runs in.
    in `plugins/` on Paper or Purpur. The Java port is `server-port` as the server reads it (`ServerAddress`).
 5. Where the API lives is `LoaderInstaller.Urls.geyserApi` (tests point it at a local fake, like the other services).
 
+Amended 2026-11-15 (#590): one rule (`BedrockRule`) decides Geyser against the final platform and Velocity forwarding,
+for the setup and the start line. Geyser works only on Paper or Purpur without `proxy=velocity` (a forwarding backend
+refuses direct joins, Geyser's too). `bedrock=true` elsewhere, and a setup that would keep Geyser already in `plugins/`
+where it cannot work (a platform switch, `proxy=velocity`), are refused in one line before anything changes;
+`bedrock=false` removes the two jars whatever the platform. The `bedrock:` start line is shown only where Geyser works.
+
 ## Consequences
 
 - An AI can make its dev server reachable by Bedrock players with one argument and sees the port on every start.

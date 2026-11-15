@@ -85,6 +85,23 @@ class ProxyForwardingTest {
     }
 
     @Test
+    void enabledReadsBackWhatBackendWrote() throws Exception {
+        assertThat(ProxyForwarding.enabled(dir)).isFalse();
+        Path file = Files.createDirectories(dir.resolve("config")).resolve("paper-global.yml");
+        Files.writeString(file, PAPER_WRITES);
+        assertThat(ProxyForwarding.enabled(dir)).isFalse();
+        ProxyForwarding.backend(dir, SECRET);
+        assertThat(ProxyForwarding.enabled(dir)).isTrue();
+        ProxyForwarding.backend(dir, null);
+        assertThat(ProxyForwarding.enabled(dir)).isFalse();
+        // Another section's enabled: true is not Velocity's; a comment after the value and CRLF lines are.
+        Files.writeString(file, "proxies:\n  bungee-cord:\n    enabled: true\n  velocity:\n    enabled: false\n");
+        assertThat(ProxyForwarding.enabled(dir)).isFalse();
+        Files.writeString(file, "proxies:\r\n  velocity:\r\n    enabled: true # on\r\n");
+        assertThat(ProxyForwarding.enabled(dir)).isTrue();
+    }
+
+    @Test
     void theProxyGetsItsConfigOnceAndTheSecretEveryTime() throws Exception {
         assertThat(ProxyForwarding.proxy(dir, SECRET)).contains("wrote velocity.toml");
         assertThat(dir.resolve("velocity.toml")).content().contains("bind = \"127.0.0.1:25577\"",

@@ -58,7 +58,9 @@ other shared files untouched where possible.
 5. **World, build and player tools on a proxy answer one line**: `Velocity is a proxy with no world or msc agent:
    world, build and player tools do not apply; use them in the backend's workspace`, from `AgentHub.require` (every
    world and build tool goes through it) and `player_test`, instead of waiting for an agent and timing out. The start
-   report says `a proxy: no world or agent`. `server_command`, `server_logs` and `server_wait` use the proxy's console.
+   report says `a proxy: no world or agent`. Amended 2026-11-15 (#591): the line comes from one gate on the tool
+   registry over a fixed list of world tools (`Core.WORLD_TOOLS`, `ToolRegistry.gate`), before the tool runs, so
+   `build_undo backup=`, which never reaches the agent, refuses too; a test puts every tool on one side of the list. `server_command`, `server_logs` and `server_wait` use the proxy's console.
 6. **A `velocity-plugin` template**: Java 25, `velocity-api` as `compileOnly` and annotation processor (the `@Plugin`
    annotation becomes `velocity-plugin.json`), a `/hello` `SimpleCommand`, a `PostLoginEvent` greeting, a plain JUnit
    test of the logic (Velocity has no mock server), `run-velocity` (same run-task version as `run-paper`) for

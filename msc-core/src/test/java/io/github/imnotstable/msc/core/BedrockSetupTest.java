@@ -82,6 +82,60 @@ class BedrockSetupTest {
     }
 
     @Test
+    void bedrockAndVelocityForwardingAreRefusedTogetherBeforeAnythingChanges() throws Exception {
+        Path ws = Files.createDirectories(dir.resolve("proxied"));
+        Path plugins = ws.resolve("run/plugins");
+        try (CoreHarness h = new CoreHarness(ws, c -> downloads.apply(c).withProxySecret(dir.resolve("velocity.secret")))) {
+            Map<String, String> before = TreeSnapshot.of(ws);
+            assertThat(h.error("server_setup", "platform", "paper", "bedrock", true, "proxy", "velocity"))
+                    .isEqualTo("error: bedrock=true does not work with proxy=velocity (the backend refuses direct "
+                            + "joins, Geyser's too)");
+            assertThat(TreeSnapshot.of(ws)).isEqualTo(before);
+
+            // Geyser first, then forwarding: refused until Geyser goes, in the same call or before.
+            h.ok("server_setup", "platform", "paper", "bedrock", true);
+            Map<String, String> withGeyser = TreeSnapshot.of(ws);
+            assertThat(h.error("server_setup", "proxy", "velocity")).isEqualTo("error: Geyser is in plugins/ and does "
+                    + "not work with proxy=velocity (the backend refuses direct joins, Geyser's too): bedrock=false "
+                    + "removes it");
+            assertThat(TreeSnapshot.of(ws)).isEqualTo(withGeyser);
+            assertThat(h.ok("server_setup", "proxy", "velocity", "bedrock", false))
+                    .contains("removed Geyser and Floodgate from plugins/").doesNotContain("bedrock: UDP");
+            assertThat(plugins.resolve("Geyser-Spigot.jar")).doesNotExist();
+
+            // Forwarding on: bedrock=true alone is refused too, since the folder keeps forwarding.
+            assertThat(h.error("server_setup", "bedrock", true)).contains("does not work with proxy=velocity");
+            assertThat(h.ok("server_setup", "proxy", "none", "bedrock", true)).contains("bedrock: UDP");
+        }
+    }
+
+    /** A Paper folder with Geyser switched to each other platform: refused alone, cleaned with bedrock=false. */
+    @Test
+    void aPlatformSwitchRemovesGeyserOnlyWhenAskedAndNeverKeepsItSilently() throws Exception {
+        for (String platform : new String[] {"folia", "velocity", "fabric", "minestom"}) {
+            Path ws = Files.createDirectories(dir.resolve("switch-" + platform));
+            Path plugins = ws.resolve("run/plugins");
+            try (CoreHarness h = new CoreHarness(ws,
+                    c -> downloads.apply(c).withProxySecret(dir.resolve("velocity.secret")))) {
+                h.ok("server_setup", "platform", "paper", "bedrock", true);
+                Map<String, String> before = TreeSnapshot.of(ws);
+
+                assertThat(h.error("server_setup", "platform", platform)).as(platform).isEqualTo("error: Geyser is in "
+                        + "plugins/ and needs paper or purpur (Geyser and Floodgate install as plugins), not " + platform
+                        + ": bedrock=false removes it");
+                assertThat(TreeSnapshot.of(ws)).as(platform).isEqualTo(before);
+
+                assertThat(h.ok("server_setup", "platform", platform, "bedrock", false)).as(platform)
+                        .contains("removed Geyser and Floodgate from plugins/ (their config folders stay)");
+                assertThat(plugins.resolve("Geyser-Spigot.jar")).as(platform).doesNotExist();
+                assertThat(plugins.resolve("floodgate-spigot.jar")).as(platform).doesNotExist();
+                assertThat(BedrockConfig.file(ws.resolve("run"))).as(platform).exists();
+                assertThat(h.ok("server_setup")).as(platform).doesNotContain("Geyser");
+            }
+        }
+    }
+
+    @Test
     void aPlatformWithoutPluginsIsRefusedBeforeAnythingChanges() throws Exception {
         for (String platform : new String[] {"fabric", "quilt", "neoforge", "forge", "minestom"}) {
             Path ws = Files.createDirectories(dir.resolve(platform));
