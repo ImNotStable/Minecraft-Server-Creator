@@ -34,6 +34,17 @@ class WorldBackupToolsTest {
         return level;
     }
 
+    /**
+     * The templates' Minestom world as Minestom 2026.10.07-26.2 writes it: region files under
+     * {@code dimensions/minecraft/overworld}, no {@code level.dat} (#654).
+     */
+    private Path minestomWorld(String text) throws Exception {
+        Path region = workspace.resolve("run/world/dimensions/minecraft/overworld/region/r.0.0.mca");
+        Files.createDirectories(region.getParent());
+        Files.writeString(region, text);
+        return region;
+    }
+
     private static List<String> fakeServer() {
         return List.of(Path.of(System.getProperty("java.home"), "bin", "java").toString(),
                 "-cp", System.getProperty("java.class.path"), FakeServerMain.class.getName());
@@ -76,10 +87,10 @@ class WorldBackupToolsTest {
 
     @Test
     void minestomSendsNoCommandsAndSaysTheBackupIsTheWorldAsLastStopped() throws Exception {
-        world("v1");
+        minestomWorld("v1");
         Platform.remember(CoreConfig.forWorkspace(workspace), Platform.MINESTOM);
         try (CoreHarness h = new CoreHarness(workspace).withAgent()) {
-            assertThat(h.ok("build_undo", "backup", "save")).endsWith(
+            assertThat(h.ok("build_undo", "backup", "save")).startsWith("backup ").contains(" (world; ").endsWith(
                     "\nMinestom saves the world only when it stops: this backup is the world as last stopped");
             assertThat(h.agent.commands).isEmpty();
         }
@@ -124,7 +135,7 @@ class WorldBackupToolsTest {
     @ParameterizedTest(name = "{0} {1}")
     @MethodSource("serverStates")
     void rollbackStopsWhicheverServerRunsAndStartsItAgain(Platform platform, Running running) throws Exception {
-        Path level = world("before");
+        Path level = platform == Platform.MINESTOM ? minestomWorld("before") : world("before");
         if (platform != Platform.PAPER) {
             Platform.remember(CoreConfig.forWorkspace(workspace), platform);
         }

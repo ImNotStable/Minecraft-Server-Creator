@@ -59,7 +59,8 @@ public final class Backups {
         recover(serverDir);
         List<String> worlds = WorldFolders.in(serverDir);
         if (worlds.isEmpty()) {
-            throw new ToolException("no world folder in " + serverDir + " (none with level.dat or region/)");
+            throw new ToolException("no world folder in " + serverDir + " (" + WorldFolders.LAYOUTS
+                    + "); a server writes its world when it saves or stops");
         }
         Files.createDirectories(dir);
         String base = TIME.format(LocalDateTime.now(clock)) + "-" + slug(label);

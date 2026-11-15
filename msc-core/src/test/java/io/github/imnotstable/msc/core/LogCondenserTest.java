@@ -94,6 +94,28 @@ class LogCondenserTest {
         assertThat(LogCondenser.analyze(log, 6000).clean()).isTrue();
     }
 
+    /**
+     * The offline-mode banners MSC's own configuration causes (#656): Velocity's with MSC's velocity.toml, as Velocity
+     * 4.3.1 prints it to the console MSC reads, and Paper's as a backend behind that proxy (its
+     * DedicatedServer patch). A warning that only starts the same is kept.
+     */
+    @Test
+    void offlineBannersFromMscsOwnConfigurationAreDropped() {
+        List<String> log = List.of(
+                "[10:59:52 INFO]: Booting up Velocity 4.3.1...",
+                "[10:59:52 WARN]: The proxy is running in offline mode! This is a security risk and you will NOT receive any support!",
+                "[12:00:01 WARN]: **** SERVER IS RUNNING IN OFFLINE/INSECURE MODE!",
+                "[12:00:01 WARN]: The server will make no attempt to authenticate usernames. Beware.",
+                "[12:00:01 WARN]: Whilst this makes it possible to use Velocity, unless access to your server is properly restricted, it also opens up the ability for hackers to connect with any username they choose.",
+                "[12:00:01 WARN]: Please see https://docs.papermc.io/velocity/security for further information.",
+                "[12:00:01 WARN]: To change this, set \"online-mode\" to \"true\" in the server.properties file.",
+                "[12:00:02 WARN]: The proxy is running in offline mode! This is a security risk and you will NOT receive any support! (plugin)",
+                "[10:59:53 INFO]: Done (1.47s)!");
+        LogCondenser.Condensed c = LogCondenser.analyze(log, 6000);
+        assertThat(c.warnings()).isEqualTo(1);
+        assertThat(c.hidden()).isEqualTo(6);
+    }
+
     @Test
     void forgeStyleLinesDropTheLoggerAndTheSameNoiseIsDropped() {
         List<String> log = List.of(
