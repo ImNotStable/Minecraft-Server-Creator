@@ -5,6 +5,7 @@ import io.github.imnotstable.msc.bench.check.CheckContext;
 import io.github.imnotstable.msc.bench.check.CheckResult;
 import io.github.imnotstable.msc.bench.report.ReportWriter;
 import io.github.imnotstable.msc.bench.run.BenchConfig;
+import io.github.imnotstable.msc.bench.run.PidNamespace;
 import io.github.imnotstable.msc.bench.run.BenchRunner;
 import io.github.imnotstable.msc.bench.run.ChildProcesses;
 import io.github.imnotstable.msc.bench.run.Disk;
@@ -60,7 +61,8 @@ import java.util.Set;
  */
 public final class Main {
 
-    private static final Set<String> FLAGS = Set.of("--tasks", "--modes", "--repeat", "--tasks-dir", "--config", "--out");
+    private static final Set<String> FLAGS = Set.of("--tasks", "--modes", "--repeat", "--tasks-dir", "--config", "--out",
+            "--model");
     /** The report's name inside a run folder. */
     static final String REPORT = "report.md";
     private static final Set<String> PATH_FLAGS = Set.of("--tasks-dir", "--config", "--out");
@@ -151,7 +153,9 @@ public final class Main {
         List<String> positional = new ArrayList<>();
         Map<String, String> flags = new HashMap<>();
         for (int i = 0; i < args.length; i++) {
-            if (FLAGS.contains(args[i])) {
+            if (args[i].equals("--isolate")) {
+                flags.put(args[i], "");
+            } else if (FLAGS.contains(args[i])) {
                 if (i + 1 >= args.length) {
                     throw new IllegalArgumentException(args[i] + " needs a value");
                 }
@@ -177,7 +181,7 @@ public final class Main {
             }
             case "run" -> {
                 if (positional.size() != 1) {
-                    throw new IllegalArgumentException("usage: run [--tasks a,b] [--modes m1,m2] [--repeat N]; "
+                    throw new IllegalArgumentException("usage: run [--tasks a,b] [--modes m1,m2] [--repeat N] [--model M] [--isolate]; "
                             + "unexpected " + positional.get(1));
                 }
                 yield runBench(tasksDir, flags, out, home, temp);
@@ -199,7 +203,7 @@ public final class Main {
     }
 
     static String usage() {
-        return "usage: msc-bench list | run [--tasks a,b] [--modes m1,m2] [--repeat N] [--out DIR, default "
+        return "usage: msc-bench list | run [--tasks a,b] [--modes m1,m2] [--repeat N] [--model M] [--isolate] [--out DIR, default "
                 + RunIsolation.DEFAULT_RUNS_SHOWN + "] | check <task> <workspace> | report <runDir>";
     }
 
@@ -233,6 +237,12 @@ public final class Main {
         int repeat = repeat(flags.getOrDefault("--repeat", "1"));
         Path configFile = Path.of(flags.getOrDefault("--config", "bench.json"));
         BenchConfig config = loadConfig(configFile, home);
+        if (flags.containsKey("--model")) {
+            config = config.withModel(flags.get("--model"));
+        }
+        if (flags.containsKey("--isolate")) {
+            config = config.withAgentPrefix(PidNamespace.require());
+        }
         RunSelection selection = RunSelection.resolve(tasksDir, TaskLoader.loadAll(tasksDir), flags.get("--tasks"),
                 config.modes().keySet(), configFile, flags.get("--modes"));
         config.requirePaths(configFile, selection.modes());
@@ -420,12 +430,14 @@ public final class Main {
             }
         };
         try {
+            if (task.freesPortsBeforeChecks()) {
+                // As in a run: a server answering on the bench's ports holds in memory what a reset deletes, and a
+                // check's own server needs the game port, so it is stopped first (#577); the RCON checks then start
+                // the workspace's own server. Nothing is killed by its folder: the command that started this check
+                // names the workspace too.
+                ServerManager.clearPorts((config == null ? BenchConfig.defaults() : config).server(), null);
+            }
             if (!task.reset().isEmpty()) {
-                // As in a run: a server answering on the bench's ports holds in memory what the reset deletes, so it
-                // is stopped first, and the RCON checks start the workspace's own server on the reset files.
-                if (config != null && task.needsServer()) {
-                    ServerManager.clearPorts(config.server());
-                }
                 task.reset().apply(workspace);
                 out.printf("reset before checks: deleted %s%n", String.join(", ", task.reset().delete()));
             }

@@ -44,8 +44,8 @@ public final class BenchRunner {
     private final Disk disk;
     /** The agent, servers and check processes of the attempt under way, killed if the run is cut short. */
     private final ChildProcesses children = new ChildProcesses();
-    /** True while an attempt whose task has a Paper server is under way. */
-    private volatile boolean serverTask;
+    /** True while an attempt whose task uses the bench's ports is under way ({@link TaskDef#usesBenchPorts}). */
+    private volatile boolean portsTask;
     private String stoppedBy;
     private IOException notRecorded;
 
@@ -123,15 +123,22 @@ public final class BenchRunner {
     }
 
     /**
-     * Stops the run for good: kills the agent, server and check processes under way with their descendants, and
-     * sends {@code stop} to a server on the bench's RCON port (the agent may have started one outside its own
-     * process tree, through a Gradle daemon). Runs from the shutdown hook; later attempts do not start.
+     * Stops the run for good: kills the agent, server and check processes under way with their descendants, sends
+     * {@code stop} to a server on the bench's RCON port, and kills what runs in the run's attempt folders (the agent
+     * may have started a server outside its own process tree, through a Gradle daemon or detached, #577). Runs from
+     * the shutdown hook; later attempts do not start.
      */
     public void abort() {
         children.killAll();
-        if (serverTask) {
+        if (portsTask) {
             ServerManager.sendStop(config.server());
         }
+        AttemptProcesses.kill(attemptsDir());
+    }
+
+    /** The folder holding every attempt folder of this run. */
+    private Path attemptsDir() {
+        return runDir.resolve("attempts").toAbsolutePath();
     }
 
     private List<RunRecord> runAll(List<TaskDef> tasks, List<String> modes, int repeats) throws IOException {
@@ -188,26 +195,28 @@ public final class BenchRunner {
     private RunRecord runWithMcpRetries(TaskDef task, String modeName, int repeat) throws IOException {
         String required = config.modes().get(modeName).requireMcp();
         RunRecord record = null;
+        String problem = null;
         for (int attempt = 1; attempt <= MCP_TRIES; attempt++) {
             record = runOne(task, modeName, repeat, attempt);
             // Claude Code connects MCP servers in the background, so the init event can list none even though the
             // tools arrived a moment later: a logged tool call proves the server was there. Without a parsed result
             // (a time-out, a crash) no init event says the server was missing, so the attempt stands as it is.
-            if (required == null || record.error() != null || record.timedOut() || !record.agent().parsed()
-                    || record.agent().mcpConnected().contains(required) || record.tools().calls() > 0) {
+            problem = required == null ? null : record.agent().mcpProblem(required);
+            if (problem == null || record.error() != null || record.timedOut() || !record.agent().parsed()
+                    || record.tools().calls() > 0) {
                 return record;
             }
-            log.printf("[%s] %s #%d: MCP server %s was not connected when the agent started (try %d of %d)%n",
-                    modeName, task.id(), repeat, required, attempt, MCP_TRIES);
+            log.printf("[%s] %s #%d: %s, and no tool call was logged (try %d of %d)%n",
+                    modeName, task.id(), repeat, problem, attempt, MCP_TRIES);
         }
         return record.failed("MCP server " + required + " was not connected when the agent started, "
-                + MCP_TRIES + " tries");
+                + MCP_TRIES + " tries: " + problem);
     }
 
     RunRecord runOne(TaskDef task, String modeName, int repeat, int attempt) throws IOException {
         BenchConfig.Mode mode = config.modes().get(modeName);
         String name = modeName + "-" + repeat + (attempt > 1 ? "-try" + attempt : "");
-        Path attemptDir = runDir.resolve("attempts").resolve(task.id()).resolve(name).toAbsolutePath();
+        Path attemptDir = attemptsDir().resolve(task.id()).resolve(name);
         if (Files.exists(attemptDir)) {
             // Its workspace and tool log hold an earlier attempt's work, which this attempt's checks would score.
             throw new IOException("attempt folder " + attemptDir + " already exists");
@@ -220,7 +229,7 @@ public final class BenchRunner {
         if (mcpTemplate != null) {
             Path mcpConfig = attemptDir.resolve("mcp.json");
             Files.createDirectories(attemptDir);
-            Files.writeString(mcpConfig, fillJson(Text.readOwn(mcpTemplate), values));
+            PrivateFile.write(mcpConfig, fillJson(Text.readOwn(mcpTemplate), values));
             values.put("mcpConfig", slashes(mcpConfig));
         }
 
@@ -235,12 +244,20 @@ public final class BenchRunner {
         String error = null;
 
         ServerManager server = null;
-        serverTask = task.needsServer();
+        portsTask = task.usesBenchPorts();
         // The step a failure before the agent starts is named after; null once the agent has started.
-        String setupStep = "preparing the workspace";
+        String setupStep = "freeing the bench's ports";
         try {
-            if (task.needsServer()) {
-                ServerManager.clearPorts(config.server());
+            if (task.usesBenchPorts()) {
+                // A server an earlier attempt of this run left there is killed; anything else is refused here, before
+                // the agent works for nothing.
+                ServerManager.clearPorts(config.server(), attemptsDir());
+            }
+            setupStep = "preparing the workspace";
+            if (mcpTemplate != null) {
+                setupStep = "checking the core port";
+                CoreProcesses.requireFreePort(config.corePort());
+                setupStep = "preparing the workspace";
             }
             Workspaces.prepare(task, workspace, config, mode, task.needsServer() ? paperJar() : null, values);
             if (task.needsServer()) {
@@ -269,6 +286,7 @@ public final class BenchRunner {
                     .redirectInput(ProcessBuilder.Redirect.from(nullDevice()))
                     .redirectOutput(attemptDir.resolve("agent-stdout.json").toFile())
                     .redirectError(attemptDir.resolve("agent-stderr.log").toFile());
+            AgentEnvironment.dropParentSession(builder.environment());
             mode.env().forEach((k, v) -> builder.environment().put(k, Placeholders.fill(v, values)));
             Files.writeString(attemptDir.resolve("prompt.md"), values.get("prompt"));
 
@@ -323,13 +341,15 @@ public final class BenchRunner {
                     return children.start(builder);
                 }
             };
-            if (!task.reset().isEmpty()) {
+            if (task.freesPortsBeforeChecks()) {
+                // A plugin holds what a reset deletes in memory, and a check's own server needs the game port: a
+                // server still running (the bench's, or one the agent left) is stopped first.
                 if (server != null) {
-                    // A plugin holds what the reset deletes in memory: a server still running (the bench's, or one
-                    // the agent left) is stopped first, so the checks start one that loads the reset files.
                     server.close();
-                    ServerManager.clearPorts(config.server());
                 }
+                freePortsBeforeChecks(attemptDir);
+            }
+            if (!task.reset().isEmpty()) {
                 task.reset().apply(workspace);
             }
             for (Check check : task.checks()) {
@@ -351,7 +371,23 @@ public final class BenchRunner {
                     }
                 }
             }
-            serverTask = false;
+            portsTask = false;
+            if (mcpTemplate != null) {
+                // Claude Code does not always stop its MCP servers when it exits: a core left running keeps the core
+                // port, and the next toolset attempt's core cannot start.
+                int left = CoreProcesses.stop(CoreProcesses.marker(values.get("attemptDir")));
+                if (left > 0) {
+                    log.printf("[%s] %s #%d: stopped %d msc-core process(es) the agent left running%n",
+                            modeName, task.id(), repeat, left);
+                }
+            }
+            // What the agent left running anywhere in its folder, such as a server it detached (#577): the attempt
+            // is over, and the next one must not meet it.
+            int left = AttemptProcesses.kill(attemptDir);
+            if (left > 0) {
+                log.printf("[%s] %s #%d: stopped %d process(es) the attempt left running%n",
+                        modeName, task.id(), repeat, left);
+            }
         }
 
         ToolStats tools = ToolLogReader.read(attemptDir.resolve("tool-calls.jsonl"), log::println);
@@ -360,6 +396,14 @@ public final class BenchRunner {
                 && results.stream().allMatch(CheckResult::passed);
         return new RunRecord(task.id(), task.category(), modeName, repeat, startedAt, passed, wallMs, timedOut,
                 exitCode, error, agent, tools, results);
+    }
+
+    private void freePortsBeforeChecks(Path attemptDir) throws IOException {
+        try {
+            ServerManager.clearPorts(config.server(), attemptDir);
+        } catch (IOException e) {
+            throw new IOException("freeing the bench's ports before the checks: " + e.getMessage(), e);
+        }
     }
 
     /** The terminal line for one finished attempt; a failed one ends with {@link RunRecord#failureReason()}. */

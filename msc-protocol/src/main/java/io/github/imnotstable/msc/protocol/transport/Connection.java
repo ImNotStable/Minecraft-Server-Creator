@@ -4,6 +4,7 @@ import com.google.gson.JsonParseException;
 import com.google.gson.JsonObject;
 import io.github.imnotstable.msc.protocol.Limits;
 import io.github.imnotstable.msc.protocol.ProtocolException;
+import io.github.imnotstable.msc.protocol.message.Challenge;
 import io.github.imnotstable.msc.protocol.message.ErrorCodes;
 import io.github.imnotstable.msc.protocol.message.Event;
 import io.github.imnotstable.msc.protocol.message.Goodbye;
@@ -12,6 +13,7 @@ import io.github.imnotstable.msc.protocol.message.Message;
 import io.github.imnotstable.msc.protocol.message.MessageCodec;
 import io.github.imnotstable.msc.protocol.message.Ping;
 import io.github.imnotstable.msc.protocol.message.Pong;
+import io.github.imnotstable.msc.protocol.message.Proof;
 import io.github.imnotstable.msc.protocol.message.RawJson;
 import io.github.imnotstable.msc.protocol.message.Request;
 import io.github.imnotstable.msc.protocol.message.Response;
@@ -152,9 +154,12 @@ public final class Connection implements AutoCloseable {
                 .thenApply(sent -> Duration.ofNanos(System.nanoTime() - sent));
     }
 
-    /** Read one raw frame during the handshake, before {@link #start} begins the read loop. */
+    /**
+     * Read one raw frame during the handshake, before {@link #start} begins the read loop. At most
+     * {@link Limits#MAX_HANDSHAKE_FRAME_BYTES}: before the peer has proved itself it gets no 16 MiB buffer.
+     */
     String readHandshakeFrame() throws IOException {
-        String frame = reader.read();
+        String frame = reader.read(Limits.MAX_HANDSHAKE_FRAME_BYTES);
         if (frame == null) {
             throw new ConnectionClosedException("connection " + label + " closed during handshake", null);
         }
@@ -240,6 +245,8 @@ public final class Connection implements AutoCloseable {
             }
             case Hello hello -> throw new ProtocolException("unexpected hello after handshake");
             case Welcome welcome -> throw new ProtocolException("unexpected welcome after handshake");
+            case Challenge challenge -> throw new ProtocolException("unexpected challenge after handshake");
+            case Proof proof -> throw new ProtocolException("unexpected proof after handshake");
         }
         return true;
     }

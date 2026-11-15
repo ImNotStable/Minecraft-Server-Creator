@@ -109,6 +109,27 @@ class BackupsTest {
     }
 
     @Test
+    void backupsFromOneSecondSortByWhenTakenAndAmbiguousNamesAreRefused() throws Exception {
+        Path run = server();
+        file(run.resolve("world/level.dat"), "v");
+        Backups b = backups("2026-11-14T10:00:00Z");
+        b.save(run, "zeta", null);
+        b.save(run, "alpha", null);
+        b.save(run, "alpha", null);
+        // By name, zeta would be newest; it was taken first.
+        assertThat(b.list()).extracting(Backups.Backup::name).containsExactly("20261114-100000-alpha-2",
+                "20261114-100000-alpha", "20261114-100000-zeta");
+        assertThat(b.find("zeta").name()).isEqualTo("20261114-100000-zeta");
+        assertThat(b.find("20261114-100000-alpha").name()).isEqualTo("20261114-100000-alpha");
+        assertThatThrownBy(() -> b.find("alpha")).hasMessage("backup alpha matches 2: 20261114-100000-alpha-2, "
+                + "20261114-100000-alpha; give the whole name");
+        assertThatThrownBy(() -> b.find(" ")).hasMessageStartingWith("backup takes list, save [label], or a backup name; kept: ");
+        // A backup from before the order file sorts after every ordered one.
+        Files.createDirectories(root.resolve(".msc/backups/20261114-110000-legacy/world"));
+        assertThat(b.list()).extracting(Backups.Backup::name).last().isEqualTo("20261114-110000-legacy");
+    }
+
+    @Test
     void recoverPutsAnInterruptedRestoreBackAndFinishesAComplete() throws Exception {
         Path run = server();
         Path stage = run.resolve(Backups.STAGE);

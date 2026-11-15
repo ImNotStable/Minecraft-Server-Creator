@@ -19,7 +19,7 @@ The `minestom-server` template in `msc-templates` already does this and ships th
 
 ## What it does
 
-- Connects to `msc-core` over `msc-protocol` (`MSC_CORE_ADDRESS`, `MSC_TOKEN`; or `-Dmsc.core.address=host:port -Dmsc.token=...`), retrying and reconnecting like the Paper agent.
+- Connects to `msc-core` over `msc-protocol` (`MSC_CORE_ADDRESS`, `MSC_TOKEN`; or `-Dmsc.core.address=host:port -Dmsc.token.file=<file holding the token>`, or `-Dmsc.token=...`, which `ps` shows to every user), retrying and reconnecting like the Paper agent.
 - Implements every operation in `Ops`, with the Paper agent's limits, errors, undo and events.
 - Runs world work on Minestom's scheduler at tick start in 20 ms slices; loads or generates the chunks a call touches first, and unloads the ones only a read loaded.
 - `server.command` runs the server's own commands (Minestom has no vanilla ones).

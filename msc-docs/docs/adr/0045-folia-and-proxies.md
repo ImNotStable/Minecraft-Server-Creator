@@ -25,7 +25,7 @@ What each needs, measured against that model:
 - **BungeeCord** comes only from SpigotMC's Jenkins (`lastSuccessfulBuild`, no checksum, no versioned API);
   **Waterfall** is end of life since 2024. Velocity is PaperMC's supported proxy.
 
-Limits: no new MCP tools, the tool list under 16,000 characters (15,898 before this change), `msc-protocol` and the
+Limits: no new MCP tools, the tool list under 16,000 characters (15,879 by the tools.md count on main before this change), `msc-protocol` and the
 other shared files untouched where possible.
 
 ## Decision
@@ -66,8 +66,8 @@ other shared files untouched where possible.
    `Platform.detect` reads `velocity-api` in the build files as Velocity, and `api_search` indexes the Velocity API and
    Adventure from the Gradle cache.
 7. **Tool text**: `platform` lists `folia` and `velocity`, `proxy` is one short argument, `project_scaffold` names
-   `velocity-plugin`. The additions are paid for by trims, so the list shrinks (by about 12 characters, 15,794 to
-   15,782 as tools.md counts it), leaving room for the Geyser `bedrock` argument (ADR 0046): `api_search` no longer
+   `velocity-plugin`. The additions are paid for by trims, so the list shrinks (by 12 characters: 15,879 to
+   15,867 as tools.md counts it, with the Geyser `bedrock` argument of ADR 0046 in): `api_search` no longer
    lists the platforms, `api_class`'s example is `Player` only, `platform` drops "Default: the project's", and the
    minigame templates and two folder arguments are worded shorter.
 

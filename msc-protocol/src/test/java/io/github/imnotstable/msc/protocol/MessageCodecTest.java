@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonPrimitive;
 import io.github.imnotstable.msc.protocol.message.AgentInfo;
+import io.github.imnotstable.msc.protocol.message.Challenge;
 import io.github.imnotstable.msc.protocol.message.Event;
 import io.github.imnotstable.msc.protocol.message.Goodbye;
 import io.github.imnotstable.msc.protocol.message.Hello;
@@ -13,6 +14,7 @@ import io.github.imnotstable.msc.protocol.message.Message;
 import io.github.imnotstable.msc.protocol.message.MessageCodec;
 import io.github.imnotstable.msc.protocol.message.Ping;
 import io.github.imnotstable.msc.protocol.message.Pong;
+import io.github.imnotstable.msc.protocol.message.Proof;
 import io.github.imnotstable.msc.protocol.message.RawJson;
 import io.github.imnotstable.msc.protocol.message.Request;
 import io.github.imnotstable.msc.protocol.message.Response;
@@ -32,8 +34,10 @@ class MessageCodecTest {
         JsonObject params = new JsonObject();
         params.addProperty("command", "say hi\nthere");
         List<Message> messages = List.of(
-                new Hello(1, "tok", new AgentInfo("paper", "26.3.build.231-stable", "26.3", List.of("server.info"))),
-                new Welcome(1, "s-1"),
+                new Hello(2, "n-a", new AgentInfo("paper", "26.3.build.231-stable", "26.3", List.of("server.info"))),
+                new Challenge("n-c"),
+                new Proof("p-a"),
+                new Welcome(2, "s-1", "p-c"),
                 new Goodbye("shutdown", "bye"),
                 new Request(7, "server.command", params),
                 Response.ok(7, new JsonPrimitive(42)),

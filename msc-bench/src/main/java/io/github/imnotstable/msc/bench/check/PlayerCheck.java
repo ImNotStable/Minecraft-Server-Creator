@@ -97,9 +97,14 @@ record PlayerCheck(
     }
 
     @Override
+    public boolean startsServer() {
+        return true;
+    }
+
+    @Override
     public CheckResult run(CheckContext context) {
         Path workspace = context.workspace();
-        Path builtJar = workspace.resolve(Placeholders.fill(jar, context.placeholders()));
+        Path builtJar = workspace.resolve(jar);
         if (!Files.isRegularFile(builtJar)) {
             return CheckResult.fail(name, "no server jar at " + jar + " (did the build pass?)");
         }
@@ -112,7 +117,7 @@ record PlayerCheck(
             Files.createDirectories(dir);
             Files.copy(builtJar, dir.resolve("server.jar"), StandardCopyOption.REPLACE_EXISTING);
             // The console is written and read as UTF-8 below; so must the server's Java speak (#478).
-            server = context.start(ServerJava.processBuilder(Placeholders.fill(command, context.placeholders()))
+            server = context.start(ServerJava.processBuilder(command)
                     .directory(dir.toFile())
                     .redirectErrorStream(true)
                     .redirectOutput(log.toFile()));
@@ -122,7 +127,7 @@ record PlayerCheck(
             }
             StringBuilder seen = new StringBuilder();
             if (!script.isEmpty()) {
-                int p = Integer.parseInt(Placeholders.fill(port, context.placeholders()).strip());
+                int p = Integer.parseInt(port.strip());
                 try (Bot bot = Bots.join(player, "127.0.0.1", p, FLAT, Duration.ofSeconds(30), protocols())) {
                     seen.append(bot.run(script, "world")).append('\n');
                 }
@@ -130,7 +135,7 @@ record PlayerCheck(
             OutputStream in = server.getOutputStream();
             int before = read(log).length();
             for (String line : console) {
-                in.write((Placeholders.fill(line, context.placeholders()) + "\n").getBytes(StandardCharsets.UTF_8));
+                in.write((line + "\n").getBytes(StandardCharsets.UTF_8));
                 in.flush();
             }
             if (!console.isEmpty()) {

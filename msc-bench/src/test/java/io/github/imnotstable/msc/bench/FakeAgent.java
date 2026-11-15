@@ -32,6 +32,14 @@ public final class FakeAgent {
             Files.createDirectories(file.toAbsolutePath().getParent());
             Files.writeString(file, leave.substring(leave.indexOf('=') + 1));
         }
+        // FAKE_LEAVE_SERVER "port": a server the agent started in the workspace and left running when it exited, as
+        // a detached Minestom server (#577). It names the workspace on its command line, as a jar path there does.
+        String leaveServer = System.getenv("FAKE_LEAVE_SERVER");
+        if (leaveServer != null) {
+            Path workspace = Path.of("").toAbsolutePath();
+            PortHolder.start(workspace, Integer.parseInt(leaveServer), workspace.resolve("left-server.port"),
+                    workspace.resolve("build/libs/game.jar").toString());
+        }
         if (System.getenv("FAKE_HANG") != null) {
             // The marker comes first: the OS cuts long command lines.
             new ProcessBuilder(ProcessHandle.current().info().command().orElse("java"),

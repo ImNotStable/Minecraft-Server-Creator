@@ -3,6 +3,9 @@ package io.github.imnotstable.msc.core;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.imnotstable.msc.core.fixture.FakeServerMain;
+import io.github.imnotstable.msc.core.server.Platform;
+import io.github.imnotstable.msc.core.tools.WorldBackupsAccess;
+import java.time.Duration;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -22,6 +25,57 @@ class WorldBackupToolsTest {
         Files.createDirectories(level.getParent());
         Files.writeString(level, text);
         return level;
+    }
+
+    private static List<String> fakeServer() {
+        return List.of(Path.of(System.getProperty("java.home"), "bin", "java").toString(),
+                "-cp", System.getProperty("java.class.path"), FakeServerMain.class.getName());
+    }
+
+    /** The console lines the fake server echoed for save commands, in order, once save-on has arrived. */
+    private static List<String> saveCommands(CoreHarness h) {
+        h.ok("server_wait", "until", "console: save-on", "timeoutSeconds", 10);
+        return h.ok("server_logs", "mode", "grep", "pattern", "console: save").lines()
+                .map(l -> l.substring(l.indexOf("console: ") + 9)).toList();
+    }
+
+    @Test
+    void withoutAnAgentTheConsoleFlushesAndWaitsForTheSave() throws Exception {
+        world("v1");
+        Files.writeString(workspace.resolve("run/no-agent.flag"), "");
+        try (CoreHarness h = new CoreHarness(workspace, c -> c.withServerCommand(fakeServer()))) {
+            assertThat(h.ok("server_start", "timeoutSeconds", 30)).contains("no agent connected");
+            assertThat(h.ok("build_undo", "backup", "save")).matches("backup \\d{8}-\\d{6}-manual \\(world; 0\\.0 MB\\)");
+            assertThat(saveCommands(h)).containsExactly("save-off", "save-all flush", "save-on");
+        }
+    }
+
+    @Test
+    void aServerThatNeverConfirmsTheSaveGetsNoBackupAndAutosaveBack() throws Exception {
+        world("v1");
+        Files.writeString(workspace.resolve("run/no-agent.flag"), "");
+        Files.writeString(workspace.resolve("run/no-save.flag"), "");
+        Duration old = WorldBackupsAccess.saveWait(Duration.ofSeconds(1));
+        try (CoreHarness h = new CoreHarness(workspace, c -> c.withServerCommand(fakeServer()))) {
+            h.ok("server_start", "timeoutSeconds", 30);
+            assertThat(h.error("build_undo", "backup", "save"))
+                    .isEqualTo("error: the server did not confirm save-all flush within 1s; no backup taken");
+            assertThat(saveCommands(h)).containsExactly("save-off", "save-all flush", "save-on");
+            assertThat(h.ok("build_undo", "backup", "list")).isEqualTo("no backups yet");
+        } finally {
+            WorldBackupsAccess.saveWait(old);
+        }
+    }
+
+    @Test
+    void minestomSendsNoCommandsAndSaysTheBackupIsTheWorldAsLastStopped() throws Exception {
+        world("v1");
+        Platform.remember(CoreConfig.forWorkspace(workspace), Platform.MINESTOM);
+        try (CoreHarness h = new CoreHarness(workspace).withAgent()) {
+            assertThat(h.ok("build_undo", "backup", "save")).endsWith(
+                    "\nMinestom saves the world only when it stops: this backup is the world as last stopped");
+            assertThat(h.agent.commands).isEmpty();
+        }
     }
 
     @Test
@@ -55,9 +109,7 @@ class WorldBackupToolsTest {
     @Test
     void rollbackStopsRestoresAndStartsTheServerAgain() throws Exception {
         Path level = world("before");
-        List<String> java = List.of(Path.of(System.getProperty("java.home"), "bin", "java").toString(),
-                "-cp", System.getProperty("java.class.path"), FakeServerMain.class.getName());
-        try (CoreHarness h = new CoreHarness(workspace, c -> c.withServerCommand(java))) {
+        try (CoreHarness h = new CoreHarness(workspace, c -> c.withServerCommand(fakeServer()))) {
             String saved = h.ok("build_undo", "backup", "save").split(" ")[1];
             h.ok("server_start", "timeoutSeconds", 30);
             h.ok("build_batch", "steps", "set 0,64,0 stone");
@@ -78,6 +130,13 @@ class WorldBackupToolsTest {
                     .contains("\nserver not started (it was not running)");
             assertThat(level).hasContent("after");
             assertThat(h.error("build_undo", "backup", "nope")).contains("no backup nope; kept: ");
+            // Blank or ambiguous never rolls back (#573): two before-rollback backups now, both taken this second.
+            Files.writeString(level, "kept");
+            assertThat(h.error("build_undo", "backup", "")).startsWith("error: backup takes list, save [label], or a backup name; kept: ");
+            assertThat(h.error("build_undo", "backup", "  ")).contains("backup takes list");
+            assertThat(h.error("build_undo", "backup", "before-rollback")).contains("backup before-rollback matches 2: ")
+                    .endsWith("; give the whole name");
+            assertThat(level).hasContent("kept");
         }
     }
 }

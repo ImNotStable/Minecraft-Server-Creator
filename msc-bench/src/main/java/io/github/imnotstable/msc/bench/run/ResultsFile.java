@@ -331,7 +331,8 @@ public final class ResultsFile {
                 json.wholeLong("outputTokens", JsonNumbers.AMOUNT, 0),
                 json.number("costUsd", JsonNumbers.COST, 0),
                 json.exactString("model", ""),
-                json.exactStrings("mcpConnected"));
+                json.exactStrings("mcpConnected"),
+                json.exactStrings("mcpNotConnected"));
     }
 
     private static ToolStats tools(UserJson json) {

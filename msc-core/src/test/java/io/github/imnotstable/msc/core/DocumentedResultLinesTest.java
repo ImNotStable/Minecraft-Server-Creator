@@ -215,6 +215,13 @@ class DocumentedResultLinesTest {
             new SetupLine("`fabric api <version>`", "fabric api \\S+ \\((downloaded|cached)\\)"),
             new SetupLine("`agent installed in mods/` (or `plugins/`)", "agent installed in (mods|plugins)/"),
             new SetupLine("`warning: msc <agent> agent not found ...`", "warning: msc \\w+ agent not found\\b.*"),
+            new SetupLine("`geyser <version> build <n> (downloaded), floodgate ...`",
+                    "geyser \\S+ build \\d+ \\((downloaded|cached|already there)\\), floodgate .*"),
+            new SetupLine("`bedrock.port was taken, moved to N`", "bedrock\\.port was taken, moved to \\d+"),
+            new SetupLine("`bedrock: UDP <address>:<port> (Geyser, fronting Java port <port>; ...)`",
+                    "bedrock: UDP \\S+:\\d+ \\(Geyser, fronting Java port \\d+; .*\\)"),
+            new SetupLine("`removed Geyser and Floodgate from plugins/ (their config folders stay)`",
+                    "removed Geyser and Floodgate from plugins/ \\(their config folders stay\\)"),
             new SetupLine("`eula.txt has eula=true from the owner's one-time acceptance for this machine (...)`",
                     "eula\\.txt has eula=true from the owner's one-time acceptance for this machine \\(.*\\)"),
             new SetupLine("`note: eula.txt has eula=true; ...`", "note: eula\\.txt has eula=true; .*"),
@@ -262,6 +269,16 @@ class DocumentedResultLinesTest {
             try (CoreHarness h = new CoreHarness(purpur, c -> downloads.apply(c)
                     .withMachineEula(MachineEula.forHome(root.resolve("nobody"))))) {
                 results.add(h.ok("server_setup", "platform", "purpur", "mode", "build"));
+                results.add(h.ok("server_setup", "bedrock", true));
+                // Another program holds the configured Bedrock port: the next setup moves it.
+                Path geyser = purpur.resolve("run/plugins/Geyser-Spigot/config.yml");
+                try (java.net.DatagramSocket held = new java.net.DatagramSocket(0,
+                        java.net.InetAddress.getByName("127.0.0.1"))) {
+                    Files.writeString(geyser, Files.readString(geyser)
+                            .replaceAll("(?m)^  port: \\d+$", "  port: " + held.getLocalPort()));
+                    results.add(h.ok("server_setup"));
+                }
+                results.add(h.ok("server_setup", "bedrock", false));
             }
             for (String platform : List.of("fabric", "quilt", "neoforge", "forge")) {
                 Path ws = agents(Files.createDirectories(root.resolve(platform)));
