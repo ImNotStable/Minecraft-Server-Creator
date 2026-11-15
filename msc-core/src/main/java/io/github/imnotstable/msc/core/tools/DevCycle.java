@@ -181,15 +181,17 @@ final class DevCycle {
     }
 
     /**
-     * Check first: a project the workspace's server does not run (another agent family) is refused before the build,
-     * not deployed where that server never loads it with an OK (#636, ADR 0048).
+     * Check first: a project the workspace's server does not run (another agent family than every platform the
+     * project runs on, {@link Platform#runsOn}) is refused before the build, not deployed where that server never
+     * loads it with an OK (#636, #642, ADR 0048).
      */
     private void checkServed(Path project) {
-        Platform own = Platform.detect(project);
-        Platform runs = own == null ? null : Platform.otherFamily(config, own);
+        List<Platform> runsOn = Platform.runsOn(project);
+        Platform runs = runsOn.isEmpty() ? null : Platform.otherFamily(config, runsOn);
         if (runs == null) {
             return;
         }
+        Platform own = runsOn.getFirst();
         Path workspace = config.workspace().toAbsolutePath().normalize();
         Path shown = project.toAbsolutePath().normalize();
         String name = shown.equals(workspace) ? "the workspace's project"
@@ -238,11 +240,12 @@ final class DevCycle {
 
     /**
      * The workspace's platform for a project that names none; else the one that serves the project's
-     * ({@link Platform#serving}): its own when the workspace has none yet (the deploy remembers it).
+     * ({@link Platform#serving}, of every platform it runs on): its own when the workspace has none yet (the deploy
+     * remembers it).
      */
     private Platform platform(Path project) {
-        Platform platform = Platform.detect(project);
-        return platform == null ? server.platform() : Platform.serving(config, platform);
+        List<Platform> runsOn = Platform.runsOn(project);
+        return runsOn.isEmpty() ? server.platform() : Platform.serving(config, runsOn);
     }
 
     static final String STOP_LEFTOVER = "stop a server an earlier session left holding the jar";

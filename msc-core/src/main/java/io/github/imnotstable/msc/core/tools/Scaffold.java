@@ -63,10 +63,16 @@ final class Scaffold {
         } catch (IllegalArgumentException | IllegalStateException e) {
             throw new ToolException(String.valueOf(e.getMessage()));
         }
+        // paper-server writes only server files (server.properties, eula.txt), used by every platform: not a project,
+        // so it neither moves the workspace nor is a project the workspace's server could fail to run (#643).
+        boolean isProject = platform != null && !template.equals(Templates.PAPER_SERVER);
         // The server that runs the project: a workspace set up as Quilt or Purpur keeps its own for a Fabric mod or a
-        // Paper plugin, so its platform is neither overwritten nor reported as not set up (#631).
-        Platform serves = platform == null ? null : Platform.serving(config, platform);
-        boolean remember = platformId != null && !template.equals(Templates.PAPER_SERVER) && serves == platform
+        // Paper plugin, so its platform is neither overwritten nor reported as not set up (#631). The same rule as
+        // dev_cycle's, which reads the project's files: a template's show its platform only. Server files: the
+        // workspace's own server.
+        Platform serves = platform == null ? null
+                : isProject ? Platform.serving(config, List.of(platform)) : Platform.current(config);
+        boolean remember = isProject && serves == platform
                 && (dir.equals(config.workspace()) || !Files.exists(Platform.file(config)));
         boolean warm = Boolean.parseBoolean(Templates.info(template).get("warmup"));
         Steps steps = new Steps("project_scaffold").then(WRITE_FILES);
@@ -103,7 +109,7 @@ final class Scaffold {
         }
         // A subfolder project of another family than the workspace's server (a Fabric mod in a Paper workspace): the
         // workspace keeps its platform, and dev_cycle refuses until server_setup switches it (#636, ADR 0048).
-        Platform other = serves == null || remember ? null : Platform.otherFamily(config, platform);
+        Platform other = !isProject || remember ? null : Platform.otherFamily(config, List.of(platform));
         if (other != null || serves != null && serves.needsServerSetup()
                 && !Files.exists(config.serverDir().resolve(serves.serverJar()))) {
             // The server is not set up yet: a first dev_cycle would build for nothing and then stop there (#627).
