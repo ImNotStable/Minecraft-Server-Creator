@@ -210,6 +210,24 @@ class WorldToolsTest {
         assertThat(h.error("build_undo")).contains("nothing to undo");
     }
 
+    /** #695: an older edit is undone only when no later edit still applied set any of its blocks. */
+    @Test
+    void anOlderEditUnderALaterOneIsNotUndone() {
+        h.ok("build_batch", "steps", "fill 0,64,0 2,64,2 stone");
+        h.ok("build_batch", "steps", "set 1,64,1 gold_block");
+        h.ok("build_batch", "steps", "set 9,64,9 glass");
+        assertThat(h.error("build_undo", "edit", "e1")).isEqualTo("error: e1 not undone: later edit e2 set some of "
+                + "the same blocks, which undoing e1 would wipe. Undo it first (build_undo edit=e2), then e1.");
+        assertThat(h.agent.get(0, 64, 0)).isEqualTo("minecraft:stone");
+        assertThat(h.agent.get(1, 64, 1)).isEqualTo("minecraft:gold_block");
+        // An older edit no later one touches is undone, and the latest stays the default.
+        assertThat(h.ok("build_undo", "edit", "e2")).isEqualTo("undid e2: 1 blocks restored");
+        assertThat(h.ok("build_undo", "edit", "e1")).isEqualTo("undid e1: 9 blocks restored");
+        assertThat(h.agent.get(1, 64, 1)).isEqualTo("minecraft:air");
+        assertThat(h.ok("build_undo")).isEqualTo("undid e3: 1 blocks restored");
+        assertThat(h.error("build_undo")).contains("nothing to undo");
+    }
+
     @Test
     void largeFillIsSplitAndUndoneAsOneEdit() {
         // 200 x 1 x 200 = 40,000 blocks fits one agent call.
