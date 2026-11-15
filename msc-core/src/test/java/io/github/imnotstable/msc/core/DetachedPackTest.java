@@ -2,8 +2,12 @@ package io.github.imnotstable.msc.core;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.imnotstable.msc.core.fixture.FailingPackHostMain;
 import io.github.imnotstable.msc.core.fixture.FakeBuildMain;
 import io.github.imnotstable.msc.core.fixture.FakeServerMain;
+import io.github.imnotstable.msc.core.server.Platform;
+import io.github.imnotstable.msc.core.texture.PackHost;
+import io.github.imnotstable.msc.core.texture.PackProperties;
 import java.io.IOException;
 import java.net.HttpURLConnection;
 import java.net.Proxy;
@@ -20,7 +24,7 @@ import org.junit.jupiter.api.io.TempDir;
 /**
  * #741: a pack built or rebuilt after server_detach was served in-process only, so a switch away, the switch back and
  * the session end left the detached server offering a URL nothing served. Once a server is detached, the standalone
- * host serves every build.
+ * host serves every build. PackLifecycleOrderTest covers the orders of these calls (ADR 0051).
  */
 class DetachedPackTest {
     @TempDir
@@ -109,6 +113,43 @@ class DetachedPackTest {
                 .contains("\nresource pack sent: players who join get it");
         String rebuilt = h.core.pack().lastBuilt().url();
         assertThat(rebuilt).isNotEqualTo(first);
+        servedThroughSwitchesAndTheSessionEnd(rebuilt);
+    }
+
+    /**
+     * #744: a standalone host that does not come up never fails the call. The pack is served and sent by this session,
+     * every answer says so with the reason in one line (never a stack trace line), server.properties does not offer a
+     * pack that dies with the session, and the next call tries the host again.
+     */
+    @Test
+    void aStandaloneHostThatDoesNotComeUpLeavesThePackServedAndSentAndSaysWhy() throws Exception {
+        Path properties = Files.createDirectories(workspace.resolve("run")).resolve("server.properties");
+        Files.writeString(properties, "motd=x\n");
+        h.ok("server_start", "timeoutSeconds", 30);
+        h.ok("server_detach");
+        h.core.pack().hostCommand(java(FailingPackHostMain.class));
+        pixel("ff0000");
+        String built = h.ok("pack");
+        String url = built.replaceAll("(?s).*\nurl: (\\S+).*", "$1");
+        String why = "could not start a standalone pack host (port " + URI.create(url).getPort()
+                + " is taken: Address already in use)";
+        assertThat(built).contains("\n" + why + ", so the resource pack is served by this session only, until it ends\n")
+                .contains("\napplied: sent to ").doesNotContain("more)");
+        assertThat(serves(url)).as("served by this session").isTrue();
+        assertThat(PackProperties.url(Platform.PAPER, properties)).as("not offered: it ends with the session").isNull();
+        assertThat(h.ok("server_detach")).startsWith("server detached: it keeps running after this session ends.\n"
+                + why + ", so the resource pack is served by this session only, until it ends\nWorld tools");
+        assertThat(h.ok("msc_workspace", "path", "other", "create", true))
+                .contains(" keeps running; " + why + ", so nothing serves the resource pack until the switch back\n");
+        h.ok("msc_workspace", "path", workspace.toString());
+        assertThat(serves(url)).as("served again after the switch back").isTrue();
+
+        h.core.pack().hostCommand(java(PackHost.class));
+        pixel("00ff00");
+        String again = h.ok("pack");
+        assertThat(again).doesNotContain("could not start").contains("\nserver.properties updated to offer this build");
+        String rebuilt = again.replaceAll("(?s).*\nurl: (\\S+).*", "$1");
+        assertThat(PackProperties.url(Platform.PAPER, properties)).isEqualTo(rebuilt);
         servedThroughSwitchesAndTheSessionEnd(rebuilt);
     }
 }

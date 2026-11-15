@@ -19,12 +19,14 @@ import io.github.imnotstable.msc.core.tools.BackgroundWork;
 import io.github.imnotstable.msc.core.tools.BuildTools;
 import io.github.imnotstable.msc.core.tools.LifecycleTools;
 import io.github.imnotstable.msc.core.tools.MetaTools;
+import io.github.imnotstable.msc.core.tools.PackPublisher;
 import io.github.imnotstable.msc.core.tools.PlayerTools;
 import io.github.imnotstable.msc.core.tools.TextureTools;
 import io.github.imnotstable.msc.core.tools.WayArgs;
 import io.github.imnotstable.msc.core.tools.WorldTools;
 import io.github.imnotstable.msc.core.tools.WorldBackups;
 import io.github.imnotstable.msc.core.world.WorldService;
+import io.github.imnotstable.msc.process.ServerPropertiesFile;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
@@ -95,8 +97,9 @@ import java.util.stream.Collectors;
  * <li>the Bench's monitor ({@link Bench#close}); a second closer (a close during a switch) waits for the first.</li>
  * <li>one part's monitor at a time, in the close order above. A part holds its monitor only for bounded or
  * interruptible steps and never across a call's own long work (PlayerTools keeps its bot under a separate guard for
- * that). The one nesting: AgentHub's lock may ask {@link ServerManager#running}, so ServerManager reads the hub
- * before it takes its own monitor.</li>
+ * that). Two nestings, both into ServerManager, which calls into neither part: AgentHub's lock may ask
+ * {@link ServerManager#running}, so ServerManager reads the hub before it takes its own monitor; and ResourcePack's
+ * monitor asks {@link ServerManager#detached}, the state that decides who serves the pack (ADR 0051).</li>
  * </ol>
  */
 public final class Core implements AutoCloseable {
@@ -118,8 +121,8 @@ public final class Core implements AutoCloseable {
 
     /** The services of one workspace and the tools bound to them. */
     private record Bench(CoreConfig config, AgentHub hub, ServerManager server, ResourcePack pack,
-                         PlayerTools players, ToolRegistry tools, BackgroundWork background, AtomicBoolean closed,
-                         Map<Path, Bench> kept) {
+                         PackPublisher publisher, PlayerTools players, ToolRegistry tools, BackgroundWork background,
+                         AtomicBoolean closed, Map<Path, Bench> kept) {
         /**
          * Opens a workspace: the one this session keeps there for its detached server ({@code kept}, #735) when that
          * server still runs, else new parts. When a step fails, closes those already opened (the agent socket), and
@@ -163,8 +166,11 @@ public final class Core implements AutoCloseable {
             hub.lastRun(server::lastRun);
             hub.serverStopping(server::reportsStopping);
             hub.noAgentReason(() -> server.platform().noWorldTools());
+            // Whether the server is detached is the one state that decides who serves the pack (ADR 0051).
             ResourcePack pack = new ResourcePack(config.packDir(), config.packBuildDir(),
-                    config.packHost(), config.packPort(), config.packFormat());
+                    config.packHost(), config.packPort(), config.packFormat(), server::detached);
+            PackPublisher publisher = new PackPublisher(pack, server, hub,
+                    config.serverDir().resolve(ServerPropertiesFile.NAME));
             ToolRegistry tools = new ToolRegistry(log);
             WorldService world = new WorldService(hub);
             world.serverRun(server::serverRun);
@@ -173,7 +179,8 @@ public final class Core implements AutoCloseable {
             // is such a workspace the current one).
             MetaTools.register(tools, config, hub, server, log, api,
                     () -> closed.get() || kept.containsKey(realOrSelf(config.workspace())));
-            WorldBackups backups = LifecycleTools.register(tools, config, hub, server, pack, new ProjectBuilder(config),
+            WorldBackups backups = LifecycleTools.register(tools, config, hub, server, pack, publisher,
+                    new ProjectBuilder(config),
                     new PaperDownloader(config.downloadsUrl(), config.cacheDir(),
                             config.downloadStore()),
                     new FabricDownloader(config.fabricMetaUrl(), config.fabricMavenUrl(),
@@ -181,12 +188,12 @@ public final class Core implements AutoCloseable {
             api.register(tools);
             WorldTools.register(tools, config, world, backups);
             BuildTools.register(tools, config, world, new Builder(hub, world, backups::beforeBigEdit));
-            TextureTools.register(tools, hub, pack, config);
+            TextureTools.register(tools, hub, pack, publisher, config);
             PlayerTools players = PlayerTools.register(tools, config, hub, world);
             // On a proxy every world, build and player tool answers one line before it sends, saves or stops anything,
             // whether or not it reaches the agent (ADR 0045, #591).
             tools.gate(WORLD_TOOLS, () -> server.platform().noWorldTools());
-            Bench bench = new Bench(config, hub, server, pack, players, tools, background, closed, kept);
+            Bench bench = new Bench(config, hub, server, pack, publisher, players, tools, background, closed, kept);
             // Not on the exiting process's own thread: the close waits for the pack host to end.
             server.onExit(() -> Thread.ofVirtual().name("msc-kept-release").start(bench::releaseIfExited));
             return bench;
@@ -205,19 +212,22 @@ public final class Core implements AutoCloseable {
          * A switch away: closes the workspace, or keeps it whole for a switch back (#735) when its server is detached.
          * The server runs on with its pack host and agent connection, and every other part stays as it is (the edit
          * history among them, #739); only what listens or runs work stops: the agent and in-process pack listeners,
-         * background builds, the test player. A kept workspace ends only through {@link #release}: when its server
-         * exits, when a switch back finds it exited, or when the session ends (#737).
+         * background builds, the test player. Its pack is published first (ADR 0051), so the standalone host serves
+         * it. A kept workspace ends only through {@link #release}: when its server exits, when a switch back finds it
+         * exited, or when the session ends (#737). Returns a line when its pack is not served now, else null.
          */
-        synchronized void leave() throws IOException {
+        synchronized String leave() throws IOException {
             if (!server.detached()) {
                 close();
-                return;
+                return null;
             }
             background.stop();
             players.leave();
+            String unserved = publisher.settle(true);
             pack.park();
             hub.park();
             kept.put(key(), this);
+            return unserved;
         }
 
         /**
@@ -244,7 +254,8 @@ public final class Core implements AutoCloseable {
                 throw e;
             }
             kept.remove(key(), this);
-            pack.unpark();
+            // Served again as the state says (ADR 0051): also when its standalone host ended meanwhile.
+            publisher.settle(false);
             return this;
         }
 
@@ -280,7 +291,9 @@ public final class Core implements AutoCloseable {
             background.close();
             players.close();
             boolean detached = server.seal();
-            if (!detached) {
+            if (detached) {
+                publisher.settle(true); // so the standalone host serves the pack past the session (ADR 0051)
+            } else {
                 pack.stopOwnHost(); // waited for, so its port is free for this workspace's next pack (#737)
             }
             pack.close(detached);
@@ -487,7 +500,11 @@ public final class Core implements AutoCloseable {
             String closing = closing(old);
             // Close (or keep) first: a fixed agent or pack port must be free before the new bench binds it. CoreServer
             // lets it go before its close returns, and the bind waits PortPatience for it (#721).
-            old.leave();
+            String unserved = old.leave();
+            if (unserved != null) {
+                // One line with the closing one, which a detached server always has.
+                closing = closing == null ? unserved : closing + "; " + unserved;
+            }
             Bench next;
             try {
                 next = Bench.open(old.config().withWorkspace(target), log, openCheck, kept);

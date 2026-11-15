@@ -35,6 +35,7 @@ final class ServerRun {
     private final AgentHub hub;
     private final ServerManager server;
     private final ResourcePack pack;
+    private final PackPublisher publisher;
     private final ServerSetup setup;
     private final EulaPrompts eula;
     private final LogMarks marks;
@@ -49,12 +50,13 @@ final class ServerRun {
     /** The hint of a cut of a start report's header lines, which no later call shows again. */
     static final String HEADER_CUT = "The startup log is in server_logs.";
 
-    ServerRun(CoreConfig config, AgentHub hub, ServerManager server, ResourcePack pack, ServerSetup setup,
-              EulaPrompts eula, LogMarks marks) {
+    ServerRun(CoreConfig config, AgentHub hub, ServerManager server, ResourcePack pack, PackPublisher publisher,
+              ServerSetup setup, EulaPrompts eula, LogMarks marks) {
         this.config = config;
         this.hub = hub;
         this.server = server;
         this.pack = pack;
+        this.publisher = publisher;
         this.setup = setup;
         this.eula = eula;
         this.marks = marks;
@@ -69,8 +71,6 @@ final class ServerRun {
     /** Longest server_start may wait for the server to be ready. */
     static final int MAX_START_SECONDS = 3600;
     static final String DETACH = "detach the server";
-    static final String KEEP_SERVING = "hand the pack to a standalone host";
-    static final String OFFER_PACK = "offer the pack in " + ServerPropertiesFile.NAME;
 
     /**
      * Checked first ({@link #checkStart}): not running, a server to start, the EULA accepted or accepted now, eula.txt
@@ -166,59 +166,45 @@ final class ServerRun {
 
     /**
      * Checked first: running, server.properties writable when a pack was built and the platform reads it there. Then:
-     * detach the server, hand the pack to a standalone host, offer it in server.properties (only where the platform
-     * reads it, #718). A host that does not come up leaves the pack served by this session, which the message says;
-     * the call still detaches.
+     * detach the server, and publish the pack as every pack change is (ADR 0051): the standalone host serves it, and
+     * server.properties offers it (only where the platform reads it, #718). A host that does not come up leaves the
+     * pack served by this session, which the message says; the call still detaches.
      */
     String detach(Args args) throws IOException, InterruptedException {
         if (!server.running() || server.reportsStopping()) {
             throw new ToolException(server.notRunning());
         }
         Platform platform = server.platform();
-        boolean offers = platform.readsPackProperties();
         // The workspace's built pack: this session's last build, or the zip an earlier build left (#655).
-        if (offers && pack.hasBuild() && Files.exists(serverProperties())) {
+        boolean offers = platform.readsPackProperties() && pack.hasBuild() && Files.exists(serverProperties());
+        if (offers) {
             OutputFile.check(serverProperties(), ServerPropertiesFile.NAME);
         }
-        Steps steps = new Steps("server_detach").then(DETACH).then(KEEP_SERVING);
+        Steps steps = new Steps("server_detach").then(DETACH).then(PackPublisher.SERVE);
         if (offers) {
-            steps.then(OFFER_PACK);
+            steps.then(PackPublisher.OFFER);
         }
-        steps.ifFails(KEEP_SERVING, "the server is detached, but the pack is served by this session only, until it "
-                        + "ends; server_stop then server_start and server_detach again keeps it up")
-                .ifFails(OFFER_PACK, "the server and the pack host run on, but a restart outside MSC offers no pack");
+        steps.ifFails(PackPublisher.SERVE, "the server is detached, but the pack is served by this session only, until "
+                        + "it ends; server_detach again hands it to a standalone host")
+                .ifFails(PackPublisher.OFFER, "the server and the pack host run on, but a restart outside MSC offers no "
+                        + "pack; server_detach again offers it");
         if (!steps.run(DETACH, server::detach)) {
             throw new ToolException(server.notRunning());
         }
-        String java = ProcessHandle.current().info().command().orElse(config.javaCommand());
-        // A host that does not come up is an answer, not a failure: this session keeps serving the pack.
-        String[] noHost = new String[1];
-        boolean hosting = steps.run(KEEP_SERVING, () -> {
-            try {
-                pack.current();
-                return pack.keepServing(java, System.getProperty("java.class.path"));
-            } catch (ToolException e) {
-                noHost[0] = e.getMessage();
-                return false;
-            }
-        });
-        if (noHost[0] != null) {
-            return "server detached: it keeps running after this session ends\n" + noHost[0];
-        }
+        PackPublisher.Published published = publisher.publish(steps, PackPublisher.Send.IF_NEW, null);
         String properties = "";
-        ResourcePack.Built built = pack.lastBuilt();
-        ResourcePack.Applied applied = pack.applied();
-        if (hosting && !offers) {
+        if (published.offered()) {
+            properties = "\n" + ServerPropertiesFile.NAME + " now offers the pack too, so a restart outside MSC keeps it.";
+        } else if (published.outlives() && !platform.readsPackProperties()) {
             properties = "\n" + platform.displayName() + " does not read the pack from " + ServerPropertiesFile.NAME
                     + ", so a restart outside MSC does not offer it.";
-        } else if (hosting && built != null && steps.run(OFFER_PACK, () -> PackProperties.write(platform,
-                serverProperties(), built.url(), built.sha1(), applied != null && applied.required()))) {
-            properties = "\n" + ServerPropertiesFile.NAME + " now offers the pack too, so a restart outside MSC keeps it.";
         }
+        String hosting = published.hosting(false);
         return "server detached: it keeps running after this session ends"
-                + (hosting ? ", and so does the resource pack host"
-                : " (no pack built yet; the pack tool starts a pack host that does too)")
-                + "." + properties + "\n" + (platform.proxy() ? "server_command works" // a proxy has no world (#722)
+                + (published.built() == null ? " (no pack built yet; the pack tool starts a pack host that does too)"
+                : published.outlives() ? ", and so does the resource pack host" : "")
+                + "." + (hosting == null ? "" : "\n" + hosting) + properties + "\n"
+                + (platform.proxy() ? "server_command works" // a proxy has no world (#722)
                 : "World tools and server_command work") + " until this session ends; the next session's server_start, "
                 + "dev_cycle or server_stop stops the server" + (platform.proxy() ? "" : " (world saved)")
                 + " and the pack host.";
@@ -427,28 +413,25 @@ final class ServerRun {
         }
         try {
             ResourcePack.Snapshot before = pack.snapshot();
-            Path file = serverProperties();
-            byte[] offeredBefore = pack.ours(PackProperties.url(server.platform(), file)) ? Files.readAllBytes(file)
-                    : null;
-            ResourcePack.Built built = pack.build(applied.description());
-            // The host now serves only this build: a server.properties that offers our pack follows it first.
-            TextureTools.keepOffered(pack, server.platform(), file, built, applied.required());
-            if (onlyChanged && pack.wasSent(to, built, applied.required())) {
-                return "";
-            }
+            byte[] offeredBefore = publisher.propertiesBefore();
+            pack.build(applied.description());
+            PackPublisher.Published published;
             try {
-                hub.call(Ops.PACK_APPLY, new Ops.PackParams(built.url(), built.sha1(), applied.required()));
-                pack.sent(to, built, applied.required());
+                // As every pack change is published (ADR 0051): served, offered, then sent.
+                published = publisher.publish(null, onlyChanged ? PackPublisher.Send.IF_NEW
+                        : PackPublisher.Send.ALWAYS, applied.required());
             } catch (RuntimeException e) {
                 return "\nresource pack not sent (" + Steps.reason(e) + "); "
-                        + TextureTools.takeBack(pack, before, file, offeredBefore);
+                        + TextureTools.takeBack(pack, before, serverProperties(), offeredBefore);
             }
-            return "\nresource pack sent: players who join get it";
+            String hosting = published.hosting(false);
+            return (published.sent() == null ? "" : "\nresource pack sent: players who join get it")
+                    + (hosting == null ? "" : "\n" + hosting);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return "";
         } catch (IOException | RuntimeException e) {
-            return "\nresource pack not sent (" + e.getMessage() + "): run the pack tool";
+            return "\nresource pack not sent (" + Steps.reason(e) + "): run the pack tool";
         }
     }
 
@@ -469,7 +452,7 @@ final class ServerRun {
      * Serve the pack again, on the same port when it is free, and point server.properties at it before the server
      * reads the file; if the pack can no longer be built, stop offering it. Returns a note, or null.
      */
-    private String syncPackProperties() {
+    private String syncPackProperties() throws InterruptedException {
         Path file = serverProperties();
         Platform platform = server.platform();
         if (!pack.ours(PackProperties.url(platform, file))) {
@@ -477,10 +460,9 @@ final class ServerRun {
         }
         try {
             ResourcePack.Applied applied = pack.applied();
-            ResourcePack.Built built = pack.build(applied != null ? applied.description()
-                    : LifecycleTools.DEFAULT_PACK_DESCRIPTION);
-            PackProperties.write(platform, file, built.url(), built.sha1(),
-                    applied != null ? applied.required() : PackProperties.required(platform, file));
+            pack.build(applied != null ? applied.description() : LifecycleTools.DEFAULT_PACK_DESCRIPTION);
+            // Published as every pack change is (ADR 0051); the server is not running yet, so nothing is sent.
+            publisher.publish(null, PackPublisher.Send.NEVER, null);
             return null;
         } catch (IOException | RuntimeException e) {
             try {

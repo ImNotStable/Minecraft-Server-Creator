@@ -247,13 +247,21 @@ public final class PackHost {
         };
     }
 
-    /** {@code PackHost <host> <port> <zip>}: the standalone host a detached session leaves running. */
-    public static void main(String[] args) throws IOException, InterruptedException {
+    /**
+     * {@code PackHost <host> <port> <zip>}: the standalone host a detached session leaves running. A host that cannot
+     * serve prints why as its one line and exits, so the core can quote it (#744).
+     */
+    public static void main(String[] args) throws InterruptedException {
         if (args.length != 3) {
             System.err.println("usage: PackHost <host> <port> <zip>");
             System.exit(2);
         }
-        // The core closed this port just before starting this process.
-        startWithin(args[0], Integer.parseInt(args[1]), file(Path.of(args[2])), PORT_PATIENCE);
+        try {
+            // The core closed this port just before starting this process.
+            startWithin(args[0], Integer.parseInt(args[1]), file(Path.of(args[2])), PORT_PATIENCE);
+        } catch (IOException | RuntimeException e) {
+            System.err.println(e.getMessage() != null ? e.getMessage() : e.toString());
+            System.exit(1);
+        }
     }
 }

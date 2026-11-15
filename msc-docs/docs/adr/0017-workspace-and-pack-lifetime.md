@@ -1,6 +1,6 @@
 # ADR 0017: Switch workspace at runtime, keep the pack offered past the session, small playtest fixes
 
-Status: accepted, 2026-11-12. Decided by Claude under Jeremiah's hand-over of build decisions. Follows the playtest findings (`playtest-findings.md`, items 12, 14, 17, 18, 19 and 20). Amended 2026-11-14 (see the end).
+Status: accepted, 2026-11-12. Decided by Claude under Jeremiah's hand-over of build decisions. Follows the playtest findings (`playtest-findings.md`, items 12, 14, 17, 18, 19 and 20). Amended 2026-11-14 and 2026-11-15 (see the end).
 
 ## Context
 
@@ -28,3 +28,11 @@ Found by reading every ADR against the code during the campaign. The original te
 
 - Decision 1: `msc_stats` is now `msc_status stats=true` ([ADR 0019](0019-smaller-tool-surface.md)); it still covers the whole session.
 - Decision 5: `texture_create`, `texture_generate` and `texture_recolor` are one `texture` tool, which takes `model=handheld` ([ADR 0023](0023-texture-tools.md)). The EULA question is unchanged, but with the owner's acceptance for the machine the tools no longer ask ([ADR 0020](0020-machine-eula.md)).
+
+## Amendment, 2026-11-15: who serves and offers the pack (#743, #744, #745)
+
+Decisions 3 and 4 are now one rule, applied by every call that changes the pack or who must serve it, in any order
+([ADR 0051](0051-publish-the-pack-from-one-state.md)): while the server is detached, the standalone host serves the
+build and `server.properties` offers it, also a build made after the detach (#743); an offer once written follows
+every later build, as before. A standalone host that does not come up leaves the pack served by the session, with no
+new offer, and the answer says why.
