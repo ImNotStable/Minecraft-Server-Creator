@@ -35,13 +35,15 @@ final class ServerConsole {
     }
 
     String logs(Args args) throws InterruptedException {
+        String mode = args.str("mode", "errors");
+        if (!WayArgs.LOG_MODES.contains(mode)) {
+            throw new ToolException("mode must be errors, tail, grep or triage");
+        }
+        // Checked first (#619): an argument this mode does not read is refused, not dropped with an OK.
+        WayArgs.check(args, Set.of(mode), WayArgs.LOGS);
         // A server that just exited: its last lines may still be in the pipe (#533).
         server.awaitLogEnd();
         int maxChars = Budget.of(args);
-        String mode = args.str("mode", "errors");
-        if (!List.of("errors", "tail", "grep", "triage").contains(mode)) {
-            throw new ToolException("mode must be errors, tail, grep or triage");
-        }
         boolean all = args.bool("all", false);
         List<String> lines = all ? server.log().all() : server.log().since(marks.start);
         if (mode.equals("triage")) {

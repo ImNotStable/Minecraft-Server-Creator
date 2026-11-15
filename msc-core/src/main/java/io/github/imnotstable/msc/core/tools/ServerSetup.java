@@ -24,6 +24,7 @@ import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Stream;
 
 /** {@code server_setup} for each platform, and where the msc agent jar for a platform comes from. */
@@ -59,6 +60,12 @@ final class ServerSetup {
         }
         // The setup would replace the files of another live session's server (ADR 0037).
         server.checkNoOtherSession();
+        // Chosen here, remembered for the workspace only once the setup succeeded: a refused or failed setup
+        // (unsupported version, download error) leaves the workspace as it was, its working server included.
+        Platform chosen = args.str("platform", null) == null ? null : Platform.of(args.str("platform"));
+        Platform platform = chosen == null ? server.platform() : chosen;
+        // An argument this platform does not read is refused, not dropped with an OK (#619).
+        WayArgs.check(args, Set.of(platform.id()), WayArgs.SETUP);
         String version = args.str("version", config.minecraft()).strip();
         if (!VERSION.matcher(version).matches()) {
             throw new ToolException("version must look like " + config.minecraft()
@@ -71,10 +78,6 @@ final class ServerSetup {
         } catch (IllegalArgumentException e) {
             throw new ToolException(e.getMessage());
         }
-        // Chosen here, remembered for the workspace only once the setup succeeded: a refused or failed setup
-        // (unsupported version, download error) leaves the workspace as it was, its working server included.
-        Platform chosen = args.str("platform", null) == null ? null : Platform.of(args.str("platform"));
-        Platform platform = chosen == null ? server.platform() : chosen;
         Boolean forwarding = forwarding(args.str("proxy", null), platform);
         Boolean bedrock = args.has("bedrock") ? args.bool("bedrock", false) : null;
         // One check of Geyser against the final platform and forwarding, before anything changes (ADR 0046, #590).
@@ -85,7 +88,7 @@ final class ServerSetup {
         String rememberFails = "the server folder is set up, but the workspace platform is still "
                 + Platform.current(config).id() + ": run server_setup again";
         if (platform == Platform.VELOCITY) {
-            return velocity(steps, chosen, dir, mode, geyser, rememberFails);
+            return velocity(steps, chosen, dir, geyser, rememberFails);
         }
         if (platform == Platform.MINESTOM) {
             steps.then(CREATE_FOLDER);
@@ -100,7 +103,6 @@ final class ServerSetup {
             runBedrock(steps, geyser, dir, List.of(), geyserOut);
             remember(steps, chosen);
             return LoaderInstaller.removedLine(removed, "dev_cycle deploys this project's jar there") + geyserOut
-                    + (mode == null ? "" : "mode ignored: a Minestom server sets game mode and difficulty in its own code\n")
                     + "minestom needs no server download and has no EULA step: the project's own jar is the server and "
                     + "the msc agent is built into it. Server directory: " + dir + "; next: dev_cycle";
         }
@@ -206,12 +208,12 @@ final class ServerSetup {
     }
 
     /**
-     * Velocity: the pinned Velocity jar (it serves every recent Minecraft version, so {@code version} is not used),
-     * its config and the machine's forwarding secret. No defaults, game mode, agent or EULA: it is not a Minecraft
-     * server.
+     * Velocity: the pinned Velocity jar (it serves every recent Minecraft version, so {@code version} is refused, as
+     * are {@code mode} and {@code acceptEula}: {@link WayArgs#SETUP}), its config and the machine's forwarding secret.
+     * No defaults, game mode, agent or EULA: it is not a Minecraft server.
      */
-    private String velocity(Steps steps, Platform chosen, Path dir, ServerProperties.Mode mode,
-                            BedrockRule.Action geyser, String rememberFails) throws InterruptedException {
+    private String velocity(Steps steps, Platform chosen, Path dir, BedrockRule.Action geyser,
+                            String rememberFails) throws InterruptedException {
         String velocity = pinned("velocityVersion", "Velocity");
         String partly = "the proxy is installed but not fully set up; server_setup again finishes it";
         steps.then(INSTALL).then(FORWARDING).ifFails(FORWARDING, partly);
@@ -220,9 +222,6 @@ final class ServerSetup {
             steps.then(REMEMBER).ifFails(REMEMBER, rememberFails);
         }
         StringBuilder out = new StringBuilder();
-        if (mode != null) {
-            out.append("mode ignored: a proxy has no world\n");
-        }
         steps.run(INSTALL, () -> fill(Platform.VELOCITY, velocity, dir, out));
         steps.run(FORWARDING, () -> {
             out.append(ProxyForwarding.proxy(dir, ProxyForwarding.secret(config.proxySecretFile())));

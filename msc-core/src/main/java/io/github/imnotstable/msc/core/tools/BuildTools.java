@@ -15,6 +15,7 @@ import io.github.imnotstable.msc.protocol.world.Region;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Set;
 
 /** Shapes, stamps and batches: many blocks per call, one undo id per call, every block name checked first. */
 public final class BuildTools {
@@ -44,9 +45,11 @@ public final class BuildTools {
                         .opt("world", "string", WORLD).opt("physics", "boolean", PHYSICS)
                         .opt("dryRun", "boolean", DRY_RUN),
                 args -> {
+                    boolean dryRun = args.bool("dryRun", false);
+                    WayArgs.check(args, Set.of(dryRun ? "dryRun" : "write"), WayArgs.BUILD);
                     String w = world.world(args.str("world", null));
                     List<Step> steps = new BuildScript(w, files).parse(args.text("steps"));
-                    return builder.run(w, steps, args.bool("physics", false), args.bool("dryRun", false), "build_batch");
+                    return builder.run(w, steps, args.bool("physics", false), dryRun, "build_batch");
                 });
     }
 
