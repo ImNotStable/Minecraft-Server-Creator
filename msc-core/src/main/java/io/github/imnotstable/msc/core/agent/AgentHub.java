@@ -40,6 +40,7 @@ public final class AgentHub implements AutoCloseable {
     private volatile Duration connectWait = CONNECT_WAIT;
     private volatile java.util.function.BooleanSupplier agentExpected = () -> true;
     private volatile java.util.function.Supplier<String> noAgentReason = () -> null;
+    private volatile Runnable onReady = () -> { };
 
     public AgentHub(int port, String token) throws IOException {
         this.token = token;
@@ -67,6 +68,7 @@ public final class AgentHub implements AutoCloseable {
             public void event(CoreServer.AgentSession s, Event event) {
                 if (Events.SERVER_READY.equals(event.name())) {
                     update(() -> readyCount++);
+                    onReady.run();
                 }
             }
 
@@ -114,6 +116,19 @@ public final class AgentHub implements AutoCloseable {
      */
     public void noAgentReason(java.util.function.Supplier<String> reason) {
         this.noAgentReason = reason;
+    }
+
+    /**
+     * Run {@code listener} each time an agent says its server is ready. It runs on the connection's thread, before
+     * the event's waiters see it, so it must hand any work (an op call) to another thread.
+     */
+    public void onReady(Runnable listener) {
+        this.onReady = listener;
+    }
+
+    /** Why no agent will ever connect, or null when one can. */
+    public String noAgentReason() {
+        return noAgentReason.get();
     }
 
     /** Shorten the wait for an agent; tests use this. */

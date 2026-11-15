@@ -2,7 +2,10 @@ package io.github.imnotstable.msc.core;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.google.gson.JsonObject;
 import io.github.imnotstable.msc.core.fixture.FakeServerMain;
+import io.github.imnotstable.msc.protocol.op.Events;
+import io.github.imnotstable.msc.protocol.transport.AgentClient;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -145,6 +148,67 @@ class WorkspaceAndPackTest {
         String rebuilt = url(h.ok("pack", "apply", false));
         assertThat(rebuilt).isNotEqualTo(url);
         assertThat(Files.readString(props)).contains("resource-pack=" + rebuilt.replace(":", "\\:"));
+    }
+
+    /** #655: a pack built while no agent is connected is the workspace's pack, which the next start sends. */
+    @Test
+    void aPackBuiltBeforeTheStartIsSentByIt() {
+        pixel();
+        assertThat(h.ok("pack")).contains("\nnot sent yet: no server agent connected; the next server_start or "
+                + "dev_cycle sends it\n");
+        assertThat(h.ok("server_start", "timeoutSeconds", 30)).contains("\nresource pack sent: players who join get it\n");
+    }
+
+    /** #655: the pack belongs to the workspace, so a switch away and back neither forgets it nor its build. */
+    @Test
+    void aSwitchAwayAndBackKeepsTheWorkspacesPack() throws Exception {
+        h.ok("server_start", "timeoutSeconds", 30);
+        pixel();
+        String url = url(h.ok("pack"));
+        h.ok("msc_workspace", "path", "../second", "create", true);
+        h.ok("msc_workspace", "path", first.toString());
+        assertThat(h.ok("server_start", "timeoutSeconds", 30)).contains("\nresource pack sent: players who join get it\n");
+        assertThat(h.ok("server_detach")).contains("and so does the resource pack host");
+        assertThat(LifecycleToolsTest.fetchCode(url)).isEqualTo(200);
+        assertThat(h.ok("server_stop")).isEqualTo("server stopped, and the pack host it kept running");
+    }
+
+    /** #655: a build an earlier session left is served on server_detach as it is, never "no pack built yet". */
+    @Test
+    void detachServesTheBuildAnEarlierSessionLeft() throws Exception {
+        pixel();
+        String url = url(h.ok("pack", "apply", false));
+        h.close();
+        h = new CoreHarness(first, c -> c.withServerCommand(java(FakeServerMain.class)));
+        assertThat(h.ok("server_start", "timeoutSeconds", 30)).doesNotContain("resource pack");
+        assertThat(h.ok("server_detach")).contains("and so does the resource pack host");
+        assertThat(LifecycleToolsTest.fetchCode(url)).isEqualTo(200);
+        assertThat(h.ok("server_stop")).isEqualTo("server stopped, and the pack host it kept running");
+    }
+
+    /** #655: an agent that says its server is ready after the start was reported gets the workspace's pack too. */
+    @Test
+    void anAgentReadyAfterTheStartGetsThePack() throws Exception {
+        pixel();
+        String url = url(h.ok("pack"));
+        h.core.hub().agentExpected(() -> true);
+        AgentClient.Session session = h.agent.connect(h.core.hub().address(), h.core.hub().token());
+        try {
+            h.core.hub().require();
+            session.connection().sendEvent(Events.SERVER_READY, new JsonObject());
+            for (int i = 0; i < 100 && sent().isEmpty(); i++) {
+                Thread.sleep(50);
+            }
+            assertThat(sent()).containsExactly(url);
+        } finally {
+            session.connection().close();
+        }
+    }
+
+    private List<String> sent() {
+        synchronized (h.agent) {
+            return h.agent.packs.stream().map(p -> p.url()).toList();
+        }
     }
 
     @Test

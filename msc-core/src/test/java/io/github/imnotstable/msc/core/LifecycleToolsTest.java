@@ -240,7 +240,7 @@ class LifecycleToolsTest {
         h.ok("texture", "name", "item/dot", "palette", List.of("a=#ff0000"), "rows", List.of("a"));
         assertThat(h.ok("pack")).contains("applied: sent to 1 players; players who join later get it too");
         h.ok("server_stop");
-        assertThat(h.ok("server_start", "timeoutSeconds", 30)).contains("\nresource pack sent again: players who join get it\n");
+        assertThat(h.ok("server_start", "timeoutSeconds", 30)).contains("\nresource pack sent: players who join get it\n");
     }
 
     static int fetchCode(String url) throws InterruptedException {

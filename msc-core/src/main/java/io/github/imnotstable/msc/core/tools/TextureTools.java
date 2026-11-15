@@ -165,7 +165,14 @@ public final class TextureTools {
         }
         ResourcePack.Snapshot before = pack.snapshot();
         byte[] offeredBefore = offered ? Files.readAllBytes(properties) : null;
-        ResourcePack.Built built = steps.run(BUILD, () -> pack.build(description));
+        ResourcePack.Built built = steps.run(BUILD, () -> {
+            ResourcePack.Built b = pack.build(description);
+            if (apply && !connected) {
+                // The workspace's pack to send: the next start that connects an agent sends it (#655).
+                pack.applied(new ResourcePack.Applied(description, required));
+            }
+            return b;
+        });
         StringBuilder out = new StringBuilder();
         out.append("pack built: ").append(built.files()).append(" files, ").append(built.bytes())
                 .append(" bytes, pack_format ").append(pack.packFormat()).append("\nurl: ").append(built.url())
@@ -186,7 +193,9 @@ public final class TextureTools {
                 out.append("\napplied: sent to ").append(r.playersSent())
                         .append(" players; players who join later get it too, also after a restart");
             } else if (apply) {
-                out.append("\nnot applied: no server agent connected");
+                String never = hub.noAgentReason();
+                out.append(never != null ? "\nnot sent: " + never
+                        : "\nnot sent yet: no server agent connected; the next server_start or dev_cycle sends it");
             }
         } catch (ToolException e) {
             throw new ToolException(e.getMessage() + "\n" + takeBack(pack, before, properties, offeredBefore));

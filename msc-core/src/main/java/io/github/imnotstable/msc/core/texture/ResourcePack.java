@@ -1,5 +1,7 @@
 package io.github.imnotstable.msc.core.texture;
 
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import io.github.imnotstable.msc.core.server.PidFile;
 import io.github.imnotstable.msc.core.tool.ToolException;
 import io.github.imnotstable.msc.process.AtomicFile;
@@ -25,19 +27,40 @@ public final class ResourcePack implements AutoCloseable {
     public record Built(Path zip, String sha1, String url, int files, long bytes) {
     }
 
-    /** What pack last sent to the server. A restarted server has forgotten it, so the next start sends it again. */
+    /**
+     * The pack the pack tool built to be sent, kept with the workspace in {@code .msc/pack-applied.json} (#655): a
+     * restarted server has forgotten it, and a server started later, in this session or another, never had it, so
+     * each start that connects an agent sends it.
+     */
     public record Applied(String description, boolean required) {
     }
 
-    private volatile Applied applied;
-
-    /** Null until pack has sent a pack to the server in this session. */
+    /** The workspace's pack to send, or null when the pack tool never built one to send (or the record is unreadable). */
     public Applied applied() {
-        return applied;
+        try {
+            JsonObject json = JsonParser.parseString(Files.readString(appliedFile())).getAsJsonObject();
+            return new Applied(json.get("description").getAsString(), json.get("required").getAsBoolean());
+        } catch (IOException | RuntimeException e) {
+            return null;
+        }
     }
 
-    public void applied(Applied applied) {
-        this.applied = applied;
+    /** Keep {@code applied} as the workspace's pack to send; null forgets it. */
+    public void applied(Applied applied) throws IOException {
+        if (applied == null) {
+            Files.deleteIfExists(appliedFile());
+            return;
+        }
+        JsonObject json = new JsonObject();
+        json.addProperty("description", applied.description());
+        json.addProperty("required", applied.required());
+        Files.createDirectories(appliedFile().getParent());
+        AtomicFile.write(appliedFile(), to -> Files.writeString(to, json + "\n"));
+    }
+
+    /** {@code .msc/pack-applied.json}: the workspace's pack to send ({@link #applied()}). */
+    private Path appliedFile() {
+        return outDir.resolveSibling("pack-applied.json");
     }
 
     private final PackSource source;
@@ -77,6 +100,48 @@ public final class ResourcePack implements AutoCloseable {
     /** The last pack built in this session, or null. */
     public Built lastBuilt() {
         return lastBuilt;
+    }
+
+    /** True when the workspace has a built pack: one built in this session, or the zip an earlier build left. */
+    public boolean hasBuild() {
+        return lastBuilt != null || Files.isRegularFile(zipFile());
+    }
+
+    /**
+     * The workspace's built pack, served:the last one built in this session, else the zip an earlier build left in
+     * {@code .msc/build} (another session's, or this one's before an {@code msc_workspace} switch away and back),
+     * served as it is. Null when there is none.
+     */
+    public synchronized Built current() throws IOException {
+        if (lastBuilt != null || !Files.isRegularFile(zipFile())) {
+            return lastBuilt;
+        }
+        if (closed) {
+            throw ToolException.workspaceClosed("the pack was not served");
+        }
+        byte[] data = Files.readAllBytes(zipFile());
+        int files;
+        try (java.util.zip.ZipFile zip = new java.util.zip.ZipFile(zipFile().toFile())) {
+            files = zip.size();
+        }
+        String sha1 = PackSource.sha1(data);
+        served = new PackHost.Served(data, sha1);
+        lastBuilt = new Built(zipFile(), sha1, url(sha1), files, data.length);
+        return lastBuilt;
+    }
+
+    /** The URL of the build with {@code sha1}, starting the in-process host unless a standalone one serves it. */
+    private String url(String sha1) throws IOException {
+        int port;
+        if (hostProcess != null && hostProcess.isAlive()) {
+            port = hostPort; // the standalone host serves the zip file itself
+        } else {
+            if (server == null) {
+                server = startHost();
+            }
+            port = server.port();
+        }
+        return "http://" + host + ":" + port + "/pack-" + sha1 + ".zip";
     }
 
     /** True when {@code url} has the shape of a URL an MSC pack host hands out on this host. */
@@ -129,28 +194,27 @@ public final class ResourcePack implements AutoCloseable {
         byte[] data = Files.readAllBytes(zipped.zip());
         String sha1 = zipped.sha1();
         served = new PackHost.Served(data, sha1);
-        int port;
-        if (hostProcess != null && hostProcess.isAlive()) {
-            port = hostPort; // the standalone host serves the zip file itself
-        } else {
-            if (server == null) {
-                server = startHost();
-            }
-            port = server.port();
-        }
-        String url = "http://" + host + ":" + port + "/pack-" + sha1 + ".zip";
-        Built built = new Built(zipped.zip(), sha1, url, zipped.files(), data.length);
+        Built built = new Built(zipped.zip(), sha1, url(sha1), zipped.files(), data.length);
         lastBuilt = built;
         return built;
     }
 
-    /** What the pack host serves, so a build whose send failed can be taken back ({@link #restore}). */
-    public record Snapshot(PackHost.Served served, Built built) {
+    /**
+     * What the pack host serves and the workspace's pack to send, so a build whose send failed can be taken back
+     * ({@link #restore}).
+     */
+    public record Snapshot(PackHost.Served served, Built built, Applied applied) {
     }
 
-    /** What is served now. */
+    /** What is served now; an earlier build's zip ({@link #current}) is served first, so it can be restored. */
     public synchronized Snapshot snapshot() {
-        return new Snapshot(served, lastBuilt);
+        Built built;
+        try {
+            built = current();
+        } catch (IOException | RuntimeException e) {
+            built = lastBuilt; // an unreadable zip is nothing to restore
+        }
+        return new Snapshot(served, built, applied());
     }
 
     /**
@@ -158,6 +222,7 @@ public final class ResourcePack implements AutoCloseable {
      * players were last sent works again after a build whose send failed.
      */
     public synchronized void restore(Snapshot snapshot) throws IOException {
+        applied(snapshot.applied());
         if (snapshot.built() == null || snapshot.served().sha1().isEmpty()) {
             served = PackHost.Served.NONE;
             lastBuilt = null;
