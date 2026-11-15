@@ -1,6 +1,7 @@
 package io.github.imnotstable.msc.core.server;
 
 import io.github.imnotstable.msc.core.CoreConfig;
+import io.github.imnotstable.msc.templates.Templates;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
@@ -200,7 +201,8 @@ public final class WorkspaceProjects {
     /**
      * The step that builds a project of the workspace as it is: the {@code dev_cycle} call of each project its server
      * runs (plain for the workspace root, {@code project=} for a subfolder at any depth). With none,
-     * {@code project_scaffold then dev_cycle}, into a new folder when the workspace holds other files (where a scaffold
+     * {@code project_scaffold then dev_cycle} with the {@link #template} of the workspace's platform (none for Paper,
+     * project_scaffold's default), into a new folder when the workspace holds other files (where a scaffold
      * into it is refused), and a note naming each project the server never runs with the {@code server_setup} that
      * switches the workspace to it.
      */
@@ -217,9 +219,25 @@ public final class WorkspaceProjects {
         } catch (IOException | UncheckedIOException e) {
             taken = true;
         }
-        String call = taken ? "project_scaffold dir=" + NEW_FOLDER + " then dev_cycle project=" + NEW_FOLDER
-                : "project_scaffold then dev_cycle";
+        // The template the workspace's server runs, so the step never scaffolds another platform's project (#689).
+        String template = template(Platform.current(config));
+        String scaffold = "project_scaffold" + (template.equals(Templates.PAPER_PLUGIN) ? "" : " template=" + template);
+        String call = taken ? scaffold + " dir=" + NEW_FOLDER + " then dev_cycle project=" + NEW_FOLDER
+                : scaffold + " then dev_cycle";
         return new Next(call, unservedNote(config, all));
+    }
+
+    /**
+     * The project template for {@code platform}'s server, by the platform project_scaffold reads from each template
+     * ({@code template.properties}): the one of the platform's agent family that is neither server files only
+     * ({@code paper-server}) nor a minigame base ({@code <platform>-game}). Purpur and Folia get {@code paper-plugin},
+     * Quilt {@code fabric-mod}.
+     */
+    public static String template(Platform platform) {
+        return Templates.ids().stream()
+                .filter(id -> !id.equals(Templates.PAPER_SERVER) && !id.endsWith("-game")
+                        && platform.agent().equals(Templates.info(id).get("platform")))
+                .findFirst().orElse(Templates.PAPER_PLUGIN);
     }
 
     /** {@link #next}'s whole line. */

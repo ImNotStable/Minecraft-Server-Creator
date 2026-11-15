@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.github.imnotstable.msc.core.fixture.FakeBuildMain;
 import io.github.imnotstable.msc.core.fixture.FakeServerMain;
 import io.github.imnotstable.msc.core.server.Platform;
+import io.github.imnotstable.msc.core.server.WorkspaceProjects;
 import io.github.imnotstable.msc.core.tool.ToolRegistry;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -20,12 +21,15 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 /**
  * The tools' own next steps, followed in order from a fresh workspace, reach a build (#664, #665): scaffold then
  * setup, setup then a scaffold into the workspace root, and a scaffold into a subfolder. Minestom and Velocity end
  * with a deploy; Paper, whose owner has not agreed to the EULA, ends with dev_cycle's EULA refusal and nothing else.
+ * Following a step never changes the workspace's platform unless the step says so ({@code server_setup platform=}):
+ * a scaffold the step names is of the template the workspace's server runs (#689).
  */
 class FollowTheHintsTest {
     private static FakeDownloads downloads;
@@ -54,6 +58,18 @@ class FollowTheHintsTest {
             case "minestom" -> "minestom-game";
             case "velocity" -> "velocity-plugin";
             default -> "paper-plugin";
+        };
+    }
+
+    /**
+     * The scaffold a next step names in each kind of workspace (#689): the template its server runs, none for Paper,
+     * whose project_scaffold default is it.
+     */
+    private static String named(String platform) {
+        return switch (platform) {
+            case "minestom" -> "project_scaffold template=minestom-server";
+            case "velocity" -> "project_scaffold template=velocity-plugin";
+            default -> "project_scaffold";
         };
     }
 
@@ -133,12 +149,20 @@ class FollowTheHintsTest {
             }
             ran.add((tool + " " + String.join(" ", args.stream().map(String::valueOf).toList())).strip());
             assertThat(ran).as("a loop").doesNotHaveDuplicates();
+            // #689: only a step that says so (server_setup platform=) changes the workspace's platform.
+            Platform before = Platform.current(h.core.config());
+            int named = args.indexOf("platform");
+            Platform said = tool.equals("server_setup") && named >= 0 ? Platform.of((String) args.get(named + 1))
+                    : before;
             if (tool.equals("dev_cycle")) {
                 Path project = h.core.config().workspace().resolve(args.isEmpty() ? "." : (String) args.get(1));
                 Files.writeString(project.resolve("version.txt"), "1." + VERSION.incrementAndGet());
-                return h.call(tool, args.toArray());
+                ToolRegistry.Result cycle = h.call(tool, args.toArray());
+                assertThat(Platform.current(h.core.config())).as("the platform after %s", ran).isEqualTo(said);
+                return cycle;
             }
             current = h.ok(tool, args.toArray());
+            assertThat(Platform.current(h.core.config())).as("the platform after %s", ran).isEqualTo(said);
         }
         throw new AssertionError("no dev_cycle after " + ran);
     }
@@ -179,12 +203,13 @@ class FollowTheHintsTest {
         try (CoreHarness h = harness(platform)) {
             List<String> ran = new ArrayList<>();
             String setup = h.ok("server_setup", "platform", platform);
-            assertThat(setup).endsWith("project_scaffold then dev_cycle");
+            assertThat(setup).endsWith(named(platform) + " then dev_cycle");
             Path ws = h.core.config().workspace();
             Path properties = ws.resolve("run/server.properties");
             String own = Files.exists(properties) ? Files.readString(properties) : null;
-            ToolRegistry.Result cycle = follow(h, setup, ran, "name", "Arena", "template", template(platform));
-            assertThat(ran).containsExactly("project_scaffold name Arena template " + template(platform), "dev_cycle");
+            // The step's own template, none of the follower's (#689).
+            ToolRegistry.Result cycle = follow(h, setup, ran, "name", "Arena");
+            assertThat(ran).containsExactly(named(platform).replace('=', ' ') + " name Arena", "dev_cycle");
             if (own != null) {
                 // The template's run/ defaults go beside the server's own files, never over them.
                 assertThat(properties).hasContent(own);
@@ -241,6 +266,45 @@ class FollowTheHintsTest {
         }
     }
 
+    /**
+     * #689: on every platform, an empty workspace's step scaffolds the template that platform's server runs, into
+     * the root and into a new folder, and the scaffold it names keeps the workspace's platform.
+     */
+    @ParameterizedTest
+    @EnumSource(Platform.class)
+    void theScaffoldStepKeepsEveryPlatform(Platform platform) throws Exception {
+        String template = switch (platform) {
+            case PAPER, PURPUR, FOLIA -> null;
+            case FABRIC, QUILT -> "fabric-mod";
+            case NEOFORGE -> "neoforge-mod";
+            case FORGE -> "forge-mod";
+            case MINESTOM -> "minestom-server";
+            case VELOCITY -> "velocity-plugin";
+        };
+        String scaffold = "project_scaffold" + (template == null ? "" : " template=" + template);
+        for (boolean root : List.of(true, false)) {
+            Path ws = Files.createDirectories(dir.resolve(platform.id() + (root ? "-root" : "-beside")));
+            try (CoreHarness h = new CoreHarness(ws, c -> c.withBuildCommand(java(FakeBuildMain.class)))) {
+                Platform.remember(h.core.config(), platform);
+                if (!root) {
+                    Files.writeString(ws.resolve("notes.txt"), "mine");
+                }
+                String step = WorkspaceProjects.nextDevCycle(h.core.config());
+                assertThat(step).isEqualTo(scaffold + (root ? " then dev_cycle"
+                        : " dir=<new folder> then dev_cycle project=<new folder>"));
+                List<Object> args = new ArrayList<>(List.of("name", "Arena"));
+                Matcher arg = Pattern.compile(ARG).matcher(step.substring(0, step.indexOf(" then ")));
+                while (arg.find()) {
+                    args.addAll(List.of(arg.group(1), arg.group(2).startsWith("<") ? NEW_FOLDER : arg.group(2)));
+                }
+                h.ok("project_scaffold", args.toArray());
+                assertThat(Platform.current(h.core.config())).as("root %s", root).isEqualTo(platform);
+                assertThat(WorkspaceProjects.nextDevCycle(h.core.config()))
+                        .isEqualTo(root ? "dev_cycle" : "dev_cycle project=" + NEW_FOLDER);
+            }
+        }
+    }
+
     /** The template of another agent family than each workspace kind's, so that kind's server never runs it. */
     private static String otherFamily(String platform) {
         return switch (platform) {
@@ -265,14 +329,14 @@ class FollowTheHintsTest {
             Platform otherPlatform = Platform.of(other.substring(0, other.indexOf('-')));
             String setup = h.ok("server_setup", "platform", platform);
             assertThat(nextSteps(setup)).doesNotContain("project=games/other")
-                    .endsWith(" project_scaffold dir=<new folder> then dev_cycle project=<new folder>; games/other is a "
-                            + otherPlatform.displayName() + " project, which " + Platform.of(platform).displayName()
-                            + " never runs: server_setup platform=" + otherPlatform.id()
-                            + " switches the workspace to it");
+                    .endsWith(" " + named(platform) + " dir=<new folder> then dev_cycle project=<new folder>; "
+                            + "games/other is a " + otherPlatform.displayName() + " project, which "
+                            + Platform.of(platform).displayName() + " never runs: server_setup platform="
+                            + otherPlatform.id() + " switches the workspace to it");
             List<String> ran = new ArrayList<>();
-            ToolRegistry.Result cycle = follow(h, setup, ran, "name", "Arena", "template", template(platform));
-            assertThat(ran).containsExactly("project_scaffold dir " + NEW_FOLDER + " name Arena template "
-                    + template(platform), "dev_cycle project " + NEW_FOLDER);
+            ToolRegistry.Result cycle = follow(h, setup, ran, "name", "Arena");
+            assertThat(ran).containsExactly(named(platform).replace('=', ' ') + " dir " + NEW_FOLDER + " name Arena",
+                    "dev_cycle project " + NEW_FOLDER);
             reachesTheBuild(platform, cycle, ws.resolve(NEW_FOLDER));
 
             // Beside a project the server runs, only that one is named.
@@ -287,13 +351,13 @@ class FollowTheHintsTest {
         try (CoreHarness h = harness("minestom")) {
             h.ok("project_scaffold", "name", "Proxy", "template", "velocity-plugin");
             String setup = h.ok("server_setup", "platform", "minestom");
-            assertThat(setup).endsWith("next: project_scaffold dir=<new folder> then dev_cycle project=<new folder>; "
-                    + "the workspace's project is a Velocity project, which Minestom never runs: server_setup "
-                    + "platform=velocity switches the workspace to it");
+            assertThat(setup).endsWith("next: project_scaffold template=minestom-server dir=<new folder> then "
+                    + "dev_cycle project=<new folder>; the workspace's project is a Velocity project, which Minestom "
+                    + "never runs: server_setup platform=velocity switches the workspace to it");
             List<String> ran = new ArrayList<>();
-            ToolRegistry.Result cycle = follow(h, setup, ran, "name", "Arena", "template", "minestom-game");
-            assertThat(ran).containsExactly("project_scaffold dir " + NEW_FOLDER + " name Arena template minestom-game",
-                    "dev_cycle project " + NEW_FOLDER);
+            ToolRegistry.Result cycle = follow(h, setup, ran, "name", "Arena");
+            assertThat(ran).containsExactly("project_scaffold template minestom-server dir " + NEW_FOLDER
+                    + " name Arena", "dev_cycle project " + NEW_FOLDER);
             reachesTheBuild("minestom", cycle, h.core.config().workspace().resolve(NEW_FOLDER));
             h.call("server_stop");
         }
@@ -338,7 +402,7 @@ class FollowTheHintsTest {
         try (CoreHarness h = new CoreHarness(Files.createDirectories(dir.resolve("other")))) {
             h.ok("server_setup", "platform", "minestom");
             h.ok("project_scaffold", "name", "Proxy", "template", "velocity-plugin", "dir", "proxy");
-            String none = "project_scaffold dir=<new folder> then dev_cycle project=<new folder>";
+            String none = "project_scaffold template=minestom-server dir=<new folder> then dev_cycle project=<new folder>";
             String note = "; proxy is a Velocity project, which Minestom never runs: server_setup platform=velocity "
                     + "switches the workspace to it";
             assertThat(h.error("dev_cycle", "restart", false)).endsWith("Run " + none + note + ".");

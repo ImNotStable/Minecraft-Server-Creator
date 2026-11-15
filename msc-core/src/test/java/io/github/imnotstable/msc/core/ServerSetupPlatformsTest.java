@@ -83,7 +83,7 @@ class ServerSetupPlatformsTest {
             // ADR 0045: a proxy has no EULA step, no agent and no Minecraft defaults; it gets its own config.
             assertThat(out).doesNotContain("internal").doesNotContain("warning").doesNotContain("EULA is not")
                     .contains("velocity " + FakeDownloads.VELOCITY + " build 45").contains("velocity.toml")
-                    .endsWith("next: server_start or project_scaffold then dev_cycle");
+                    .endsWith("next: server_start or project_scaffold template=velocity-plugin then dev_cycle");
             assertThat(run.resolve("velocity.jar")).hasContent("velocity server");
             assertThat(run.resolve("velocity.toml")).content().contains("player-info-forwarding-mode = \"MODERN\"");
             assertThat(run.resolve("forwarding.secret")).content().matches("[0-9a-f]{32}");
@@ -93,7 +93,13 @@ class ServerSetupPlatformsTest {
         }
         assertThat(out).doesNotContain("internal").doesNotContain("warning")
                 .contains("agent installed in " + platform.addonDir() + "/")
-                .contains("EULA is not accepted").endsWith("next: server_start or project_scaffold then dev_cycle");
+                .contains("EULA is not accepted").endsWith("next: server_start or project_scaffold"
+                        + switch (platform) {
+                            case FABRIC, QUILT -> " template=fabric-mod";
+                            case NEOFORGE -> " template=neoforge-mod";
+                            case FORGE -> " template=forge-mod";
+                            default -> "";
+                        } + " then dev_cycle");
         assertThat(run.resolve(platform.serverJar())).hasContent(platform.id() + " server");
         assertThat(run.resolve(platform.addonDir()).resolve(platform.agentJar())).hasContent("agent " + platform.agent());
         assertThat(run.resolve("server.properties")).exists();

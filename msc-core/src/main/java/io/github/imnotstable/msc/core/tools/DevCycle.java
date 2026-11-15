@@ -268,9 +268,10 @@ final class DevCycle {
      */
     private Deployed deployAndRestart(Path project, Platform platform, ProjectBuilder.BuildResult build,
                                       boolean restart, Timings time) throws IOException, InterruptedException {
+        // Every way that leaves a running server running sends it a changed pack, whatever happens to the jar (#690).
         if (build.jar() == null) {
             return Deployed.not(new Budget.Parts().add("build ok in " + LogText.seconds(build.millis()) + " but no jar in " + project.resolve("build/libs")
-                    + "; nothing deployed"));
+                    + "; nothing deployed" + (server.running() ? run.packIfChanged() : "")));
         }
         Path target = OutputFile.check(target(platform, build.jar(), project), "deploy target");
         Path libs = config.serverDir().resolve("libs");
@@ -396,8 +397,8 @@ final class DevCycle {
             out.append('\n').append(LoaderInstaller.removedLine(claimed[0], "the project's jar replaces it").strip());
         }
         if (!restart) {
-            return new Deployed(new Budget.Parts()
-                    .add(out.append(wasRunning ? "; server still running the old jar until restarted" : "").toString()), true);
+            return new Deployed(new Budget.Parts().add(out.append(wasRunning
+                    ? "; server still running the old jar until restarted" + run.packIfChanged() : "").toString()), true);
         }
         if (server.serverJar() == null && config.serverCommand() == null) {
             return new Deployed(new Budget.Parts().add(

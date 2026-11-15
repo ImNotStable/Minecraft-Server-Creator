@@ -10,7 +10,7 @@ import java.nio.file.Path;
  * warmup's {@code mscJar check}) writes its pid to {@code check-started} and sleeps a minute. With {@code many-failing-tests.flag}, check fails 200 tests and writes their
  * results where Gradle does. With {@code thin.flag}, the jar also goes to {@code build/msc/server.jar} with one dependency in
  * {@code build/msc/libs}, as the init script's thin Minestom jar does. With {@code no-tests.flag}, check runs no test
- * ({@code NO-SOURCE}) and passes. With {@code download.txt} (a jar, then a path in the Gradle user home), any run copies
+ * ({@code NO-SOURCE}) and passes. With {@code no-jar.flag}, the build succeeds with only a sources jar. With {@code download.txt} (a jar, then a path in the Gradle user home), any run copies
  * that jar into {@code GRADLE_USER_HOME} there, as Gradle downloads a dependency into its caches.
  */
 public final class FakeBuildMain {
@@ -86,6 +86,10 @@ public final class FakeBuildMain {
             }
         }
         Files.writeString(Path.of("build", "libs", name + "-1.0-sources.jar"), "sources");
+        if (Files.exists(Path.of("no-jar.flag"))) {
+            System.out.println("BUILD SUCCESSFUL in 1s");
+            return;
+        }
         Files.writeString(Path.of("build", "libs", name + "-1.0.jar"), Files.readString(Path.of("version.txt")));
         if (Files.exists(Path.of("thin.flag"))) {
             Files.createDirectories(Path.of("build", "msc", "libs"));
