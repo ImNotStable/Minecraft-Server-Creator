@@ -364,6 +364,8 @@ public final class Main {
      * running; when none answers and the machine's owner accepted the EULA, the workspace's own {@code server/} is
      * started for the checks and stopped after them, as in a run. Its arguments are already accepted: every IO
      * failure from here on is a step of its own work that failed ({@link StepFailed}), a failed check as in a run.
+     * Stopping that server is no such step: {@link ServerManager#close} throws nothing, and kills a server that does
+     * not stop (#645).
      */
     static int check(TaskDef task, Path workspace, BenchConfig config, PrintStream out) throws IOException {
         // The run's own placeholders (#554); an attempt's workspace sits in its attempt folder.
@@ -379,11 +381,6 @@ public final class Main {
                 ? new ServerManager(workspace.resolve("server"), config.server(), Map.of(), children)
                 : null) {
             return check(task, workspace, values, config, server, children, out);
-        } catch (StepFailed e) {
-            throw e;
-        } catch (IOException e) {
-            // Only the server's stop throws a bare IOException here: every step inside names itself.
-            throw new StepFailed("stopping the workspace's server", e);
         } finally {
             try {
                 Runtime.getRuntime().removeShutdownHook(hook);
