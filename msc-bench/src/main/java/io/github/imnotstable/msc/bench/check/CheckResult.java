@@ -22,6 +22,16 @@ public record CheckResult(String name, boolean passed, String detail) {
         detail = Text.cut(detail, MAX_DETAIL);
     }
 
+    /**
+     * This result as a reader is shown it, {@code name: detail}, the same in {@code run}'s progress line, report.md's
+     * Failures and {@code check}'s output (#677): each on one line with every hidden character escaped
+     * ({@link Text#singleLine}), and each at most {@link #MAX_DETAIL} characters, so a stored detail is shown whole.
+     * {@code results.jsonl} keeps the detail as it is.
+     */
+    public String shown() {
+        return Text.singleLine(name == null ? "" : name, MAX_DETAIL) + ": " + Text.singleLine(detail, MAX_DETAIL);
+    }
+
     public static CheckResult pass(String name, String detail) {
         return new CheckResult(name, true, detail);
     }

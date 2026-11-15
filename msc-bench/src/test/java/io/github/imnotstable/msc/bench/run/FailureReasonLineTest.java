@@ -45,7 +45,8 @@ class FailureReasonLineTest {
             for (RunRecord r : records) {
                 String line = BenchRunner.progressLine(r);
                 assertThat(line).doesNotContainPattern("[\\r\\n\\u0085\\u2028\\u2029\\p{Cntrl}]");
-                assertThat(line.length()).isLessThan(1200);
+                // each part keeps at most 300 characters, and an escape stands for one in at most 6
+                assertThat(line.length()).isLessThan(6 * 1200);
             }
             String md = ReportWriter.render(records);
             String failures = md.substring(md.indexOf("## Failures\n\n") + "## Failures\n\n".length());
@@ -59,7 +60,7 @@ class FailureReasonLineTest {
         RunRecord r = record(1, List.of(CheckResult.fail("build", "exit 1:\n" + "y".repeat(10_000))), null);
 
         String reason = r.failureReason();
-        assertThat(reason).startsWith("agent exited with code 1; build: exit 1: yyy").contains("y" + Text.CUT_MARK + "y")
+        assertThat(reason).startsWith("agent exited with code 1; build: exit 1:\\nyyy").contains("y" + Text.CUT_MARK + "y")
                 .endsWith("yyy");
         assertThat(reason.length()).isLessThan(2 * RunRecord.MAX_REASON_PART);
     }
@@ -68,7 +69,8 @@ class FailureReasonLineTest {
     void markdownInReasonIsEscaped() {
         String md = ReportWriter.render(List.of(record(1, List.of(CheckResult.fail("build", "* Try:\n> Run | x")), null)));
 
-        assertThat(md).contains("- t (b #1): agent exited with code 1; build: \\* Try: \\> Run \\| x\n");
+        // the line break is shown as backslash n, whose backslash Markdown needs escaped
+        assertThat(md).contains("- t (b #1): agent exited with code 1; build: \\* Try:\\\\n\\> Run \\| x\n");
     }
 
     @Test

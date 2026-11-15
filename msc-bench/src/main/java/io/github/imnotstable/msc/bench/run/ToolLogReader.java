@@ -4,6 +4,7 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import io.github.imnotstable.msc.bench.JsonNumbers;
+import io.github.imnotstable.msc.bench.Quoted;
 import io.github.imnotstable.msc.bench.Text;
 import java.io.IOException;
 import java.math.BigDecimal;
@@ -35,8 +36,8 @@ public final class ToolLogReader {
         try {
             text = Text.read(log);
         } catch (IOException e) {
-            warnings.accept("warning: tool log " + log + " could not be read, its calls are not counted: "
-                    + e.getMessage());
+            warnings.accept("warning: tool log " + Quoted.path(log.toString()) + " could not be read, its calls are not "
+                    + "counted: " + Quoted.message(StepFailed.describe(e)));
             return ToolStats.NONE;
         }
         Sum sum = new Sum();
@@ -52,8 +53,8 @@ public final class ToolLogReader {
             }
         }
         if (skipped > 0) {
-            warnings.accept("warning: tool log " + log + ": " + skipped + (skipped == 1 ? " line" : " lines")
-                    + " could not be read as a tool call and " + (skipped == 1 ? "is" : "are") + " not counted");
+            warnings.accept("warning: tool log " + Quoted.path(log.toString()) + ": " + skipped
+                    + (skipped == 1 ? " line" : " lines") + " could not be read as a tool call and " + (skipped == 1 ? "is" : "are") + " not counted");
         }
         return sum.stats();
     }

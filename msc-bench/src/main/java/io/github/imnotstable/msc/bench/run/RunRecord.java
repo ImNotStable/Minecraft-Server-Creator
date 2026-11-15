@@ -53,9 +53,11 @@ public record RunRecord(
      * Why this attempt failed, or null when it passed: the one text the terminal's progress line and the report's
      * Failures section both show, so they cannot differ. Lists the bench error, the timeout, how the agent ended
      * (non-zero exit, an error it reported, output the bench could not read, said only when it ran) and every failed
-     * check. Each part is one line and at most {@link #MAX_REASON_PART} chars, so the terminal line stays one line; a
-     * failed check's part is its name, {@code ": "} and its detail, and the name is added outside that budget, so a
-     * stored detail (already at most {@link CheckResult#MAX_DETAIL}) is shown whole, never cut a second time (#535).
+     * check. Each part is one line of at most {@link #MAX_REASON_PART} characters, with every hidden character escaped
+     * ({@link Text#singleLine}, #677), so the terminal line stays one line and nothing in it is invisible; a failed
+     * check's part is {@link CheckResult#shown()}, as {@code check} prints it, whose name is added outside that budget,
+     * so a stored detail (already at most {@link CheckResult#MAX_DETAIL}) is shown whole, never cut a second time
+     * (#535).
      */
     public String failureReason() {
         if (passed) {
@@ -78,8 +80,7 @@ public record RunRecord(
             reasons.add("agent output not parsed");
         }
         List<String> parts = new ArrayList<>(reasons.stream().map(r -> Text.singleLine(r, MAX_REASON_PART)).toList());
-        checks.stream().filter(c -> !c.passed()).forEach(c -> parts.add(Text.singleLine(c.name(), MAX_REASON_PART)
-                + ": " + Text.singleLine(c.detail(), MAX_REASON_PART)));
+        checks.stream().filter(c -> !c.passed()).forEach(c -> parts.add(c.shown()));
         return parts.isEmpty() ? "no checks ran" : String.join("; ", parts);
     }
 
