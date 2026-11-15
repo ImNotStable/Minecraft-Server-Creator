@@ -3,6 +3,7 @@ package io.github.imnotstable.msc.bench;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.imnotstable.msc.bench.run.FullDisk;
+import io.github.imnotstable.msc.bench.run.RunFolderUnwritable;
 import io.github.imnotstable.msc.buildlogic.RepoFiles;
 import io.github.imnotstable.msc.bench.run.RunRecord;
 import java.io.ByteArrayOutputStream;
@@ -500,8 +501,8 @@ class CommandLineTest {
             "fail, true, 3, ''",
             "limit, false, 4, Stopped early on a usage limit (out of usage)",
             "limit, true, 4, Stopped early on a usage limit (out of usage)",
-            "unrecorded, false, 5, Stopped early: an attempt could not be written to results.jsonl (No space left",
-            "unrecorded, true, 5, Stopped early: an attempt could not be written to results.jsonl (No space left"})
+            "unrecorded, false, 5, Stopped early: results.jsonl could not be written (No space left on device); results.jsonl holds",
+            "unrecorded, true, 5, Stopped early: results.jsonl could not be written (No space left on device); results.jsonl holds"})
     void theEndOfARunKeepsItsExitCodeWhenTheReportCannotBeWritten(String verdict, boolean reportFails, int exit,
             String stop) throws IOException {
         Path runDir = Files.createDirectories(dir.resolve("run"));
@@ -510,7 +511,8 @@ class CommandLineTest {
                 false, 0, null, null, null, null));
         ByteArrayOutputStream out = new ByteArrayOutputStream();
 
-        int code = Main.endRun(records, verdict.equals("unrecorded") ? new IOException("No space left on device") : null,
+        int code = Main.endRun(records, verdict.equals("unrecorded")
+                ? new RunFolderUnwritable(Path.of("results.jsonl"), new IOException("No space left on device")) : null,
                 verdict.equals("limit") ? "out of usage" : null, runDir, new PrintStream(out, true, StandardCharsets.UTF_8),
                 new FullDisk(reportFails ? Set.of(Main.REPORT) : Set.of(), 0, false));
 

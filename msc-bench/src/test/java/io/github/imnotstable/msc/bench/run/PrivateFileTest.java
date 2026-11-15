@@ -14,7 +14,7 @@ class PrivateFileTest {
     void onlyTheOwnerCanReadIt(@TempDir Path dir) throws Exception {
         Path file = dir.resolve("mcp.json");
         Files.writeString(file, "old");
-        PrivateFile.write(file, "{\"MSC_TOKEN\":\"t\"}");
+        PrivateFile.write(file, "{\"MSC_TOKEN\":\"t\"}", Disk.REAL);
         assertThat(Files.readString(file)).isEqualTo("{\"MSC_TOKEN\":\"t\"}");
         if (FileSystems.getDefault().supportedFileAttributeViews().contains("posix")) {
             assertThat(PosixFilePermissions.toString(Files.getPosixFilePermissions(file))).isEqualTo("rw-------");

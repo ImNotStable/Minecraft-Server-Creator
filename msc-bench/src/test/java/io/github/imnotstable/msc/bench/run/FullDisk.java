@@ -8,7 +8,8 @@ import java.util.Set;
 
 /**
  * A disk that fills up: writes to the files named in {@code full} after the first {@code room} of them take half
- * their bytes and then fail as a full disk does; with {@code stuck}, cutting a file back fails too.
+ * their bytes and then fail as a full disk does, and so does creating a folder named there; with {@code stuck},
+ * cutting a file back fails too.
  */
 public final class FullDisk implements Disk {
 
@@ -31,6 +32,14 @@ public final class FullDisk implements Disk {
         }
         Disk.REAL.write(file, channel, bytes.slice(bytes.position(), bytes.remaining() / 2));
         throw new IOException("No space left on device");
+    }
+
+    @Override
+    public void createDirectory(Path dir) throws IOException {
+        if (full.contains(dir.getFileName().toString()) && writes++ >= room) {
+            throw new IOException("No space left on device");
+        }
+        Disk.REAL.createDirectory(dir);
     }
 
     @Override
