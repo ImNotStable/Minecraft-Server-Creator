@@ -41,6 +41,12 @@ public final class AgentHub implements AutoCloseable {
     private final String token;
     private CoreServer.AgentSession session;
     private long readyCount;
+    /**
+     * Counts every change under {@link #lock}, each signalled on {@link #changed}: {@link #require} asks
+     * {@link #refusal} without the lock and then waits only while this is unchanged, so no change in between is lost
+     * (#710).
+     */
+    private long generation;
     /** The last agent said {@code server.stopping}: its run is ending, so none comes back until a new one connects. */
     private boolean ending;
     /** Set by {@link #close()} under {@link #lock}: no agent can arrive after it, so nobody waits for one. */
@@ -64,6 +70,7 @@ public final class AgentHub implements AutoCloseable {
                     if (!late) {
                         session = s;
                         ending = false;
+                        generation++;
                         changed.signalAll();
                     }
                 } finally {
@@ -99,6 +106,7 @@ public final class AgentHub implements AutoCloseable {
         lock.lock();
         try {
             change.run();
+            generation++;
             changed.signalAll();
         } finally {
             lock.unlock();
@@ -213,9 +221,15 @@ public final class AgentHub implements AutoCloseable {
     public CoreServer.AgentSession require() throws InterruptedException {
         long deadline = System.nanoTime() + connectWait.toNanos();
         while (true) {
-            CoreServer.AgentSession s = current();
-            if (s != null) {
-                return s;
+            long seen;
+            lock.lock();
+            try {
+                if (session != null && session.connection().isOpen()) {
+                    return session;
+                }
+                seen = generation;
+            } finally {
+                lock.unlock();
             }
             String why = refusal();
             if (why != null) {
@@ -223,11 +237,8 @@ public final class AgentHub implements AutoCloseable {
             }
             lock.lock();
             try {
-                if (session != null && session.connection().isOpen()) {
-                    return session;
-                }
-                if (closed || ending) {
-                    continue;
+                if (generation != seen) {
+                    continue; // something changed since the refusal was asked: ask again (#710)
                 }
                 long nanos = deadline - System.nanoTime();
                 if (nanos <= 0) {

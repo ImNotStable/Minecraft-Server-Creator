@@ -12,6 +12,7 @@ import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.Test;
 
 class AgentHubTest {
@@ -47,6 +48,32 @@ class AgentHubTest {
             } finally {
                 second.connection().close();
             }
+        }
+    }
+
+    @Test
+    void anExitBetweenTheCheckAndTheWaitIsNotLost() throws Exception {
+        // #710: the process exited (its onExit signalled) after refusal() asked but before require() waited.
+        try (AgentHub hub = new AgentHub(0, "t")) {
+            AtomicBoolean alive = new AtomicBoolean(true);
+            AtomicBoolean first = new AtomicBoolean(true);
+            hub.connectWait(Duration.ofSeconds(5));
+            hub.agentExpected(() -> {
+                boolean answer = alive.get();
+                if (first.getAndSet(false)) {
+                    alive.set(false);
+                    Thread t = Thread.ofPlatform().start(hub::serverChanged);
+                    try {
+                        t.join();
+                    } catch (InterruptedException e) {
+                        throw new IllegalStateException(e);
+                    }
+                }
+                return answer;
+            });
+            long start = System.nanoTime();
+            assertThatThrownBy(hub::require).hasMessageContaining("not running");
+            assertThat(Duration.ofNanos(System.nanoTime() - start)).isLessThan(Duration.ofSeconds(1));
         }
     }
 
