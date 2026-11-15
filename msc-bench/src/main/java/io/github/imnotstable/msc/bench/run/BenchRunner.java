@@ -4,6 +4,7 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import com.google.gson.JsonParseException;
 import com.google.gson.JsonParser;
 import io.github.imnotstable.msc.bench.RunSelection;
 import io.github.imnotstable.msc.bench.Text;
@@ -485,10 +486,16 @@ public final class BenchRunner {
 
     /**
      * The MCP config {@code json} with {@code marks} in the {@code env} of each of its servers, so msc-core carries the
-     * run's marks however Claude Code passes its own environment on (#587). A config without servers stays as it is.
+     * run's marks however Claude Code passes its own environment on (#587). A config without servers, or that is no
+     * JSON (Claude Code refuses it and says why), stays as it is.
      */
     static String withMarks(String json, Map<String, String> marks) {
-        JsonElement tree = JsonParser.parseString(json);
+        JsonElement tree;
+        try {
+            tree = JsonParser.parseString(json);
+        } catch (JsonParseException e) {
+            return json;
+        }
         if (!tree.isJsonObject() || !(tree.getAsJsonObject().get("mcpServers") instanceof JsonObject servers)) {
             return json;
         }

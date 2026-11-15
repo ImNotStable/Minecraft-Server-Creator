@@ -62,6 +62,7 @@ class HeadlessRunTest {
         assertThat(json).contains("\"env\":{\"MSC_TOKEN\":\"t\",").contains("\"MSC_BENCH_RUN\":\"r\"")
                 .contains("\"other\":{\"command\":\"x\",\"env\":{");
         assertThat(BenchRunner.withMarks("{}", Map.of(AttemptProcesses.RUN, "r"))).isEqualTo("{}");
+        assertThat(BenchRunner.withMarks("{not json", Map.of(AttemptProcesses.RUN, "r"))).isEqualTo("{not json");
     }
 
     @Test
