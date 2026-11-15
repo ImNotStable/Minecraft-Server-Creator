@@ -7,7 +7,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 /**
- * Stands in for Claude Code in runner tests: writes the prompt to {@code done.txt}, logs one tool
+ * Stands in for Claude Code in runner tests: writes the prompt (its first argument, else stdin) to {@code done.txt}, logs one tool
  * call when {@code MSC_TOOL_LOG} is set, leaves the file {@code FAKE_LEAVE} names, and prints a Claude-style JSON result (a usage-limit error when
  * {@code FAKE_USAGE_LIMIT} is set, nothing when {@code FAKE_SILENT} is set). With {@code FAKE_HANG} set it starts a
  * child that sleeps (as Claude Code starts msc-core) and sleeps itself, like an agent still at work.
@@ -21,10 +21,12 @@ public final class FakeAgent {
     public static final String SLEEP = "--sleep";
 
     public static void main(String[] args) throws IOException, InterruptedException {
-        if (args[0].equals(SLEEP)) {
+        if (args.length > 0 && args[0].equals(SLEEP)) {
             Thread.sleep(Long.MAX_VALUE);
         }
-        Files.writeString(Path.of("done.txt"), args[0]);
+        // The prompt: the first argument, or stdin when there is none, as claude -p reads it (#624).
+        String prompt = args.length > 0 ? args[0] : new String(System.in.readAllBytes(), StandardCharsets.UTF_8);
+        Files.writeString(Path.of("done.txt"), prompt);
         // FAKE_LEAVE "path=text": state the agent's own testing left in the workspace, such as a saved plugin config.
         String leave = System.getenv("FAKE_LEAVE");
         if (leave != null) {

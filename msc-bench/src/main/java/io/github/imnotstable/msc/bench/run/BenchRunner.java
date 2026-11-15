@@ -330,9 +330,12 @@ public final class BenchRunner {
             own(stdoutFile, () -> disk.writeString(stdoutFile, ""));
             own(stderrFile, () -> disk.writeString(stderrFile, ""));
             own(promptFile, () -> disk.writeString(promptFile, values.get("prompt")));
+            // The prompt goes over stdin unless the command names {prompt}: no command line carries every prompt
+            // whole through every Windows launcher (#624, ADR 0047).
             ProcessBuilder builder = new ProcessBuilder(command)
                     .directory(workspace.toFile())
-                    .redirectInput(ProcessBuilder.Redirect.from(nullDevice()))
+                    .redirectInput(ProcessBuilder.Redirect.from(
+                            config.promptOnStdin(mode) ? promptFile.toFile() : nullDevice()))
                     .redirectOutput(stdoutFile.toFile())
                     .redirectError(stderrFile.toFile());
             AgentEnvironment.dropParentSession(builder.environment());

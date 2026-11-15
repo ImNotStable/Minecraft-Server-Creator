@@ -52,7 +52,7 @@ class BenchConfigRulesTest {
     private static final Map<String, List<JsonElement>> CASES = new LinkedHashMap<>();
 
     static {
-        cases("agent.command", "[]", "[\"\"]", "[null]", "[\"claude\",\"-p\"]");
+        cases("agent.command", "[]", "[\"\"]", "[null]");
         cases("agent.timeoutSeconds", number("0", "-1"));
         cases("modes", "{}", "{\"m\":null}", "{\"a/b\":{}}", "{\"a,b\":{}}");
         cases("modes.*.extraArgs", "[null]");
@@ -346,6 +346,33 @@ class BenchConfigRulesTest {
     void theShippedConfigLoads() {
         Path shipped = RepoFiles.path("shippedConfig", "msc-bench/bench.json");
         assertThatCode(() -> BenchConfig.load(shipped, home())).doesNotThrowAnyException();
+    }
+
+    /** #624: the shipped agent gets its prompt on stdin in every mode, never on a Windows command line. */
+    @Test
+    void theShippedAndDefaultAgentsReadThePromptOnStdin() throws IOException {
+        BenchConfig shipped = BenchConfig.load(RepoFiles.path("shippedConfig", "msc-bench/bench.json"), home());
+        assertThat(shipped.modes()).isNotEmpty();
+        assertThat(shipped.modes().values()).allSatisfy(mode -> assertThat(shipped.promptOnStdin(mode)).isTrue());
+        assertThat(BenchConfig.defaults().agent().command()).doesNotContain("{prompt}");
+    }
+
+    /** A {prompt} in the command, a mode's extraArgs or its env puts the prompt there, and stdin stays empty. */
+    @Test
+    void aPromptPlaceholderAnywhereKeepsThePromptOffStdin() throws IOException {
+        BenchConfig.Mode plain = new BenchConfig.Mode(null, null, null, null, null, null, null);
+        BenchConfig.Mode inArgs = new BenchConfig.Mode(List.of("--append", "x{prompt}"), null, null, null, null,
+                null, null);
+        BenchConfig.Mode inEnv = new BenchConfig.Mode(null, Map.of("TASK", "{prompt}"), null, null, null, null, null);
+        BenchConfig loaded = BenchConfig.load(write(JsonParser.parseString(VALID)), home());
+        BenchConfig onStdin = new BenchConfig(new BenchConfig.Agent(List.of("claude", "-p"), 60), loaded.modes(),
+                loaded.server(), loaded.gradleWrapperFrom(), loaded.paths(), loaded.corePort(),
+                loaded.minecraftVersion());
+
+        assertThat(loaded.promptOnStdin(plain)).isFalse();
+        assertThat(onStdin.promptOnStdin(plain)).isTrue();
+        assertThat(onStdin.promptOnStdin(inArgs)).isFalse();
+        assertThat(onStdin.promptOnStdin(inEnv)).isFalse();
     }
 
     @Test

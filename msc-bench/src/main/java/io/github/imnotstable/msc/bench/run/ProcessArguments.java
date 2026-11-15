@@ -69,9 +69,9 @@ final class ProcessArguments {
         String encoded = Base64.getEncoder().encodeToString(QUERY.getBytes(StandardCharsets.UTF_16LE));
         Process process = null;
         try {
-            process = new ProcessBuilder("powershell.exe", "-NoProfile", "-NonInteractive", "-EncodedCommand",
-                    encoded).redirectError(ProcessBuilder.Redirect.DISCARD).redirectInput(ProcessBuilder.Redirect.PIPE)
-                    .start();
+            process = WindowsCommandLine.prepare(new ProcessBuilder("powershell.exe", "-NoProfile",
+                    "-NonInteractive", "-EncodedCommand", encoded).redirectError(ProcessBuilder.Redirect.DISCARD)
+                    .redirectInput(ProcessBuilder.Redirect.PIPE)).start();
             process.getOutputStream().close();
             Process started = process;
             CompletableFuture<byte[]> output = CompletableFuture.supplyAsync(() -> {

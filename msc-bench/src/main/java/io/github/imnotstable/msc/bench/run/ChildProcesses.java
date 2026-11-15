@@ -18,12 +18,15 @@ public final class ChildProcesses {
     private final Set<Process> live = new LinkedHashSet<>();
     private boolean closed;
 
-    /** Starts {@code builder}'s process and tracks it until it exits. */
+    /**
+     * Starts {@code builder}'s process and tracks it until it exits. On Windows its command is first encoded so each
+     * argument reaches the program whole ({@link WindowsCommandLine}, #624).
+     */
     public synchronized Process start(ProcessBuilder builder) throws IOException {
         if (closed) {
             throw new IOException("the bench is shutting down");
         }
-        Process process = builder.start();
+        Process process = WindowsCommandLine.prepare(builder).start();
         live.add(process);
         process.onExit().thenRun(() -> forget(process));
         return process;
