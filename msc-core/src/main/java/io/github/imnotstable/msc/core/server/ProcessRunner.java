@@ -9,6 +9,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 /** Runs a command to completion and captures what it printed. An interrupt stops the command and its children. */
@@ -23,9 +24,16 @@ public final class ProcessRunner {
     }
 
     public static Result run(List<String> command, Path dir, Duration timeout) throws IOException, InterruptedException {
+        return run(command, dir, timeout, Map.of());
+    }
+
+    /** {@link #run(List, Path, Duration)} with {@code env} added to the inherited environment. */
+    public static Result run(List<String> command, Path dir, Duration timeout, Map<String, String> env)
+            throws IOException, InterruptedException {
         long start = System.nanoTime();
         // Read as UTF-8, so a Java installer or a Gradle build is started to write UTF-8 (#478).
         ProcessBuilder pb = ServerJava.processBuilder(command).directory(dir.toFile()).redirectErrorStream(true);
+        pb.environment().putAll(env);
         Process process = pb.start();
         process.getOutputStream().close();
         StringBuilder out = new StringBuilder();

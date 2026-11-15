@@ -100,7 +100,7 @@ EULA step: installing or using MSC never accepts the Minecraft EULA. `server_set
 
 ## API index
 
-Built on first use from the platform's jars in the Gradle cache (or `MSC_API_JARS`), by reading class files directly: Paper API and Adventure for Paper and Purpur, the Minecraft server jar from Loom's cache plus Fabric API and loader for Fabric and Quilt, NeoForge and its event bus for NeoForge, Forge with its event bus and FML core for Forge, Minestom and Adventure for Minestom, Velocity API and Adventure for Velocity. No network, no Javadoc. `kind=event` uses each API's own mark of an event: a subtype of Bukkit's `Event` (Paper, Purpur, Folia), of the NeoForge bus `Event`, of Forge EventBus 7's `RecordEvent`, `MutableEvent` or `InheritableEvent`, or of Minestom's `Event`; Fabric API's `...Events` and `...Callback` types, which declare its events as fields; and for Velocity, whose events share no supertype, the classes named `...Event` in `com.velocitypowered.api.event`. Parameter names appear only when the jar records them; the published paper-api jar does not, so signatures show types only.
+Built on first use from the platform's jars in the Gradle cache of the Gradle user home the core's builds use (`GRADLE_USER_HOME`, see below; or `MSC_API_JARS`), by reading class files directly: Paper API and Adventure for Paper and Purpur, the Minecraft server jar from Loom's cache plus Fabric API and loader for Fabric and Quilt, NeoForge and its event bus for NeoForge, Forge with its event bus and FML core for Forge, Minestom and Adventure for Minestom, Velocity API and Adventure for Velocity. No network, no Javadoc. `kind=event` uses each API's own mark of an event: a subtype of Bukkit's `Event` (Paper, Purpur, Folia), of the NeoForge bus `Event`, of Forge EventBus 7's `RecordEvent`, `MutableEvent` or `InheritableEvent`, or of Minestom's `Event`; Fabric API's `...Events` and `...Callback` types, which declare its events as fields; and for Velocity, whose events share no supertype, the classes named `...Event` in `com.velocitypowered.api.event`. Parameter names appear only when the jar records them; the published paper-api jar does not, so signatures show types only.
 <!-- tools: api_search api_class -->
 | Tool | Arguments | What it does |
 | --- | --- | --- |
@@ -219,7 +219,8 @@ One JSON line per call, appended to `MSC_TOOL_LOG` (default `<workspace>/.msc/to
 | `MSC_CORE_ADDRESS`, `MSC_TOKEN` | Where agents connect and the shared token. Set both to attach a server that is already running | free port, random token |
 | `MSC_TOOL_LOG` | Tool log file | `<workspace>/.msc/tool-calls.jsonl` |
 | `MSC_AGENT_JAR` | Agent plugin or mod to install into the server | the jar in `<workspace>/.msc/agent` named for the platform (`...paper...`, `...fabric...`), else one with no platform in its name; then the same search in `agents/` of the core's install folder (`installMsc` ships them there) |
-| `MSC_API_JARS` | Jars to index, separated by the path separator | the platform's jars from `~/.gradle` |
+| `MSC_API_JARS` | Jars to index, separated by the path separator | the platform's jars in the Gradle user home |
+| `GRADLE_USER_HOME` | Gradle's own: where Gradle keeps its caches. The `gradle.user.home` system property of the core wins over it, as in Gradle. The core gives the one it resolves to every Gradle build it starts (`dev_cycle`, the first build after `project_scaffold`) and reads the API jars there | `~/.gradle` |
 | `MSC_MINECRAFT` | Default Minecraft version | 26.3 |
 | `MSC_CLIENT_JAR` | A Minecraft client jar whose textures `world_render` uses after the project's pack | none (colour table) |
 | `MSC_JAVA` | Java used to run the server | the Java running the core |

@@ -24,8 +24,8 @@ class ApiToolsTest {
         Path files = dir.resolve("gradle/caches/modules-2/files-2.1");
         Path paper = jar(files.resolve("io.papermc.paper/paper-api/1.0/h/paper-api-1.0.jar"), "org.bukkit.PaperThing");
         jar(files.resolve("net.minestom/minestom/1.0/h/minestom-1.0.jar"), "net.minestom.MinestomThing");
-        CoreConfig config = CoreConfig.forWorkspace(dir.resolve("ws"));
-        ApiTools api = new ApiTools(config, dir.resolve("gradle"));
+        CoreConfig config = CoreConfig.forWorkspace(dir.resolve("ws")).withGradleUserHome(dir.resolve("gradle"));
+        ApiTools api = new ApiTools(config);
 
         assertThat(api.index().search("thing", null, 5, 100)).contains("org.bukkit.PaperThing");
         Platform.remember(config, Platform.MINESTOM);
