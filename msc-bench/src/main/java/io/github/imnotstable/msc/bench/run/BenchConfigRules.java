@@ -106,7 +106,7 @@ final class BenchConfigRules {
             raw.paths().forEach((name, path) -> {
                 String key = "paths." + Quoted.name(name);
                 if (!NAME.matcher(name).matches()) {
-                    problems.add("paths: the name " + quoted(name) + " is no placeholder name; use letters, digits, "
+                    problems.add("paths: the name " + Quoted.text(name) + " is no placeholder name; use letters, digits, "
                             + "'.', '_' or '-'");
                 } else if (BUILT_IN_PLACEHOLDERS.contains(name)) {
                     problems.add(key + ": {" + name + "} is filled by the runner itself, which would "
@@ -118,7 +118,7 @@ final class BenchConfigRules {
             });
         }
         if (raw.minecraftVersion() != null && !NAME.matcher(raw.minecraftVersion()).matches()) {
-            problems.add("minecraftVersion: " + quoted(raw.minecraftVersion()) + " is no Minecraft version, such as "
+            problems.add("minecraftVersion: " + Quoted.text(raw.minecraftVersion()) + " is no Minecraft version, such as "
                     + "26.3");
         }
         return problems;
@@ -157,7 +157,7 @@ final class BenchConfigRules {
                 while (placeholder.find()) {
                     String placeholderName = placeholder.group(1);
                     if (!pathNames.contains(placeholderName) && !BUILT_IN_PLACEHOLDERS.contains(placeholderName)) {
-                        problems.add(key + ".serverPlugins: " + placeholder(placeholderName) + " in " + quoted(plugin)
+                        problems.add(key + ".serverPlugins: " + placeholder(placeholderName) + " in " + Quoted.text(plugin)
                                 + " is no placeholder; name a key of paths, such as {agentJar}");
                     }
                 }
@@ -194,17 +194,13 @@ final class BenchConfigRules {
      * differs, such as {@code "missing.jar" (/home/me/bench/missing.jar)} (#652).
      */
     private static String where(String written, String resolved) {
-        return quoted(written) + (resolved.equals(written) ? "" : " (" + Quoted.path(resolved) + ")");
-    }
-
-    private static String quoted(String text) {
-        return UserJson.quoted(text);
+        return Quoted.text(written) + (resolved.equals(written) ? "" : " (" + Quoted.path(resolved) + ")");
     }
 
     /** {@code {name}} as a refusal shows a placeholder: as it is for a plain name, else quoted. */
     private static String placeholder(String name) {
         String placeholder = "{" + name + "}";
-        return Quoted.name(name).equals(name) ? placeholder : quoted(placeholder);
+        return Quoted.name(name).equals(name) ? placeholder : Quoted.text(placeholder);
     }
 
     /** What builds the {@code paths} entries of the shipped {@code bench.json}, named when one is missing. */
@@ -319,7 +315,7 @@ final class BenchConfigRules {
         if (mode.paperCacheSeed() != null && !mode.paperCacheSeed().isBlank()) {
             Path seed = Path.of(mode.paperCacheSeed());
             if (seed.isAbsolute() || seed.getRoot() != null || seed.normalize().startsWith("..")) {
-                problems.add(key + ".paperCacheSeed: " + quoted(mode.paperCacheSeed())
+                problems.add(key + ".paperCacheSeed: " + Quoted.text(mode.paperCacheSeed())
                         + " is not a folder inside the workspace");
             }
         }
@@ -346,7 +342,7 @@ final class BenchConfigRules {
             if ((scheme.equals("http") || scheme.equals("https")) && uri.getHost() != null) {
                 if (uri.getRawQuery() != null || uri.getRawFragment() != null) {
                     // The bench puts /v3/... after the base, so a query or fragment would swallow that path (#649).
-                    problems.add("server.downloadsUrl: " + quoted(url) + " has a query or fragment; give the service's "
+                    problems.add("server.downloadsUrl: " + Quoted.text(url) + " has a query or fragment; give the service's "
                             + "base URL, such as https://fill.papermc.io");
                 }
                 return;
@@ -354,7 +350,7 @@ final class BenchConfigRules {
         } catch (URISyntaxException e) {
             // reported below
         }
-        problems.add("server.downloadsUrl: " + quoted(url) + " is no http or https URL");
+        problems.add("server.downloadsUrl: " + Quoted.text(url) + " is no http or https URL");
     }
 
     private static void command(List<String> problems, String key, List<String> command, Set<String> refused) {

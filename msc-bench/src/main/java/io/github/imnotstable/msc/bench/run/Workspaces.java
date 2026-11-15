@@ -1,5 +1,6 @@
 package io.github.imnotstable.msc.bench.run;
 
+import io.github.imnotstable.msc.bench.Quoted;
 import io.github.imnotstable.msc.bench.check.Placeholders;
 import io.github.imnotstable.msc.bench.task.Scaffold;
 import io.github.imnotstable.msc.bench.task.TaskDef;
@@ -75,7 +76,8 @@ public final class Workspaces {
         try {
             Templates.scaffold(scaffold.template(), workspace, vars);
         } catch (IllegalArgumentException | IllegalStateException e) {
-            throw new IOException("cannot scaffold " + scaffold.template() + ": " + e.getMessage(), e);
+            throw new IOException("cannot scaffold " + Quoted.name(scaffold.template()) + ": "
+                    + Quoted.message(e.getMessage()), e);
         }
     }
 

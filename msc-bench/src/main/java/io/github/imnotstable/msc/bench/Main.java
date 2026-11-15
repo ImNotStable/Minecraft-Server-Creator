@@ -134,7 +134,8 @@ public final class Main {
             err.println("msc-bench: " + oneLine(message(e.getCause())));
             return BAD_INPUT;
         } catch (RuntimeException | Error e) {
-            String text = e.getMessage() == null ? "" : e.getMessage().strip().lines().findFirst().orElse("");
+            String text = e.getMessage() == null ? ""
+                    : Quoted.message(e.getMessage().strip().lines().findFirst().orElse(""));
             err.println("msc-bench: internal error (" + e.getClass().getName() + (text.isEmpty() ? "" : ": " + text)
                     + "); please report it");
             return INTERNAL_ERROR;

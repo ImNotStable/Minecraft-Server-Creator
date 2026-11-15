@@ -161,6 +161,9 @@ class TaskTypesTest {
             rows.add(Arguments.of(key, "(abc", "\"(abc\" is not a regex: Unclosed group at index 4"));
             rows.add(Arguments.of(key, "x\n[" + "a".repeat(100), "\"x\\n[" + "a".repeat(57)
                     + "\"... is not a regex: Unclosed character class at index 102"));
+            // #672: the library's description repeats the regex, and is escaped as the quoted value is.
+            rows.add(Arguments.of(key, "\\p{a\u2028b\u202ec}", "\"\\\\p{a\\u2028b\\u202ec}\" is not a regex: "
+                    + "Unknown character property name {a\\u2028b\\u202ec} at index 8"));
         }
         for (String key : PATH_KEYS) {
             rows.add(Arguments.of(key, "a\0b", "\"a\\u0000b\" is not a path: Nul character not allowed"));

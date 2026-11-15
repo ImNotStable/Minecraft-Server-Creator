@@ -28,6 +28,8 @@ public final class Quoted {
 
     /** The most characters of a value a refusal shows. */
     public static final int MAX = 60;
+    /** The most characters of a library's or an exception's own text a refusal shows ({@link #message}). */
+    public static final int MESSAGE_MAX = 200;
 
     /** A name shown in a key path as it is: nothing a reader could take for a separator, a quote or a blank. */
     private static final Pattern PLAIN_NAME = Pattern.compile("[\\p{L}\\p{N}_.$-]+");
@@ -93,6 +95,27 @@ public final class Quoted {
         }
         Units units = new Units(Integer.MAX_VALUE);
         string(units, path);
+        return units.toString();
+    }
+
+    /**
+     * {@code message}, free text that a library or an exception wrote, such as a regex error's description, as a
+     * refusal appends it (#672): without quotes, since it is no value, but with every character that would split the
+     * line or hide itself escaped as {@link #text} escapes it (a line break as backslash n, a right-to-left override as
+     * a unicode escape), so it stays on the problem's line and can be seen. A quote and a backslash are shown as they
+     * are. Cut after {@link #MESSAGE_MAX} characters, with {@code ...} after it; null is empty.
+     */
+    public static String message(String message) {
+        if (message == null) {
+            return "";
+        }
+        String text = message.strip();
+        Units units = new Units(MESSAGE_MAX);
+        for (int i = 0; i < text.length(); ) {
+            int c = text.codePointAt(i);
+            units.add(c == '"' || c == '\\' ? Character.toString(c) : escaped(c));
+            i += Character.charCount(c);
+        }
         return units.toString();
     }
 

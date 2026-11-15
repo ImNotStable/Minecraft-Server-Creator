@@ -147,6 +147,11 @@ class CommandLineTest {
         BAD_TASKS.put("bad-regex", new String[] {"{\"category\":\"code\",\"title\":\"t\",\"checks\":[{\"type\":"
                 + "\"file\",\"path\":\"a.txt\",\"contains\":\"(abc\"}]}",
                 "checks[0].contains: \"(abc\" is not a regex: Unclosed group at index 4"});
+        // #672: the library's description of a bad regex is escaped as well, keeping no line separator or RTL override.
+        BAD_TASKS.put("regex-bidi", new String[] {"{\"category\":\"code\",\"title\":\"t\",\"checks\":[{\"type\":"
+                + "\"file\",\"path\":\"a.txt\",\"contains\":\"\\\\p{a\\u2028b\\u202ec}\"}]}",
+                "checks[0].contains: \"\\\\p{a\\u2028b\\u202ec}\" is not a regex: Unknown character property name "
+                + "{a\\u2028b\\u202ec} at index 8"});
         // #519: a task refusal names its file and key path.
         BAD_TASKS.put("missing-fixture", new String[] {"{\"category\":\"code\",\"title\":\"t\",\"fixtures\":[\"_nope\"],"
                 + check + "}", "fixtures: no folder _nope next to the task folders"});
@@ -551,6 +556,20 @@ class CommandLineTest {
                 Main.USAGE_LIMIT, Main.NOT_WRITTEN);
         assertThat(err.toString(StandardCharsets.UTF_8).lines().toList()).singleElement().asString()
                 .isEqualTo("msc-bench: internal error (java.lang.IllegalStateException: broken); please report it");
+    }
+
+    /** #672: the exception's own text is escaped, so a line separator or an RTL override in it can be seen. */
+    @Test
+    void anUnexpectedErrorShowsItsTextEscaped() {
+        ByteArrayOutputStream err = new ByteArrayOutputStream();
+
+        Main.guarded(new PrintStream(err, true, StandardCharsets.UTF_8), () -> {
+            throw new IllegalStateException("a b‮c");
+        });
+
+        assertThat(err.toString(StandardCharsets.UTF_8).lines().toList()).singleElement().asString()
+                .isEqualTo("msc-bench: internal error (java.lang.IllegalStateException: a\\u2028b\\u202ec); please "
+                        + "report it");
     }
 
     /** #508: the last guard of the one-line promise, for a refusal whose message nobody made one line. */

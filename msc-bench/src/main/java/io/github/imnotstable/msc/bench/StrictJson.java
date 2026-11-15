@@ -9,6 +9,7 @@ import com.google.gson.stream.JsonReader;
 import com.google.gson.stream.JsonToken;
 import java.io.IOException;
 import java.io.StringReader;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -25,13 +26,43 @@ import java.util.regex.Pattern;
  * byte-order mark at the very start is skipped), and no object may give a key twice, at any depth. A refusal is an
  * {@link IllegalArgumentException} that names the problem and where it is: the line, column and key of a syntax
  * error, or the path to a repeated key such as {@code checks[0].contains}.
+ *
+ * <p>A syntax refusal never shows Gson's own text, which may quote the file (#671): its {@code Malformed Unicode
+ * escape} is followed by the next four characters of the string, which may be part of a password or a token. The
+ * refusal shows only the kind of problem, from a fixed list, its line and column, and the key path as this class
+ * tracks it, every name as {@link Quoted#secretName} shows it: nothing after an {@code =} in a name is ever shown,
+ * whatever characters follow it.
  */
 public final class StrictJson {
 
     private static final TypeAdapter<JsonElement> TREE = new Gson().getAdapter(JsonElement.class);
-    /** The rest of a key name after an "=", which an env entry written {@code "API_KEY=sk-..."} holds (#661). */
-    private static final Pattern HIDDEN_AFTER_EQUALS = Pattern.compile("=[^.\\[]*");
-    private static final Pattern PROBLEM = Pattern.compile("^(.*?) at line (\\d+) column (\\d+)(?: path \\$\\.?(\\S+))?");
+    /**
+     * The kinds of syntax problem a refusal names: each is the fixed text that starts one of Gson's messages. The rest
+     * of a message, such as the characters after {@code Malformed Unicode escape}, is never shown (#671).
+     */
+    private static final List<String> KINDS = List.of(
+            "Unterminated array",
+            "Unterminated object",
+            "Unterminated string",
+            "Unterminated comment",
+            "Unterminated escape sequence",
+            "Expected name",
+            "Expected ':'",
+            "Expected value",
+            "Unexpected value",
+            "End of input",
+            "Malformed Unicode escape",
+            "Invalid escape sequence",
+            "Invalid escaped character \"'\" in strict mode",
+            "Cannot escape a newline character in strict mode",
+            "Unescaped control characters (\\u0000-\\u001F) are not allowed in strict mode",
+            "Unpaired surrogate characters are not allowed in strict mode");
+    /** The start of Gson's message for text only a lenient reader takes, such as a comment or an unquoted name. */
+    private static final String LENIENT_ONLY = "Use JsonReader.setStrictness";
+    private static final String UNEXPECTED = "unexpected text";
+    private static final Pattern NESTING = Pattern.compile("^Nesting limit \\d+ reached");
+    /** The start of {@link JsonReader#toString}: where the reader stands, which never holds the file's own text. */
+    private static final Pattern POSITION = Pattern.compile("^JsonReader at line (\\d+) column (\\d+) ");
 
     private StrictJson() {
     }
@@ -78,11 +109,12 @@ public final class StrictJson {
             JsonElement tree = TREE.read(reader);
             // In strict mode peek() refuses any text after the value; the check is for a reader that would not.
             if (reader.peek() != JsonToken.END_DOCUMENT) {
-                throw new JsonParseException("unexpected text after the value");
+                throw new JsonParseException(UNEXPECTED);
             }
             return tree;
         } catch (IOException | JsonParseException e) {
-            throw new IllegalArgumentException(at + "is not valid JSON: " + problem(e.getMessage(), text), e);
+            // Neither Gson's message nor its exception goes on as the cause: both may quote the file (#671).
+            throw new IllegalArgumentException(at + "is not valid JSON: " + problem(text));
         }
     }
 
@@ -101,8 +133,7 @@ public final class StrictJson {
                 Set<String> seen = new HashSet<>();
                 while (reader.hasNext()) {
                     String key = reader.nextName();
-                    // A name is shown only up to an "=": an env entry written "API_KEY=sk-..." holds its secret (#661).
-                    String keyPath = path.isEmpty() ? Quoted.secretName(key) : path + "." + Quoted.secretName(key);
+                    String keyPath = path + step(path.isEmpty(), key);
                     if (!seen.add(key)) {
                         String problem = at + keyPath + ": given twice; give each key once";
                         if (repeated == null) {
@@ -128,23 +159,98 @@ public final class StrictJson {
     }
 
     /**
-     * Gson's message without its advice to read leniently: what is wrong, and where, with the key it is in, such as
-     * {@code (in server.rconPassword)} for a lone surrogate. The line is left out for text of one line, such as a line
-     * of {@code results.jsonl}.
+     * What is wrong with {@code text}, and where, with the key it is in, such as {@code Unpaired surrogate characters
+     * are not allowed in strict mode at line 3 column 30 (in server.rconPassword)}. The text is read again, step by
+     * step, up to the problem, so the key path is this class's own and Gson's message gives only the kind. The line is
+     * left out for text of one line, such as a line of {@code results.jsonl}.
      */
-    private static String problem(String message, String text) {
+    private static String problem(String text) {
+        JsonReader reader = reader(text);
+        List<String> steps = new ArrayList<>();
+        String kind;
+        try {
+            walk(reader, steps);
+            if (reader.peek() == JsonToken.END_DOCUMENT) {
+                // Gson's tree reader refused what the walk takes: nothing is known but that.
+                return "a syntax error";
+            }
+            kind = UNEXPECTED;
+        } catch (IOException | RuntimeException e) {
+            kind = kind(e.getMessage());
+        }
+        Matcher position = POSITION.matcher(reader.toString());
+        if (!position.find()) {
+            return kind;
+        }
+        boolean oneLine = text.indexOf('\n') < 0 && text.indexOf('\r') < 0;
+        String key = steps.isEmpty() || kind.equals(UNEXPECTED) ? "" : " (in " + String.join("", steps) + ")";
+        return kind + " at " + (oneLine ? "" : "line " + position.group(1) + " ") + "column " + position.group(2) + key;
+    }
+
+    /** The kind of problem Gson's {@code message} names: one of {@link #KINDS}, and nothing else of the message. */
+    private static String kind(String message) {
         if (message == null) {
             return "it ends too early";
         }
-        String first = message.lines().findFirst().orElse("");
-        Matcher at = PROBLEM.matcher(first);
-        if (!at.find()) {
-            return first;
+        if (message.startsWith(LENIENT_ONLY)) {
+            return UNEXPECTED;
         }
-        String what = at.group(1).startsWith("Use JsonReader") ? "unexpected text" : at.group(1);
-        boolean oneLine = text.indexOf('\n') < 0 && text.indexOf('\r') < 0;
-        String key = at.group(4) == null || what.equals("unexpected text") ? ""
-                : " (in " + HIDDEN_AFTER_EQUALS.matcher(at.group(4)).replaceAll("=<hidden>") + ")";
-        return what + " at " + (oneLine ? "" : "line " + at.group(2) + " ") + "column " + at.group(3) + key;
+        Matcher nesting = NESTING.matcher(message);
+        if (nesting.find()) {
+            return nesting.group();
+        }
+        return KINDS.stream().filter(message::startsWith).findFirst().orElse("a syntax error");
+    }
+
+    /**
+     * Reads the value at the reader as Gson's tree reader does, keeping in {@code steps} the key path to where it is,
+     * one step per name or index. As in Gson's own path, a name stays the last step until the next name is read, and
+     * an index names the entry about to be read; a problem stops the walk with its steps in place.
+     */
+    private static void walk(JsonReader reader, List<String> steps) throws IOException {
+        switch (reader.peek()) {
+            case BEGIN_OBJECT -> {
+                reader.beginObject();
+                boolean named = false;
+                while (reader.hasNext()) {
+                    String name = reader.nextName();
+                    if (named) {
+                        steps.removeLast();
+                    }
+                    steps.add(step(steps.isEmpty(), name));
+                    named = true;
+                    walk(reader, steps);
+                }
+                if (named) {
+                    steps.removeLast();
+                }
+                reader.endObject();
+            }
+            case BEGIN_ARRAY -> {
+                reader.beginArray();
+                for (int i = 0; ; i++) {
+                    steps.add("[" + i + "]");
+                    if (!reader.hasNext()) {
+                        steps.removeLast();
+                        break;
+                    }
+                    walk(reader, steps);
+                    steps.removeLast();
+                }
+                reader.endArray();
+            }
+            case STRING, NUMBER -> reader.nextString();
+            case BOOLEAN -> reader.nextBoolean();
+            case NULL -> reader.nextNull();
+            default -> throw new JsonParseException("Expected value");
+        }
+    }
+
+    /**
+     * {@code name} as a step of a key path, after a dot unless {@code first}: as {@link Quoted#secretName} shows it, so
+     * a name holding an {@code =}, as an env entry written {@code "API_KEY=sk-..."} does, is shown only up to it (#661).
+     */
+    private static String step(boolean first, String name) {
+        return (first ? "" : ".") + Quoted.secretName(name);
     }
 }

@@ -1,6 +1,7 @@
 package io.github.imnotstable.msc.bench.check;
 
 import io.github.imnotstable.msc.bench.JsonNumbers;
+import io.github.imnotstable.msc.bench.Quoted;
 import io.github.imnotstable.msc.bench.Text;
 import io.github.imnotstable.msc.bench.UserJson;
 import io.github.imnotstable.msc.bench.run.ChildProcesses;
@@ -90,7 +91,7 @@ record PlayerCheck(
         }
         if (!port.strip().matches("\\d{1,5}") || Integer.parseInt(port.strip()) < 1
                 || Integer.parseInt(port.strip()) > 65535) {
-            throw new IllegalArgumentException(json.key("port") + ": " + UserJson.quoted(port)
+            throw new IllegalArgumentException(json.key("port") + ": " + Quoted.text(port)
                     + " is not a port from 1 to 65535 or a placeholder such as {serverPort}");
         }
         return port;

@@ -1,6 +1,7 @@
 package io.github.imnotstable.msc.bench.run;
 
 import com.google.gson.JsonElement;
+import io.github.imnotstable.msc.bench.Quoted;
 import io.github.imnotstable.msc.bench.StrictJson;
 import io.github.imnotstable.msc.bench.Text;
 import io.github.imnotstable.msc.bench.UserJson;
@@ -387,7 +388,7 @@ public record BenchConfig(
      */
     public BenchConfig withModel(String model) {
         if (model == null || model.isBlank() || model.startsWith("-")) {
-            throw new IllegalArgumentException("--model " + (model == null ? "null" : UserJson.quoted(model)) + " is no model name, such as claude-sonnet-4-6");
+            throw new IllegalArgumentException("--model " + (model == null ? "null" : Quoted.text(model)) + " is no model name, such as claude-sonnet-4-6");
         }
         List<String> command = new ArrayList<>(agent.command());
         int at = command.indexOf("--model");

@@ -12,6 +12,9 @@ dependencies {
     // Minestom tasks start from a scaffolded template, and their player checks join with the test player.
     implementation(project(":msc-templates"))
     implementation(project(":msc-bot"))
+    // The player check names blocks and regions with msc-protocol's world types (BlockGrid, Region) itself, so it
+    // depends on them directly rather than through msc-bot's api.
+    implementation(project(":msc-protocol"))
     // The tree kill and the RCON client shared with msc-core; their own module, since the bench must not depend on
     // core (ADR 0004, ADR 0031, ADR 0032). Its test fixtures hold the fake RCON server.
     implementation(project(":msc-process"))

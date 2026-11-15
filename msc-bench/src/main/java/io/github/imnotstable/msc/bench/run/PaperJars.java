@@ -3,6 +3,7 @@ package io.github.imnotstable.msc.bench.run;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import io.github.imnotstable.msc.bench.Quoted;
 import io.github.imnotstable.msc.process.AtomicFile;
 import io.github.imnotstable.msc.process.HttpStall;
 import java.io.IOException;
@@ -127,7 +128,7 @@ public final class PaperJars {
             Thread.currentThread().interrupt();
             throw new IOException("interrupted while downloading Paper", e);
         } catch (RuntimeException e) {
-            throw new IOException("unexpected answer from PaperMC: " + e.getMessage(), e);
+            throw new IOException("unexpected answer from PaperMC: " + Quoted.message(e.getMessage()), e);
         }
     }
 
