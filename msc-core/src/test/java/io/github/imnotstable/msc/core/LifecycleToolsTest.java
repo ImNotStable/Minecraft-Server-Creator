@@ -921,7 +921,8 @@ class LifecycleToolsTest {
             String first = s.ok("server_setup", "platform", "fabric");
             assertThat(first).contains("fabric launcher for " + minecraft + ", loader " + loader + " (downloaded)")
                     .contains("fabric api " + api + " (downloaded)").contains("warning: msc fabric agent not found")
-                    .contains("EULA is not accepted").endsWith("next: server_start or project_scaffold then dev_cycle");
+                    .contains("EULA is not accepted")
+                    .endsWith("next: server_start or project_scaffold template=fabric-mod then dev_cycle");
             Path run = ws.resolve("run");
             assertThat(run.resolve("fabric-server-launch.jar")).hasContent("launcher");
             assertThat(run.resolve("mods/fabric-api.jar")).hasContent("fabric api");

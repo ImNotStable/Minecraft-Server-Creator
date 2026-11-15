@@ -231,7 +231,7 @@ class DocumentedResultLinesTest {
             new SetupLine("`Minecraft EULA (...) accepted for this machine ...`",
                     "Minecraft EULA \\(.*\\) accepted for this machine.*"),
             new SetupLine("`<platform> server ready in <folder>; next: server_start or project_scaffold then dev_cycle`",
-                    "\\w+ server ready in .*; next: server_start or project_scaffold then dev_cycle"),
+                    "\\w+ server ready in .*; next: server_start or project_scaffold( template=\\S+)? then dev_cycle"),
             new SetupLine("`minestom needs no server download ...`", "minestom needs no server download .*"),
             new SetupLine("Folia `folia <version> build <n> (downloaded)`", "folia \\S+ build \\d+ \\((downloaded|cached)\\)"),
             new SetupLine("`folia: plugins load only with folia-supported: true ...`",
