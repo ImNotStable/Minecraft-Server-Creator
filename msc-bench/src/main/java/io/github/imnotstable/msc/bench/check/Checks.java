@@ -75,6 +75,11 @@ public final class Checks {
         }
 
         @Override
+        public Path addFiles() {
+            return unfilled.addFiles();
+        }
+
+        @Override
         public CheckResult run(CheckContext context) {
             Check filled;
             try {

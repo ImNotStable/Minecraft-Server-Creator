@@ -254,16 +254,61 @@ class CommandLineTest {
         }
     }
 
+    /** #609: the flags each command takes, written out here so the test does not read the table it checks. */
+    private static final Map<String, List<String>> TAKES = new TreeMap<>(Map.of(
+            "list", List.of("--tasks-dir"),
+            "run", List.of("--tasks", "--modes", "--repeat", "--model", "--isolate", "--out", "--tasks-dir", "--config"),
+            "check", List.of("--tasks-dir", "--config"),
+            "report", List.of()));
+    /** Every flag, and the ones that take no value. */
+    private static final List<String> ALL_FLAGS = TAKES.get("run");
+    private static final Set<String> NO_VALUE = Set.of("--isolate");
+    /** Each command's positional arguments, given right. */
+    private static final Map<String, List<String>> POSITIONAL = Map.of("list", List.of(), "run", List.of(),
+            "check", List.of("t1", "@ws"), "report", List.of("@good/crlf"));
+
     /** Arguments with {@code @x} as the path of {@code x} in the test folder; then what the refusal says. */
     static Stream<Arguments> refusals() {
         List<Arguments> rows = new ArrayList<>();
         // Wrong for every command alike.
         for (String command : List.of("list", "run", "check", "report")) {
             rows.add(row(command + " --nope", "unknown option --nope", command, "--nope"));
-            rows.add(row(command + " --tasks", "--tasks needs a value", command, "--tasks"));
-            rows.add(row(command + " --config", "--config needs a value", command, "--config"));
         }
-        rows.add(row("unknown command", "unknown command lst", "lst"));
+        rows.add(row("run --tasks", "--tasks needs a value", "run", "--tasks"));
+        rows.add(row("run --config", "--config needs a value", "run", "--config"));
+        rows.add(row("check --config", "--config needs a value", "check", "t1", "@ws", "--config"));
+        rows.add(row("unknown command", "unknown command lst; the commands are list, run, check, report", "lst"));
+        rows.add(row("unknown command with a flag", "unknown command lst", "lst", "--repeat", "2"));
+        // #609: every command crossed with every flag. A flag the command does not take is refused, even without its
+        // value; one it takes is refused when given twice, naming how to give it once.
+        TAKES.forEach((command, takes) -> {
+            for (String flag : ALL_FLAGS) {
+                List<String> args = new ArrayList<>(List.of(command));
+                args.addAll(POSITIONAL.get(command));
+                if (takes.contains(flag)) {
+                    for (int i = 0; i < 2; i++) {
+                        args.add(flag);
+                        if (!NO_VALUE.contains(flag)) {
+                            args.add("@twice-" + i);
+                        }
+                    }
+                    rows.add(row(command + " " + flag + " twice", flag + " is given twice; "
+                            + (flag.equals("--tasks") ? "list the tasks in one --tasks a,b"
+                            : flag.equals("--modes") ? "list the modes in one --modes m1,m2" : "give it once"),
+                            args.toArray(String[]::new)));
+                } else {
+                    args.add(flag);
+                    rows.add(row(command + " " + flag, command + " does not take " + flag + "; " + command
+                            + (takes.isEmpty() ? " takes no options" : " takes only " + String.join(", ", takes)),
+                            args.toArray(String[]::new)));
+                    if (!NO_VALUE.contains(flag)) {
+                        args.add("x");
+                        rows.add(row(command + " " + flag + " x", command + " does not take " + flag,
+                                args.toArray(String[]::new)));
+                    }
+                }
+            }
+        });
         rows.add(row("list extra", "usage: list", "list", "x", "--tasks-dir", "@tasks"));
         rows.add(row("run extra", "unexpected x", "run", "x", "--tasks-dir", "@tasks", "--config", "@bench.json"));
         rows.add(row("check 1 arg", "usage: check <task> <workspace>", "check", "t1", "--tasks-dir", "@tasks"));
@@ -275,7 +320,10 @@ class CommandLineTest {
                     {"@a-file", "Tasks folder not found"}, {"@empty", "no tasks in"}, {"@not-tasks", "no tasks in"}}) {
                 List<String> args = new ArrayList<>(List.of(command));
                 args.addAll(rest);
-                args.addAll(List.of("--tasks-dir", folder[0], "--config", "@bench.json"));
+                args.addAll(List.of("--tasks-dir", folder[0]));
+                if (!command.equals("list")) {
+                    args.addAll(List.of("--config", "@bench.json"));
+                }
                 rows.add(row(command + " tasks-dir " + folder[0], folder[1], args.toArray(String[]::new)));
             }
         }
@@ -302,18 +350,19 @@ class CommandLineTest {
         BAD_CONFIGS.forEach((name, config) -> rows.add(row("run bench.json " + name, config[1], "run", "--tasks-dir",
                 "@tasks", "--config", "@configs/" + name + ".json")));
         BAD_TASKS.forEach((name, task) -> {
-            for (String command : List.of("list", "run")) {
-                rows.add(row(command + " task.json " + name, "Task t1: task.json " + task[1], command, "--tasks-dir",
-                        "@bad-tasks/" + name, "--config", "@bench.json"));
-            }
+            rows.add(row("list task.json " + name, "Task t1: task.json " + task[1], "list", "--tasks-dir",
+                    "@bad-tasks/" + name));
+            rows.add(row("run task.json " + name, "Task t1: task.json " + task[1], "run", "--tasks-dir",
+                    "@bad-tasks/" + name, "--config", "@bench.json"));
         });
         // #555: a file of the bench's own that is not UTF-8 is named, with where its first bad byte is.
         String notUtf8 = " is not UTF-8 text; save the file as UTF-8";
         for (String command : List.of("list", "run")) {
-            rows.add(row(command + " Latin-1 task.json", "task.json: the byte at offset 16" + notUtf8, command,
-                    "--tasks-dir", "@latin1/task-json", "--config", "@bench.json"));
-            rows.add(row(command + " Latin-1 prompt.md", "prompt.md: the byte at offset 3" + notUtf8, command,
-                    "--tasks-dir", "@latin1/prompt-md", "--config", "@bench.json"));
+            List<String> config = command.equals("run") ? List.of("--config", "@bench.json") : List.of();
+            rows.add(row(command + " Latin-1 task.json", "task.json: the byte at offset 16" + notUtf8,
+                    with(with(new String[] {command}, "--tasks-dir", "@latin1/task-json"), config.toArray(String[]::new))));
+            rows.add(row(command + " Latin-1 prompt.md", "prompt.md: the byte at offset 3" + notUtf8,
+                    with(with(new String[] {command}, "--tasks-dir", "@latin1/prompt-md"), config.toArray(String[]::new))));
         }
         rows.add(row("run Latin-1 bench.json", "bench.json: the byte at offset 24" + notUtf8, "run", "--tasks-dir",
                 "@tasks", "--config", "@latin1/bench.json"));
@@ -358,12 +407,40 @@ class CommandLineTest {
         return out;
     }
 
+    /** #609: each flag a command takes is read once, with its value, a path's {@code ~} as the home folder. */
+    static Stream<Arguments> takenFlags() {
+        List<Arguments> rows = new ArrayList<>();
+        TAKES.forEach((command, takes) -> takes.forEach(flag -> rows.add(Arguments.argumentSet(command + " " + flag,
+                command, flag))));
+        return rows.stream();
+    }
+
+    @ParameterizedTest
+    @MethodSource("takenFlags")
+    void aFlagTheCommandTakesIsReadOnce(String command, String flag) {
+        Path home = dir.resolve("home");
+        List<String> args = new ArrayList<>(List.of(command));
+        args.addAll(POSITIONAL.get(command));
+        args.add(flag);
+        if (!NO_VALUE.contains(flag)) {
+            args.add("~/v");
+        }
+
+        CommandLine line = CommandLine.parse(args.toArray(String[]::new), home);
+
+        assertThat(line.command()).isEqualTo(command);
+        assertThat(line.positional()).isEqualTo(POSITIONAL.get(command));
+        String expected = NO_VALUE.contains(flag) ? ""
+                : Set.of("--out", "--tasks-dir", "--config").contains(flag) ? home.resolve("v").toString() : "~/v";
+        assertThat(line.flags()).containsExactly(Map.entry(flag, expected));
+    }
+
     /** #519: only run needs the toolset built; list and check take the shipped config in a fresh checkout. */
     @Test
     void listAndCheckTakeTheShippedConfigBeforeTheToolsetIsBuilt() throws IOException {
         Files.writeString(dir.resolve("ws/a.txt"), "x");
 
-        Outcome list = exec("list", "--tasks-dir", "@tasks", "--config", "@fresh/msc-bench/bench.json");
+        Outcome list = exec("list", "--tasks-dir", "@tasks");
         Outcome check = exec("check", "t1", "@ws", "--tasks-dir", "@tasks", "--config", "@fresh/msc-bench/bench.json");
 
         assertThat(list.exit()).as(list.err()).isZero();
