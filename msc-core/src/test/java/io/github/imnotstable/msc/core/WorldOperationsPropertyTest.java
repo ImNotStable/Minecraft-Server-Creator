@@ -238,6 +238,23 @@ class WorldOperationsPropertyTest {
         assertThat(snapshot(area)).isEqualTo(replay(start, gold));
         assertThat(h.ok("build_undo")).startsWith("undid " + e4 + ":");
         assertThat(snapshot(area)).isEqualTo(start);
+        // A replace= build sent while another build writes masks against the world that build leaves (#704): here
+        // the cells it may replace are glass only once the first build is done.
+        answers = whileHeld(placing, () -> h.ok("build_batch", "steps", glass),
+                () -> h.ok("build_batch", "steps", gold + " replace=glass"));
+        String e5 = editId(answers[0]);
+        assertThat(answers[1]).startsWith("edit e6: 9 blocks changed");
+        assertThat(snapshot(area)).isEqualTo(replay(start, glass, gold));
+        assertThat(h.ok("build_undo")).startsWith("undid e6:");
+        assertThat(h.ok("build_undo")).startsWith("undid " + e5 + ":");
+        assertThat(snapshot(area)).isEqualTo(start);
+        // And one whose mask is the world before the first build: nothing is stone there any more.
+        answers = whileHeld(placing, () -> h.ok("build_batch", "steps", glass),
+                () -> h.ok("build_batch", "steps", gold + " replace=stone"));
+        assertThat(answers[1]).isEqualTo("nothing to place: every step was empty or masked out by replace=");
+        assertThat(snapshot(area)).isEqualTo(replay(start, glass));
+        assertThat(h.ok("build_undo")).startsWith("undid " + editId(answers[0]) + ":");
+        assertThat(snapshot(area)).isEqualTo(start);
         assertThat(h.error("build_undo")).contains("nothing to undo");
     }
 

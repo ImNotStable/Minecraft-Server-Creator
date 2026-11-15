@@ -5,6 +5,7 @@ import io.github.imnotstable.msc.core.tool.Budget;
 import io.github.imnotstable.msc.core.tool.ToolException;
 import io.github.imnotstable.msc.protocol.Limits;
 import io.github.imnotstable.msc.protocol.message.ErrorCodes;
+import io.github.imnotstable.msc.protocol.op.OpSpec;
 import io.github.imnotstable.msc.protocol.op.Ops;
 import io.github.imnotstable.msc.protocol.transport.CoreServer;
 import io.github.imnotstable.msc.protocol.transport.OpException;
@@ -26,13 +27,15 @@ public final class WorldService {
     public static final int MAX_VIEW_SIDE = 128;
     /** Largest region {@code world_summary} and {@code build_batch} accept. */
     public static final long MAX_BULK_VOLUME = 8L * Limits.MAX_REGION_VOLUME;
+    /** The way back for blocks an edit left whose run has ended: its id is gone (#701). */
+    public static final String ROLL_BACK = "build_undo backup= rolls the world back";
 
     private final AgentHub hub;
     /** The edits still applied, oldest first: each one's agent parts and the positions it set. */
     private final Map<String, Edit> edits = new LinkedHashMap<>();
     /**
-     * Held by every call that changes the world under an edit id, from its first write or check to its last change of
-     * {@link #edits}, so they run one at a time (ADR 0049). Never taken while this object's monitor is held.
+     * Held by every call that changes the world under an edit id, from its first read of the world to its last change
+     * of {@link #edits}, so they run one at a time (ADR 0049). Never taken while this object's monitor is held.
      */
     private final java.util.concurrent.locks.ReentrantLock editing = new java.util.concurrent.locks.ReentrantLock(true);
     private volatile java.util.function.Supplier<Object> serverRun = () -> null;
@@ -457,8 +460,33 @@ public final class WorldService {
         this.serverRun = run;
     }
 
-    /** {@code run}: the {@link #serverRun} the edit was made in. */
-    private record Edit(List<String> parts, Footprint where, Object run) {
+    /**
+     * The server run an edit is made in: the {@link #serverRun} process (null for a server the core did not start) and
+     * the agent connection to it. The agent keeps an edit's undo in that process and numbers edits from the start in
+     * each one, so every write, clean-up and undo of an edit goes to its run's connection, never to a later one, and
+     * the edit ends with its run (#699, #702).
+     */
+    public record Run(Object process, CoreServer.AgentSession agent) {
+    }
+
+    /** The run edits are made in now, waiting a little for an agent as every world tool does. */
+    public Run run() throws InterruptedException {
+        // The connection first: a process read after it is the connection's or a later one, which ends the run.
+        CoreServer.AgentSession agent = hub.require();
+        return new Run(serverRun.get(), agent);
+    }
+
+    /** True once the server process of {@code run} has stopped or been replaced, or its agent connection closed. */
+    public boolean ended(Run run) {
+        return run.process() != serverRun.get() || !run.agent().connection().isOpen();
+    }
+
+    /** Run one operation on {@code run}'s agent connection only (#702). */
+    public <P, R> R call(Run run, OpSpec<P, R> op, P params) throws InterruptedException {
+        return hub.call(run.agent(), op, params);
+    }
+
+    private record Edit(List<String> parts, Footprint where, Run run) {
     }
 
     /**
@@ -466,18 +494,17 @@ public final class WorldService {
      * they could undo nothing, and they would block undoing older edits they overlap. Under this monitor.
      */
     private void forgetEnded() {
-        Object run = serverRun.get();
-        edits.values().removeIf(e -> e.run() != run);
+        edits.values().removeIf(e -> ended(e.run()));
     }
 
     /**
-     * Keep agent edit ids under one new edit id for {@code build_undo}, with the positions the edit set, and return
-     * that id.
+     * Keep agent edit ids made in {@code run} under one new edit id for {@code build_undo}, with the positions the edit
+     * set, and return that id. Call it only while that run lasts: once it has ended, the next call forgets the id.
      */
-    public synchronized String remember(List<String> agentEdits, Footprint where) {
+    public synchronized String remember(List<String> agentEdits, Footprint where, Run run) {
         forgetEnded();
         String id = "e" + (++editCounter);
-        edits.put(id, new Edit(new ArrayList<>(agentEdits), where, serverRun.get()));
+        edits.put(id, new Edit(new ArrayList<>(agentEdits), where, run));
         return id;
     }
 
@@ -499,9 +526,10 @@ public final class WorldService {
     }
 
     /**
-     * Run {@code work} while no other call writes or undoes an edit (ADR 0049): a build from its first write to its
-     * {@link #remember}, an undo from its overlap check to its edit leaving the list. Interleaved, an undo's check
-     * would miss a build not remembered yet, and wipe its blocks or bring back blocks of an edit already undone.
+     * Run {@code work} while no other call writes or undoes an edit (ADR 0049): a build from its first read of the
+     * world to its {@link #remember}, an undo from its overlap check to its edit leaving the list. Interleaved, an
+     * undo's check would miss a build not remembered yet, and wipe its blocks or bring back blocks of an edit already
+     * undone, and a build would read the world as an earlier id had not yet left it (#704).
      */
     public <T> T oneAtATime(EditWork<T> work) throws InterruptedException {
         editing.lockInterruptibly();
@@ -514,6 +542,7 @@ public final class WorldService {
 
     private String undoNow(String id) throws InterruptedException {
         List<String> agentEdits;
+        Run run;
         String target = id;
         synchronized (this) {
             forgetEnded();
@@ -528,7 +557,7 @@ public final class WorldService {
             Edit edit = edits.get(target);
             if (edit == null) {
                 throw new ToolException("unknown edit " + target + " (already undone, or made before the server last "
-                        + "stopped: build_undo backup= rolls the world back)");
+                        + "stopped: " + ROLL_BACK + ")");
             }
             List<String> over = new ArrayList<>();
             boolean later = false;
@@ -545,6 +574,7 @@ public final class WorldService {
                         + " first (build_undo edit=" + over.getFirst() + "), then " + target + ".");
             }
             agentEdits = edit.parts();
+            run = edit.run();
         }
         // Only an undo changes an edit's parts, and undos run one at a time.
         long changed = 0;
@@ -552,14 +582,14 @@ public final class WorldService {
         int parts = agentEdits.size();
         for (int i = parts - 1; i >= 0; i--) {
             try {
-                changed += hub.call(Ops.WORLD_UNDO, new Ops.UndoParams(agentEdits.get(i))).changed();
+                changed += call(run, Ops.WORLD_UNDO, new Ops.UndoParams(agentEdits.get(i))).changed();
             } catch (OpException e) {
                 if (!e.code().equals(ErrorCodes.NOT_FOUND)) {
-                    throw stopped(target, changed, e);
+                    throw stopped(target, changed, run, e);
                 }
                 lost++;
             } catch (RuntimeException e) {
-                throw stopped(target, changed, e);
+                throw stopped(target, changed, run, e);
             }
             agentEdits.remove(i);
         }
@@ -573,12 +603,18 @@ public final class WorldService {
                 + " parts no longer kept by the server (it keeps the last " + UNDO_BLOCKS_TEXT + " changed blocks)";
     }
 
-    private static RuntimeException stopped(String target, long changed, RuntimeException e) {
-        if (changed == 0) {
+    /**
+     * An undo that failed after restoring {@code changed} blocks. While the edit's run lasts, the same id undoes the
+     * rest; once it has ended, the id is gone (#701), so the answer says what stays and how to roll it back.
+     */
+    private RuntimeException stopped(String target, long changed, Run run, RuntimeException e) {
+        boolean ended = ended(run);
+        if (changed == 0 && !ended) {
             return e;
         }
-        return new ToolException("undo of " + target + " stopped after " + changed + " blocks restored: "
-                + (e instanceof OpException op ? op.detail() : e.getMessage()) + "; build_undo edit=" + target
-                + " again undoes the rest");
+        return new ToolException((changed == 0 ? target + " not undone: " : "undo of " + target + " stopped after "
+                + changed + " blocks restored: ") + (e instanceof OpException op ? op.detail() : e.getMessage())
+                + (ended ? "; the server that made " + target + " has stopped, so " + (changed == 0 ? "its blocks" : "the rest")
+                + " stay placed: " + ROLL_BACK : "; build_undo edit=" + target + " again undoes the rest"));
     }
 }

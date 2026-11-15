@@ -3,8 +3,17 @@ package io.github.imnotstable.msc.core;
 import org.junit.jupiter.api.Timeout;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.imnotstable.msc.protocol.op.Ops;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -225,6 +234,71 @@ class BuildToolsTest {
         assertThat(h.agent.get(200, 90, 200)).isEqualTo("minecraft:andesite");
         assertThat(h.ok("build_undo", "edit", "e1")).isEqualTo("undid e1: 1 blocks restored");
         assertThat(h.agent.blocks.values()).allMatch("minecraft:air"::equals);
+    }
+
+    /**
+     * #701, #702: a build cut off by a server restart undoes nothing on the new server, which never had its parts (and
+     * numbers its own edits from the start again), and names no id, which would be gone by the next call: it says
+     * what stays placed and how to roll it back.
+     */
+    @Test
+    void aBuildCutOffByARestartSaysWhatStaysAndSendsTheNewServerNothing() throws Exception {
+        List<Object> undos = new java.util.concurrent.CopyOnWriteArrayList<>();
+        String err = stoppedDuring(2, undos, () -> h.error("build_batch", "steps",
+                "set 0,64,0 stone\nset 200,90,200 andesite"));
+        assertThat(err).startsWith("error: agent call world.write failed: ").endsWith("; the server stopped before the "
+                + "build was undone, so 1 blocks it changed stay in world 0,64,0 200,90,200: build_undo backup= rolls "
+                + "the world back, or the same build_batch completes it");
+        assertThat(undos).isEmpty();
+        assertThat(h.agent.get(0, 64, 0)).isEqualTo("minecraft:stone");
+        assertThat(h.error("build_undo")).contains("nothing to undo");
+    }
+
+    /** #701: an undo cut off by a server restart does not offer the same id again: it is gone by the next call. */
+    @Test
+    void anUndoCutOffByARestartPointsToABackupNotItsId() throws Exception {
+        h.ok("build_batch", "steps", "set 0,64,0 stone\nset 200,90,200 andesite");
+        String err = stoppedDuring(2, new ArrayList<>(), () -> h.error("build_undo", "edit", "e1"));
+        assertThat(err).startsWith("error: undo of e1 stopped after 1 blocks restored: agent call world.undo failed: ")
+                .endsWith("; the server that made e1 has stopped, so the rest stay placed: build_undo backup= rolls "
+                        + "the world back");
+        assertThat(h.agent.get(0, 64, 0)).isEqualTo("minecraft:stone");
+        assertThat(h.agent.get(200, 90, 200)).isEqualTo("minecraft:air");
+        assertThat(h.error("build_undo", "edit", "e1")).contains("unknown edit e1");
+    }
+
+    /**
+     * Send {@code call}, hold it at the agent at its {@code nth} write that places blocks or undo, restart the server
+     * while it is held, then let it go: the call's answer. {@code undos} gets every undo the agent is sent.
+     */
+    private String stoppedDuring(int nth, List<Object> undos, Callable<String> call) throws Exception {
+        CountDownLatch reached = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        AtomicInteger changes = new AtomicInteger();
+        h.agent.beforeChange = p -> {
+            if (p instanceof Ops.UndoParams) {
+                undos.add(p);
+            }
+            boolean changing = p instanceof Ops.UndoParams
+                    || p instanceof Ops.WriteParams w && Arrays.stream(w.grid().blocks()).anyMatch(b -> b >= 0);
+            if (changing && changes.incrementAndGet() == nth) {
+                reached.countDown();
+                try {
+                    release.await();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+        };
+        try (var calls = Executors.newVirtualThreadPerTaskExecutor()) {
+            var answer = calls.submit(call);
+            assertThat(reached.await(30, TimeUnit.SECONDS)).as("the call reached the agent").isTrue();
+            h.stopServer(true);
+            release.countDown();
+            return answer.get(30, TimeUnit.SECONDS);
+        } finally {
+            h.agent.beforeChange = p -> { };
+        }
     }
 
     @Test

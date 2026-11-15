@@ -37,6 +37,26 @@ final class CoreHarness implements AutoCloseable {
         return this;
     }
 
+    /**
+     * A server stop as the core sees it: the agent's connection closes. With {@code restart}, a new server process on
+     * the same world then connects (#702).
+     */
+    void stopServer(boolean restart) throws Exception {
+        var old = core.hub().current();
+        session.connection().close();
+        if (restart) {
+            agent.restart();
+            session = agent.connect(core.hub().address(), core.hub().token());
+        }
+        long deadline = System.nanoTime() + Duration.ofSeconds(10).toNanos();
+        while (restart ? core.hub().current() == null || core.hub().current() == old : core.hub().current() != null) {
+            if (System.nanoTime() > deadline) {
+                throw new AssertionError("the core did not see the server " + (restart ? "restart" : "stop"));
+            }
+            Thread.sleep(10);
+        }
+    }
+
     /** Call a tool with alternating name, value arguments. Values may be String, Number, Boolean or List of String. */
     ToolRegistry.Result call(String tool, Object... pairs) {
         return core.registry().call(tool, args(pairs));
