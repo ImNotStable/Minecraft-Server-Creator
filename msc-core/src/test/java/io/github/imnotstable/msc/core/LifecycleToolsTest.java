@@ -1094,6 +1094,47 @@ class LifecycleToolsTest {
     }
 
     /**
+     * #694: a proxy has no agent, so no pack ever reaches it. pack says why; every dev_cycle, whatever happens to the
+     * jar and the pack, says nothing about the pack, as server_start does there.
+     */
+    @Test
+    void devCycleOnAProxySaysNothingAboutThePack() throws Exception {
+        Files.createDirectories(workspace.resolve(".msc"));
+        Files.writeString(workspace.resolve(".msc/platform"), "velocity\n");
+        Path run = Files.createDirectories(workspace.resolve("run"));
+        Files.writeString(run.resolve("velocity.jar"), "set up");
+        Files.writeString(run.resolve("no-agent.flag"), "");
+        Path resources = Files.createDirectories(project.resolve("src/main/resources"));
+        Files.writeString(resources.resolve("velocity-plugin.json"), "{\"id\":\"demo\"}");
+        assertThat(h.ok("dev_cycle", "project", "demo")).contains("a proxy: no world or agent")
+                .doesNotContain("resource pack");
+        h.ok("texture", "name", "item/dot", "palette", List.of("a=#000001"), "rows", List.of("a"));
+        assertThat(h.ok("pack")).contains("\nnot sent: Velocity is a proxy");
+        int version = 0;
+        int color = 1;
+        for (String jar : List.of("changed", "unchanged", "none")) {
+            for (boolean restart : List.of(false, true)) {
+                for (boolean packChanged : List.of(true, false)) {
+                    Files.deleteIfExists(project.resolve("no-jar.flag"));
+                    if (jar.equals("none")) {
+                        Files.writeString(project.resolve("no-jar.flag"), "");
+                    } else if (jar.equals("changed")) {
+                        Files.writeString(project.resolve("version.txt"), "1." + ++version);
+                    }
+                    if (packChanged) {
+                        h.ok("texture", "name", "item/dot", "palette",
+                                List.of("a=#" + "%06x".formatted(++color)), "rows", List.of("a"));
+                    }
+                    String result = h.ok("dev_cycle", "project", "demo", "restart", restart);
+                    assertThat(result).as("jar %s, restart %s, pack changed %s:%n%s", jar, restart, packChanged,
+                            result).doesNotContain("resource pack").doesNotContain("pack again");
+                }
+            }
+        }
+        h.ok("server_stop");
+    }
+
+    /**
      * #667: dev_cycle with an unchanged jar sends the workspace's pack only when it differs from what the running
      * server's agent connection was last sent; a new connection (a restart) always gets it (#660).
      */

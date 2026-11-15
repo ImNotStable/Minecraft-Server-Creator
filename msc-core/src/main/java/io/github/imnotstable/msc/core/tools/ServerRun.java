@@ -393,7 +393,8 @@ final class ServerRun {
     /**
      * dev_cycle that keeps the server running (an unchanged jar, restart=false, or no jar; #690): the workspace's
      * pack, rebuilt, goes to the connected agent only when it differs from what that connection was last sent (#667),
-     * so the players do not download and reload the same pack on every cycle. Says nothing when it was not sent.
+     * so the players do not download and reload the same pack on every cycle. Says nothing when it was not sent, also
+     * with no agent connected (a proxy, #694).
      */
     String packIfChanged() {
         synchronized (sending) {
@@ -403,7 +404,10 @@ final class ServerRun {
 
     private String sendPack(boolean onlyChanged) {
         ResourcePack.Applied applied = pack.applied();
-        if (applied == null) {
+        // No agent connection, nothing to send to: a proxy never has one (#694), and the next connection of any
+        // other server gets the pack from packForAgent. Nothing is sent, so nothing is said.
+        CoreServer.AgentSession to = hub.current();
+        if (applied == null || to == null) {
             return "";
         }
         try {
@@ -413,7 +417,6 @@ final class ServerRun {
             ResourcePack.Built built = pack.build(applied.description());
             // The host now serves only this build: a server.properties that offers our pack follows it first.
             TextureTools.keepOffered(pack, file, built, applied.required());
-            CoreServer.AgentSession to = hub.current();
             if (onlyChanged && pack.wasSent(to, built, applied.required())) {
                 return "";
             }
