@@ -1,0 +1,6 @@
+[12:00:01] [Server thread/ERROR]: Encountered an unexpected exception
+java.lang.IllegalStateException: world folder locked
+	at net.minecraft.server.Main.main(Main.java:10)
+[12:00:02] [Server thread/ERROR]: Exception stopping the server
+java.lang.NullPointerException: Cannot invoke "Level.save()"
+	at net.minecraft.server.MinecraftServer.stopServer(MinecraftServer.java:20)

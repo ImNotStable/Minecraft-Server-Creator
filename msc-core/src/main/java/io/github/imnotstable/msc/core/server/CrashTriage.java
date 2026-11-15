@@ -313,15 +313,22 @@ public final class CrashTriage {
     private static void add(List<Finding> found, Finding f) {
         for (int i = 0; i < found.size(); i++) {
             Finding g = found.get(i);
-            // One entry can name several dependencies under one exception; a crash report repeats the log's.
-            boolean sameCause = !f.cause().isEmpty() && f.cause().equals(g.cause()) && !f.source().equals(g.source());
-            boolean sameWhat = f.what().equals(g.what()) && f.culprit().equals(g.culprit());
-            if (sameCause || sameWhat) {
+            // A repeat is the same failure again: the same what, culprit and cause (exception type and message), not
+            // just the same rule. A crash report or JVM file repeating a log finding's exception joins it by cause.
+            boolean repeat = f.what().equals(g.what()) && f.culprit().equals(g.culprit()) && f.cause().equals(g.cause());
+            boolean fileRepeats = !f.cause().isEmpty() && f.cause().equals(g.cause())
+                    && (!onlyLog(f.source()) || !onlyLog(g.source()));
+            if (repeat || fileRepeats) {
                 found.set(i, g.seenAt(f.source()));
                 return;
             }
         }
         found.add(f);
+    }
+
+    /** True when every source of a finding is a log entry, no crash report or JVM file. */
+    private static boolean onlyLog(String source) {
+        return List.of(source.split(", ")).stream().allMatch(s -> s.startsWith(LOG));
     }
 
     private static List<Finding> match(String text, List<String> lines, String source) {
