@@ -130,6 +130,15 @@ public enum Platform {
                 + "apply; use them in the backend's workspace" : null;
     }
 
+    /**
+     * True when {@code server_setup} installs the server this platform runs ({@link #serverJar()}), so a project for it
+     * runs only once that is done; false for Minestom, whose server is the project's own jar that {@code dev_cycle}
+     * deploys ({@link #addonDir()} null). Independent of the EULA: Velocity needs the setup and no EULA (#627).
+     */
+    public boolean needsServerSetup() {
+        return addonDir != null;
+    }
+
     /** True when the server is Mojang's and so needs an accepted {@code eula.txt}. */
     public boolean needsEula() {
         return eula;

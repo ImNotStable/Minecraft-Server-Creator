@@ -174,7 +174,7 @@ final class DevCycle {
         // The deploy remembers the project's platform for a workspace that has none; the start then uses it.
         boolean remember = Platform.detect(project) != null && !Files.exists(Platform.file(config));
         Platform starts = remember ? platform : server.platform();
-        if (starts.needsEula() && Files.exists(server().resolve(starts.serverJar()))) {
+        if (Files.exists(server().resolve(starts.serverJar()))) {
             run.checkStart(starts, false);
         }
     }

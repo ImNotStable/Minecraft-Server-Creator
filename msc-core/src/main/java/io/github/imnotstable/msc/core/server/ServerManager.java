@@ -202,8 +202,8 @@ public final class ServerManager implements AutoCloseable {
         }
         if (!Files.exists(config.serverDir().resolve(platform.serverJar()))) {
             throw new ToolException("no " + platform.id() + " server in " + config.serverDir() + ". "
-                    + (platform == Platform.MINESTOM ? "Run dev_cycle to build the project and put its jar there."
-                    : "Run server_setup first."));
+                    + (platform.needsServerSetup() ? "Run server_setup first."
+                    : "Run dev_cycle to build the project and put its jar there."));
         }
         if (platform.needsEula() && !acceptingEula && !eulaAccepted(eulaFile())
                 && config.machineEula().read().isEmpty()) {

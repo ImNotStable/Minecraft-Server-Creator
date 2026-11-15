@@ -113,13 +113,15 @@ public final class PlayerTools implements AutoCloseable {
             // A dev-server test player: op so commands and tp work, in the mode real players will have.
             // Minestom has only the commands the server registered, so these may not exist there.
             boolean op = console("op " + name);
-            boolean mode = gamemode != null && console("gamemode " + gamemode + " " + name);
-            out.append("joined as ").append(name).append(" (")
-                    .append(mode ? gamemode : gamemode == null ? "the game's own mode"
-                            : "game mode left to the server: it has no gamemode command")
+            String mode = gamemode == null ? "the game's own mode" : gamemode(gamemode, name);
+            out.append("joined as ").append(name).append(" (").append(mode)
                     .append(op ? ", op" : ", not op: the server has no op command").append(")\n");
         } else if (gamemode != null) {
-            console("gamemode " + gamemode + " " + name);
+            // Already joined: said only when the mode was not set, so the actions are not read as in that mode (#626).
+            String mode = gamemode(gamemode, name);
+            if (!mode.equals(gamemode)) {
+                out.append(mode).append('\n');
+            }
         }
         try {
             out.append(bot.run(actions, world));
@@ -192,9 +194,39 @@ public final class PlayerTools implements AutoCloseable {
 
     /** Runs a console command; false only when the server has no such command (a repeated op also fails). */
     private boolean console(String command) throws Exception {
-        Ops.CommandResult result = hub.call(Ops.SERVER_COMMAND, new Ops.CommandParams(command));
+        return !unknownCommand(hub.call(Ops.SERVER_COMMAND, new Ops.CommandParams(command)));
+    }
+
+    /** True when the server answered that it has no such command. */
+    private static boolean unknownCommand(Ops.CommandResult result) {
         String text = String.join(" ", result.output()).toLowerCase(java.util.Locale.ROOT);
-        return result.success() || !(text.contains("unknown") && text.contains("command"));
+        return !result.success() && text.contains("unknown") && text.contains("command");
+    }
+
+    /** Sets the test player's game mode; what {@link #gameModeSet} says came of it. */
+    private String gamemode(String mode, String name) throws Exception {
+        return gameModeSet(mode, hub.call(Ops.SERVER_COMMAND, new Ops.CommandParams("gamemode " + mode + " " + name)));
+    }
+
+    /** Longest server reply a failed gamemode line quotes. */
+    private static final int REPLY_CHARS = 200;
+
+    /**
+     * What came of {@code gamemode <mode> <player>}, from the server's answer {@code result}: {@code mode} when it was
+     * set, else why not. A server with no such command (Minestom has only the commands the project registers) leaves
+     * the mode to the server; any other failure that says why quotes the server. A failure that says nothing counts as
+     * set, as vanilla answers a player already in that mode (#626).
+     */
+    static String gameModeSet(String mode, Ops.CommandResult result) {
+        if (unknownCommand(result)) {
+            return "game mode left to the server: it has no gamemode command";
+        }
+        String reply = String.join(" ", result.output()).strip();
+        if (result.success() || reply.isEmpty()) {
+            return mode;
+        }
+        return "game mode not set to " + mode + ": " + (reply.length() > REPLY_CHARS
+                ? reply.substring(0, REPLY_CHARS) + "..." : reply);
     }
 
     /**
