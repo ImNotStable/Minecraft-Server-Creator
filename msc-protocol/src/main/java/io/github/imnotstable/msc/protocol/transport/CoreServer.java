@@ -53,6 +53,7 @@ public final class CoreServer implements AutoCloseable {
     private final AgentListener listener;
     private final Duration handshakeTimeout;
     private final Semaphore handshakes = new Semaphore(MAX_PENDING_HANDSHAKES);
+    private Thread acceptor;
 
     private CoreServer(ServerSocket serverSocket, String token, RequestHandler handler, AgentListener listener,
                        Duration handshakeTimeout) {
@@ -76,7 +77,7 @@ public final class CoreServer implements AutoCloseable {
         // Loopback only, whatever host MSC_CORE_ADDRESS names: agents on other machines are not supported (ADR 0043).
         ServerSocket socket = new ServerSocket(port, 50, InetAddress.getLoopbackAddress());
         CoreServer server = new CoreServer(socket, token, handler, listener, handshakeTimeout);
-        Thread.ofVirtual().name("msc-core-accept").start(server::acceptLoop);
+        server.acceptor = Thread.ofVirtual().name("msc-core-accept").start(server::acceptLoop);
         return server;
     }
 
@@ -203,8 +204,18 @@ public final class CoreServer implements AutoCloseable {
         }
     }
 
+    /**
+     * Stops listening. Returns once the port is let go, so it can be bound again at once (a workspace switch with a
+     * fixed MSC_CORE_ADDRESS, #721): a socket closed while a thread is blocked in its accept is only really closed
+     * when that thread wakes up, so this waits for the accept loop to end.
+     */
     @Override
     public void close() throws IOException {
         serverSocket.close();
+        try {
+            acceptor.join(Duration.ofSeconds(5));
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 }
