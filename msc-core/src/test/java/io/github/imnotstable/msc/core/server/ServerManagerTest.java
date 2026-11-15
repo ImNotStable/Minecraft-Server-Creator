@@ -176,6 +176,52 @@ class ServerManagerTest {
     }
 
     @Test
+    @Timeout(value = 5, unit = TimeUnit.MINUTES) // a hang guard: the hour-long wait below must never be waited out
+    void aSlowLeftoverStopBlocksNeitherTheStatusNorTheRefusals() throws Exception {
+        // #712: stopLeftover waited for the leftover to exit on the monitor msc_status and every refusal need.
+        ServerManager m = manager(QuietServer.class);
+        FakeLeftover leftover = FakeLeftover.install(m, Duration.ofHours(1));
+        java.util.concurrent.CompletableFuture<String> stop = java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+            try {
+                return m.stopLeftover(true);
+            } catch (InterruptedException e) {
+                throw new IllegalStateException(e);
+            }
+        });
+        try {
+            whileALeftoverStopWaits(m, leftover, stop);
+        } finally {
+            leftover.exit(); // never left waiting, also when an assertion failed
+        }
+        assertThat(stop.get(60, TimeUnit.SECONDS)).contains("pid " + leftover.pid());
+        assertThat(m.pidFile()).doesNotExist();
+    }
+
+    private static void whileALeftoverStopWaits(ServerManager m, FakeLeftover leftover,
+            java.util.concurrent.CompletableFuture<String> stop) throws Exception {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(60);
+        while (leftover.destroys.get() == 0) { // asked to end, now waiting for it to exit
+            assertThat(System.nanoTime()).isLessThan(deadline);
+            Thread.sleep(10);
+        }
+        java.util.concurrent.CompletableFuture<String> status = java.util.concurrent.CompletableFuture.supplyAsync(
+                () -> m.running() + " " + m.awaitsAgent() + " " + m.otherSession() + " " + m.leftoverPid() + " "
+                        + m.notRunning());
+        assertThat(status.get(10, TimeUnit.SECONDS)).startsWith("false false Optional.empty " + leftover.pid())
+                .contains("was left by an earlier session");
+        // A start meanwhile refuses at once: the pid file still names the leftover.
+        assertThatThrownBy(() -> java.util.concurrent.CompletableFuture.runAsync(() -> {
+            try {
+                m.start(Duration.ofSeconds(60));
+            } catch (Exception e) {
+                throw new IllegalStateException(e);
+            }
+        }).get(10, TimeUnit.SECONDS)).hasMessageContaining("pid " + leftover.pid());
+        assertThat(m.process()).isNull();
+        assertThat(stop).isNotDone();
+    }
+
+    @Test
     void aStartNeverOverwritesThePidFileOfALiveLeftover() throws Exception {
         ServerManager m = manager(QuietServer.class);
         Process leftover = leftover(m);

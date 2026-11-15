@@ -1429,6 +1429,32 @@ class LifecycleToolsTest {
     }
 
     @Test
+    void anAttachedCoreSaysNotRunningOnceTheStoppedServerIsGone() throws Exception {
+        // #711: with MSC_CORE_ADDRESS set an agent is always expected (Core leaves agentExpected true), and the
+        // server.stopping its agent sent made every world tool say "stopping" after server_stop said "stopped".
+        h.core.hub().agentExpected(() -> true);
+        h.core.hub().connectWait(java.time.Duration.ofSeconds(60));
+        for (String stop : List.of("server_stop", "a stop typed into the server")) {
+            h.ok("server_start", "timeoutSeconds", 30);
+            if (stop.equals("server_stop")) {
+                assertThat(h.ok("server_stop")).isEqualTo("server stopped");
+            } else {
+                h.core.server().console("stop"); // not through MSC's stop: only the agent says server.stopping
+            }
+            long deadline = System.nanoTime() + java.time.Duration.ofSeconds(20).toNanos();
+            while (h.core.hub().current() != null || h.core.server().running()) {
+                assertThat(System.nanoTime()).as("the server is gone").isLessThan(deadline);
+                Thread.sleep(10);
+            }
+            long start = System.nanoTime();
+            assertThat(h.ok("msc_status")).as(stop).doesNotContain("server: running");
+            assertThat(h.error("world_summary", "region", "0,60,0 1,61,1")).as(stop)
+                    .isEqualTo("error: " + io.github.imnotstable.msc.core.agent.AgentHub.NOT_RUNNING);
+            assertThat(java.time.Duration.ofNanos(System.nanoTime() - start)).isLessThan(java.time.Duration.ofSeconds(20));
+        }
+    }
+
+    @Test
     void aCallWaitingForTheAgentFailsAsSoonAsTheServerExits() throws Exception {
         // #703: only a session coming or going woke the wait, never the process exit.
         Files.createDirectories(workspace.resolve("run"));
