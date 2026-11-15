@@ -113,6 +113,8 @@ class StartupLogFixturesTest {
             new Fixture("quilt", 7, MOD_PRINTED, MOD_WARNING),
             new Fixture("neoforge", 8, LOADER_PRINTED, LOADER_WARNING),
             new Fixture("forge", 9, LOADER_PRINTED, LOADER_WARNING),
+            // Velocity 4.3.1 with MSC's velocity.toml, captured as it ran (#656): the offline banner is hidden.
+            new Fixture("velocity", 1, PLUGIN_ERROR, PLUGIN_WARNING),
             new Fixture("minestom", 0, LISTENER_ERROR, SIMPLE_WARNING),
             new Fixture("minestom", 0, BARE_LISTENER_ERROR, SIMPLE_WARNING));
 

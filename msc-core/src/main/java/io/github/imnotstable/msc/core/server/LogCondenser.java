@@ -28,8 +28,10 @@ public final class LogCondenser {
 
     /**
      * Entries every dev server prints and the AI can do nothing about: Paper's banners for running as root or
-     * administrator and for offline mode (the dev server is offline on purpose), and the system report's oshi
-     * errors and warnings on some Windows machines. Dropped so a clean start reads {@code no errors or warnings}.
+     * administrator, the offline-mode banners that MSC's own configuration causes (every dev server and the Velocity dev
+     * proxy are offline on purpose: vanilla's and Paper's, Paper's variant for a backend behind Velocity, and
+     * Velocity's, #656), and the system report's oshi errors and warnings on some Windows machines. Dropped so a clean
+     * start reads {@code no errors or warnings}. Minestom logs its offline note at INFO.
      */
     private static final List<Pattern> EXPECTED = List.of(
             Pattern.compile("^\\*+$"),
@@ -38,6 +40,12 @@ public final class LogCondenser {
             Pattern.compile("^\\*+ SERVER IS RUNNING IN OFFLINE/INSECURE MODE!.*"),
             Pattern.compile("^(The server will make no attempt to authenticate usernames|While this makes the game "
                     + "possible to play without internet access|To change this, set \"online-mode\" to \"true\").*"),
+            // Paper, Purpur and Folia behind MSC's Velocity proxy (proxies.velocity.enabled), instead of "While ...".
+            Pattern.compile("^(Whilst this makes it possible to use Velocity, unless access to your server is properly "
+                    + "restricted|Please see https://docs\\.papermc\\.io/velocity/security for further information).*"),
+            // Velocity with MSC's velocity.toml, which sets online-mode = false.
+            Pattern.compile("^The proxy is running in offline mode! This is a security risk and you will NOT receive "
+                    + "any support!$"),
             // Paper's system report on Windows: oshi messages and "Failed to get system info for ..." with an NPE.
             Pattern.compile("^\\[(oshi|os)\\.[\\w.$]+\\] .*"),
             Pattern.compile("^Failed to get system info for .*"),

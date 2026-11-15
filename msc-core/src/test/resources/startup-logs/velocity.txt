@@ -1,0 +1,14 @@
+2026-11-15T10:59:51.324552651Z main WARN Advanced terminal features are not available in this environment
+[10:59:52 INFO]: Booting up Velocity 4.3.1...
+[10:59:52 INFO]: Connections will use epoll channels, libdeflate (Linux x86_64) compression, OpenSSL 3.x.x (Linux x86_64) ciphers
+[10:59:52 WARN]: The proxy is running in offline mode! This is a security risk and you will NOT receive any support!
+[10:59:52 INFO]: Loading localizations...
+[10:59:52 INFO]: Loading plugins...
+[10:59:52 INFO]: Loaded 1 plugins
+[10:59:53 INFO]: Listening on /127.0.0.1:25987
+[10:59:53 INFO]: Velocity and some of its plugins collect metrics and send them to bStats (https://bStats.org).
+[10:59:53 INFO]: bStats collects some basic information for plugin authors, like how many people use
+[10:59:53 INFO]: their plugin and their total player count. It's recommended to keep bStats enabled, but
+[10:59:53 INFO]: if you're not comfortable with this, you can opt-out by editing the config.txt file in
+[10:59:53 INFO]: the '/plugins/bStats/' folder and setting enabled to false.
+[10:59:53 INFO]: Done (1.47s)!
