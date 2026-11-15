@@ -10,6 +10,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import java.util.function.Predicate;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
@@ -183,65 +184,105 @@ public enum Platform {
     }
 
     /**
-     * What a project file says about the platform: a resource file the server loads ({@code file} under
-     * {@code src/main/resources}), or a word in a build file ({@code word}).
+     * What a project says about the platform: a descriptor file the server loads ({@code file}, under any of
+     * {@link #RESOURCE_ROOTS}), or build-file text that {@code build} finds: a plugin id, a DSL block or a dependency.
      */
-    private record Sign(String file, String word, Platform platform) {
-        static Sign resource(String file, Platform platform) {
-            return new Sign(file, null, platform);
+    private record Sign(Platform platform, String file, Pattern build) {
+        static Sign descriptor(Platform platform, String file) {
+            return new Sign(platform, file, null);
         }
 
-        static Sign build(String word, Platform platform) {
-            return new Sign(null, word, platform);
+        /** Any of {@code words} anywhere in a build file. */
+        static Sign build(Platform platform, String... words) {
+            return new Sign(platform, null, Pattern.compile(Arrays.stream(words).map(Pattern::quote)
+                    .collect(Collectors.joining("|"))));
         }
 
-        boolean shows(Path project) {
-            return file != null ? Files.isRegularFile(project.resolve("src/main/resources").resolve(file))
-                    : mentions(project, word);
+        /** A line that opens one of the DSL blocks {@code names}, such as {@code paper {}}. */
+        static Sign blocks(Platform platform, String... names) {
+            return new Sign(platform, null, Pattern.compile("(?m)^\\s*(?:" + String.join("|", names) + ")\\s*\\{"));
+        }
+
+        boolean shows(Path project, String buildText) {
+            return file != null
+                    ? RESOURCE_ROOTS.stream().anyMatch(root -> Files.isRegularFile(project.resolve(root).resolve(file)))
+                    : build.matcher(buildText).find();
         }
     }
 
     /**
-     * The signs {@link #detect} reads, first match wins (#593). Every resource file comes before every build-file word,
-     * since the file is what the server actually loads, while a build file also names the APIs of other platforms a
-     * jar is built for: a plugin built for Paper and Velocity has {@code plugin.yml} and names {@code velocity-api}.
-     * Among resource files a game server comes before the proxy, so a jar that is both a Paper and a Velocity plugin
-     * is Paper (a proxy workspace is {@code server_setup platform=velocity}).
+     * Where a project keeps the descriptor the server loads: resources, or templates its build expands into them
+     * (the NeoForge ModDevGradle MDK keeps {@code META-INF/neoforge.mods.toml} in {@code src/main/templates}).
+     */
+    private static final List<String> RESOURCE_ROOTS = List.of("src/main/resources", "src/main/templates");
+
+    /** The build files {@link #detect} reads: plugin ids, DSL blocks and dependencies live there. */
+    private static final List<String> BUILD_FILES = List.of("build.gradle.kts", "build.gradle", "gradle/libs.versions.toml");
+
+    /**
+     * The signs {@link #detect} reads, first match wins (#593, #599), in three tiers:
+     * <ol>
+     *   <li>the descriptor the server loads: the file, or the Gradle plugin or block that writes it at build time
+     *       (plugin-yml's {@code bukkit {}} and {@code paper {}}, resource-factory's conventions);</li>
+     *   <li>the platform's own Gradle plugin: Loom, ModDevGradle, NeoGradle, ForgeGradle, paperweight, run-paper or
+     *       run-velocity, which build or run for that platform only;</li>
+     *   <li>a dependency word: {@code velocity-api}, then Minestom.</li>
+     * </ol>
+     * A build file also names the APIs of other platforms a jar is built for: a plugin built for Paper and Velocity has
+     * {@code plugin.yml} (or a {@code paper {}} block) and names {@code velocity-api}, so the bare word comes last.
+     * Within a tier a game server comes before the proxy, so a jar that is both a Paper and a Velocity plugin is Paper
+     * (a proxy workspace is {@code server_setup platform=velocity}); Quilt comes before Fabric, whose mods it loads, and
+     * ModDevGradle's legacyforge plugin (Forge) before its NeoForge one, whose id it extends.
      */
     private static final List<Sign> SIGNS = List.of(
-            Sign.resource("quilt.mod.json", QUILT),
-            Sign.resource("fabric.mod.json", FABRIC),
-            Sign.resource("META-INF/neoforge.mods.toml", NEOFORGE),
-            Sign.resource("META-INF/mods.toml", FORGE),
-            Sign.resource("paper-plugin.yml", PAPER),
-            Sign.resource("plugin.yml", PAPER),
-            Sign.resource("velocity-plugin.json", VELOCITY),
-            Sign.build("velocity-api", VELOCITY),
-            Sign.build("minestom", MINESTOM));
+            Sign.descriptor(QUILT, "quilt.mod.json"),
+            Sign.descriptor(FABRIC, "fabric.mod.json"),
+            Sign.build(FABRIC, "xyz.jpenilla.resource-factory-fabric-convention"),
+            Sign.descriptor(NEOFORGE, "META-INF/neoforge.mods.toml"),
+            Sign.build(NEOFORGE, "xyz.jpenilla.resource-factory-neoforge-convention"),
+            Sign.descriptor(FORGE, "META-INF/mods.toml"),
+            Sign.descriptor(PAPER, "paper-plugin.yml"),
+            Sign.descriptor(PAPER, "plugin.yml"),
+            Sign.build(PAPER, "plugin-yml.bukkit", "plugin-yml.paper", "xyz.jpenilla.resource-factory-bukkit-convention",
+                    "xyz.jpenilla.resource-factory-paper-convention"),
+            Sign.blocks(PAPER, "bukkit", "paper", "bukkitpluginyaml", "paperpluginyaml"),
+            Sign.descriptor(VELOCITY, "velocity-plugin.json"),
+            Sign.build(VELOCITY, "xyz.jpenilla.resource-factory-velocity-convention"),
+            Sign.build(QUILT, "org.quiltmc.loom"),
+            Sign.build(FABRIC, "fabric-loom"),
+            Sign.build(FORGE, "net.neoforged.moddev.legacyforge"),
+            Sign.build(NEOFORGE, "net.neoforged.moddev", "net.neoforged.gradle"),
+            Sign.build(FORGE, "net.minecraftforge.gradle"),
+            Sign.build(PAPER, "io.papermc.paperweight.userdev", "xyz.jpenilla.run-paper"),
+            Sign.build(VELOCITY, "xyz.jpenilla.run-velocity"),
+            Sign.build(VELOCITY, "velocity-api"),
+            Sign.build(MINESTOM, "minestom"));
 
     /** Platform of the Gradle project in {@code project}, or null when it does not say. */
     public static Platform detect(Path project) {
+        String build = buildText(project);
         for (Sign sign : SIGNS) {
-            if (sign.shows(project)) {
+            if (sign.shows(project, build)) {
                 return sign.platform();
             }
         }
         return null;
     }
 
-    /** True when one of the project's build files names {@code word}, ignoring case. */
-    private static boolean mentions(Path project, String word) {
-        for (String build : List.of("build.gradle.kts", "build.gradle", "gradle/libs.versions.toml")) {
+    /** The project's build files, lower-cased and joined; a file that is missing or not readable as text adds nothing. */
+    private static String buildText(Path project) {
+        StringBuilder text = new StringBuilder();
+        for (String build : BUILD_FILES) {
             Path file = project.resolve(build);
             try {
-                if (Files.isRegularFile(file) && Files.readString(file).toLowerCase(Locale.ROOT).contains(word)) {
-                    return true;
+                if (Files.isRegularFile(file)) {
+                    text.append(Files.readString(file).toLowerCase(Locale.ROOT)).append('\n');
                 }
             } catch (IOException e) {
                 // Not readable as text: no opinion.
             }
         }
-        return false;
+        return text.toString();
     }
 
     /** The command that starts this platform's server from its directory. */

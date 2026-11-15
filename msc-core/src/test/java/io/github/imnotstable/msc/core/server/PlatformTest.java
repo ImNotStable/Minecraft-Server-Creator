@@ -6,6 +6,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import io.github.imnotstable.msc.core.CoreConfig;
 import io.github.imnotstable.msc.core.api.ApiIndex;
 import io.github.imnotstable.msc.core.tool.ToolException;
+import io.github.imnotstable.msc.templates.TemplateVariables;
+import io.github.imnotstable.msc.templates.Templates;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
@@ -118,9 +120,13 @@ class PlatformTest {
     }
 
     /**
-     * #593: what {@link Platform#detect} makes of a project's files ({@code src/main/resources/<file>}, or a build file
-     * that names a word). A resource file the server loads beats any word in a build file, and a game server's
-     * plugin file beats Velocity's, so a plugin built for Paper and Velocity is Paper.
+     * #593, #599: what {@link Platform#detect} makes of a project's files. A token is a descriptor file under
+     * {@code src/main/resources} ({@code templates:} under {@code src/main/templates}), a Gradle plugin id
+     * ({@code plugin:}), a top-level DSL block ({@code block:}) or a dependency ({@code build:}). The descriptor the server
+     * loads, or what writes it, beats the platform's own Gradle plugin, which beats a dependency word; within a tier a
+     * game server beats Velocity, so a plugin built for Paper and Velocity is Paper. The rows after "upstream" are the
+     * layouts of public templates: NeoForge's MDK-1.21.1-ModDevGradle and MDK-1.21.1-NeoGradle, Forge's 1.21.1 MDK,
+     * fabric-example-mod, quilt-template-mod and paperweight-test-plugin.
      */
     @ParameterizedTest(name = "{0} -> {1}")
     @CsvSource(nullValues = "none", value = {
@@ -140,20 +146,78 @@ class PlatformTest {
             "quilt.mod.json fabric.mod.json, QUILT",
             "META-INF/mods.toml, FORGE",
             "META-INF/neoforge.mods.toml META-INF/mods.toml, NEOFORGE",
-            "META-INF/neoforge.mods.toml plugin.yml build:velocity-api, NEOFORGE"})
-    void detectionReadsTheFilesTheServerLoadsBeforeTheBuildFiles(String files, Platform expected) throws Exception {
-        StringBuilder build = new StringBuilder("dependencies {\n");
-        for (String file : files == null ? new String[0] : files.split(" ")) {
-            if (file.startsWith("build:")) {
-                build.append("    compileOnly(\"com.example:").append(file.substring(6)).append(":1.0\")\n");
-            } else {
-                Path resource = dir.resolve("src/main/resources").resolve(file);
-                Files.createDirectories(resource.getParent());
-                Files.writeString(resource, "");
+            "META-INF/neoforge.mods.toml plugin.yml build:velocity-api, NEOFORGE",
+            // #599: the descriptor in a template folder the build expands, or written by a Gradle plugin.
+            "templates:META-INF/neoforge.mods.toml plugin:net.neoforged.moddev, NEOFORGE",
+            "templates:META-INF/neoforge.mods.toml, NEOFORGE",
+            "templates:META-INF/mods.toml, FORGE",
+            "templates:plugin.yml build:velocity-api, PAPER",
+            "plugin:de.eldoria.plugin-yml.paper build:paper-api build:velocity-api block:paper, PAPER",
+            "plugin:net.minecrell.plugin-yml.bukkit build:velocity-api, PAPER",
+            "plugin:net.minecrell.plugin-yml.paper build:velocity-api, PAPER",
+            "block:bukkit build:velocity-api, PAPER",
+            "plugin:xyz.jpenilla.resource-factory-paper-convention block:paperPluginYaml build:velocity-api, PAPER",
+            "plugin:xyz.jpenilla.resource-factory-velocity-convention build:paper-api, VELOCITY",
+            "plugin:xyz.jpenilla.resource-factory-fabric-convention, FABRIC",
+            "plugin:xyz.jpenilla.resource-factory-neoforge-convention, NEOFORGE",
+            "plugin:de.eldoria.plugin-yml.bungee build:velocity-api, VELOCITY",
+            "block:paperweight build:velocity-api, VELOCITY",
+            "block:paper plugin:fabric-loom, PAPER",
+            // The platform's own Gradle plugin, with no descriptor in the project.
+            "plugin:fabric-loom build:velocity-api, FABRIC",
+            "plugin:org.quiltmc.loom plugin:fabric-loom, QUILT",
+            "plugin:net.neoforged.moddev.legacyforge, FORGE",
+            "plugin:net.neoforged.gradle.userdev build:velocity-api, NEOFORGE",
+            "plugin:net.minecraftforge.gradle, FORGE",
+            "plugin:io.papermc.paperweight.userdev build:velocity-api, PAPER",
+            "plugin:xyz.jpenilla.run-paper build:velocity-api, PAPER",
+            "plugin:xyz.jpenilla.run-velocity build:velocity-api, VELOCITY",
+            "plugin:xyz.jpenilla.run-velocity plugin:xyz.jpenilla.run-paper, PAPER",
+            "plugin:xyz.jpenilla.run-velocity build:minestom, VELOCITY",
+            "plugin:com.gradleup.shadow build:minestom, MINESTOM",
+            // upstream
+            "templates:META-INF/neoforge.mods.toml plugin:java-library plugin:net.neoforged.moddev, NEOFORGE",
+            "META-INF/neoforge.mods.toml plugin:net.neoforged.gradle.userdev, NEOFORGE",
+            "META-INF/mods.toml plugin:net.minecraftforge.gradle, FORGE",
+            "fabric.mod.json plugin:net.fabricmc.fabric-loom, FABRIC",
+            "quilt.mod.json plugin:org.quiltmc.loom, QUILT",
+            "plugin:io.papermc.paperweight.userdev plugin:xyz.jpenilla.run-paper "
+                    + "plugin:xyz.jpenilla.resource-factory-bukkit-convention block:bukkitPluginYaml, PAPER"})
+    void detectionReadsWhatTheServerLoadsThenTheBuildPluginsThenTheDependencies(String tokens, Platform expected)
+            throws Exception {
+        StringBuilder plugins = new StringBuilder("plugins {\n");
+        StringBuilder dependencies = new StringBuilder("dependencies {\n");
+        StringBuilder blocks = new StringBuilder();
+        for (String token : tokens == null ? new String[0] : tokens.split(" ")) {
+            String value = token.substring(token.indexOf(':') + 1);
+            switch (token.substring(0, Math.max(token.indexOf(':'), 0))) {
+                case "plugin" -> plugins.append("    id(\"").append(value).append("\")\n");
+                case "build" -> dependencies.append("    compileOnly(\"com.example:").append(value).append(":1.0\")\n");
+                case "block" -> blocks.append(value).append(" {\n    main = \"x.Main\"\n}\n");
+                case "templates" -> write(dir.resolve("src/main/templates").resolve(value));
+                default -> write(dir.resolve("src/main/resources").resolve(value));
             }
         }
-        Files.writeString(dir.resolve("build.gradle.kts"), build.append("}\n"));
+        Files.createDirectories(dir.resolve("src/main/resources"));
+        Files.writeString(dir.resolve("build.gradle.kts"), plugins + "}\n\n" + dependencies + "}\n\n" + blocks);
         assertThat(Platform.detect(dir)).isEqualTo(expected);
+    }
+
+    /** #599: every msc-templates template, as scaffolded, is detected as the platform it is made for. */
+    @Test
+    void everyTemplateIsDetectedAsItsOwnPlatform() throws Exception {
+        for (String id : Templates.ids()) {
+            Path project = dir.resolve(id);
+            Templates.scaffold(id, project, TemplateVariables.of("Detect Me"));
+            Platform expected = Files.exists(project.resolve("build.gradle.kts"))
+                    ? Platform.of(Templates.info(id).get("platform")) : null;
+            assertThat(Platform.detect(project)).as(id).isEqualTo(expected);
+        }
+    }
+
+    private static void write(Path file) throws Exception {
+        Files.createDirectories(file.getParent());
+        Files.writeString(file, "");
     }
 
     private static Path jar(Path path) throws Exception {
