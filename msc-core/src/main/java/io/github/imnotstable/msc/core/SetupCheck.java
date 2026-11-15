@@ -21,9 +21,9 @@ public final class SetupCheck {
 
     public static List<String> warnings(CoreConfig config) {
         List<String> out = new ArrayList<>();
-        if (isMscRepo(config.workspace())) {
-            out.add("warning: the workspace is the Minecraft Server Creator repo (" + config.workspace() + "), not a "
-                    + "server project. Call msc_workspace with the server's folder, or start Claude Code there.");
+        String repo = workspaceWarning(config);
+        if (repo != null) {
+            out.add(repo);
         }
         if (config.installDir() != null) {
             String newer = newerInstall(config.installDir());
@@ -33,6 +33,13 @@ public final class SetupCheck {
             }
         }
         return out;
+    }
+
+    /** The warning about the workspace itself (it is the MSC repo), or null: the one a workspace switch changes. */
+    public static String workspaceWarning(CoreConfig config) {
+        return isMscRepo(config.workspace()) ? "warning: the workspace is the Minecraft Server Creator repo ("
+                + config.workspace() + "), not a server project. Call msc_workspace with the server's folder, or start "
+                + "Claude Code there." : null;
     }
 
     /** The repo's own root: its settings file names the root project. */

@@ -7,6 +7,7 @@ import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Supplier;
 
 /** All tools by name. Every call goes through {@link #call}, which turns failures into text and logs the call. */
 public final class ToolRegistry {
@@ -24,14 +25,23 @@ public final class ToolRegistry {
         this.log = log;
     }
 
-    private final AtomicReference<String> notice = new AtomicReference<>();
+    private final AtomicReference<Supplier<String>> notice = new AtomicReference<>();
 
     /**
      * A note put in front of the next tool result only, so setup warnings reach the AI once without a call. It counts
      * toward that result's cap ({@link #fit}).
      */
     public void noticeOnce(String text) {
-        notice.set(text);
+        notice.set(() -> text);
+    }
+
+    /**
+     * A note for the next tool result only, worked out when that call has run, so it describes the state the call
+     * left (a {@code msc_workspace} switch, #633); null or empty for none. A note already waiting is kept: it is
+     * worked out then too.
+     */
+    public void noticeUnlessPending(Supplier<String> text) {
+        notice.compareAndSet(null, text);
     }
 
     public ToolRegistry add(Tool tool) {
@@ -153,7 +163,9 @@ public final class ToolRegistry {
                 text = "error: internal: " + e;
             }
         }
-        String pending = notice.getAndSet(null);
+        Supplier<String> queued = notice.getAndSet(null);
+        String pending = queued == null ? null : queued.get();
+        pending = pending == null || pending.isEmpty() ? null : pending;
         // The one place every result passes: the cap applies to the final text, the notice included.
         text = fit(pending, text, cap(tool, new Args(args)));
         long ms = (System.nanoTime() - start) / 1_000_000;

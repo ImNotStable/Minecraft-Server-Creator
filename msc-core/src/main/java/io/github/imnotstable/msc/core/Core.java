@@ -227,10 +227,9 @@ public final class Core implements AutoCloseable {
                 Schema.of().opt("path", "string", "Folder, absolute or relative")
                         .opt("create", "boolean", "Create it if missing"),
                 this::switchWorkspace);
-        List<String> warnings = SetupCheck.warnings(config);
-        if (!warnings.isEmpty()) {
-            registry.noticeOnce(String.join("\n", warnings));
-        }
+        // Worked out for the workspace the first result is about: a first call that switches away from the MSC repo
+        // gets no warning to switch (#633).
+        registry.noticeUnlessPending(() -> String.join("\n", SetupCheck.warnings(bench.config())));
     }
 
     /** A handler that runs the current bench's tool of that name. */
@@ -380,6 +379,8 @@ public final class Core implements AutoCloseable {
             }
             install(next);
             log.moveTo(next.config().toolLog());
+            // A switch into the MSC repo says so in this result (#633).
+            registry.noticeUnlessPending(() -> SetupCheck.workspaceWarning(bench.config()));
             StringBuilder out = new StringBuilder("workspace: ").append(target);
             if (detached) {
                 out.append("\nthe detached server of ").append(old.config().workspace()).append(" keeps running");
