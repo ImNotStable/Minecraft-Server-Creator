@@ -32,25 +32,25 @@ import java.nio.file.StandardOpenOption;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 
 /**
  * Command line entry point.
  *
  * <pre>
- * list                                   list tasks
- * run [--tasks a,b] [--modes baseline,toolset] [--repeat N]
- * check &lt;task&gt; &lt;workspace&gt;                 run one task's checks on a folder (starts its server for RCON checks)
+ * list [--tasks-dir DIR]                 list tasks
+ * run [--tasks a,b] [--modes baseline,toolset] [--repeat N] [--model M] [--isolate] [--out DIR] [--tasks-dir DIR]
+ *     [--config FILE]
+ * check &lt;task&gt; &lt;workspace&gt; [--tasks-dir DIR] [--config FILE]
+ *                                        run one task's checks on a folder (starts its server for RCON checks)
  * report &lt;runDir&gt;                         rewrite report.md from results.jsonl
- * common: --tasks-dir DIR (default tasks), --config FILE (default bench.json),
- *         --out DIR (default ~/.msc/bench-runs, or &lt;temp&gt;/msc-bench-runs when the home folder is inside a
- *         repository; must be outside any repository or CLAUDE.md folder)
+ * --tasks-dir defaults to tasks, --config to bench.json, --out to ~/.msc/bench-runs (or &lt;temp&gt;/msc-bench-runs
+ * when the home folder is inside a repository; it must be outside any repository or CLAUDE.md folder). Each command
+ * takes only its own flags, each at most once ({@link CommandLine}).
  * A leading {@code ~} in a path argument is the home folder: Gradle's {@code --args="..."} and quoted shell
  * arguments pass it unexpanded.
  * </pre>
@@ -61,11 +61,8 @@ import java.util.Set;
  */
 public final class Main {
 
-    private static final Set<String> FLAGS = Set.of("--tasks", "--modes", "--repeat", "--tasks-dir", "--config", "--out",
-            "--model");
     /** The report's name inside a run folder. */
     static final String REPORT = "report.md";
-    private static final Set<String> PATH_FLAGS = Set.of("--tasks-dir", "--config", "--out");
 
     /** Every attempt or check passed, or the command had nothing to judge ({@code list}, {@code report}). */
     static final int OK = 0;
@@ -150,61 +147,49 @@ public final class Main {
     }
 
     static int run(String[] args, PrintStream out, Path home, Path temp) throws IOException {
-        List<String> positional = new ArrayList<>();
-        Map<String, String> flags = new HashMap<>();
-        for (int i = 0; i < args.length; i++) {
-            if (args[i].equals("--isolate")) {
-                flags.put(args[i], "");
-            } else if (FLAGS.contains(args[i])) {
-                if (i + 1 >= args.length) {
-                    throw new IllegalArgumentException(args[i] + " needs a value");
-                }
-                flags.put(args[i], args[++i]);
-            } else if (args[i].startsWith("--")) {
-                throw new IllegalArgumentException("unknown option " + args[i]);
-            } else {
-                positional.add(args[i]);
-            }
-        }
-        if (positional.isEmpty()) {
+        CommandLine line = CommandLine.parse(args, home);
+        if (line.command() == null) {
             out.println(usage());
             return USAGE;
         }
-        flags.replaceAll((flag, value) -> PATH_FLAGS.contains(flag) ? expandHome(value, home).toString() : value);
+        Map<String, String> flags = line.flags();
+        List<String> rest = line.positional();
         Path tasksDir = Path.of(flags.getOrDefault("--tasks-dir", "tasks"));
-        return switch (positional.getFirst()) {
+        return switch (line.command()) {
             case "list" -> {
-                if (positional.size() != 1) {
-                    throw new IllegalArgumentException("usage: list");
+                if (!rest.isEmpty()) {
+                    throw new IllegalArgumentException("usage: list " + CommandLine.options("list"));
                 }
                 yield list(tasksDir, out);
             }
             case "run" -> {
-                if (positional.size() != 1) {
-                    throw new IllegalArgumentException("usage: run [--tasks a,b] [--modes m1,m2] [--repeat N] [--model M] [--isolate]; "
-                            + "unexpected " + positional.get(1));
+                if (!rest.isEmpty()) {
+                    throw new IllegalArgumentException("usage: run " + CommandLine.options("run") + "; unexpected "
+                            + rest.getFirst());
                 }
                 yield runBench(tasksDir, flags, out, home, temp);
             }
             case "check" -> {
-                if (positional.size() != 3) {
-                    throw new IllegalArgumentException("usage: check <task> <workspace>");
+                if (rest.size() != 2) {
+                    throw new IllegalArgumentException("usage: check <task> <workspace> "
+                            + CommandLine.options("check"));
                 }
-                yield check(tasksDir, positional.get(1), expandHome(positional.get(2), home), flags, home, out);
+                yield check(tasksDir, rest.get(0), expandHome(rest.get(1), home), flags, home, out);
             }
             case "report" -> {
-                if (positional.size() != 2) {
+                if (rest.size() != 1) {
                     throw new IllegalArgumentException("usage: report <runDir>");
                 }
-                yield report(expandHome(positional.get(1), home), out);
+                yield report(expandHome(rest.getFirst(), home), out);
             }
-            default -> throw new IllegalArgumentException("unknown command " + positional.getFirst());
+            default -> throw new IllegalStateException("no case for command " + line.command());
         };
     }
 
     static String usage() {
-        return "usage: msc-bench list | run [--tasks a,b] [--modes m1,m2] [--repeat N] [--model M] [--isolate] [--out DIR, default "
-                + RunIsolation.DEFAULT_RUNS_SHOWN + "] | check <task> <workspace> | report <runDir>";
+        return "usage: msc-bench list " + CommandLine.options("list") + " | run " + CommandLine.options("run")
+                + " | check <task> <workspace> " + CommandLine.options("check") + " | report <runDir>; --out DIR, default "
+                + RunIsolation.DEFAULT_RUNS_SHOWN + "; a flag is given at most once";
     }
 
     /**

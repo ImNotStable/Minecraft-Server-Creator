@@ -68,6 +68,17 @@ The agent runs as Claude Code started from a plain shell even when the bench its
 
 A leading `~` in a path argument (`check`'s workspace, `report`'s run folder, `--out`, `--config`, `--tasks-dir`) is your home folder: the bench expands it itself, because neither Gradle's `--args` nor a quoted shell argument does. The path `run` prints after `Report:` works too.
 
+Each command takes only its own flags, and each flag at most once (#609):
+
+| Command | Flags |
+| --- | --- |
+| `list` | `--tasks-dir DIR` |
+| `run` | `--tasks a,b`, `--modes m1,m2`, `--repeat N`, `--model M`, `--isolate` (no value), `--out DIR`, `--tasks-dir DIR`, `--config FILE` |
+| `check <task> <workspace>` | `--tasks-dir DIR`, `--config FILE` |
+| `report <runDir>` | none |
+
+A flag the command does not take (`list --repeat 3`, `report <runDir> --modes m`), a flag given twice (`run --tasks a --tasks b`: list both in one `--tasks a,b`), an unknown flag and a flag without its value are refused with exit code 2 and one line naming the flag (`msc-bench: --tasks is given twice; list the tasks in one --tasks a,b`), before anything is read or created.
+
 `--repeat` is a whole number from 1. Before it creates anything, `run` resolves and checks what it will run: a tasks folder with no task in it (an empty folder, or `--tasks-dir` naming another folder such as `msc-bench` itself), a `--tasks` or `--modes` list that names nothing or has an empty name (`--tasks ,`, `--modes a,,b`), a name that is no task or mode, a name listed twice and a `--config` file that does not exist are refused with exit code 2, without a run folder or report. `check` refuses a task list that is not exactly one task, a workspace folder that does not exist and a `--config` file that does not exist (without `--config`, it runs without `bench.json` when there is none, and then its RCON checks fail). When every selected task was skipped (Paper tasks without the EULA), `run` says that nothing ran and writes an empty report.
 
 | Exit code | Meaning |
