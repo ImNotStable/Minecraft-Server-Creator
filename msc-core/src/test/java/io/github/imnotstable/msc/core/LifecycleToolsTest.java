@@ -91,6 +91,21 @@ class LifecycleToolsTest {
     }
 
     @Test
+    void theStartReportGivesTheBedrockPortWhenGeyserIsInPlugins() throws Exception {
+        // ADR 0046: after the mode line; nothing about Bedrock without Geyser.
+        Path run = Files.createDirectories(workspace.resolve("run"));
+        Files.writeString(run.resolve("server.properties"), "gamemode=creative\ndifficulty=peaceful\nserver-port=25570\n");
+        assertThat(h.ok("server_start", "timeoutSeconds", 30)).doesNotContain("bedrock");
+        h.ok("server_stop");
+        Files.createDirectories(run.resolve("plugins/Geyser-Spigot"));
+        Files.writeString(run.resolve("plugins/Geyser-Spigot.jar"), "geyser");
+        Files.writeString(run.resolve("plugins/Geyser-Spigot/config.yml"), "bedrock:\n  address: 0.0.0.0\n  port: 19140\n");
+        assertThat(h.ok("server_start", "timeoutSeconds", 30)).contains("difficulty (server_setup mode=game for "
+                + "survival, normal: mobs attack and players take damage)\nbedrock: UDP 0.0.0.0:19140 (Geyser, fronting "
+                + "Java port 25570; Floodgate sign-in, open to the network)\n");
+    }
+
+    @Test
     void startRemovesTheAsideCopiesOlderCoresLeftInTheScanFolders() throws Exception {
         // #434: cores before #430 set a jar aside as x.jar.msc-removing in mods/, which Quilt loads as a second copy.
         Path mods = Files.createDirectories(workspace.resolve("run/mods"));

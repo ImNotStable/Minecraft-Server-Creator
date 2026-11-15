@@ -1,7 +1,9 @@
 package io.github.imnotstable.msc.core.tools;
 
 import io.github.imnotstable.msc.core.CoreConfig;
+import io.github.imnotstable.msc.core.server.BedrockConfig;
 import io.github.imnotstable.msc.core.server.FabricDownloader;
+import io.github.imnotstable.msc.core.server.GeyserDownloader;
 import io.github.imnotstable.msc.core.server.LoaderInstaller;
 import io.github.imnotstable.msc.core.server.MachineEula;
 import io.github.imnotstable.msc.core.server.PaperDownloader;
@@ -30,6 +32,8 @@ final class ServerSetup {
     private final PaperDownloader paper;
     private final FabricDownloader fabric;
     private final LoaderInstaller loaders;
+    private final GeyserDownloader geyser;
+    private final BedrockConfig.PortCheck ports = BedrockConfig::udpFree;
     private final EulaPrompts eula;
 
     ServerSetup(CoreConfig config, ServerManager server, PaperDownloader paper, FabricDownloader fabric,
@@ -40,6 +44,8 @@ final class ServerSetup {
         this.fabric = fabric;
         this.loaders = new LoaderInstaller(config.loaderUrls(), config.dataDir().resolve("cache"),
                 config.javaCommand(), config.downloadStore());
+        this.geyser = new GeyserDownloader(config.loaderUrls().geyserApi(), config.dataDir().resolve("cache"),
+                config.downloadStore());
         this.eula = eula;
     }
 
@@ -68,6 +74,12 @@ final class ServerSetup {
         // (unsupported version, download error) leaves the workspace as it was, its working server included.
         Platform chosen = args.str("platform", null) == null ? null : Platform.of(args.str("platform"));
         Platform platform = chosen == null ? server.platform() : chosen;
+        Boolean bedrock = args.has("bedrock") ? args.bool("bedrock", false) : null;
+        boolean plugins = platform == Platform.PAPER || platform == Platform.PURPUR;
+        if (Boolean.TRUE.equals(bedrock) && !plugins) {
+            throw new ToolException("bedrock=true needs paper or purpur (Geyser and Floodgate install as plugins), not "
+                    + platform.id());
+        }
         Path dir = OutputFile.checkFolder(config.serverDir(), "server folder");
         Steps steps = new Steps("server_setup");
         String rememberFails = "the server folder is set up, but the workspace platform is still "
@@ -95,15 +107,24 @@ final class ServerSetup {
         if (mode != null) {
             steps.then(MODE);
         }
-        steps.then(AGENT).then(EULA);
+        // Geyser: on bedrock=true, and kept up to date by any later setup of a folder that has it (ADR 0046).
+        Path pluginDir = dir.resolve(platform.addonDir());
+        boolean geyser = plugins && !Boolean.FALSE.equals(bedrock) && (Boolean.TRUE.equals(bedrock)
+                || Files.exists(pluginDir.resolve(GeyserDownloader.Project.GEYSER.jarName())));
+        steps.then(AGENT);
+        if (geyser || Boolean.FALSE.equals(bedrock) && plugins) {
+            steps.then(BEDROCK);
+        }
+        steps.then(EULA);
         if (chosen != null) {
             steps.then(REMEMBER).ifFails(REMEMBER, rememberFails);
         }
         String partly = "server_setup again finishes it";
-        for (String step : List.of(DEFAULTS, MODE, AGENT, EULA)) {
+        for (String step : List.of(DEFAULTS, MODE, AGENT, BEDROCK, EULA)) {
             steps.ifFails(step, "the server is installed but not fully set up; " + partly);
         }
         StringBuilder installed = new StringBuilder();
+        List<GeyserDownloader.Download> bedrockJars = new java.util.ArrayList<>();
         steps.run(INSTALL, () -> {
             switch (platform) {
                 case FABRIC -> fabric(version, dir, installed);
@@ -112,6 +133,11 @@ final class ServerSetup {
                 case FORGE -> forge(version, dir, installed);
                 case PURPUR -> report("purpur", loaders.purpur(version, dir), installed);
                 default -> paper(version, dir, installed);
+            }
+            if (geyser) {
+                for (GeyserDownloader.Project p : GeyserDownloader.Project.values()) {
+                    bedrockJars.add(this.geyser.download(p));
+                }
             }
         });
         StringBuilder out = new StringBuilder();
@@ -129,6 +155,15 @@ final class ServerSetup {
         out.append(installed);
         // The addon folder exists after setup even without an agent, for the deploys that follow.
         steps.run(AGENT, () -> installAgent(platform, Files.createDirectories(dir.resolve(platform.addonDir())), out));
+        if (steps.planned(BEDROCK)) {
+            steps.run(BEDROCK, () -> {
+                if (geyser) {
+                    installBedrock(dir, pluginDir, bedrockJars, out);
+                } else {
+                    removeBedrock(pluginDir, out);
+                }
+            });
+        }
         steps.run(EULA, () -> eulaStep(dir.resolve("eula.txt"), acceptEula, out));
         remember(steps, chosen);
         out.append(platform.id()).append(" server ready in ").append(dir).append("; next: server_start or dev_cycle");
@@ -142,6 +177,7 @@ final class ServerSetup {
     static final String DEFAULTS = "write missing default config files";
     static final String MODE = "set the game mode in " + ServerPropertiesFile.NAME;
     static final String AGENT = "install the msc agent";
+    static final String BEDROCK = "install or remove Geyser and Floodgate";
     static final String EULA = "apply the EULA answer";
     static final String REMEMBER = "remember the workspace platform";
 
@@ -253,6 +289,45 @@ final class ServerSetup {
     private static void report(String what, LoaderInstaller.Result r, StringBuilder out) {
         out.append(what).append(' ').append(r.version()).append(r.cached() ? " (already there)" : " (installed)")
                 .append('\n');
+    }
+
+    /**
+     * Geyser-Spigot and Floodgate into {@code plugins/} (replacing older builds under the same names), then Geyser's
+     * config: written when missing, else kept with a free Bedrock port (ADR 0046).
+     */
+    private void installBedrock(Path dir, Path pluginDir, List<GeyserDownloader.Download> jars, StringBuilder out)
+            throws IOException {
+        Files.createDirectories(pluginDir);
+        StringBuilder names = new StringBuilder();
+        for (GeyserDownloader.Download d : jars) {
+            Path target = pluginDir.resolve(d.project().jarName());
+            boolean same = Files.exists(target) && Files.mismatch(d.jar(), target) == -1;
+            if (!same) {
+                ScanFolders.copy(d.jar(), target, dir);
+            }
+            names.append(names.isEmpty() ? "" : ", ").append(d.describe())
+                    .append(same ? " (already there)" : d.cached() ? " (cached)" : " (downloaded)");
+        }
+        out.append(names).append('\n');
+        BedrockConfig.Result r = BedrockConfig.configure(dir, ports);
+        if (r.change() == BedrockConfig.Change.MOVED) {
+            out.append("bedrock.port was taken, moved to ").append(r.port()).append('\n');
+        }
+        out.append(BedrockConfig.describe(r.address(), r.port(),
+                ServerPropertiesFile.read(dir.resolve(ServerPropertiesFile.NAME)))).append('\n');
+    }
+
+    /** bedrock=false: the two jars go; their config folders stay for a later bedrock=true. */
+    private static void removeBedrock(Path pluginDir, StringBuilder out) throws IOException {
+        int removed = 0;
+        for (GeyserDownloader.Project p : GeyserDownloader.Project.values()) {
+            if (Files.deleteIfExists(pluginDir.resolve(p.jarName()))) {
+                removed++;
+            }
+        }
+        if (removed > 0) {
+            out.append("removed Geyser and Floodgate from plugins/ (their config folders stay)\n");
+        }
     }
 
     private void installAgent(Platform platform, Path addons, StringBuilder out) throws IOException {

@@ -45,10 +45,11 @@ public final class LifecycleTools {
                         .opt("acceptEula", "boolean", EulaPrompts.SCAFFOLD_EULA_ARG),
                 scaffold::run);
         registry.add("server_setup",
-                "Prepare the dev server: download or install it, write dev defaults, install the msc agent.",
+                "Prepare the dev server: install it, write dev defaults, install the msc agent.",
                 Schema.of().opt("version", "string", "Minecraft version. Default " + config.minecraft())
                         .opt("platform", "string", "paper, purpur, fabric, quilt, neoforge, forge or minestom. Default: the project's")
                         .opt("mode", "string", "build (creative, peaceful) or game (survival, normal)")
+                        .opt("bedrock", "boolean", "Geyser+Floodgate for Bedrock players; false removes")
                         .opt("acceptEula", "boolean", EulaPrompts.EULA_ARG),
                 setup::run);
         registry.add("server_start", "Start the dev server and wait until it is ready. Returns startup errors only.",

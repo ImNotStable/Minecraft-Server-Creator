@@ -32,17 +32,19 @@ public final class LoaderInstaller {
     /** The marker line of a claim: the folder held no {@code server.jar}, and the next one there is the caller's. */
     static final String UNWRITTEN = "- " + SHARED_JAR;
 
-    /** Where each project publishes. Tests point these at a local server. */
-    public record Urls(String neoforgeMaven, String forgeMaven, String quiltMaven, String purpurApi) {
+    /** Where each project publishes (Geyser and Floodgate: GeyserMC's download API, ADR 0046). Tests point these at a local server. */
+    public record Urls(String neoforgeMaven, String forgeMaven, String quiltMaven, String purpurApi,
+                       String geyserApi) {
         public static final Urls DEFAULT = new Urls("https://maven.neoforged.net/releases",
                 "https://maven.minecraftforge.net", "https://maven.quiltmc.org/repository/release",
-                "https://api.purpurmc.org");
+                "https://api.purpurmc.org", "https://download.geysermc.org");
 
         public Urls {
             neoforgeMaven = Downloads.trim(neoforgeMaven);
             forgeMaven = Downloads.trim(forgeMaven);
             quiltMaven = Downloads.trim(quiltMaven);
             purpurApi = Downloads.trim(purpurApi);
+            geyserApi = Downloads.trim(geyserApi);
         }
     }
 
