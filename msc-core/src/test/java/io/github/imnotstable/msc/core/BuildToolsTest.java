@@ -44,6 +44,34 @@ class BuildToolsTest {
         assertThat(h.agent.get(2, 65, 0)).isEqualTo("minecraft:air");
     }
 
+    /**
+     * ADR 0042: a block may carry block entity data; world_slice data=true shows it, and a slice pasted into a
+     * structure step, a copy and a saved schematic all keep it.
+     */
+    @Test
+    void blockEntityDataIsPlacedShownCopiedAndSaved() {
+        String chest = "chest[facing=north]{Items:[{Slot:0b, id:\"minecraft:diamond\", count:3}], x:9}";
+        assertThat(h.ok("build_batch", "steps", "set 0,64,0 " + chest + "\nset 1,64,0 chest[facing=north]"))
+                .contains("blocks changed").doesNotContain("blocks:");
+        String stored = "minecraft:chest[facing=north]{Items:[{Slot:0b,id:\"minecraft:diamond\",count:3}]}";
+        assertThat(h.agent.get(0, 64, 0)).as("one spelling, without the position").isEqualTo(stored);
+
+        String slice = h.ok("world_slice", "region", "0,64,0 1,64,0", "data", true, "states", true);
+        assertThat(slice).endsWith("\ndata 0,64,0 {Items:[{Slot:0b,id:\"minecraft:diamond\",count:3}]}");
+        assertThat(h.ok("world_slice", "region", "0,64,0 1,64,0")).doesNotContain("data");
+
+        h.ok("build_batch", "steps", "structure 10,64,0 rotate=180\n" + slice + "\nend");
+        assertThat(h.agent.get(11, 64, 0)).isEqualTo(stored.replace("north", "south"));
+        h.ok("build_batch", "steps", "copy 0,64,0 1,64,0 to=20,64,0");
+        assertThat(h.agent.get(20, 64, 0)).isEqualTo(stored);
+
+        h.ok("structure_save", "region", "0,64,0 1,64,0", "file", "chests.schem");
+        h.ok("build_batch", "steps", "structure 30,64,0 file=chests.schem");
+        assertThat(h.agent.get(30, 64, 0)).isEqualTo(stored);
+        assertThat(h.error("build_batch", "steps", "set 0,64,0 chest{Items:[}"))
+                .contains("line 1").contains("bad SNBT");
+    }
+
     @Test
     void badBlockNamesStopTheWholeBatchAndAreAllListed() {
         String err = h.error("build_batch", "steps", """

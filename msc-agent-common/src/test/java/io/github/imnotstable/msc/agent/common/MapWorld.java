@@ -20,6 +20,8 @@ final class MapWorld implements AgentWorld<String>, AgentWorlds<String> {
     final List<Ops.EntitySummary> entities = new ArrayList<>();
     final List<Ops.EntityInfo> entityInfos = new ArrayList<>();
     final Map<Long, Ops.SignText> signs = new HashMap<>();
+    /** Block entity data as SNBT; only chests keep it here. A merge replaces it, which is enough for these tests. */
+    final Map<Long, String> data = new HashMap<>();
     final List<String> loads = new ArrayList<>();
     int writes;
     boolean lastPhysics;
@@ -49,6 +51,7 @@ final class MapWorld implements AgentWorld<String>, AgentWorlds<String> {
         writes++;
         lastPhysics = physics;
         signs.remove(PackedPos.pack(x, y, z)); // like a real world: a new block drops the old block entity
+        data.remove(PackedPos.pack(x, y, z));
         if (state.equals(AIR)) {
             blocks.remove(PackedPos.pack(x, y, z));
         } else {
@@ -84,15 +87,54 @@ final class MapWorld implements AgentWorld<String>, AgentWorlds<String> {
                 .toList();
     }
 
-    /** Sign text lives outside the state, as on Paper and the mod loaders. */
+    /** Sign text and chest data live outside the state, as on Paper and the mod loaders. */
     @Override
     public Object blockEntity(int x, int y, int z) {
-        return signs.get(PackedPos.pack(x, y, z));
+        long p = PackedPos.pack(x, y, z);
+        return signs.containsKey(p) || data.containsKey(p) ? new Kept(signs.get(p), data.get(p)) : null;
     }
 
     @Override
-    public void loadBlockEntity(int x, int y, int z, Object data) {
-        signs.put(PackedPos.pack(x, y, z), (Ops.SignText) data);
+    public void loadBlockEntity(int x, int y, int z, Object saved) {
+        long p = PackedPos.pack(x, y, z);
+        Kept kept = (Kept) saved;
+        if (kept.sign() != null) {
+            signs.put(p, kept.sign());
+        }
+        if (kept.data() == null) {
+            data.remove(p);
+        } else {
+            data.put(p, kept.data());
+        }
+    }
+
+    record Kept(Ops.SignText sign, String data) {
+    }
+
+    @Override
+    public boolean holdsData(String state) {
+        return state.contains("chest");
+    }
+
+    @Override
+    public String blockData(int x, int y, int z) {
+        return data.get(PackedPos.pack(x, y, z));
+    }
+
+    @Override
+    public void mergeBlockData(int x, int y, int z, Object patch) {
+        data.put(PackedPos.pack(x, y, z), (String) patch);
+    }
+
+    @Override
+    public Object parseData(String state, String snbt) {
+        if (!holdsData(state)) {
+            throw new IllegalArgumentException(state + " has no block entity data");
+        }
+        if (!snbt.startsWith("{") || !snbt.endsWith("}")) {
+            throw new IllegalArgumentException("bad SNBT " + snbt);
+        }
+        return snbt;
     }
 
     @Override

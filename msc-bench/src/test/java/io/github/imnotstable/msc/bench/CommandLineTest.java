@@ -128,6 +128,18 @@ class CommandLineTest {
         BAD_TASKS.put("setup-start-before-false", new String[] {"{\"category\":\"world\",\"title\":\"t\","
                 + "\"server\":{\"startBefore\":false,\"setup\":[\"say hi\"]}," + check + "}",
                 "server.setup: runs only before the agent, so it needs \"startBefore\": true"});
+        // #570: a Minestom task that would start or check a Paper server.
+        BAD_TASKS.put("minestom-start-before", new String[] {"{\"category\":\"game\",\"title\":\"t\","
+                + "\"platform\":\"minestom\",\"server\":{\"startBefore\":true}," + check + "}",
+                "server.startBefore: starts the Paper server, and a minestom task runs none"});
+        BAD_TASKS.put("minestom-rcon-check", new String[] {"{\"category\":\"game\",\"title\":\"t\","
+                + "\"platform\":\"minestom\",\"checks\":[{\"type\":\"file\",\"path\":\"a\"},"
+                + "{\"type\":\"rcon\",\"command\":\"list\",\"expect\":\"x\"}]}",
+                "checks[1].type: \"rcon\" checks the Paper server, and a minestom task runs none"});
+        BAD_TASKS.put("minestom-blocks-check", new String[] {"{\"category\":\"game\",\"title\":\"t\","
+                + "\"platform\":\"minestom\",\"checks\":[{\"type\":\"blocks\","
+                + "\"blocks\":[{\"pos\":[0,0,0],\"block\":\"minecraft:air\"}]}]}",
+                "checks[0].type: \"blocks\" checks the Paper server, and a minestom task runs none"});
         BAD_CONFIGS.put("path-nul", new String[] {"{\"gradleWrapperFrom\":\"a\\u0000b\"}",
                 "gradleWrapperFrom: \"a\\u0000b\" is not a path: Nul character not allowed"});
         // #508: a bad regex is refused in one line naming its key, not in PatternSyntaxException's three lines.

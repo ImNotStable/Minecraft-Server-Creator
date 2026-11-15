@@ -119,7 +119,9 @@ public final class FakeAgent {
         for (int y = r.min().y(); y <= r.max().y(); y++) {
             for (int z = r.min().z(); z <= r.max().z(); z++) {
                 for (int x = r.min().x(); x <= r.max().x(); x++) {
-                    String s = get(x, y, z);
+                    // Block entity data is kept on the state, as written, and read back only when asked for (ADR 0042).
+                    String s = p.blockData() ? get(x, y, z)
+                            : io.github.imnotstable.msc.core.world.BlockNames.withoutData(get(x, y, z));
                     Integer idx = index.get(s);
                     if (idx == null) {
                         idx = palette.size();

@@ -52,6 +52,16 @@ class CrashTriageTest {
                   at com.example.myplugin.ChunkCache.put(ChunkCache.java:30)
                   fix: the dev server has -Xmx2G (Minestom 1G): find what keeps growing (caches, loaded chunks, \
                 entities, a leak) or load less at once""");
+        // Different failures are never a repeat (#567): two fatal exceptions in server code stay two findings...
+        assertThat(triage("paper-two-fatal")).doesNotContain("(x2)")
+                .contains("fatal exception in server code [log 12:00:01]\n  culprit: server or loader code\n"
+                        + "  cause: java.lang.IllegalStateException: world folder locked")
+                .contains("fatal exception in server code [log 12:00:02]\n  culprit: server or loader code\n"
+                        + "  cause: java.lang.NullPointerException: Cannot invoke \"Level.save()\"");
+        // ...and two plugins failing with the same exception in different seconds are both named.
+        assertThat(triage("paper-two-plugins")).doesNotContain("(x2)")
+                .contains("plugin Shops failed to enable [log 12:00:02]\n  culprit: com.example.shops.Shops.onEnable")
+                .contains("plugin Jobs failed to enable [log 12:00:03]\n  culprit: com.example.jobs.Jobs.onEnable");
         // Minestom's lines carry no time: its repeats count the same (#561).
         assertThat(triage("minestom-oom")).startsWith("out of memory (x2) [log]\n");
     }

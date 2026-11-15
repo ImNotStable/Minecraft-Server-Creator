@@ -76,23 +76,54 @@ public record BlockPattern(List<String> states, int[] cumulative, long seed) {
         return splitTopLevel(text.trim()).size() > 1 || WEIGHT.matcher(text.trim()).matches();
     }
 
+    /** Splits at commas outside {@code [...]} and block entity data {@code {...}} (ADR 0042). */
     static List<String> splitTopLevel(String text) {
         List<String> out = new ArrayList<>();
-        int depth = 0;
         int start = 0;
+        Nesting n = new Nesting();
         for (int i = 0; i < text.length(); i++) {
-            char c = text.charAt(i);
-            if (c == '[') {
-                depth++;
-            } else if (c == ']') {
-                depth--;
-            } else if (c == ',' && depth == 0) {
+            if (n.top(text.charAt(i)) && text.charAt(i) == ',') {
                 out.add(text.substring(start, i));
                 start = i + 1;
             }
         }
         out.add(text.substring(start));
         return out;
+    }
+
+    /**
+     * Follows a block name character by character: {@link #top} says whether a character is outside brackets, braces
+     * and the quoted strings in block entity data, which may hold any character.
+     */
+    public static final class Nesting {
+        private int depth;
+        private char quote;
+        private boolean escaped;
+
+        public boolean top(char c) {
+            if (quote != 0) {
+                if (escaped) {
+                    escaped = false;
+                } else if (c == '\\') {
+                    escaped = true;
+                } else if (c == quote) {
+                    quote = 0;
+                }
+                return false;
+            }
+            if (c == '[' || c == '{') {
+                depth++;
+                return false;
+            }
+            if (c == ']' || c == '}') {
+                depth--;
+                return false;
+            }
+            if ((c == '"' || c == '\'') && depth > 0) {
+                quote = c;
+            }
+            return depth == 0;
+        }
     }
 
     public BlockPattern withSeed(long newSeed) {

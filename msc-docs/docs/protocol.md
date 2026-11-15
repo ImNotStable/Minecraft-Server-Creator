@@ -82,10 +82,10 @@ Defined with their Java types in `Ops`. Block states are vanilla strings such as
 | --- | --- | --- |
 | `server.info` | `{}` | `platform, platformVersion, minecraftVersion, worlds[], onlinePlayers, tps` |
 | `server.command` | `command` | `success, output[]` |
-| `world.read` | `region, includeEntities, includeSigns?` | `grid, entities[], signs[{x, y, z, front[4], back[4]?}]` (signs only when `includeSigns`, only signs with text, at most 1000; `back` omitted when blank) |
+| `world.read` | `region, includeEntities, includeSigns?, includeBlockData?` | `grid, entities[], signs[{x, y, z, front[4], back[4]?}]` (signs only when `includeSigns`, only signs with text, at most 1000; `back` omitted when blank). With `includeBlockData`, a block with block entity data has its own palette entry, the state followed by the data as SNBT (`minecraft:chest[facing=north]{Items:[...]}`); a read whose data passes 4 Mi characters fails with `too_large` |
 | `world.entities` | `region, type?, limit` | `entities[{type, uuid, x, y, z, name?, tags[], health?, maxHealth?}], total` (no blocks read, so no volume limit; loaded chunks only) |
 | `world.heightmap` | `world, min, max` (x/z only) | `minX, minZ, sizeX, sizeZ, heights[]` (Z then X) |
-| `world.write` | `grid, updatePhysics` | `editId, changed` (the only block-writing op; every build is a grid) |
+| `world.write` | `grid, updatePhysics` | `editId, changed` (the only block-writing op; every build is a grid). A palette entry may end in SNBT, merged into the placed block's data as `/data merge block` does, also where the state was already there (that counts as changed, and the undo puts the old data back); data on a block that keeps none is `invalid_params` before anything changes |
 | `world.undo` | `editId` | `editId, changed` |
 | `pack.apply` | `url, sha1, required` | `playersSent` |
 
@@ -98,6 +98,7 @@ A `world.write` that fails after changing blocks (its main-thread wait timed out
 - `blocks` is ordered Y, then Z, then X (X fastest): index = `((y - minY) * sizeZ + (z - minZ)) * sizeX + (x - minX)`.
 - In writes, `-1` leaves a block unchanged.
 - An entity is in a region when its position is (`Region.containsPoint`), not when its hitbox touches it, on every platform; so the pieces of a split read hold each entity once.
+- `includeBlockData` is left out of the frame when off, so a read without it is the same bytes as before ([ADR 0042](adr/0042-block-entity-data.md)); a palette entry without `{` is a plain state, as before.
 - `world.fill` and `world.setBlocks` were removed in [ADR 0019](adr/0019-smaller-tool-surface.md): a core and its agents come from one install, so the protocol version stays 1.
 - One call covers at most 1,048,576 blocks (`Limits.MAX_REGION_VOLUME`). The core splits larger jobs.
 

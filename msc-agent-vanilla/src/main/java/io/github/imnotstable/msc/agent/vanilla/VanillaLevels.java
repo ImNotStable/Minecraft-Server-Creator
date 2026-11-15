@@ -54,4 +54,9 @@ final class VanillaLevels implements AgentWorlds<BlockState> {
     public BlockState parse(String state) {
         return BlockStates.parse(state);
     }
+
+    @Override
+    public Object parseData(BlockState state, String snbt) {
+        return BlockStates.parseData(state, snbt);
+    }
 }
