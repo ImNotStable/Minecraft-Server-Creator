@@ -7,7 +7,7 @@ A Paper plugin that runs inside the dev server and carries out the core's world 
 
 ## What it does
 
-- Connects to `msc-core` over `msc-protocol` when the core starts the server (`MSC_CORE_ADDRESS`, `MSC_TOKEN`; or `-Dmsc.core.address=host:port -Dmsc.token=...`). Without them it stays idle.
+- Connects to `msc-core` over `msc-protocol` when the core starts the server (`MSC_CORE_ADDRESS`, `MSC_TOKEN`; or `-Dmsc.core.address=host:port -Dmsc.token.file=<file holding the token>`, or `-Dmsc.token=...`, which `ps` shows to every user). Without them it stays idle.
 - Implements every operation in `Ops`: `server.info`, `server.command`, `world.read`, `world.heightmap`, `world.entities`, `world.write`, `world.undo`, `pack.apply`.
 - Runs world work on the main thread in 20 ms slices per tick, so a 1M-block edit doesn't stall the server.
 - Keeps undo history in memory (about 8 full-size edits); undo returns a new edit id, so undo can be undone.

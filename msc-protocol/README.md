@@ -3,7 +3,7 @@
 The shared message types and local socket transport between `msc-core` and the in-server agents, published as one versioned library.
 
 **Phase:** MVP  
-**Status:** Built. Protocol version 1; the overview is `msc-docs/docs/protocol.md`.
+**Status:** Built. Protocol version 2 (mutual token proof, ADR 0043); the overview is `msc-docs/docs/protocol.md`.
 
 ## Scope
 

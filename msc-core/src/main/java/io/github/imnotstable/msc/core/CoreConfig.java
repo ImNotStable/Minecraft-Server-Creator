@@ -5,11 +5,11 @@ import io.github.imnotstable.msc.core.server.LoaderInstaller;
 import io.github.imnotstable.msc.core.server.MachineEula;
 import io.github.imnotstable.msc.core.tool.PathArg;
 import io.github.imnotstable.msc.protocol.Limits;
+import io.github.imnotstable.msc.protocol.transport.HandshakeProof;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.UUID;
 
 /**
  * Everything the core reads from its environment. Tests build one by hand.
@@ -82,7 +82,7 @@ public record CoreConfig(Path workspace, Path serverDir, int agentPort, String t
     /** Defaults for a workspace; used by tests and as the base for {@link #fromEnvironment}. */
     public static CoreConfig forWorkspace(Path workspace) {
         String java = Path.of(System.getProperty("java.home"), "bin", "java").toString();
-        return new CoreConfig(workspace, workspace.resolve("run"), 0, UUID.randomUUID().toString(), null, java,
+        return new CoreConfig(workspace, workspace.resolve("run"), 0, HandshakeProof.nonce(), null, java,
                 null, null, DEFAULT_DOWNLOADS_URL, DEFAULT_MINECRAFT, List.of(), "127.0.0.1", DEFAULT_PACK_FORMAT, null,
                 DEFAULT_FABRIC_META_URL, DEFAULT_FABRIC_MAVEN_URL, null, 0, MachineEula.none(), LoaderInstaller.Urls.DEFAULT,
                 DownloadStore.NONE);
@@ -104,7 +104,7 @@ public record CoreConfig(Path workspace, Path serverDir, int agentPort, String t
                 workspace,
                 env.containsKey(ENV_SERVER_DIR) ? Path.of(env.get(ENV_SERVER_DIR)) : base.serverDir(),
                 port,
-                env.getOrDefault(Limits.ENV_TOKEN, base.token()),
+                token(env, base.token()),
                 logFile != null ? Path.of(logFile) : base.dataDir().resolve("tool-calls.jsonl"),
                 env.getOrDefault(ENV_JAVA, base.javaCommand()),
                 null, null,
@@ -121,6 +121,12 @@ public record CoreConfig(Path workspace, Path serverDir, int agentPort, String t
                 MachineEula.forHome(Path.of(System.getProperty("user.home"))),
                 base.loaderUrls(),
                 DownloadStore.fromEnvironment(env, Path.of(System.getProperty("user.home"))));
+    }
+
+    /** {@code MSC_TOKEN} when set and not blank (an empty one would let any agent prove itself), else a random one. */
+    static String token(Map<String, String> env, String random) {
+        String token = env.get(Limits.ENV_TOKEN);
+        return token == null || token.isBlank() ? random : token;
     }
 
     /** {@code <workspace>/.msc}: caches, the resource pack source and logs. */

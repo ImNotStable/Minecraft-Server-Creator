@@ -1,23 +1,35 @@
-# Core-to-agent protocol, version 1
+# Core-to-agent protocol, version 2
 
 Source of truth is the code in `msc-protocol` (`io.github.imnotstable.msc.protocol`). This page is the overview; design reasons are in [ADR 0002](adr/0002-protocol.md).
 
 ## Connection
 
-1. The core listens on `127.0.0.1` (`CoreServer.start`) and starts the game server with two environment variables:
+1. The core listens on `127.0.0.1` only, whatever host `MSC_CORE_ADDRESS` names (`CoreServer.start`), and starts the game server with two environment variables:
    - `MSC_CORE_ADDRESS`: `host:port` of the core
-   - `MSC_TOKEN`: a random token for this session
-2. The agent connects through `AgentLink` in `msc-agent-common` ([ADR 0024](adr/0024-agent-common.md)), which finds the core with `CoreAddress.resolve()`: the two environment variables, or else the system properties `msc.core.address` (`host:port`) and `msc.token` for servers started by hand and for tests. If neither is set, the agent stays idle. `AgentLink` retries with backoff, reconnects when the core drops it, and sends `server.ready` once both the connection is up and the server has finished starting.
+   - `MSC_TOKEN`: a random token for this session (64 hex characters; never sent on the wire, see [Handshake](#handshake))
+2. The agent connects through `AgentLink` in `msc-agent-common` ([ADR 0024](adr/0024-agent-common.md)), which finds the core with `CoreAddress.resolve()`: the two environment variables, or else the system properties `msc.core.address` (`host:port`) and `msc.token` (or `msc.token.file`, a file holding the token) for servers started by hand and for tests. A system property is on the command line, which every user of the machine can see with `ps`; on a shared machine use `msc.token.file` with a file only you can read. If neither is set, the agent stays idle. `AgentLink` retries with backoff, reconnects when the core drops it, and sends `server.ready` once both the connection is up and the server has finished starting.
 3. Every frame is one JSON object on one line, UTF-8, ending in `\n`, at most 16 MiB (`Limits.MAX_FRAME_BYTES`). The `type` field names the message. See [Size limits](#size-limits) for what happens to a message that would not fit.
 
 ## Handshake
 
+Each side proves it holds the token without sending it ([ADR 0043](adr/0043-agent-link-auth.md)):
+
 ```
-agent -> core  {"type":"hello","protocolVersion":1,"token":"...","agent":{"platform":"paper","platformVersion":"26.3.build.231-stable","minecraftVersion":"26.3","operations":["server.info","world.read"]}}
-core -> agent  {"type":"welcome","protocolVersion":1,"sessionId":"6f1c..."}
+agent -> core  {"type":"hello","protocolVersion":2,"nonce":"<Na>","agent":{"platform":"paper","platformVersion":"26.3.build.231-stable","minecraftVersion":"26.3","operations":["server.info","world.read"]}}
+core -> agent  {"type":"challenge","nonce":"<Nc>"}
+agent -> core  {"type":"proof","proof":"<HMAC-SHA256(token, \"msc-agent-proof\n\" + Na + \"\n\" + Nc), hex>"}
+core -> agent  {"type":"welcome","protocolVersion":2,"sessionId":"6f1c...","proof":"<HMAC-SHA256(token, \"msc-core-proof\n\" + Na + \"\n\" + Nc), hex>"}
 ```
 
-On failure the core sends `{"type":"goodbye","code":"unauthorized","reason":"bad token"}` and closes. Codes: `version_mismatch`, `unauthorized`, `bad_frame`.
+Nonces are 32 random bytes as hex (`HandshakeProof`), at most 128 characters; proofs are compared in constant time.
+The agent proves first and handles no request until the core's proof checks out; a core that fails it is treated as
+unreachable, so `AgentLink` retries.
+
+On failure the core sends `{"type":"goodbye","code":"unauthorized","reason":"bad token"}` and closes. Codes: `version_mismatch` (checked first, so an agent of protocol 1 gets it), `unauthorized`, `bad_frame`.
+
+Before the handshake completes: frames are at most 64 KiB (`Limits.MAX_HANDSHAKE_FRAME_BYTES`), the whole handshake
+must finish within one deadline (10 s on the core, the connect timeout on the agent), at most 16 connections may wait
+for their handshake at once, and a first line that is not JSON (such as an HTTP request) is closed without an answer.
 
 ## Messages after the handshake
 
@@ -112,6 +124,6 @@ Handlers run on virtual threads, so they may block while waiting for the server'
 
 ```java
 CoreServer server = CoreServer.start(0, token, RequestHandler.none(), listener, Duration.ofSeconds(10));
-// pass server.address() and token to the game server's environment
+// pass server.address() and token to the game server's environment; the token must not be empty
 Ops.EditResult r = session.connection().call(Ops.WORLD_WRITE, new Ops.WriteParams(grid, false), Duration.ofSeconds(30)).get();
 ```
