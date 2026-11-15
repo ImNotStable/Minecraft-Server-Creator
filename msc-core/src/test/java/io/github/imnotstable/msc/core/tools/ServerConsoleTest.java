@@ -31,6 +31,28 @@ class ServerConsoleTest {
                 List.of("hello"))).containsExactly("[Server] Wave 3");
     }
 
+    /** #611: a cut keeps the start of the command's reply and the end of the console lines, the newest. */
+    @Test
+    void aCutCommandOutputKeepsTheNewestConsoleLine() {
+        List<String> console = new ArrayList<>();
+        for (int i = 0; i < 30; i++) {
+            console.add("[Server] wave " + i + " " + "w".repeat(250));
+        }
+        ServerConsole.Output out = new ServerConsole.Output("reply line", "console during the command:\n",
+                String.join("\n", console));
+        for (int n : new int[] {200, 1000, 6000}) {
+            assertThat(out.fit(n)).as("n " + n).hasSizeLessThanOrEqualTo(n)
+                    .startsWith("reply line\nconsole during the command:\n[truncated: ")
+                    .endsWith(console.getLast().substring(200));
+        }
+        assertThat(out.fit(6000)).endsWith(console.getLast());
+        assertThat(out.fit(100_000)).isEqualTo(out.whole());
+        // The console path: only log lines.
+        ServerConsole.Output log = new ServerConsole.Output("", "", String.join("\n", console));
+        assertThat(log.fit(6000)).hasSizeLessThanOrEqualTo(6000).startsWith("[truncated: ").endsWith(console.getLast());
+        assertThat(new ServerConsole.Output("ran say hi", "", "").fit(6000)).isEqualTo("ran say hi");
+    }
+
     @Test
     void minestomLogPrefixesAreStripped() {
         assertThat(ServerConsole.consoleLines(List.of("[main] INFO com.example.Lobby - Wave 3"), List.of()))

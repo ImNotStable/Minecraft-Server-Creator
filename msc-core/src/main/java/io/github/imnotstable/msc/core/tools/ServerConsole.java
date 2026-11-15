@@ -58,7 +58,7 @@ final class ServerConsole {
         int count = args.integer("lines", 30);
         return switch (mode) {
             case "errors" -> LogCondenser.condense(lines, maxChars);
-            case "tail" -> Budget.truncate(LogText.tail(lines, count), maxChars, "Ask for fewer lines.");
+            case "tail" -> Budget.tail(LogText.tail(lines, count), maxChars, Budget.RAISE);
             default -> grep(lines, pattern(args.str("pattern")), count, maxChars);
         };
     }
@@ -73,9 +73,8 @@ final class ServerConsole {
         if (hits.isEmpty()) {
             return "no lines match in " + lines.size() + " lines";
         }
-        String shown = LogText.tail(hits, count);
-        return Budget.truncate(hits.size() > count ? hits.size() + " matches, last " + count + ":\n" + shown : shown,
-                maxChars, "Use a narrower pattern.");
+        String head = hits.size() > count ? hits.size() + " matches, last " + count + ":\n" : "";
+        return head + Budget.tail(LogText.tail(hits, count), maxChars - head.length(), "Use a narrower pattern.");
     }
 
     private static Pattern pattern(String regex) {
@@ -104,7 +103,11 @@ final class ServerConsole {
         marks.waitFrom = server.log().mark();
         String last = LogText.tail(server.log().since(from), 5);
         String why = server.running() ? "no line matched in " + timeout + "s" : "the server stopped after " + waited;
-        return why + (last.isEmpty() ? "; no new lines" : "; last lines:\n" + last);
+        if (last.isEmpty()) {
+            return why + "; no new lines";
+        }
+        why += "; last lines:\n";
+        return why + Budget.tail(last, Budget.DEFAULT_CHARS - why.length(), "Use server_logs to see more.");
     }
 
     /** Most commands one server_command call runs. */
@@ -118,18 +121,43 @@ final class ServerConsole {
             throw new ToolException("at most " + MAX_COMMANDS + " commands per call; got " + commands.size());
         }
         if (commands.size() <= 1) {
-            return Budget.truncate(one(commands.isEmpty() ? "" : commands.getFirst()), Budget.DEFAULT_CHARS, CUT);
+            return one(commands.isEmpty() ? "" : commands.getFirst()).fit(Budget.DEFAULT_CHARS);
         }
         // One budget (#473): every command keeps its line, the outputs share what is left.
         Budget.Parts out = new Budget.Parts();
         for (String command : commands) {
-            String output = one(command);
-            out.add((out.isEmpty() ? "" : "\n") + "> " + command + "\n").cut(n -> Budget.truncate(output, n, CUT));
+            Output output = one(command);
+            out.add((out.isEmpty() ? "" : "\n") + "> " + command + "\n").cut(output::fit);
         }
         return out.text(Budget.DEFAULT_CHARS, null, "Run fewer commands per call.");
     }
 
-    private String one(String command) throws IOException, InterruptedException {
+    /**
+     * What one command printed: its own reply, then under {@code label} the end of the log it caused (#611). A cut
+     * keeps the start of the reply and the end of the log, so the newest log lines survive.
+     */
+    record Output(String reply, String label, String log) {
+        String whole() {
+            return reply + (reply.isEmpty() || log.isEmpty() ? "" : "\n") + label + log;
+        }
+
+        /** The output in at most {@code n} characters. */
+        String fit(int n) {
+            String whole = whole();
+            if (whole.length() <= n || log.isEmpty()) {
+                return Budget.truncate(whole, n, CUT);
+            }
+            int fixed = (reply.isEmpty() ? 0 : 1) + label.length();
+            if (n < fixed) {
+                return Budget.tail(whole, n, CUT);
+            }
+            int[] shares = Budget.split(n - fixed, reply.length(), log.length());
+            return (reply.isEmpty() ? "" : Budget.truncate(reply, shares[0], CUT) + "\n") + label
+                    + Budget.tail(log, shares[1], CUT);
+        }
+    }
+
+    private Output one(String command) throws IOException, InterruptedException {
         if (command.startsWith("/")) {
             command = command.substring(1);
         }
@@ -139,22 +167,19 @@ final class ServerConsole {
             Ops.CommandResult r = hub.call(Ops.SERVER_COMMAND, new Ops.CommandParams(command));
             List<String> output = r.output() == null ? List.of() : r.output();
             List<String> console = server.running() ? consoleDuring(before, output) : List.of();
-            StringBuilder text = new StringBuilder(r.success() ? "" : "command failed\n");
-            text.append(output.isEmpty() && console.isEmpty() ? "(no output)" : String.join("\n", output));
-            if (!console.isEmpty()) {
-                // Broadcasts reach the console, not the command's sender: without these a /say-style reply is lost.
-                text.append(output.isEmpty() ? "" : "\n").append("console during the command:\n")
-                        .append(String.join("\n", console));
-            }
-            return text.toString();
+            List<String> reply = new ArrayList<>(r.success() ? List.of() : List.of("command failed"));
+            reply.addAll(output.isEmpty() && console.isEmpty() ? List.of("(no output)") : output);
+            // Broadcasts reach the console, not the command's sender: without these a /say-style reply is lost.
+            return new Output(String.join("\n", reply), console.isEmpty() ? "" : "console during the command:\n",
+                    String.join("\n", console));
         }
         long mark = server.log().mark();
         marks.waitFrom = mark;
         server.console(command);
         Thread.sleep(700);
         List<String> lines = server.log().since(mark);
-        return lines.isEmpty() ? "sent (no output within 0.7s)"
-                : LogText.tail(lines, 30);
+        return lines.isEmpty() ? new Output("sent (no output within 0.7s)", "", "")
+                : new Output("", "", LogText.tail(lines, 30));
     }
 
     /**
