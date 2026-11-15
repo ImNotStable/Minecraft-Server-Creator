@@ -413,17 +413,14 @@ public final class ResourcePack implements AutoCloseable {
     }
 
     /**
-     * Takes over the standalone host {@code kept} (this workspace's closed pack, before a switch) started for this
-     * session's detached server, so a server_stop after a switch back stops it as its own (#735).
+     * A switch away from a workspace kept for its detached server (#735): stop the in-process host, so a fixed pack
+     * port is free for the next workspace, and keep the standalone host. A build after the switch back serves again.
      */
-    public void adoptHost(ResourcePack kept) {
-        synchronized (this) {
-            synchronized (kept) {
-                if (hostProcess == null && kept.hostProcess != null && kept.hostProcess.isAlive()) {
-                    hostProcess = kept.hostProcess;
-                    hostPort = kept.hostPort;
-                }
-            }
+    public synchronized void park() {
+        if (server != null) {
+            server.stop();
+            server = null;
+            lastBuilt = null; // its URL named the stopped host's port; current() serves the zip again
         }
     }
 

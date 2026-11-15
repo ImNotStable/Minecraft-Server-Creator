@@ -61,10 +61,13 @@ import java.util.stream.Collectors;
  * <li>pack host ({@link ResourcePack}): the in-process HTTP server, and the standalone host process unless the
  * server is detached;</li>
  * <li>server process ({@link ServerManager#close}): stopped unless detached; its log pump thread ends with it;</li>
- * <li>agent connection ({@link AgentHub}): the agent session and the listening socket, and CoreServer's threads. A
- * detached server's agent session stays open: the session keeps it with the server ({@link #kept}), so the workspace
- * opened again by a switch back takes both over, and {@link #close} ends it (#735).</li>
+ * <li>agent connection ({@link AgentHub}): the agent session and the listening socket, and CoreServer's threads.</li>
  * </ol>
+ * A switch away from a workspace whose server is detached does not close it: the session keeps the whole Bench
+ * ({@link #kept}, #735), with only what listens or runs work stopped (agent and in-process pack listeners, background
+ * builds, the test player), and a switch back reopens that same Bench, edit history and all (#738, #739). A kept Bench
+ * ends through one path, {@link Bench#release}, which closes it as above: when its server exits, when a switch back
+ * finds that server gone, and at the session end (#737).
  * Each part marks itself closed under its own monitor first, and every method that opens something (a process, a
  * socket, a thread, a bot) checks that mark under the same monitor before opening it. So nothing opens after its
  * close, even from a call that was already past every earlier check when the close began (#282); such a call gets
@@ -113,41 +116,33 @@ public final class Core implements AutoCloseable {
         }
     }
 
-    /**
-     * A server this session detached in a workspace a switch then closed, with its pack host and agent connection: the
-     * closed workspace's parts, which the workspace opened again takes it over from (#735).
-     */
-    private record Kept(ServerManager server, ResourcePack pack, AgentHub hub) {
-    }
-
     /** The services of one workspace and the tools bound to them. */
     private record Bench(CoreConfig config, AgentHub hub, ServerManager server, ResourcePack pack,
                          PlayerTools players, ToolRegistry tools, BackgroundWork background, AtomicBoolean closed,
-                         Map<Path, Kept> kept) {
+                         Map<Path, Bench> kept) {
         /**
-         * Opens a workspace's parts, taking over the server this session detached there ({@code kept}); when a step
-         * fails, closes those already opened (the agent socket), and leaves that server to the next open.
+         * Opens a workspace: the one this session keeps there for its detached server ({@code kept}, #735) when that
+         * server still runs, else new parts. When a step fails, closes those already opened (the agent socket), and
+         * leaves a kept workspace kept.
          */
-        static Bench open(CoreConfig config, ToolLog log, OpenCheck check, Map<Path, Kept> kept) throws IOException {
-            Path key = realOrSelf(config.workspace());
-            Kept detached = kept.get(key);
-            BackgroundWork background = new BackgroundWork();
-            AgentHub hub = hub(config, detached);
-            try {
-                Bench bench = wire(config, log, background, hub, detached, kept);
-                check.check(config, hub);
-                if (detached != null) {
-                    kept.remove(key, detached);
+        static Bench open(CoreConfig config, ToolLog log, OpenCheck check, Map<Path, Bench> kept) throws IOException {
+            Bench parked = kept.get(realOrSelf(config.workspace()));
+            if (parked != null) {
+                Bench back = parked.unpark(check);
+                if (back != null) {
+                    return back;
                 }
+            }
+            BackgroundWork background = new BackgroundWork();
+            AgentHub hub = new AgentHub(config.agentPort(), config.token(), config.serverToken());
+            try {
+                Bench bench = wire(config, log, background, hub, kept);
+                check.check(config, hub);
                 return bench;
             } catch (IOException | RuntimeException | Error e) {
                 background.close();
                 try {
-                    if (detached != null) {
-                        hub.park(); // the kept agent connection stays open for the next open
-                    } else {
-                        hub.close();
-                    }
+                    hub.close();
                 } catch (IOException suppressed) {
                     e.addSuppressed(suppressed);
                 }
@@ -155,27 +150,10 @@ public final class Core implements AutoCloseable {
             }
         }
 
-        /**
-         * The workspace's agent hub. Without a fixed address, a switch back listens on the port the kept server's
-         * agent was started with, so an agent that reconnects later (Paper's /reload) finds it (#735); on a free one
-         * when that port is taken meanwhile.
-         */
-        private static AgentHub hub(CoreConfig config, Kept detached) throws IOException {
-            if (detached != null && config.agentPort() == 0) {
-                try {
-                    return new AgentHub(detached.hub().port(), config.token(), config.serverToken());
-                } catch (IOException e) {
-                    // Taken by something else since the switch away: its agent needs no new connection now.
-                }
-            }
-            return new AgentHub(config.agentPort(), config.token(), config.serverToken());
-        }
-
         private static Bench wire(CoreConfig config, ToolLog log, BackgroundWork background, AgentHub hub,
-                                  Kept detached, Map<Path, Kept> kept) {
+                                  Map<Path, Bench> kept) {
             AtomicBoolean closed = new AtomicBoolean();
             ServerManager server = new ServerManager(config, hub);
-            boolean adopted = detached != null && server.adopt(detached.server());
             if (config.agentPort() == 0) {
                 // No fixed address, so only a server this core starts can connect (MSC_CORE_ADDRESS attaches others).
                 // Only while it starts or its agent reconnects: not once it was asked to stop (#703).
@@ -191,7 +169,10 @@ public final class Core implements AutoCloseable {
             WorldService world = new WorldService(hub);
             world.serverRun(server::serverRun);
             ApiTools api = new ApiTools(config);
-            MetaTools.register(tools, config, hub, server, log, api, closed::get);
+            // Kept for its detached server, it is closed to the tools until a switch back (only after a failed switch
+            // is such a workspace the current one).
+            MetaTools.register(tools, config, hub, server, log, api,
+                    () -> closed.get() || kept.containsKey(realOrSelf(config.workspace())));
             WorldBackups backups = LifecycleTools.register(tools, config, hub, server, pack, new ProjectBuilder(config),
                     new PaperDownloader(config.downloadsUrl(), config.cacheDir(),
                             config.downloadStore()),
@@ -205,16 +186,90 @@ public final class Core implements AutoCloseable {
             // On a proxy every world, build and player tool answers one line before it sends, saves or stops anything,
             // whether or not it reaches the agent (ADR 0045, #591).
             tools.gate(WORLD_TOOLS, () -> server.platform().noWorldTools());
-            if (adopted) {
-                pack.adoptHost(detached.pack());
-                hub.adopt(detached.hub());
+            Bench bench = new Bench(config, hub, server, pack, players, tools, background, closed, kept);
+            // Not on the exiting process's own thread: the close waits for the pack host to end.
+            server.onExit(() -> Thread.ofVirtual().name("msc-kept-release").start(bench::releaseIfExited));
+            return bench;
+        }
+
+        private Path key() {
+            return realOrSelf(config.workspace());
+        }
+
+        /** Neither closed nor kept: a kept workspace is current only after a failed switch, and opens with a switch. */
+        boolean inUse() {
+            return !closed.get() && kept.get(key()) != this;
+        }
+
+        /**
+         * A switch away: closes the workspace, or keeps it whole for a switch back (#735) when its server is detached.
+         * The server runs on with its pack host and agent connection, and every other part stays as it is (the edit
+         * history among them, #739); only what listens or runs work stops: the agent and in-process pack listeners,
+         * background builds, the test player. A kept workspace ends only through {@link #release}: when its server
+         * exits, when a switch back finds it exited, or when the session ends (#737).
+         */
+        synchronized void leave() throws IOException {
+            if (!server.detached()) {
+                close();
+                return;
             }
-            return new Bench(config, hub, server, pack, players, tools, background, closed, kept);
+            background.stop();
+            players.leave();
+            pack.park();
+            hub.park();
+            kept.put(key(), this);
+        }
+
+        /**
+         * This kept workspace, listening again, or null when it is no longer kept or its server exited meanwhile
+         * (then released, pack host included, #737). When {@code check} fails it stays kept.
+         */
+        synchronized Bench unpark(OpenCheck check) throws IOException {
+            if (kept.get(key()) != this) {
+                return null;
+            }
+            if (!server.detached()) {
+                release();
+                return null;
+            }
+            hub.unpark(config.agentPort());
+            try {
+                check.check(config, hub);
+            } catch (IOException | RuntimeException | Error e) {
+                try {
+                    hub.park();
+                } catch (IOException suppressed) {
+                    e.addSuppressed(suppressed);
+                }
+                throw e;
+            }
+            kept.remove(key(), this);
+            return this;
+        }
+
+        /** Releases this workspace if it is kept and its server exited: its pack host goes at once (#737). */
+        synchronized void releaseIfExited() {
+            if (kept.get(key()) == this && !server.detached()) {
+                try {
+                    release();
+                } catch (IOException e) {
+                    // Released as far as it goes: the pack host stops first, and the hub's close only ends sockets.
+                }
+            }
+        }
+
+        /** The one way a kept workspace ends: closed, then no longer kept, so a switch back opens new parts. */
+        synchronized void release() throws IOException {
+            try {
+                close();
+            } finally {
+                kept.remove(key(), this);
+            }
         }
 
         /**
          * Same as a session ending: a detached server and its pack host keep running, anything else stops. Builds
-         * first, so none outlives the core. Once only: a second caller (a close during a switch) waits for the first.
+         * first, so none outlives the core. Once only: a second caller waits for the first.
          */
         synchronized void close() throws IOException {
             if (closed.getAndSet(true)) {
@@ -224,16 +279,12 @@ public final class Core implements AutoCloseable {
             background.close();
             players.close();
             boolean detached = server.seal();
+            if (!detached) {
+                pack.stopOwnHost(); // waited for, so its port is free for this workspace's next pack (#737)
+            }
             pack.close(detached);
             server.close();
-            if (detached) {
-                // The session keeps its detached server, agent connection included, for a switch back (#735); its
-                // own close ends that connection.
-                kept.put(realOrSelf(config.workspace()), new Kept(server, pack, hub));
-                hub.park();
-            } else {
-                hub.close();
-            }
+            hub.close();
         }
     }
 
@@ -267,8 +318,8 @@ public final class Core implements AutoCloseable {
     /** Guards the hand-over of {@link #bench} against {@link #close}, which may run without the write lock. */
     private final Object benchGuard = new Object();
     private volatile Bench bench;
-    /** The servers this session detached in workspaces a switch closed, by real path (#735). */
-    private final Map<Path, Kept> kept = new ConcurrentHashMap<>();
+    /** The workspaces a switch left with a detached server, kept whole for a switch back, by real path (#735). */
+    private final Map<Path, Bench> kept = new ConcurrentHashMap<>();
     /** Set once by {@link #close}; a switch still under way then closes what it opened instead of installing it. */
     private volatile boolean closed;
     private volatile OpenCheck openCheck = (config, hub) -> {
@@ -355,6 +406,11 @@ public final class Core implements AutoCloseable {
         return bench.tools().tools().stream().filter(t -> t.name().equals(name)).findFirst().orElseThrow().handler();
     }
 
+    /** For tests: how many workspaces the session keeps for their detached servers. */
+    int keptWorkspaces() {
+        return kept.size();
+    }
+
     /** For tests: the current bench's resource pack and test player. */
     ResourcePack pack() {
         return bench.pack();
@@ -394,7 +450,7 @@ public final class Core implements AutoCloseable {
         CoreConfig current = bench.config();
         WayArgs.check(args, java.util.Set.of(args.has("path") ? "switch" : "show"), WayArgs.WORKSPACE);
         if (!args.has("path")) {
-            return "workspace: " + (bench.closed().get() ? MetaTools.closedWorkspace(current.workspace())
+            return "workspace: " + (!bench.inUse() ? MetaTools.closedWorkspace(current.workspace())
                     : current.workspace());
         }
         Path target = PathArg.anywhere(current.workspace()).resolve("path", args.str("path").strip());
@@ -428,9 +484,9 @@ public final class Core implements AutoCloseable {
             }
             Bench old = bench;
             String closing = closing(old);
-            // Close first: a fixed agent or pack port must be free before the new bench binds it. CoreServer lets it go
-            // before its close returns, and the bind waits PortPatience for it (#721).
-            old.close();
+            // Close (or keep) first: a fixed agent or pack port must be free before the new bench binds it. CoreServer
+            // lets it go before its close returns, and the bind waits PortPatience for it (#721).
+            old.leave();
             Bench next;
             try {
                 next = Bench.open(old.config().withWorkspace(target), log, openCheck, kept);
@@ -462,7 +518,7 @@ public final class Core implements AutoCloseable {
     /** True when {@code target} is the workspace and it is open: a closed one (#721) is opened again by a switch. */
     private boolean isOpen(Path target) {
         Bench current = bench;
-        return target.equals(realOrSelf(current.config().workspace())) && !current.closed().get();
+        return target.equals(realOrSelf(current.config().workspace())) && current.inUse();
     }
 
     /**
@@ -566,14 +622,21 @@ public final class Core implements AutoCloseable {
     }
 
     /**
-     * At the session end: the agent connections of the servers this session detached, which a switch kept (#735), are
-     * closed as a workspace's close closes them. The servers run on.
+     * At the session end: the workspaces a switch kept for their detached servers (#735) close as the current one
+     * does. A server still running runs on with its pack host; an exited one's pack host stops (#737).
      */
     private void releaseKept() throws IOException {
-        for (Kept k : kept.values()) {
-            k.hub().close();
+        IOException failed = null;
+        for (Bench b : List.copyOf(kept.values())) {
+            try {
+                b.release();
+            } catch (IOException e) {
+                failed = failed == null ? e : failed;
+            }
         }
-        kept.clear();
+        if (failed != null) {
+            throw failed;
+        }
     }
 
     /**

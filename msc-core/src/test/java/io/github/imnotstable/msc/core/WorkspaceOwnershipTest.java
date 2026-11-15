@@ -215,6 +215,105 @@ class WorkspaceOwnershipTest {
             assertThat(server.running()).isFalse();
         }
 
+        /** The process a pid file under .msc names. */
+        private ProcessHandle pidOf(String file) throws IOException {
+            return ProcessHandle.of(Long.parseLong(Files.readString(workspace.resolve(".msc/" + file)).split(" ")[0]))
+                    .orElseThrow();
+        }
+
+        /** A detached server with its pack host, then a switch away; returns the pack's URL. */
+        private String detachedWithPackHostThenAway() {
+            started();
+            h.ok("texture", "name", "item/dot", "palette", List.of("a=#ff0000"), "rows", List.of("a"));
+            String url = h.ok("pack", "apply", false).replaceAll("(?s).*url: (\\S+).*", "$1");
+            assertThat(h.ok("server_detach")).contains("and so does the resource pack host");
+            switchAway();
+            assertThat(h.core.keptWorkspaces()).isEqualTo(1);
+            return url;
+        }
+
+        /** #737: a kept server that exits releases its workspace at once, pack host included. */
+        @Test
+        void aKeptServerThatExitsTakesItsPackHostAlong() throws Exception {
+            detachedWithPackHostThenAway();
+            ProcessHandle host = pidOf("pack-host.pid");
+            pidOf("server.pid").destroyForcibly();
+            assertThat(host.onExit().get(15, TimeUnit.SECONDS).isAlive()).isFalse();
+            long end = System.nanoTime() + Duration.ofSeconds(10).toNanos();
+            while (h.core.keptWorkspaces() > 0 && System.nanoTime() < end) {
+                Thread.sleep(20);
+            }
+            assertThat(h.core.keptWorkspaces()).isZero();
+            assertThat(workspace.resolve(".msc/pack-host.pid")).doesNotExist();
+        }
+
+        /** #737: the session end stopped only the kept agent connection, not the pack host of a server gone meanwhile. */
+        @Test
+        void theSessionEndStopsThePackHostOfAKeptServerThatExited() throws Exception {
+            detachedWithPackHostThenAway();
+            ProcessHandle host = pidOf("pack-host.pid");
+            ProcessHandle server = pidOf("server.pid");
+            server.destroyForcibly();
+            server.onExit().get(15, TimeUnit.SECONDS);
+            h.close();
+            assertThat(h.core.keptWorkspaces()).isZero();
+            assertThat(host.onExit().get(1, TimeUnit.SECONDS).isAlive()).isFalse();
+        }
+
+        /**
+         * #737: the switch back dropped the kept pack host of a server gone meanwhile: the next pack waited 5 s for its
+         * port and moved to another, and server_start blamed an earlier session for this session's own host.
+         */
+        @Test
+        void aSwitchBackAfterTheKeptServerExitedServesThePackOnItsPortAgain() throws Exception {
+            String url = detachedWithPackHostThenAway();
+            ProcessHandle host = pidOf("pack-host.pid");
+            ProcessHandle server = pidOf("server.pid");
+            server.destroyForcibly();
+            server.onExit().get(15, TimeUnit.SECONDS);
+            assertThat(h.ok("msc_workspace", "path", workspace.toString()))
+                    .doesNotContain("the server this session detached here runs on");
+            assertThat(host.isAlive()).isFalse();
+            long begin = System.nanoTime();
+            assertThat(h.ok("pack", "apply", false)).contains("url: " + url);
+            assertThat(Duration.ofNanos(System.nanoTime() - begin)).isLessThan(Duration.ofSeconds(3));
+            assertThat(h.ok("server_start", "timeoutSeconds", 30)).startsWith("server ready")
+                    .doesNotContain("earlier session");
+        }
+
+        /**
+         * #738: each switch back built a new workspace and grafted the kept one's parts onto it, chaining every earlier
+         * hub. Now the kept workspace itself comes back, so nothing piles up however often the switch runs.
+         */
+        @Test
+        void aKeptWorkspaceComesBackWholeAcrossManySwitches() {
+            ServerManager server = started();
+            AgentHub hub = h.core.hub();
+            h.ok("server_detach");
+            for (int i = 0; i < 20; i++) {
+                switchAway();
+                assertThat(h.core.keptWorkspaces()).isEqualTo(1);
+                assertThat(h.ok("msc_workspace", "path", workspace.toString()))
+                        .contains("; the server this session detached here runs on, still this session's");
+                assertThat(h.core.keptWorkspaces()).isZero();
+                assertThat(h.core.server()).isSameAs(server);
+                assertThat(h.core.hub()).isSameAs(hub);
+            }
+            assertThat(h.ok("server_command", "command", "say hi")).isEqualTo("ran say hi");
+        }
+
+        /** #739: the switch back lost the kept server's edit history: nothing to undo, and ids started at e1 again. */
+        @Test
+        void editsSurviveASwitchAwayAndBack() {
+            started();
+            assertThat(h.ok("build_batch", "steps", "set 0,70,0 stone")).startsWith("edit e1: ");
+            h.ok("server_detach");
+            switchAway();
+            h.ok("msc_workspace", "path", workspace.toString());
+            assertThat(h.ok("build_undo")).startsWith("undid e1");
+            assertThat(h.ok("build_batch", "steps", "set 0,70,0 stone")).startsWith("edit e2: ");
+        }
+
         /** #282: the start was reached after the bench closed; nothing would ever stop that server. */
         @Test
         void aStartAfterCloseBeganLaunchesNothing() throws Exception {
