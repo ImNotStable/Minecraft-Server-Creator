@@ -31,10 +31,11 @@ import java.util.regex.Pattern;
  * starts with a mark, or two such files joined; a U+FEFF there is never part of the text.
  *
  * <p>The bench's own files stay strict on purpose: {@code task.json}, {@code prompt.md} and the preambles,
- * {@code bench.json}, a mode's MCP config template and the machine's {@code eula.json} are read by {@link #readOwn},
- * which refuses one that is not UTF-8 naming the file and the first bad byte (#555), since a garbled task or config
- * must not run quietly. {@code results.jsonl} has its own strict reader, which also takes the UTF-16 a Windows join
- * writes ({@code ResultsFile}).
+ * {@code bench.json} and a mode's MCP config template are read by {@link #readOwn}, which refuses one that is not
+ * UTF-8 naming the file and the first bad byte (#555), since a garbled task or config must not run quietly. The
+ * machine's {@code eula.json} is read by {@link #readOwn} too, but one that is not UTF-8 counts as no acceptance,
+ * not a refusal, as in msc-core's {@code MachineEula.read} ({@code MachineEula}, #571). {@code results.jsonl} has its
+ * own strict reader, which also takes the UTF-16 a Windows join writes ({@code ResultsFile}).
  */
 public final class Text {
 
