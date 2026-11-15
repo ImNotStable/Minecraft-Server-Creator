@@ -134,7 +134,7 @@ The agent reads its prompt on stdin, from the attempt's `prompt.md`, as `claude 
 | `server.command` | `java -Xmx2G -jar paper.jar --nogui` | empty list, blank entries |
 | `server.paperJar` | newest cached jar, else downloaded | blank, no such file |
 | `server.paperCacheDirs` | `.cache`, `../.msc/cache` | empty list, blank entries |
-| `server.downloadsUrl` | `https://fill.papermc.io` | not an http or https URL with a host |
+| `server.downloadsUrl` | `https://fill.papermc.io`; trailing slashes are dropped, as msc-core drops them, so `https://fill.papermc.io/` works too | not an http or https URL with a host, a query or fragment (`?`, `#`) |
 | `server.acceptEula` | from `~/.msc/eula.json` | never read from the file |
 | `server.serverPort` | 25566 | outside 1 to 65535, the same as `server.rconPort` or `corePort` |
 | `server.rconPort` | 25576 | outside 1 to 65535, the same as `server.serverPort` or `corePort` |

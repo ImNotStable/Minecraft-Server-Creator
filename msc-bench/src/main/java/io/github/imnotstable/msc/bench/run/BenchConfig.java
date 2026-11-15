@@ -111,7 +111,7 @@ public record BenchConfig(
      *                            is downloaded into the first cache folder
      * @param paperCacheDirs      folders holding {@code paper-<version>-<build>.jar}; default msc-core's
      *                            cache in the repo ({@code ../.msc/cache}) and {@code .cache}
-     * @param downloadsUrl        PaperMC downloads service
+     * @param downloadsUrl        PaperMC downloads service, its trailing slashes trimmed when the config loads (#649)
      * @param acceptEula          writes {@code eula=true}; true only when the machine's owner accepted the Minecraft
      *                            EULA through msc ({@code ~/.msc/eula.json}), whatever the config file says
      * @param serverPort          game port, kept off 25565 so a normal server can keep running
@@ -313,7 +313,7 @@ public record BenchConfig(
                 s.paperJar() == null ? null : resolve(base, s.paperJar()),
                 (s.paperCacheDirs() == null ? List.of(".cache", "../.msc/cache") : s.paperCacheDirs())
                         .stream().map(d -> resolve(base, d)).toList(),
-                s.downloadsUrl() == null ? "https://fill.papermc.io" : s.downloadsUrl(),
+                s.downloadsUrl() == null ? "https://fill.papermc.io" : BenchConfigRules.baseUrl(s.downloadsUrl()),
                 eulaAccepted,
                 s.serverPort() > 0 ? s.serverPort() : 25566,
                 s.rconPort() > 0 ? s.rconPort() : 25576,

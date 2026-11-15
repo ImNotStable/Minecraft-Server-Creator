@@ -58,7 +58,10 @@ public final class PaperJars {
         return best;
     }
 
-    /** Uses a cached jar or downloads the newest build (stable preferred) into {@code cacheDirs.get(0)}. */
+    /**
+     * Uses a cached jar or downloads the newest build (stable preferred) into {@code cacheDirs.get(0)}.
+     * {@code downloadsUrl} is a base without a trailing slash, as {@link BenchConfig#load} gives it (#649).
+     */
     public static Path resolve(List<Path> cacheDirs, String version, String downloadsUrl) throws IOException {
         return resolve(cacheDirs, version, downloadsUrl, HttpStall.LIMIT);
     }
@@ -77,6 +80,10 @@ public final class PaperJars {
             URI builds = URI.create(downloadsUrl + "/v3/projects/paper/versions/" + version + "/builds");
             HttpResponse<String> list = HttpStall.send(http, request(builds), HttpResponse.BodyHandlers.ofString(),
                     stall, retry);
+            if (list.statusCode() == 404) {
+                // As msc-core's PaperDownloader: PaperMC answers 404 for a version it does not have.
+                throw new IOException("PaperMC has no version " + version);
+            }
             if (list.statusCode() != 200) {
                 throw new IOException("PaperMC answered " + list.statusCode() + " for " + builds);
             }
@@ -92,7 +99,9 @@ public final class PaperJars {
             }
             JsonObject file = best.getAsJsonObject("downloads").getAsJsonObject("server:default");
             String url = file.get("url").getAsString();
-            String sha256 = file.has("checksums") ? file.getAsJsonObject("checksums").get("sha256").getAsString() : null;
+            // Without the whitespace around it, as msc-core's Downloads.Checksum reads it.
+            String sha256 = file.has("checksums")
+                    ? file.getAsJsonObject("checksums").get("sha256").getAsString().strip() : null;
             Path dir = cacheDirs.getFirst();
             Files.createDirectories(dir);
             Path jar = dir.resolve("paper-" + version + "-" + best.get("id").getAsInt() + ".jar");
