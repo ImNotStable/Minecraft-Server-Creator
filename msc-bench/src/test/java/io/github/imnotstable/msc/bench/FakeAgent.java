@@ -34,6 +34,12 @@ public final class FakeAgent {
             Files.createDirectories(file.toAbsolutePath().getParent());
             Files.writeString(file, leave.substring(leave.indexOf('=') + 1));
         }
+        // FAKE_LINK "link=target": a symbolic link the agent made in the workspace, such as one out of it (#639).
+        String link = System.getenv("FAKE_LINK");
+        if (link != null) {
+            Files.createSymbolicLink(Path.of(link.substring(0, link.indexOf('='))),
+                    Path.of(link.substring(link.indexOf('=') + 1)));
+        }
         // FAKE_LEAVE_SERVER "port": a server the agent started in the workspace and left running when it exited, as
         // a detached Minestom server (#577). It names the workspace on its command line, as a jar path there does.
         String leaveServer = System.getenv("FAKE_LEAVE_SERVER");

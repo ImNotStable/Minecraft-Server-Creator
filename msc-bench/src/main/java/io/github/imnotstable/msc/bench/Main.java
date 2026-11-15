@@ -15,6 +15,7 @@ import io.github.imnotstable.msc.bench.run.RunIsolation;
 import io.github.imnotstable.msc.bench.run.ResultsFile;
 import io.github.imnotstable.msc.bench.run.RunRecord;
 import io.github.imnotstable.msc.bench.run.ServerManager;
+import io.github.imnotstable.msc.bench.run.StepFailed;
 import io.github.imnotstable.msc.bench.task.TaskDef;
 import io.github.imnotstable.msc.bench.task.TaskLoader;
 import io.github.imnotstable.msc.process.AtomicFile;
@@ -25,10 +26,7 @@ import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.AccessDeniedException;
-import java.nio.file.FileSystemException;
 import java.nio.file.Files;
-import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.time.Duration;
@@ -71,7 +69,10 @@ public final class Main {
     static final int USAGE = 1;
     /** A bad argument or input file, refused before anything was created. */
     static final int BAD_INPUT = 2;
-    /** An attempt or check failed. */
+    /**
+     * An attempt or check failed, or a step of {@code check}'s own work on the inputs it accepted, such as freeing the
+     * bench's ports or the reset ({@link StepFailed}), as the same step fails an attempt in a run.
+     */
     static final int FAILED = 3;
     /** {@code run} stopped early on an account usage limit. */
     static final int USAGE_LIMIT = 4;
@@ -92,8 +93,8 @@ public final class Main {
     }
 
     /**
-     * Runs the command and returns its exit code. Whatever goes wrong ends as one line on {@code err}: a refusal of
-     * a bad argument or file as {@link #BAD_INPUT}, anything else as {@link #INTERNAL_ERROR}.
+     * Runs the command and returns its exit code. Whatever goes wrong ends as one line on {@code err}, with the code
+     * {@link #guarded} gives it.
      */
     static int exec(String[] args, PrintStream out, PrintStream err, Path home, Path temp) {
         return guarded(err, () -> run(args, out, home, temp));
@@ -105,10 +106,18 @@ public final class Main {
         int run() throws IOException;
     }
 
-    /** {@code command}'s exit code, with every exception it throws turned into one line on {@code err} and a code. */
+    /**
+     * {@code command}'s exit code, with every exception it throws turned into one line on {@code err} and a code. This
+     * is the one place that decides which failure gets which code (#639): a step of the bench's own work that failed
+     * ({@link StepFailed}) is {@link #FAILED}, as the same step fails an attempt in a run; any other IO failure or
+     * refused argument is a bad argument or input file, {@link #BAD_INPUT}; anything else is {@link #INTERNAL_ERROR}.
+     */
     static int guarded(PrintStream err, Command command) {
         try {
             return command.run();
+        } catch (StepFailed e) {
+            err.println("msc-bench: " + oneLine(e.getMessage()));
+            return FAILED;
         } catch (IOException | IllegalArgumentException e) {
             err.println("msc-bench: " + oneLine(message(e)));
             return BAD_INPUT;
@@ -134,16 +143,7 @@ public final class Main {
 
     /** The exception's message, with the path and what went wrong for a file-system error, whose message is bare. */
     static String message(Exception e) {
-        if (e instanceof NoSuchFileException missing) {
-            return missing.getFile() + " does not exist";
-        }
-        if (e instanceof AccessDeniedException denied) {
-            return denied.getFile() + ": access denied";
-        }
-        if (e instanceof FileSystemException fs && fs.getReason() == null) {
-            return fs.getFile() + ": " + fs.getClass().getSimpleName();
-        }
-        return e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
+        return StepFailed.describe(e);
     }
 
     static int run(String[] args, PrintStream out) throws IOException {
@@ -361,7 +361,8 @@ public final class Main {
     /**
      * Runs one task's checks on a workspace. RCON checks use a server already running on the RCON port and leave it
      * running; when none answers and the machine's owner accepted the EULA, the workspace's own {@code server/} is
-     * started for the checks and stopped after them, as in a run.
+     * started for the checks and stopped after them, as in a run. Its arguments are already accepted: every IO
+     * failure from here on is a step of its own work that failed ({@link StepFailed}), a failed check as in a run.
      */
     static int check(TaskDef task, Path workspace, BenchConfig config, PrintStream out) throws IOException {
         // The run's own placeholders (#554); an attempt's workspace sits in its attempt folder.
@@ -377,6 +378,11 @@ public final class Main {
                 ? new ServerManager(workspace.resolve("server"), config.server(), Map.of(), children)
                 : null) {
             return check(task, workspace, values, config, server, children, out);
+        } catch (StepFailed e) {
+            throw e;
+        } catch (IOException e) {
+            // Only the server's stop throws a bare IOException here: every step inside names itself.
+            throw new StepFailed("stopping the workspace's server", e);
         } finally {
             try {
                 Runtime.getRuntime().removeShutdownHook(hook);
@@ -433,10 +439,11 @@ public final class Main {
                 // check's own server needs the game port, so it is stopped first (#577); the RCON checks then start
                 // the workspace's own server. Nothing is killed by its folder: the command that started this check
                 // names the workspace too.
-                ServerManager.clearPorts((config == null ? BenchConfig.defaults() : config).server(), null, null);
+                StepFailed.during(StepFailed.FREEING_PORTS_BEFORE_CHECKS, () -> ServerManager.clearPorts(
+                        (config == null ? BenchConfig.defaults() : config).server(), null, null));
             }
             if (!task.reset().isEmpty()) {
-                task.reset().apply(workspace);
+                StepFailed.during(StepFailed.RESET_BEFORE_CHECKS, () -> task.reset().apply(workspace));
                 out.printf("reset before checks: deleted %s%n", String.join(", ", task.reset().delete()));
             }
             boolean allPassed = true;
@@ -448,7 +455,7 @@ public final class Main {
             return allPassed ? OK : FAILED;
         } finally {
             if (running[0] != null) {
-                running[0].close();
+                StepFailed.during("closing the RCON connection", running[0]::close);
             }
         }
     }
