@@ -52,6 +52,8 @@ Text the agent or a child process wrote is read the same way by every check (a `
 ./gradlew :msc-bench:run --args="run --tasks game-sky-sprint --repeat 1 --model claude-haiku-4-5 --isolate"   # a smoke run on Linux
 ```
 
+Each `run` makes a new folder of its own, `<ts>`, named by the second it started (`20261115-081230`); when a folder or file by that name already exists, as for runs started side by side in the same second, it takes the next free `-2`, `-3`... (`20261115-081230-2`). A run never writes into a folder it did not create, so its `results.jsonl` and `report.md` hold only its own attempts. Each line of `results.jsonl` is appended under a lock on the file, so even two writers that meet in one file, in one process or two, never lose or mix a line.
+
 `--model` replaces the model `agent.command` pins (or adds `--model`), for a cheap smoke run; results from different models do not compare. The smallest useful selection is one task and one repeat: `game-sky-sprint` (Minestom: no EULA, the whole game, a Gradle build) or `texture-ruby-item` (no server and no build).
 
 ### On Linux, headless

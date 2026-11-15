@@ -9,6 +9,7 @@ import io.github.imnotstable.msc.bench.run.PidNamespace;
 import io.github.imnotstable.msc.bench.run.BenchRunner;
 import io.github.imnotstable.msc.bench.run.ChildProcesses;
 import io.github.imnotstable.msc.bench.run.Disk;
+import io.github.imnotstable.msc.bench.run.RunFolder;
 import io.github.imnotstable.msc.bench.run.RunFolderUnwritable;
 import io.github.imnotstable.msc.bench.run.RunIsolation;
 import io.github.imnotstable.msc.bench.run.ResultsFile;
@@ -32,7 +33,6 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.time.Duration;
 import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -151,6 +151,14 @@ public final class Main {
     }
 
     static int run(String[] args, PrintStream out, Path home, Path temp) throws IOException {
+        return run(args, out, home, temp, null);
+    }
+
+    /**
+     * {@link #run(String[], PrintStream, Path, Path)}, judging whether the run folder is inside a project no higher
+     * than {@code top} (null: the file-system root), as tests that run inside this repository need.
+     */
+    static int run(String[] args, PrintStream out, Path home, Path temp, Path top) throws IOException {
         CommandLine line = CommandLine.parse(args, home);
         if (line.command() == null) {
             out.println(usage());
@@ -171,7 +179,7 @@ public final class Main {
                     throw new IllegalArgumentException("usage: run " + CommandLine.options("run") + "; unexpected "
                             + rest.getFirst());
                 }
-                yield runBench(tasksDir, flags, out, home, temp);
+                yield runBench(tasksDir, flags, out, home, temp, top);
             }
             case "check" -> {
                 if (rest.size() != 2) {
@@ -220,8 +228,8 @@ public final class Main {
         return OK;
     }
 
-    private static int runBench(Path tasksDir, Map<String, String> flags, PrintStream out, Path home, Path temp)
-            throws IOException {
+    private static int runBench(Path tasksDir, Map<String, String> flags, PrintStream out, Path home, Path temp,
+            Path top) throws IOException {
         // Everything the run works on is read and checked first: a refusal leaves no run folder behind.
         int repeat = repeat(flags.getOrDefault("--repeat", "1"));
         Path configFile = Path.of(flags.getOrDefault("--config", "bench.json"));
@@ -245,14 +253,15 @@ public final class Main {
         // Attempts run in the run folder: inside this repository both modes would load its CLAUDE.md and sources.
         // The checked folder is the resolved one, and the run writes to that same folder (links, .. and all).
         Path runsDir = flags.containsKey("--out")
-                ? RunIsolation.requireIsolated(Path.of(flags.get("--out")), home, temp)
-                : RunIsolation.defaultRunsDir(home, temp);
+                ? RunIsolation.requireIsolated(Path.of(flags.get("--out")), home, temp, top)
+                : RunIsolation.defaultRunsDir(home, temp, top);
         if (!flags.containsKey("--out") && !runsDir.equals(RunIsolation.resolve(RunIsolation.homeRunsDir(home)))) {
             out.println(RunIsolation.DEFAULT_RUNS_SHOWN + " is inside a project (your home folder is a repository or "
                     + "has a CLAUDE.md), so runs go to " + runsDir + "; the system may clear it, so pass --out to keep "
                     + "them elsewhere");
         }
-        Path runDir = runsDir.resolve(LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss")));
+        // A new folder of its own: runs started side by side never share results.jsonl or report.md (#621).
+        Path runDir = RunFolder.claim(runsDir, LocalDateTime.now());
 
         BenchRunner runner = new BenchRunner(config, runDir, preambles, out);
         List<RunRecord> records = runner.run(selection, repeat);

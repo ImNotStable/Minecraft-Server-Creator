@@ -48,7 +48,7 @@ public final class RunIsolation {
     }
 
     /** {@link #defaultRunsDir(Path, Path)}, looking no higher than {@code top} (see {@link #leaks}). */
-    static Path defaultRunsDir(Path home, Path temp, Path top) throws IOException {
+    public static Path defaultRunsDir(Path home, Path temp, Path top) throws IOException {
         List<String> refused = new ArrayList<>();
         for (Path candidate : List.of(homeRunsDir(home), tempRunsDir(temp))) {
             Path resolved = resolve(candidate);
@@ -107,7 +107,7 @@ public final class RunIsolation {
      * {@link #requireIsolated(Path, Path, Path)}, looking no higher than {@code top} (see
      * {@link #leaks(Path, Path, Path)}).
      */
-    static Path requireIsolated(Path runDir, Path home, Path temp, Path top) throws IOException {
+    public static Path requireIsolated(Path runDir, Path home, Path temp, Path top) throws IOException {
         Path resolved = resolve(runDir);
         List<Path> leaks = leaks(resolved, home, top);
         if (leaks.isEmpty()) {

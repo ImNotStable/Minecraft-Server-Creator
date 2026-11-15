@@ -61,6 +61,8 @@ public final class ResultsFile {
 
     private static final Gson GSON = new GsonBuilder().disableHtmlEscaping().create();
     private static final char BOM = '\uFEFF';
+    /** Held by the one append under way in this JVM. */
+    private static final Object APPENDING = new Object();
 
     private ResultsFile() {
     }
@@ -78,26 +80,36 @@ public final class ResultsFile {
      * starts a new line when the file does not end with one (a run killed while writing its last line), and a write
      * that fails part way (a full disk takes the first bytes and refuses the rest) is cut back to the size the file
      * had, as the "not recorded" stop says (#477). When even that cut fails, the exception says so.
+     *
+     * <p>An append is atomic against every other append: from reading the size to the last byte it holds the file
+     * (one append at a time in this JVM, and a {@link java.nio.channels.FileLock} on the whole file against other
+     * processes), so two writers that meet in one file, whatever the cause, never write at the same offset or between
+     * each other's bytes (#621).
      */
     static void append(Path file, RunRecord record, Disk disk) throws IOException {
         String line = Text.writable(GSON.toJson(record)) + "\n";
-        try (FileChannel channel = FileChannel.open(file, StandardOpenOption.CREATE, StandardOpenOption.READ,
-                StandardOpenOption.WRITE)) {
-            long size = channel.size();
-            ByteBuffer bytes = StandardCharsets.UTF_8.encode(endsOpen(channel, size) ? "\n" + line : line);
-            channel.position(size);
-            try {
-                disk.write(file, channel, bytes);
-            } catch (IOException e) {
+        // A FileLock belongs to the whole JVM, and a second one on the same file from this JVM throws.
+        synchronized (APPENDING) {
+            try (FileChannel channel = FileChannel.open(file, StandardOpenOption.CREATE, StandardOpenOption.READ,
+                    StandardOpenOption.WRITE)) {
+                channel.lock(); // released when the channel closes
+                long size = channel.size();
+                ByteBuffer bytes = StandardCharsets.UTF_8.encode(endsOpen(channel, size) ? "\n" + line : line);
+                channel.position(size);
                 try {
-                    disk.truncate(file, channel, size);
-                } catch (IOException | RuntimeException cut) {
-                    IOException both = new IOException(e.getMessage() + "; " + file + " could not be cut back to its "
-                            + "last whole line either (" + cut.getMessage() + "), so its last line is half-written", e);
-                    both.addSuppressed(cut);
-                    throw both;
+                    disk.write(file, channel, bytes);
+                } catch (IOException e) {
+                    try {
+                        disk.truncate(file, channel, size);
+                    } catch (IOException | RuntimeException cut) {
+                        IOException both = new IOException(e.getMessage() + "; " + file + " could not be cut back to "
+                                + "its last whole line either (" + cut.getMessage() + "), so its last line is "
+                                + "half-written", e);
+                        both.addSuppressed(cut);
+                        throw both;
+                    }
+                    throw e;
                 }
-                throw e;
             }
         }
     }

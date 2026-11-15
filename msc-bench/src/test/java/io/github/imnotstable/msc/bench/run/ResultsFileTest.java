@@ -12,6 +12,11 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -175,5 +180,69 @@ class ResultsFileTest {
                 throw new AssertionError(w);
             })).as(text).isInstanceOf(IOException.class).hasMessageContaining("line 1: is not valid JSON");
         }
+    }
+
+    @Test
+    void appendsFromManyThreadsAtOnceKeepEveryLineWhole() throws Exception {
+        // #621: each append wrote at the size it had read, so two at once wrote at one offset and a line was lost.
+        Path file = dir.resolve(ResultsFile.NAME);
+        int threads = 8;
+        int each = 25;
+        CountDownLatch go = new CountDownLatch(1);
+        List<Future<?>> writers = new ArrayList<>();
+        try (ExecutorService pool = Executors.newFixedThreadPool(threads)) {
+            for (int t = 0; t < threads; t++) {
+                String prefix = "t" + t;
+                writers.add(pool.submit(() -> {
+                    go.await();
+                    for (int i = 0; i < each; i++) {
+                        ResultsFile.append(file, record(prefix + "-" + i));
+                    }
+                    return null;
+                }));
+            }
+            go.countDown();
+            for (Future<?> writer : writers) {
+                writer.get();
+            }
+        }
+
+        assertThat(tasks(file)).hasSize(threads * each).doesNotHaveDuplicates()
+                .contains("t0-0", "t7-24");
+    }
+
+    @Test
+    void appendsFromTwoProcessesAtOnceKeepEveryLineWhole() throws Exception {
+        // Two bench runs are two JVMs: the lock must hold between processes too.
+        Path file = dir.resolve(ResultsFile.NAME);
+        int each = 200;
+        String java = ProcessHandle.current().info().command().orElse("java");
+        List<Process> processes = new ArrayList<>();
+        for (String prefix : List.of("a", "b")) {
+            processes.add(new ProcessBuilder(java, "-cp", System.getProperty("java.class.path"),
+                    AppendRecords.class.getName(), file.toString(), prefix, String.valueOf(each))
+                    .redirectErrorStream(true).redirectOutput(ProcessBuilder.Redirect.DISCARD).start());
+        }
+        // Meanwhile this process appends too.
+        for (int i = 0; i < each; i++) {
+            ResultsFile.append(file, record("c-" + i));
+        }
+        for (Process process : processes) {
+            assertThat(process.waitFor(60, TimeUnit.SECONDS)).isTrue();
+            assertThat(process.exitValue()).isZero();
+        }
+
+        assertThat(tasks(file)).hasSize(3 * each).doesNotHaveDuplicates().contains("a-199", "b-199", "c-199");
+    }
+
+    private List<String> tasks(Path file) throws IOException {
+        return ResultsFile.read(file, w -> {
+            throw new AssertionError(w);
+        }).stream().map(RunRecord::task).toList();
+    }
+
+    static RunRecord record(String task) {
+        return new RunRecord(task, "code", "baseline", 1, "2026-11-15T08:12:30Z", true, 1_000, false, 0, null, null,
+                null, List.of(CheckResult.pass("file", "a line long enough to make writes take a while ".repeat(20))));
     }
 }
