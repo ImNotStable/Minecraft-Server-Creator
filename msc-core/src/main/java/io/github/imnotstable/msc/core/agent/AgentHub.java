@@ -49,17 +49,20 @@ public final class AgentHub implements AutoCloseable {
      */
     private long generation;
     /**
-     * The last agent said {@code server.stopping}: its run is ending, so none comes back until a new one connects or a
-     * server is launched. While it is set and none is connected, {@link #refusal} answers {@link #notRunning}, which
-     * says "stopping" only while this session's server process still runs (#711).
+     * The last agent said {@code server.stopping}: the run {@link #endingRun} is ending, so none comes back until a new
+     * one connects. While it is set, none is connected and that run is still the last one launched, {@link #refusal}
+     * answers {@link #notRunning}, which says "stopping" only while this session's server process still runs (#711).
      */
     private boolean ending;
+    /** The run ({@link #lastRun}) that {@link #ending} belongs to: a later launch is never stopping for it (#715). */
+    private Object endingRun;
     /** Set by {@link #close()} under {@link #lock}: no agent can arrive after it, so nobody waits for one. */
     private boolean closed;
     private volatile Duration connectWait = CONNECT_WAIT;
     private volatile java.util.function.BooleanSupplier agentExpected = () -> true;
     private volatile java.util.function.Supplier<String> noAgentReason = () -> null;
     private volatile java.util.function.Supplier<String> notRunning = () -> NOT_RUNNING;
+    private volatile java.util.function.Supplier<Object> lastRun = () -> null;
     private volatile Runnable onReady = () -> { };
 
     public AgentHub(int port, String token) throws IOException {
@@ -89,7 +92,11 @@ public final class AgentHub implements AutoCloseable {
             @Override
             public void event(CoreServer.AgentSession s, Event event) {
                 if (Events.SERVER_STOPPING.equals(event.name())) {
-                    update(() -> ending = true);
+                    Object run = lastRun.get();
+                    update(() -> {
+                        ending = true;
+                        endingRun = run;
+                    });
                 } else if (Events.SERVER_READY.equals(event.name())) {
                     update(() -> readyCount++);
                     onReady.run();
@@ -151,9 +158,13 @@ public final class AgentHub implements AutoCloseable {
         update(() -> { });
     }
 
-    /** A new server process was launched: the last one's {@code server.stopping} no longer says its agent won't come. */
-    public void serverLaunched() {
-        update(() -> ending = false);
+    /**
+     * Which server run is the current one: the server process this session launched last, running or not, or null.
+     * It changes in the same critical section as a launch, and is read without the hub lock. A {@code server.stopping}
+     * belongs to the run it came in, so a new run is never "stopping" for the last one (#715).
+     */
+    public void lastRun(java.util.function.Supplier<Object> run) {
+        this.lastRun = run;
     }
 
     /**
@@ -292,16 +303,18 @@ public final class AgentHub implements AutoCloseable {
      * Why no agent can come now, or null while one may: the one answer for {@link #require} and for a tool that does
      * not wait (player_test). Asked without the hub lock: the answer may need another lock (ServerManager's monitor),
      * whose holder may be waiting for this one. After a {@code server.stopping} the answer is {@link #notRunning}'s,
-     * as msc_status says it: "stopping" while this session's server still exits, else why none runs (#711).
+     * as msc_status says it: "stopping" while this session's server still exits, else why none runs (#711). The
+     * answer is about one run: a server launched while it was asked is a new run, whose agent may be waited for (#715).
      */
     public String refusal() {
+        Object run = lastRun.get();
         boolean stopping;
         lock.lock();
         try {
             if (closed) {
                 throw ToolException.workspaceClosed("no server agent can connect any more");
             }
-            stopping = ending;
+            stopping = ending && endingRun == run;
         } finally {
             lock.unlock();
         }
@@ -309,10 +322,8 @@ public final class AgentHub implements AutoCloseable {
         if (never != null) {
             return never;
         }
-        if (!agentExpected.getAsBoolean()) {
-            return notRunning.get();
-        }
-        return stopping ? notRunning.get() : null;
+        String why = stopping || !agentExpected.getAsBoolean() ? notRunning.get() : null;
+        return why != null && lastRun.get() != run ? null : why;
     }
 
     private static ToolException timedOut(String op) {

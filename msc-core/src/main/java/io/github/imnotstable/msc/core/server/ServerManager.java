@@ -39,7 +39,7 @@ public final class ServerManager implements AutoCloseable {
     private final AgentHub hub;
     /** At most 20,000 lines of at most {@link LogReader#MAX_LINE_CHARS} chars, and 4M chars in all. */
     private final LogBuffer log = new LogBuffer(20_000, 4_000_000);
-    /** Changed under this monitor; volatile for {@link #serverRun}. */
+    /** Changed under this monitor; volatile for {@link #serverRun} and {@link #lastRun}. */
     private volatile Process process;
     /** Reads {@link #process}'s output; null before the first start. */
     private LogPump pump;
@@ -207,6 +207,14 @@ public final class ServerManager implements AutoCloseable {
         return p != null && p.isAlive() ? p : null;
     }
 
+    /**
+     * The server process this core launched last, running or not, or null: the run a {@code server.stopping} belongs to
+     * ({@link AgentHub#lastRun}). It changes in the critical section that launches the next one (#715). Takes no lock.
+     */
+    public Object lastRun() {
+        return process;
+    }
+
     /** The platform this workspace targets. */
     public Platform platform() {
         return Platform.current(config);
@@ -318,7 +326,6 @@ public final class ServerManager implements AutoCloseable {
             startedPump = LogPump.start(started, log, () -> sawDone = true, PUMP_DRAIN);
             pump = startedPump;
         }
-        hub.serverLaunched();
         // A caller waiting for its agent learns of the exit at once, not when the wait runs out (#703).
         started.onExit().thenRun(hub::serverChanged);
         long deadline = begin + timeout.toNanos();

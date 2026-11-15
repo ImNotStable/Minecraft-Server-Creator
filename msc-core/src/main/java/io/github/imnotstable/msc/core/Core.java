@@ -141,6 +141,7 @@ public final class Core implements AutoCloseable {
                 hub.agentExpected(server::awaitsAgent);
             }
             hub.notRunning(server::notRunning);
+            hub.lastRun(server::lastRun);
             hub.noAgentReason(() -> server.platform().noWorldTools());
             ResourcePack pack = new ResourcePack(config.packDir(), config.packBuildDir(),
                     config.packHost(), config.packPort(), config.packFormat());

@@ -1429,6 +1429,55 @@ class LifecycleToolsTest {
     }
 
     @Test
+    void aWorldCallWhileARestartLaunchesWaitsForTheNewAgent() throws Exception {
+        // #715: the last run's server.stopping made a world call during the next launch say "the server is stopping".
+        h.core.hub().connectWait(java.time.Duration.ofSeconds(60));
+        h.ok("server_start", "timeoutSeconds", 30);
+        assertThat(h.ok("server_stop")).isEqualTo("server stopped");
+        // The hub has seen the agent's server.stopping: an attached core would refuse at once.
+        h.core.hub().agentExpected(() -> true);
+        long deadline = System.nanoTime() + java.time.Duration.ofSeconds(20).toNanos();
+        while (h.core.hub().refusal() == null) {
+            assertThat(System.nanoTime()).as("server.stopping arrives").isLessThan(deadline);
+            Thread.sleep(10);
+        }
+        h.core.hub().agentExpected(h.core.server()::awaitsAgent);
+        // Another core holds the server lock, so the restart stops inside its launch, holding ServerManager's monitor.
+        Process holder = io.github.imnotstable.msc.core.fixture.LockHoldMain.hold(workspace.resolve(".msc/server.lock"));
+        var restart = new java.util.concurrent.CompletableFuture<Object>();
+        String[] world = new String[1];
+        Thread caller = new Thread(() -> world[0] = h.call("world_summary", "region", "0,60,0 1,61,1").text());
+        try {
+            Thread starter = Thread.ofPlatform().start(() -> {
+                try {
+                    restart.complete(h.core.server().start(java.time.Duration.ofSeconds(30)));
+                } catch (Exception | Error e) {
+                    restart.completeExceptionally(e);
+                }
+            });
+            var threads = java.lang.management.ManagementFactory.getThreadMXBean();
+            while (java.util.Arrays.stream(threads.getThreadInfo(new long[] {starter.threadId()}, true, false)[0]
+                    .getLockedMonitors()).noneMatch(m -> m.getClassName().endsWith(".ServerManager"))) {
+                assertThat(System.nanoTime()).as("the launch begins").isLessThan(deadline);
+                assertThat(restart).isNotDone();
+                Thread.sleep(10);
+            }
+            caller.start();
+            while (caller.getState() != Thread.State.BLOCKED) {
+                assertThat(System.nanoTime()).as("the world call waits for the launch").isLessThan(deadline);
+                assertThat(caller.isAlive()).as("answered " + world[0]).isTrue();
+                Thread.sleep(10);
+            }
+        } finally {
+            holder.destroy();
+        }
+        caller.join(java.time.Duration.ofSeconds(60));
+        assertThat(world[0]).as("waits for the new run's agent").contains("blocks: stone 8");
+        assertThat(((io.github.imnotstable.msc.core.server.ServerManager.StartResult)
+                restart.get(60, java.util.concurrent.TimeUnit.SECONDS)).ready()).isTrue();
+    }
+
+    @Test
     void anAttachedCoreSaysNotRunningOnceTheStoppedServerIsGone() throws Exception {
         // #711: with MSC_CORE_ADDRESS set an agent is always expected (Core leaves agentExpected true), and the
         // server.stopping its agent sent made every world tool say "stopping" after server_stop said "stopped".
