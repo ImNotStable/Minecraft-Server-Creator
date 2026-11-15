@@ -21,6 +21,7 @@ import io.github.imnotstable.msc.core.tools.LifecycleTools;
 import io.github.imnotstable.msc.core.tools.MetaTools;
 import io.github.imnotstable.msc.core.tools.PlayerTools;
 import io.github.imnotstable.msc.core.tools.TextureTools;
+import io.github.imnotstable.msc.core.tools.WayArgs;
 import io.github.imnotstable.msc.core.tools.WorldTools;
 import io.github.imnotstable.msc.core.tools.WorldBackups;
 import io.github.imnotstable.msc.core.world.WorldService;
@@ -331,6 +332,7 @@ public final class Core implements AutoCloseable {
 
     private String switchWorkspace(Args args) throws IOException {
         CoreConfig current = bench.config();
+        WayArgs.check(args, java.util.Set.of(args.has("path") ? "switch" : "show"), WayArgs.WORKSPACE);
         if (!args.has("path")) {
             return "workspace: " + current.workspace();
         }

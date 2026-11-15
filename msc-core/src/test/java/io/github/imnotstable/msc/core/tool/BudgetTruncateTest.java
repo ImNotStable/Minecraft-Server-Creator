@@ -74,6 +74,9 @@ class BudgetTruncateTest {
         assertThat(Budget.raise(Budget.MAX_CHARS - 1, "Ask for less."))
                 .isEqualTo("Ask for less. Or raise maxChars (at most 24000).");
         assertThat(Budget.raise(Budget.MAX_CHARS, "Ask for less.")).isEqualTo("Ask for less.");
+        // #620: nothing to narrow by: raising is the advice, and at the largest cap there is none.
+        assertThat(Budget.raise(Budget.MAX_CHARS - 1, "")).isEqualTo("Raise maxChars (at most 24000).");
+        assertThat(Budget.raise(Budget.MAX_CHARS, "")).isEmpty();
     }
 
     @Test

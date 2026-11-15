@@ -245,8 +245,7 @@ class DocumentedResultLinesTest {
             new SetupLine("`velocity.toml kept as it is`", "velocity\\.toml kept as it is"),
             new SetupLine("`backend: a paper, purpur or folia server set up with proxy=velocity, ...`",
                     "backend: a paper, purpur or folia server set up with proxy=velocity, .*"),
-            new SetupLine("`velocity proxy ready in <folder> ...`", "velocity proxy ready in .*"),
-            new SetupLine("`mode ignored: ...`", "mode ignored: .*"));
+            new SetupLine("`velocity proxy ready in <folder> ...`", "velocity proxy ready in .*"));
 
     @Test
     void serverSetupNamesItsLinesInsteadOfACount() throws Exception {
@@ -287,7 +286,7 @@ class DocumentedResultLinesTest {
                 }
             }
             try (CoreHarness h = new CoreHarness(Files.createDirectories(root.resolve("minestom")))) {
-                results.add(h.ok("server_setup", "platform", "minestom", "mode", "build"));
+                results.add(h.ok("server_setup", "platform", "minestom"));
             }
             // ADR 0045: Folia as a Velocity backend and back, and a Velocity proxy set up twice.
             Path folia = agents(Files.createDirectories(root.resolve("folia")));
@@ -296,7 +295,7 @@ class DocumentedResultLinesTest {
                 results.add(h.ok("server_setup", "proxy", "none"));
             }
             try (CoreHarness h = new CoreHarness(Files.createDirectories(root.resolve("velocity")), downloads::apply)) {
-                results.add(h.ok("server_setup", "platform", "velocity", "mode", "game"));
+                results.add(h.ok("server_setup", "platform", "velocity"));
                 results.add(h.ok("server_setup"));
             }
         }

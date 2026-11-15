@@ -7,11 +7,28 @@ import java.nio.file.Path;
  * A stand-in for {@code gradlew}. {@code assemble} (or no task) fails like javac when {@code broken.flag} exists, else
  * writes a jar; {@code check} fails like a test when {@code failing-test.flag} exists, and appends each task it ran to
  * {@code tasks.log}. With {@code slow-check.flag} or {@code -Dfake.slowCheck=true}, any run with {@code check} (also a
- * warmup's {@code mscJar check}) writes its pid to {@code check-started} and sleeps a minute. With {@code thin.flag}, the jar also goes to {@code build/msc/server.jar} with one dependency in
+ * warmup's {@code mscJar check}) writes its pid to {@code check-started} and sleeps a minute. With {@code many-failing-tests.flag}, check fails 200 tests and writes their
+ * results where Gradle does. With {@code thin.flag}, the jar also goes to {@code build/msc/server.jar} with one dependency in
  * {@code build/msc/libs}, as the init script's thin Minestom jar does.
  */
 public final class FakeBuildMain {
     private FakeBuildMain() {
+    }
+
+    /**
+     * What Gradle's test task writes for {@code many-failing-tests.flag}: {@code build/test-results/test/
+     * TEST-DemoTest.xml}, one testcase per failed test, case0 to case{n-1}, with its failure.
+     */
+    private static void testResults(int n) throws java.io.IOException {
+        StringBuilder xml = new StringBuilder("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<testsuite name=\"DemoTest\""
+                + " tests=\"" + n + "\" failures=\"" + n + "\">\n");
+        for (int i = 0; i < n; i++) {
+            xml.append("  <testcase name=\"case").append(i).append("()\" classname=\"DemoTest\">\n")
+                    .append("    <failure message=\"expected: &quot;hi").append(i).append("&quot; but was: &quot;bye")
+                    .append(i).append("&quot;\" type=\"org.opentest4j.AssertionFailedError\"/>\n  </testcase>\n");
+        }
+        Path dir = Files.createDirectories(Path.of("build", "test-results", "test"));
+        Files.writeString(dir.resolve("TEST-DemoTest.xml"), xml.append("</testsuite>\n"));
     }
 
     public static void main(String[] args) throws Exception {
@@ -32,6 +49,7 @@ public final class FakeBuildMain {
                             .append("expected: \"hi").append(i).append("\" but was: \"bye").append(i)
                             .append("\" in a fairly long message\n");
                 }
+                testResults(200);
                 System.out.println(out + "200 tests completed, 200 failed\nBUILD FAILED in 1s");
                 System.exit(1);
             }
