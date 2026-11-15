@@ -30,7 +30,8 @@ class DiffTest {
         String row = "#".repeat(20) + "\n";
         String changed = ".".repeat(20) + "\n";
         String result = Diff.compare(grid(row + row), grid(changed), "big.schem");
-        assertThat(result).startsWith("note: big.schem is 20x1x2, the region 20x1x1; compared where they overlap\n"
+        assertThat(result).startsWith("note: big.schem is 20x1x2, the region 20x1x1; compared only where they overlap, 20x1x1 from "
+                + "10,64,10 to 29,64,10\n"
                 + "20 blocks changed").endsWith("[8 more]");
     }
 

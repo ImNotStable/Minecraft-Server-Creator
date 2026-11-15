@@ -24,6 +24,16 @@ public final class Diff {
      * @param name   what to call the snapshot, such as its file name
      */
     public static String compare(BlockGrid before, BlockGrid now, String name) {
+        return compare(before, now, now.region(), name);
+    }
+
+    /**
+     * @param before the snapshot, placed at {@code region}'s lowest corner
+     * @param now    the world now, over the part of {@code region} the snapshot covers: only that is compared
+     * @param region the region asked for, whose size the note gives when the snapshot's differs (#632)
+     * @param name   what to call the snapshot, such as its file name
+     */
+    public static String compare(BlockGrid before, BlockGrid now, Region region, String name) {
         Region r = now.region();
         long changed = 0;
         int[] lo = {Integer.MAX_VALUE, Integer.MAX_VALUE, Integer.MAX_VALUE};
@@ -60,10 +70,10 @@ public final class Diff {
         }
         StringBuilder out = new StringBuilder();
         Region b = before.region();
-        if (b.sizeX() != r.sizeX() || b.sizeY() != r.sizeY() || b.sizeZ() != r.sizeZ()) {
-            out.append("note: ").append(name).append(" is ").append(b.sizeX()).append('x').append(b.sizeY()).append('x')
-                    .append(b.sizeZ()).append(", the region ").append(r.sizeX()).append('x').append(r.sizeY())
-                    .append('x').append(r.sizeZ()).append("; compared where they overlap\n");
+        if (b.sizeX() != region.sizeX() || b.sizeY() != region.sizeY() || b.sizeZ() != region.sizeZ()) {
+            out.append("note: ").append(name).append(" is ").append(size(b)).append(", the region ").append(size(region))
+                    .append("; compared only where they overlap, ").append(size(r)).append(" from ")
+                    .append(Coords.show(r.min())).append(" to ").append(Coords.show(r.max())).append('\n');
         }
         if (changed == 0) {
             return out.append("no change since ").append(name).toString();
@@ -85,6 +95,10 @@ public final class Diff {
             out.append("\n[").append(changed - listed.size()).append(" more]");
         }
         return out.toString();
+    }
+
+    private static String size(Region r) {
+        return r.sizeX() + "x" + r.sizeY() + "x" + r.sizeZ();
     }
 
     /** The same block: equal states, or two kinds of air. */

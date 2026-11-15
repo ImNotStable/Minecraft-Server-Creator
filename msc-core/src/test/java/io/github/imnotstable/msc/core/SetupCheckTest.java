@@ -38,6 +38,24 @@ class SetupCheckTest {
         assertThat(SetupCheck.warnings(CoreConfig.forWorkspace(dir))).isEmpty();
     }
 
+    /** #633: the one-time notice is about the workspace the result is about, worked out after the call. */
+    @Test
+    void theRepoNoticeFollowsTheWorkspaceSwitch() throws Exception {
+        Path repo = repo();
+        Path server = Files.createDirectories(dir.resolve("server"));
+        String warning = "warning: the workspace is the Minecraft Server Creator repo";
+        try (CoreHarness h = new CoreHarness(repo)) {
+            assertThat(h.ok("msc_workspace", "path", server.toString())).startsWith("workspace: ")
+                    .doesNotContain(warning);
+            assertThat(h.ok("msc_workspace", "path", repo.toString())).startsWith(warning + " (" + repo.toRealPath());
+            assertThat(h.ok("msc_workspace")).doesNotContain(warning);
+        }
+        try (CoreHarness h = new CoreHarness(repo)) {
+            assertThat(h.ok("msc_workspace")).startsWith(warning);
+            assertThat(h.ok("msc_workspace")).doesNotContain(warning);
+        }
+    }
+
     @Test
     void warnsWhenTheCheckoutChangedAfterTheInstall() throws Exception {
         Path repo = repo();

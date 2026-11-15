@@ -215,20 +215,12 @@ final class DevCycle {
     }
 
     /**
-     * The project's platform when the workspace has none yet (the deploy remembers it); else
-     * the workspace's. A workspace set up as a platform that runs the same projects (Quilt for a Fabric mod, Purpur
-     * for a Paper plugin) keeps its own.
+     * The workspace's platform for a project that names none; else the one that serves the project's
+     * ({@link Platform#serving}): its own when the workspace has none yet (the deploy remembers it).
      */
     private Platform platform(Path project) {
         Platform platform = Platform.detect(project);
-        if (platform == null) {
-            return server.platform();
-        }
-        if (!Files.exists(Platform.file(config))) {
-            return platform;
-        }
-        Platform workspace = server.platform();
-        return workspace.agent().equals(platform.agent()) ? workspace : platform;
+        return platform == null ? server.platform() : Platform.serving(config, platform);
     }
 
     static final String STOP_LEFTOVER = "stop a server an earlier session left holding the jar";

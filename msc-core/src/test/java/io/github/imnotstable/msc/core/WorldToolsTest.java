@@ -271,6 +271,22 @@ class WorldToolsTest {
                 .contains("not both");
     }
 
+    /** #632: the note gives the region's own size and what was compared, also for a snapshot smaller than it. */
+    @Test
+    void summaryDiffSaysWhenTheRegionAndTheSnapshotDifferInSize() {
+        h.ok("build_batch", "steps", "fill 0,64,0 2,64,2 stone");
+        h.ok("structure_save", "region", "0,63,0 2,65,2", "file", "small.schem");
+        assertThat(h.ok("world_summary", "region", "0,63,0 9,67,9", "diff", "small.schem")).isEqualTo(
+                "note: small.schem is 3x3x3, the region 10x5x10; compared only where they overlap, 3x3x3 from 0,63,0 "
+                        + "to 2,65,2\nno change since small.schem");
+        h.ok("structure_save", "region", "0,64,0 5,64,0", "file", "row.schem");
+        assertThat(h.ok("world_summary", "region", "0,64,0 2,67,2", "diff", "row.schem")).isEqualTo(
+                "note: row.schem is 6x1x1, the region 3x4x3; compared only where they overlap, 3x1x1 from 0,64,0 "
+                        + "to 2,64,0\nno change since row.schem");
+        assertThat(h.ok("world_summary", "region", "0,64,0 5,64,0", "diff", "row.schem"))
+                .isEqualTo("no change since row.schem");
+    }
+
     /**
      * #509: one rule for structure files. structure_save takes only a .schem name (any case); every reader goes by
      * the content, so whatever it saved reads back through world_summary diff= and build_batch file=, a text
