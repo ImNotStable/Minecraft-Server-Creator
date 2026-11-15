@@ -53,7 +53,7 @@ public record Reset(List<String> delete) {
     /** {@code path} normalized, refused unless it names something strictly inside the workspace. */
     private static String insideWorkspace(String path, String key) {
         String slashes = path.replace('\\', '/');
-        String refused = key + ": \"" + path + "\" ";
+        String refused = key + ": " + UserJson.quoted(path) + " ";
         if (slashes.isBlank()) {
             throw new IllegalArgumentException(refused + "is blank; give a path inside the workspace");
         }

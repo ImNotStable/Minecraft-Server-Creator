@@ -384,10 +384,24 @@ final class ServerRun {
     /**
      * The workspace's pack (the one the pack tool built to send, in this session or an earlier one): a started server
      * never had it or has forgotten it, and a detached pack host was just stopped, so serve and send it. Best effort,
-     * like the ground line. Also used when dev_cycle keeps the server running: a changed pack still reaches the
-     * players.
+     * like the ground line. dev_cycle with the server kept running uses {@link #packIfChanged} instead.
      */
     String resendPack() {
+        return sendPack(false);
+    }
+
+    /**
+     * dev_cycle with an unchanged jar, the server kept running: the workspace's pack, rebuilt, goes to the connected
+     * agent only when it differs from what that connection was last sent (#667), so the players do not download and
+     * reload the same pack on every cycle. Says nothing when it was not sent.
+     */
+    String packIfChanged() {
+        synchronized (sending) {
+            return sendPack(true);
+        }
+    }
+
+    private String sendPack(boolean onlyChanged) {
         ResourcePack.Applied applied = pack.applied();
         if (applied == null) {
             return "";
@@ -399,8 +413,13 @@ final class ServerRun {
             ResourcePack.Built built = pack.build(applied.description());
             // The host now serves only this build: a server.properties that offers our pack follows it first.
             TextureTools.keepOffered(pack, file, built, applied.required());
+            CoreServer.AgentSession to = hub.current();
+            if (onlyChanged && pack.wasSent(to, built, applied.required())) {
+                return "";
+            }
             try {
                 hub.call(Ops.PACK_APPLY, new Ops.PackParams(built.url(), built.sha1(), applied.required()));
+                pack.sent(to, built, applied.required());
             } catch (RuntimeException e) {
                 return "\nresource pack not sent (" + Steps.reason(e) + "); "
                         + TextureTools.takeBack(pack, before, file, offeredBefore);

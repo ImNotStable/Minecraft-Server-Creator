@@ -1,6 +1,7 @@
 package io.github.imnotstable.msc.core;
 
 import io.github.imnotstable.msc.core.server.DownloadStore;
+import io.github.imnotstable.msc.core.server.GradleUserHome;
 import io.github.imnotstable.msc.core.server.LoaderInstaller;
 import io.github.imnotstable.msc.core.server.MachineEula;
 import io.github.imnotstable.msc.core.tool.PathArg;
@@ -45,13 +46,16 @@ import java.util.Objects;
  *                      workspace (ADR 0038); {@link DownloadStore#NONE} (tests) means there is none
  * @param proxySecret   the machine's Velocity forwarding secret file ({@code ~/.msc/velocity.secret}), shared by a
  *                      proxy workspace and its backend's (ADR 0045); null (tests) keeps it in {@link #dataDir()}
+ * @param gradleUserHome where Gradle keeps its caches ({@link GradleUserHome}): passed to every Gradle build the core
+ *                      starts, and where api_search finds the API jars those builds downloaded (#666)
  */
 public record CoreConfig(Path workspace, Path serverDir, int agentPort, String token, Path toolLog,
                          String javaCommand, List<String> serverCommand, List<String> buildCommand,
                          String downloadsUrl, String minecraft, List<Path> apiJars, String packHost,
                          int packFormat, Path agentJar, String fabricMetaUrl, String fabricMavenUrl,
                          Path installDir, int packPort, MachineEula machineEula,
-                         LoaderInstaller.Urls loaderUrls, DownloadStore downloadStore, Path proxySecret) {
+                         LoaderInstaller.Urls loaderUrls, DownloadStore downloadStore, Path proxySecret,
+                         Path gradleUserHome) {
     public static final String ENV_WORKSPACE = "MSC_WORKSPACE";
     public static final String ENV_SERVER_DIR = "MSC_SERVER_DIR";
     public static final String ENV_TOOL_LOG = "MSC_TOOL_LOG";
@@ -80,6 +84,7 @@ public record CoreConfig(Path workspace, Path serverDir, int agentPort, String t
         apiJars = List.copyOf(apiJars);
         machineEula = Objects.requireNonNull(machineEula, "machineEula: MachineEula.none() for none");
         downloadStore = Objects.requireNonNull(downloadStore, "downloadStore: DownloadStore.NONE for none");
+        gradleUserHome = gradleUserHome.toAbsolutePath().normalize();
     }
 
     /** Defaults for a workspace; used by tests and as the base for {@link #fromEnvironment}. */
@@ -88,7 +93,7 @@ public record CoreConfig(Path workspace, Path serverDir, int agentPort, String t
         return new CoreConfig(workspace, workspace.resolve("run"), 0, HandshakeProof.nonce(), null, java,
                 null, null, DEFAULT_DOWNLOADS_URL, DEFAULT_MINECRAFT, List.of(), "127.0.0.1", DEFAULT_PACK_FORMAT, null,
                 DEFAULT_FABRIC_META_URL, DEFAULT_FABRIC_MAVEN_URL, null, 0, MachineEula.none(), LoaderInstaller.Urls.DEFAULT,
-                DownloadStore.NONE, null);
+                DownloadStore.NONE, null, GradleUserHome.ofThisProcess());
     }
 
     public static CoreConfig fromEnvironment(Map<String, String> env) {
@@ -124,7 +129,9 @@ public record CoreConfig(Path workspace, Path serverDir, int agentPort, String t
                 MachineEula.forHome(Path.of(System.getProperty("user.home"))),
                 base.loaderUrls(),
                 DownloadStore.fromEnvironment(env, Path.of(System.getProperty("user.home"))),
-                Path.of(System.getProperty("user.home"), ".msc", "velocity.secret"));
+                Path.of(System.getProperty("user.home"), ".msc", "velocity.secret"),
+                GradleUserHome.resolve(env, System.getProperty(GradleUserHome.PROPERTY),
+                        System.getProperty("user.home")));
     }
 
     /** {@code MSC_TOKEN} when set and not blank (an empty one would let any agent prove itself), else a random one. */
@@ -175,43 +182,43 @@ public record CoreConfig(Path workspace, Path serverDir, int agentPort, String t
 
     public CoreConfig withServerCommand(List<String> command) {
         return new CoreConfig(workspace, serverDir, agentPort, token, toolLog, javaCommand, command, buildCommand,
-                downloadsUrl, minecraft, apiJars, packHost, packFormat, agentJar, fabricMetaUrl, fabricMavenUrl, installDir, packPort, machineEula, loaderUrls, downloadStore, proxySecret);
+                downloadsUrl, minecraft, apiJars, packHost, packFormat, agentJar, fabricMetaUrl, fabricMavenUrl, installDir, packPort, machineEula, loaderUrls, downloadStore, proxySecret, gradleUserHome);
     }
 
     public CoreConfig withBuildCommand(List<String> command) {
         return new CoreConfig(workspace, serverDir, agentPort, token, toolLog, javaCommand, serverCommand, command,
-                downloadsUrl, minecraft, apiJars, packHost, packFormat, agentJar, fabricMetaUrl, fabricMavenUrl, installDir, packPort, machineEula, loaderUrls, downloadStore, proxySecret);
+                downloadsUrl, minecraft, apiJars, packHost, packFormat, agentJar, fabricMetaUrl, fabricMavenUrl, installDir, packPort, machineEula, loaderUrls, downloadStore, proxySecret, gradleUserHome);
     }
 
     public CoreConfig withToolLog(Path file) {
         return new CoreConfig(workspace, serverDir, agentPort, token, file, javaCommand, serverCommand, buildCommand,
-                downloadsUrl, minecraft, apiJars, packHost, packFormat, agentJar, fabricMetaUrl, fabricMavenUrl, installDir, packPort, machineEula, loaderUrls, downloadStore, proxySecret);
+                downloadsUrl, minecraft, apiJars, packHost, packFormat, agentJar, fabricMetaUrl, fabricMavenUrl, installDir, packPort, machineEula, loaderUrls, downloadStore, proxySecret, gradleUserHome);
     }
 
     public CoreConfig withDownloadsUrl(String url) {
         return new CoreConfig(workspace, serverDir, agentPort, token, toolLog, javaCommand, serverCommand,
-                buildCommand, url, minecraft, apiJars, packHost, packFormat, agentJar, fabricMetaUrl, fabricMavenUrl, installDir, packPort, machineEula, loaderUrls, downloadStore, proxySecret);
+                buildCommand, url, minecraft, apiJars, packHost, packFormat, agentJar, fabricMetaUrl, fabricMavenUrl, installDir, packPort, machineEula, loaderUrls, downloadStore, proxySecret, gradleUserHome);
     }
 
     public CoreConfig withFabricUrls(String metaUrl, String mavenUrl) {
         return new CoreConfig(workspace, serverDir, agentPort, token, toolLog, javaCommand, serverCommand,
-                buildCommand, downloadsUrl, minecraft, apiJars, packHost, packFormat, agentJar, metaUrl, mavenUrl, installDir, packPort, machineEula, loaderUrls, downloadStore, proxySecret);
+                buildCommand, downloadsUrl, minecraft, apiJars, packHost, packFormat, agentJar, metaUrl, mavenUrl, installDir, packPort, machineEula, loaderUrls, downloadStore, proxySecret, gradleUserHome);
     }
 
     public CoreConfig withMinecraft(String version) {
         return new CoreConfig(workspace, serverDir, agentPort, token, toolLog, javaCommand, serverCommand,
-                buildCommand, downloadsUrl, version, apiJars, packHost, packFormat, agentJar, fabricMetaUrl, fabricMavenUrl, installDir, packPort, machineEula, loaderUrls, downloadStore, proxySecret);
+                buildCommand, downloadsUrl, version, apiJars, packHost, packFormat, agentJar, fabricMetaUrl, fabricMavenUrl, installDir, packPort, machineEula, loaderUrls, downloadStore, proxySecret, gradleUserHome);
     }
 
     public CoreConfig withApiJars(List<Path> jars) {
         return new CoreConfig(workspace, serverDir, agentPort, token, toolLog, javaCommand, serverCommand,
-                buildCommand, downloadsUrl, minecraft, jars, packHost, packFormat, agentJar, fabricMetaUrl, fabricMavenUrl, installDir, packPort, machineEula, loaderUrls, downloadStore, proxySecret);
+                buildCommand, downloadsUrl, minecraft, jars, packHost, packFormat, agentJar, fabricMetaUrl, fabricMavenUrl, installDir, packPort, machineEula, loaderUrls, downloadStore, proxySecret, gradleUserHome);
     }
 
     public CoreConfig withInstallDir(Path dir) {
         return new CoreConfig(workspace, serverDir, agentPort, token, toolLog, javaCommand, serverCommand,
                 buildCommand, downloadsUrl, minecraft, apiJars, packHost, packFormat, agentJar, fabricMetaUrl,
-                fabricMavenUrl, dir, packPort, machineEula, loaderUrls, downloadStore, proxySecret);
+                fabricMavenUrl, dir, packPort, machineEula, loaderUrls, downloadStore, proxySecret, gradleUserHome);
     }
 
     /**
@@ -226,31 +233,37 @@ public record CoreConfig(Path workspace, Path serverDir, int agentPort, String t
                 : toolLog;
         return new CoreConfig(ws, server, agentPort, token, logFile, javaCommand, serverCommand, buildCommand,
                 downloadsUrl, minecraft, apiJars, packHost, packFormat, agentJar, fabricMetaUrl, fabricMavenUrl,
-                installDir, packPort, machineEula, loaderUrls, downloadStore, proxySecret);
+                installDir, packPort, machineEula, loaderUrls, downloadStore, proxySecret, gradleUserHome);
     }
 
     public CoreConfig withMachineEula(MachineEula eula) {
         return new CoreConfig(workspace, serverDir, agentPort, token, toolLog, javaCommand, serverCommand,
                 buildCommand, downloadsUrl, minecraft, apiJars, packHost, packFormat, agentJar, fabricMetaUrl,
-                fabricMavenUrl, installDir, packPort, eula, loaderUrls, downloadStore, proxySecret);
+                fabricMavenUrl, installDir, packPort, eula, loaderUrls, downloadStore, proxySecret, gradleUserHome);
     }
 
     public CoreConfig withDownloadStore(DownloadStore store) {
         return new CoreConfig(workspace, serverDir, agentPort, token, toolLog, javaCommand, serverCommand,
                 buildCommand, downloadsUrl, minecraft, apiJars, packHost, packFormat, agentJar, fabricMetaUrl,
-                fabricMavenUrl, installDir, packPort, machineEula, loaderUrls, store, proxySecret);
+                fabricMavenUrl, installDir, packPort, machineEula, loaderUrls, store, proxySecret, gradleUserHome);
     }
 
     public CoreConfig withLoaderUrls(LoaderInstaller.Urls urls) {
         return new CoreConfig(workspace, serverDir, agentPort, token, toolLog, javaCommand, serverCommand,
                 buildCommand, downloadsUrl, minecraft, apiJars, packHost, packFormat, agentJar, fabricMetaUrl,
-                fabricMavenUrl, installDir, packPort, machineEula, urls, downloadStore, proxySecret);
+                fabricMavenUrl, installDir, packPort, machineEula, urls, downloadStore, proxySecret, gradleUserHome);
     }
 
     public CoreConfig withProxySecret(Path file) {
         return new CoreConfig(workspace, serverDir, agentPort, token, toolLog, javaCommand, serverCommand,
                 buildCommand, downloadsUrl, minecraft, apiJars, packHost, packFormat, agentJar, fabricMetaUrl,
-                fabricMavenUrl, installDir, packPort, machineEula, loaderUrls, downloadStore, file);
+                fabricMavenUrl, installDir, packPort, machineEula, loaderUrls, downloadStore, file, gradleUserHome);
+    }
+
+    public CoreConfig withGradleUserHome(Path dir) {
+        return new CoreConfig(workspace, serverDir, agentPort, token, toolLog, javaCommand, serverCommand,
+                buildCommand, downloadsUrl, minecraft, apiJars, packHost, packFormat, agentJar, fabricMetaUrl,
+                fabricMavenUrl, installDir, packPort, machineEula, loaderUrls, downloadStore, proxySecret, dir);
     }
 
     /** Where the Velocity forwarding secret is kept: {@link #proxySecret()}, else the workspace's {@code .msc}. */

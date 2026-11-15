@@ -159,8 +159,8 @@ class TaskTypesTest {
         List<Arguments> rows = new ArrayList<>();
         for (String key : REGEX_KEYS) {
             rows.add(Arguments.of(key, "(abc", "\"(abc\" is not a regex: Unclosed group at index 4"));
-            rows.add(Arguments.of(key, "x\n[" + "a".repeat(100), "\"x\\n[" + "a".repeat(52)
-                    + "... is not a regex: Unclosed character class at index 102"));
+            rows.add(Arguments.of(key, "x\n[" + "a".repeat(100), "\"x\\n[" + "a".repeat(57)
+                    + "\"... is not a regex: Unclosed character class at index 102"));
         }
         for (String key : PATH_KEYS) {
             rows.add(Arguments.of(key, "a\0b", "\"a\\u0000b\" is not a path: Nul character not allowed"));
@@ -211,7 +211,7 @@ class TaskTypesTest {
     @CsvSource(delimiter = '|', quoteCharacter = '`', value = {
             "resetBeforeChecks.delete[0] | `\"../x\"`        | resetBeforeChecks.delete[0]: \"../x\" is not inside the workspace",
             "resetBeforeChecks.delete[0] | `\"a/../../x\"`   | resetBeforeChecks.delete[0]: \"a/../../x\" is not inside the workspace",
-            "resetBeforeChecks.delete[0] | `\"..\\\\x\"` | resetBeforeChecks.delete[0]: \"..\\x\" is not inside the workspace",
+            "resetBeforeChecks.delete[0] | `\"..\\\\x\"` | resetBeforeChecks.delete[0]: \"..\\\\x\" is not inside the workspace",
             "resetBeforeChecks.delete[0] | `\".\"`           | resetBeforeChecks.delete[0]: \".\" is not inside the workspace",
             "resetBeforeChecks.delete[0] | `\"a/..\"`        | resetBeforeChecks.delete[0]: \"a/..\" is not inside the workspace",
             "resetBeforeChecks.delete[0] | `\"/etc/x\"`      | resetBeforeChecks.delete[0]: \"/etc/x\" is absolute",

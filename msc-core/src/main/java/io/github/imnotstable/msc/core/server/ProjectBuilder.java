@@ -12,6 +12,7 @@ import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -91,7 +92,9 @@ public final class ProjectBuilder {
             args.addAll(extra);
             command = wrapperCommand(projectDir, windows, args.toArray(String[]::new));
         }
-        ProcessRunner.Result r = ProcessRunner.run(command, projectDir, timeout);
+        // The Gradle user home the core reads the caches from (api_search), so the build fills those (#666).
+        ProcessRunner.Result r = ProcessRunner.run(command, projectDir, timeout,
+                Map.of(GradleUserHome.ENV, config.gradleUserHome().toString()));
         String output = r.timedOut() ? r.output() + "\nbuild timed out after " + timeout.toSeconds() + "s" : r.output();
         return new BuildResult(r.ok(), output, r.ok() && !noJar ? newestJar(projectDir) : null, r.millis(), null);
     }

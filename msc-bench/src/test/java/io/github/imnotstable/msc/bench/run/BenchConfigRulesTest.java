@@ -10,6 +10,7 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.google.gson.JsonPrimitive;
+import io.github.imnotstable.msc.bench.Quoted;
 import io.github.imnotstable.msc.bench.UserJson;
 import io.github.imnotstable.msc.buildlogic.RepoFiles;
 import java.io.IOException;
@@ -242,9 +243,18 @@ class BenchConfigRulesTest {
             json = with(path, JsonParser.parseString(value));
         }
         Path config = write(json);
+        // #661: a value under a secret key is shown only by its type and length.
+        String shown = secret(path) ? Quoted.masked(JsonParser.parseString(value)) : value;
         assertThatThrownBy(() -> BenchConfig.load(config, home()))
                 .isInstanceOf(IOException.class)
-                .hasMessageContaining(path + ": " + value + " is not " + type);
+                .hasMessageContaining(path + ": " + shown + " is not " + type);
+    }
+
+    /** Whether {@code path} lies under a key bench.json's keys mark secret, as the mode {@code m}. */
+    private static boolean secret(String path) {
+        return BenchConfig.SERVER.secrets().stream().anyMatch(k -> path.startsWith("server." + k))
+                || BenchConfig.MODE.secrets().stream().anyMatch(k -> path.equals("modes.m." + k)
+                        || path.startsWith("modes.m." + k + "."));
     }
 
     /**
@@ -422,6 +432,134 @@ class BenchConfigRulesTest {
         assertThat(problems(config)).containsExactly(only);
     }
 
+    /**
+     * #661: a secret of the wrong type, the rows of the issue, is refused naming its key and showing only the value's
+     * type and length; so is an env name written {@code KEY=value}, shown up to its {@code =}.
+     */
+    static Stream<Arguments> secretsOfTheWrongType() {
+        return Stream.of(
+                Arguments.of("{\"server\":{\"rconPassword\":12345678}}", "12345678",
+                        "server.rconPassword: a number of 8 characters is not a string"),
+                Arguments.of("{\"server\":{\"rconPassword\":[\"hunter2\"]}}", "hunter2",
+                        "server.rconPassword: a list of 1 entry is not a string"),
+                Arguments.of("{\"server\":{\"rconPassword\":{\"x\":\"hunter2\"}}}", "hunter2",
+                        "server.rconPassword: an object of 1 key is not a string"),
+                Arguments.of("{\"modes\":{\"m\":{\"env\":{\"ANTHROPIC_API_KEY\":[\"sk-ant-secret\"]}}}}", "sk-ant-secret",
+                        "modes.m.env.ANTHROPIC_API_KEY: a list of 1 entry is not a string"),
+                Arguments.of("{\"modes\":{\"m\":{\"env\":\"ANTHROPIC_API_KEY=sk-ant-secret\"}}}", "sk-ant-secret",
+                        "modes.m.env: a string of 31 characters is not an object"),
+                Arguments.of("{\"modes\":{\"m\":{\"serverEnv\":{\"TOKEN\":42424242}}}}", "42424242",
+                        "modes.m.serverEnv.TOKEN: a number of 8 characters is not a string"),
+                Arguments.of("{\"modes\":{\"m\":{\"env\":{\"API_KEY=sk-ant-secret\":\"x\"}}}}", "sk-ant-secret",
+                        "modes.m.env: \"API_KEY=\"<13 hidden characters> is no environment variable name"),
+                Arguments.of("{\"modes\":{\"m\":{\"env\":{\"API_KEY=sk-ant-secret\":null}}}}", "sk-ant-secret",
+                        "modes.m.env: \"API_KEY=\"<13 hidden characters> is no environment variable name\n"
+                                + "modes.m.env.\"API_KEY=\"<13 hidden characters>: is null"));
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("secretsOfTheWrongType")
+    void aSecretIsRefusedShowingOnlyItsTypeAndLength(String config, String secret, String expected)
+            throws IOException {
+        List<String> problems = problems(config);
+        assertThat(problems).containsExactly(expected.split("\n"));
+        assertThat(String.join("\n", problems)).doesNotContain(secret);
+    }
+
+    /**
+     * #662: each value a refusal shows goes through the one quoting, so a newline or a space at an end is shown
+     * escaped in quotes, on one line. The first five are the rows of the issue.
+     */
+    static Stream<Arguments> valuesShownQuoted() {
+        return Stream.of(
+                Arguments.of("{\"minecraftVersion\":\"26.3\\n\"}",
+                        "minecraftVersion: \"26.3\\n\" is no Minecraft version, such as 26.3"),
+                Arguments.of("{\"server\":{\"downloadsUrl\":\"https://x/\\nfoo\"}}",
+                        "server.downloadsUrl: \"https://x/\\nfoo\" is no http or https URL"),
+                // The text after "=" in an env name may be a secret, so the name is shown up to it.
+                Arguments.of("{\"modes\":{\"m\":{\"env\":{\"A\\n=B\":\"1\"}}}}",
+                        "modes.m.env: \"A\\n=\"<1 hidden character> is no environment variable name"),
+                Arguments.of("{\"paths\":{\"a\\nb\":\"x\"}}",
+                        "paths: the name \"a\\nb\" is no placeholder name; use letters, digits, '.', '_' or '-'"),
+                Arguments.of("{\"modes\":{\"m\":{\"paperCacheSeed\":\"../x \"}}}",
+                        "modes.m.paperCacheSeed: \"../x \" is not a folder inside the workspace"),
+                Arguments.of("{\"modes\":{\"a\\nb\":{}}}", "modes.\"a\\nb\": the name is no mode name (it names "
+                        + "attempt folders and --modes lists); use letters, digits, '.', '_' or '-'"),
+                Arguments.of("{\"agent\":{\"x\\u2028y \":1}}",
+                        "agent.\"x\\u2028y \": unknown key; the keys are [command, timeoutSeconds]"),
+                Arguments.of("{\"server\":{\"downloadsUrl\":\"\\u202ehttps://x\"}}",
+                        "server.downloadsUrl: \"\\u202ehttps://x\" is no http or https URL"),
+                Arguments.of("{\"modes\":{\"m\":{\"serverPlugins\":[\"{a\\nb}\"]}}}",
+                        "modes.m.serverPlugins: \"{a\\nb}\" in \"{a\\nb}\" is no placeholder; name a key of paths, "
+                                + "such as {agentJar}"));
+    }
+
+    @ParameterizedTest(name = "{1}")
+    @MethodSource("valuesShownQuoted")
+    void aValueIsShownQuotedOnOneLine(String config, String expected) throws IOException {
+        assertThat(problems(config)).containsExactly(expected);
+    }
+
+    /** #662: a missing path at run is quoted as written, then named where it was looked for. */
+    @Test
+    void aMissingPathAtRunIsQuotedAsWrittenThenResolved() throws IOException {
+        Path config = dir.resolve("bench.json");
+        Files.writeString(config, "{\"paths\":{\"agentJar\":\"build/../no.jar\"},"
+                + "\"modes\":{\"m\":{\"serverPlugins\":[\"{agentJar}\"]}}}");
+        BenchConfig loaded = BenchConfig.load(config, home());
+        assertThatThrownBy(() -> loaded.requirePaths(config, List.of("m"))).isInstanceOf(IOException.class)
+                .hasMessage("Bad bench config " + config + ": paths.agentJar: no such file or folder "
+                        + "\"build/../no.jar\" (" + dir.resolve("no.jar") + ") (used by modes.m.serverPlugins); run "
+                        + "./gradlew :msc-agent-paper:shadowJar first or fix the path");
+    }
+
+    /**
+     * #663: one refused entry of a list or object no longer hides the others; the first four are the rows of the
+     * issue. A refused paths entry leaves out only the placeholders that name it.
+     */
+    static Stream<Arguments> entriesCheckedOneByOne() {
+        return Stream.of(
+                Arguments.of("{\"modes\":{\"m\":{\"env\":{\"PORT\":8080,\"B=\":\"x\"}}}}", List.of(
+                        "modes.m.env.PORT: a number of 4 characters is not a string",
+                        "modes.m.env: \"B=\"<0 hidden characters> is no environment variable name")),
+                Arguments.of("{\"paths\":{\"bad name\":\"x\",\"a\":\"foo\\u0000\"}}", List.of(
+                        "paths.a: \"foo\\u0000\" is not a path: ",
+                        "paths: the name \"bad name\" is no placeholder name; use letters, digits, '.', '_' or '-'")),
+                Arguments.of("{\"agent\":{\"command\":[5,\"\"]}}", List.of(
+                        "agent.command[0]: 5 is not a string",
+                        "agent.command: entry 1 is blank")),
+                Arguments.of("{\"server\":{\"paperCacheDirs\":[\"a\\u0000\",\"\"]}}", List.of(
+                        "server.paperCacheDirs[0]: \"a\\u0000\" is not a path: ",
+                        "server.paperCacheDirs: entry 1 is blank")),
+                Arguments.of("{\"paths\":{\"a\":5},\"modes\":{\"m\":{\"serverPlugins\":[\"{a}\",\"{typo}\"]}}}", List.of(
+                        "paths.a: 5 is not a string",
+                        "modes.m.serverPlugins: {typo} in \"{typo}\" is no placeholder; name a key of paths, such as "
+                                + "{agentJar}")),
+                Arguments.of("{\"modes\":{\"x\":5,\"y\":{\"extraArgs\":[null,true]}}}", List.of(
+                        "modes.x: 5 is not an object",
+                        "modes.y.extraArgs[1]: true is not a string",
+                        "modes.y.extraArgs: entry 0 is null")),
+                Arguments.of("{\"corePort\":1,\"corePort\":2,\"server\":{\"rconPort\":\"x\",\"rconPort\":\"y\"}}", List.of(
+                        "corePort: given twice; give each key once",
+                        "server.rconPort: given twice; give each key once",
+                        "server.rconPort: \"y\" is not a TCP port, a whole number from 1 to 65535")));
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("entriesCheckedOneByOne")
+    void everyEntryOfAListOrObjectIsCheckedOnItsOwn(String config, List<String> expected) throws IOException {
+        Path file = dir.resolve("bench.json");
+        Files.writeString(file, config);
+        String message = catchThrowable(() -> BenchConfig.load(file, home())).getMessage();
+        String head = "Bad bench config " + file + ":\n  ";
+        assertThat(message).startsWith(head);
+        List<String> problems = List.of(message.substring(head.length()).split("\n  "));
+        assertThat(problems).hasSameSizeAs(expected);
+        for (int i = 0; i < expected.size(); i++) {
+            assertThat(problems.get(i)).startsWith(expected.get(i));
+        }
+    }
+
     @Test
     void theEmptyRconPasswordSaysWhyBeforeAnyServerStarts() throws IOException {
         // #406: an empty password made the server turn RCON off, and each attempt waited 180 s for it.
@@ -454,8 +592,8 @@ class BenchConfigRulesTest {
                 loaded.gradleWrapperFrom(), Map.of("coreLib", dir.resolve("no-lib").toString(), "agentJar",
                         dir.resolve("no.jar").toString()), loaded.corePort(), loaded.minecraftVersion());
 
-        assertThat(BenchConfigRules.missingPaths(unbuilt, List.of("baseline"))).isEmpty();
-        assertThat(BenchConfigRules.missingPaths(unbuilt, List.of("toolset", "baseline"))).containsExactly(
+        assertThat(BenchConfigRules.missingPaths(unbuilt, null, List.of("baseline"))).isEmpty();
+        assertThat(BenchConfigRules.missingPaths(unbuilt, null, List.of("toolset", "baseline"))).containsExactly(
                 "paths.coreLib: no such file or folder " + dir.resolve("no-lib") + " (used by "
                         + "modes.toolset.mcpConfigTemplate); run ./gradlew :msc-core:installDist first or fix the path",
                 "paths.agentJar: no such file or folder " + dir.resolve("no.jar") + " (used by "
@@ -463,7 +601,7 @@ class BenchConfigRulesTest {
                         + "the path");
         Files.createDirectories(dir.resolve("no-lib"));
         Files.writeString(dir.resolve("no.jar"), "jar");
-        assertThat(BenchConfigRules.missingPaths(unbuilt, List.of("toolset"))).isEmpty();
+        assertThat(BenchConfigRules.missingPaths(unbuilt, null, List.of("toolset"))).isEmpty();
     }
 
     @Test

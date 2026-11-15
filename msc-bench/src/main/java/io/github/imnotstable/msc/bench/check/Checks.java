@@ -127,7 +127,7 @@ public final class Checks {
                     requirePattern(json, "expect", 0));
             case "blocks" -> BlocksCheck.parse(orDefault(name, "blocks"), json);
             case "player" -> PlayerCheck.parse(orDefault(name, "player"), json);
-            default -> throw new IllegalArgumentException("unknown check type \"" + type + "\"");
+            default -> throw new IllegalArgumentException("unknown check type " + UserJson.quoted(type));
         };
     }
 

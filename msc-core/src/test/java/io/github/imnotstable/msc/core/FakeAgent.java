@@ -28,6 +28,8 @@ public final class FakeAgent {
     volatile String minecraft = "26.3";
     /** When set, PACK_APPLY fails as an agent error would. */
     volatile boolean failPackApply;
+    /** Told of each pack sent; FakeServerMain logs it, so a test can count the sends to a server process. */
+    public volatile java.util.function.Consumer<Ops.PackParams> onPack = p -> { };
 
     final Map<BlockPos, String> blocks = new HashMap<>();
     final List<String> commands = new ArrayList<>();
@@ -96,6 +98,7 @@ public final class FakeAgent {
                     synchronized (this) {
                         packs.add(p);
                     }
+                    onPack.accept(p);
                     return new Ops.PackResult(1);
                 });
     }

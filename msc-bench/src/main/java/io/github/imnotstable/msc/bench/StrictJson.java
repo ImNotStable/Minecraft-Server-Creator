@@ -10,6 +10,7 @@ import com.google.gson.stream.JsonToken;
 import java.io.IOException;
 import java.io.StringReader;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -28,6 +29,8 @@ import java.util.regex.Pattern;
 public final class StrictJson {
 
     private static final TypeAdapter<JsonElement> TREE = new Gson().getAdapter(JsonElement.class);
+    /** The rest of a key name after an "=", which an env entry written {@code "API_KEY=sk-..."} holds (#661). */
+    private static final Pattern HIDDEN_AFTER_EQUALS = Pattern.compile("=[^.\\[]*");
     private static final Pattern PROBLEM = Pattern.compile("^(.*?) at line (\\d+) column (\\d+)(?: path \\$\\.?(\\S+))?");
 
     private StrictJson() {
@@ -40,10 +43,20 @@ public final class StrictJson {
      * {@code task.json is not valid JSON: ... at line 3 column 5}.
      */
     public static JsonElement parse(String text, String at) {
+        return parse(text, at, null);
+    }
+
+    /**
+     * {@link #parse}, except that every key given twice is added to {@code repeated}, at any depth, instead of
+     * refused at the first, and the tree is returned for the rest of the file to be checked too (#663): with it, a
+     * reader lists every problem of the file in one refusal. Text that is no JSON is still refused at once, since
+     * nothing after the problem can be read.
+     */
+    public static JsonElement parse(String text, String at, List<String> repeated) {
         JsonElement tree = syntax(text, at);
         try {
             JsonReader reader = reader(text);
-            keysOnce(reader, at, "");
+            keysOnce(reader, at, "", repeated);
         } catch (IOException e) {
             // syntax() has read the same text without a problem
             throw new IllegalStateException(e);
@@ -80,25 +93,33 @@ public final class StrictJson {
     }
 
     /** Walks the value at the reader, refusing a key that its object gives twice. */
-    private static void keysOnce(JsonReader reader, String at, String path) throws IOException {
+    private static void keysOnce(JsonReader reader, String at, String path, List<String> repeated)
+            throws IOException {
         switch (reader.peek()) {
             case BEGIN_OBJECT -> {
                 reader.beginObject();
                 Set<String> seen = new HashSet<>();
                 while (reader.hasNext()) {
                     String key = reader.nextName();
-                    String keyPath = path.isEmpty() ? key : path + "." + key;
+                    // A name is shown only up to an "=": an env entry written "API_KEY=sk-..." holds its secret (#661).
+                    String keyPath = path.isEmpty() ? Quoted.secretName(key) : path + "." + Quoted.secretName(key);
                     if (!seen.add(key)) {
-                        throw new IllegalArgumentException(at + keyPath + ": given twice; give each key once");
+                        String problem = at + keyPath + ": given twice; give each key once";
+                        if (repeated == null) {
+                            throw new IllegalArgumentException(problem);
+                        }
+                        if (!repeated.contains(problem)) {
+                            repeated.add(problem);
+                        }
                     }
-                    keysOnce(reader, at, keyPath);
+                    keysOnce(reader, at, keyPath, repeated);
                 }
                 reader.endObject();
             }
             case BEGIN_ARRAY -> {
                 reader.beginArray();
                 for (int i = 0; reader.hasNext(); i++) {
-                    keysOnce(reader, at, path + "[" + i + "]");
+                    keysOnce(reader, at, path + "[" + i + "]", repeated);
                 }
                 reader.endArray();
             }
@@ -122,7 +143,8 @@ public final class StrictJson {
         }
         String what = at.group(1).startsWith("Use JsonReader") ? "unexpected text" : at.group(1);
         boolean oneLine = text.indexOf('\n') < 0 && text.indexOf('\r') < 0;
-        String key = at.group(4) == null || what.equals("unexpected text") ? "" : " (in " + at.group(4) + ")";
+        String key = at.group(4) == null || what.equals("unexpected text") ? ""
+                : " (in " + HIDDEN_AFTER_EQUALS.matcher(at.group(4)).replaceAll("=<hidden>") + ")";
         return what + " at " + (oneLine ? "" : "line " + at.group(2) + " ") + "column " + at.group(3) + key;
     }
 }

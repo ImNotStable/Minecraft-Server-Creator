@@ -58,6 +58,26 @@ public final class ResourcePack implements AutoCloseable {
         AtomicFile.write(appliedFile(), to -> Files.writeString(to, json + "\n"));
     }
 
+    /** The pack an agent connection was last sent: its URL, SHA-1 and whether it is required. */
+    private record Sent(Object connection, String url, String sha1, boolean required) {
+    }
+
+    /** What the last send went to; in memory only, as a new connection (a restart, a late agent) always gets it. */
+    private Sent sent;
+
+    /** Note that {@code connection} (the agent connection the send went to) was sent {@code built}. */
+    public synchronized void sent(Object connection, Built built, boolean required) {
+        sent = new Sent(connection, built.url(), built.sha1(), required);
+    }
+
+    /**
+     * True when {@code connection} was last sent exactly {@code built}, so its players already have it: dev_cycle with
+     * an unchanged jar sends the pack only when this is false (#667).
+     */
+    public synchronized boolean wasSent(Object connection, Built built, boolean required) {
+        return connection != null && new Sent(connection, built.url(), built.sha1(), required).equals(sent);
+    }
+
     /** {@code .msc/pack-applied.json}: the workspace's pack to send ({@link #applied()}). */
     private Path appliedFile() {
         return outDir.resolveSibling("pack-applied.json");
