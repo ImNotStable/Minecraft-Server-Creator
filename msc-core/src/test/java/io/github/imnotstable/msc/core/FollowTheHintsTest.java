@@ -191,10 +191,11 @@ class FollowTheHintsTest {
     @Test
     void onlyWhatMscCreatedCountsAsEmpty() throws Exception {
         Path ws = Files.createDirectories(dir.resolve("custom"));
-        try (CoreHarness h = new CoreHarness(ws, c -> new CoreConfig(c.workspace(), ws.resolve("servers/dev"),
-                c.agentPort(), c.token(), ws.resolve("calls.jsonl"), c.javaCommand(), null, null, c.downloadsUrl(),
-                c.minecraft(), c.apiJars(), c.packHost(), c.packFormat(), null, c.fabricMetaUrl(), c.fabricMavenUrl(),
-                null, 0, c.machineEula(), c.loaderUrls(), c.downloadStore(), null))) {
+        try (CoreHarness h = new CoreHarness(ws, c -> CoreConfig.fromEnvironment(java.util.Map.of(
+                CoreConfig.ENV_WORKSPACE, ws.toString(), CoreConfig.ENV_SERVER_DIR, ws.resolve("servers/dev").toString(),
+                CoreConfig.ENV_TOOL_LOG, ws.resolve("calls.jsonl").toString()))
+                .withMachineEula(c.machineEula()).withDownloadStore(c.downloadStore()).withProxySecret(null)
+                .withGradleUserHome(c.gradleUserHome()))) {
             h.ok("server_setup", "platform", "minestom");
             h.ok("msc_status");
             Files.createDirectories(ws.resolve(".msc/backups/b1"));
