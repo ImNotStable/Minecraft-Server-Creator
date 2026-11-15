@@ -44,6 +44,17 @@ class ToolRegistryTest {
                 .hasSizeLessThanOrEqualTo(Budget.DEFAULT_CHARS);
     }
 
+    /** #637: a notice line the result already holds is not put in front again; the other lines are. */
+    @Test
+    void theNoticeLeavesOutLinesTheResultHolds() {
+        ToolRegistry registry = new ToolRegistry(new ToolLog(null));
+        registry.add("lists", "Lists.", Schema.of(), args -> "status\nwarning: a");
+        registry.noticeOnce("warning: a");
+        assertThat(registry.call("lists", new JsonObject()).text()).isEqualTo("status\nwarning: a");
+        registry.noticeOnce("warning: a\nwarning: b");
+        assertThat(registry.call("lists", new JsonObject()).text()).isEqualTo("warning: b\nstatus\nwarning: a");
+    }
+
     /**
      * #607: the one-time notice counts toward the cap of the result it goes in front of, so the first result of a
      * session obeys the cap too, and a result its tool budgeted to the full cap keeps its closing line.

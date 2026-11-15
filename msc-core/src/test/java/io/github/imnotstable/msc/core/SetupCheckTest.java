@@ -56,6 +56,23 @@ class SetupCheckTest {
         }
     }
 
+    /** #637: msc_status as the first call lists each setup warning once, not again in the notice in front. */
+    @Test
+    void mscStatusFirstShowsEachWarningOnce() throws Exception {
+        Path repo = repo();
+        String warning = "warning: the workspace is the Minecraft Server Creator repo";
+        try (CoreHarness h = new CoreHarness(repo)) {
+            String status = h.ok("msc_status");
+            assertThat(status).startsWith("msc-core ").containsOnlyOnce(warning);
+            assertThat(h.ok("msc_status")).containsOnlyOnce(warning);
+        }
+        try (CoreHarness h = new CoreHarness(repo)) {
+            // stats=true does not list the warnings, so the notice still goes in front.
+            assertThat(h.ok("msc_status", "stats", true)).startsWith(warning);
+            assertThat(h.ok("msc_status", "stats", true)).doesNotContain(warning);
+        }
+    }
+
     @Test
     void warnsWhenTheCheckoutChangedAfterTheInstall() throws Exception {
         Path repo = repo();
