@@ -13,6 +13,7 @@ import java.util.Locale;
 import java.util.function.Predicate;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * The server platform a workspace targets. It decides what {@code server_setup} installs, how the server
@@ -225,27 +226,38 @@ public enum Platform {
     /**
      * What a project says about the platform: a descriptor file the server loads ({@code file}, under any of
      * {@link #RESOURCE_ROOTS}), or build-file text that {@code build} finds: a plugin id, a DSL block or a dependency.
+     * {@code texts} is what it looks for, as a project writes it: the file, the words, or block lines like {@code paper {}.
      */
-    private record Sign(Platform platform, String file, Pattern build) {
+    record Sign(Platform platform, String file, List<String> texts, Pattern build) {
         static Sign descriptor(Platform platform, String file) {
-            return new Sign(platform, file, null);
+            return new Sign(platform, file, List.of(file), null);
         }
 
-        /** Any of {@code words} anywhere in a build file. */
+        /** Any of {@code words} anywhere in a build file, where no other platform's longer sign covers it. */
         static Sign build(Platform platform, String... words) {
-            return new Sign(platform, null, Pattern.compile(Arrays.stream(words).map(Pattern::quote)
+            return new Sign(platform, null, List.of(words), Pattern.compile(Arrays.stream(words).map(Pattern::quote)
                     .collect(Collectors.joining("|"))));
         }
 
         /** A line that opens one of the DSL blocks {@code names}, such as {@code paper {}}. */
         static Sign blocks(Platform platform, String... names) {
-            return new Sign(platform, null, Pattern.compile("(?m)^\\s*(?:" + String.join("|", names) + ")\\s*\\{"));
+            return new Sign(platform, null, Arrays.stream(names).map(name -> name + " {").toList(),
+                    Pattern.compile("(?m)^\\s*(?:" + String.join("|", names) + ")\\s*\\{"));
         }
 
-        boolean shows(Path project, String buildText) {
-            return file != null
-                    ? RESOURCE_ROOTS.stream().anyMatch(root -> Files.isRegularFile(project.resolve(root).resolve(file)))
-                    : build.matcher(buildText).find();
+        /** Each place this build sign's text is in {@code buildText}; none for a descriptor. */
+        Stream<Found> found(String buildText) {
+            return build == null ? Stream.empty()
+                    : build.matcher(buildText).results().map(match -> new Found(this, match.start(), match.end()));
+        }
+    }
+
+    /** A build sign's text at {@code [start, end)} of a project's build text. */
+    private record Found(Sign sign, int start, int end) {
+        /** True when {@code other} is another platform's sign whose longer text covers this one, so this is its. */
+        boolean coveredBy(Found other) {
+            return other.sign.platform() != sign.platform() && other.start <= start && end <= other.end
+                    && other.end - other.start > end - start;
         }
     }
 
@@ -270,10 +282,13 @@ public enum Platform {
      * A build file also names the APIs of other platforms a jar is built for: a plugin built for Paper and Velocity has
      * {@code plugin.yml} (or a {@code paper {}} block) and names {@code velocity-api}, so the bare word comes last.
      * Within a tier a game server comes before the proxy, so a jar that is both a Paper and a Velocity plugin is Paper
-     * here; {@link #runsOn} names both, so a Velocity workspace runs it too (#642). Quilt comes before Fabric, whose mods it loads, and
-     * ModDevGradle's legacyforge plugin (Forge) before its NeoForge one, whose id it extends.
+     * here; {@link #runsOn} names both, so a Velocity workspace runs it too (#642). Quilt comes before Fabric, whose
+     * mods it loads.
+     * <p>
+     * A build sign's text counts only where no longer sign of another platform covers it, whatever the order:
+     * ModDevGradle's legacyforge plugin id (Forge) extends its NeoForge one, and is Forge's alone (#648).
      */
-    private static final List<Sign> SIGNS = List.of(
+    static final List<Sign> SIGNS = List.of(
             Sign.descriptor(QUILT, "quilt.mod.json"),
             Sign.descriptor(FABRIC, "fabric.mod.json"),
             Sign.build(FABRIC, "xyz.jpenilla.resource-factory-fabric-convention"),
@@ -311,9 +326,10 @@ public enum Platform {
      */
     public static List<Platform> runsOn(Path project) {
         String build = buildText(project);
+        List<Found> texts = SIGNS.stream().flatMap(sign -> sign.found(build)).toList();
         List<Platform> found = new ArrayList<>();
         for (Sign sign : SIGNS) {
-            if (!found.contains(sign.platform()) && sign.shows(project, build)) {
+            if (!found.contains(sign.platform()) && shows(sign, project, texts)) {
                 found.add(sign.platform());
             }
         }
@@ -321,6 +337,14 @@ public enum Platform {
             found.removeIf(p -> !p.needsServerSetup());
         }
         return List.copyOf(found);
+    }
+
+    /** True when the project has the sign's descriptor, or its build text where no other platform's sign covers it. */
+    private static boolean shows(Sign sign, Path project, List<Found> texts) {
+        if (sign.file() != null) {
+            return RESOURCE_ROOTS.stream().anyMatch(root -> Files.isRegularFile(project.resolve(root).resolve(sign.file())));
+        }
+        return texts.stream().anyMatch(text -> text.sign() == sign && texts.stream().noneMatch(text::coveredBy));
     }
 
     /** The project's build files, lower-cased and joined; a file that is missing or not readable as text adds nothing. */

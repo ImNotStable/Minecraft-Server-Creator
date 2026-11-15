@@ -59,3 +59,16 @@ workspace refused it, although Velocity loads it and `dev_cycle` deployed it bef
   remembers its platform, never adds the "never loads" line, and its next step is for the workspace's own server
   (`Platform.current`), so a set-up Fabric workspace gets `next: edit the code, then dev_cycle`, not the EULA question
   and `server_setup platform=paper`.
+
+## Amendment, 2026-11-15: a sign inside another platform's sign (#648)
+
+Build signs match text anywhere in the build files, and ModDevGradle's Forge plugin id,
+`net.neoforged.moddev.legacyforge`, contains NeoForge's sign `net.neoforged.moddev`. With every sign counted, a Forge mod
+built with it ran on NeoForge too, so a NeoForge workspace deployed it with an OK although NeoForge never loads it.
+
+- A build sign's text counts only where no longer sign of another platform covers the same text. The covered text is
+  the longer sign's platform's alone, whatever the order of the signs, so `runsOn` of that mod is Forge only and a
+  NeoForge workspace refuses it again. NeoForge's own plugin elsewhere in the same build still counts.
+- Descriptors are whole file paths (`META-INF/mods.toml` is not `META-INF/neoforge.mods.toml`), so they cannot overlap.
+- A test writes every sign's text into a build file, as a plugin id, a dependency, a catalog entry and a line of its
+  own, and checks that the project runs on that sign's platform only; that legacyforge id was the only overlap.

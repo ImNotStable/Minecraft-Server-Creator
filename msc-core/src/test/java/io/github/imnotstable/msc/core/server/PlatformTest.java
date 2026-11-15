@@ -126,6 +126,50 @@ class PlatformTest {
         assertThat(Platform.runsOn(dir)).containsExactly(Platform.PAPER, Platform.VELOCITY);
     }
 
+    /** #648: ModDevGradle's legacyforge plugin id contains its NeoForge one; a Forge mod built with it is Forge only. */
+    @Test
+    void aLegacyForgeModRunsOnForgeOnly() throws Exception {
+        write(dir.resolve("src/main/resources/META-INF/mods.toml"));
+        Files.writeString(dir.resolve("build.gradle"), "plugins {\n    id 'net.neoforged.moddev.legacyforge' version '2.0.91'\n}\n");
+        assertThat(Platform.runsOn(dir)).containsExactly(Platform.FORGE);
+        Files.delete(dir.resolve("src/main/resources/META-INF/mods.toml"));
+        assertThat(Platform.runsOn(dir)).containsExactly(Platform.FORGE);
+        CoreConfig config = CoreConfig.forWorkspace(dir);
+        Platform.remember(config, Platform.NEOFORGE);
+        assertThat(Platform.otherFamily(config, Platform.runsOn(dir))).isEqualTo(Platform.NEOFORGE);
+        // NeoForge's own plugin beside it, in another line, still counts.
+        Files.writeString(dir.resolve("build.gradle.kts"), "plugins { id(\"net.neoforged.moddev\") }\n");
+        assertThat(Platform.runsOn(dir)).containsExactly(Platform.FORGE, Platform.NEOFORGE);
+    }
+
+    /**
+     * #648: a sign's text, written in a build file as a plugin id, a dependency, a version-catalog entry and a line of
+     * its own, makes the project run on the sign's platform and no other; a descriptor's name there makes it run on
+     * nothing, and the descriptor file on its platform only. So no sign's text is another platform's sign as well.
+     */
+    @Test
+    void everySignsTextShowsItsOwnPlatformOnly() throws Exception {
+        int n = 0;
+        for (Platform.Sign sign : Platform.SIGNS) {
+            for (String text : sign.texts()) {
+                Path project = Files.createDirectories(dir.resolve("p" + n++));
+                Files.writeString(project.resolve("build.gradle.kts"), "plugins {\n    id(\"" + text + "\") version \"1.0\"\n}\n"
+                        + "dependencies {\n    compileOnly(\"com.example:" + text + ":1.0\")\n}\n" + text + "\n}\n");
+                Files.createDirectories(project.resolve("gradle"));
+                Files.writeString(project.resolve("gradle/libs.versions.toml"),
+                        "[plugins]\nx = { id = \"" + text + "\", version = \"1.0\" }\n");
+                List<Platform> expected = sign.file() == null ? List.of(sign.platform()) : List.of();
+                assertThat(Platform.runsOn(project)).as(text).isEqualTo(expected);
+                if (sign.file() != null) {
+                    Files.delete(project.resolve("build.gradle.kts"));
+                    Files.delete(project.resolve("gradle/libs.versions.toml"));
+                    write(project.resolve("src/main/resources").resolve(sign.file()));
+                    assertThat(Platform.runsOn(project)).as(text).containsExactly(sign.platform());
+                }
+            }
+        }
+    }
+
     @Test
     void theRememberedPlatformWinsThenTheProjectFilesThenPaper() throws Exception {
         CoreConfig config = CoreConfig.forWorkspace(dir);
