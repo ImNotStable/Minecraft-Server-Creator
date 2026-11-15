@@ -294,8 +294,8 @@ public final class Quoted {
     }
 
     /**
-     * Unicode's Default_Ignorable_Code_Point, as first and last code point of each range, from DerivedCoreProperties.txt
-     * of Unicode 16.0.0 (the version Java 25 implements). Besides format characters it holds letters and marks that
+     * Unicode's Default_Ignorable_Code_Point, as first and last code point of each range, from
+     * DerivedCoreProperties.txt of Unicode 16.0.0 (the version Java 25 implements). Besides format characters it holds letters and marks that
      * render as nothing, such as the Hangul fillers U+3164 and U+FFA0, the combining grapheme joiner U+034F and every
      * variation selector, U+FE0F included.
      */

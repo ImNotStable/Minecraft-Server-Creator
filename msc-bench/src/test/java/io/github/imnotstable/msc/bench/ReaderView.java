@@ -2,6 +2,7 @@ package io.github.imnotstable.msc.bench;
 
 import java.util.BitSet;
 import java.util.Locale;
+import java.util.stream.Stream;
 
 /**
  * What a reader should see of run text (#677, #678), written apart from {@link Quoted} so a test does not check the
@@ -56,19 +57,52 @@ public final class ReaderView {
 
     /**
      * {@code markdown} as a Markdown renderer shows it when it holds only backslash escapes: each backslash before
-     * ASCII punctuation dropped.
+     * ASCII punctuation dropped, except inside an extended autolink (#685). GitHub's Markdown links a bare URL straight
+     * from the source, from where it starts to the next blank or {@code <}, so a backslash there is shown as it is.
      */
     public static String unescapeMarkdown(String markdown) {
         StringBuilder out = new StringBuilder();
         for (int i = 0; i < markdown.length(); i++) {
             char c = markdown.charAt(i);
-            if (c == '\\' && i + 1 < markdown.length() && isAsciiPunctuation(markdown.charAt(i + 1))) {
+            if (autolinkAt(markdown, i)) {
+                while (i < markdown.length() && !Character.isWhitespace(markdown.charAt(i))
+                        && markdown.charAt(i) != '<') {
+                    out.append(markdown.charAt(i++));
+                }
+                i--;
+            } else if (c == '\\' && i + 1 < markdown.length() && isAsciiPunctuation(markdown.charAt(i + 1))) {
                 out.append(markdown.charAt(++i));
             } else {
                 out.append(c);
             }
         }
         return out.toString();
+    }
+
+    /**
+     * Whether an extended autolink of the GitHub Flavored Markdown spec starts at {@code i}, a little more often than
+     * GitHub finds one: {@code www.} after the start, a blank or one of {@code *_~(}, or {@code http://},
+     * {@code https://} or {@code ftp://} (any case) not right after a letter, each followed by a character that is no
+     * blank and no {@code <}.
+     */
+    private static boolean autolinkAt(String markdown, int i) {
+        int start;
+        if (markdown.startsWith("www.", i)) {
+            char before = i > 0 ? markdown.charAt(i - 1) : ' ';
+            if (!Character.isWhitespace(before) && "*_~(".indexOf(before) < 0) {
+                return false;
+            }
+            start = i + 4;
+        } else {
+            String scheme = Stream.of("http://", "https://", "ftp://")
+                    .filter(s -> markdown.regionMatches(true, i, s, 0, s.length())).findFirst().orElse(null);
+            if (scheme == null || i > 0 && Character.isLetter(markdown.charAt(i - 1))) {
+                return false;
+            }
+            start = i + scheme.length();
+        }
+        return start < markdown.length() && !Character.isWhitespace(markdown.charAt(start))
+                && markdown.charAt(start) != '<';
     }
 
     private static boolean isAsciiPunctuation(char c) {
