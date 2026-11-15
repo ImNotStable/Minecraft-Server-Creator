@@ -53,6 +53,8 @@ public final class Templates {
      * respawns, no natural spawns, fixed time, saved progress) and a {@code /game} admin command.
      */
     public static final String FABRIC_GAME = "fabric-game";
+    /** A Velocity proxy plugin with tests and conventions; no Minecraft server files, no EULA step. ADR 0045. */
+    public static final String VELOCITY_PLUGIN = "velocity-plugin";
 
     private static final String ROOT = "msc/templates/";
     private static final String TEMPLATE_SUFFIX = ".tmpl";
@@ -71,7 +73,9 @@ public final class Templates {
                     "minecraft", "java", "fabricloader", "mixinextras", "fabric-api", "fabric", "quilt_loader"), "msc-agent"),
             "neoforge", new LoaderIds("modId", "mod id", Set.of("minecraft", "neoforge"), "msc_agent"),
             "forge", new LoaderIds("modId", "mod id", Set.of("minecraft", "forge"), "msc_agent"),
-            "paper", new LoaderIds("name", "plugin name", Set.of("bukkit", "minecraft", "mojang"), "mscagent"));
+            "paper", new LoaderIds("name", "plugin name", Set.of("bukkit", "minecraft", "mojang"), "mscagent"),
+            // Velocity's own built-in plugin is id velocity; a proxy runs no MSC agent, so no id is MSC's.
+            "velocity", new LoaderIds("projectId", "plugin id", Set.of("velocity"), ""));
     /** Paper refuses a plugin whose main class is in this package or below it. */
     private static final String BUKKIT_PACKAGE = "org.bukkit";
 
@@ -207,7 +211,7 @@ public final class Templates {
             // dev_cycle deploys the jar as <projectId>.jar next to the agent's msc-agent-<platform>.jar (#311);
             // ignoring case, since Windows and macOS file names do.
             String agentJar = "msc-agent-" + platform;
-            if (values.get("projectId").equalsIgnoreCase(agentJar)) {
+            if (!ids.agent().isEmpty() && values.get("projectId").equalsIgnoreCase(agentJar)) {
                 throw new IllegalArgumentException("Template '" + id + "' would give jar name '" + values.get("projectId")
                         + "', which the MSC agent on the dev server keeps for itself (" + agentJar
                         + ".jar); choose another project name");

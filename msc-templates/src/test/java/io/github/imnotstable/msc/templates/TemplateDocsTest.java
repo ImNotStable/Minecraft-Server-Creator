@@ -37,7 +37,7 @@ class TemplateDocsTest {
         List<Command> commands = TemplateDocs.commands(project);
 
         assertThat(commands).extracting(Command::task).contains("build", "test");
-        assertThat(commands).extracting(Command::task).containsAnyOf("run", "runServer");
+        assertThat(commands).extracting(Command::task).containsAnyOf("run", "runServer", "runVelocity");
         for (Command c : commands) {
             assertThat(build.tasks()).as(c.doc() + ": " + c.line()).contains(c.task());
             if (c.testClass() != null) {

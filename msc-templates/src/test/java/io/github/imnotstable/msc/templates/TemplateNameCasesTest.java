@@ -32,14 +32,15 @@ import org.junit.jupiter.params.provider.MethodSource;
  * Every project template with odd project names and packages (#293): each either refuses cleanly, naming the
  * input or the template, and writes nothing, or renders a project with no placeholder left, metadata that parses,
  * ids the loader accepts and a main class where its package says. Paper templates also serve Purpur and Fabric
- * templates also serve Quilt, so the platforms are paper, fabric, neoforge, forge and minestom.
+ * templates also serve Quilt, so the platforms are paper, fabric, neoforge, forge, minestom and velocity.
  */
 class TemplateNameCasesTest {
     private static final String ALL = "*";
     private static final Pattern FABRIC_ID = Pattern.compile("[a-z][a-z0-9-_]{1,63}");
     private static final Pattern FORGE_ID = Pattern.compile("[a-z][a-z0-9_]{1,63}");
     private static final Pattern JAVA_PACKAGE = Pattern.compile("(?m)^package\\s+([\\w.]+)\\s*;");
-    private static final Pattern GRADLE_MAIN = Pattern.compile("mainClass = \"([\\w.]+)\"");
+    private static final Pattern VELOCITY_ID = Pattern.compile("@com\\.velocitypowered\\.api\\.plugin\\.Plugin\\(id = \"([^\"]*)\"");
+    private static final Pattern GRADLE_MAIN =Pattern.compile("mainClass = \"([\\w.]+)\"");
     private static final Set<String> PAPER_RESTRICTED = Set.of("bukkit", "minecraft", "mojang");
     /** Where the in-memory projects are rendered; nothing is written there. */
     private static final Path ROOT = Path.of("project").toAbsolutePath().normalize();
@@ -85,7 +86,7 @@ class TemplateNameCasesTest {
                 name("Null", ALL), name("a".repeat(65), ALL), name("Abcdefghij ".repeat(7), ALL),
                 name("Ølstue", ALL), name("日本", ALL), name("Straße", ALL),
                 // Ids a loader, Paper or MSC's agent keeps; Minestom refuses MinecraftServer, Paper JavaPlugin.
-                name("Minecraft", ALL), name("Java", "fabric", "paper"), name("Fabric", "fabric"),
+                name("Minecraft", "fabric", "neoforge", "forge", "paper", "minestom"), name("Java", "fabric", "paper"), name("Fabric", "fabric"),
                 name("Fabric Api", "fabric"), name("Fabricloader", "fabric"), name("Mixinextras", "fabric"),
                 name("Forge", "forge"), name("Neoforge", "neoforge"), name("Bukkit", "paper"), name("Mojang", "paper"),
                 name("Msc Agent", "fabric", "neoforge", "forge", "paper"),
@@ -94,7 +95,7 @@ class TemplateNameCasesTest {
                 // The agent's jar, msc-agent-<platform>.jar, where dev_cycle deploys <projectId>.jar (#311).
                 name("Msc Agent Paper", "paper"), name("msc-agent-fabric", "fabric"),
                 name("MSC Agent Neoforge", "neoforge"), name("msc_agent_forge", "forge"),
-                name("Msc Agent Minestom"),
+                name("Msc Agent Minestom"), name("Velocity", "velocity"), name("Msc Agent Velocity"),
                 // Packages.
                 pkg("a"), pkg("com.example.lobby_2"), pkg("javax.lobby"), pkg("org.bukkitlobby"), pkg("dev.record.var"),
                 pkg("org.bukkit", "paper"), pkg("org.bukkit.lobby", "paper"), pkg("java.lobby", ALL), pkg("java", ALL),
@@ -162,6 +163,7 @@ class TemplateNameCasesTest {
             case "forge" -> forgeMain(files, "src/main/resources/META-INF/mods.toml", vars, "forge");
             case "paper" -> paperMain(files, vars);
             case "minestom" -> gradleMain(files);
+            case "velocity" -> velocityMain(files, vars);
             default -> throw new AssertionError("unknown platform " + platform);
         };
         assertThat(mainClass).startsWith(vars.packageName() + ".");
@@ -237,5 +239,15 @@ class TemplateNameCasesTest {
         Matcher m = GRADLE_MAIN.matcher(text(files, "build.gradle.kts"));
         assertThat(m.find()).as("mainClass in build.gradle.kts").isTrue();
         return m.group(1);
+    }
+
+    /** The class with the {@code @Plugin} annotation, whose id Velocity accepts ({@code [a-z][a-z0-9-_]{0,63}}). */
+    private static String velocityMain(Map<String, byte[]> files, TemplateVariables vars) {
+        String main = vars.packageName() + "." + vars.mainClass();
+        String text = text(files, "src/main/java/" + main.replace('.', '/') + ".java");
+        Matcher m = VELOCITY_ID.matcher(text);
+        assertThat(m.find()).as("@Plugin id in the main class").isTrue();
+        assertThat(m.group(1)).matches("[a-z][a-z0-9-_]{0,63}").isEqualTo(vars.projectId()).isNotEqualTo("velocity");
+        return main;
     }
 }

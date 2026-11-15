@@ -76,6 +76,11 @@ class TemplateBuildTest {
         buildsAndPassesItsTests(Templates.FABRIC_GAME);
     }
 
+    @Test
+    void velocityPluginBuildsAndPassesItsTests() throws IOException, InterruptedException {
+        buildsAndPassesItsTests(Templates.VELOCITY_PLUGIN);
+    }
+
     private static void buildsAndPassesItsTests(String id) throws IOException, InterruptedException {
         ScaffoldResult r = scaffoldFresh(id, id);
         String output = daemon.run(r.root(), "build", "tasks", "--all");

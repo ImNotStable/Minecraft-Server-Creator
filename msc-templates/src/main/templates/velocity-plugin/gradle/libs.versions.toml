@@ -1,0 +1,18 @@
+# Every version this project uses. Change versions here only.
+[versions]
+java = "{{javaVersion}}"
+velocity = "{{velocityVersion}}"
+junit = "{{junitVersion}}"
+assertj = "{{assertjVersion}}"
+run-paper = "{{runPaperVersion}}"
+
+[libraries]
+velocity-api = { module = "com.velocitypowered:velocity-api", version.ref = "velocity" }
+junit-bom = { module = "org.junit:junit-bom", version.ref = "junit" }
+junit-jupiter = { module = "org.junit.jupiter:junit-jupiter" }
+junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher" }
+assertj = { module = "org.assertj:assertj-core", version.ref = "assertj" }
+
+[plugins]
+# run-velocity comes from the same run-task project, at the same version, as run-paper.
+run-velocity = { id = "xyz.jpenilla.run-velocity", version.ref = "run-paper" }

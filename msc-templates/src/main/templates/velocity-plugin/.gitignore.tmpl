@@ -1,0 +1,16 @@
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+.idea/
+*.iml
+.vscode/
+out/
+.kotlin/
+
+# Minecraft Server Creator cache (server jars, built packs, tool log), except the resource pack sources in .msc/pack.
+.msc/*
+!.msc/pack/
+
+# Dev proxy: keep only its config, not its logs, plugins or downloaded jars. forwarding.secret stays out of git.
+run/*
+!run/velocity.toml

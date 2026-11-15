@@ -25,7 +25,9 @@ class TemplatesTest {
         assertThat(Templates.ids()).containsExactly(
                 Templates.FABRIC_GAME, Templates.FABRIC_MOD, Templates.FORGE_MOD, Templates.MINESTOM_GAME,
                 Templates.MINESTOM_SERVER, Templates.NEOFORGE_MOD, Templates.PAPER_GAME, Templates.PAPER_PLUGIN,
-                Templates.PAPER_SERVER);
+                Templates.PAPER_SERVER, Templates.VELOCITY_PLUGIN);
+        assertThat(Templates.info(Templates.VELOCITY_PLUGIN)).containsEntry("platform", "velocity");
+        assertThat(Templates.versions().get("velocityVersion")).matches("\\d+\\.\\d+\\.\\d+");
         assertThat(Templates.info(Templates.NEOFORGE_MOD)).containsEntry("platform", "neoforge");
         assertThat(Templates.info(Templates.FORGE_MOD)).containsEntry("platform", "forge");
         assertThat(Templates.versions().get("neoforgeVersion")).startsWith(Templates.versions().get("mcVersion") + ".");
@@ -41,6 +43,22 @@ class TemplatesTest {
         assertThat(Templates.info(Templates.PAPER_PLUGIN)).containsEntry("platform", "paper").containsKey("description");
         assertThat(Templates.versions()).containsEntry("javaVersion", "25").containsKeys("paperVersion", "mcVersion", "mockbukkitVersion");
         assertThat(Templates.versions().get("paperVersion")).startsWith(Templates.versions().get("mcVersion") + ".build");
+    }
+
+    /** ADR 0045: a proxy plugin with its own wrapper and no Minecraft server files (no server.properties, no EULA). */
+    @Test
+    void scaffoldsAVelocityPluginWithNoServerFiles() throws IOException {
+        ScaffoldResult r = Templates.scaffold(Templates.VELOCITY_PLUGIN, dir.resolve("v"), vars);
+
+        assertThat(relative(r)).contains("build.gradle.kts", "settings.gradle.kts", ".gitignore", "CLAUDE.md",
+                        "gradle/libs.versions.toml", "gradlew", "gradle/wrapper/gradle-wrapper.jar",
+                        "src/main/java/com/example/spawnlobby/SpawnLobbyPlugin.java",
+                        "src/test/java/com/example/spawnlobby/GreeterTest.java")
+                .noneMatch(p -> p.startsWith("run/") || p.contains("eula"));
+        assertThat(r.root().resolve("src/main/java/com/example/spawnlobby/SpawnLobbyPlugin.java"))
+                .content().contains("id = \"spawn-lobby\"");
+        assertThat(r.root().resolve("gradle/libs.versions.toml")).content()
+                .contains("velocity = \"" + Templates.versions().get("velocityVersion") + "\"");
     }
 
     @Test

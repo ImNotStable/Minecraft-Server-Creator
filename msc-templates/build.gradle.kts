@@ -37,6 +37,7 @@ val templateVersions = mapOf(
     "forgeVersion" to catalogVersion("forge"),
     "forgeGradleVersion" to catalogVersion("forgegradle"),
     "forgeEventbusVersion" to catalogVersion("forge-eventbus"),
+    "velocityVersion" to catalogVersion("velocity"),
     "minestomVersion" to minestom,
     "minestomMcVersion" to minestom.substringAfterLast("-"),
     "slf4jVersion" to catalogVersion("slf4j"),
@@ -80,6 +81,8 @@ abstract class PackTemplates : DefaultTask() {
     companion object {
         val PROJECT_TEMPLATES = setOf("paper-plugin", "paper-game", "fabric-mod", "fabric-game", "neoforge-mod", "forge-mod")
         val MINESTOM_TEMPLATES = setOf("minestom-server", "minestom-game")
+        /** A proxy plugin: its own wrapper, no Minecraft server files in run/ (the proxy writes its own config). */
+        val PROXY_TEMPLATES = setOf("velocity-plugin")
         val WRAPPER_FILES = listOf(
             "gradlew", "gradlew.bat", "gradle/wrapper/gradle-wrapper.jar", "gradle/wrapper/gradle-wrapper.properties")
     }
@@ -109,6 +112,9 @@ abstract class PackTemplates : DefaultTask() {
                 // A Minestom server is its own project: own wrapper, agent jar on its classpath.
                 WRAPPER_FILES.forEach { files[it] = wrapper.resolve(it) }
                 files["libs/msc-agent-minestom.jar"] = minestomAgent.singleFile
+            }
+            if (id in PROXY_TEMPLATES) {
+                WRAPPER_FILES.forEach { files[it] = wrapper.resolve(it) }
             }
             val description = files.remove("template.properties")
             for ((path, file) in files) {
