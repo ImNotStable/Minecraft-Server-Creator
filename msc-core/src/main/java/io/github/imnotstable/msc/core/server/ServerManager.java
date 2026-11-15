@@ -44,6 +44,8 @@ public final class ServerManager implements AutoCloseable {
     private LogPump pump;
     private volatile boolean sawDone;
     private volatile boolean detached;
+    /** {@link #stop} asked the running server to stop; a launch clears it. Under this monitor. */
+    private boolean stopping;
     /** Set by {@link #close()} under this monitor; {@link #start} checks it under the same monitor (#282). */
     private boolean closed;
     /** Extra environment for the server process: tests set a locale here. */
@@ -157,6 +159,35 @@ public final class ServerManager implements AutoCloseable {
 
     public synchronized boolean running() {
         return process != null && process.isAlive();
+    }
+
+    /**
+     * Whether an agent of this session's server can still connect: its server runs and was not asked to stop (#703).
+     * The hub is woken when either changes ({@link AgentHub#serverChanged}).
+     */
+    public synchronized boolean awaitsAgent() {
+        return running() && !stopping;
+    }
+
+    /**
+     * Why this session has no server to send to, the same answer as msc_status's server line (#705): this session's
+     * server is stopping, another live session runs one, an earlier session left one running, or none runs.
+     */
+    public synchronized String notRunning() {
+        if (running()) {
+            return stopping ? AgentHub.STOPPING : AgentHub.NOT_RUNNING;
+        }
+        Optional<OtherSession> other = otherSession();
+        if (other.isPresent()) {
+            return other.get().refusal();
+        }
+        long leftover = leftoverPid();
+        if (leftover >= 0) {
+            return "the server running here (pid " + leftover + ") was left by an earlier session and has no "
+                    + "connection to this one: server_start or dev_cycle restarts it under this session, server_stop "
+                    + "stops it";
+        }
+        return AgentHub.NOT_RUNNING;
     }
 
     /**
@@ -279,6 +310,9 @@ public final class ServerManager implements AutoCloseable {
             startedPump = LogPump.start(started, log, () -> sawDone = true, PUMP_DRAIN);
             pump = startedPump;
         }
+        hub.serverLaunched();
+        // A caller waiting for its agent learns of the exit at once, not when the wait runs out (#703).
+        started.onExit().thenRun(hub::serverChanged);
         long deadline = begin + timeout.toNanos();
         boolean ready = false;
         long agentMillis = -1;
@@ -335,6 +369,7 @@ public final class ServerManager implements AutoCloseable {
         // Surviving the session is asked for per server (ADR 0014): a detached server that exited on its own
         // must not pass that on to the next one.
         detached = false;
+        stopping = false;
         launchedAt = java.time.Instant.now();
         Process p = pb.start();
         held.write(p.toHandle(), self);
@@ -409,7 +444,7 @@ public final class ServerManager implements AutoCloseable {
     /** Type a line into the server console. */
     public synchronized void console(String line) throws IOException {
         if (!running()) {
-            throw new ToolException("server is not running");
+            throw new ToolException(notRunning());
         }
         OutputStream in = process.getOutputStream();
         in.write((line + "\n").getBytes(StandardCharsets.UTF_8));
@@ -543,12 +578,15 @@ public final class ServerManager implements AutoCloseable {
             }
             p = process;
             detached = false;
+            stopping = true;
             try {
                 console("stop");
             } catch (IOException e) {
                 p.destroy();
             }
         }
+        // Its agent leaves before the process exits: a call waiting for one fails now, not after the wait (#703).
+        hub.serverChanged();
         if (!p.waitFor(timeout.toMillis(), TimeUnit.MILLISECONDS)) {
             ProcessRunner.destroyTree(p.toHandle());
             p.waitFor(10, TimeUnit.SECONDS);

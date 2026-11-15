@@ -171,7 +171,7 @@ final class ServerRun {
      */
     String detach(Args args) throws IOException, InterruptedException {
         if (!server.running()) {
-            throw new ToolException("the server is not running. Start it with server_start first.");
+            throw new ToolException(server.notRunning());
         }
         // The workspace's built pack: this session's last build, or the zip an earlier build left (#655).
         if (pack.hasBuild() && Files.exists(serverProperties())) {
@@ -182,7 +182,7 @@ final class ServerRun {
                         + "ends; server_stop then server_start and server_detach again keeps it up")
                 .ifFails(OFFER_PACK, "the server and the pack host run on, but a restart outside MSC offers no pack");
         if (!steps.run(DETACH, server::detach)) {
-            throw new ToolException("the server is not running. Start it with server_start first.");
+            throw new ToolException(server.notRunning());
         }
         String java = ProcessHandle.current().info().command().orElse(config.javaCommand());
         // A host that does not come up is an answer, not a failure: this session keeps serving the pack.

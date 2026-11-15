@@ -91,6 +91,16 @@ public final class FakeServerMain {
         while ((line = in.readLine()) != null) {
             if (line.equals("stop")) {
                 System.out.println("[12:00:09 INFO]: Stopping server");
+                // linger-stop.flag: the agent leaves without a word, then the process lingers until release.flag
+                // exists (at most a minute), as a real server saving its worlds does (#703).
+                if (session != null && Files.exists(Path.of("linger-stop.flag"))) {
+                    session.connection().close();
+                    System.out.println("[12:00:09 INFO]: agent gone, lingering");
+                    long end = System.nanoTime() + Duration.ofMinutes(1).toNanos();
+                    while (!Files.exists(Path.of("release.flag")) && System.nanoTime() < end) {
+                        Thread.sleep(20);
+                    }
+                }
                 break;
             }
             System.out.println("[12:00:05 INFO]: console: " + line);

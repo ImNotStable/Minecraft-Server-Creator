@@ -137,8 +137,10 @@ public final class Core implements AutoCloseable {
             ServerManager server = new ServerManager(config, hub);
             if (config.agentPort() == 0) {
                 // No fixed address, so only a server this core starts can connect (MSC_CORE_ADDRESS attaches others).
-                hub.agentExpected(server::running);
+                // Only while it starts or its agent reconnects: not once it was asked to stop (#703).
+                hub.agentExpected(server::awaitsAgent);
             }
+            hub.notRunning(server::notRunning);
             hub.noAgentReason(() -> server.platform().noWorldTools());
             ResourcePack pack = new ResourcePack(config.packDir(), config.packBuildDir(),
                     config.packHost(), config.packPort(), config.packFormat());

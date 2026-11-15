@@ -28,6 +28,12 @@ public final class AgentHub implements AutoCloseable {
      * answer (or its timeout error, with the undo id of a write's changed blocks) wins.
      */
     public static final Duration CALL_TIMEOUT = Limits.CORE_CALL_TIMEOUT;
+    /** The refusal of a world call while this session has no server running. */
+    public static final String NOT_RUNNING = "the server is not running. Start it with server_start, or dev_cycle to "
+            + "build and deploy first.";
+    /** The refusal of a world call while the server is on its way down: its agent does not come back (#703). */
+    public static final String STOPPING = "the server is stopping. Start it again with server_start, or dev_cycle to "
+            + "build and deploy first.";
 
     private final ReentrantLock lock = new ReentrantLock();
     private final Condition changed = lock.newCondition();
@@ -35,11 +41,14 @@ public final class AgentHub implements AutoCloseable {
     private final String token;
     private CoreServer.AgentSession session;
     private long readyCount;
+    /** The last agent said {@code server.stopping}: its run is ending, so none comes back until a new one connects. */
+    private boolean ending;
     /** Set by {@link #close()} under {@link #lock}: no agent can arrive after it, so nobody waits for one. */
     private boolean closed;
     private volatile Duration connectWait = CONNECT_WAIT;
     private volatile java.util.function.BooleanSupplier agentExpected = () -> true;
     private volatile java.util.function.Supplier<String> noAgentReason = () -> null;
+    private volatile java.util.function.Supplier<String> notRunning = () -> NOT_RUNNING;
     private volatile Runnable onReady = () -> { };
 
     public AgentHub(int port, String token) throws IOException {
@@ -54,6 +63,7 @@ public final class AgentHub implements AutoCloseable {
                     late = closed;
                     if (!late) {
                         session = s;
+                        ending = false;
                         changed.signalAll();
                     }
                 } finally {
@@ -66,7 +76,9 @@ public final class AgentHub implements AutoCloseable {
 
             @Override
             public void event(CoreServer.AgentSession s, Event event) {
-                if (Events.SERVER_READY.equals(event.name())) {
+                if (Events.SERVER_STOPPING.equals(event.name())) {
+                    update(() -> ending = true);
+                } else if (Events.SERVER_READY.equals(event.name())) {
                     update(() -> readyCount++);
                     onReady.run();
                 }
@@ -108,6 +120,27 @@ public final class AgentHub implements AutoCloseable {
      */
     public void agentExpected(java.util.function.BooleanSupplier expected) {
         this.agentExpected = expected;
+    }
+
+    /**
+     * The refusal when no agent is expected ({@link #agentExpected}): why this session has no server to reach (#705).
+     * Asked without the hub lock, like {@link #agentExpected}.
+     */
+    public void notRunning(java.util.function.Supplier<String> why) {
+        this.notRunning = why;
+    }
+
+    /**
+     * Wakes a caller waiting for an agent, so it asks {@link #agentExpected} again: the server process exited or
+     * began to stop, which no session change signals (#703).
+     */
+    public void serverChanged() {
+        update(() -> { });
+    }
+
+    /** A new server process was launched: the last one's {@code server.stopping} no longer says its agent won't come. */
+    public void serverLaunched() {
+        update(() -> ending = false);
     }
 
     /**
@@ -173,7 +206,10 @@ public final class AgentHub implements AutoCloseable {
         }
     }
 
-    /** The connected agent, waiting a little for one to arrive. */
+    /**
+     * The connected agent, waiting a little for one to arrive. It waits only while one can still come (the server is
+     * starting, or its agent reconnects): a server that is stopping or gone fails at once ({@link #refusal}, #703).
+     */
     public CoreServer.AgentSession require() throws InterruptedException {
         long deadline = System.nanoTime() + connectWait.toNanos();
         while (true) {
@@ -181,25 +217,16 @@ public final class AgentHub implements AutoCloseable {
             if (s != null) {
                 return s;
             }
-            if (closed()) {
-                throw ToolException.workspaceClosed("no server agent can connect any more");
-            }
-            String never = noAgentReason.get();
-            if (never != null) {
-                throw new ToolException(never);
-            }
-            // Asked without the hub lock: the answer may need another lock (ServerManager's monitor), whose holder
-            // may be waiting for this one.
-            if (!agentExpected.getAsBoolean()) {
-                throw new ToolException("the server is not running. Start it with server_start, or dev_cycle to "
-                        + "build and deploy first.");
+            String why = refusal();
+            if (why != null) {
+                throw new ToolException(why);
             }
             lock.lock();
             try {
                 if (session != null && session.connection().isOpen()) {
                     return session;
                 }
-                if (closed) {
+                if (closed || ending) {
                     continue;
                 }
                 long nanos = deadline - System.nanoTime();
@@ -236,18 +263,35 @@ public final class AgentHub implements AutoCloseable {
         }
     }
 
-    private static ToolException timedOut(String op) {
-        return new ToolException("the server did not answer " + op + " within " + CALL_TIMEOUT.toSeconds()
-                + "s. Try a smaller region, or check server_logs: the server may be overloaded or stopped.");
-    }
-
-    private boolean closed() {
+    /**
+     * Why no agent can come now, or null while one may: the one answer for {@link #require} and for a tool that does
+     * not wait (player_test). Asked without the hub lock: the answer may need another lock (ServerManager's monitor),
+     * whose holder may be waiting for this one.
+     */
+    public String refusal() {
+        boolean stopping;
         lock.lock();
         try {
-            return closed;
+            if (closed) {
+                throw ToolException.workspaceClosed("no server agent can connect any more");
+            }
+            stopping = ending;
         } finally {
             lock.unlock();
         }
+        String never = noAgentReason.get();
+        if (never != null) {
+            return never;
+        }
+        if (!agentExpected.getAsBoolean()) {
+            return notRunning.get();
+        }
+        return stopping ? STOPPING : null;
+    }
+
+    private static ToolException timedOut(String op) {
+        return new ToolException("the server did not answer " + op + " within " + CALL_TIMEOUT.toSeconds()
+                + "s. Try a smaller region, or check server_logs: the server may be overloaded or stopped.");
     }
 
     /** Close the agent session and stop listening. Wakes a caller waiting for an agent, which then fails at once. */
