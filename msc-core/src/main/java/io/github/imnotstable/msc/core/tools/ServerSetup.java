@@ -77,28 +77,29 @@ final class ServerSetup {
         Platform platform = chosen == null ? server.platform() : chosen;
         Boolean forwarding = forwarding(args.str("proxy", null), platform);
         Boolean bedrock = args.has("bedrock") ? args.bool("bedrock", false) : null;
-        boolean plugins = platform == Platform.PAPER || platform == Platform.PURPUR;
-        if (Boolean.TRUE.equals(bedrock) && !plugins) {
-            throw new ToolException("bedrock=true needs paper or purpur (Geyser and Floodgate install as plugins), not "
-                    + platform.id());
-        }
+        // One check of Geyser against the final platform and forwarding, before anything changes (ADR 0046, #590).
+        BedrockRule.Action geyser = BedrockRule.decide(platform, forwarding != null ? forwarding
+                : ProxyForwarding.enabled(config.serverDir()), bedrock, BedrockRule.installed(config.serverDir()));
         Path dir = OutputFile.checkFolder(config.serverDir(), "server folder");
         Steps steps = new Steps("server_setup");
         String rememberFails = "the server folder is set up, but the workspace platform is still "
                 + Platform.current(config).id() + ": run server_setup again";
         if (platform == Platform.VELOCITY) {
-            return velocity(steps, chosen, dir, mode, rememberFails);
+            return velocity(steps, chosen, dir, mode, geyser, rememberFails);
         }
         if (platform == Platform.MINESTOM) {
             steps.then(CREATE_FOLDER);
+            planBedrock(steps, geyser, "the server folder is set up; server_setup again finishes it");
             if (chosen != null) {
                 steps.then(REMEMBER).ifFails(REMEMBER, rememberFails);
             }
             // A server.jar another platform left (NeoForge's starter, a vanilla jar) is not this project: dev_cycle puts it.
             String removed = steps.run(CREATE_FOLDER,
                     () -> LoaderInstaller.claimSharedJar(Files.createDirectories(dir), MINESTOM_ID));
+            StringBuilder geyserOut = new StringBuilder();
+            runBedrock(steps, geyser, dir, List.of(), geyserOut);
             remember(steps, chosen);
-            return LoaderInstaller.removedLine(removed, "dev_cycle deploys this project's jar there")
+            return LoaderInstaller.removedLine(removed, "dev_cycle deploys this project's jar there") + geyserOut
                     + (mode == null ? "" : "mode ignored: a Minestom server sets game mode and difficulty in its own code\n")
                     + "minestom needs no server download and has no EULA step: the project's own jar is the server and "
                     + "the msc agent is built into it. Server directory: " + dir + "; next: dev_cycle";
@@ -115,14 +116,8 @@ final class ServerSetup {
         if (forwarding != null) {
             steps.then(FORWARDING);
         }
-        // Geyser: on bedrock=true, and kept up to date by any later setup of a folder that has it (ADR 0046).
-        Path pluginDir = dir.resolve(platform.addonDir());
-        boolean geyser = plugins && !Boolean.FALSE.equals(bedrock) && (Boolean.TRUE.equals(bedrock)
-                || Files.exists(pluginDir.resolve(GeyserDownloader.Project.GEYSER.jarName())));
         steps.then(AGENT);
-        if (geyser || Boolean.FALSE.equals(bedrock) && plugins) {
-            steps.then(BEDROCK);
-        }
+        planBedrock(steps, geyser, null);
         steps.then(EULA);
         if (chosen != null) {
             steps.then(REMEMBER).ifFails(REMEMBER, rememberFails);
@@ -143,9 +138,10 @@ final class ServerSetup {
                 case FOLIA -> fill(Platform.FOLIA, version, dir, installed).append(FOLIA_NOTE).append('\n');
                 default -> paper(version, dir, installed);
             }
-            if (geyser) {
+            if (geyser == BedrockRule.Action.INSTALL) {
                 for (GeyserDownloader.Project p : GeyserDownloader.Project.values()) {
-                    bedrockJars.add(note(this.geyser.download(p), GeyserDownloader.Download::note, installed));
+                    bedrockJars.add(note(this.geyser.download(p, BedrockRule.plugins(dir).resolve(p.jarName())),
+                            GeyserDownloader.Download::note, installed));
                 }
             }
         });
@@ -170,15 +166,7 @@ final class ServerSetup {
         out.append(installed);
         // The addon folder exists after setup even without an agent, for the deploys that follow.
         steps.run(AGENT, () -> installAgent(platform, Files.createDirectories(dir.resolve(platform.addonDir())), out));
-        if (steps.planned(BEDROCK)) {
-            steps.run(BEDROCK, () -> {
-                if (geyser) {
-                    installBedrock(dir, pluginDir, bedrockJars, out);
-                } else {
-                    removeBedrock(pluginDir, out);
-                }
-            });
-        }
+        runBedrock(steps, geyser, dir, bedrockJars, out);
         steps.run(EULA, () -> eulaStep(dir.resolve("eula.txt"), acceptEula, out));
         remember(steps, chosen);
         out.append(platform.id()).append(" server ready in ").append(dir).append("; next: server_start or dev_cycle");
@@ -222,11 +210,12 @@ final class ServerSetup {
      * its config and the machine's forwarding secret. No defaults, game mode, agent or EULA: it is not a Minecraft
      * server.
      */
-    private String velocity(Steps steps, Platform chosen, Path dir, ServerProperties.Mode mode, String rememberFails)
-            throws InterruptedException {
+    private String velocity(Steps steps, Platform chosen, Path dir, ServerProperties.Mode mode,
+                            BedrockRule.Action geyser, String rememberFails) throws InterruptedException {
         String velocity = pinned("velocityVersion", "Velocity");
-        steps.then(INSTALL).then(FORWARDING)
-                .ifFails(FORWARDING, "the proxy is installed but not fully set up; server_setup again finishes it");
+        String partly = "the proxy is installed but not fully set up; server_setup again finishes it";
+        steps.then(INSTALL).then(FORWARDING).ifFails(FORWARDING, partly);
+        planBedrock(steps, geyser, partly);
         if (chosen != null) {
             steps.then(REMEMBER).ifFails(REMEMBER, rememberFails);
         }
@@ -239,9 +228,30 @@ final class ServerSetup {
             out.append(ProxyForwarding.proxy(dir, ProxyForwarding.secret(config.proxySecretFile())));
             Files.createDirectories(dir.resolve(Platform.VELOCITY.addonDir()));
         });
+        runBedrock(steps, geyser, dir, List.of(), out);
         remember(steps, chosen);
         return out.append("velocity proxy ready in ").append(dir).append(" (no EULA step, no msc agent); next: "
                 + "server_start or dev_cycle").toString();
+    }
+
+    /** Declares the Geyser step when {@code geyser} does something, with {@code ifFails} when not null. */
+    private static void planBedrock(Steps steps, BedrockRule.Action geyser, String ifFails) {
+        if (geyser != BedrockRule.Action.NONE) {
+            steps.then(BEDROCK);
+            if (ifFails != null) {
+                steps.ifFails(BEDROCK, ifFails);
+            }
+        }
+    }
+
+    /** Installs ({@code jars}, downloaded in the install step) or removes Geyser and Floodgate, as planned. */
+    private void runBedrock(Steps steps, BedrockRule.Action geyser, Path dir, List<GeyserDownloader.Download> jars,
+                            StringBuilder out) throws InterruptedException {
+        if (geyser == BedrockRule.Action.INSTALL) {
+            steps.run(BEDROCK, () -> installBedrock(dir, BedrockRule.plugins(dir), jars, out));
+        } else if (geyser == BedrockRule.Action.REMOVE) {
+            steps.run(BEDROCK, () -> removeBedrock(BedrockRule.plugins(dir), out));
+        }
     }
 
     /** Last: a refused or failed setup leaves the workspace's platform, and with it its working server, as it was. */

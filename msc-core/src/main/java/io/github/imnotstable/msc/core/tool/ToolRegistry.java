@@ -45,6 +45,36 @@ public final class ToolRegistry {
         return add(new Tool(name, description, schema.build(), handler));
     }
 
+    /**
+     * Makes each of {@code names}, all registered already, answer {@code refusal}'s line before its handler runs, while
+     * that line is not null. The handler is wrapped, so a registry that forwards to these tools' handlers gets it too.
+     */
+    public ToolRegistry gate(Collection<String> names, java.util.function.Supplier<String> refusal) {
+        for (String name : names) {
+            Tool tool = tools.get(name);
+            if (tool == null) {
+                throw new IllegalStateException("no tool " + name + " to gate");
+            }
+            Tool.Handler inner = tool.handler();
+            tools.put(name, new Tool(name, tool.description(), tool.inputSchema(), new Tool.Handler() {
+                @Override
+                public String call(Args args) throws Exception {
+                    return output(args).text();
+                }
+
+                @Override
+                public Tool.Output output(Args args) throws Exception {
+                    String refused = refusal.get();
+                    if (refused != null) {
+                        throw new ToolException(refused);
+                    }
+                    return inner.output(args);
+                }
+            }));
+        }
+        return this;
+    }
+
     public Collection<Tool> tools() {
         return tools.values();
     }

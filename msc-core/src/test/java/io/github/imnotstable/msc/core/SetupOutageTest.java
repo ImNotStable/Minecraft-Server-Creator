@@ -44,6 +44,17 @@ class SetupOutageTest {
                                     + "newest cached build$")
                             .contains("geyser build 1302 (already there), floodgate build 141 (already there)")
                             .contains("mode game: survival");
+
+                    // An emptied cache: Geyser falls back to the jars already in plugins/ (#590 follow-up).
+                    try (var cached = Files.list(ws.resolve(".msc/cache"))) {
+                        for (Path jar : cached.filter(p -> p.getFileName().toString().contains("-spigot-")).toList()) {
+                            Files.delete(jar);
+                        }
+                    }
+                    assertThat(h.ok("server_setup"))
+                            .containsPattern("(?m)^GeyserMC downloads answered 503 for \\S+; keeping the jar in plugins/$")
+                            .contains("geyser (already there), floodgate (already there)");
+                    assertThat(ws.resolve("run/plugins/Geyser-Spigot.jar")).hasContent("geyser jar");
                 }
             } finally {
                 down.stop(0);

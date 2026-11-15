@@ -111,6 +111,16 @@ class GeyserDownloaderTest {
             assertThat(d.jar()).hasContent("new");
             assertThatThrownBy(() -> g.download(GeyserDownloader.Project.FLOODGATE))
                     .isInstanceOf(ToolException.class).hasMessageStartingWith("cannot reach ");
+
+            // Nothing cached, but the folder has the plugin: it is kept, and the note says why.
+            Path kept = Files.writeString(Files.createDirectories(tmp.resolve("plugins")).resolve("floodgate-spigot.jar"),
+                    "installed");
+            GeyserDownloader.Download k = g.download(GeyserDownloader.Project.FLOODGATE, kept);
+            assertThat(k.jar()).isEqualTo(kept).hasContent("installed");
+            assertThat(k.describe()).isEqualTo("floodgate");
+            assertThat(k.note()).startsWith("cannot reach ").endsWith("; keeping the jar in plugins/")
+                    .doesNotContain("cached");
+            assertThat(g.download(GeyserDownloader.Project.GEYSER, kept).jar()).hasContent("new");
         }
     }
 

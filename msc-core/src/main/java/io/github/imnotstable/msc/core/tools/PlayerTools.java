@@ -68,10 +68,6 @@ public final class PlayerTools implements AutoCloseable {
                 throw ToolException.workspaceClosed("player_test did not run");
             }
         }
-        String proxy = io.github.imnotstable.msc.core.server.Platform.current(config).noWorldTools();
-        if (proxy != null) {
-            throw new ToolException(proxy);
-        }
         if (hub.current() == null) {
             throw new ToolException("the server is not running with the agent. Start it with server_start first.");
         }

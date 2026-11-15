@@ -94,6 +94,9 @@ final class Downloads {
         return status == 408 || status == 429 || status >= 500;
     }
 
+    /** What a fallback's note adds to the source's reason. */
+    static final String CACHED = "; using the newest cached build";
+
     /**
      * The one update rule of every downloader (#589): run {@code update}; when the source is {@link Unavailable} for
      * any reason that can pass, use the newest cached build from {@code cached}, with a one-line note saying so. Only
@@ -103,7 +106,7 @@ final class Downloads {
         try {
             return update.get();
         } catch (Unavailable e) {
-            T fallback = cached.use(e.getMessage() + "; using the newest cached build");
+            T fallback = cached.use(e.getMessage() + CACHED);
             if (fallback == null) {
                 throw new ToolException(e.getMessage());
             }

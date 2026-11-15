@@ -85,6 +85,19 @@ public final class ProxyForwarding {
         }
     }
 
+    /** True when the backend's {@code config/paper-global.yml} has {@code proxies.velocity.enabled: true}. */
+    public static boolean enabled(Path serverDir) throws IOException {
+        Path file = serverDir.resolve(PAPER_GLOBAL);
+        if (!Files.isRegularFile(file)) {
+            return false;
+        }
+        List<String> lines = Files.readAllLines(file, StandardCharsets.UTF_8);
+        int proxies = find(lines, 0, lines.size(), "", "proxies:");
+        int velocity = proxies < 0 ? -1 : find(lines, proxies + 1, blockEnd(lines, proxies, 0), "  ", "velocity:");
+        int at = velocity < 0 ? -1 : find(lines, velocity + 1, blockEnd(lines, velocity, 2), "    ", "enabled:");
+        return at >= 0 && lines.get(at).substring("    enabled:".length()).split("#", 2)[0].strip().equals("true");
+    }
+
     /**
      * {@code yaml} with {@code proxies.velocity.enabled}, {@code online-mode} and {@code secret} set: on with
      * {@code secret}, off without (the secret then stays as it was). Lines are matched by indentation, as Paper
