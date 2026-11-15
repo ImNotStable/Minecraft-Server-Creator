@@ -220,7 +220,7 @@ public final class BenchRunner {
         if (mcpTemplate != null) {
             Path mcpConfig = attemptDir.resolve("mcp.json");
             Files.createDirectories(attemptDir);
-            Files.writeString(mcpConfig, fillJson(Text.readOwn(mcpTemplate), values));
+            PrivateFile.write(mcpConfig, fillJson(Text.readOwn(mcpTemplate), values));
             values.put("mcpConfig", slashes(mcpConfig));
         }
 

@@ -7,7 +7,7 @@ A server-side Fabric mod that runs inside the dev server and carries out the cor
 
 ## What it does
 
-- Connects to `msc-core` over `msc-protocol` when the core starts the server (`MSC_CORE_ADDRESS`, `MSC_TOKEN`; or `-Dmsc.core.address=host:port -Dmsc.token=...`). Without them it stays idle.
+- Connects to `msc-core` over `msc-protocol` when the core starts the server (`MSC_CORE_ADDRESS`, `MSC_TOKEN`; or `-Dmsc.core.address=host:port -Dmsc.token.file=<file holding the token>`, or `-Dmsc.token=...`, which `ps` shows to every user). Without them it stays idle.
 - Implements every operation in `Ops`: `server.info`, `server.command`, `world.read`, `world.entities`, `world.heightmap`, `world.write`, `world.undo`, `pack.apply` (see [protocol.md](../msc-docs/docs/protocol.md)). Behaviour matches the Paper agent.
 - Names worlds like Paper (`world`, `world_nether`, `world_the_end`; other dimensions by id), and also accepts dimension ids.
 - Runs world work on the server thread in 20 ms slices per tick, so a 1M-block edit doesn't stall the server.

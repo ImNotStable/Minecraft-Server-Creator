@@ -28,6 +28,11 @@ public final class FrameReader {
 
     /** Next frame without its newline, or {@code null} at end of stream. */
     public String read() throws IOException {
+        return read(maxBytes);
+    }
+
+    /** Like {@link #read()}, refusing a frame over {@code maxBytes} (the handshake's smaller limit). */
+    public String read(int maxBytes) throws IOException {
         buffer.reset();
         while (true) {
             if (pos == limit) {
