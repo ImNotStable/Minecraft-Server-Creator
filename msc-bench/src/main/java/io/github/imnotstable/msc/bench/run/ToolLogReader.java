@@ -3,8 +3,10 @@ package io.github.imnotstable.msc.bench.run;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import io.github.imnotstable.msc.bench.JsonNumbers;
 import io.github.imnotstable.msc.bench.Text;
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
@@ -56,7 +58,11 @@ public final class ToolLogReader {
         return sum.stats();
     }
 
-    /** The running totals; {@link #add} reads every field before it counts any, so a bad line counts nothing. */
+    /**
+     * The running totals; {@link #add} reads every field and works out every new total before it counts any, so a bad
+     * line counts nothing. A field or a total outside the range {@code results.jsonl} keeps it in ({@link ToolStats}'s
+     * ranges, #602), such as {@code "durationMs": -5} or a decimal, makes the line one that cannot be read as a call.
+     */
     private static final class Sum {
         private int calls;
         private int errors;
@@ -71,19 +77,60 @@ public final class ToolLogReader {
                 return;
             }
             boolean failed = o.has("ok") && !o.get("ok").getAsBoolean();
-            long resultChars = o.has("resultChars") ? o.get("resultChars").getAsLong() : 0;
-            long textTokens = o.has("resultTokens") ? o.get("resultTokens").getAsLong() : (resultChars + 3) / 4;
-            long imageTokens = o.has("imageTokens") ? o.get("imageTokens").getAsLong() : 0;
-            long ms = o.has("durationMs") ? o.get("durationMs").getAsLong() : 0;
+            long resultChars = amount(o, "resultChars", 0);
+            long textTokens = amount(o, "resultTokens", (resultChars + 3) / 4);
+            long imageTokens = amount(o, "imageTokens", 0);
+            long ms = amount(o, "durationMs", 0);
             String tool = o.has("tool") ? string(o.get("tool")) : "?";
+            ToolStats.PerTool before = perTool.get(tool);
+            ToolStats.PerTool call = new ToolStats.PerTool(1, failed ? 1 : 0, textTokens + imageTokens, ms);
+            ToolStats.PerTool after = before == null ? call : before.plus(call);
+            int newErrors = errors + (failed ? 1 : 0);
+            long newChars = within(ToolStats.AMOUNT, chars + resultChars);
+            long newTokens = within(ToolStats.AMOUNT, tokens + textTokens);
+            long newImages = within(ToolStats.AMOUNT, images + imageTokens);
+            long newDuration = within(ToolStats.AMOUNT, duration + ms);
+            within(ToolStats.COUNT, calls + 1L);
+            within(ToolStats.COUNT, newErrors);
+            within(ToolStats.PerTool.CALLS, after.calls());
+            within(ToolStats.AMOUNT, after.tokens());
+            within(ToolStats.AMOUNT, after.durationMs());
             calls++;
-            errors += failed ? 1 : 0;
-            chars += resultChars;
-            tokens += textTokens;
-            images += imageTokens;
-            duration += ms;
-            perTool.merge(tool, new ToolStats.PerTool(1, failed ? 1 : 0, textTokens + imageTokens, ms),
-                    ToolStats.PerTool::plus);
+            errors = newErrors;
+            chars = newChars;
+            tokens = newTokens;
+            images = newImages;
+            duration = newDuration;
+            perTool.put(tool, after);
+        }
+
+        /** The amount {@code key} holds, {@code absent} when the line has none; refused outside the kept range. */
+        private static long amount(JsonObject o, String key, long absent) {
+            if (!o.has(key)) {
+                return absent;
+            }
+            JsonElement e = o.get(key);
+            if (!e.isJsonPrimitive() || !e.getAsJsonPrimitive().isNumber()) {
+                throw new IllegalArgumentException(key + " is not a number: " + e);
+            }
+            BigDecimal value;
+            try {
+                value = e.getAsBigDecimal();
+            } catch (NumberFormatException ex) {
+                throw new IllegalArgumentException(key + " is not a number: " + e, ex);
+            }
+            if (!ToolStats.AMOUNT.holds(value)) {
+                throw new IllegalArgumentException(key + ": " + e + " is not " + ToolStats.AMOUNT.text());
+            }
+            return value.longValueExact();
+        }
+
+        /** {@code total}, refused when {@code range} does not hold it. */
+        private static long within(JsonNumbers.Range range, long total) {
+            if (!range.holds(total)) {
+                throw new IllegalArgumentException(total + " is not " + range.text());
+            }
+            return total;
         }
 
         ToolStats stats() {

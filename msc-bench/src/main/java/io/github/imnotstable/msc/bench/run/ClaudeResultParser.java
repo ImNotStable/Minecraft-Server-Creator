@@ -3,6 +3,7 @@ package io.github.imnotstable.msc.bench.run;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import io.github.imnotstable.msc.bench.JsonNumbers;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
@@ -51,8 +52,9 @@ public final class ClaudeResultParser {
         try {
             return agentResult(result, model, mcpConnected, mcpNotConnected);
         } catch (NotANumber e) {
-            // A count or cost that is not a JSON number ("num_turns":"abc", null, true, {}): the output is as
-            // unreadable as invalid JSON.
+            // A count or cost that is not a JSON number ("num_turns":"abc", null, true, {}), or one results.jsonl
+            // cannot keep (-1 turns, 3000000000 turns, 2.5 turns, -7 tokens, a negative cost; #602): the output is as
+            // unreadable as invalid JSON, and the attempt says so instead of writing a line report refuses.
             return AgentResult.UNKNOWN;
         }
     }
@@ -65,13 +67,13 @@ public final class ClaudeResultParser {
         return new AgentResult(
                 true,
                 bool(result, "is_error"),
-                number(result, "num_turns").intValue(),
-                number(result, "duration_api_ms").longValue(),
-                number(usage, "input_tokens").longValue(),
-                number(usage, "cache_creation_input_tokens").longValue(),
-                number(usage, "cache_read_input_tokens").longValue(),
-                number(usage, "output_tokens").longValue(),
-                number(result, "total_cost_usd").doubleValue(),
+                number(result, "num_turns", AgentResult.TURNS).intValueExact(),
+                number(result, "duration_api_ms", AgentResult.AMOUNT).longValueExact(),
+                number(usage, "input_tokens", AgentResult.AMOUNT).longValueExact(),
+                number(usage, "cache_creation_input_tokens", AgentResult.AMOUNT).longValueExact(),
+                number(usage, "cache_read_input_tokens", AgentResult.AMOUNT).longValueExact(),
+                number(usage, "output_tokens", AgentResult.AMOUNT).longValueExact(),
+                number(result, "total_cost_usd", AgentResult.COST).doubleValue(),
                 result.has("modelUsage") && result.get("modelUsage").isJsonObject()
                         && !result.getAsJsonObject("modelUsage").isEmpty()
                         ? String.join(",", result.getAsJsonObject("modelUsage").keySet())
@@ -153,6 +155,18 @@ public final class ClaudeResultParser {
     }
 
     private static final BigDecimal LONG_MAX = BigDecimal.valueOf(Long.MAX_VALUE);
+
+    /**
+     * The number {@code key} holds, as {@link #number(JsonObject, String)} reads it, and {@link NotANumber} unless
+     * {@code range} holds it: the range {@code results.jsonl} keeps that number in.
+     */
+    static BigDecimal number(JsonObject o, String key, JsonNumbers.Range range) {
+        BigDecimal value = number(o, key);
+        if (!range.holds(value)) {
+            throw new NotANumber();
+        }
+        return value;
+    }
 
     /**
      * The one reader of every number in the agent's output: 0 when {@code key} is absent, its value when it is a JSON

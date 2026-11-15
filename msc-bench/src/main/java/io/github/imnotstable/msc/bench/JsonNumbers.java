@@ -61,6 +61,21 @@ public final class JsonNumbers {
                 throw new IllegalArgumentException("empty range " + min + " to " + max);
             }
         }
+
+        /**
+         * Whether {@code value} is one this range takes: within min and max, and whole when the range is. The one
+         * rule for a number both where msc-bench reads it from a file and where it takes it from a tool's output to
+         * write it (#602), so what a run writes to {@code results.jsonl} its {@code report} reads back.
+         */
+        public boolean holds(BigDecimal value) {
+            return (!whole || value.signum() == 0 || value.stripTrailingZeros().scale() <= 0)
+                    && value.compareTo(min) >= 0 && value.compareTo(max) <= 0;
+        }
+
+        /** Whether the whole number {@code value} is one this range takes. */
+        public boolean holds(long value) {
+            return holds(BigDecimal.valueOf(value));
+        }
     }
 
     private JsonNumbers() {
@@ -101,9 +116,7 @@ public final class JsonNumbers {
                 // an exponent too large for BigDecimal: refused below
             }
         }
-        if (number == null
-                || range.whole() && number.signum() != 0 && number.stripTrailingZeros().scale() > 0
-                || number.compareTo(range.min()) < 0 || number.compareTo(range.max()) > 0) {
+        if (number == null || !range.holds(number)) {
             throw new IllegalArgumentException(key + ": " + written(value) + " is not " + range.text());
         }
         return number;

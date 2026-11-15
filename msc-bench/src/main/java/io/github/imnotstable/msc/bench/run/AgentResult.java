@@ -1,5 +1,7 @@
 package io.github.imnotstable.msc.bench.run;
 
+import io.github.imnotstable.msc.bench.JsonNumbers;
+import io.github.imnotstable.msc.bench.JsonNumbers.Range;
 import java.util.List;
 
 /**
@@ -35,6 +37,17 @@ public record AgentResult(
         List<String> mcpNotConnected) {
 
     public static final AgentResult UNKNOWN = new AgentResult(false, false, 0, 0, 0, 0, 0, 0, 0, "", List.of());
+
+    /*
+     * The values results.jsonl keeps, the one rule its writer (ClaudeResultParser) and its reader (ResultsFile) share
+     * (#602): an agent number outside them makes the output unparsed, never a line report refuses.
+     */
+    /** The range of {@link #turns}. */
+    public static final Range TURNS = JsonNumbers.COUNT;
+    /** The range of {@link #apiDurationMs} and of each token count. */
+    public static final Range AMOUNT = JsonNumbers.AMOUNT;
+    /** The range of {@link #costUsd}. */
+    public static final Range COST = JsonNumbers.COST;
 
     public AgentResult {
         model = model == null ? "" : model;

@@ -1,8 +1,7 @@
 package io.github.imnotstable.msc.bench.run;
 
 import com.google.gson.JsonElement;
-import com.google.gson.JsonParseException;
-import com.google.gson.JsonParser;
+import io.github.imnotstable.msc.bench.StrictJson;
 import io.github.imnotstable.msc.bench.Text;
 import io.github.imnotstable.msc.bench.UserJson;
 import java.io.IOException;
@@ -139,10 +138,14 @@ public record BenchConfig(
     public static BenchConfig load(Path file, Path home) throws IOException {
         BenchConfig raw;
         List<String> problems;
+        String text = Text.readOwn(file);
+        if (text.isBlank()) {
+            throw new IOException("Empty bench config " + file);
+        }
         try {
-            JsonElement parsed = JsonParser.parseString(Text.readOwn(file));
-            if (parsed.isJsonNull()) {
-                throw new IOException("Empty bench config " + file);
+            JsonElement parsed = StrictJson.parse(text, "");
+            if (!parsed.isJsonObject()) {
+                throw new IllegalArgumentException("is not a JSON object");
             }
             problems = new ArrayList<>();
             UserJson root = null;
@@ -152,7 +155,7 @@ public record BenchConfig(
                 problems.add(e.getMessage());
             }
             raw = root == null ? null : read(root, problems);
-        } catch (JsonParseException | IllegalStateException e) {
+        } catch (IllegalArgumentException | IllegalStateException e) {
             throw new IOException("Bad bench config " + file + ": " + e.getMessage(), e);
         }
         if (raw != null) {

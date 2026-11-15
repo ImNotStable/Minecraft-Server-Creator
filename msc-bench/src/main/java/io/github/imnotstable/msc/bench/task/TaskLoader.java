@@ -1,8 +1,9 @@
 package io.github.imnotstable.msc.bench.task;
 
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
 import io.github.imnotstable.msc.bench.JsonNumbers;
+import io.github.imnotstable.msc.bench.StrictJson;
 import io.github.imnotstable.msc.bench.Text;
 import io.github.imnotstable.msc.bench.UserJson;
 import io.github.imnotstable.msc.bench.check.Check;
@@ -67,11 +68,16 @@ public final class TaskLoader {
 
     public static TaskDef load(Path taskDir) throws IOException {
         String id = taskDir.getFileName().toString();
+        String text = Text.readOwn(taskDir.resolve("task.json"));
         JsonObject tree;
         try {
-            tree = JsonParser.parseString(Text.readOwn(taskDir.resolve("task.json"))).getAsJsonObject();
-        } catch (RuntimeException e) {
-            throw new IOException("Task " + id + ": task.json is not a JSON object: " + e.getMessage(), e);
+            JsonElement parsed = StrictJson.parse(text, "task.json ");
+            if (!parsed.isJsonObject()) {
+                throw new IllegalArgumentException("task.json is not a JSON object");
+            }
+            tree = parsed.getAsJsonObject();
+        } catch (IllegalArgumentException e) {
+            throw new IOException("Task " + id + ": " + e.getMessage(), e);
         }
         try {
             UserJson json = UserJson.of(tree, "task.json ", KEYS);
