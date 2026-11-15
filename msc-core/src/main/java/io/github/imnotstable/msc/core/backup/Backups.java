@@ -32,9 +32,11 @@ public final class Backups {
     private static final String PART = ".part";
     private static final java.util.regex.Pattern NAME = java.util.regex.Pattern.compile("\\d{8}-\\d{6}-[a-z0-9-]+");
     static final String STAGE = ".msc-restore";
+    /** In each backup: its place in the order backups were taken, so two from one second sort right (#573). */
+    private static final String ORDER = ".order";
 
-    /** A kept backup: its folder name, the world folders it holds and their bytes. */
-    public record Backup(String name, List<String> worlds, long bytes) {
+    /** A kept backup: its folder name, the world folders it holds, their bytes, and its place in the order taken. */
+    public record Backup(String name, List<String> worlds, long bytes, long order) {
         /** "name (world, world_nether; 12.3 MB)". */
         public String describe() {
             return name + " (" + String.join(", ", worlds) + "; " + mb(bytes) + ")";
@@ -68,7 +70,10 @@ public final class Backups {
         Path part = dir.resolve(name + PART);
         Trees.delete(part);
         long bytes = 0;
+        long order = list().stream().mapToLong(Backup::order).max().orElse(0) + 1;
         try {
+            Files.createDirectories(part);
+            Files.writeString(part.resolve(ORDER), order + "\n");
             for (String w : worlds) {
                 bytes += Trees.copy(serverDir.resolve(w), part.resolve(w));
             }
@@ -78,40 +83,63 @@ public final class Backups {
             throw e;
         }
         prune(name, keep);
-        return new Backup(name, worlds, bytes);
+        return new Backup(name, worlds, bytes, order);
     }
 
-    /** The kept backups, newest first. */
+    /** The kept backups, newest first: in the order they were taken, then by name (backups without an order). */
     public List<Backup> list() throws IOException {
         List<Backup> out = new ArrayList<>();
         if (!Files.isDirectory(dir)) {
             return out;
         }
         try (Stream<Path> children = Files.list(dir)) {
-            for (Path p : children.sorted(Comparator.reverseOrder()).toList()) {
+            for (Path p : children.toList()) {
                 if (Files.isDirectory(p) && NAME.matcher(p.getFileName().toString()).matches()) {
-                    out.add(new Backup(p.getFileName().toString(), WorldFolders.in(p), Trees.size(p)));
+                    out.add(new Backup(p.getFileName().toString(), WorldFolders.in(p), Trees.size(p), order(p)));
                 }
             }
         }
+        out.sort(Comparator.comparingLong(Backup::order).thenComparing(Backup::name).reversed());
         return out;
     }
 
-    /** The backup named {@code text}, else the newest whose name contains it. */
+    /**
+     * The backup named {@code text}, else the one backup whose name contains it. A blank text, or one that more than
+     * one name contains, is refused: a rollback replaces the whole world, so it never guesses (#573).
+     */
     public Backup find(String text) throws IOException {
         List<Backup> all = list();
+        String kept = all.isEmpty() ? "none taken yet"
+                : "kept: " + String.join(", ", all.stream().map(Backup::name).toList());
+        if (text.isBlank()) {
+            throw new ToolException("backup takes list, save [label], or a backup name; " + kept);
+        }
+        List<Backup> matches = new ArrayList<>();
         for (Backup b : all) {
             if (b.name().equals(text)) {
                 return b;
             }
-        }
-        for (Backup b : all) {
             if (b.name().contains(text)) {
-                return b;
+                matches.add(b);
             }
         }
-        throw new ToolException("no backup " + text + (all.isEmpty() ? "; none taken yet"
-                : "; kept: " + String.join(", ", all.stream().map(Backup::name).toList())));
+        if (matches.size() == 1) {
+            return matches.getFirst();
+        }
+        if (matches.isEmpty()) {
+            throw new ToolException("no backup " + text + "; " + kept);
+        }
+        throw new ToolException("backup " + text + " matches " + matches.size() + ": "
+                + String.join(", ", matches.stream().map(Backup::name).toList()) + "; give the whole name");
+    }
+
+    /** A backup folder's {@link #ORDER}, or 0 when it has none or it is unreadable. */
+    private static long order(Path backup) {
+        try {
+            return Long.parseLong(Files.readString(backup.resolve(ORDER)).strip());
+        } catch (IOException | NumberFormatException e) {
+            return 0;
+        }
     }
 
     /** The newest backup's age in seconds, or -1 when there is none. */
