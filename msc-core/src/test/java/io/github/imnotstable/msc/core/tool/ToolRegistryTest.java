@@ -44,6 +44,50 @@ class ToolRegistryTest {
                 .hasSizeLessThanOrEqualTo(Budget.DEFAULT_CHARS);
     }
 
+    /**
+     * #607: the one-time notice counts toward the cap of the result it goes in front of, so the first result of a
+     * session obeys the cap too, and a result its tool budgeted to the full cap keeps its closing line.
+     */
+    @Test
+    void theFirstResultWithTheNoticeInFrontObeysTheCapToo() {
+        ToolRegistry registry = new ToolRegistry(new ToolLog(null));
+        String big = "line of text\n".repeat(10_000);
+        Schema sized = Schema.of().opt("maxChars", "integer", "Result size cap. Default 6000");
+        registry.add("plain", "Plain.", Schema.of(), args -> big);
+        registry.add("sized", "Sized.", sized, args -> big);
+        registry.add("budgeted", "Budgeted.", sized, args -> new Budget.Parts().cut(n -> Budget.truncate(big, n, "x"))
+                .text(Budget.of(args), "[done: 10000 lines]", "x"));
+        registry.add("fails", "Fails.", Schema.of(), args -> {
+            throw new ToolException(big);
+        });
+        registry.add("short", "Short.", Schema.of(), args -> "pong");
+        for (String tool : new String[] {"plain", "sized", "budgeted", "fails", "short", "missing"}) {
+            for (int max : new int[] {Budget.MIN_CHARS, 300, Budget.DEFAULT_CHARS, Budget.MAX_CHARS}) {
+                for (String note : new String[] {"warning: stale", "warning: " + "w".repeat(400), "n\n".repeat(20_000)}) {
+                    JsonObject args = new JsonObject();
+                    args.addProperty("maxChars", max);
+                    int cap = tool.equals("plain") || tool.equals("fails") || tool.equals("short") || tool.equals("missing")
+                            ? Budget.DEFAULT_CHARS : max;
+                    registry.noticeOnce(note);
+                    String text = registry.call(tool, args).text();
+                    assertThat(text).as("%s, maxChars %d, notice of %d", tool, max, note.length())
+                            .hasSizeLessThanOrEqualTo(cap).startsWith(note.substring(0, 1));
+                    if (tool.equals("budgeted")) {
+                        assertThat(text).endsWith("\n[done: 10000 lines]");
+                    }
+                }
+            }
+        }
+        registry.noticeOnce("warning: stale");
+        assertThat(registry.call("short", new JsonObject()).text()).isEqualTo("warning: stale\npong");
+        JsonObject args = new JsonObject();
+        args.addProperty("maxChars", 200);
+        registry.noticeOnce("warning: " + "w".repeat(400));
+        // The issue's repro: was 595 characters.
+        assertThat(registry.call("sized", args).text()).hasSizeLessThanOrEqualTo(200).contains("msc_status shows it all.")
+                .contains("line of text");
+    }
+
     @Test
     void aCutResultIncludingItsClosingLineFitsTheCap() {
         String text = "x".repeat(50) + "\n" + "y".repeat(10_000);

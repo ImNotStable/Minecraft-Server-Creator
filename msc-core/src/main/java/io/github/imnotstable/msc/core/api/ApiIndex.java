@@ -22,10 +22,41 @@ import java.util.stream.Stream;
  * what does it take" in a few lines, so the AI does not read Javadoc pages or decompile.
  */
 public final class ApiIndex {
-    /** The event base types of each platform; Forge's EventBus 7 events implement one of three. */
-    private static final List<String> EVENT_ROOTS = List.of("org.bukkit.event.Event", "net.neoforged.bus.api.Event",
-            "net.minecraftforge.eventbus.api.event.RecordEvent", "net.minecraftforge.eventbus.api.event.MutableEvent",
-            "net.minecraftforge.eventbus.api.event.InheritableEvent", "net.minestom.server.event.Event");
+    /** How one agent family's API marks an event. */
+    @FunctionalInterface
+    public interface EventRule {
+        boolean test(ApiIndex index, ClassInfo c);
+
+        /** A subtype, direct or not, of one of {@code roots}. */
+        static EventRule subtypeOf(String... roots) {
+            List<String> all = List.of(roots);
+            return (index, c) -> all.stream().anyMatch(root -> index.isA(c, root));
+        }
+
+        /** A type of one of {@code kinds} under package {@code prefix} whose simple name ends in one of {@code suffixes}. */
+        static EventRule named(String prefix, Set<String> kinds, String... suffixes) {
+            List<String> all = List.of(suffixes);
+            return (index, c) -> c.name().startsWith(prefix) && kinds.contains(c.kind())
+                    && all.stream().anyMatch(c.simpleName()::endsWith);
+        }
+    }
+
+    /**
+     * The event rule of each agent family {@link #findJars} handles (a {@link
+     * io.github.imnotstable.msc.core.server.Platform#agent()} value), kept only here (#114, #606). Fabric API declares
+     * its events as fields of {@code ...Events} and {@code ...Callback} types. Velocity's events share no supertype,
+     * so they are the classes named {@code ...Event} in its event package; its {@code ResultedEvent} interface is not one.
+     */
+    public static final Map<String, EventRule> EVENT_RULES = Map.of(
+            "paper", EventRule.subtypeOf("org.bukkit.event.Event"),
+            "fabric", EventRule.named("net.fabricmc.fabric.api.", Set.of("class", "interface"), "Events", "Callback"),
+            "neoforge", EventRule.subtypeOf("net.neoforged.bus.api.Event"),
+            // Forge's EventBus 7 events implement one of three.
+            "forge", EventRule.subtypeOf("net.minecraftforge.eventbus.api.event.RecordEvent",
+                    "net.minecraftforge.eventbus.api.event.MutableEvent",
+                    "net.minecraftforge.eventbus.api.event.InheritableEvent"),
+            "minestom", EventRule.subtypeOf("net.minestom.server.event.Event"),
+            "velocity", EventRule.named("com.velocitypowered.api.event.", Set.of("class", "record"), "Event"));
 
     private final Map<String, ClassInfo> classes = new LinkedHashMap<>();
     private final List<Path> jars;
@@ -103,10 +134,11 @@ public final class ApiIndex {
                 addNewest(out, files.resolve("net.minestom").resolve("minestom"));
                 addAdventure(out, files);
             }
-            default -> {
+            case "paper" -> {
                 addNewest(out, files.resolve("io.papermc.paper").resolve("paper-api"));
                 addAdventure(out, files);
             }
+            default -> throw new IllegalArgumentException("no API jars known for agent family " + platform);
         }
         return out;
     }
@@ -175,16 +207,9 @@ public final class ApiIndex {
         return false;
     }
 
-    /**
-     * True for a platform event: a subtype of the Bukkit, NeoForge bus, Forge EventBus 7 or Minestom event root,
-     * or for Fabric, a {@code ...Events} or {@code ...Callback} type of Fabric API (it declares its events as fields).
-     */
+    /** True for an event of any agent family's API ({@link #EVENT_RULES}), so {@code MSC_API_JARS} of any mix works. */
     public boolean isEvent(ClassInfo c) {
-        if (c.name().startsWith("net.fabricmc.fabric.api.")
-                && (c.simpleName().endsWith("Events") || c.simpleName().endsWith("Callback"))) {
-            return true;
-        }
-        return EVENT_ROOTS.stream().anyMatch(root -> isA(c, root));
+        return EVENT_RULES.values().stream().anyMatch(rule -> rule.test(this, c));
     }
 
     private record Hit(int score, String text) {

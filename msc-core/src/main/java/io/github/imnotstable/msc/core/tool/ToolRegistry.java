@@ -6,6 +6,7 @@ import io.github.imnotstable.msc.protocol.transport.OpException;
 import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 
 /** All tools by name. Every call goes through {@link #call}, which turns failures into text and logs the call. */
 public final class ToolRegistry {
@@ -23,11 +24,14 @@ public final class ToolRegistry {
         this.log = log;
     }
 
-    private volatile String notice;
+    private final AtomicReference<String> notice = new AtomicReference<>();
 
-    /** A note put in front of the next tool result only, so setup warnings reach the AI once without a call. */
+    /**
+     * A note put in front of the next tool result only, so setup warnings reach the AI once without a call. It counts
+     * toward that result's cap ({@link #fit}).
+     */
     public void noticeOnce(String text) {
-        notice = text;
+        notice.set(text);
     }
 
     public ToolRegistry add(Tool tool) {
@@ -80,19 +84,43 @@ public final class ToolRegistry {
     }
 
     /**
-     * The one cap rule for every result ({@link Budget#cap}). A tool spends the cap as one budget ({@link Budget.Parts}
+     * The one cap rule for every result ({@link Budget#cap}), applied by {@link #fit}. A tool spends the cap as one budget ({@link Budget.Parts}
      * for a result of several parts), so its own cuts keep their hints and closing lines; this cut is only the safety
      * net for a result that came out longer anyway. Its hint never says to raise maxChars: a result that outgrew its
      * cap would outgrow a larger one too (#473).
      */
-    private static String capped(Tool tool, Args args, String text) {
-        int cap;
+    private static int cap(Tool tool, Args args) {
         try {
-            cap = Budget.cap(tool, args);
+            return tool == null ? Budget.DEFAULT_CHARS : Budget.cap(tool, args);
         } catch (ToolException e) {
-            cap = Budget.DEFAULT_CHARS;
+            return Budget.DEFAULT_CHARS;
         }
-        return Budget.truncate(text, cap, "Narrow the call.");
+    }
+
+    private static final String NARROW = "Narrow the call.";
+
+    /**
+     * The final text of a call in at most {@code cap} characters: the result, with the one-time {@code notice} (or
+     * null) in front of it (#607). Both share the cap as one budget ({@link Budget#split}); a notice cut to its share
+     * points at msc_status, which repeats it, and a result cut to its share keeps its last line, the closing line a
+     * tool's own budget put there.
+     */
+    static String fit(String notice, String result, int cap) {
+        if (notice == null) {
+            return Budget.truncate(result, cap, NARROW);
+        }
+        int[] shares = Budget.split(cap - 1, notice.length(), result.length());
+        String head = Budget.truncate(notice, shares[0], "msc_status shows it all.");
+        int room = head.isEmpty() ? cap : cap - head.length() - 1;
+        String body = result;
+        if (result.length() > room) {
+            int lastBreak = result.lastIndexOf('\n');
+            String last = result.substring(lastBreak + 1);
+            body = lastBreak > 0 && !last.isBlank() && last.length() + 1 <= room / 2
+                    ? Budget.truncate(result.substring(0, lastBreak), room - last.length() - 1, NARROW) + "\n" + last
+                    : Budget.truncate(result, room, NARROW);
+        }
+        return head.isEmpty() ? body : head + "\n" + body;
     }
 
     public Result call(String name, JsonObject arguments) {
@@ -124,13 +152,10 @@ public final class ToolRegistry {
             } catch (Exception e) {
                 text = "error: internal: " + e;
             }
-            text = capped(tool, new Args(args), text);
         }
-        String pending = notice;
-        if (pending != null) {
-            notice = null;
-            text = pending + "\n" + text;
-        }
+        String pending = notice.getAndSet(null);
+        // The one place every result passes: the cap applies to the final text, the notice included.
+        text = fit(pending, text, cap(tool, new Args(args)));
         long ms = (System.nanoTime() - start) / 1_000_000;
         log.record(name, ok, ms, args.toString().length(), text.length(), ok ? null : text,
                 output == null ? 0 : output.imageTokens());

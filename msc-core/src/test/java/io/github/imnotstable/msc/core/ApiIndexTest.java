@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.imnotstable.msc.core.api.ApiIndex;
+import io.github.imnotstable.msc.core.server.Platform;
 import io.github.imnotstable.msc.core.tool.ToolException;
 import java.io.InputStream;
 import java.lang.classfile.ClassFile;
@@ -12,6 +13,7 @@ import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import java.util.jar.JarEntry;
 import java.util.jar.JarOutputStream;
 import org.junit.jupiter.api.BeforeAll;
@@ -105,6 +107,60 @@ class ApiIndexTest {
                 "a.BukkitJoinEvent", "b.NeoJoinEvent", "c.ForgeJoinEvent", "c.ForgeJoinMutable",
                 "c.ForgeJoinInheritable", "d.MinestomJoinEvent", "net.fabricmc.fabric.api.networking.v1.JoinEvents",
                 "net.fabricmc.fabric.api.event.player.JoinCallback");
+    }
+
+    /** One agent family's API as {@link ApiIndex#findJars} finds it in the Gradle cache, with one real-shaped event. */
+    private record Family(String jar, String event, String superclass, String iface) {
+    }
+
+    /**
+     * #606: every platform's {@code api_search kind=event} finds its events in the jars {@link ApiIndex#findJars}
+     * picks, and not a look-alike that is no event. A platform with a new agent family needs a row here.
+     */
+    private static final Map<String, Family> FAMILIES = Map.of(
+            "paper", new Family("io.papermc.paper/paper-api/1/a/paper-api-1.jar",
+                    "org.bukkit.event.player.PlayerJoinEvent", "org.bukkit.event.Event", null),
+            "fabric", new Family("net.fabricmc.fabric-api/fabric-networking-api-v1/1/a/fabric-networking-api-v1-1.jar",
+                    "net.fabricmc.fabric.api.networking.v1.ServerJoinEvents", "java.lang.Object", null),
+            "neoforge", new Family("net.neoforged/neoforge/1/a/neoforge-1.jar",
+                    "net.neoforged.neoforge.event.entity.player.PlayerJoinEvent", "net.neoforged.bus.api.Event", null),
+            "forge", new Family("net.minecraftforge/forge/1/a/forge-1.jar", "net.minecraftforge.event.PlayerJoinEvent",
+                    "java.lang.Record", "net.minecraftforge.eventbus.api.event.RecordEvent"),
+            "minestom", new Family("net.minestom/minestom/1/a/minestom-1.jar",
+                    "net.minestom.server.event.player.PlayerJoinEvent", "java.lang.Object", "net.minestom.server.event.Event"),
+            // Velocity's events share no supertype: PostLoginEvent is a plain final class.
+            "velocity", new Family("com.velocitypowered/velocity-api/1/a/velocity-api-1.jar",
+                    "com.velocitypowered.api.event.connection.PostJoinEvent", "java.lang.Object", null));
+
+    @Test
+    void eachPlatformsEventSearchFindsItsEvents(@TempDir Path gradleHome) throws Exception {
+        for (Map.Entry<String, Family> e : FAMILIES.entrySet()) {
+            Family f = e.getValue();
+            Path jar = gradleHome.resolve("caches/modules-2/files-2.1").resolve(f.jar());
+            Files.createDirectories(jar.getParent());
+            String pkg = f.event().substring(0, f.event().lastIndexOf('.'));
+            try (OutputStream out = Files.newOutputStream(jar); JarOutputStream zip = new JarOutputStream(out)) {
+                synthetic(zip, f.event(), f.superclass(), f.iface());
+                synthetic(zip, pkg + ".JoinHelper", "java.lang.Object", null);
+                // Named like an event but an interface, as Velocity's ResultedEvent is.
+                syntheticInterface(zip, pkg + ".JoinResultedEvent");
+            }
+        }
+        for (Platform platform : Platform.values()) {
+            Family f = FAMILIES.get(platform.agent());
+            assertThat(f).as("no event fixture for %s's agent family %s", platform, platform.agent()).isNotNull();
+            String found = ApiIndex.load(ApiIndex.findJars(gradleHome, platform.agent())).search("join", "event", 20, 100);
+            assertThat(found).as(platform.id()).matches("(class|record) " + java.util.regex.Pattern.quote(f.event()));
+        }
+    }
+
+    private static void syntheticInterface(JarOutputStream zip, String name) throws Exception {
+        byte[] bytes = ClassFile.of().build(ClassDesc.of(name), cb -> cb
+                .withFlags(ClassFile.ACC_PUBLIC | ClassFile.ACC_INTERFACE | ClassFile.ACC_ABSTRACT)
+                .withSuperclass(ClassDesc.of("java.lang.Object")));
+        zip.putNextEntry(new JarEntry(name.replace('.', '/') + ".class"));
+        zip.write(bytes);
+        zip.closeEntry();
     }
 
     private static void synthetic(JarOutputStream zip, String name, String superclass, String iface) throws Exception {
