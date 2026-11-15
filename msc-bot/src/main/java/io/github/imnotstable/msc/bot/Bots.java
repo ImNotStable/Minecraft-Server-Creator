@@ -35,6 +35,16 @@ public final class Bots {
     }
 
     /**
+     * Reads every script line as {@link Bot#run} will, without a server, so a caller refuses a bad one before anything
+     * joins (#717). Every protocol's bot reads lines with its own copy of the same classes.
+     *
+     * @throws IllegalArgumentException naming the first line that is not an action
+     */
+    public static void check(List<String> lines) {
+        lines.forEach(Script::parse);
+    }
+
+    /**
      * Ask the server which version it runs, then join with the matching client.
      *
      * @param protocols folder of version subfolders for older protocols, or null for the built-in one only
