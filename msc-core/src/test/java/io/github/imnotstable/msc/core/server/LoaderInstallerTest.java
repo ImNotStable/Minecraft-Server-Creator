@@ -270,4 +270,16 @@ class LoaderInstallerTest {
         assertThat(LoaderInstaller.tail("a\n\nb\nc\nd\n", 2)).isEqualTo("c\nd");
         assertThat(LoaderInstaller.latestBuild("{\"build\":\"7\"}")).isEqualTo("7");
     }
+
+    /** #611: long installer lines are cut from the start, so the last one, usually the reason, stays. */
+    @Test
+    void aLongInstallerTailKeepsItsLastLine() {
+        StringBuilder output = new StringBuilder();
+        for (int i = 0; i < 15; i++) {
+            output.append("download ").append(i).append(' ').append("x".repeat(400)).append('\n');
+        }
+        output.append("Failed to download the server jar");
+        assertThat(LoaderInstaller.tail(output.toString(), 15)).hasSizeLessThanOrEqualTo(LoaderInstaller.TAIL_CHARS)
+                .startsWith("[truncated: ").endsWith("\nFailed to download the server jar");
+    }
 }

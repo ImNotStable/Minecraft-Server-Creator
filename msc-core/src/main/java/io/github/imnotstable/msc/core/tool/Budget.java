@@ -89,6 +89,62 @@ public final class Budget {
         return Math.max(1, dropped);
     }
 
+    /** Length of the opening line of a cut tail without its hint: the words, ten-digit numbers, the line break. */
+    private static final int TAIL_MARK_CHARS = "[truncated:  earlier lines,  chars. ]\n".length() + 20;
+
+    /**
+     * The end of a log tail (#611): like {@link #truncate}, but keeps the end of the text, the newest lines, and says
+     * at the top how much earlier text was dropped: {@code [truncated: N earlier lines, M chars. hint]}. Starts at a
+     * line boundary when one is in reach. The result is never longer than {@code maxChars} (0 when negative): when
+     * the opening line with its hint does not fit, a short {@code [M chars cut]} line takes its place; when even that
+     * does not fit, the result is the plain end of the text. Never splits a surrogate pair.
+     */
+    public static String tail(String text, int maxChars, String hint) {
+        int max = Math.max(0, maxChars);
+        if (text.length() <= max) {
+            return text;
+        }
+        int keep = max - (TAIL_MARK_CHARS + hint.length());
+        if (keep >= 0) {
+            int from = startAt(text, keep);
+            return "[truncated: " + earlierLines(text, from) + " earlier lines, " + from + " chars. " + hint + "]"
+                    + (from < text.length() ? "\n" : "") + text.substring(from);
+        }
+        keep = max - (BRIEF_CHARS + String.valueOf(text.length()).length());
+        if (keep >= 0) {
+            int from = startAt(text, keep);
+            return "[" + from + " chars cut]" + (from < text.length() ? "\n" : "") + text.substring(from);
+        }
+        return text.substring(plainStart(text, text.length() - max));
+    }
+
+    /** Where to start {@code text} to keep at most {@code keep} characters of its end: a line start, else a plain cut. */
+    private static int startAt(String text, int keep) {
+        int from = text.length() - keep;
+        if (from > 0 && text.charAt(from - 1) == '\n') {
+            return from;
+        }
+        int line = text.indexOf('\n', from);
+        return line >= 0 && line + 1 < text.length() ? line + 1 : plainStart(text, from);
+    }
+
+    /** {@code from}, or one later when it would start inside a surrogate pair (never half an emoji). */
+    private static int plainStart(String text, int from) {
+        return from > 0 && from < text.length() && Character.isLowSurrogate(text.charAt(from))
+                && Character.isHighSurrogate(text.charAt(from - 1)) ? from + 1 : from;
+    }
+
+    /** Lines before {@code from}, wholly or partly; at least 1. */
+    private static int earlierLines(String text, int from) {
+        int lines = text.charAt(from - 1) == '\n' ? 0 : 1;
+        for (int i = 0; i < from; i++) {
+            if (text.charAt(i) == '\n') {
+                lines++;
+            }
+        }
+        return Math.max(1, lines);
+    }
+
     /** The hint of a cut a larger {@code maxChars} undoes: "Raise maxChars (at most 24000) to see more." */
     public static final String RAISE = "Raise maxChars (at most " + MAX_CHARS + ") to see more.";
 

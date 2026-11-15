@@ -2,6 +2,7 @@ package io.github.imnotstable.msc.core.server;
 
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import io.github.imnotstable.msc.core.tool.Budget;
 import io.github.imnotstable.msc.core.tool.ToolException;
 import io.github.imnotstable.msc.process.AtomicFile;
 import java.io.IOException;
@@ -289,9 +290,14 @@ public final class LoaderInstaller {
                 + (tail.isEmpty() ? "" : ":\n" + tail));
     }
 
+    /** Most characters of installer output an error shows, so the tool's cap never cuts its newest lines. */
+    static final int TAIL_CHARS = Budget.DEFAULT_CHARS / 2;
+
+    /** The last {@code lines} non-blank lines of {@code text}, cut from the start to {@link #TAIL_CHARS} (#611). */
     static String tail(String text, int lines) {
         List<String> all = text.lines().filter(l -> !l.isBlank()).toList();
-        return String.join("\n", all.subList(Math.max(0, all.size() - lines), all.size()));
+        return Budget.tail(String.join("\n", all.subList(Math.max(0, all.size() - lines), all.size())), TAIL_CHARS,
+                "Earlier output left out.");
     }
 
     private void fetch(URI uri, Path jar, String notFound) throws IOException, InterruptedException {

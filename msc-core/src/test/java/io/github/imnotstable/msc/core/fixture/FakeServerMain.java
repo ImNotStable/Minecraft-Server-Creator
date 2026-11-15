@@ -29,6 +29,18 @@ public final class FakeServerMain {
             System.out.println("[12:00:01 ERROR]: Failed to start the minecraft server");
             System.exit(1);
         }
+        // long-lines.flag: ten clean lines of 2,000 characters, more than a default cap holds (#611).
+        // long-exit.flag: the same, then the server exits before it is ready.
+        boolean longExit = Files.exists(Path.of("long-exit.flag"));
+        if (longExit || Files.exists(Path.of("long-lines.flag"))) {
+            for (int i = 0; i < 10; i++) {
+                System.out.println("[12:00:01 INFO]: step " + i + " " + "s".repeat(2000));
+            }
+            if (longExit) {
+                System.out.flush();
+                System.exit(0);
+            }
+        }
         if (Files.exists(Path.of("plugins", "demo.jar"))) {
             System.out.println("[12:00:01 INFO]: [Demo] Enabling Demo v" + Files.readString(Path.of("plugins", "demo.jar")).trim());
         }
@@ -79,6 +91,12 @@ public final class FakeServerMain {
                 break;
             }
             System.out.println("[12:00:05 INFO]: console: " + line);
+            // "spam": ten more lines of 1,000 characters, more than a command's output holds (#611).
+            if (line.equals("spam")) {
+                for (int i = 0; i < 10; i++) {
+                    System.out.println("[12:00:05 INFO]: spam " + i + " " + "s".repeat(1000));
+                }
+            }
             // Like vanilla's save-all; no-save.flag: a server that never confirms it.
             if (line.equals("save-all flush") && !Files.exists(Path.of("no-save.flag"))) {
                 System.out.println("[12:00:05 INFO]: Saved the game");

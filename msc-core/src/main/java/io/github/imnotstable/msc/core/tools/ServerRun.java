@@ -300,7 +300,7 @@ final class ServerRun {
             out.setLength(0);
             if (analysis.clean()) {
                 String tail = LogText.tail(lines, 15);
-                parts.add("\nlast lines:\n").cut(n -> Budget.truncate(tail, n, "Use server_logs to see more."));
+                parts.add("\nlast lines:\n").cut(n -> Budget.tail(tail, n, "Use server_logs to see more."));
             }
         } else {
             out.append("server not ready after ").append(timeoutSeconds).append("s (still starting)\n");
