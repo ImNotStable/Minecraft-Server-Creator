@@ -16,7 +16,6 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 
@@ -32,7 +31,8 @@ import java.util.regex.PatternSyntaxException;
  * ({@link IllegalStateException}), so the key set and the reads cannot drift apart.
  *
  * <p>An object {@link #filled} with placeholder values fills {@code {name}} in every string it reads, at any depth
- * (#578): a regex gets each value quoted, so it matches the value literally. Since every string read goes through
+ * (#578): a regex gets each value quoted, so it matches the value literally, in one pass that leaves escape sequences
+ * such as {@code \p{L}} as written (#588). Since every string read goes through
  * here, no reader can leave a key unfilled.
  */
 public final class UserJson {
@@ -40,16 +40,14 @@ public final class UserJson {
     private final JsonObject tree;
     private final String at;
     private final List<String> allowed;
-    /** The placeholder values filled into every string read, and the same quoted for regexes; empty when not filled. */
+    /** The placeholder values filled into every string read; empty when not filled. */
     private final Map<String, String> values;
-    private final Map<String, String> quoted;
 
     private UserJson(JsonObject tree, String at, Keys keys) {
         this.tree = tree;
         this.at = at;
         this.allowed = keys.of(this);
         this.values = Map.of();
-        this.quoted = Map.of();
         for (String field : tree.keySet()) {
             if (!allowed.contains(field)) {
                 throw new IllegalArgumentException(key(field) + ": unknown key; the keys are " + allowed);
@@ -62,9 +60,6 @@ public final class UserJson {
         this.at = at;
         this.allowed = keysFrom.allowed;
         this.values = values;
-        Map<String, String> quoted = new LinkedHashMap<>();
-        values.forEach((name, value) -> quoted.put(name, Pattern.quote(value)));
-        this.quoted = Collections.unmodifiableMap(quoted);
     }
 
     /**
@@ -279,7 +274,7 @@ public final class UserJson {
     /** The regex {@code field} compiled with {@code flags}, or null when absent; a string that is no regex is refused. */
     public Pattern pattern(String field, int flags) {
         String regex = rawString(field);
-        return regex == null ? null : compile(fill(regex, quoted), key(field), flags);
+        return regex == null ? null : compile(regex, key(field), flags);
     }
 
     /** The list of regexes {@code field} compiled with {@code flags}, empty when absent; entry {@code i} is {@code field[i]}. */
@@ -287,7 +282,7 @@ public final class UserJson {
         List<String> regexes = Objects.requireNonNullElse(rawStrings(field), List.of());
         List<Pattern> out = new ArrayList<>();
         for (int i = 0; i < regexes.size(); i++) {
-            out.add(compile(fill(regexes.get(i), quoted), key(field) + "[" + i + "]", flags));
+            out.add(compile(regexes.get(i), key(field) + "[" + i + "]", flags));
         }
         return out;
     }
@@ -331,13 +326,10 @@ public final class UserJson {
         return paths;
     }
 
-    /** A {@code {name}} left after filling: no regex syntax (a repetition takes digits), so it matches as written. */
-    private static final Pattern NAME = Pattern.compile("(?<!\\\\)\\{[A-Za-z_][A-Za-z0-9._-]*}");
-
-    private static Pattern compile(String regex, String key, int flags) {
+    /** {@code regex} as written, filled with this object's values ({@link Placeholders#fillRegex}) and compiled. */
+    private Pattern compile(String regex, String key, int flags) {
         try {
-            return Pattern.compile(NAME.matcher(regex).replaceAll(m -> Matcher.quoteReplacement(
-                    Pattern.quote(m.group()))), flags);
+            return Pattern.compile(Placeholders.fillRegex(regex, values), flags);
         } catch (PatternSyntaxException e) {
             throw new IllegalArgumentException(key + ": " + quoted(regex)
                     + " is not a regex: " + firstLine(e.getDescription())

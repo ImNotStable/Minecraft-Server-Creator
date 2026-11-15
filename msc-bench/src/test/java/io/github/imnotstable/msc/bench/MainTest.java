@@ -13,8 +13,6 @@ import io.github.imnotstable.msc.process.rcon.FakeRconServer;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.PrintStream;
-import java.net.InetAddress;
-import java.net.ServerSocket;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -49,9 +47,8 @@ class MainTest {
         Files.writeString(home.resolve("eula.json"), """
                 {"accepted":true,"eula":"https://aka.ms/MinecraftEULA","acceptedBy":"owner","acceptedAt":"2026-11-12T00:00:00Z"}
                 """);
-        int port = freePort();
-        try (ClosedPort gamePort = ClosedPort.reserve()) {
-            checkWithServer(task, home, port, gamePort.port());
+        try (HandedPort rconPort = HandedPort.reserve(); ClosedPort gamePort = ClosedPort.reserve()) {
+            checkWithServer(task, home, rconPort.port(), gamePort.port());
         }
     }
 
@@ -197,12 +194,6 @@ class MainTest {
     void modeAndTaskNamesAreReadWithoutSurroundingSpaces() {
         // "--modes baseline, baseline" passed the repeat check as two different names.
         assertThat(RunSelection.names("--modes", "baseline , toolset", "mode")).containsExactly("baseline", "toolset");
-    }
-
-    private static int freePort() throws IOException {
-        try (ServerSocket socket = new ServerSocket(0, 1, InetAddress.getLoopbackAddress())) {
-            return socket.getLocalPort();
-        }
     }
 
     @ParameterizedTest

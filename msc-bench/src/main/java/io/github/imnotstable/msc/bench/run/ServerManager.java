@@ -171,22 +171,24 @@ public final class ServerManager implements AutoCloseable {
      * whatever its platform. A server left on them (a run cut short, a server an agent started outside its own process
      * tree, a Minestom server, which has no RCON) is stopped, so the setup commands and checks cannot reach another
      * workspace's world and a check's own server can bind the game port: first with {@code stop} over RCON, then, if
-     * the ports are still taken, by killing the processes that belong to {@code leftoversIn} (an attempt folder, or the
-     * run's folder of attempts; {@link AttemptProcesses}; null to kill nothing). Throws, naming the port, when they
-     * stay taken.
+     * the ports are still taken, by killing the processes {@code processes} started for an attempt in
+     * {@code leftoversIn} (an attempt folder, or the run's folder of attempts; {@link AttemptProcesses}; either null to
+     * kill nothing). Throws, naming the port, when they stay taken.
      */
-    public static void clearPorts(BenchConfig.Server config, Path leftoversIn) throws IOException {
-        clearPorts(config, leftoversIn, STOP_TIMEOUT);
+    public static void clearPorts(BenchConfig.Server config, AttemptProcesses processes, Path leftoversIn)
+            throws IOException {
+        clearPorts(config, processes, leftoversIn, STOP_TIMEOUT);
     }
 
-    static void clearPorts(BenchConfig.Server config, Path leftoversIn, Duration wait) throws IOException {
+    static void clearPorts(BenchConfig.Server config, AttemptProcesses processes, Path leftoversIn, Duration wait)
+            throws IOException {
         if (!portsTaken(config)) {
             return;
         }
         if (sendStop(config, loginTimeout(wait))) {
             awaitPortsFree(config, wait);
         }
-        if (portsTaken(config) && leftoversIn != null && AttemptProcesses.kill(leftoversIn) > 0) {
+        if (portsTaken(config) && processes != null && leftoversIn != null && processes.kill(leftoversIn) > 0) {
             // Each was waited for; the system frees a dead process's ports at once, so a port still taken a moment
             // later belongs to something else.
             awaitPortsFree(config, wait.compareTo(KILL_WAIT) < 0 ? wait : KILL_WAIT);
@@ -194,8 +196,11 @@ public final class ServerManager implements AutoCloseable {
         for (int port : new int[] {config.rconPort(), config.serverPort()}) {
             if (accepts(port)) {
                 throw new IOException("port " + port + " is still taken by a process the bench cannot prove its own "
-                        + "(no stop over RCON ended it, and it runs in no attempt folder of this run: a server left "
-                        + "from an earlier run?); stop it and run again");
+                        + "(no stop over RCON ended it, and this run started it for no attempt: a server left from "
+                        + "an earlier run, or one started by hand?"
+                        + (AttemptProcesses.canProve() ? "" : " This system does not show which processes the bench "
+                                + "started, so it kills none.")
+                        + "); stop it and run again");
             }
         }
     }

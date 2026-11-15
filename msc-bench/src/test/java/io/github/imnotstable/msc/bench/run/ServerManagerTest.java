@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
 
 import io.github.imnotstable.msc.bench.FakeRconMain;
+import io.github.imnotstable.msc.bench.HandedPort;
 import io.github.imnotstable.msc.bench.PortHolder;
 import io.github.imnotstable.msc.process.ClosedPort;
 import io.github.imnotstable.msc.process.rcon.FakeRconServer;
@@ -19,6 +20,7 @@ import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -27,6 +29,9 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 
 class ServerManagerTest {
+
+    /** The run whose processes the ports step may kill. */
+    private static final AttemptProcesses RUN = AttemptProcesses.newRun();
 
     private static final String JAVA = ProcessHandle.current().info().command().orElse("java");
 
@@ -141,16 +146,16 @@ class ServerManagerTest {
         // close() sent no stop, waited 60 s for a server never told to go, and killed it.
         Files.writeString(serverDir.resolve("paper.jar"), "stands in for paper");
         Files.writeString(serverDir.resolve("eula.txt"), "eula=true");
-        int port;
-        try (ServerSocket free = new ServerSocket(0, 1, InetAddress.getLoopbackAddress())) {
-            port = free.getLocalPort();
+        ServerManager server;
+        try (HandedPort rconPort = HandedPort.reserve()) {
+            int port = rconPort.port();
+            List<String> command = List.of(JAVA, "-Dmarker=" + serverDir, "-cp", System.getProperty("java.class.path"),
+                    FakeRconMain.class.getName(), Integer.toString(port), "pw");
+            BenchConfig.Server config = new BenchConfig.Server(command, null, List.of(), null, true, gamePort.port(),
+                    port, "pw", 60);
+            server = new ServerManager(serverDir, config, Map.of());
+            server.rcon().command("setup");
         }
-        List<String> command = List.of(JAVA, "-Dmarker=" + serverDir, "-cp", System.getProperty("java.class.path"),
-                FakeRconMain.class.getName(), Integer.toString(port), "pw");
-        BenchConfig.Server config = new BenchConfig.Server(command, null, List.of(), null, true, gamePort.port(), port,
-                "pw", 60);
-        ServerManager server = new ServerManager(serverDir, config, Map.of());
-        server.rcon().command("setup");
         server.disconnect();
 
         server.close();
@@ -173,7 +178,8 @@ class ServerManagerTest {
             return "";
         });
         try (FakeRconServer orphan = holder[0]) {
-            ServerManager.clearPorts(config(List.of("unused"), orphan.port()), serverDir, Duration.ofSeconds(10));
+            ServerManager.clearPorts(config(List.of("unused"), orphan.port()), RUN, serverDir,
+                    Duration.ofSeconds(10));
 
             assertThat(orphan.commands()).containsExactly("stop");
         }
@@ -188,10 +194,12 @@ class ServerManagerTest {
         String configured = password.equals("LONG") ? "p".repeat(1447) : password;
         Files.writeString(serverDir.resolve("paper.jar"), "stands in for paper");
         Files.writeString(serverDir.resolve("eula.txt"), "eula=true");
-        int port;
-        try (ServerSocket free = new ServerSocket(0, 1, InetAddress.getLoopbackAddress())) {
-            port = free.getLocalPort();
+        try (HandedPort rconPort = HandedPort.reserve()) {
+            refusedLogin(rconPort.port(), configured, reason);
         }
+    }
+
+    private void refusedLogin(int port, String configured, String reason) throws IOException {
         List<String> command = List.of(JAVA, "-Dmarker=" + serverDir, "-cp", System.getProperty("java.class.path"),
                 FakeRconMain.class.getName(), Integer.toString(port), "pass");
         BenchConfig.Server config = new BenchConfig.Server(command, null, List.of(), null, true, gamePort.port(), port,
@@ -209,7 +217,7 @@ class ServerManagerTest {
     void clearPortsReportsAServerThatRefusesTheLogin() throws IOException {
         try (FakeRconServer other = new FakeRconServer("not the bench's", command -> "")) {
             Throwable refused = catchThrowable(() -> ServerManager.clearPorts(config(List.of("unused"), other.port()),
-                    serverDir, Duration.ofSeconds(600)));
+                    RUN, serverDir, Duration.ofSeconds(600)));
             assertThat(refused).isInstanceOf(IOException.class).hasMessageContaining("login refused")
                     .hasMessageContaining("port " + other.port());
             assertThat(other.commands()).isEmpty();
@@ -231,38 +239,40 @@ class ServerManagerTest {
                 }
             });
             Throwable refused = catchThrowable(() -> ServerManager.clearPorts(
-                    config(List.of("unused"), taken.getLocalPort()), serverDir, Duration.ofMillis(200)));
+                    config(List.of("unused"), taken.getLocalPort()), RUN, serverDir, Duration.ofMillis(200)));
 
             assertThat(refused).isInstanceOf(IOException.class).hasMessageContaining("port " + taken.getLocalPort());
         }
     }
 
     /**
-     * #577: a Minestom server has no RCON, so a stop never reaches it. One the bench can prove its own, running in the
-     * folder it is given, is killed and its port freed; any other is refused at once, without the minute's wait for a
-     * stop nobody was sent, and left running.
+     * #577, #587: a Minestom server has no RCON, so a stop never reaches it. One this run started for an attempt in
+     * the folder it is given is killed and its port freed; any other, even one running in that folder, is refused at
+     * once, without the minute's wait for a stop nobody was sent, and left running.
      */
     @Test
     @Timeout(120)
-    void clearPortsKillsAServerWithoutRconOnlyWhenItRunsInTheGivenFolder() throws IOException {
-        Path attempt = Files.createDirectories(serverDir.resolve("attempts/game/baseline-1/workspace"));
-        Path other = Files.createDirectories(serverDir.resolve("elsewhere"));
-        Process ours = PortHolder.start(attempt, 0, attempt.resolve("port"), attempt.resolve("game.jar").toString());
-        Process theirs = PortHolder.start(other, 0, other.resolve("port"));
+    void clearPortsKillsAServerWithoutRconOnlyWhenThisRunStartedItForTheGivenFolder() throws IOException {
+        Assumptions.assumeTrue(AttemptProcesses.canProve(), "this system shows no process's environment");
+        Path attempt = Files.createDirectories(serverDir.resolve("attempts/game/baseline-1"));
+        Path workspace = Files.createDirectories(attempt.resolve("workspace"));
+        Process ours = PortHolder.start(serverDir, 0, serverDir.resolve("ours.port"), RUN.marks(attempt));
+        // In the attempt's workspace, naming it, but started by someone else: a user's server, say.
+        Process theirs = PortHolder.start(workspace, 0, workspace.resolve("port"), workspace.toString());
         try {
-            int ourPort = PortHolder.awaitPort(ours, attempt.resolve("port"));
-            int theirPort = PortHolder.awaitPort(theirs, other.resolve("port"));
+            int ourPort = PortHolder.awaitPort(ours, serverDir.resolve("ours.port"));
+            int theirPort = PortHolder.awaitPort(theirs, workspace.resolve("port"));
             long start = System.nanoTime();
             Throwable refused = catchThrowable(() -> ServerManager.clearPorts(
                     new BenchConfig.Server(List.of("unused"), null, List.of(), null, true, theirPort, gamePort.port(),
-                            "pw", 1), serverDir.resolve("attempts"), Duration.ofSeconds(600)));
+                            "pw", 1), RUN, serverDir.resolve("attempts"), Duration.ofSeconds(600)));
             assertThat(refused).isInstanceOf(IOException.class).hasMessageContaining("port " + theirPort);
             assertThat(Duration.ofNanos(System.nanoTime() - start)).as("no wait for a stop never sent")
                     .isLessThan(Duration.ofSeconds(60));
-            assertThat(theirs.isAlive()).as("a process outside the attempt folders is never killed").isTrue();
+            assertThat(theirs.isAlive()).as("a process this run did not start is never killed").isTrue();
 
             ServerManager.clearPorts(new BenchConfig.Server(List.of("unused"), null, List.of(), null, true, ourPort,
-                    gamePort.port(), "pw", 1), serverDir.resolve("attempts"), Duration.ofSeconds(60));
+                    gamePort.port(), "pw", 1), RUN, serverDir.resolve("attempts"), Duration.ofSeconds(60));
             assertThat(ours.isAlive()).isFalse();
         } finally {
             ours.destroyForcibly();
