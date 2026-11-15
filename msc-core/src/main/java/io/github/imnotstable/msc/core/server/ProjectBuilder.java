@@ -86,7 +86,7 @@ public final class ProjectBuilder {
         } else {
             boolean windows = System.getProperty("os.name").toLowerCase(Locale.ROOT).contains("win");
             if (!Files.exists(projectDir.resolve(windows ? "gradlew.bat" : "gradlew"))) {
-                throw new ToolException("no Gradle wrapper in " + projectDir + ". Create the project with project_scaffold.");
+                throw new ToolException("no Gradle wrapper in " + projectDir + ". " + noWrapperStep(projectDir));
             }
             List<String> args = new ArrayList<>(tasks);
             args.addAll(extra);
@@ -97,6 +97,16 @@ public final class ProjectBuilder {
                 Map.of(GradleUserHome.ENV, config.gradleUserHome().toString()));
         String output = r.timedOut() ? r.output() + "\nbuild timed out after " + timeout.toSeconds() + "s" : r.output();
         return new BuildResult(r.ok(), output, r.ok() && !noJar ? newestJar(projectDir) : null, r.millis(), null);
+    }
+
+    /** What works instead of a folder with no wrapper: the project a subfolder of it holds, else a new one (#665). */
+    private String noWrapperStep(Path projectDir) {
+        List<Path> found = WorkspaceProjects.inSubfolders(projectDir);
+        if (found.isEmpty()) {
+            return "Create the project with project_scaffold.";
+        }
+        return "A subfolder holds one: " + String.join(" or ",
+                found.stream().map(p -> WorkspaceProjects.devCycle(config, p)).toList()) + ".";
     }
 
     /** {@code .msc/msc-init.gradle}, rewritten when this core ships a different one. */

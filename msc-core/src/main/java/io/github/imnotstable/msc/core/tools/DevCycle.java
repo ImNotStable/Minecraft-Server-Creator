@@ -7,6 +7,7 @@ import io.github.imnotstable.msc.core.server.LoaderInstaller;
 import io.github.imnotstable.msc.core.server.Platform;
 import io.github.imnotstable.msc.core.server.ProjectBuilder;
 import io.github.imnotstable.msc.core.server.ServerManager;
+import io.github.imnotstable.msc.core.server.WorkspaceProjects;
 import io.github.imnotstable.msc.core.tool.Args;
 import io.github.imnotstable.msc.core.tool.Budget;
 import io.github.imnotstable.msc.core.tool.ToolException;
@@ -398,7 +399,8 @@ final class DevCycle {
         }
         if (server.serverJar() == null && config.serverCommand() == null) {
             return new Deployed(new Budget.Parts().add(
-                    out.append("\nserver not set up, so nothing was started. Run server_setup, then dev_cycle.").toString()), true);
+                    out.append("\nserver not set up, so nothing was started. Run server_setup, then ")
+                            .append(WorkspaceProjects.devCycle(config, project)).append(".").toString()), true);
         }
         ServerRun.Report report = run.startAndReport(steps, false, 180);
         time.add("start", report.result().millis());
@@ -432,7 +434,8 @@ final class DevCycle {
         if (isAgentJar(platform, name)) {
             throw new ToolException("the project's jar deploys as " + platform.addonDir() + "/" + name
                     + ", which is MSC's agent jar on " + platform.displayName() + ": deploying it would replace the agent."
-                    + " Rename the project (rootProject.name in settings.gradle.kts), then dev_cycle.");
+                    + " Rename the project (rootProject.name in settings.gradle.kts), then "
+                    + WorkspaceProjects.devCycle(config, project) + ".");
         }
         return config.serverDir().resolve(platform.addonDir()).resolve(name);
     }

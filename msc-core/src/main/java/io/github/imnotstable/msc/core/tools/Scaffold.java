@@ -3,27 +3,33 @@ package io.github.imnotstable.msc.core.tools;
 import io.github.imnotstable.msc.core.CoreConfig;
 import io.github.imnotstable.msc.core.server.MachineEula;
 import io.github.imnotstable.msc.core.server.Platform;
+import io.github.imnotstable.msc.core.server.WorkspaceProjects;
 import io.github.imnotstable.msc.core.tool.Args;
 import io.github.imnotstable.msc.core.tool.ToolException;
 import io.github.imnotstable.msc.templates.ScaffoldResult;
 import io.github.imnotstable.msc.templates.TemplateVariables;
 import io.github.imnotstable.msc.templates.Templates;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 /** {@code project_scaffold}: a new project from a template, and what to do next. */
 final class Scaffold {
     /**
-     * Entries a folder may already hold and still count as empty for a scaffold: the core's own {@code .msc},
-     * Claude Code's project config, git and editor folders. None of them collide with template files.
+     * Entries of other tools a folder may already hold and still count as empty for a scaffold: Claude Code's project
+     * config, git and editor folders. What MSC itself creates there counts too ({@link CoreConfig#ownPaths}). None of
+     * them collide with template files.
      */
-    private static final Set<String> TOOL_FILES = Set.of(".msc", ".mcp.json", ".claude", ".git", ".idea", ".vscode");
+    private static final Set<String> TOOL_FILES = Set.of(".mcp.json", ".claude", ".git", ".idea", ".vscode");
 
     private final CoreConfig config;
     private final EulaPrompts eula;
@@ -110,6 +116,8 @@ final class Scaffold {
         // A subfolder project of another family than the workspace's server (a Fabric mod in a Paper workspace): the
         // workspace keeps its platform, and dev_cycle refuses until server_setup switches it (#636, ADR 0048).
         Platform other = !isProject || remember ? null : Platform.otherFamily(config, List.of(platform));
+        // The dev_cycle call that builds this project: with project= when it is not the workspace's own (#665).
+        String devCycle = isProject ? WorkspaceProjects.devCycle(config, dir) : "dev_cycle";
         if (other != null || serves != null && serves.needsServerSetup()
                 && !Files.exists(config.serverDir().resolve(serves.serverJar()))) {
             // The server is not set up yet: a first dev_cycle would build for nothing and then stop there (#627).
@@ -123,43 +131,103 @@ final class Scaffold {
             Optional<MachineEula.Acceptance> machine = config.machineEula().read();
             if (!serves.needsEula()) {
                 out.append("\nnext: server_setup platform=").append(serves.id())
-                        .append(", then edit the code and dev_cycle");
+                        .append(", then edit the code and ").append(devCycle);
             } else if (machine.isPresent()) {
                 out.append("\nnext: ").append(setup).append(" (the Minecraft EULA is accepted for this machine by ")
-                        .append(machine.get().describe()).append("), then edit the code and dev_cycle");
+                        .append(machine.get().describe()).append("), then edit the code and ").append(devCycle);
             } else {
                 out.append("\nnext: ").append(EulaPrompts.EULA_QUESTION).append(eula.oneTimeHint())
-                        .append("\nOn yes: ").append(setup).append(" acceptEula=true, then edit the code and dev_cycle");
+                        .append("\nOn yes: ").append(setup).append(" acceptEula=true, then edit the code and ")
+                        .append(devCycle);
             }
         } else {
-            out.append("\nnext: edit the code, then dev_cycle");
+            out.append("\nnext: edit the code, then ").append(devCycle);
         }
         return out.toString();
     }
 
-    /** True when {@code dir} exists and holds nothing but {@link #TOOL_FILES}, as a fresh workspace does. */
-    private static boolean onlyToolFiles(Path dir) throws IOException {
+    /**
+     * True when {@code dir} exists and holds nothing but {@link #TOOL_FILES} and what MSC created, as a workspace does
+     * before its project: after server_setup that is the server folder too (#664). A folder that holds anything else
+     * is refused with the step that works, not the template's bare "not empty".
+     */
+    private boolean onlyToolFiles(Path dir) throws IOException {
         if (!Files.isDirectory(dir)) {
             return false;
         }
+        List<Path> own = config.ownPaths();
+        List<Path> other;
         try (Stream<Path> list = Files.list(dir)) {
             List<Path> entries = list.toList();
-            return !entries.isEmpty() && entries.stream().allMatch(e -> TOOL_FILES.contains(e.getFileName().toString()));
+            if (entries.isEmpty()) {
+                return false;
+            }
+            other = entries.stream().filter(e -> !TOOL_FILES.contains(e.getFileName().toString()) && !mscOwn(e, own))
+                    .sorted().toList();
+        }
+        if (other.isEmpty()) {
+            return true;
+        }
+        String names = other.stream().limit(3).map(e -> e.getFileName().toString()).collect(Collectors.joining(", "))
+                + (other.size() > 3 ? ", ..." : "");
+        throw new ToolException(dir + " already holds files that are not MSC's (" + names + "): give dir=<new folder> "
+                + "to create the project beside them");
+    }
+
+    /**
+     * True when MSC created {@code entry}: one of {@code own}, or a folder that holds only such entries on the way to
+     * one (an MSC_SERVER_DIR of {@code servers/dev}).
+     */
+    private static boolean mscOwn(Path entry, List<Path> own) {
+        Path e = entry.toAbsolutePath().normalize();
+        if (own.contains(e)) {
+            return true;
+        }
+        if (own.stream().noneMatch(p -> p.startsWith(e)) || !Files.isDirectory(e, LinkOption.NOFOLLOW_LINKS)) {
+            return false;
+        }
+        try (Stream<Path> list = Files.list(e)) {
+            return list.toList().stream().allMatch(child -> mscOwn(child, own));
+        } catch (IOException | UncheckedIOException ex) {
+            return false;
         }
     }
 
-    /** Templates only write into empty directories, so render into a staging folder and move the files in. */
+    /**
+     * Templates only write into empty directories, so render into a staging folder and move the files in. A project
+     * template's {@code run/} goes into a server folder server_setup already made, beside its files: the server's own
+     * {@code server.properties} and {@code eula.txt} are kept, not replaced by the template's defaults.
+     */
     private ScaffoldResult besideToolFiles(String template, Path dir, TemplateVariables vars) throws IOException {
         Path staging = Files.createTempDirectory(Files.createDirectories(config.dataDir()), "scaffold-");
         try {
             Path staged = staging.resolve("project");
             ScaffoldResult result = Templates.scaffold(template, staged, vars);
+            List<Path> entries;
             try (Stream<Path> list = Files.list(staged)) {
-                for (Path entry : list.toList()) {
-                    Files.move(entry, dir.resolve(entry.getFileName().toString()));
+                entries = list.toList();
+            }
+            // Checked before the first move: nothing MSC made under a template file's name (src, gradle) is replaced,
+            // and nothing is half moved.
+            List<Path> own = config.ownPaths();
+            for (Path entry : entries) {
+                Path to = dir.resolve(entry.getFileName().toString());
+                if (Files.exists(to, LinkOption.NOFOLLOW_LINKS) && !(Files.isDirectory(entry)
+                        && Files.isDirectory(to, LinkOption.NOFOLLOW_LINKS) && mscOwn(to, own))) {
+                    throw new ToolException("the template writes " + entry.getFileName() + ", which " + dir
+                            + " already holds: give dir=<new folder> to create the project beside it");
                 }
             }
-            return result;
+            List<Path> written = new ArrayList<>();
+            for (Path file : result.files()) {
+                Path to = dir.resolve(staged.relativize(file).toString());
+                if (!Files.exists(to, LinkOption.NOFOLLOW_LINKS)) {
+                    Files.createDirectories(to.getParent());
+                    Files.move(file, to);
+                    written.add(to);
+                }
+            }
+            return new ScaffoldResult(dir, written, result.values());
         } finally {
             // The call owns its staging folder: gone also when the template refuses the arguments.
             deleteTree(staging);

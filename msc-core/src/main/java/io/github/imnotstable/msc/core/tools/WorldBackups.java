@@ -49,7 +49,7 @@ public final class WorldBackups {
         this.server = server;
         this.run = run;
         this.world = world;
-        this.backups = new Backups(config.dataDir().resolve("backups"), clock);
+        this.backups = new Backups(config.backupsDir(), clock);
     }
 
     /** {@code build_undo backup=...}. */

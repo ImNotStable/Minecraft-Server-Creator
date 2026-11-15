@@ -8,6 +8,7 @@ import io.github.imnotstable.msc.core.tool.PathArg;
 import io.github.imnotstable.msc.protocol.Limits;
 import io.github.imnotstable.msc.protocol.transport.HandshakeProof;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -142,6 +143,41 @@ public record CoreConfig(Path workspace, Path serverDir, int agentPort, String t
     /** {@code <workspace>/.msc}: caches, the resource pack source and logs. */
     public Path dataDir() {
         return workspace.resolve(".msc");
+    }
+
+    /** {@code .msc/cache}: downloaded server jars, installers and loader files. */
+    public Path cacheDir() {
+        return dataDir().resolve("cache");
+    }
+
+    /** {@code .msc/pack}: the resource pack's sources. */
+    public Path packDir() {
+        return dataDir().resolve("pack");
+    }
+
+    /** {@code .msc/build}: the built pack zip; the pack host's port, pid and log files sit beside it. */
+    public Path packBuildDir() {
+        return dataDir().resolve("build");
+    }
+
+    /** {@code .msc/backups}: world backups taken before big edits and on request. */
+    public Path backupsDir() {
+        return dataDir().resolve("backups");
+    }
+
+    /**
+     * Everything MSC itself creates in a workspace, each where the code that creates it finds it: {@code .msc} (the
+     * caches, the pack's sources and build, backups, the logs), the server folder and the tool log. Absolute and
+     * normalized; some may be outside the workspace (an MSC_SERVER_DIR or MSC_TOOL_LOG elsewhere). A folder that holds
+     * only these is still empty for {@code project_scaffold} (#664).
+     */
+    public List<Path> ownPaths() {
+        List<Path> own = new ArrayList<>(List.of(dataDir(), cacheDir(), packDir(), packBuildDir(),
+                backupsDir(), serverDir, proxySecretFile()));
+        if (toolLog != null) {
+            own.add(toolLog);
+        }
+        return own.stream().map(p -> p.toAbsolutePath().normalize()).toList();
     }
 
     public CoreConfig withServerCommand(List<String> command) {
