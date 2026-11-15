@@ -36,6 +36,33 @@ class QuotedTest {
         assertThat(Quoted.text(text)).isEqualTo(shown);
     }
 
+    static Stream<Arguments> messages() {
+        return Stream.of(
+                Arguments.of("Unclosed group", "Unclosed group"),
+                Arguments.of("  padded \n", "padded"),
+                Arguments.of("name {a b‮c}", "name {a\\u2028b\\u202ec}"),
+                Arguments.of("two\nlines\rand\ttab", "two\\nlines\\rand\\ttab"),
+                Arguments.of("quote \" and \\ stay", "quote \" and \\ stay"),
+                Arguments.of("nul \0, ​,   and \u0085", "nul \\u0000, \\u200b, \\u00a0 and \\u0085"),
+                Arguments.of("lone \ud800", "lone \\ud800"),
+                Arguments.of("é日本😀", "é日本😀"));
+    }
+
+    /** #672: a library's or an exception's own text, appended to a refusal, is escaped as a value is, but unquoted. */
+    @ParameterizedTest(name = "{1}")
+    @MethodSource("messages")
+    void aMessageIsEscapedOntoOneLineWithoutQuotes(String message, String shown) {
+        assertThat(Quoted.message(message)).isEqualTo(shown);
+    }
+
+    @Test
+    void aLongMessageIsCutAfterWholeCharactersAndNullIsEmpty() {
+        assertThat(Quoted.message(null)).isEmpty();
+        assertThat(Quoted.message("a".repeat(300))).isEqualTo("a".repeat(Quoted.MESSAGE_MAX) + "...");
+        assertThat(Quoted.message("x ".repeat(300))).isEqualTo("x\\u2028".repeat(Quoted.MESSAGE_MAX / 2) + "...");
+        assertThat(Quoted.message("a".repeat(Quoted.MESSAGE_MAX))).isEqualTo("a".repeat(Quoted.MESSAGE_MAX));
+    }
+
     @Test
     void aLongValueIsCutAfterWholeCharactersAndClosed() {
         assertThat(Quoted.text("a".repeat(100))).isEqualTo("\"" + "a".repeat(60) + "\"...");

@@ -429,9 +429,10 @@ public final class UserJson {
         try {
             return Pattern.compile(Placeholders.fillRegex(regex, values), flags);
         } catch (PatternSyntaxException e) {
-            // The description is the library's own text, which may quote the regex: it is left out for a secret.
+            // The description is the library's own text, which may quote the regex: it is left out for a secret, and
+            // escaped like every other text a refusal shows (#672).
             throw new IllegalArgumentException(key + ": " + Quoted.value(new JsonPrimitive(regex), secret)
-                    + " is not a regex" + (secret ? "" : ": " + firstLine(e.getDescription())
+                    + " is not a regex" + (secret ? "" : ": " + Quoted.message(e.getDescription())
                     + (e.getIndex() >= 0 ? " at index " + e.getIndex() : "")));
         }
     }
@@ -441,14 +442,11 @@ public final class UserJson {
             Path.of(path);
             return path;
         } catch (InvalidPathException e) {
-            // The reason is the library's own text, which may quote the path: it is left out for a secret.
+            // The reason is the library's own text, which may quote the path: it is left out for a secret, and escaped
+            // like every other text a refusal shows (#672).
             throw new IllegalArgumentException(key + ": " + Quoted.value(new JsonPrimitive(path), secret)
-                    + " is not a path" + (secret ? "" : ": " + firstLine(e.getReason())));
+                    + " is not a path" + (secret ? "" : ": " + Quoted.message(e.getReason())));
         }
-    }
-
-    private static String firstLine(String text) {
-        return text == null ? "" : text.strip().lines().findFirst().orElse("");
     }
 
     /**

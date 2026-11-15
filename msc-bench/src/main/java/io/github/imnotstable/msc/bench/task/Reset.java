@@ -65,7 +65,7 @@ public record Reset(List<String> delete) {
         try {
             normal = Path.of(slashes).normalize();
         } catch (InvalidPathException e) {
-            throw new IllegalArgumentException(refused + "is not a path: " + e.getReason());
+            throw new IllegalArgumentException(refused + "is not a path: " + Quoted.message(e.getReason()));
         }
         String written = normal.toString().replace('\\', '/');
         if (written.isEmpty() || written.equals("..") || written.startsWith("../")) {
