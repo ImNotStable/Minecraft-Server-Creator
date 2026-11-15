@@ -56,3 +56,32 @@ container, so it stops depending on the PC. A first attempt in a cloud session f
 - Not verified: `--isolate` on Ubuntu 24.04 with its AppArmor user-namespace restriction (the trial run refuses it
   with the reason), the Ubuntu box itself (its setup script installs the same JDK and Claude Code the container has), and
   Paper tasks headless, which need the owner's EULA acceptance on that machine.
+
+## Amendment, 2026-11-15: one ownership rule for every kill (#587)
+
+Decision 3 marked core with `-Dmsc.bench.attempt=` on its command line, and #577 added kills of whatever ran in an
+attempt folder or named it on its command line. Both reached processes the bench did not start: a user's shell or
+tmux pane `cd`'d into an attempt, a `tail -f` of its log, an editor on its files, and, through the core port check,
+anything with the marker anywhere on its command line, another bench run's live cores included.
+
+Every kill now goes through one rule, `AttemptProcesses`: a process is the run's when its environment holds
+`MSC_BENCH_RUN` with this run's id (a random UUID per run) and `MSC_BENCH_ATTEMPT` with an attempt folder inside the
+one being cleared. The runner sets both on every process it starts for an attempt (the agent, the server, each check
+process) and adds them to the `env` of every server in the filled MCP config, so msc-core has them however Claude
+Code passes its environment on. Children inherit them, through `nohup`, `setsid`, `&` and a Gradle build's forked
+server alike. The bench reads them from `/proc/<pid>/environ`, the environment a process started with. The leftovers
+after an attempt, the Ctrl-C hook, the ports step and the core port check all use this rule, and
+`-Dmsc.bench.attempt=` is gone from the template.
+
+- Where the environment cannot be read (Windows, macOS, another user's process, a process already gone), nothing is
+  proven and nothing is killed: the port is refused with a message saying so.
+- A Gradle daemon an attempt started carries its marks but stays, as before, for later builds to reuse; a server it
+  forks carries the marks of the build that forked it and is killed.
+- A process that clears its environment (`env -i`) is killed only together with the marked process it runs under.
+
+Chosen over "a descendant that started after the attempt began": a detached process is no longer a descendant of
+anything the bench can see, and a start time alone also matches a user's shell opened during the attempt.
+
+Not verified: that Claude Code passes its own environment to stdio MCP servers (the config `env` covers it either
+way), and that a reused Gradle daemon gives a forked server the current build's environment rather than its own start
+environment (if not, that server is still the run's, and the Ctrl-C hook or the next ports step kills it).

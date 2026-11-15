@@ -2,6 +2,7 @@ package io.github.imnotstable.msc.bench.check;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import io.github.imnotstable.msc.bench.ArgsEchoServer;
 import io.github.imnotstable.msc.bench.CatFile;
@@ -19,6 +20,7 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Pattern;
 import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
@@ -164,11 +166,15 @@ class PlaceholderFillTest {
         return out.toByteArray();
     }
 
+    /** A filled value with what a regex pass must not read again: placeholders' syntax and a quote's end. */
+    private static final String BRACES = "/home/u/{proj}/{plus}/runs/a.b\\E.x";
+
     private static final Map<String, String> VALUES = Map.of(
             "scaffoldVersion", "1.0.0",
             "java", ProcessHandle.current().info().command().orElse("java"),
             "classpath", System.getProperty("java.class.path"),
             "plus", "a+b",
+            "braces", BRACES,
             "serverPort", "25566");
 
     private static UserJson json(String text) {
@@ -228,6 +234,56 @@ class PlaceholderFillTest {
         assertThat(run(Checks.parse(json("{\"type\":\"command\",\"run\":[" + CAT + "\"plus.txt\"],"
                 + "\"outputMatches\":\"^{plus}$\"}"), taskDir))).satisfies(r -> assertThat(r.passed())
                 .as(r.toString()).isTrue());
+    }
+
+    /** A regex as a task writes it, and a text it must find. */
+    record RegexRow(String regex, String text) {
+        @Override
+        public String toString() {
+            return regex + " finds " + text;
+        }
+    }
+
+    static Stream<RegexRow> regexes() {
+        return Stream.of(
+                new RegexRow("^\\p{Lu}\\p{L}+$", "Émile"),
+                new RegexRow("^\\P{Lu}+$", "émile"),
+                new RegexRow("^[\\p{IsLatin}]+$", "abc"),
+                new RegexRow("^\\x{FF}$", "ÿ"),
+                new RegexRow("^\\N{LATIN SMALL LETTER A}$", "a"),
+                new RegexRow("^a{2}b{1,2}$", "aab"),
+                new RegexRow("^\\{plus}$", "{plus}"),
+                new RegexRow("^\\Q{plus}*\\E$", "a+b*"),
+                new RegexRow("^\\Q{unknown}\\E$", "{unknown}"),
+                new RegexRow("^{unknown}$", "{unknown}"),
+                new RegexRow("^(?:{plus}){2}$", "a+ba+b"),
+                new RegexRow("^{braces}$", BRACES),
+                new RegexRow("^<{braces}>$", "<" + BRACES + ">"));
+    }
+
+    /**
+     * #588: a regex key is filled and quoted in one pass over the regex as written. Escape sequences with braces stay
+     * regex syntax, a filled value matches literally whatever it holds, and an unknown name matches as written.
+     */
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("regexes")
+    void aRegexKeepsItsEscapesAndMatchesFilledValuesLiterally(RegexRow row) throws IOException {
+        Path file = Files.writeString(workspace.resolve("regex-" + Integer.toHexString(row.regex().hashCode())
+                + ".txt"), row.text());
+        JsonObject check = new JsonObject();
+        check.addProperty("type", "file");
+        check.addProperty("path", file.getFileName().toString());
+        check.addProperty("contains", row.regex());
+        // Loaded as written (the task's load), then run filled.
+        CheckResult result = run(Checks.parse(UserJson.of(check, "check.", Checks.KEYS), taskDir));
+        assertThat(result.passed()).as(result.toString()).isTrue();
+    }
+
+    @Test
+    void aFilledValueIsNeverFilledAgain() {
+        assertThat(Placeholders.fill("{braces} {plus} {unknown}", VALUES)).isEqualTo(BRACES + " a+b {unknown}");
+        assertThat(Placeholders.fillRegex("^{braces}$", VALUES)).isEqualTo("^" + Pattern.quote(BRACES) + "$");
+        assertThat(Pattern.compile(Placeholders.fillRegex("^{plus}$", VALUES)).matcher("aab").find()).isFalse();
     }
 
     @BeforeAll
