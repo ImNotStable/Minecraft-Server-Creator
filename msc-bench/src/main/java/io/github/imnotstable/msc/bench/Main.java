@@ -60,7 +60,8 @@ import java.util.Set;
  */
 public final class Main {
 
-    private static final Set<String> FLAGS = Set.of("--tasks", "--modes", "--repeat", "--tasks-dir", "--config", "--out");
+    private static final Set<String> FLAGS = Set.of("--tasks", "--modes", "--repeat", "--tasks-dir", "--config", "--out",
+            "--model");
     /** The report's name inside a run folder. */
     static final String REPORT = "report.md";
     private static final Set<String> PATH_FLAGS = Set.of("--tasks-dir", "--config", "--out");
@@ -177,7 +178,7 @@ public final class Main {
             }
             case "run" -> {
                 if (positional.size() != 1) {
-                    throw new IllegalArgumentException("usage: run [--tasks a,b] [--modes m1,m2] [--repeat N]; "
+                    throw new IllegalArgumentException("usage: run [--tasks a,b] [--modes m1,m2] [--repeat N] [--model M]; "
                             + "unexpected " + positional.get(1));
                 }
                 yield runBench(tasksDir, flags, out, home, temp);
@@ -199,7 +200,7 @@ public final class Main {
     }
 
     static String usage() {
-        return "usage: msc-bench list | run [--tasks a,b] [--modes m1,m2] [--repeat N] [--out DIR, default "
+        return "usage: msc-bench list | run [--tasks a,b] [--modes m1,m2] [--repeat N] [--model M] [--out DIR, default "
                 + RunIsolation.DEFAULT_RUNS_SHOWN + "] | check <task> <workspace> | report <runDir>";
     }
 
@@ -233,6 +234,9 @@ public final class Main {
         int repeat = repeat(flags.getOrDefault("--repeat", "1"));
         Path configFile = Path.of(flags.getOrDefault("--config", "bench.json"));
         BenchConfig config = loadConfig(configFile, home);
+        if (flags.containsKey("--model")) {
+            config = config.withModel(flags.get("--model"));
+        }
         RunSelection selection = RunSelection.resolve(tasksDir, TaskLoader.loadAll(tasksDir), flags.get("--tasks"),
                 config.modes().keySet(), configFile, flags.get("--modes"));
         config.requirePaths(configFile, selection.modes());

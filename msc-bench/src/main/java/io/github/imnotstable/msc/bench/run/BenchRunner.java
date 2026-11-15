@@ -188,20 +188,22 @@ public final class BenchRunner {
     private RunRecord runWithMcpRetries(TaskDef task, String modeName, int repeat) throws IOException {
         String required = config.modes().get(modeName).requireMcp();
         RunRecord record = null;
+        String problem = null;
         for (int attempt = 1; attempt <= MCP_TRIES; attempt++) {
             record = runOne(task, modeName, repeat, attempt);
             // Claude Code connects MCP servers in the background, so the init event can list none even though the
             // tools arrived a moment later: a logged tool call proves the server was there. Without a parsed result
             // (a time-out, a crash) no init event says the server was missing, so the attempt stands as it is.
-            if (required == null || record.error() != null || record.timedOut() || !record.agent().parsed()
-                    || record.agent().mcpConnected().contains(required) || record.tools().calls() > 0) {
+            problem = required == null ? null : record.agent().mcpProblem(required);
+            if (problem == null || record.error() != null || record.timedOut() || !record.agent().parsed()
+                    || record.tools().calls() > 0) {
                 return record;
             }
-            log.printf("[%s] %s #%d: MCP server %s was not connected when the agent started (try %d of %d)%n",
-                    modeName, task.id(), repeat, required, attempt, MCP_TRIES);
+            log.printf("[%s] %s #%d: %s, and no tool call was logged (try %d of %d)%n",
+                    modeName, task.id(), repeat, problem, attempt, MCP_TRIES);
         }
         return record.failed("MCP server " + required + " was not connected when the agent started, "
-                + MCP_TRIES + " tries");
+                + MCP_TRIES + " tries: " + problem);
     }
 
     RunRecord runOne(TaskDef task, String modeName, int repeat, int attempt) throws IOException {
@@ -242,6 +244,11 @@ public final class BenchRunner {
             if (task.needsServer()) {
                 ServerManager.clearPorts(config.server());
             }
+            if (mcpTemplate != null) {
+                setupStep = "checking the core port";
+                CoreProcesses.requireFreePort(config.corePort());
+                setupStep = "preparing the workspace";
+            }
             Workspaces.prepare(task, workspace, config, mode, task.needsServer() ? paperJar() : null, values);
             if (task.needsServer()) {
                 setupStep = "preparing the server files";
@@ -269,6 +276,7 @@ public final class BenchRunner {
                     .redirectInput(ProcessBuilder.Redirect.from(nullDevice()))
                     .redirectOutput(attemptDir.resolve("agent-stdout.json").toFile())
                     .redirectError(attemptDir.resolve("agent-stderr.log").toFile());
+            AgentEnvironment.dropParentSession(builder.environment());
             mode.env().forEach((k, v) -> builder.environment().put(k, Placeholders.fill(v, values)));
             Files.writeString(attemptDir.resolve("prompt.md"), values.get("prompt"));
 
@@ -352,6 +360,15 @@ public final class BenchRunner {
                 }
             }
             serverTask = false;
+            if (mcpTemplate != null) {
+                // Claude Code does not always stop its MCP servers when it exits: a core left running keeps the core
+                // port, and the next toolset attempt's core cannot start.
+                int left = CoreProcesses.stop(CoreProcesses.marker(values.get("attemptDir")));
+                if (left > 0) {
+                    log.printf("[%s] %s #%d: stopped %d msc-core process(es) the agent left running%n",
+                            modeName, task.id(), repeat, left);
+                }
+            }
         }
 
         ToolStats tools = ToolLogReader.read(attemptDir.resolve("tool-calls.jsonl"), log::println);

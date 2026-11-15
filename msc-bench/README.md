@@ -11,11 +11,11 @@ For each task and each mode (`baseline` = Claude Code alone, `toolset` = Claude 
 
 1. Builds a fresh workspace: the task's scaffolded template (if any), then its fixtures (same for both modes; Paper tasks in toolset mode also get msc-agent-paper in `server/plugins`).
 2. For world tasks, starts the Paper server and runs the task's setup commands over RCON.
-3. Runs the agent headless (`claude -p ... --output-format json`) in the workspace, with a time limit.
+3. Runs the agent headless (`claude -p ... --output-format stream-json --verbose`) in the workspace, with a time limit.
 4. Puts back what the task's `resetBeforeChecks` names (see below), then runs the task's checks: files, build commands, PNGs, zips, and the live world and plugins over RCON.
 5. Stops the server and records time, turns, tokens and cost (from Claude Code's JSON result) plus tool-call totals, including image tokens from rendered views (from msc-core's tool log, [ADR 0004](../msc-docs/docs/adr/0004-bench.md)).
 
-In toolset mode the runner checks Claude Code's init event: when the `msc` server was not connected at the start (Claude Code `-p` sometimes starts before its MCP servers connect), and no msc tool was called either (the init event can come before the connection), the attempt is retried, up to 3 tries, instead of being scored as a toolset run without tools. Attempts are interleaved (task 1 baseline, task 1 toolset, task 2 ...) so drift in model speed hits both modes alike. When an agent run ends on an account usage limit (API error 429), the runner stops there: that attempt is not recorded, and every later one would fail in a second. Results go to `~/.msc/bench-runs/<timestamp>/results.jsonl` (`--out` picks another folder; `run` prints the full path after `Report:`) and `report.md` (pass rate, time, turns and tokens per mode and task, plus a tool cost table: calls, tokens and time per msc-core tool); each attempt keeps its workspace, prompt, agent output and server log under `attempts/`.
+In toolset mode the runner checks Claude Code's init event: when the `msc` server was not connected at the start (Claude Code `-p` sometimes starts before its MCP servers connect), and no msc tool was called either (the init event can come before the connection), the attempt is retried, up to 3 tries, instead of being scored as a toolset run without tools; the failure names the status the init event gave `msc` (`failed`, `pending`), or says the output named no MCP server at all (an agent command without `stream-json --verbose`, whose `json` output has no init event in some Claude Code versions). Before a toolset attempt the core port must be free: cores of earlier bench attempts holding it are stopped, and any other program holding it (such as the msc plugin of the Claude Code session the bench runs in) fails the attempt at once, naming its msc-core pids. After the attempt the runner stops the msc-core the agent started, found by the `-Dmsc.bench.attempt=<attempt folder>` the MCP config template puts on its command line, since Claude Code does not always stop it (ADR 0044). Attempts are interleaved (task 1 baseline, task 1 toolset, task 2 ...) so drift in model speed hits both modes alike. When an agent run ends on an account usage limit (API error 429), the runner stops there: that attempt is not recorded, and every later one would fail in a second. Results go to `~/.msc/bench-runs/<timestamp>/results.jsonl` (`--out` picks another folder; `run` prints the full path after `Report:`) and `report.md` (pass rate, time, turns and tokens per mode and task, plus a tool cost table: calls, tokens and time per msc-core tool); each attempt keeps its workspace, prompt, agent output and server log under `attempts/`.
 
 ## Tasks
 
@@ -49,7 +49,20 @@ Text the agent or a child process wrote is read the same way by every check (a `
 ./gradlew :msc-bench:run --args="run --tasks build-hut --repeat 3"
 ./gradlew :msc-bench:run --args="check build-hut ~/.msc/bench-runs/<ts>/attempts/build-hut/baseline-1/workspace"
 ./gradlew :msc-bench:run --args="report ~/.msc/bench-runs/<ts>"
+./gradlew :msc-bench:run --args="run --tasks game-sky-sprint --repeat 1 --model claude-haiku-4-5"   # a smoke run
 ```
+
+`--model` replaces the model `agent.command` pins (or adds `--model`), for a cheap smoke run; results from different models do not compare. The smallest useful selection is one task and one repeat: `game-sky-sprint` (Minestom: no EULA, the whole game, a Gradle build) or `texture-ruby-item` (no server and no build).
+
+### On Linux, headless
+
+The bench needs no desktop: a Linux box set up with `scripts/setup-ubuntu.sh` (JDK 25, Claude Code, the repository), or a Claude Code cloud container, runs it as on Windows.
+
+1. Sign Claude Code in once (`claude`, then `/login`); in a cloud container it already is.
+2. `./gradlew :msc-core:installDist :msc-agent-paper:shadowJar`
+3. `./gradlew :msc-bench:run --args="run --tasks game-sky-sprint --repeat 1"`, in `tmux` or with `nohup` on a box you log out of. Paper tasks also need the owner's EULA acceptance on that machine; Minestom tasks never do.
+
+The agent runs as Claude Code started from a plain shell even when the bench itself runs inside a Claude Code session (Remote Control, a cloud session): the runner drops that session's `CLAUDECODE`, `CLAUDE_*` and `CCR_*` variables from the agent's environment, keeping the ones that pick the account or provider (`CLAUDE_CODE_OAUTH_TOKEN`, `CLAUDE_CONFIG_DIR`, `CLAUDE_SESSION_INGRESS_TOKEN_FILE`, `CLAUDE_CODE_USE_*`, `CLAUDE_CODE_SKIP_*`); a mode's `env` can set any back. If that session's msc plugin holds the core port (25590), the toolset attempt says so: set `corePort` in a copy of `bench.json` and pass it with `--config`.
 
 A leading `~` in a path argument (`check`'s workspace, `report`'s run folder, `--out`, `--config`, `--tasks-dir`) is your home folder: the bench expands it itself, because neither Gradle's `--args` nor a quoted shell argument does. The path `run` prints after `Report:` works too.
 
@@ -91,7 +104,7 @@ The agent command runs Claude Code with `--setting-sources project,local`, so yo
 
 | Key | Default | Refused |
 | --- | --- | --- |
-| `agent.command` | `claude -p {prompt} --output-format json` | empty list, empty entries, no `{prompt}` here or in each mode's `extraArgs` or `env` |
+| `agent.command` | `claude -p {prompt} --output-format stream-json --verbose` | empty list, empty entries, no `{prompt}` here or in each mode's `extraArgs` or `env` |
 | `agent.timeoutSeconds` | 1800 | 0 or less, a decimal |
 | `modes` | `{"baseline": {}}` | empty, a `null` mode, a name other than letters, digits, `.`, `_`, `-` |
 | `modes.<name>.extraArgs` | none | `null` entries |
@@ -119,7 +132,7 @@ The agent command runs Claude Code with `--setting-sources project,local`, so yo
 
 - `msc-core`'s tool log and `~/.msc/eula.json`, read at runtime only (no compile dependency).
 - `msc-templates` to scaffold Minestom tasks, and `msc-bot` for the `player` check.
-- Claude Code's `--output-format json` result for tokens, turns and cost.
+- Claude Code's `--output-format stream-json --verbose` events (or `json`) for tokens, turns, cost and MCP status.
 
 ## Stack
 
