@@ -1,6 +1,6 @@
 # Minecraft Server Creator
 
-A toolset that helps an AI develop custom Minecraft servers on any platform. This is one git repo (a monorepo); each folder is a module. It targets the latest stable Minecraft release on Paper, Purpur, Fabric, Quilt, NeoForge, Forge and Minestom ([Platforms](docs/wiki/Platforms.md)).
+A toolset that helps an AI develop custom Minecraft servers on any platform. This is one git repo (a monorepo); each folder is a module. It targets the latest stable Minecraft release on Paper, Purpur, Folia, Fabric, Quilt, NeoForge, Forge and Minestom, and the Velocity proxy ([Platforms](docs/wiki/Platforms.md)).
 
 ## Quick start (Claude Code)
 
@@ -21,7 +21,7 @@ A toolset that helps an AI develop custom Minecraft servers on any platform. Thi
    The plugin's launcher starts the newest install every time, so you never re-register MSC after an update. Coming from an older install? Remove the old registration first: `claude mcp remove msc -s user`.
 3. Make an empty folder, start `claude` in it and ask for a server, for example: "Make a Paper lobby plugin with a /spawn command and build a small spawn platform." The AI scaffolds the project there (`project_scaffold`), downloads Paper and installs the agent (`server_setup`), then builds, deploys and restarts in one call (`dev_cycle`).
 
-Every dev server except Minestom (Paper, Purpur, Fabric, Quilt, NeoForge, Forge) needs your agreement to the Minecraft EULA (https://aka.ms/MinecraftEULA). Nothing accepts it by default. To turn on automatic acceptance for your machine, install with `./gradlew :msc-core:installMsc -Pmsc.acceptEula=true`, or say yes once when the AI asks (it passes `acceptEula=true`). Either one confirms that you read and accept Mojang's EULA, as set out in [TERMS.md](TERMS.md), and from then on MSC writes `eula=true` for every such dev server on that machine ([ADR 0020](msc-docs/docs/adr/0020-machine-eula.md)).
+Every dev server except Minestom and the Velocity proxy (Paper, Purpur, Folia, Fabric, Quilt, NeoForge, Forge) needs your agreement to the Minecraft EULA (https://aka.ms/MinecraftEULA). Nothing accepts it by default. To turn on automatic acceptance for your machine, install with `./gradlew :msc-core:installMsc -Pmsc.acceptEula=true`, or say yes once when the AI asks (it passes `acceptEula=true`). Either one confirms that you read and accept Mojang's EULA, as set out in [TERMS.md](TERMS.md), and from then on MSC writes `eula=true` for every such dev server on that machine ([ADR 0020](msc-docs/docs/adr/0020-machine-eula.md)).
 
 Step-by-step guide: [Wiki](https://github.com/ImNotStable/Minecraft-Server-Creator/wiki) (source in `docs/wiki/`).
 

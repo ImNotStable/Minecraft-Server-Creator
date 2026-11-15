@@ -35,7 +35,8 @@ class TemplateDocNamesTest {
             Templates.FABRIC_GAME, Set.of("ServerPlayerEntity", "Text", "World", "ARENA", "Steve"),
             Templates.NEOFORGE_MOD, Set.of("COMMON", "SERVER"),
             Templates.FORGE_MOD, Set.of("Missing"),
-            Templates.MINESTOM_GAME, Set.of("ARENA", "Steve"));
+            Templates.MINESTOM_GAME, Set.of("ARENA", "Steve"),
+            Templates.VELOCITY_PLUGIN, Set.of("Hi"));
 
     @TempDir
     Path dir;

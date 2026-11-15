@@ -18,25 +18,46 @@ import org.bukkit.entity.Player;
 /** {@link AgentServer} on a Bukkit {@link Server}. */
 final class PaperServer implements AgentServer {
     static final String PLATFORM = "paper";
+    /** What the agent reports on Folia, so the core's messages name the platform the world operations are missing on. */
+    static final String FOLIA = "folia";
+    /** A class only Folia has: its regionised server. */
+    static final String FOLIA_CLASS = "io.papermc.paper.threadedregions.RegionizedServer";
 
     private final Server server;
     private final ServerFacts facts;
     private final Function<Consumer<Component>, CommandSender> senders;
+    private final String platform;
 
-    PaperServer(Server server, ServerFacts facts) {
-        this(server, facts, server::createCommandSender);
+    PaperServer(Server server, ServerFacts facts, String platform) {
+        this(server, facts, server::createCommandSender, platform);
     }
 
     /** @param senders makes a command sender that passes the feedback it receives to the consumer */
     PaperServer(Server server, ServerFacts facts, Function<Consumer<Component>, CommandSender> senders) {
+        this(server, facts, senders, PLATFORM);
+    }
+
+    private PaperServer(Server server, ServerFacts facts, Function<Consumer<Component>, CommandSender> senders,
+                        String platform) {
         this.server = server;
         this.facts = facts;
         this.senders = senders;
+        this.platform = platform;
+    }
+
+    /** True when {@code loader} sees Folia's classes, so the server is Folia (Paper API, no main thread). */
+    static boolean isFolia(ClassLoader loader) {
+        try {
+            Class.forName(FOLIA_CLASS, false, loader);
+            return true;
+        } catch (ClassNotFoundException | LinkageError e) {
+            return false;
+        }
     }
 
     @Override
     public String platform() {
-        return PLATFORM;
+        return platform;
     }
 
     @Override

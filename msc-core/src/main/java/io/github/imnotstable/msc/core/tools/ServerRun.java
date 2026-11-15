@@ -260,7 +260,8 @@ final class ServerRun {
         if (r.ready()) {
             out.append("server ready in ").append(LogText.seconds(r.millis()));
             CoreServer.AgentSession s = hub.current();
-            out.append(s != null ? ", agent connected" : ", no agent connected (world tools unavailable)");
+            out.append(s != null ? ", agent connected" : server.platform().proxy() ? ", a proxy: no world or agent"
+                    : ", no agent connected (world tools unavailable)");
             if (agentUpdated) {
                 out.append(", agent jar updated");
             }

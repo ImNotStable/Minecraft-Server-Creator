@@ -21,6 +21,11 @@ public enum Platform {
     PAPER("Paper", "paper.jar", "plugins", true, "paper"),
     /** Purpur, a Paper fork: Paper plugins and the Paper agent run on it unchanged. See ADR 0027. */
     PURPUR("Purpur", "purpur.jar", "plugins", true, "paper"),
+    /**
+     * Folia, Paper with regionised multithreading: Paper plugins that declare {@code folia-supported: true} run on it.
+     * The Paper agent runs server operations only there; world operations are not offered (ADR 0045).
+     */
+    FOLIA("Folia", "folia.jar", "plugins", true, "paper"),
     /** Fabric server launcher, mods in {@code mods/}. */
     FABRIC("Fabric", "fabric-server-launch.jar", "mods", true, "fabric"),
     /** Quilt server launcher; Quilt loads Fabric mods, so the Fabric agent and Fabric API run on it. See ADR 0027. */
@@ -30,7 +35,12 @@ public enum Platform {
     /** Minecraft Forge's runnable shim jar, copied to a fixed name, mods in {@code mods/}. */
     FORGE("Forge", "forge-server.jar", "mods", true, "forge"),
     /** The project's own runnable jar is the server; the agent is built into it. No Mojang EULA step. */
-    MINESTOM("Minestom", "server.jar", null, false, "minestom");
+    MINESTOM("Minestom", "server.jar", null, false, "minestom"),
+    /**
+     * The Velocity proxy, plugins in {@code plugins/}. Not a Minecraft server: no world, no msc agent and no EULA step;
+     * players reach a Paper backend through it (ADR 0045).
+     */
+    VELOCITY("Velocity", "velocity.jar", "plugins", false, "velocity");
 
     private final String displayName;
     private final String serverJar;
@@ -67,7 +77,8 @@ public enum Platform {
 
     /**
      * Which msc agent runs on this platform, and so also which API and project layout it shares: {@code paper},
-     * {@code fabric}, {@code neoforge}, {@code forge} or {@code minestom}. Purpur shares Paper's, Quilt Fabric's.
+     * {@code fabric}, {@code neoforge}, {@code forge} or {@code minestom}. Purpur and Folia share Paper's, Quilt
+     * Fabric's. Velocity has none: {@code velocity} names only its API and project layout.
      */
     public String agent() {
         return agent;
@@ -79,6 +90,17 @@ public enum Platform {
      */
     public String agentJar() {
         return "msc-agent-" + agent + ".jar";
+    }
+
+    /** True for a proxy: it runs no world and no msc agent, so world, build and player tools do not apply. */
+    public boolean proxy() {
+        return this == VELOCITY;
+    }
+
+    /** The one line world, build and player tools answer with on a proxy, or null where they work. */
+    public String noWorldTools() {
+        return proxy() ? displayName + " is a proxy with no world or msc agent: world, build and player tools do not "
+                + "apply; use them in the backend's workspace" : null;
     }
 
     /** True when the server is Mojang's and so needs an accepted {@code eula.txt}. */
@@ -149,29 +171,38 @@ public enum Platform {
         if (Files.isRegularFile(resources.resolve("META-INF/mods.toml"))) {
             return FORGE;
         }
+        if (mentions(project, "velocity-api")) {
+            return VELOCITY;
+        }
         if (Files.isRegularFile(project.resolve("src/main/resources/paper-plugin.yml"))
                 || Files.isRegularFile(project.resolve("src/main/resources/plugin.yml"))) {
             return PAPER;
         }
+        return mentions(project, "minestom") ? MINESTOM : null;
+    }
+
+    /** True when one of the project's build files names {@code word}, ignoring case. */
+    private static boolean mentions(Path project, String word) {
         for (String build : List.of("build.gradle.kts", "build.gradle", "gradle/libs.versions.toml")) {
             Path file = project.resolve(build);
             try {
-                if (Files.isRegularFile(file) && Files.readString(file).toLowerCase(Locale.ROOT).contains("minestom")) {
-                    return MINESTOM;
+                if (Files.isRegularFile(file) && Files.readString(file).toLowerCase(Locale.ROOT).contains(word)) {
+                    return true;
                 }
             } catch (IOException e) {
                 // Not readable as text: no opinion.
             }
         }
-        return null;
+        return false;
     }
 
     /** The command that starts this platform's server from its directory. */
     public List<String> launchCommand(String java) {
         return switch (this) {
-            case PAPER, PURPUR -> List.of(java, "-Xmx2G", "-jar", serverJar, "--nogui");
+            case PAPER, PURPUR, FOLIA -> List.of(java, "-Xmx2G", "-jar", serverJar, "--nogui");
             case FABRIC, QUILT, NEOFORGE, FORGE -> List.of(java, "-Xmx2G", "-jar", serverJar, "nogui");
             case MINESTOM -> List.of(java, "-Xmx1G", "-jar", serverJar);
+            case VELOCITY -> List.of(java, "-Xmx512M", "-jar", serverJar);
         };
     }
 }

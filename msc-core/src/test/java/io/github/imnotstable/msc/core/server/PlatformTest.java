@@ -25,14 +25,14 @@ class PlatformTest {
         assertThat(Platform.MINESTOM.addonDir()).isNull();
         assertThat(Platform.of(" Fabric\n")).isEqualTo(Platform.FABRIC);
         assertThatThrownBy(() -> Platform.of("spigot")).isInstanceOf(ToolException.class)
-                .hasMessageContaining("paper, purpur, fabric, quilt, neoforge, forge, minestom");
+                .hasMessageContaining("paper, purpur, folia, fabric, quilt, neoforge, forge, minestom, velocity");
     }
 
     @Test
     void namesListPlatformsAsProse() {
         assertThat(Platform.names(p -> p == Platform.PAPER, "or")).isEqualTo("Paper");
-        assertThat(Platform.names(p -> p.agent().equals("paper"), "or")).isEqualTo("Paper or Purpur");
-        assertThat(Platform.names(Platform::needsEula, "and")).isEqualTo("Paper, Purpur, Fabric, Quilt, NeoForge and Forge");
+        assertThat(Platform.names(p -> p.agent().equals("paper"), "or")).isEqualTo("Paper, Purpur or Folia");
+        assertThat(Platform.names(Platform::needsEula, "and")).isEqualTo("Paper, Purpur, Folia, Fabric, Quilt, NeoForge and Forge");
     }
 
     @Test
@@ -48,8 +48,26 @@ class PlatformTest {
         assertThat(Platform.FORGE.agent()).isEqualTo("forge");
         assertThat(Platform.FORGE.launchCommand("java")).containsExactly("java", "-Xmx2G", "-jar", "forge-server.jar", "nogui");
         for (Platform p : Platform.values()) {
-            assertThat(p.needsEula()).as(p.id()).isEqualTo(p != Platform.MINESTOM);
+            assertThat(p.needsEula()).as(p.id()).isEqualTo(p != Platform.MINESTOM && p != Platform.VELOCITY);
+            assertThat(p.proxy()).as(p.id()).isEqualTo(p == Platform.VELOCITY);
+            assertThat(p.noWorldTools() != null).as(p.id()).isEqualTo(p.proxy());
         }
+    }
+
+    /** ADR 0045: Folia runs Paper's agent like Paper; Velocity is a proxy with its own jar, plugins and no agent. */
+    @Test
+    void foliaIsAPaperForkAndVelocityAProxy() throws Exception {
+        assertThat(Platform.FOLIA.agent()).isEqualTo("paper");
+        assertThat(Platform.FOLIA.agentJar()).isEqualTo("msc-agent-paper.jar");
+        assertThat(Platform.FOLIA.launchCommand("java")).containsExactly("java", "-Xmx2G", "-jar", "folia.jar", "--nogui");
+        assertThat(Platform.VELOCITY.addonDir()).isEqualTo("plugins");
+        assertThat(Platform.VELOCITY.launchCommand("java")).containsExactly("java", "-Xmx512M", "-jar", "velocity.jar");
+        assertThat(Platform.VELOCITY.noWorldTools()).startsWith("Velocity is a proxy").doesNotContain("\n");
+        Files.writeString(dir.resolve("build.gradle.kts"), "dependencies { compileOnly(libs.velocity.api) }");
+        Files.createDirectories(dir.resolve("gradle"));
+        Files.writeString(dir.resolve("gradle/libs.versions.toml"),
+                "velocity-api = { module = \"com.velocitypowered:velocity-api\", version.ref = \"velocity\" }\n");
+        assertThat(Platform.detect(dir)).isEqualTo(Platform.VELOCITY);
     }
 
     @Test

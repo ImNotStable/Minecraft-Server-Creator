@@ -138,6 +138,7 @@ public final class Core implements AutoCloseable {
                 // No fixed address, so only a server this core starts can connect (MSC_CORE_ADDRESS attaches others).
                 hub.agentExpected(server::running);
             }
+            hub.noAgentReason(() -> server.platform().noWorldTools());
             ResourcePack pack = new ResourcePack(config.dataDir().resolve("pack"), config.dataDir().resolve("build"),
                     config.packHost(), config.packPort(), config.packFormat());
             ToolRegistry tools = new ToolRegistry(log);

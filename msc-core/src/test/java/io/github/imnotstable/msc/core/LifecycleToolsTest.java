@@ -580,7 +580,7 @@ class LifecycleToolsTest {
             assertThat(machineEula).doesNotExist();
             assertThat(s.call("server_start", "acceptEula", true, "timeoutSeconds", 20).text())
                     .startsWith("Minecraft EULA (https://aka.ms/MinecraftEULA) accepted for this machine, saved in ")
-                    .contains("TERMS.md").contains("every Paper, Purpur, Fabric, Quilt, NeoForge and Forge server");
+                    .contains("TERMS.md").contains("every Paper, Purpur, Folia, Fabric, Quilt, NeoForge and Forge server");
             // The notice is shown once.
             assertThat(s.call("server_start", "acceptEula", true, "timeoutSeconds", 20).text()).doesNotContain("TERMS.md");
             assertThat(ws.resolve("run/eula.txt")).content().contains("eula=true");
@@ -763,7 +763,7 @@ class LifecycleToolsTest {
             assertThat(paths).hasSize(before);
             assertThat(s.error("server_setup", "version", "1.0")).contains("Fabric setup supports Minecraft " + minecraft);
             assertThat(s.error("server_setup", "platform", "spigot")).contains("unknown platform spigot")
-                    .contains("paper, purpur, fabric, quilt, neoforge, forge, minestom");
+                    .contains("paper, purpur, folia, fabric, quilt, neoforge, forge, minestom, velocity");
             // Quilt runs Fabric mods: a version Fabric API does not cover is refused before any download.
             assertThat(s.error("server_setup", "platform", "quilt", "version", "1.0"))
                     .contains("Fabric setup supports Minecraft " + minecraft);

@@ -1,0 +1,49 @@
+plugins {
+    java
+    alias(libs.plugins.run.velocity)
+}
+
+group = "{{packageName}}"
+version = "{{version}}"
+description = "{{description}}"
+
+java {
+    toolchain.languageVersion = JavaLanguageVersion.of(libs.versions.java.get().toInt())
+}
+
+repositories {
+    mavenCentral()
+    maven("https://repo.papermc.io/repository/maven-public/")
+}
+
+dependencies {
+    compileOnly(libs.velocity.api)
+    // Writes velocity-plugin.json from the @Plugin annotation.
+    annotationProcessor(libs.velocity.api)
+
+    testImplementation(libs.velocity.api)
+    testImplementation(platform(libs.junit.bom))
+    testImplementation(libs.junit.jupiter)
+    testImplementation(libs.assertj)
+    testRuntimeOnly(libs.junit.platform.launcher)
+}
+
+tasks.withType<JavaCompile>().configureEach {
+    options.encoding = "UTF-8"
+    options.release = libs.versions.java.get().toInt()
+    options.compilerArgs.addAll(listOf("-parameters", "-Xlint:all,-processing,-serial"))
+}
+
+tasks.test {
+    useJUnitPlatform()
+    // Short output: only failures, with the full exception.
+    testLogging {
+        events("failed")
+        exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+    }
+}
+
+tasks.runVelocity {
+    // Dev proxy in run/ with this plugin loaded. Velocity has no EULA step.
+    velocityVersion(libs.versions.velocity.get())
+}

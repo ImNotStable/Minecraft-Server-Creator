@@ -4,3 +4,4 @@ main: io.github.imnotstable.msc.agent.paper.MscAgentPlugin
 api-version: '26.3'
 description: "Carries out Minecraft Server Creator's world and server operations."
 author: ImNotStable
+folia-supported: true

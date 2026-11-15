@@ -25,6 +25,7 @@ forgegradle = "7.0.40"      # only written into the forge-mod template; the repo
 quilt-loader = "0.30.2"     # newest stable Quilt Loader; runs the Fabric agent and Fabric mods
 quilt-installer = "0.15.1"
 minestom = "2026.10.07-26.2"  # Minestom lags Paper: newest build targets Minecraft 26.2
+velocity = "4.3.1"          # Velocity proxy (ADR 0045): server_setup installs it; the velocity-plugin template compiles against its API
 mcprotocollib = "26.3-3"  # GeyserMC Java Edition protocol client for the msc-bot test player (opencollab repo)
 netty = "4.2.20.Final"  # floor for mcprotocollib, which pulls netty-all 4.2.1.Final (old, with advisories); like jackson
 mcprotocollib-previous = "26.2"  # the previous Minecraft version, for servers that lag Paper (Minestom); stays one behind

@@ -84,6 +84,10 @@ final class TemplateDocs {
             tasks.add("runServer"); // run-task 3.1 AbstractRun calls setStandardInput(System.in)
             stdin.add("runServer");
         }
+        if (aliases.contains("run.velocity")) {
+            tasks.add("runVelocity"); // the same run-task AbstractRun as run-paper
+            stdin.add("runVelocity");
+        }
         for (String plugin : aliases) {
             if (!RUN_CONFIG_PLUGINS.contains(plugin)) {
                 continue;

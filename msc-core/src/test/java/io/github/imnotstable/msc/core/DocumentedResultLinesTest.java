@@ -233,6 +233,19 @@ class DocumentedResultLinesTest {
             new SetupLine("`<platform> server ready in <folder>; next: server_start or dev_cycle`",
                     "\\w+ server ready in .*; next: server_start or dev_cycle"),
             new SetupLine("`minestom needs no server download ...`", "minestom needs no server download .*"),
+            new SetupLine("Folia `folia <version> build <n> (downloaded)`", "folia \\S+ build \\d+ \\((downloaded|cached)\\)"),
+            new SetupLine("`folia: plugins load only with folia-supported: true ...`",
+                    "folia: plugins load only with folia-supported: true .*"),
+            new SetupLine("`proxy velocity: players join only through the Velocity proxy ...`",
+                    "proxy velocity: players join only through the Velocity proxy .*"),
+            new SetupLine("`proxy none: players join directly`", "proxy none: players join directly"),
+            new SetupLine("Velocity `velocity <version> build <n> (downloaded)`",
+                    "velocity \\S+ build \\d+ \\((downloaded|cached)\\)"),
+            new SetupLine("`wrote velocity.toml: ...`", "wrote velocity\\.toml: .*"),
+            new SetupLine("`velocity.toml kept as it is`", "velocity\\.toml kept as it is"),
+            new SetupLine("`backend: a paper, purpur or folia server set up with proxy=velocity, ...`",
+                    "backend: a paper, purpur or folia server set up with proxy=velocity, .*"),
+            new SetupLine("`velocity proxy ready in <folder> ...`", "velocity proxy ready in .*"),
             new SetupLine("`mode ignored: ...`", "mode ignored: .*"));
 
     @Test
@@ -275,6 +288,16 @@ class DocumentedResultLinesTest {
             }
             try (CoreHarness h = new CoreHarness(Files.createDirectories(root.resolve("minestom")))) {
                 results.add(h.ok("server_setup", "platform", "minestom", "mode", "build"));
+            }
+            // ADR 0045: Folia as a Velocity backend and back, and a Velocity proxy set up twice.
+            Path folia = agents(Files.createDirectories(root.resolve("folia")));
+            try (CoreHarness h = new CoreHarness(folia, c -> downloads.apply(c).withMachineEula(machineEula))) {
+                results.add(h.ok("server_setup", "platform", "folia", "proxy", "velocity"));
+                results.add(h.ok("server_setup", "proxy", "none"));
+            }
+            try (CoreHarness h = new CoreHarness(Files.createDirectories(root.resolve("velocity")), downloads::apply)) {
+                results.add(h.ok("server_setup", "platform", "velocity", "mode", "game"));
+                results.add(h.ok("server_setup"));
             }
         }
         List<String> lines = results.stream().flatMap(String::lines).toList();
