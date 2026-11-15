@@ -1,5 +1,7 @@
 package io.github.imnotstable.msc.bench.run;
 
+import io.github.imnotstable.msc.bench.JsonNumbers;
+import io.github.imnotstable.msc.bench.JsonNumbers.Range;
 import java.util.Map;
 import java.util.TreeMap;
 
@@ -25,12 +27,24 @@ public record ToolStats(
 
     public static final ToolStats NONE = new ToolStats(0, 0, 0, 0, 0, 0, Map.of());
 
+    /*
+     * The values results.jsonl keeps, the one rule its writer (ToolLogReader) and its reader (ResultsFile) share
+     * (#602): a tool log line that would take a total outside them is left out, never written for report to refuse.
+     */
+    /** The range of {@link #calls} and {@link #errors}, and of a tool's {@link PerTool#errors}. */
+    public static final Range COUNT = JsonNumbers.COUNT;
+    /** The range of the tokens, characters and milliseconds, in all and per tool. */
+    public static final Range AMOUNT = JsonNumbers.AMOUNT;
+
     /**
      * Totals for one tool.
      *
      * @param tokens text and image tokens the tool returned
      */
     public record PerTool(int calls, int errors, long tokens, long durationMs) {
+
+        /** The range of {@link #calls}: a tool is listed only once it was called. */
+        public static final Range CALLS = JsonNumbers.CALLS;
 
         PerTool plus(PerTool other) {
             return new PerTool(calls + other.calls, errors + other.errors, tokens + other.tokens,
