@@ -10,6 +10,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 class PlatformTest {
     @TempDir
@@ -113,6 +115,45 @@ class PlatformTest {
         assertThat(ApiIndex.findJars(dir, "minestom")).containsExactly(minestom, adventure);
         assertThat(ApiIndex.findJars(dir, "fabric")).containsExactly(minecraft, events, loader);
         assertThat(ApiIndex.findJars(dir.resolve("empty"), "fabric")).isEmpty();
+    }
+
+    /**
+     * #593: what {@link Platform#detect} makes of a project's files ({@code src/main/resources/<file>}, or a build file
+     * that names a word). A resource file the server loads beats any word in a build file, and a game server's
+     * plugin file beats Velocity's, so a plugin built for Paper and Velocity is Paper.
+     */
+    @ParameterizedTest(name = "{0} -> {1}")
+    @CsvSource(nullValues = "none", value = {
+            "plugin.yml, PAPER",
+            "paper-plugin.yml, PAPER",
+            "velocity-plugin.json, VELOCITY",
+            "build:velocity-api, VELOCITY",
+            "build:minestom, MINESTOM",
+            "build:paper-api, none",
+            "none, none",
+            "plugin.yml build:paper-api build:velocity-api, PAPER",
+            "paper-plugin.yml build:velocity-api, PAPER",
+            "plugin.yml velocity-plugin.json build:velocity-api, PAPER",
+            "velocity-plugin.json build:paper-api, VELOCITY",
+            "plugin.yml build:minestom, PAPER",
+            "fabric.mod.json build:velocity-api, FABRIC",
+            "quilt.mod.json fabric.mod.json, QUILT",
+            "META-INF/mods.toml, FORGE",
+            "META-INF/neoforge.mods.toml META-INF/mods.toml, NEOFORGE",
+            "META-INF/neoforge.mods.toml plugin.yml build:velocity-api, NEOFORGE"})
+    void detectionReadsTheFilesTheServerLoadsBeforeTheBuildFiles(String files, Platform expected) throws Exception {
+        StringBuilder build = new StringBuilder("dependencies {\n");
+        for (String file : files == null ? new String[0] : files.split(" ")) {
+            if (file.startsWith("build:")) {
+                build.append("    compileOnly(\"com.example:").append(file.substring(6)).append(":1.0\")\n");
+            } else {
+                Path resource = dir.resolve("src/main/resources").resolve(file);
+                Files.createDirectories(resource.getParent());
+                Files.writeString(resource, "");
+            }
+        }
+        Files.writeString(dir.resolve("build.gradle.kts"), build.append("}\n"));
+        assertThat(Platform.detect(dir)).isEqualTo(expected);
     }
 
     private static Path jar(Path path) throws Exception {
