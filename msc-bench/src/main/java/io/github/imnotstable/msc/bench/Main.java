@@ -9,6 +9,7 @@ import io.github.imnotstable.msc.bench.run.PidNamespace;
 import io.github.imnotstable.msc.bench.run.BenchRunner;
 import io.github.imnotstable.msc.bench.run.ChildProcesses;
 import io.github.imnotstable.msc.bench.run.Disk;
+import io.github.imnotstable.msc.bench.run.RunFolderUnwritable;
 import io.github.imnotstable.msc.bench.run.RunIsolation;
 import io.github.imnotstable.msc.bench.run.ResultsFile;
 import io.github.imnotstable.msc.bench.run.RunRecord;
@@ -74,7 +75,10 @@ public final class Main {
     static final int FAILED = 3;
     /** {@code run} stopped early on an account usage limit. */
     static final int USAGE_LIMIT = 4;
-    /** {@code run} stopped early: an attempt could not be written to {@code results.jsonl}. */
+    /**
+     * {@code run} stopped early: one of the run's own files (an attempt's folder or files, {@code results.jsonl}) could
+     * not be written ({@link RunFolderUnwritable}).
+     */
     static final int NOT_RECORDED = 5;
     /** An error the bench did not expect: a bug to report. */
     static final int INTERNAL_ERROR = 70;
@@ -263,12 +267,12 @@ public final class Main {
      * attempt keeps {@link #OK}, {@link #FAILED} or {@link #USAGE_LIMIT}, since those speak for the attempts and every
      * one of them is in {@code results.jsonl}. The earlier {@code report.md}, if any, is left as it was.
      */
-    static int endRun(List<RunRecord> records, IOException notRecorded, String stoppedBy, Path runDir,
+    static int endRun(List<RunRecord> records, RunFolderUnwritable notRecorded, String stoppedBy, Path runDir,
             PrintStream out, Disk disk) {
         int exit;
         if (notRecorded != null) {
-            out.println("Stopped early: an attempt could not be written to " + ResultsFile.NAME + " ("
-                    + message(notRecorded) + "); " + ResultsFile.NAME + " holds the " + records.size() + " attempts "
+            out.println("Stopped early: " + notRecorded.getMessage() + "; " + ResultsFile.NAME + " holds the "
+                    + records.size() + " attempts "
                     + "recorded. Fix the cause, run the rest into a new folder and put the results.jsonl files "
                     + "together before `report`.");
             exit = NOT_RECORDED;

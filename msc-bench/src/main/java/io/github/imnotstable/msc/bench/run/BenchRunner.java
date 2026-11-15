@@ -17,6 +17,7 @@ import io.github.imnotstable.msc.process.rcon.RconClient;
 import io.github.imnotstable.msc.templates.Templates;
 import java.io.IOException;
 import java.io.PrintStream;
+import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.SecureRandom;
@@ -53,7 +54,7 @@ public final class BenchRunner {
     /** True while an attempt whose task uses the bench's ports is under way ({@link TaskDef#usesBenchPorts}). */
     private volatile boolean portsTask;
     private String stoppedBy;
-    private IOException notRecorded;
+    private RunFolderUnwritable notRecorded;
 
     /** A runner whose Paper tasks get {@code preamble}. */
     public BenchRunner(BenchConfig config, Path runDir, String preamble, PrintStream log) {
@@ -93,11 +94,11 @@ public final class BenchRunner {
     }
 
     /**
-     * Why the last {@link #run} stopped before the end because an attempt could not be written to
-     * {@code results.jsonl} (a full disk, a file another program holds), or null. That attempt and every later one are
-     * not recorded; the records returned are exactly the ones the file holds.
+     * Why the last {@link #run} stopped before the end because one of the run's own files could not be written (a
+     * full disk, a file another program holds; {@link #own}), or null. That attempt and every later one are not
+     * recorded; the records returned are exactly the ones {@code results.jsonl} holds.
      */
-    public IOException notRecorded() {
+    public RunFolderUnwritable notRecorded() {
         return notRecorded;
     }
 
@@ -147,7 +148,7 @@ public final class BenchRunner {
         return runDir.resolve("attempts").toAbsolutePath();
     }
 
-    private List<RunRecord> runAll(List<TaskDef> tasks, List<String> modes, int repeats) throws IOException {
+    private List<RunRecord> runAll(List<TaskDef> tasks, List<String> modes, int repeats) {
         List<RunRecord> records = new ArrayList<>();
         int skipped = 0;
         for (TaskDef task : tasks) {
@@ -163,25 +164,24 @@ public final class BenchRunner {
                     RunRecord record;
                     try {
                         record = runWithMcpRetries(task, mode, repeat);
+                        if (children.closed() || Thread.currentThread().isInterrupted()) {
+                            // Cut short: the attempt's agent was killed, so its record would score nothing real.
+                            log.printf("[%s] %s #%d: stopped, the run was interrupted%n", mode, task.id(), repeat);
+                            return records;
+                        }
+                        Path results = runDir.resolve(RESULTS_FILE);
+                        RunRecord done = record;
+                        own(results, () -> ResultsFile.append(results, done, disk));
                     } catch (UsageLimitReached e) {
                         stoppedBy = e.getMessage();
                         log.printf("[%s] %s #%d: stopped, the agent hit a usage limit: %s%n",
                                 mode, task.id(), repeat, stoppedBy);
                         return records;
-                    }
-                    if (children.closed() || Thread.currentThread().isInterrupted()) {
-                        // Cut short: the attempt's agent was killed, so its record would score nothing real.
-                        log.printf("[%s] %s #%d: stopped, the run was interrupted%n", mode, task.id(), repeat);
-                        return records;
-                    }
-                    try {
-                        ResultsFile.append(runDir.resolve(RESULTS_FILE), record, disk);
-                    } catch (IOException e) {
-                        // The file system refused the write: later attempts would be lost the same way, so the run
-                        // stops with the records the file holds, and the caller still writes their report.
+                    } catch (RunFolderUnwritable e) {
+                        // Later attempts would be lost the same way, so the run stops with the records results.jsonl
+                        // holds, and the caller still writes their report.
                         notRecorded = e;
-                        log.printf("[%s] %s #%d: stopped, the attempt could not be written to %s (%s)%n",
-                                mode, task.id(), repeat, RESULTS_FILE, e);
+                        log.printf("[%s] %s #%d: stopped, %s%n", mode, task.id(), repeat, e.getMessage());
                         return records;
                     }
                     records.add(record);
@@ -198,7 +198,7 @@ public final class BenchRunner {
     /** Tries per attempt when the mode's required MCP server was not connected at start and no tool was called. */
     static final int MCP_TRIES = 3;
 
-    private RunRecord runWithMcpRetries(TaskDef task, String modeName, int repeat) throws IOException {
+    private RunRecord runWithMcpRetries(TaskDef task, String modeName, int repeat) throws RunFolderUnwritable {
         String required = config.modes().get(modeName).requireMcp();
         RunRecord record = null;
         String problem = null;
@@ -219,30 +219,51 @@ public final class BenchRunner {
                 + MCP_TRIES + " tries: " + problem);
     }
 
-    RunRecord runOne(TaskDef task, String modeName, int repeat, int attempt) throws IOException {
+    /** A write of one of the run's own files. */
+    @FunctionalInterface
+    private interface OwnWrite {
+        void run() throws IOException;
+    }
+
+    /**
+     * The one rule for an IO failure in an attempt (#615). The run's own files, each attempt's folder, its
+     * {@code mcp.json}, {@code prompt.md} and agent output files, and {@code results.jsonl}, are written only through
+     * this, and a failure to write one (a full disk, a file another program holds) is the machine's: every later
+     * attempt would fail the same way, so it stops the run as {@link RunFolderUnwritable}, and the run ends with its
+     * verdict and report. Every other failure in an attempt (reading the MCP config template, building the workspace
+     * from the task, the server, the agent, the checks) is the attempt's own: {@link #runOne} records it as that
+     * attempt's failure, under the step it happened in, and the run goes on.
+     */
+    private static void own(Path file, OwnWrite write) throws RunFolderUnwritable {
+        try {
+            write.run();
+        } catch (RunFolderUnwritable e) {
+            throw e;
+        } catch (IOException e) {
+            throw new RunFolderUnwritable(file, e);
+        }
+    }
+
+    /**
+     * One attempt. It throws only when one of the run's own files cannot be written ({@link #own}); any other failure
+     * is recorded in the returned record.
+     */
+    RunRecord runOne(TaskDef task, String modeName, int repeat, int attempt) throws RunFolderUnwritable {
         BenchConfig.Mode mode = config.modes().get(modeName);
         String name = modeName + "-" + repeat + (attempt > 1 ? "-try" + attempt : "");
         Path attemptDir = attemptsDir().resolve(task.id()).resolve(name);
-        if (Files.exists(attemptDir)) {
-            // Its workspace and tool log hold an earlier attempt's work, which this attempt's checks would score.
-            throw new IOException("attempt folder " + attemptDir + " already exists");
-        }
+        own(attemptDir, () -> {
+            Files.createDirectories(attemptDir.getParent());
+            try {
+                disk.createDirectory(attemptDir);
+            } catch (FileAlreadyExistsException e) {
+                // Its workspace and tool log hold an earlier attempt's work, which this attempt's checks would score.
+                throw new IOException("it already exists, with an earlier attempt's work in it", e);
+            }
+        });
         Path workspace = attemptDir.resolve("workspace");
         String startedAt = Instant.now().toString();
         Map<String, String> values = placeholders(config, attemptDir, workspace);
-
-        Path mcpTemplate = mode.mcpConfigTemplate() == null ? null : Path.of(mode.mcpConfigTemplate());
-        if (mcpTemplate != null) {
-            Path mcpConfig = attemptDir.resolve("mcp.json");
-            Files.createDirectories(attemptDir);
-            PrivateFile.write(mcpConfig, withMarks(fillJson(Text.readOwn(mcpTemplate), values),
-                    processes.marks(attemptDir), processes.argumentMarks(attemptDir)));
-            values.put("mcpConfig", slashes(mcpConfig));
-        }
-
-        Map<String, String> serverEnv = new LinkedHashMap<>();
-        mode.serverEnv().forEach((k, v) -> serverEnv.put(k, Placeholders.fill(v, values)));
-        processes.mark(serverEnv, attemptDir);
 
         long wallMs = 0;
         boolean timedOut = false;
@@ -254,15 +275,27 @@ public final class BenchRunner {
         ServerManager server = null;
         portsTask = task.usesBenchPorts();
         // The step a failure before the agent starts is named after; null once the agent has started.
-        String setupStep = "freeing the bench's ports";
+        String setupStep = "making the MCP config";
         try {
+            if (mode.mcpConfigTemplate() != null) {
+                Path mcpConfig = attemptDir.resolve("mcp.json");
+                String text = withMarks(fillJson(Text.readOwn(Path.of(mode.mcpConfigTemplate())), values),
+                        processes.marks(attemptDir), processes.argumentMarks(attemptDir));
+                own(mcpConfig, () -> PrivateFile.write(mcpConfig, text, disk));
+                values.put("mcpConfig", slashes(mcpConfig));
+            }
+            Map<String, String> serverEnv = new LinkedHashMap<>();
+            mode.serverEnv().forEach((k, v) -> serverEnv.put(k, Placeholders.fill(v, values)));
+            processes.mark(serverEnv, attemptDir);
+
+            setupStep = "freeing the bench's ports";
             if (task.usesBenchPorts()) {
                 // A server an earlier attempt of this run left there is killed; anything else is refused here, before
                 // the agent works for nothing.
                 ServerManager.clearPorts(config.server(), processes, attemptsDir());
             }
             setupStep = "preparing the workspace";
-            if (mcpTemplate != null) {
+            if (mode.mcpConfigTemplate() != null) {
                 setupStep = "checking the core port";
                 CoreProcesses.requireFreePort(config.corePort(), () -> processes.kill(attemptsDir()),
                         p -> processes.owns(p, attemptsDir()));
@@ -290,15 +323,21 @@ public final class BenchRunner {
             values.put("prompt", fullPrompt(task, values));
             List<String> command = new ArrayList<>(Placeholders.fill(config.agent().command(), values));
             command.addAll(Placeholders.fill(mode.extraArgs(), values));
+            Path stdoutFile = attemptDir.resolve("agent-stdout.json");
+            Path stderrFile = attemptDir.resolve("agent-stderr.log");
+            Path promptFile = attemptDir.resolve("prompt.md");
+            // The agent's output files are made here, so the run's rule covers them rather than the agent's start.
+            own(stdoutFile, () -> disk.writeString(stdoutFile, ""));
+            own(stderrFile, () -> disk.writeString(stderrFile, ""));
+            own(promptFile, () -> disk.writeString(promptFile, values.get("prompt")));
             ProcessBuilder builder = new ProcessBuilder(command)
                     .directory(workspace.toFile())
                     .redirectInput(ProcessBuilder.Redirect.from(nullDevice()))
-                    .redirectOutput(attemptDir.resolve("agent-stdout.json").toFile())
-                    .redirectError(attemptDir.resolve("agent-stderr.log").toFile());
+                    .redirectOutput(stdoutFile.toFile())
+                    .redirectError(stderrFile.toFile());
             AgentEnvironment.dropParentSession(builder.environment());
             mode.env().forEach((k, v) -> builder.environment().put(k, Placeholders.fill(v, values)));
             processes.mark(builder.environment(), attemptDir);
-            Files.writeString(attemptDir.resolve("prompt.md"), values.get("prompt"));
 
             int timeout = task.timeoutSeconds() > 0 ? task.timeoutSeconds() : config.agent().timeoutSeconds();
             long start = System.nanoTime();
@@ -366,7 +405,7 @@ public final class BenchRunner {
             for (Check check : task.checks()) {
                 results.add(check.run(context));
             }
-        } catch (UsageLimitReached e) {
+        } catch (UsageLimitReached | RunFolderUnwritable e) {
             throw e;
         } catch (IOException | RuntimeException e) {
             String message = e.getMessage() == null ? e.toString() : e.getMessage();

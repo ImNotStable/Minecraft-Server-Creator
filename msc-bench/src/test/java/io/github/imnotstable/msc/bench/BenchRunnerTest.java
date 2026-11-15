@@ -1,7 +1,6 @@
 package io.github.imnotstable.msc.bench;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.assertj.core.api.Assertions.tuple;
 
 import io.github.imnotstable.msc.bench.run.BenchConfig;
@@ -424,9 +423,87 @@ class BenchRunnerTest {
 
         assertThat(records).isEmpty();
         assertThat(runner.notRecorded()).isNotNull();
-        assertThat(log.toString(StandardCharsets.UTF_8))
-                .contains("[baseline] a-emoji #1: stopped, the attempt could not be written to results.jsonl");
+        assertThat(log.toString(StandardCharsets.UTF_8)).contains("[baseline] a-emoji #1: stopped, "
+                + runDir.resolve(BenchRunner.RESULTS_FILE) + " could not be written (");
         assertThat(runDir.resolve("attempts/b-pass")).doesNotExist();
+    }
+
+    /**
+     * #615: the one rule for an IO failure in an attempt, at each write. Each row: what fails (a file or folder of the
+     * run's own that the disk refuses after {@code room} writes of that name, or the workspace the task's fixtures
+     * build); the exit code, and how many of the two attempts (baseline, then toolset with an MCP config) are
+     * recorded. A refused write of the run's own files stops the run with exit 5 and its report, as a refused
+     * results.jsonl append does; a failed workspace is that attempt's failure and the run goes on. No row leaves
+     * {@code run} with an exception, which {@code Main} would turn into exit 2 with no report.
+     */
+    @ParameterizedTest
+    @CsvSource({
+            "toolset-1, 0, 5, 1",
+            "mcp.json, 0, 5, 1",
+            "agent-stdout.json, 1, 5, 1",
+            "agent-stderr.log, 1, 5, 1",
+            "prompt.md, 1, 5, 1",
+            "results.jsonl, 1, 5, 1",
+            "report.md, 0, 0, 2",
+            "workspace, 0, 3, 2"})
+    void everyWriteOfAnAttemptFailsOneWay(String fails, int room, int exit, int recorded) throws IOException {
+        Path tasks = Files.createDirectories(dir.resolve("tasks"));
+        Path task = Files.createDirectories(tasks.resolve("write"));
+        Files.writeString(task.resolve("prompt.md"), "Write done.txt.");
+        if (fails.equals("workspace")) {
+            // Two fixtures that cannot both be copied: a file and a folder of the same name.
+            Files.writeString(Files.createDirectories(tasks.resolve("_shared")).resolve("clash"), "a file");
+            Files.writeString(Files.createDirectories(task.resolve("fixture/clash")).resolve("in.txt"), "a folder");
+        }
+        Files.writeString(task.resolve("task.json"), "{\"category\":\"code\",\"title\":\"x\","
+                + (fails.equals("workspace") ? "\"fixtures\":[\"_shared\"]," : "")
+                + "\"checks\":[{\"type\":\"file\",\"path\":\"done.txt\"}]}");
+        Files.writeString(dir.resolve("mcp.template.json"), "{\"log\":\"{toolLog}\"}");
+        Path configFile = dir.resolve("bench.json");
+        Path runDir = dir.resolve("run");
+        ByteArrayOutputStream log = new ByteArrayOutputStream();
+        PrintStream out = new PrintStream(log, true, StandardCharsets.UTF_8);
+        try (ClosedPort corePort = ClosedPort.reserve()) {
+            Files.writeString(configFile, """
+                    {"agent":{"command":["%s","-cp","%s","io.github.imnotstable.msc.bench.FakeAgent","{prompt}"]},
+                     "modes":{"baseline":{},"toolset":{"mcpConfigTemplate":"mcp.template.json"}},
+                     "corePort":%d}
+                    """.formatted(JAVA, CLASSPATH, corePort.port()));
+            FullDisk disk = new FullDisk(fails.equals("workspace") ? Set.of() : Set.of(fails), room, false);
+            BenchRunner runner = new BenchRunner(BenchConfig.load(configFile, dir), runDir, Map.of(TaskDef.PAPER, ""),
+                    out, disk);
+
+            List<RunRecord> records = runner.run(new RunSelection(TaskLoader.loadAll(tasks),
+                    List.of("baseline", "toolset")), 1);
+            int code = Main.endRun(records, runner.notRecorded(), runner.stoppedBy(), runDir, out, disk);
+
+            assertThat(code).as(fails).isEqualTo(exit);
+            assertThat(records).hasSize(recorded);
+            assertThat(ResultsFile.read(runDir.resolve(ResultsFile.NAME), w -> {
+                throw new AssertionError(w);
+            })).isEqualTo(records);
+            List<String> lines = log.toString(StandardCharsets.UTF_8).lines().toList();
+            if (exit == Main.NOT_RECORDED) {
+                Path file = fails.equals("toolset-1") ? runDir.resolve("attempts/write/toolset-1")
+                        : fails.equals(ResultsFile.NAME) ? runDir.resolve(fails)
+                        : runDir.resolve("attempts/write/toolset-1").resolve(fails);
+                String stop = file + " could not be written (No space left on device)";
+                assertThat(lines).contains("[toolset] write #1: stopped, " + stop);
+                assertThat(lines.get(lines.size() - 2)).isEqualTo("Stopped early: " + stop + "; results.jsonl holds "
+                        + "the 1 attempts recorded. Fix the cause, run the rest into a new folder and put the "
+                        + "results.jsonl files together before `report`.");
+            }
+            if (fails.equals("workspace")) {
+                assertThat(records).allSatisfy(r -> assertThat(r.error()).startsWith("preparing the workspace: "));
+            }
+            if (fails.equals(Main.REPORT)) {
+                assertThat(lines.getLast()).startsWith("warning: " + runDir.resolve(Main.REPORT).toAbsolutePath()
+                        + " could not be written (No space left on device)");
+            } else {
+                assertThat(lines.getLast()).startsWith("Report: ");
+                assertThat(Files.readString(runDir.resolve(Main.REPORT))).contains("Runs: " + recorded + ".");
+            }
+        }
     }
 
     /**
@@ -472,7 +549,7 @@ class BenchRunnerTest {
         }
         // The stop comes first, then the report or the one warning that says how to rebuild it.
         if (exit == Main.NOT_RECORDED) {
-            assertThat(lines.getFirst()).startsWith("Stopped early: an attempt could not be written to results.jsonl "
+            assertThat(lines.getFirst()).startsWith("Stopped early: " + results + " could not be written "
                     + "(No space left on device); results.jsonl holds the " + recorded + " attempts recorded.");
         }
         String last = lines.getLast();
@@ -497,10 +574,14 @@ class BenchRunnerTest {
         assertThat(fileTaskRunner(runDir).run(new RunSelection(TaskLoader.loadAll(dir.resolve("tasks")), List.of("baseline")), 1))
                 .singleElement().satisfies(r -> assertThat(r.passed()).isTrue());
 
-        Throwable refused = catchThrowable(() -> fileTaskRunner(runDir)
-                .run(new RunSelection(TaskLoader.loadAll(dir.resolve("tasks")), List.of("baseline")), 1));
+        BenchRunner again = fileTaskRunner(runDir);
+        List<RunRecord> records = again.run(new RunSelection(TaskLoader.loadAll(dir.resolve("tasks")),
+                List.of("baseline")), 1);
 
-        assertThat(refused).isInstanceOf(IOException.class).hasMessageContaining("already exists");
+        // The run's own folder cannot be made: the run stops as on a full disk (#615), with its report.
+        assertThat(records).isEmpty();
+        assertThat(again.notRecorded()).hasMessage(runDir.resolve("attempts/write/baseline-1").toAbsolutePath()
+                + " could not be written (it already exists, with an earlier attempt's work in it)");
         assertThat(Files.readAllLines(runDir.resolve(BenchRunner.RESULTS_FILE))).hasSize(1);
     }
 

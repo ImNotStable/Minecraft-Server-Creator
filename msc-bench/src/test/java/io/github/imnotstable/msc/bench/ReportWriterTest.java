@@ -7,8 +7,10 @@ import io.github.imnotstable.msc.bench.report.ReportWriter;
 import io.github.imnotstable.msc.bench.run.AgentResult;
 import io.github.imnotstable.msc.bench.run.RunRecord;
 import io.github.imnotstable.msc.bench.run.ToolStats;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
 
 class ReportWriterTest {
@@ -83,6 +85,97 @@ class ReportWriterTest {
                 .contains(" | 12.0 (1 of 2) |")
                 .contains("- build-hut (toolset #2): ")
                 .doesNotContain("agent output not parsed");
+    }
+
+    /** One tool's totals in one run: calls, errors, tokens and milliseconds. */
+    private record ToolUse(String name, ToolStats.PerTool totals) {
+    }
+
+    private static ToolUse tool(String name, int calls, int errors, long tokens, long ms) {
+        return new ToolUse(name, new ToolStats.PerTool(calls, errors, tokens, ms));
+    }
+
+    /**
+     * A run of {@code task} whose agent reported its usage when {@code turns} is above 0 (else it timed out); its
+     * tool totals are the sums of {@code tools}, and its one check {@code "name: detail"} passes or fails with it.
+     */
+    private static RunRecord run(String task, String mode, int repeat, boolean passed, long wallMs, int turns,
+            long input, long output, double cost, String check, ToolUse... tools) {
+        AgentResult agent = turns == 0 ? AgentResult.UNKNOWN
+                : new AgentResult(true, false, turns, 0, input, 0, 0, output, cost, "m-1", List.of());
+        Map<String, ToolStats.PerTool> perTool = Arrays.stream(tools)
+                .collect(Collectors.toMap(ToolUse::name, ToolUse::totals));
+        ToolStats stats = new ToolStats(perTool.values().stream().mapToInt(ToolStats.PerTool::calls).sum(),
+                perTool.values().stream().mapToInt(ToolStats.PerTool::errors).sum(),
+                perTool.values().stream().mapToLong(ToolStats.PerTool::tokens).sum(), 0, 0,
+                perTool.values().stream().mapToLong(ToolStats.PerTool::durationMs).sum(), perTool);
+        List<CheckResult> checks = check == null ? List.of()
+                : List.of(new CheckResult(check.substring(0, check.indexOf(':')), passed,
+                        check.substring(check.indexOf(':') + 2)));
+        return new RunRecord(task, task.equals("alpha") ? "build" : "code", mode, repeat, "2026-11-10T13:00:00Z",
+                passed, wallMs, turns == 0, turns == 0 ? -1 : 0, null, agent, stats, checks);
+    }
+
+    /**
+     * #616: every figure of a report over several runs per mode (4 each; all measured in baseline, 3 of 4 in toolset,
+     * so medians of even and odd counts) and several tools spread over several runs. The expected report is worked
+     * out by hand: the median of an even count is the mean of the middle two, Total cost is the sum over the measured
+     * runs, a tool's totals are summed over every run that called it, and Tool cost lists most tokens first.
+     */
+    @Test
+    void everyFigureOverSeveralRunsAndTools() {
+        String md = ReportWriter.render(List.of(
+                run("alpha", "baseline", 1, true, 100_000, 5, 20_000, 2_000, 1.10, "walls: 196/196 blocks match"),
+                run("alpha", "toolset", 1, true, 50_000, 6, 10_000, 800, 0.90, "walls: 196/196 blocks match",
+                        tool("world_render", 2, 0, 3000, 2000), tool("build_batch", 1, 0, 200, 500)),
+                run("alpha", "baseline", 2, false, 300_000, 9, 40_000, 6_000, 2.20, "walls: 10/196 blocks match"),
+                run("alpha", "toolset", 2, true, 70_000, 8, 14_000, 1_500, 1.30, "walls: 196/196 blocks match",
+                        tool("world_render", 1, 0, 1500, 1000), tool("build_batch", 3, 1, 900, 3000)),
+                run("beta", "baseline", 1, true, 200_000, 7, 8_000, 1_200, 0.40, "log: ready"),
+                run("beta", "toolset", 1, false, 40_000, 4, 5_000, 700, 0.50, "log: no line says ready",
+                        tool("server_logs", 4, 0, 400, 800)),
+                run("beta", "baseline", 2, true, 150_000, 3, 11_000, 3_000, 0.60, "log: ready"),
+                run("beta", "toolset", 2, false, 600_000, 0, 0, 0, 0, null,
+                        tool("build_batch", 3, 0, 600, 1500))));
+
+        assertThat(md).isEqualTo("""
+                # Benchmark report
+
+                Runs: 8. Tasks: 2. Modes: baseline, toolset. Models: m-1.
+
+                ## Summary
+
+                | Mode | Pass rate | Median time | Median turns | Median tokens | Median output tokens | Total cost | Tool calls/run |
+                | --- | --- | --- | --- | --- | --- | --- | --- |
+                | baseline | 3/4 (75%) | 175s | 6 | 18k | 2500 | $4.30 | 0.0 |
+                | toolset | 2/4 (50%) | 60s | 6 (3 of 4) | 11k (3 of 4) | 800 (3 of 4) | $2.70 (3 of 4) | 3.5 |
+
+                ## Per task
+
+                Each cell: passes/runs, median time, median tokens. (k of n) marks a figure from the k runs that \
+                measured it; - means none did. Change columns compare toolset with baseline (negative is better).
+
+                | Task | Category | baseline | toolset | Time change | Token change |
+                | --- | --- | --- | --- | --- | --- |
+                | alpha | build | 1/2, 200s, 34k | 2/2, 60s, 13k | -70% | -61% |
+                | beta | code | 2/2, 175s, 12k | 0/2, 320s, 5700 (1 of 2) | +83% | -51% |
+
+                ## Tool cost
+
+                All runs together, most tokens first. Tokens are what the tool returned to the model.
+
+                | Tool | Calls | Errors | Tokens | Tokens/call | Time | Time/call |
+                | --- | --- | --- | --- | --- | --- | --- |
+                | world_render | 3 | 0 | 4500 | 1500 | 3s | 1.0s |
+                | build_batch | 7 | 1 | 1700 | 242 | 5s | 0.7s |
+                | server_logs | 4 | 0 | 400 | 100 | 1s | 0.2s |
+
+                ## Failures
+
+                - alpha (baseline #2): walls: 10/196 blocks match
+                - beta (toolset #1): log: no line says ready
+                - beta (toolset #2): timed out after 600s; agent output not parsed
+                """);
     }
 
     @Test
