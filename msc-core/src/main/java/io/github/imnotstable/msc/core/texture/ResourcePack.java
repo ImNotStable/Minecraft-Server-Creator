@@ -392,7 +392,7 @@ public final class ResourcePack implements AutoCloseable {
                     .start();
         } catch (IOException e) {
             server = startHost();
-            return failed(e.getMessage());
+            return failed(e.getMessage() != null ? e.getMessage() : e.toString());
         }
         // Owned from the moment it exists, so an interrupt below (the session ending while the host starts) leaves
         // it where close and a later session's stopLeftoverHost find it, never as an orphan with no pid file (#297).
@@ -407,14 +407,15 @@ public final class ResourcePack implements AutoCloseable {
             }
         } catch (IOException | RuntimeException e) {
             abandonHost(p);
-            return failed(e.getMessage());
+            return failed(e.getMessage() != null ? e.getMessage() : e.toString());
         }
         if (p.isAlive() && accepts(port)) {
             return null;
         }
+        boolean hung = p.isAlive();
         abandonHost(p);
         String why = reason(readLog());
-        return failed(!why.isEmpty() ? why : p.isAlive() ? "it did not listen within 15 s"
+        return failed(!why.isEmpty() ? why : hung ? "it did not listen within 15 s"
                 : "it exited with code " + p.exitValue());
     }
 
@@ -482,7 +483,7 @@ public final class ResourcePack implements AutoCloseable {
     }
 
     /**
-     * Stop the standalone host this session started on server_detach, once the detached server was stopped after
+     * Stop the standalone host this session started for its detached server, once that server was stopped after
      * all. The next build serves in-process again, on the same port. Returns true when there was one.
      */
     public synchronized boolean stopOwnHost() {
