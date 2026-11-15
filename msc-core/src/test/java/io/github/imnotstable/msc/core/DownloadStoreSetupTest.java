@@ -101,7 +101,8 @@ class DownloadStoreSetupTest {
             Files.writeString(agents.resolve("msc-agent-" + agent + "-0.1.0.jar"), "agent " + agent);
         }
         try (CoreHarness h = new CoreHarness(ws, c -> c.withDownloadsUrl(base + "/fill").withMinecraft(MINECRAFT)
-                .withLoaderUrls(new LoaderInstaller.Urls(base + "/neo", base + "/forge", base + "/quilt", base + "/purpur"))
+                .withLoaderUrls(new LoaderInstaller.Urls(base + "/neo", base + "/forge", base + "/quilt", base + "/purpur",
+                        base + "/geyser"))
                 .withDownloadStore(new DownloadStore(store)))) {
             return h.ok("server_setup", "platform", platform, "version", MINECRAFT);
         }

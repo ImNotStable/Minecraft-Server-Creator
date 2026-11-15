@@ -61,7 +61,7 @@ class LoaderInstallerTest {
         String base = "http://127.0.0.1:" + http.getAddress().getPort();
         String java = Path.of(System.getProperty("java.home"), "bin", "java").toString();
         installer = new LoaderInstaller(new LoaderInstaller.Urls(base + "/neo", base + "/forge", base + "/quilt",
-                base + "/purpur/"), dir.resolve("cache"), java);
+                base + "/purpur/", base + "/geyser"), dir.resolve("cache"), java);
     }
 
     @AfterEach
@@ -103,7 +103,7 @@ class LoaderInstallerTest {
         try (Socket unreachable = new Socket()) {
             unreachable.bind(new InetSocketAddress("127.0.0.1", 0));
             String base = "http://127.0.0.1:" + unreachable.getLocalPort();
-            LoaderInstaller offline = new LoaderInstaller(new LoaderInstaller.Urls(base, base, base, base), cache,
+            LoaderInstaller offline = new LoaderInstaller(new LoaderInstaller.Urls(base, base, base, base, base), cache,
                     "java");
             assertThat(offline.purpur("26.3", server))
                     .isEqualTo(new LoaderInstaller.Result("26.3 build " + newest, true));

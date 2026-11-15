@@ -48,6 +48,8 @@ final class FakeDownloads implements AutoCloseable {
                 body = "fabric api".getBytes(StandardCharsets.UTF_8);
             } else if (path.matches("/(neo|forge|quilt)/.*installer.*\\.jar")) {
                 body = installer;
+            } else if (GEYSER.containsKey(path)) {
+                body = GEYSER.get(path).getBytes(StandardCharsets.UTF_8);
             } else {
                 body = null;
             }
@@ -65,7 +67,27 @@ final class FakeDownloads implements AutoCloseable {
     CoreConfig apply(CoreConfig c) {
         return c.withDownloadsUrl(base + "/fill").withFabricUrls(base + "/meta", base + "/maven")
                 .withMinecraft(MINECRAFT).withLoaderUrls(new LoaderInstaller.Urls(base + "/neo", base + "/forge",
-                        base + "/quilt", base + "/purpur"));
+                        base + "/quilt", base + "/purpur", base + "/geyser"));
+    }
+
+    /** GeyserMC's download API for Geyser-Spigot and Floodgate (ADR 0046), with the sha256 of each fake jar. */
+    private static final Map<String, String> GEYSER = Map.of(
+            "/geyser/v2/projects/geyser/versions/latest/builds/latest", latest("geyser", "2.12.1", 1302, "geyser jar"),
+            "/geyser/v2/projects/geyser/versions/2.12.1/builds/1302/downloads/spigot", "geyser jar",
+            "/geyser/v2/projects/floodgate/versions/latest/builds/latest", latest("floodgate", "2.2.5", 141,
+                    "floodgate jar"),
+            "/geyser/v2/projects/floodgate/versions/2.2.5/builds/141/downloads/spigot", "floodgate jar");
+
+    /** A {@code builds/latest} answer naming {@code jar}'s sha256 for the spigot download. */
+    static String latest(String project, String version, int build, String jar) {
+        try {
+            String sha = java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
+                    .digest(jar.getBytes(StandardCharsets.UTF_8)));
+            return "{\"project_id\":\"" + project + "\",\"version\":\"" + version + "\",\"build\":" + build
+                    + ",\"downloads\":{\"spigot\":{\"name\":\"x.jar\",\"sha256\":\"" + sha + "\"}}}";
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new IllegalStateException(e);
+        }
     }
 
     @Override
