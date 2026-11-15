@@ -48,4 +48,26 @@ public record TaskDef(
     public boolean needsServer() {
         return server.startBefore() || checks.stream().anyMatch(Check::needsServer);
     }
+
+    /**
+     * True when the task uses the bench's game or RCON port, whatever its platform (#577): it has the bench's Paper
+     * server, a check starts a server of its own ({@code player}), or the agent runs a server on {@code {serverPort}}
+     * (a Minestom task, a scaffolded project, which listens on the bench's game port). Such an attempt starts only once
+     * those ports are free.
+     */
+    public boolean usesBenchPorts() {
+        return needsServer() || platform.equals(MINESTOM) || scaffold != null
+                || checks.stream().anyMatch(Check::startsServer);
+    }
+
+    /**
+     * True when the ports are freed again after the agent and before the checks: a check starts its own server, or
+     * the agent may have left one there that no check is meant to reach (a task without the Paper server), or a reset
+     * deletes what the agent's running server holds in memory. A Paper task without a reset checks the server the
+     * agent left running.
+     */
+    public boolean freesPortsBeforeChecks() {
+        return usesBenchPorts() && (!needsServer() || !reset.isEmpty()
+                || checks.stream().anyMatch(Check::startsServer));
+    }
 }

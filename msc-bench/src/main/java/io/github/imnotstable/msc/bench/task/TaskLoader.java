@@ -7,6 +7,7 @@ import io.github.imnotstable.msc.bench.Text;
 import io.github.imnotstable.msc.bench.UserJson;
 import io.github.imnotstable.msc.bench.check.Check;
 import io.github.imnotstable.msc.bench.check.Checks;
+import io.github.imnotstable.msc.bench.run.BenchConfig;
 import io.github.imnotstable.msc.templates.Templates;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -14,6 +15,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 /**
@@ -79,7 +82,10 @@ public final class TaskLoader {
             String prompt = Text.readOwn(promptFile).strip();
 
             List<Path> fixtures = new ArrayList<>();
-            for (String shared : json.paths("fixtures")) {
+            List<String> sharedFixtures = json.paths("fixtures");
+            for (int i = 0; i < sharedFixtures.size(); i++) {
+                String shared = sharedFixtures.get(i);
+                unfilled(json.key("fixtures") + "[" + i + "]", shared);
                 Path fixture = taskDir.getParent().resolve(shared).normalize();
                 if (!Files.isDirectory(fixture)) {
                     throw new IllegalArgumentException(json.key("fixtures") + ": no folder " + shared + " next to the task "
@@ -136,20 +142,53 @@ public final class TaskLoader {
                 throw new IllegalArgumentException("a task needs at least one check");
             }
 
+            String category = requireString(json, "category");
+            String title = requireString(json, "title");
+            UserJson resetJson = json.exactObject("resetBeforeChecks", Reset.KEYS);
+            Reset reset = Reset.parse(resetJson);
+            // #578: the runner fills placeholders in server.setup and in every check key; these keys are read as
+            // written, so a placeholder in one would stay there and quietly name nothing.
+            unfilled(json.key("category"), category);
+            unfilled(json.key("title"), title);
+            if (s != null) {
+                unfilled(s.key("name"), scaffold.name());
+                unfilled(s.key("package"), scaffold.packageName());
+            }
+            for (int i = 0; i < reset.delete().size(); i++) {
+                unfilled(resetJson.key("delete") + "[" + i + "]", reset.delete().get(i));
+            }
+
             return new TaskDef(
                     id,
-                    requireString(json, "category"),
-                    requireString(json, "title"),
+                    category,
+                    title,
                     platform,
                     prompt,
                     scaffold,
                     fixtures,
                     server,
                     checks,
-                    Reset.parse(json.exactObject("resetBeforeChecks", Reset.KEYS)),
+                    reset,
                     json.wholeNumber("timeoutSeconds", JsonNumbers.SECONDS, 0));
         } catch (RuntimeException e) {
             throw new IOException("Task " + id + ": " + e.getMessage(), e);
+        }
+    }
+
+    /** The placeholders the runner fills, such as {@code {scaffoldVersion}}. */
+    private static final Pattern PLACEHOLDER = Pattern.compile("\\{([A-Za-z0-9._-]+)}");
+
+    /**
+     * Refuses a runner placeholder in {@code value} of a key the runner does not fill (#578), naming the key: the
+     * placeholder would stay as written and the task would quietly not do what it says.
+     */
+    static void unfilled(String key, String value) {
+        Matcher m = PLACEHOLDER.matcher(value);
+        while (m.find()) {
+            if (BenchConfig.RUNNER_PLACEHOLDERS.contains(m.group(1))) {
+                throw new IllegalArgumentException(key + ": " + UserJson.quoted(value) + " holds " + m.group()
+                        + ", and placeholders are filled only in server.setup and in checks");
+            }
         }
     }
 

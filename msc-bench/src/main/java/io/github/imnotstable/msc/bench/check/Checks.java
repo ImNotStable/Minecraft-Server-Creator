@@ -48,6 +48,47 @@ public final class Checks {
      * {@code task.json checks[2].timeoutSeconds} ({@link UserJson}).
      */
     public static Check parse(UserJson json, Path taskDir) {
+        return new Written(json, taskDir, read(json, taskDir));
+    }
+
+    /**
+     * A check as task.json writes it. Each run reads it again from its JSON with the attempt's placeholders filled
+     * ({@link UserJson#filled}), so every string key of every check type is filled through this one path (#578), and
+     * no check fills a key of its own. Read once without them when the task loads, so a check that can never work is
+     * refused then.
+     */
+    private record Written(UserJson json, Path taskDir, Check unfilled) implements Check {
+
+        @Override
+        public String name() {
+            return unfilled.name();
+        }
+
+        @Override
+        public boolean needsServer() {
+            return unfilled.needsServer();
+        }
+
+        @Override
+        public boolean startsServer() {
+            return unfilled.startsServer();
+        }
+
+        @Override
+        public CheckResult run(CheckContext context) {
+            Check filled;
+            try {
+                filled = read(json.filled(context.placeholders()), taskDir);
+            } catch (IllegalArgumentException e) {
+                // A value made the check unreadable, such as a port placeholder filled with no number.
+                return CheckResult.fail(unfilled.name(), e.getMessage());
+            }
+            return filled.run(context);
+        }
+    }
+
+    /** The check {@code json} describes, read as it is (filled or not). */
+    static Check read(UserJson json, Path taskDir) {
         String type = string(json, "type", null);
         if (type == null) {
             throw new IllegalArgumentException("check without \"type\": " + json);

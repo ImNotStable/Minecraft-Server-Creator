@@ -25,12 +25,17 @@ public final class ClaudeResultParser {
         JsonObject result = null;
         String model = "";
         List<String> mcpConnected = new ArrayList<>();
+        List<String> mcpNotConnected = new ArrayList<>();
         for (JsonObject o : events) {
             if (o.has("mcp_servers") && o.get("mcp_servers").isJsonArray()) {
                 for (JsonElement e : o.getAsJsonArray("mcp_servers")) {
                     JsonObject server = e.isJsonObject() ? e.getAsJsonObject() : new JsonObject();
-                    if (string(server, "name") != null && "connected".equals(string(server, "status"))) {
-                        mcpConnected.add(server.get("name").getAsString());
+                    String name = string(server, "name");
+                    String status = string(server, "status");
+                    if (name != null && "connected".equals(status)) {
+                        mcpConnected.add(name);
+                    } else if (name != null) {
+                        mcpNotConnected.add(name + " (" + (status == null ? "no status" : status) + ")");
                     }
                 }
             }
@@ -44,7 +49,7 @@ public final class ClaudeResultParser {
             return AgentResult.UNKNOWN;
         }
         try {
-            return agentResult(result, model, mcpConnected);
+            return agentResult(result, model, mcpConnected, mcpNotConnected);
         } catch (NotANumber e) {
             // A count or cost that is not a JSON number ("num_turns":"abc", null, true, {}): the output is as
             // unreadable as invalid JSON.
@@ -52,7 +57,8 @@ public final class ClaudeResultParser {
         }
     }
 
-    private static AgentResult agentResult(JsonObject result, String model, List<String> mcpConnected) {
+    private static AgentResult agentResult(JsonObject result, String model, List<String> mcpConnected,
+            List<String> mcpNotConnected) {
         JsonObject usage = result.has("usage") && result.get("usage").isJsonObject()
                 ? result.getAsJsonObject("usage")
                 : new JsonObject();
@@ -70,7 +76,8 @@ public final class ClaudeResultParser {
                         && !result.getAsJsonObject("modelUsage").isEmpty()
                         ? String.join(",", result.getAsJsonObject("modelUsage").keySet())
                         : model,
-                mcpConnected);
+                mcpConnected,
+                mcpNotConnected);
     }
 
     private static final Pattern USAGE_LIMIT = Pattern.compile(
