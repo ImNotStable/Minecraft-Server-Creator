@@ -57,14 +57,26 @@ public record WayArgs(String arg, Set<String> readers, String refusal) {
     private static final Set<String> MINECRAFT = Arrays.stream(Platform.values()).filter(Platform::needsEula)
             .map(Platform::id).collect(Collectors.toUnmodifiableSet());
 
+    /**
+     * acceptEula, read only by a platform with a Minecraft EULA. One row for every tool that takes it, each picking the
+     * platform its own way: server_setup the one it sets up, server_start the workspace's, project_scaffold the
+     * template's ({@link #checkEula}, #625).
+     */
+    private static final WayArgs EULA = new WayArgs("acceptEula", MINECRAFT, "acceptEula is for a server with a "
+            + "Minecraft EULA; minestom and velocity have none, leave it out");
+
     /** The server_setup tool. Ways: the platform it sets up. */
     static final List<WayArgs> SETUP = List.of(
             new WayArgs("version", MINECRAFT, "version is for the Minecraft servers MSC installs; minestom and "
                     + "velocity do not take one, leave it out"),
             new WayArgs("mode", MINECRAFT, "mode is for a Minecraft server's world; minestom sets it in its own "
                     + "code and velocity has no world, leave it out"),
-            new WayArgs("acceptEula", MINECRAFT, "acceptEula is for a server with a Minecraft EULA; minestom and "
-                    + "velocity have none, leave it out"));
+            EULA);
+
+    /** Refuses acceptEula for {@code platform} when it has no Minecraft EULA: the shared rule of {@link #EULA}. */
+    static void checkEula(Args args, Platform platform) {
+        check(args, Set.of(platform.id()), List.of(EULA));
+    }
 
     /** Refuses the first argument in {@code table} that {@code args} gives and none of {@code ways} reads. */
     public static void check(Args args, Set<String> ways, List<WayArgs> table) {

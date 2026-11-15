@@ -83,7 +83,9 @@ final class ServerRun {
         }
         server.checkNoOtherSession();
         Platform platform = server.platform();
-        boolean accepting = args.bool("acceptEula", false) && platform.needsEula();
+        // acceptEula on a platform with no EULA is refused, as server_setup refuses it, not dropped with an OK (#625).
+        WayArgs.checkEula(args, platform);
+        boolean accepting = args.bool("acceptEula", false);
         checkStart(platform, accepting);
         Steps steps = new Steps("server_start");
         String accepted = "";

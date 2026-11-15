@@ -50,6 +50,12 @@ final class Scaffold {
         if (!Templates.ids().contains(template)) {
             throw new ToolException("unknown template " + template + ". Available: " + String.join(", ", Templates.ids()));
         }
+        String platformId = Templates.info(template).get("platform");
+        Platform platform = platformId == null ? null : Platform.of(platformId);
+        if (platform != null) {
+            // The template's platform has no EULA (minestom, velocity): refused as server_setup refuses it (#625).
+            WayArgs.checkEula(args, platform);
+        }
         TemplateVariables vars;
         try {
             TemplateVariables v = TemplateVariables.of(name).withAcceptEula(args.bool("acceptEula", false));
@@ -57,7 +63,6 @@ final class Scaffold {
         } catch (IllegalArgumentException | IllegalStateException e) {
             throw new ToolException(String.valueOf(e.getMessage()));
         }
-        String platformId = Templates.info(template).get("platform");
         boolean remember = platformId != null && !template.equals(Templates.PAPER_SERVER)
                 && (dir.equals(config.workspace()) || !Files.exists(Platform.file(config)));
         boolean warm = Boolean.parseBoolean(Templates.info(template).get("warmup"));
@@ -93,7 +98,6 @@ final class Scaffold {
             out.append("\nfirst build started in the background (the loader sets up Minecraft once, which takes "
                     + "minutes); dev_cycle waits for it");
         }
-        Platform platform = platformId == null ? null : Platform.of(platformId);
         if (platform != null && platform.needsEula()
                 && !Files.exists(config.serverDir().resolve(platform.serverJar()))) {
             // The server is not set up yet: a first dev_cycle would build for nothing and then stop there.

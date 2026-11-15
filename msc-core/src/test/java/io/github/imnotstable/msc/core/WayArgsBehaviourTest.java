@@ -3,6 +3,7 @@ package io.github.imnotstable.msc.core;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.imnotstable.msc.core.fixture.FakeServerMain;
+import io.github.imnotstable.msc.core.server.MachineEula;
 import io.github.imnotstable.msc.core.tool.Tool;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -159,5 +160,33 @@ class WayArgsBehaviourTest {
             h.ok("server_setup", "platform", "minestom");
             assertThat(h.error("server_setup", "mode", "build")).isEqualTo(refusals.get("mode"));
         }
+    }
+
+    @Test
+    void everyToolThatTakesAcceptEulaRefusesItWhereThePlatformHasNone() throws Exception {
+        // #625: server_start dropped it with an OK (a fake server started); project_scaffold goes by the template.
+        String refusal = "error: acceptEula is for a server with a Minecraft EULA; minestom and velocity have none, "
+                + "leave it out";
+        Path home = dir.resolve("home");
+        for (String template : List.of("minestom-server", "minestom-game", "velocity-plugin")) {
+            Path ws = Files.createDirectories(dir.resolve(template));
+            try (CoreHarness h = new CoreHarness(ws, c -> c.withServerCommand(java(FakeServerMain.class))
+                    .withMachineEula(MachineEula.forHome(home)))) {
+                for (boolean value : new boolean[] {true, false}) {
+                    assertThat(h.error("project_scaffold", "name", "Proj", "template", template, "acceptEula", value))
+                            .as("%s %s", template, value).isEqualTo(refusal);
+                }
+                assertThat(ws.resolve("build.gradle.kts")).as("a refused scaffold writes nothing").doesNotExist();
+                // The scaffold remembers the template's platform, which server_start then goes by.
+                h.ok("project_scaffold", "name", "Proj", "template", template);
+                for (boolean value : new boolean[] {true, false}) {
+                    assertThat(h.error("server_start", "acceptEula", value)).as("%s %s", template, value)
+                            .isEqualTo(refusal);
+                }
+                assertThat(h.core.server().running()).isFalse();
+            }
+            assertThat(ws.resolve("run/eula.txt")).doesNotExist();
+        }
+        assertThat(home.resolve(".msc/eula.json")).as("nothing kept for the machine").doesNotExist();
     }
 }
