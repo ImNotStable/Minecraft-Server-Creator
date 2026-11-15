@@ -89,9 +89,12 @@ final class DevCycle {
         time.add("jar", jar.millis());
         if (!jar.ok()) {
             return new Budget.Parts().add("BUILD FAILED in " + LogText.seconds(jar.millis()) + "\n")
-                    .cut(n -> LogCondenser.condenseBuild(jar.output(), n)).text(maxChars, null, hint(maxChars));
+                    .cut(n -> LogCondenser.condenseBuild(jar.output(), n)).text(maxChars, null,
+                            hint(maxChars, null, false));
         }
+        long checkStarted = System.currentTimeMillis();
         Check tests = check(project);
+        long logMark = server.log().mark();
         Budget.Parts out = new Budget.Parts();
         Budget.Parts rest;
         ProjectBuilder.BuildResult checked;
@@ -112,12 +115,54 @@ final class DevCycle {
                     .cut(n -> LogCondenser.condenseBuild(checked.output(), n)).add("\n");
         }
         // One budget (#473): the time line is kept last, the test output and the startup log share what is left.
-        return out.add(rest).text(maxChars, time.line(), hint(maxChars));
+        String results = checked.ok() ? null : testResults(project, checkStarted);
+        boolean started = restart && !server.log().since(logMark).isEmpty();
+        return out.add(rest).text(maxChars, time.line(), hint(maxChars, results, started));
     }
 
-    /** The hint of a cut of dev_cycle's fixed lines: a larger maxChars shows more, as they do not grow with it. */
-    private static String hint(int maxChars) {
-        return Budget.raise(maxChars, "Use server_logs for the rest.");
+    /**
+     * The hint of a cut that is not a part's own (#620): of dev_cycle's own lines, or the line counting the outputs
+     * cut. It names only what really shows what this result held: the test results Gradle wrote on this run
+     * ({@code results}, or null), and server_logs for a startup log ({@code started}). dev_cycle's own lines are in no
+     * file or log, so beyond those only a larger maxChars shows them.
+     */
+    static String hint(int maxChars, String results, boolean started) {
+        List<String> where = new ArrayList<>();
+        if (results != null) {
+            where.add("Failed tests: " + results + ".");
+        }
+        if (started) {
+            where.add("Startup log: server_logs.");
+        }
+        String hint = Budget.raise(maxChars, String.join(" ", where));
+        return hint.isEmpty() ? "No other tool shows these lines." : hint;
+    }
+
+    /**
+     * Where the failed tests are, as the hint names it: Gradle's {@code build/test-results} of {@code project}, shown
+     * relative to the workspace, when this run's check wrote a file there (written since {@code since}, give or take
+     * a coarse file clock); else null, as a failure before any test ran writes none and older files are stale.
+     */
+    private String testResults(Path project, long since) {
+        Path dir = project.resolve("build").resolve("test-results");
+        long from = since / 1000 * 1000 - 1000;
+        try (var files = Files.walk(dir, 3)) {
+            boolean fresh = files.anyMatch(f -> {
+                try {
+                    return Files.isRegularFile(f) && Files.getLastModifiedTime(f).toMillis() >= from;
+                } catch (IOException e) {
+                    return false;
+                }
+            });
+            if (!fresh) {
+                return null;
+            }
+        } catch (IOException | java.io.UncheckedIOException e) {
+            return null;
+        }
+        Path workspace = config.workspace().toAbsolutePath().normalize();
+        Path shown = dir.toAbsolutePath().normalize();
+        return (shown.startsWith(workspace) ? workspace.relativize(shown) : shown).toString().replace('\\', '/');
     }
 
     /**

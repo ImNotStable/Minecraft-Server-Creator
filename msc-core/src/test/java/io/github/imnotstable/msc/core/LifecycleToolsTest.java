@@ -857,13 +857,17 @@ class LifecycleToolsTest {
         Files.createDirectories(workspace.resolve("run"));
         Files.writeString(workspace.resolve("run/many-errors.flag"), "");
         int version = 1;
-        for (int cap : new int[] {io.github.imnotstable.msc.core.tool.Budget.DEFAULT_CHARS, 200, 24_000}) {
+        for (int cap : new int[] {io.github.imnotstable.msc.core.tool.Budget.DEFAULT_CHARS, 200, 300, 24_000}) {
             Files.writeString(project.resolve("version.txt"), "1." + version++);
             String result = h.ok("dev_cycle", "project", "demo", "maxChars", cap);
             assertThat(result).as("maxChars %d", cap).hasSizeLessThanOrEqualTo(cap)
                     .containsPattern("\ntime: jar [^\n]*, total \\d+\\.\\ds$");
-            assertHintsAreTrue(result);
-            if (cap > 200) {
+            assertHintsAreTrue(result, cap);
+            if (cap == 300) {
+                assertThat(result).as("dev_cycle's own lines cut with its own hint").contains(
+                        "Failed tests: demo/build/test-results. Startup log: server_logs. Or raise maxChars");
+            }
+            if (cap > 300) {
                 assertThat(result).as("maxChars %d", cap).startsWith("TESTS FAILED in ")
                         .contains("Fix the first errors and build again.]").contains("server ready")
                         .contains("Use server_logs with grep to narrow.]").doesNotContain("Narrow the call.");
@@ -876,14 +880,57 @@ class LifecycleToolsTest {
         h.ok("server_stop");
     }
 
-    /** Every cut names a call that shows the rest, or what to change; never the registry's safety net. */
-    private static void assertHintsAreTrue(String result) {
-        java.util.regex.Matcher m = java.util.regex.Pattern.compile("\\[truncated: \\d+ more lines, \\d+ chars\\. ([^\\]]*)\\]")
+    /**
+     * #620: every piece of advice in every cut line of a dev_cycle result (200 failed tests, 300 startup errors) is
+     * followed here, and must show what that result left out: the failed tests it does not name are in the test
+     * results file the hint names, the startup errors it does not show are what server_logs returns, and raising
+     * maxChars is said only below the largest cap. A hint of dev_cycle's own (not a part's) names each of the two.
+     */
+    private void assertHintsAreTrue(String result, int cap) throws java.io.IOException {
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile(
+                "\\[(?:truncated: \\d+ more lines, \\d+ chars\\.|\\d+ of \\d+ outputs cut to fit\\.) ([^\\]]*)\\]")
                 .matcher(result);
+        List<Integer> unshownTests = java.util.stream.IntStream.range(0, 200)
+                .filter(i -> !result.contains("case" + i + "()")).boxed().toList();
+        List<Integer> unshownErrors = java.util.stream.IntStream.range(0, 300)
+                .filter(i -> !result.contains("part" + i + ":")).boxed().toList();
+        String own = "Fix the first errors and build again.|Use server_logs with grep to narrow.";
         while (m.find()) {
-            assertThat(m.group(1)).isIn("Fix the first errors and build again.", "Use server_logs with grep to narrow.",
-                    io.github.imnotstable.msc.core.tool.Budget.raise(Integer.MIN_VALUE, "Use server_logs for the rest."),
-                    "Use server_logs for the rest.");
+            String hint = m.group(1);
+            if (!hint.matches(own)) {
+                assertThat(hint).as("maxChars %d: dev_cycle's hint names the test results", cap).contains("Failed tests: ");
+                assertThat(hint).as("maxChars %d: dev_cycle's hint names the startup log", cap)
+                        .contains("Startup log: server_logs.");
+            }
+            for (String advice : hint.split("(?<=\\.) ")) {
+                if (advice.startsWith("Failed tests: ")) {
+                    Path results = workspace.resolve(advice.substring("Failed tests: ".length(), advice.length() - 1));
+                    String xml;
+                    try (var files = Files.walk(results)) {
+                        xml = files.filter(Files::isRegularFile).map(f -> {
+                            try {
+                                return Files.readString(f);
+                            } catch (java.io.IOException e) {
+                                throw new java.io.UncheckedIOException(e);
+                            }
+                        }).collect(java.util.stream.Collectors.joining());
+                    }
+                    assertThat(unshownTests).as("maxChars %d: %s holds every failed test the result left out", cap,
+                            advice).allMatch(i -> xml.contains("\"case" + i + "()\""));
+                } else if (advice.equals("Startup log: server_logs.") || advice.equals("Use server_logs with grep to narrow.")) {
+                    for (int i : unshownErrors.isEmpty() ? List.<Integer>of()
+                            : List.of(unshownErrors.getFirst(), unshownErrors.getLast())) {
+                        assertThat(h.ok("server_logs", "mode", "grep", "pattern", "part" + i + ":"))
+                                .as("maxChars %d: %s shows the startup error the result left out", cap, advice)
+                                .contains("Could not load plugin part" + i + ":");
+                    }
+                } else if (advice.matches("(Or r|R)aise maxChars \\(at most 24000\\)\\.")) {
+                    assertThat(cap).as("raise is said only below the largest maxChars").isLessThan(24_000);
+                } else {
+                    assertThat(advice).as("maxChars %d: advice this test can follow", cap)
+                            .isEqualTo("Fix the first errors and build again.");
+                }
+            }
         }
     }
 

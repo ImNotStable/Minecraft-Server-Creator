@@ -152,8 +152,13 @@ public final class Budget {
      * The hint of a cut of a result capped at {@code maxChars} (#614): {@code narrow}, the tool's own way to narrow
      * the call, first, then {@link #RAISE} while a larger {@code maxChars} is allowed. Every cut hint that names
      * maxChars comes from here, so none says to raise it past {@link #MAX_CHARS}, which {@link ArgCheck} refuses.
+     * With no way to narrow ({@code narrow} empty), only a larger maxChars shows more: the hint is that, or empty at
+     * the largest cap.
      */
     public static String raise(int maxChars, String narrow) {
+        if (narrow.isEmpty()) {
+            return maxChars < MAX_CHARS ? "Raise maxChars (at most " + MAX_CHARS + ")." : "";
+        }
         return maxChars < MAX_CHARS ? narrow + " " + RAISE : narrow;
     }
 
