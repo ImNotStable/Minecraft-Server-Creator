@@ -514,6 +514,44 @@ class LifecycleToolsTest {
                 .endsWith("\nnext: edit the code, then dev_cycle");
     }
 
+    /** #631: Quilt runs Fabric mods and Purpur Paper plugins, so the workspace's own server counts as set up. */
+    @Test
+    void scaffoldCountsAWorkspaceServerThatRunsTheTemplate() throws Exception {
+        for (String[] c : new String[][] {{"quilt", "quilt-server-launch.jar", "fabric-mod"},
+                {"purpur", "purpur.jar", "paper-plugin"}, {"folia", "folia.jar", "paper-game"}}) {
+            Path ws = Files.createDirectories(workspace.resolve("ws-" + c[0]));
+            Files.createDirectories(ws.resolve(".msc"));
+            Files.writeString(ws.resolve(".msc/platform"), c[0] + "\n");
+            Path run = Files.createDirectories(ws.resolve("run"));
+            Files.writeString(run.resolve(c[1]), "set up");
+            Files.writeString(run.resolve("eula.txt"), "eula=true\n");
+            try (CoreHarness s = new CoreHarness(ws)) {
+                assertThat(s.ok("project_scaffold", "name", "Foo", "dir", "foo", "template", c[2]))
+                        .doesNotContain("EULA").endsWith("\nnext: edit the code, then dev_cycle");
+            }
+            assertThat(ws.resolve(".msc/platform")).hasContent(c[0]);
+        }
+    }
+
+    /** #631: with MSC_SERVER_DIR elsewhere a scaffold into the workspace root keeps its Quilt platform. */
+    @Test
+    void scaffoldIntoTheWorkspaceKeepsAPlatformThatRunsTheTemplate() throws Exception {
+        Path ws = Files.createDirectories(workspace.resolve("ws-root"));
+        Files.createDirectories(ws.resolve(".msc"));
+        Files.writeString(ws.resolve(".msc/platform"), "quilt\n");
+        Path run = Files.createDirectories(workspace.resolve("elsewhere"));
+        Files.writeString(run.resolve("quilt-server-launch.jar"), "set up");
+        Files.writeString(run.resolve("eula.txt"), "eula=true\n");
+        try (CoreHarness s = new CoreHarness(ws, c -> CoreConfig.fromEnvironment(java.util.Map.of(
+                CoreConfig.ENV_WORKSPACE, ws.toString(), CoreConfig.ENV_SERVER_DIR, run.toString()))
+                .withMachineEula(MachineEula.none()))) {
+            assertThat(s.ok("project_scaffold", "name", "Foo", "template", "fabric-mod"))
+                    .startsWith("created fabric-mod project in " + ws).endsWith("\nnext: edit the code, then dev_cycle");
+            assertThat(ws.resolve(".msc/platform")).hasContent("quilt");
+            assertThat(s.core.server().platform().id()).isEqualTo("quilt");
+        }
+    }
+
     @Test
     void scaffoldUsesTheChosenPackage() {
         assertThat(h.ok("project_scaffold", "name", "Lobby", "dir", "pkg", "package", "io.github.alex.lobby"))

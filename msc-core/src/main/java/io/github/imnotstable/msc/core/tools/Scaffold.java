@@ -63,7 +63,10 @@ final class Scaffold {
         } catch (IllegalArgumentException | IllegalStateException e) {
             throw new ToolException(String.valueOf(e.getMessage()));
         }
-        boolean remember = platformId != null && !template.equals(Templates.PAPER_SERVER)
+        // The server that runs the project: a workspace set up as Quilt or Purpur keeps its own for a Fabric mod or a
+        // Paper plugin, so its platform is neither overwritten nor reported as not set up (#631).
+        Platform serves = platform == null ? null : Platform.serving(config, platform);
+        boolean remember = platformId != null && !template.equals(Templates.PAPER_SERVER) && serves == platform
                 && (dir.equals(config.workspace()) || !Files.exists(Platform.file(config)));
         boolean warm = Boolean.parseBoolean(Templates.info(template).get("warmup"));
         Steps steps = new Steps("project_scaffold").then(WRITE_FILES);
@@ -98,12 +101,12 @@ final class Scaffold {
             out.append("\nfirst build started in the background (the loader sets up Minecraft once, which takes "
                     + "minutes); dev_cycle waits for it");
         }
-        if (platform != null && platform.needsServerSetup()
-                && !Files.exists(config.serverDir().resolve(platform.serverJar()))) {
+        if (serves != null && serves.needsServerSetup()
+                && !Files.exists(config.serverDir().resolve(serves.serverJar()))) {
             // The server is not set up yet: a first dev_cycle would build for nothing and then stop there (#627).
             Optional<MachineEula.Acceptance> machine = config.machineEula().read();
-            if (!platform.needsEula()) {
-                out.append("\nnext: server_setup platform=").append(platform.id())
+            if (!serves.needsEula()) {
+                out.append("\nnext: server_setup platform=").append(serves.id())
                         .append(", then edit the code and dev_cycle");
             } else if (machine.isPresent()) {
                 out.append("\nnext: server_setup (the Minecraft EULA is accepted for this machine by ")

@@ -193,6 +193,19 @@ public enum Platform {
     }
 
     /**
+     * The platform whose server runs a {@code project} project in this workspace: the workspace's remembered one when
+     * it runs the same projects (Quilt for a Fabric mod, Purpur or Folia for a Paper plugin: {@link #agent()} equal),
+     * else {@code project}'s own. {@code dev_cycle} deploys to it and {@code project_scaffold} checks its server (#631).
+     */
+    public static Platform serving(CoreConfig config, Platform project) {
+        if (!Files.exists(file(config))) {
+            return project;
+        }
+        Platform workspace = current(config);
+        return workspace.agent().equals(project.agent()) ? workspace : project;
+    }
+
+    /**
      * What a project says about the platform: a descriptor file the server loads ({@code file}, under any of
      * {@link #RESOURCE_ROOTS}), or build-file text that {@code build} finds: a plugin id, a DSL block or a dependency.
      */
