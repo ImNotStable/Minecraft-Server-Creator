@@ -10,6 +10,7 @@ import io.github.imnotstable.msc.templates.TemplateVariables;
 import io.github.imnotstable.msc.templates.Templates;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -91,13 +92,38 @@ class PlatformTest {
     @Test
     void otherFamilyIsARememberedPlatformThatDoesNotRunTheProject() throws Exception {
         CoreConfig config = CoreConfig.forWorkspace(dir);
-        assertThat(Platform.otherFamily(config, Platform.FABRIC)).isNull();
+        assertThat(Platform.otherFamily(config, List.of(Platform.FABRIC))).isNull();
         Platform.remember(config, Platform.QUILT);
-        assertThat(Platform.otherFamily(config, Platform.FABRIC)).isNull();
-        assertThat(Platform.otherFamily(config, Platform.PAPER)).isEqualTo(Platform.QUILT);
+        assertThat(Platform.otherFamily(config, List.of(Platform.FABRIC))).isNull();
+        assertThat(Platform.otherFamily(config, List.of(Platform.PAPER))).isEqualTo(Platform.QUILT);
         Platform.remember(config, Platform.PURPUR);
-        assertThat(Platform.otherFamily(config, Platform.PAPER)).isNull();
-        assertThat(Platform.otherFamily(config, Platform.MINESTOM)).isEqualTo(Platform.PURPUR);
+        assertThat(Platform.otherFamily(config, List.of(Platform.PAPER))).isNull();
+        assertThat(Platform.otherFamily(config, List.of(Platform.MINESTOM))).isEqualTo(Platform.PURPUR);
+    }
+
+    /** #642: a jar that is a Paper and a Velocity plugin runs on both, so either workspace serves it. */
+    @Test
+    void aProjectForSeveralPlatformsIsServedByAnyOfThem() throws Exception {
+        Path resources = Files.createDirectories(dir.resolve("src/main/resources"));
+        Files.writeString(resources.resolve("plugin.yml"), "name: demo\n");
+        assertThat(Platform.runsOn(dir)).containsExactly(Platform.PAPER);
+        Files.writeString(resources.resolve("velocity-plugin.json"), "{}");
+        List<Platform> both = Platform.runsOn(dir);
+        assertThat(both).containsExactly(Platform.PAPER, Platform.VELOCITY);
+        assertThat(Platform.detect(dir)).isEqualTo(Platform.PAPER);
+        CoreConfig config = CoreConfig.forWorkspace(dir);
+        assertThat(Platform.serving(config, both)).isEqualTo(Platform.PAPER);
+        for (Platform workspace : List.of(Platform.VELOCITY, Platform.FOLIA, Platform.PAPER)) {
+            Platform.remember(config, workspace);
+            assertThat(Platform.serving(config, both)).isEqualTo(workspace);
+            assertThat(Platform.otherFamily(config, both)).isNull();
+        }
+        Platform.remember(config, Platform.FABRIC);
+        assertThat(Platform.serving(config, both)).isEqualTo(Platform.PAPER);
+        assertThat(Platform.otherFamily(config, both)).isEqualTo(Platform.FABRIC);
+        // The project jar of a Minestom server is no plugin as well: a build that only mentions it does not add it.
+        Files.writeString(dir.resolve("build.gradle.kts"), "dependencies { compileOnly(\"net.minestom:minestom\") }");
+        assertThat(Platform.runsOn(dir)).containsExactly(Platform.PAPER, Platform.VELOCITY);
     }
 
     @Test
@@ -216,7 +242,10 @@ class PlatformTest {
         assertThat(Platform.detect(dir)).isEqualTo(expected);
     }
 
-    /** #599: every msc-templates template, as scaffolded, is detected as the platform it is made for. */
+    /**
+     * #599: every msc-templates template, as scaffolded, is detected as the platform it is made for, and runs on that
+     * one only: project_scaffold judges a template by its platform, dev_cycle the project by its files (#642).
+     */
     @Test
     void everyTemplateIsDetectedAsItsOwnPlatform() throws Exception {
         for (String id : Templates.ids()) {
@@ -225,6 +254,7 @@ class PlatformTest {
             Platform expected = Files.exists(project.resolve("build.gradle.kts"))
                     ? Platform.of(Templates.info(id).get("platform")) : null;
             assertThat(Platform.detect(project)).as(id).isEqualTo(expected);
+            assertThat(Platform.runsOn(project)).as(id).isEqualTo(expected == null ? List.of() : List.of(expected));
         }
     }
 

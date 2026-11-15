@@ -6,6 +6,7 @@ import io.github.imnotstable.msc.process.AtomicFile;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
@@ -193,25 +194,27 @@ public enum Platform {
     }
 
     /**
-     * The platform whose server runs a {@code project} project in this workspace: the workspace's remembered one when
-     * it runs the same projects (Quilt for a Fabric mod, Purpur or Folia for a Paper plugin: {@link #agent()} equal),
-     * else {@code project}'s own. {@code dev_cycle} deploys to it and {@code project_scaffold} checks its server (#631).
+     * The platform whose server runs a project that runs on {@code project} ({@link #runsOn}, first the one it is
+     * made for): the workspace's remembered one when it runs the same projects as any of them ({@link #agent()}
+     * equal: Quilt for a Fabric mod, Purpur or Folia for a Paper plugin, Velocity for a jar that is also a Velocity
+     * plugin), else the project's first. {@code dev_cycle} deploys to it and {@code project_scaffold} checks its
+     * server (#631, #642).
      */
-    public static Platform serving(CoreConfig config, Platform project) {
+    public static Platform serving(CoreConfig config, List<Platform> project) {
         if (!Files.exists(file(config))) {
-            return project;
+            return project.getFirst();
         }
         Platform workspace = current(config);
-        return workspace.agent().equals(project.agent()) ? workspace : project;
+        return project.stream().anyMatch(p -> p.agent().equals(workspace.agent())) ? workspace : project.getFirst();
     }
 
     /**
-     * The workspace's remembered platform when its server does not run a {@code project} project (another agent
-     * family, such as a Fabric mod in a Paper workspace), else null. {@code dev_cycle} then refuses to deploy, as that
-     * server would never load the project, and {@code project_scaffold} names {@code server_setup platform=} to
-     * switch the workspace (#636, ADR 0048).
+     * The workspace's remembered platform when its server runs none of {@code project} ({@link #serving}: another
+     * agent family, such as a Fabric mod in a Paper workspace), else null. {@code dev_cycle} then refuses to deploy,
+     * as that server would never load the project, and {@code project_scaffold} names {@code server_setup platform=}
+     * to switch the workspace (#636, ADR 0048).
      */
-    public static Platform otherFamily(CoreConfig config, Platform project) {
+    public static Platform otherFamily(CoreConfig config, List<Platform> project) {
         if (!Files.exists(file(config))) {
             return null;
         }
@@ -267,7 +270,7 @@ public enum Platform {
      * A build file also names the APIs of other platforms a jar is built for: a plugin built for Paper and Velocity has
      * {@code plugin.yml} (or a {@code paper {}} block) and names {@code velocity-api}, so the bare word comes last.
      * Within a tier a game server comes before the proxy, so a jar that is both a Paper and a Velocity plugin is Paper
-     * (a proxy workspace is {@code server_setup platform=velocity}); Quilt comes before Fabric, whose mods it loads, and
+     * here; {@link #runsOn} names both, so a Velocity workspace runs it too (#642). Quilt comes before Fabric, whose mods it loads, and
      * ModDevGradle's legacyforge plugin (Forge) before its NeoForge one, whose id it extends.
      */
     private static final List<Sign> SIGNS = List.of(
@@ -294,15 +297,30 @@ public enum Platform {
             Sign.build(VELOCITY, "velocity-api"),
             Sign.build(MINESTOM, "minestom"));
 
-    /** Platform of the Gradle project in {@code project}, or null when it does not say. */
+    /** Platform of the Gradle project in {@code project}, or null when it does not say: the first of {@link #runsOn}. */
     public static Platform detect(Path project) {
+        List<Platform> runsOn = runsOn(project);
+        return runsOn.isEmpty() ? null : runsOn.getFirst();
+    }
+
+    /**
+     * Every platform whose server loads the Gradle project in {@code project}, the one {@link #detect} names first;
+     * empty when it does not say. A jar can be several platforms' plugin or mod ({@code plugin.yml} and
+     * {@code velocity-plugin.json}), but never also a server whose project jar is the server (Minestom): that counts
+     * only when nothing else shows.
+     */
+    public static List<Platform> runsOn(Path project) {
         String build = buildText(project);
+        List<Platform> found = new ArrayList<>();
         for (Sign sign : SIGNS) {
-            if (sign.shows(project, build)) {
-                return sign.platform();
+            if (!found.contains(sign.platform()) && sign.shows(project, build)) {
+                found.add(sign.platform());
             }
         }
-        return null;
+        if (found.size() > 1) {
+            found.removeIf(p -> !p.needsServerSetup());
+        }
+        return List.copyOf(found);
     }
 
     /** The project's build files, lower-cased and joined; a file that is missing or not readable as text adds nothing. */

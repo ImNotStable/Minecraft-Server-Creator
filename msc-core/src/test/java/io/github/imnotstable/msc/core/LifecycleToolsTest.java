@@ -557,6 +557,65 @@ class LifecycleToolsTest {
         assertThat(h.ok("dev_cycle", "project", "foo", "restart", false)).contains("as mods/demo.jar");
     }
 
+    /**
+     * #642: a jar that is both a Paper and a Velocity plugin (plugin.yml and velocity-plugin.json, as ViaVersion ships)
+     * runs on the proxy, so a Velocity workspace deploys it; a Fabric one runs neither and refuses it.
+     */
+    @Test
+    void aPaperAndVelocityPluginDeploysToAVelocityWorkspace() throws Exception {
+        Files.createDirectories(workspace.resolve(".msc"));
+        Files.writeString(workspace.resolve(".msc/platform"), "velocity\n");
+        Path run = Files.createDirectories(workspace.resolve("run"));
+        Files.writeString(run.resolve("velocity.jar"), "set up");
+        Path resources = Files.createDirectories(project.resolve("src/main/resources"));
+        Files.writeString(resources.resolve("plugin.yml"), "name: demo\n");
+        Files.writeString(resources.resolve("velocity-plugin.json"), "{\"id\":\"demo\"}");
+        assertThat(h.ok("dev_cycle", "project", "demo", "restart", false)).contains("as plugins/demo.jar");
+        assertThat(run.resolve("plugins/demo.jar")).isRegularFile();
+        assertThat(workspace.resolve(".msc/platform")).hasContent("velocity");
+        Platform.remember(h.core.config(), Platform.FABRIC);
+        assertThat(h.error("dev_cycle", "project", "demo", "restart", false))
+                .startsWith("error: demo is a Paper project, but this workspace runs Fabric, which never loads it;");
+
+        // The scaffold and dev_cycle agree: a Paper plugin alone is not the proxy's, until it is a Velocity plugin too.
+        Platform.remember(h.core.config(), Platform.VELOCITY);
+        assertThat(h.ok("project_scaffold", "name", "Both", "dir", "both", "template", "paper-plugin"))
+                .contains("\nthe workspace stays Velocity, which never loads this Paper project: server_setup "
+                        + "platform=paper switches it (Velocity projects then need server_setup platform=velocity)\n");
+        Path both = workspace.resolve("both");
+        Files.writeString(both.resolve("version.txt"), "1.0");
+        assertThat(h.error("dev_cycle", "project", "both", "restart", false))
+                .startsWith("error: both is a Paper project, but this workspace runs Velocity, which never loads it;");
+        Files.writeString(both.resolve("src/main/resources/velocity-plugin.json"), "{\"id\":\"both\"}");
+        assertThat(h.ok("dev_cycle", "project", "both", "restart", false)).contains("as plugins/");
+        assertThat(workspace.resolve(".msc/platform")).hasContent("velocity");
+    }
+
+    /**
+     * #643: paper-server writes only server files, used by every platform: no project the workspace's server could
+     * fail to run, so no switch line, and its next step is for the workspace's own server.
+     */
+    @Test
+    void serverFilesAreNoProjectOfAnotherPlatform() throws Exception {
+        Files.createDirectories(workspace.resolve(".msc"));
+        Files.writeString(workspace.resolve(".msc/platform"), "fabric\n");
+        Path run = Files.createDirectories(workspace.resolve("run"));
+        Files.writeString(run.resolve("fabric-server-launch.jar"), "set up");
+        Files.writeString(run.resolve("eula.txt"), "eula=true\n");
+        assertThat(h.ok("project_scaffold", "name", "server", "dir", "defaults", "template", "paper-server"))
+                .doesNotContain("never loads").doesNotContain("platform=").doesNotContain("EULA")
+                .endsWith("\nnext: edit the code, then dev_cycle");
+        Files.delete(run.resolve("fabric-server-launch.jar"));
+        assertThat(h.ok("project_scaffold", "name", "server", "dir", "defaults2", "template", "paper-server"))
+                .doesNotContain("never loads").doesNotContain("platform=")
+                .endsWith("\nOn yes: server_setup acceptEula=true, then edit the code and dev_cycle");
+        assertThat(workspace.resolve(".msc/platform")).hasContent("fabric");
+        Platform.remember(h.core.config(), Platform.VELOCITY);
+        assertThat(h.ok("project_scaffold", "name", "server", "dir", "defaults3", "template", "paper-server"))
+                .doesNotContain("never loads").doesNotContain("EULA")
+                .endsWith("\nnext: server_setup platform=velocity, then edit the code and dev_cycle");
+    }
+
     /** #631: Quilt runs Fabric mods and Purpur Paper plugins, so the workspace's own server counts as set up. */
     @Test
     void scaffoldCountsAWorkspaceServerThatRunsTheTemplate() throws Exception {
