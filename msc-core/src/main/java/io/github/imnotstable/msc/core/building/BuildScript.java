@@ -35,7 +35,7 @@ public final class BuildScript {
     /** What every step verb takes, for the tool descriptions. */
     public static final String HELP = """
             One step per line; later steps win. B = a block or a mix like grass_block:78,moss_block:10; B{SNBT} adds \
-            block entity data (also world_slice's data lines). Every step \
+            block entity data. Every step \
             takes replace=a,b (change only those; air = empty), seed=N, repeat=N step=DX,DY,DZ.
             fill X,Y,Z X,Y,Z B [hollow|outline|walls]
             set X,Y,Z B

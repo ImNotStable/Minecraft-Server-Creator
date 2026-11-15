@@ -48,8 +48,10 @@ and must stay backwards compatible.
 5. **Where the AI meets it**, with no new tool: `B{SNBT}` on any block of any `build_batch` step; `world_slice
    data=true` adds `data X,Y,Z {SNBT}` lines, which the structure text reads back (a pasted slice lands its data on the
    same blocks, and `rotate` turns the block, not the data); `copy` reads with data; `structure_save` writes Sponge
-   `BlockEntities` (the block's id as `Id`) and a `.schem` structure step reads them back, version 2 and 3. Tool text
-   grew by about 135 characters (15,850 to 15,985 with `world_summary`'s "in a few lines" trimmed).
+   `BlockEntities` (the block's id as `Id`) and a `.schem` structure step reads them back, version 2 and 3. The new
+   text (about 100 characters) is paid for by trimming the world tools' wording without changing its meaning ("Default:
+   main", "Corners, inclusive", shorter `world_render`, `world_heightmap` and `world_summary` lines, no example path on
+   `structure_save`): the tool list is about 85 characters shorter than before (15,852 to 15,768).
 6. **Entities and items stay with `server_command`** on the vanilla platforms (documented in `tools.md`), and Minestom
    has none to give: its entities and items are the project's own code. That difference is the platform's nature, not
    an MSC gap.

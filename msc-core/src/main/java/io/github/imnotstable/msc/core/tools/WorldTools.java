@@ -34,8 +34,8 @@ import java.util.stream.Stream;
 
 /** Seeing and building in the world. Coordinates are strings: "x,y,z" and "x1,y1,z1 x2,y2,z2". */
 public final class WorldTools {
-    private static final String WORLD = "Default: main world";
-    private static final String REGION = "Two corners, inclusive: \"x1,y1,z1 x2,y2,z2\"";
+    private static final String WORLD = "Default: main";
+    private static final String REGION = "Corners, inclusive: \"x1,y1,z1 x2,y2,z2\"";
 
     /** Largest region one world_render reads, stitched from protocol-sized reads. */
     static final long MAX_RENDER_BLOCKS = 16_000_000L;
@@ -66,11 +66,11 @@ public final class WorldTools {
                         + "Best up to about 32x32 per layer.",
                 Schema.of().req("region", "string", REGION).opt("world", "string", WORLD)
                         .opt("states", "boolean", "Show block properties such as facing")
-                        .opt("data", "boolean", "Add block entity data as SNBT")
+                        .opt("data", "boolean", "Block entity data as SNBT")
                         .maxChars(),
                 args -> world.slice(Coords.region(world.world(args.str("world", null)), args.str("region")),
                         args.bool("states", false), args.bool("data", false), Budget.of(args)));
-        registry.add("world_heightmap", "Surface height per column over an area, as a compact grid.",
+        registry.add("world_heightmap", "Surface height per column, as a compact grid.",
                 Schema.of().req("area", "string", "Two corners: \"x1,z1 x2,z2\"").opt("world", "string", WORLD)
                         .maxChars(),
                 args -> world.heightmap(Coords.area(world.world(args.str("world", null)), args.str("area")),
@@ -83,11 +83,11 @@ public final class WorldTools {
         }
         WorldRenderer renderer = new WorldRenderer(new PackTextures(textureRoots));
         registry.addImage("world_render",
-                "See a region as a small PNG image to check how a build looks. Views: iso, top, north, "
+                "See how a region looks, as a small PNG. Views: iso, top, north, "
                         + "south, east, west, iso-ne/nw/sw/se, \"eye x,y,z look x,y,z\".",
                 Schema.of().req("region", "string", REGION).opt("view", "string", "Camera. Default iso")
                         .range("size", RenderOptions.MIN_SIZE, RenderOptions.MAX_SIZE, "Longest side in pixels. Default " + RenderOptions.DEFAULT_SIZE)
-                        .opt("entities", "boolean", "Mark entities as numbered dots and show hologram and sign text. Default true")
+                        .opt("entities", "boolean", "Number entities; show hologram and sign text. Default true")
                         .opt("world", "string", WORLD),
                 args -> {
                     View view;
@@ -115,7 +115,7 @@ public final class WorldTools {
                             r.png(), r.estimatedTokens());
                 });
         registry.add("world_summary",
-                "Summarize a region: block counts (with where rare ones are), non-air bounds, fill per layer, entities. Use before world_slice on unknown areas and to find a block.",
+                "Summarize a region: block counts (where rare ones are), non-air bounds, fill per layer, entities. Use before world_slice on unknown areas and to find a block.",
                 Schema.of().req("region", "string", REGION).opt("world", "string", WORLD)
                         .opt("path", "string", "\"x,y,z x,y,z\": can a player walk/jump from A to B; else the wall or gap")
                         .opt("diff", "string", "structure_save file of this region: what changed since"),
@@ -150,7 +150,7 @@ public final class WorldTools {
                 args -> world.undo(args.str("edit", null)));
         registry.add("structure_save", "Save a region as a Sponge schematic (.schem) file.",
                 Schema.of().req("region", "string", REGION)
-                        .req("file", "string", "Path ending .schem, such as structures/house.schem")
+                        .req("file", "string", "Path ending .schem")
                         .opt("world", "string", WORLD),
                 args -> {
                     Region region = Coords.region(world.world(args.str("world", null)), args.str("region"));

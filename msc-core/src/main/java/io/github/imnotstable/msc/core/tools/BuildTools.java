@@ -18,7 +18,7 @@ import java.util.List;
 
 /** Shapes, stamps and batches: many blocks per call, one undo id per call, every block name checked first. */
 public final class BuildTools {
-    private static final String WORLD = "Default: main world";
+    private static final String WORLD = "Default: main";
     private static final String DRY_RUN = "Only check names and count blocks";
     private static final String PHYSICS = "Apply block updates";
 
