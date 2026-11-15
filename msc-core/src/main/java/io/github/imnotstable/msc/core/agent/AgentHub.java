@@ -51,13 +51,16 @@ public final class AgentHub implements AutoCloseable {
      */
     private long generation;
     /**
-     * The last agent said {@code server.stopping}: the run {@link #endingRun} is ending, so none comes back until a new
-     * one connects. While it is set, none is connected and that run is still the last one launched, {@link #refusal}
-     * answers {@link #notRunning}, which says "stopping" only while this session's server process still runs (#711).
+     * The last agent said {@code server.stopping}: the run in it ({@link #lastRun} then) is ending, so none comes back
+     * until a new one connects; null when none did. A later launch is never stopping for it (#715). While that run is
+     * still the last one launched, {@link #refusal} answers {@link #notRunning}, which says "stopping" only while this
+     * session's server process still runs (#711). Changed under {@link #lock}; read without it
+     * ({@link #stopAnnounced}), so ServerManager's monitor never waits for the hub lock (#723).
      */
-    private boolean ending;
-    /** The run ({@link #lastRun}) that {@link #ending} belongs to: a later launch is never stopping for it (#715). */
-    private Object endingRun;
+    private volatile Ending ending;
+    /** A {@code server.stopping} of {@code run}, which may be null (a server this core did not launch). */
+    private record Ending(Object run) {
+    }
     /** Set by {@link #close()} under {@link #lock}: no agent can arrive after it, so nobody waits for one. */
     private boolean closed;
     private volatile Duration connectWait = CONNECT_WAIT;
@@ -65,6 +68,7 @@ public final class AgentHub implements AutoCloseable {
     private volatile java.util.function.Supplier<String> noAgentReason = () -> null;
     private volatile java.util.function.Supplier<String> notRunning = () -> NOT_RUNNING;
     private volatile java.util.function.Supplier<Object> lastRun = () -> null;
+    private volatile java.util.function.BooleanSupplier serverStopping = () -> false;
     private volatile Runnable onReady = () -> { };
 
     public AgentHub(int port, String token) throws IOException {
@@ -79,7 +83,7 @@ public final class AgentHub implements AutoCloseable {
                     late = closed;
                     if (!late) {
                         session = s;
-                        ending = false;
+                        ending = null;
                         generation++;
                         changed.signalAll();
                     }
@@ -95,10 +99,7 @@ public final class AgentHub implements AutoCloseable {
             public void event(CoreServer.AgentSession s, Event event) {
                 if (Events.SERVER_STOPPING.equals(event.name())) {
                     Object run = lastRun.get();
-                    update(() -> {
-                        ending = true;
-                        endingRun = run;
-                    });
+                    update(() -> ending = new Ending(run));
                 } else if (Events.SERVER_READY.equals(event.name())) {
                     update(() -> readyCount++);
                     onReady.run();
@@ -179,6 +180,25 @@ public final class AgentHub implements AutoCloseable {
     }
 
     /**
+     * Whether this session's server is stopping (ServerManager's {@code stopping()}, the one answer, #723): an agent
+     * still connected to it is not handed out, so every tool refuses alike. Asked without the hub lock.
+     */
+    public void serverStopping(java.util.function.BooleanSupplier stopping) {
+        this.serverStopping = stopping;
+    }
+
+    /** Whether an agent announced {@code server.stopping} for {@code run} ({@link #lastRun}). Takes no lock. */
+    public boolean stopAnnounced(Object run) {
+        Ending e = ending;
+        return e != null && e.run() == run;
+    }
+
+    /** {@link #notRunning}'s answer while this session's server is stopping ({@link #serverStopping}), else null. */
+    public String stopping() {
+        return serverStopping.getAsBoolean() ? notRunning.get() : null;
+    }
+
+    /**
      * Why no agent will ever connect (a proxy runs none), or null. When it says so and none is connected,
      * {@link #require} fails at once with that line (ADR 0045).
      */
@@ -249,14 +269,21 @@ public final class AgentHub implements AutoCloseable {
         long deadline = System.nanoTime() + connectWait.toNanos();
         while (true) {
             long seen;
+            CoreServer.AgentSession open;
             lock.lock();
             try {
-                if (session != null && session.connection().isOpen()) {
-                    return session;
-                }
+                open = session != null && session.connection().isOpen() ? session : null;
                 seen = generation;
             } finally {
                 lock.unlock();
+            }
+            if (open != null) {
+                // The agent of a stopping server may not have left yet: refused as server_command refuses it (#723).
+                String why = stopping();
+                if (why != null) {
+                    throw new ToolException(why);
+                }
+                return open;
             }
             String why = refusal();
             if (why != null) {
@@ -325,10 +352,10 @@ public final class AgentHub implements AutoCloseable {
             if (closed) {
                 throw ToolException.workspaceClosed("no server agent can connect any more");
             }
-            stopping = ending && endingRun == run;
         } finally {
             lock.unlock();
         }
+        stopping = stopAnnounced(run) || serverStopping.getAsBoolean();
         String never = noAgentReason.get();
         if (never != null) {
             return never;

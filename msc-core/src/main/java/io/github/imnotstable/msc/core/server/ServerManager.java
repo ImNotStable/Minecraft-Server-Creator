@@ -45,7 +45,10 @@ public final class ServerManager implements AutoCloseable {
     private LogPump pump;
     private volatile boolean sawDone;
     private volatile boolean detached;
-    /** {@link #stop} asked the running server to stop; a launch clears it. Under this monitor. */
+    /**
+     * {@link #stop} asked the running server to stop; a launch clears it. Under this monitor. The whole answer to
+     * "is it stopping" is {@link #stopping()}, which adds the stop its agent announced.
+     */
     private boolean stopping;
     /** Set by {@link #close()} under this monitor; {@link #start} checks it under the same monitor (#282). */
     private boolean closed;
@@ -168,11 +171,27 @@ public final class ServerManager implements AutoCloseable {
     }
 
     /**
-     * Whether an agent of this session's server can still connect: its server runs and was not asked to stop (#703).
-     * The hub is woken when either changes ({@link AgentHub#serverChanged}).
+     * Whether an agent of this session's server can still connect: its server runs and is not stopping (#703). The hub
+     * is woken when either changes ({@link AgentHub#serverChanged}).
      */
     public synchronized boolean awaitsAgent() {
-        return running() && !stopping;
+        return running() && !stopping();
+    }
+
+    /**
+     * The one answer to "is this session's server stopping" (#723): it runs, and {@link #stop} asked it to stop or its
+     * agent announced a stop of this run ({@code server.stopping}, {@link AgentHub#stopAnnounced}). Every call that
+     * needs the server goes by it: the world tools, server_command, server_detach, server_start and msc_status. It
+     * takes no hub lock ({@link AgentHub#stopAnnounced} reads one field), so the hub may ask it at any time.
+     */
+    public synchronized boolean stopping() {
+        return running() && (stopping || hub.stopAnnounced(process));
+    }
+
+    /** The refusal of a start while this session's server runs: a stopping one is waited for, not stopped (#723). */
+    public synchronized String alreadyRunning() {
+        return stopping() ? "the server is still stopping: server_stop waits until it has exited, then server_start "
+                + "starts it again." : "server is already running. Use server_stop or dev_cycle.";
     }
 
     /**
@@ -316,7 +335,7 @@ public final class ServerManager implements AutoCloseable {
                 throw ToolException.workspaceClosed("the server did not start");
             }
             if (running()) {
-                throw new ToolException("server is already running. Use server_stop or dev_cycle.");
+                throw new ToolException(alreadyRunning());
             }
             // Check, launch and record in one critical section across cores (ADR 0037 point 3): a core starting at
             // the same moment waits, then finds this server and its live owner, and is refused (#490).
@@ -462,7 +481,7 @@ public final class ServerManager implements AutoCloseable {
      * down, as the Minestom template's does on {@code stop}, or has just exited (#716).
      */
     public synchronized void console(String line) {
-        if (!running() || stopping) {
+        if (!running() || stopping()) {
             throw new ToolException(notRunning());
         }
         try {
@@ -622,9 +641,13 @@ public final class ServerManager implements AutoCloseable {
             }
             p = process;
             detached = false;
+            // A server already stopping is only waited for: a second "stop" into a closed console would kill it (#723).
+            boolean asked = stopping();
             stopping = true;
             try {
-                write("stop");
+                if (!asked) {
+                    write("stop");
+                }
             } catch (IOException e) {
                 p.destroy();
             }
@@ -668,13 +691,14 @@ public final class ServerManager implements AutoCloseable {
         if (closed) {
             throw ToolException.workspaceClosed("the server was not detached");
         }
-        detached = running();
+        // A stopping server does not run on after this session: refused as server_command refuses it (#723).
+        detached = running() && !stopping();
         return detached;
     }
 
-    /** True while a detached server is still running: {@link #close()} leaves it alone. */
+    /** True while a detached server is still running and not stopping: {@link #close()} leaves it alone. */
     public synchronized boolean detached() {
-        return detached && running();
+        return detached && running() && !stopping();
     }
 
     /**
