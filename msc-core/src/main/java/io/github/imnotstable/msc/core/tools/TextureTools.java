@@ -96,13 +96,8 @@ public final class TextureTools {
                         .opt("item", "boolean", "Also write an item definition. Default true"),
                 textures(args -> {
                     ResourceId model = ResourceId.parse(args.str("name"));
-                    Map<String, ResourceId> slots = new LinkedHashMap<>();
-                    for (String entry : args.strings("textures")) {
-                        int eq = entry.indexOf('=');
-                        slots.put(eq < 0 ? "*" : entry.substring(0, eq).trim(),
-                                ResourceId.parse(entry.substring(eq + 1)));
-                    }
                     Models.Kind kind = Models.Kind.parse(args.str("kind"));
+                    Map<String, ResourceId> slots = slots(kind, args.strings("textures"));
                     boolean withItem = args.bool("item", true);
                     OutputFile.check(source.modelPath(model), "model");
                     String item = new Steps("model_create").then(WRITE_MODEL).run(WRITE_MODEL,
@@ -129,6 +124,40 @@ public final class TextureTools {
                     }
                     return pack(args, hub, pack, config, serverDir.resolve(ServerPropertiesFile.NAME));
                 });
+    }
+
+    /**
+     * model_create's {@code textures} as a texture for each slot of {@code kind} (#691): either one bare name, which
+     * fills every slot, or {@code slot=texture} for every slot of the kind, each once. Refusals quote only what the
+     * call wrote.
+     */
+    static Map<String, ResourceId> slots(Models.Kind kind, List<String> entries) {
+        String all = String.join(", ", kind.slots());
+        Map<String, ResourceId> slots = new LinkedHashMap<>();
+        for (String entry : entries) {
+            int eq = entry.indexOf('=');
+            if (eq < 0) {
+                if (entries.size() > 1) {
+                    throw new ToolException("\"" + entry + "\" names no slot: give either one bare texture, which fills "
+                            + "every slot, or slot=texture for each of " + all);
+                }
+                ResourceId id = ResourceId.parse(entry);
+                kind.slots().forEach(slot -> slots.put(slot, id));
+                return slots;
+            }
+            String slot = entry.substring(0, eq).trim();
+            if (!kind.slots().contains(slot)) {
+                throw new ToolException(kind.id() + " has no texture slot \"" + slot + "\"; slots are " + all);
+            }
+            if (slots.put(slot, ResourceId.parse(entry.substring(eq + 1))) != null) {
+                throw new ToolException("slot " + slot + " is given twice");
+            }
+        }
+        List<String> missing = kind.slots().stream().filter(slot -> !slots.containsKey(slot)).toList();
+        if (!missing.isEmpty()) {
+            throw new ToolException(kind.id() + " needs textures for " + all + "; missing " + String.join(", ", missing));
+        }
+        return slots;
     }
 
     static final String BUILD = "build the pack and serve it";

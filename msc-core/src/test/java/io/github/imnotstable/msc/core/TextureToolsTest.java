@@ -2,6 +2,9 @@ package io.github.imnotstable.msc.core;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+import io.github.imnotstable.msc.textures.Models;
 import java.awt.image.BufferedImage;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -12,7 +15,11 @@ import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.HexFormat;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 import javax.imageio.ImageIO;
@@ -299,9 +306,88 @@ class TextureToolsTest {
                 .contains("\"parent\":\"minecraft:block/cube_column\"").contains("\"side\":\"msc:block/ruby_log\"");
         assertThat(workspace.resolve(".msc/pack/assets/msc/items/ruby_log.json")).exists();
         assertThat(h.error("model_create", "name", "block/x", "kind", "cube_all", "textures", List.of("a=block/a", "b=block/b")))
-                .contains("cube_all needs textures for all; missing all");
+                .isEqualTo("error: cube_all has no texture slot \"a\"; slots are all");
         assertThat(h.error("model_create", "name", "block/x", "kind", "slab", "textures", List.of("block/a")))
                 .contains("unknown model kind \"slab\"");
+    }
+
+    /**
+     * #691: the slot rules hold for every model kind and every way of giving its slots. One bare name fills every
+     * slot and comes alone; otherwise every slot of the kind is named once, and no other. A refusal writes nothing
+     * and quotes only what the call wrote.
+     */
+    @Test
+    void modelCreateSlotRulesHoldForEveryKindAndSlotCombination() throws Exception {
+        int model = 0;
+        for (Models.Kind kind : Models.Kind.values()) {
+            List<String> slots = kind.slots();
+            String id = kind.id();
+            String all = String.join(", ", slots);
+            Map<List<String>, Object> rows = new LinkedHashMap<>();
+            Map<String, String> filled = new LinkedHashMap<>();
+            slots.forEach(s -> filled.put(s, "msc:block/t"));
+            rows.put(List.of("block/t"), filled);
+            // Every non-empty set of named slots: only all of them, in any order, is a model.
+            for (int mask = 1; mask < 1 << slots.size(); mask++) {
+                List<String> named = new ArrayList<>();
+                List<String> missing = new ArrayList<>();
+                for (int i = 0; i < slots.size(); i++) {
+                    ((mask & 1 << i) != 0 ? named : missing).add(slots.get(i));
+                }
+                List<String> entries = named.stream().map(s -> s + "=block/" + s).toList();
+                if (missing.isEmpty()) {
+                    Map<String, String> own = new LinkedHashMap<>();
+                    slots.forEach(s -> own.put(s, "msc:block/" + s));
+                    rows.put(entries, own);
+                    rows.put(entries.reversed(), own);
+                } else {
+                    rows.put(entries, "error: " + id + " needs textures for " + all + "; missing "
+                            + String.join(", ", missing));
+                }
+                List<String> withBare = new ArrayList<>(entries);
+                withBare.add("block/t");
+                String bare = "error: \"block/t\" names no slot: give either one bare texture, which fills every "
+                        + "slot, or slot=texture for each of " + all;
+                rows.put(withBare, bare);
+                rows.put(withBare.reversed(), bare);
+            }
+            List<String> every = slots.stream().map(s -> s + "=block/" + s).toList();
+            for (String slot : slots) {
+                String unknown = "error: " + id + " has no texture slot \"" + slot + "x\"; slots are " + all;
+                rows.put(List.of(slot + "x=block/t"), unknown);
+                List<String> plus = new ArrayList<>(every);
+                plus.add(slot + "x=block/t");
+                rows.put(plus, unknown);
+                List<String> twice = new ArrayList<>(every);
+                twice.add(slot + "=block/t");
+                rows.put(twice, "error: slot " + slot + " is given twice");
+            }
+            rows.put(List.of("block/t", "block/u"), "error: \"block/t\" names no slot: give either one bare texture, "
+                    + "which fills every slot, or slot=texture for each of " + all);
+            for (var row : rows.entrySet()) {
+                String name = "block/m" + ++model;
+                Path file = workspace.resolve(".msc/pack/assets/msc/models/" + name + ".json");
+                var result = h.call("model_create", "name", name, "kind", id, "textures", row.getKey(), "item", false);
+                var that = assertThat(result.text()).as("%s %s", id, row.getKey());
+                if (row.getValue() instanceof String refusal) {
+                    that.isEqualTo(refusal);
+                    assertThat(file).as("%s %s", id, row.getKey()).doesNotExist();
+                    // Only what the call wrote is quoted.
+                    Matcher quoted = Pattern.compile("\"([^\"]*)\"").matcher(refusal);
+                    while (quoted.find()) {
+                        String q = quoted.group(1);
+                        assertThat(row.getKey()).as("quoted %s", q).anyMatch(e -> e.contains(q));
+                    }
+                } else {
+                    assertThat(result.ok()).as("%s %s: %s", id, row.getKey(), result.text()).isTrue();
+                    JsonObject textures = JsonParser.parseString(Files.readString(file)).getAsJsonObject()
+                            .getAsJsonObject("textures");
+                    Map<String, String> written = new LinkedHashMap<>();
+                    textures.entrySet().forEach(e -> written.put(e.getKey(), e.getValue().getAsString()));
+                    assertThat(written).as("%s %s", id, row.getKey()).isEqualTo(row.getValue());
+                }
+            }
+        }
     }
 
     @Test
