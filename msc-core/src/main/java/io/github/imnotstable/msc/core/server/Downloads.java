@@ -64,17 +64,82 @@ final class Downloads {
         return url.endsWith("/") ? url.substring(0, url.length() - 1) : url;
     }
 
-    /** A GET of a small text answer; an unreachable host throws the {@link IOException}, for an offline fallback. */
-    HttpResponse<String> text(URI uri) throws IOException, InterruptedException {
-        return HttpStall.send(http, request(uri), HttpResponse.BodyHandlers.ofString(), stall, RETRY);
+    /**
+     * The source failed for a reason that can pass: the host cannot be reached, it stalled, or it answered 408, 429 or
+     * a 5xx (the usual answer of a service that is down is its proxy's 502, 503 or 504). The message is one line for
+     * the user. Only {@link #orCached} turns it into a fallback or a {@link ToolException}.
+     */
+    static final class Unavailable extends IOException {
+        private static final long serialVersionUID = 1L;
+
+        Unavailable(String message) {
+            super(message);
+        }
+    }
+
+    /** An update from the source: asks it, and downloads what it names. */
+    @FunctionalInterface
+    interface Update<T> {
+        T get() throws IOException, InterruptedException;
+    }
+
+    /** The newest usable cached build, told {@code note} to say why it is used; null when nothing is cached. */
+    @FunctionalInterface
+    interface Fallback<T> {
+        T use(String note) throws IOException;
+    }
+
+    /** True for an answer that says the source is down for now, not that what was asked for is missing. */
+    static boolean passing(int status) {
+        return status == 408 || status == 429 || status >= 500;
+    }
+
+    /**
+     * The one update rule of every downloader (#589): run {@code update}; when the source is {@link Unavailable} for
+     * any reason that can pass, use the newest cached build from {@code cached}, with a one-line note saying so. Only
+     * without one does it fail, with the source's reason. Any other answer (404, a bad checksum) fails as it is.
+     */
+    static <T> T orCached(Update<T> update, Fallback<T> cached) throws IOException, InterruptedException {
+        try {
+            return update.get();
+        } catch (Unavailable e) {
+            T fallback = cached.use(e.getMessage() + "; using the newest cached build");
+            if (fallback == null) {
+                throw new ToolException(e.getMessage());
+            }
+            return fallback;
+        }
+    }
+
+    /** {@link #orCached} for a download with nothing to fall back to: fails with the source's reason. */
+    static <T> T fresh(Update<T> update) throws IOException, InterruptedException {
+        return orCached(update, note -> null);
+    }
+
+    /**
+     * A GET of a small text answer from {@code source} (its name in messages). A source that is {@link Unavailable}
+     * throws that; any other answer, a 404 included, is the caller's to read.
+     */
+    HttpResponse<String> text(URI uri, String source) throws IOException, InterruptedException {
+        HttpResponse<String> response;
+        try {
+            response = HttpStall.send(http, request(uri), HttpResponse.BodyHandlers.ofString(), stall, RETRY);
+        } catch (HttpStall.StalledException e) {
+            throw new Unavailable(e.getMessage());
+        } catch (IOException e) {
+            throw new Unavailable("cannot reach " + uri + ": " + e.getMessage());
+        }
+        if (passing(response.statusCode())) {
+            throw new Unavailable(source + " answered " + response.statusCode() + " for " + uri);
+        }
+        return response;
     }
 
     /**
      * Download {@code uri} to {@code target} through a {@code .part} file beside it ({@link AtomicFile}), so a failed
      * download leaves nothing behind and a replaced file keeps its permissions. A 404 throws {@code notFound}; a
-     * non-null {@code checksum} must match the downloaded bytes; a null one skips
-     * the check. A download that stalls fails with a one-line error
-     * that names the host. With a checksum, the machine's {@link DownloadStore} is asked first and keeps what was
+     * non-null {@code checksum} must match the downloaded bytes; a null one skips the check. A host that cannot be
+     * reached, stalls or answers a status that can pass throws {@link Unavailable} with a one-line reason. With a checksum, the machine's {@link DownloadStore} is asked first and keeps what was
      * downloaded.
      *
      * @return true when the file came from the machine's store, not the network
@@ -93,9 +158,12 @@ final class Downloads {
                 } catch (InterruptedException e) {
                     throw new Interrupted(e);
                 } catch (HttpStall.StalledException e) {
-                    throw new ToolException(e.getMessage());
+                    throw new Unavailable(e.getMessage());
                 } catch (IOException e) {
-                    throw new ToolException("cannot reach " + uri + ": " + e.getMessage());
+                    throw new Unavailable("cannot reach " + uri + ": " + e.getMessage());
+                }
+                if (passing(got.statusCode())) {
+                    throw new Unavailable("download of " + uri + " answered " + got.statusCode());
                 }
                 if (got.statusCode() != 200) {
                     throw new ToolException(got.statusCode() == 404 ? notFound

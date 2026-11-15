@@ -13,11 +13,18 @@ import java.nio.file.Path;
 
 /**
  * Downloads a Paper, Folia or Velocity jar from PaperMC's downloads service (Fill, API v3) into a local cache.
- * The newest stable build of a version wins; without one, the newest build of any channel.
+ * The newest stable build of a version wins; without one, the newest build of any channel. While the service is
+ * unavailable, the newest cached build ({@link Downloads#orCached}).
  */
 public final class PaperDownloader {
-    /** A downloaded jar. */
-    public record Download(Path jar, String version, int build, boolean cached) {
+    /**
+     * A downloaded jar. {@code note} is null, or one line saying why the newest cached build is used: the service was
+     * unavailable (#589).
+     */
+    public record Download(Path jar, String version, int build, boolean cached, String note) {
+        public Download(Path jar, String version, int build, boolean cached) {
+            this(jar, version, build, cached, null);
+        }
     }
 
     private final String baseUrl;
@@ -46,18 +53,17 @@ public final class PaperDownloader {
      */
     public Download download(Platform platform, String version) throws IOException, InterruptedException {
         String project = platform.id();
-        String name = platform.displayName();
         URI builds = URI.create(baseUrl + "/v3/projects/" + project + "/versions/" + version + "/builds");
-        HttpResponse<String> response;
-        try {
-            response = downloads.text(builds);
-        } catch (IOException e) {
+        return Downloads.orCached(() -> newest(platform, version, builds), note -> {
             CachedBuild offline = CachedBuild.newest(cacheDir, project, version);
-            if (offline != null) {
-                return new Download(offline.jar(), version, offline.build(), true);
-            }
-            throw new ToolException("cannot reach " + builds + ": " + e.getMessage());
-        }
+            return offline == null ? null : new Download(offline.jar(), version, offline.build(), true, note);
+        });
+    }
+
+    private Download newest(Platform platform, String version, URI builds) throws IOException, InterruptedException {
+        String project = platform.id();
+        String name = platform.displayName();
+        HttpResponse<String> response = downloads.text(builds, name + " downloads");
         if (response.statusCode() == 404) {
             throw new ToolException(name + " has no version " + version);
         }

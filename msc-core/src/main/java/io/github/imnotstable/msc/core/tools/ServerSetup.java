@@ -145,7 +145,7 @@ final class ServerSetup {
             }
             if (geyser) {
                 for (GeyserDownloader.Project p : GeyserDownloader.Project.values()) {
-                    bedrockJars.add(this.geyser.download(p));
+                    bedrockJars.add(note(this.geyser.download(p), GeyserDownloader.Download::note, installed));
                 }
             }
         });
@@ -283,7 +283,7 @@ final class ServerSetup {
     /** A jar from PaperMC's Fill service (Paper, Folia, Velocity), placed as the platform's server jar. */
     private StringBuilder fill(Platform platform, String version, Path dir, StringBuilder out)
             throws IOException, InterruptedException {
-        PaperDownloader.Download d = paper.download(platform, version);
+        PaperDownloader.Download d = note(paper.download(platform, version), PaperDownloader.Download::note, out);
         ServerFiles.place(d.jar(), dir, platform.serverJar());
         return out.append(platform.id()).append(' ').append(d.version()).append(" build ").append(d.build())
                 .append(d.cached() ? " (cached)" : " (downloaded)").append('\n');
@@ -356,8 +356,18 @@ final class ServerSetup {
     }
 
     private static void report(String what, LoaderInstaller.Result r, StringBuilder out) {
+        note(r, LoaderInstaller.Result::note, out);
         out.append(what).append(' ').append(r.version()).append(r.cached() ? " (already there)" : " (installed)")
                 .append('\n');
+    }
+
+    /** Adds a download's note, the line saying why a cached build is used (#589), to {@code out}. */
+    private static <T> T note(T download, java.util.function.Function<T, String> note, StringBuilder out) {
+        String line = note.apply(download);
+        if (line != null) {
+            out.append(line).append('\n');
+        }
+        return download;
     }
 
     /**

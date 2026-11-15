@@ -55,12 +55,7 @@ public final class FabricDownloader {
 
     private String installerVersion() throws IOException, InterruptedException {
         URI uri = URI.create(metaUrl + "/v2/versions/installer");
-        HttpResponse<String> response;
-        try {
-            response = downloads.text(uri);
-        } catch (IOException e) {
-            throw new ToolException("cannot reach " + uri + ": " + e.getMessage());
-        }
+        HttpResponse<String> response = Downloads.fresh(() -> downloads.text(uri, "Fabric meta"));
         if (response.statusCode() != 200) {
             throw new ToolException("Fabric meta answered " + response.statusCode() + " for " + uri);
         }
@@ -82,6 +77,6 @@ public final class FabricDownloader {
     }
 
     private void fetch(URI uri, Path jar, String notFound) throws IOException, InterruptedException {
-        downloads.fetch(uri, jar, notFound, null);
+        Downloads.fresh(() -> downloads.fetch(uri, jar, notFound, null));
     }
 }
