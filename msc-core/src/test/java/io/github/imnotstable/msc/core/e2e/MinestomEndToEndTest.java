@@ -105,7 +105,10 @@ class MinestomEndToEndTest {
         assertThat(played.text()).contains("joined as MscE2e");
 
         assertThat(ok(core, "world_entities", SHORT, "region", "-16,-64,-16 16,-40,16").text()).contains("MscE2e");
-        ok(core, "player_test", SHORT, "actions", new String[] {"wait 5"}, "name", "MscE2e", "leave", true);
+        // #626: the joined player's gamemode goes to a server with no gamemode command, and the result says so.
+        assertThat(ok(core, "player_test", SHORT, "actions", new String[] {"wait 5"}, "name", "MscE2e",
+                "gamemode", "creative", "leave", true).text())
+                .startsWith("game mode left to the server: it has no gamemode command\n");
 
         // Nothing changed: the same jar, so the server keeps running.
         assertThat(ok(core, "dev_cycle", BUILD, "project", "game").text()).contains("jar unchanged")
