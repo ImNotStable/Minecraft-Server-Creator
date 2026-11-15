@@ -293,8 +293,8 @@ public final class PlayerTools implements AutoCloseable {
         bot.close();
     }
 
-    /** True while a test player is joined; tests use this. */
-    boolean joined() {
+    /** True while a test player is joined: a workspace switch says it left. */
+    public boolean joined() {
         return current() != null;
     }
 

@@ -351,7 +351,7 @@ public final class Core implements AutoCloseable {
             PathArg.createFolders(target, "folder");
         }
         target = target.toRealPath();
-        if (target.equals(realOrSelf(current.workspace()))) {
+        if (isOpen(target)) {
             return "workspace is already " + target;
         }
         Lock write = writeLock();
@@ -366,31 +366,27 @@ public final class Core implements AutoCloseable {
                 throw new ToolException("did not switch: the session has ended");
             }
             // Another switch may have run while this one waited for the lock.
-            if (target.equals(realOrSelf(bench.config().workspace()))) {
+            if (isOpen(target)) {
                 return "workspace is already " + target;
             }
             Bench old = bench;
-            boolean detached = old.server().detached();
-            boolean wasRunning = old.server().running();
-            // Close first: a fixed agent or pack port must be free before the new bench binds it.
+            String closing = closing(old);
+            // Close first: a fixed agent or pack port must be free before the new bench binds it. CoreServer lets it go
+            // before its close returns, and the bind waits PortPatience for it (#721).
             old.close();
             Bench next;
             try {
                 next = Bench.open(old.config().withWorkspace(target), log, openCheck);
             } catch (IOException | RuntimeException e) {
-                install(Bench.open(old.config(), log, openCheck));
-                throw new ToolException("could not open " + target + " (" + e.getMessage() + "); still in "
-                        + old.config().workspace());
+                throw new ToolException(reopen(old, "could not open " + target + " (" + e.getMessage() + ")", closing));
             }
             install(next);
             log.moveTo(next.config().toolLog());
             // A switch into the MSC repo says so in this result (#633).
             registry.noticeUnlessPending(() -> SetupCheck.workspaceWarning(bench.config()));
             StringBuilder out = new StringBuilder("workspace: ").append(target);
-            if (detached) {
-                out.append("\nthe detached server of ").append(old.config().workspace()).append(" keeps running");
-            } else if (wasRunning) {
-                out.append("\nstopped the dev server of ").append(old.config().workspace());
+            if (closing != null) {
+                out.append('\n').append(closing);
             }
             out.append("\nserver folder: ").append(next.config().serverDir())
                     .append("; platform: ").append(next.server().platform().id());
@@ -398,6 +394,45 @@ public final class Core implements AutoCloseable {
         } finally {
             write.unlock();
         }
+    }
+
+    /** True when {@code target} is the workspace and it is open: a closed one (#721) is opened again by a switch. */
+    private boolean isOpen(Path target) {
+        Bench current = bench;
+        return target.equals(realOrSelf(current.config().workspace())) && !current.closed().get();
+    }
+
+    /**
+     * The line on what closing {@code old} does to its dev server and test player, or null when it touches neither.
+     * A switch says it whether it worked or not: the close comes first.
+     */
+    private static String closing(Bench old) {
+        Path ws = old.config().workspace();
+        String server = old.server().detached() ? "the detached server of " + ws + " keeps running"
+                : old.server().running() ? "stopped the dev server of " + ws : null;
+        String player = old.players().joined() ? "the test player left" : null;
+        if (server == null) {
+            return player;
+        }
+        return player == null ? server : server + "; " + player;
+    }
+
+    /**
+     * After a failed switch: reopens the old workspace, closed by then, and says what happened. When that fails too,
+     * the closed bench stays, and a switch to the same folder opens it again instead of answering "already".
+     */
+    private String reopen(Bench old, String failure, String closing) throws IOException {
+        Path ws = old.config().workspace();
+        String done = closing == null ? "" : "\n" + closing;
+        Bench back;
+        try {
+            back = Bench.open(old.config(), log, openCheck);
+        } catch (IOException | RuntimeException e) {
+            return failure + ", nor reopen " + ws + " (" + e.getMessage() + "), so no workspace is open" + done
+                    + "\nmsc_workspace path=" + ws + " opens it again";
+        }
+        install(back);
+        return failure + "; still in " + ws + done;
     }
 
     private static Path realOrSelf(Path p) {
