@@ -1094,6 +1094,29 @@ class LifecycleToolsTest {
     }
 
     /**
+     * #698: a server that can have an agent but has none connected (here it never connects) does not get the pack, and
+     * every dev_cycle that keeps it running says so, as pack promised; once its agent connects, it gets the pack.
+     */
+    @Test
+    void devCycleWithNoAgentConnectedSaysThePackWasNotSent() throws Exception {
+        Path run = Files.createDirectories(workspace.resolve("run"));
+        Files.writeString(run.resolve("no-agent.flag"), "");
+        assertThat(h.ok("dev_cycle", "project", "demo")).contains("no agent connected").doesNotContain("resource pack");
+        h.ok("texture", "name", "item/dot", "palette", List.of("a=#000001"), "rows", List.of("a"));
+        assertThat(h.ok("pack")).contains("\nnot sent yet: no server agent connected; the next server_start or "
+                + "dev_cycle sends it");
+        String notSent = "\nresource pack not sent: no server agent connected; it is sent when one connects";
+        assertThat(h.ok("dev_cycle", "project", "demo")).contains("jar unchanged").contains(notSent);
+        Files.writeString(project.resolve("version.txt"), "1.1");
+        assertThat(h.ok("dev_cycle", "project", "demo", "restart", false)).contains("old jar").contains(notSent);
+        Files.delete(run.resolve("no-agent.flag"));
+        assertThat(h.ok("dev_cycle", "project", "demo")).contains("server ready").doesNotContain(notSent)
+                .contains("\nresource pack sent: players who join get it\n");
+        assertThat(packSends()).isEqualTo(1);
+        h.ok("server_stop");
+    }
+
+    /**
      * #694: a proxy has no agent, so no pack ever reaches it. pack says why; every dev_cycle, whatever happens to the
      * jar and the pack, says nothing about the pack, as server_start does there.
      */
