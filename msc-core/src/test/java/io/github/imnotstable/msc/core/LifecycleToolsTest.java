@@ -592,6 +592,28 @@ class LifecycleToolsTest {
     }
 
     /**
+     * #648: ModDevGradle's legacyforge plugin id contains its NeoForge one, but a Forge mod built with it is no NeoForge
+     * mod: a NeoForge workspace refuses it, as before #642, and a Forge one deploys it.
+     */
+    @Test
+    void aLegacyForgeModIsNotDeployedToANeoForgeWorkspace() throws Exception {
+        Files.createDirectories(workspace.resolve(".msc"));
+        Files.writeString(workspace.resolve(".msc/platform"), "neoforge\n");
+        Path run = Files.createDirectories(workspace.resolve("run"));
+        Files.writeString(run.resolve("server.jar"), "set up");
+        Files.writeString(run.resolve("eula.txt"), "eula=true\n");
+        Files.createDirectories(project.resolve("src/main/resources/META-INF"));
+        Files.writeString(project.resolve("src/main/resources/META-INF/mods.toml"), "");
+        Files.writeString(project.resolve("build.gradle"),
+                "plugins {\n    id 'net.neoforged.moddev.legacyforge' version '2.0.91'\n}\n");
+        assertThat(h.error("dev_cycle", "project", "demo", "restart", false))
+                .startsWith("error: demo is a Forge project, but this workspace runs NeoForge, which never loads it;");
+        assertThat(run.resolve("mods")).doesNotExist();
+        Platform.remember(h.core.config(), Platform.FORGE);
+        assertThat(h.ok("dev_cycle", "project", "demo", "restart", false)).contains("as mods/demo.jar");
+    }
+
+    /**
      * #643: paper-server writes only server files, used by every platform: no project the workspace's server could
      * fail to run, so no switch line, and its next step is for the workspace's own server.
      */
