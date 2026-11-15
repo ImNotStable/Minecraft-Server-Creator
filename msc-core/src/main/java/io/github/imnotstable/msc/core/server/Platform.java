@@ -206,6 +206,20 @@ public enum Platform {
     }
 
     /**
+     * The workspace's remembered platform when its server does not run a {@code project} project (another agent
+     * family, such as a Fabric mod in a Paper workspace), else null. {@code dev_cycle} then refuses to deploy, as that
+     * server would never load the project, and {@code project_scaffold} names {@code server_setup platform=} to
+     * switch the workspace (#636, ADR 0048).
+     */
+    public static Platform otherFamily(CoreConfig config, Platform project) {
+        if (!Files.exists(file(config))) {
+            return null;
+        }
+        Platform workspace = current(config);
+        return serving(config, project) == workspace ? null : workspace;
+    }
+
+    /**
      * What a project says about the platform: a descriptor file the server loads ({@code file}, under any of
      * {@link #RESOURCE_ROOTS}), or build-file text that {@code build} finds: a plugin id, a DSL block or a dependency.
      */

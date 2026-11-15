@@ -87,6 +87,19 @@ class PlatformTest {
         assertThat(Platform.detect(dir)).isEqualTo(Platform.QUILT);
     }
 
+    /** #636: only a remembered platform of another agent family is one whose server does not run the project. */
+    @Test
+    void otherFamilyIsARememberedPlatformThatDoesNotRunTheProject() throws Exception {
+        CoreConfig config = CoreConfig.forWorkspace(dir);
+        assertThat(Platform.otherFamily(config, Platform.FABRIC)).isNull();
+        Platform.remember(config, Platform.QUILT);
+        assertThat(Platform.otherFamily(config, Platform.FABRIC)).isNull();
+        assertThat(Platform.otherFamily(config, Platform.PAPER)).isEqualTo(Platform.QUILT);
+        Platform.remember(config, Platform.PURPUR);
+        assertThat(Platform.otherFamily(config, Platform.PAPER)).isNull();
+        assertThat(Platform.otherFamily(config, Platform.MINESTOM)).isEqualTo(Platform.PURPUR);
+    }
+
     @Test
     void theRememberedPlatformWinsThenTheProjectFilesThenPaper() throws Exception {
         CoreConfig config = CoreConfig.forWorkspace(dir);

@@ -4,10 +4,13 @@ import com.google.gson.JsonObject;
 import io.github.imnotstable.msc.core.metrics.ToolLog;
 import io.github.imnotstable.msc.protocol.transport.OpException;
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
+import java.util.stream.Collectors;
 
 /** All tools by name. Every call goes through {@link #call}, which turns failures into text and logs the call. */
 public final class ToolRegistry {
@@ -110,6 +113,17 @@ public final class ToolRegistry {
     private static final String NARROW = "Narrow the call.";
 
     /**
+     * The lines of {@code notice} that {@code result} does not hold already, or null for none: msc_status lists the
+     * setup warnings itself, so as the first call it shows each once, not once more in front (#637).
+     */
+    static String unsaid(String notice, String result) {
+        Set<String> said = new HashSet<>(result.lines().toList());
+        String rest = notice.lines().filter(line -> line.isBlank() || !said.contains(line))
+                .collect(Collectors.joining("\n"));
+        return rest.isBlank() ? null : rest;
+    }
+
+    /**
      * The final text of a call in at most {@code cap} characters: the result, with the one-time {@code notice} (or
      * null) in front of it (#607). Both share the cap as one budget ({@link Budget#split}); a notice cut to its share
      * points at msc_status, which repeats it, and a result cut to its share keeps its last line, the closing line a
@@ -165,7 +179,7 @@ public final class ToolRegistry {
         }
         Supplier<String> queued = notice.getAndSet(null);
         String pending = queued == null ? null : queued.get();
-        pending = pending == null || pending.isEmpty() ? null : pending;
+        pending = pending == null ? null : unsaid(pending, text);
         // The one place every result passes: the cap applies to the final text, the notice included.
         text = fit(pending, text, cap(tool, new Args(args)));
         long ms = (System.nanoTime() - start) / 1_000_000;

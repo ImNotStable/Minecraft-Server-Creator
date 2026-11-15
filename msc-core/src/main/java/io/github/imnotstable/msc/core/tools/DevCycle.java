@@ -77,6 +77,7 @@ final class DevCycle {
         server.checkNoOtherSession();
         boolean restart = args.bool("restart", true);
         Timings time = new Timings();
+        checkServed(project);
         Platform platform = platform(project);
         if (restart) {
             checkStart(project, platform);
@@ -177,6 +178,27 @@ final class DevCycle {
         if (Files.exists(server().resolve(starts.serverJar()))) {
             run.checkStart(starts, false);
         }
+    }
+
+    /**
+     * Check first: a project the workspace's server does not run (another agent family) is refused before the build,
+     * not deployed where that server never loads it with an OK (#636, ADR 0048).
+     */
+    private void checkServed(Path project) {
+        Platform own = Platform.detect(project);
+        Platform runs = own == null ? null : Platform.otherFamily(config, own);
+        if (runs == null) {
+            return;
+        }
+        Path workspace = config.workspace().toAbsolutePath().normalize();
+        Path shown = project.toAbsolutePath().normalize();
+        String name = shown.equals(workspace) ? "the workspace's project"
+                : (shown.startsWith(workspace) ? workspace.relativize(shown) : shown).toString().replace('\\', '/');
+        throw new ToolException(name + " is a " + own.displayName() + " project, but this workspace runs "
+                + runs.displayName() + ", which never loads it; nothing was built or deployed. server_setup platform="
+                + own.id() + " switches the workspace to " + own.displayName() + " (" + runs.displayName()
+                + " projects then need server_setup platform=" + runs.id() + "), or msc_workspace gives the project "
+                + "its own workspace.");
     }
 
     /** The tests running beside the deploy, and the thread to interrupt to stop them. */

@@ -101,19 +101,29 @@ final class Scaffold {
             out.append("\nfirst build started in the background (the loader sets up Minecraft once, which takes "
                     + "minutes); dev_cycle waits for it");
         }
-        if (serves != null && serves.needsServerSetup()
+        // A subfolder project of another family than the workspace's server (a Fabric mod in a Paper workspace): the
+        // workspace keeps its platform, and dev_cycle refuses until server_setup switches it (#636, ADR 0048).
+        Platform other = serves == null || remember ? null : Platform.otherFamily(config, platform);
+        if (other != null || serves != null && serves.needsServerSetup()
                 && !Files.exists(config.serverDir().resolve(serves.serverJar()))) {
             // The server is not set up yet: a first dev_cycle would build for nothing and then stop there (#627).
+            String setup = other == null ? "server_setup" : "server_setup platform=" + serves.id();
+            if (other != null) {
+                out.append("\nthe workspace stays ").append(other.displayName()).append(", which never loads this ")
+                        .append(serves.displayName()).append(" project: ").append(setup).append(" switches it (")
+                        .append(other.displayName()).append(" projects then need server_setup platform=")
+                        .append(other.id()).append(')');
+            }
             Optional<MachineEula.Acceptance> machine = config.machineEula().read();
             if (!serves.needsEula()) {
                 out.append("\nnext: server_setup platform=").append(serves.id())
                         .append(", then edit the code and dev_cycle");
             } else if (machine.isPresent()) {
-                out.append("\nnext: server_setup (the Minecraft EULA is accepted for this machine by ")
+                out.append("\nnext: ").append(setup).append(" (the Minecraft EULA is accepted for this machine by ")
                         .append(machine.get().describe()).append("), then edit the code and dev_cycle");
             } else {
                 out.append("\nnext: ").append(EulaPrompts.EULA_QUESTION).append(eula.oneTimeHint())
-                        .append("\nOn yes: server_setup acceptEula=true, then edit the code and dev_cycle");
+                        .append("\nOn yes: ").append(setup).append(" acceptEula=true, then edit the code and dev_cycle");
             }
         } else {
             out.append("\nnext: edit the code, then dev_cycle");
