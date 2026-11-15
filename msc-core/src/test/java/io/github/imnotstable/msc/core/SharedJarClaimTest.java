@@ -3,6 +3,7 @@ package io.github.imnotstable.msc.core;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.imnotstable.msc.core.fixture.FakeBuildMain;
+import io.github.imnotstable.msc.core.server.Platform;
 import io.github.imnotstable.msc.templates.Templates;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -154,6 +155,11 @@ class SharedJarClaimTest {
             // A Fabric-marked folder (#516): the deploy takes it over, and Fabric's setup then removes the project jar.
             h.ok("server_setup", "platform", "fabric", "version", FakeDownloads.MINECRAFT);
             Files.writeString(ws.resolve("run/server.jar"), "fabric vanilla");
+            // A Fabric workspace does not run the Minestom project (ADR 0048); one remembered as Minestom over the
+            // Fabric folder (an older core, a hand edit) does.
+            assertThat(h.error("dev_cycle", "project", "demo", "restart", false))
+                    .startsWith("error: demo is a Minestom project, but this workspace runs Fabric");
+            Platform.remember(h.core.config(), Platform.MINESTOM);
             assertThat(h.ok("dev_cycle", "project", "demo", "restart", false))
                     .contains("removed server.jar, which the folder held for fabric " + FakeDownloads.MINECRAFT + "; ");
             assertThat(ws.resolve("run/server.jar")).hasContent("1.0");

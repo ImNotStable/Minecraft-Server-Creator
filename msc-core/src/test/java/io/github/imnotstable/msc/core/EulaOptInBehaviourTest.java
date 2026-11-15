@@ -70,7 +70,7 @@ class EulaOptInBehaviourTest {
      * as far as MSC's own code goes: a joined player only talks to the server, and writes no file.
      */
     private static final List<Row> RUNNING = List.of(
-            new Row("server_setup", "platform", "minestom"), new Row("dev_cycle", "project", "demo"),
+            new Row("server_setup", "platform", "minestom"), new Row("dev_cycle", "project", "game"),
             new Row("server_start", "timeoutSeconds", 60),
             new Row("server_logs"), new Row("server_command", "command", "list"),
             new Row("server_wait", "until", "Starting", "timeoutSeconds", 1),
@@ -161,6 +161,10 @@ class EulaOptInBehaviourTest {
                 "name: Demo\n");
         Files.writeString(demo.resolve("version.txt"), "1.0");
         Files.writeString(demo.resolve("name.txt"), "demo");
+        // The Minestom workspace of RUNNING runs only a Minestom project (ADR 0048).
+        Path game = Files.createDirectories(ws.resolve("game"));
+        Files.writeString(game.resolve("build.gradle.kts"), "dependencies { implementation(\"net.minestom:minestom\") }\n");
+        Files.writeString(game.resolve("version.txt"), "1.0");
         try (ClosedPort gamePort = CoreHarness.noGameServer(ws.resolve("run"))) {
             for (boolean fakeServer : new boolean[] {false, true}) {
                 // The rows that fail, and with what; every other row succeeds. In GATED the EULA gate stops every
