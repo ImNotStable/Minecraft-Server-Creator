@@ -3,6 +3,7 @@ package io.github.imnotstable.msc.core;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.imnotstable.msc.core.server.LogCondenser;
+import io.github.imnotstable.msc.core.server.LogReader;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
@@ -420,5 +421,56 @@ class LogCondenserTest {
         LogCondenser.Condensed c = LogCondenser.analyze(log, 6000);
         assertThat(c.errors()).isEqualTo(1);
         assertThat(c.warnings()).isEqualTo(1);
+    }
+
+    /**
+     * java.util.logging's default format, two lines per record: Minestom's System.Logger, the msc agent's own log
+     * there (#730). Written by SimpleFormatter itself, between lines of the other formats, which stay as they were.
+     */
+    @Test
+    void javaUtilLoggingRecordsAreOneEntryWithTheLevelOfTheirSecondLine() throws Exception {
+        var bytes = new java.io.ByteArrayOutputStream();
+        var handler = new java.util.logging.StreamHandler(bytes, new java.util.logging.SimpleFormatter());
+        handler.setEncoding("UTF-8");
+        var jul = java.util.logging.Logger.getLogger("msc-agent-730");
+        jul.setUseParentHandlers(false);
+        jul.addHandler(handler);
+        try {
+            System.Logger log = System.getLogger("msc-agent-730");
+            log.log(System.Logger.Level.INFO, "Connected to msc-core, session 841bcf7b");
+            log.log(System.Logger.Level.WARNING, "Could not send player.chat: frame too large");
+            log.log(System.Logger.Level.ERROR, "msc-core refused the connection: bad token");
+            jul.log(java.util.logging.Level.SEVERE, "Could not load arena", new IllegalStateException("arena missing"));
+            log.log(System.Logger.Level.WARNING, "Could not send player.chat: frame too large");
+        } finally {
+            handler.flush();
+            jul.removeHandler(handler);
+        }
+        List<String> records = new java.util.ArrayList<>();
+        LogReader.read(new java.io.ByteArrayInputStream(bytes.toByteArray()), records::add);
+        assertThat(records.get(1)).as("SimpleFormatter's second line").endsWith(": Connected to msc-core, session 841bcf7b");
+        List<String> log = new java.util.ArrayList<>(List.of(
+                "[main] INFO net.minestom.server.MinecraftServer - Starting",
+                "[12:00:01 WARN]: Legacy plugin Foo v1 does not specify an api-version.",
+                "[12:00:02] [Server thread/ERROR]: Could not tick"));
+        log.addAll(records);
+        log.add("[main] WARN com.example.lobby.LobbyConfig - lobby.json missing, using defaults");
+        log.add("Done (0.512s)! Listening on 0.0.0.0:25565. Type stop to stop.");
+        List<LogReader.Entry> entries = LogReader.entries(log);
+        assertThat(entries).extracting(e -> e.level() + " " + e.text()).containsExactly(
+                "INFO Starting", "WARN Legacy plugin Foo v1 does not specify an api-version.", "ERROR Could not tick",
+                "INFO Connected to msc-core, session 841bcf7b", "WARNING Could not send player.chat: frame too large",
+                "SEVERE msc-core refused the connection: bad token", "SEVERE Could not load arena",
+                "WARNING Could not send player.chat: frame too large", "WARN lobby.json missing, using defaults",
+                " Done (0.512s)! Listening on 0.0.0.0:25565. Type stop to stop.");
+        assertThat(entries.get(4).time()).as("the header stays with its record").isEqualTo(records.get(2))
+                .contains("javaUtilLoggingRecordsAreOneEntryWithTheLevelOfTheirSecondLine");
+        assertThat(entries.get(6).extra()).first().isEqualTo("java.lang.IllegalStateException: arena missing");
+        LogCondenser.Condensed c = LogCondenser.analyze(log, 6000);
+        assertThat(c.errors()).as(c.text()).isEqualTo(3);
+        assertThat(c.warnings()).as(c.text()).isEqualTo(4);
+        assertThat(c.text()).contains("WARNING Could not send player.chat: frame too large (x2)",
+                "SEVERE msc-core refused the connection: bad token",
+                "SEVERE Could not load arena\njava.lang.IllegalStateException: arena missing\n");
     }
 }

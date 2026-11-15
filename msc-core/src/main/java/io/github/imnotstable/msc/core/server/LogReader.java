@@ -34,6 +34,9 @@ import java.util.regex.Pattern;
  * <li>a line with a log prefix: Paper's {@code [12:34:56 INFO]: msg}, vanilla's and the loaders'
  * {@code [12:34:56] [thread/INFO]: msg} (Forge's logger name after the level is dropped), or slf4j-simple's
  * {@code [main] INFO name - msg} (Minestom);</li>
+ * <li>a java.util.logging record, two lines: a header with the date, time and source, then {@code WARNING: msg}
+ * (Minestom's {@code System.Logger}, the msc agent's own log there). Both lines are one entry, with the level and
+ * message of the second (#730);</li>
  * <li>a bare ready line ({@code Done (0.5s)!}) or the JVM's {@code Exception in thread "x" ...};</li>
  * <li>a bare throwable header ({@code java.lang.Exception: msg}, any class ending in Exception, Error or Throwable)
  * when it cannot be the trace of the entry before: that entry is not a warning or an error, or it already has
@@ -81,6 +84,15 @@ public final class LogReader {
     private static final Pattern LINE = Pattern.compile("^\\[(\\d\\d:\\d\\d:\\d\\d)(?:\\] \\[[^\\]]*/| )(\\w+)\\]:? ?(.*)$");
     /** slf4j-simple at its defaults, which the Minestom templates log with: no timestamp (#272). */
     private static final Pattern SIMPLE = Pattern.compile("^\\[[^\\]]+\\] (TRACE|DEBUG|INFO|WARN|ERROR) \\S+ - (.*)$");
+    /**
+     * The first line of a java.util.logging record ({@link #julRecord}): not bracketed, with a clock time somewhere.
+     * The date and the AM/PM marker are in the server's locale, so only the time is matched.
+     */
+    private static final Pattern JUL_HEADER = Pattern.compile("^[^\\[\\s].*\\b\\d{1,2}:\\d\\d:\\d\\d\\b.*$");
+    /** The second line of a java.util.logging record: {@code WARNING: msg}, the level as {@link #JUL_LEVELS} knows it. */
+    private static final Pattern JUL_LEVEL = Pattern.compile("^([^\\s:]+): (.*)$");
+    /** java.util.logging's level names, in English and in this machine's language as a server here writes them. */
+    private static final Map<String, String> JUL_LEVELS = julLevels();
     /** The JVM's report of an uncaught exception: printed to stderr without a prefix, never part of the line before. */
     private static final Pattern UNCAUGHT = Pattern.compile("^Exception in thread \".*");
     /** Forge and NeoForge put the logger after the level: {@code [ne.mi.fm.Foo/CORE]: msg}. */
@@ -279,11 +291,16 @@ public final class LogReader {
         Entry current = null;
         Entry lastTrace = null;
         Map<String, Entry> lastByStream = new HashMap<>();
-        for (String raw : lines) {
-            String line = stripAnsi(raw);
+        for (int i = 0; i < lines.size(); i++) {
+            String line = stripAnsi(lines.get(i));
             Prefixed prefixed = prefixed(line);
             Entry printing = prefixed == null || !traceLine(prefixed.payload()) ? null : lastByStream.get(prefixed.key());
-            if (printing != null) {
+            Entry jul = prefixed == null && i + 1 < lines.size() ? julRecord(line, stripAnsi(lines.get(i + 1))) : null;
+            if (jul != null) {
+                current = jul;
+                entries.add(current);
+                i++;
+            } else if (printing != null) {
                 printing.printed |= printing.header;
                 printing.add(prefixed.payload());
             } else if (prefixed != null) {
@@ -357,6 +374,32 @@ public final class LogReader {
             payload = caller.group(1);
         }
         return new Prefixed(m.group(1), level, message, stream, name, payload);
+    }
+
+    /**
+     * The entry a java.util.logging record starts in {@link java.util.logging.SimpleFormatter}'s default two-line
+     * format, which {@code System.Logger} also writes on Minestom (#730), or null when {@code header} and {@code next}
+     * are not one: a header with the date, time and source ({@code Nov 15, 2026 6:45:31 PM com.example.Foo run}),
+     * then {@code LEVEL: message}. Its level and message come from the second line, its header stands as its time.
+     */
+    private static Entry julRecord(String header, String next) {
+        Matcher level = JUL_LEVEL.matcher(next);
+        if (!level.matches() || !JUL_HEADER.matcher(header).matches()) {
+            return null;
+        }
+        String name = JUL_LEVELS.get(level.group(1));
+        return name == null ? null : new Entry(header, name, level.group(2), false);
+    }
+
+    private static Map<String, String> julLevels() {
+        Map<String, String> names = new HashMap<>();
+        for (java.util.logging.Level l : List.of(java.util.logging.Level.SEVERE, java.util.logging.Level.WARNING,
+                java.util.logging.Level.INFO, java.util.logging.Level.CONFIG, java.util.logging.Level.FINE,
+                java.util.logging.Level.FINER, java.util.logging.Level.FINEST)) {
+            names.put(l.getName(), l.getName());
+            names.putIfAbsent(l.getLocalizedName(), l.getName());
+        }
+        return Map.copyOf(names);
     }
 
     /** The entry an unprefixed {@code line} starts, or null when it continues {@code current} (or is blank). */
