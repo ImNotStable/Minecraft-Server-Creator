@@ -87,6 +87,14 @@ public final class PlayerTools implements AutoCloseable {
         if (gamemode != null && !List.of("survival", "adventure", "creative").contains(gamemode)) {
             throw new ToolException("gamemode must be survival, adventure or creative");
         }
+        boolean leave = args.bool("leave", false);
+        // Every action is read before anything happens (#717): a refusal leaves no player joined, dropped, made op or
+        // switched to another game mode, as build_batch checks every block name before it places one.
+        try {
+            Bots.check(actions);
+        } catch (IllegalArgumentException e) {
+            throw new ToolException(e.getMessage());
+        }
         Ops.ServerInfo info = hub.call(Ops.SERVER_INFO, new Ops.Empty());
         // The overworld; the test player asks worldOf which world the server put it in, else goes by the dimension.
         String world = info.worlds().isEmpty() ? "world" : info.worlds().getFirst();
@@ -146,7 +154,7 @@ public final class PlayerTools implements AutoCloseable {
                     .text(Budget.DEFAULT_CHARS - "error: ".length(), null, FEWER));
         }
         String left = null;
-        if (args.bool("leave", false)) {
+        if (leave) {
             drop(bot);
             left = "left the server";
         }

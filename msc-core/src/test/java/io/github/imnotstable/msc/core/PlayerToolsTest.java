@@ -2,11 +2,14 @@ package io.github.imnotstable.msc.core;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.imnotstable.msc.bot.Bot;
+import io.github.imnotstable.msc.core.tools.PlayerToolsAccess;
 import io.github.imnotstable.msc.process.ClosedPort;
 import io.github.imnotstable.msc.process.ServerPropertiesFile;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -31,6 +34,54 @@ class PlayerToolsTest {
             assertThat(h.error("player_test", "actions", List.of("jump"), "name", "a b")).contains("3 to 16");
             assertThat(h.error("player_test", "actions", List.of("jump"), "gamemode", "spectator"))
                     .contains("survival, adventure or creative");
+        }
+    }
+
+    /**
+     * #717: every action is read before anything happens. With no player joined, a bad list is refused before the
+     * join (nothing answers on the game port, which a join would report); with one joined, before its game mode
+     * changes or any action runs.
+     */
+    @Test
+    void aBadActionListJoinsNoOne() throws Exception {
+        try (CoreHarness h = new CoreHarness(workspace).withAgent();
+             ClosedPort _ = CoreHarness.noGameServer(h.core.config().serverDir())) {
+            assertThat(h.error("player_test", "actions", List.of("say hi", "jmup"), "gamemode", "creative"))
+                    .startsWith("error: unknown action \"jmup\"");
+            assertThat(PlayerToolsAccess.joined(h.core.players())).isFalse();
+            List<List<String>> runs = new ArrayList<>();
+            PlayerToolsAccess.adopt(h.core.players(), new Bot() {
+                @Override
+                public String name() {
+                    return "MscTester";
+                }
+
+                @Override
+                public boolean connected() {
+                    return true;
+                }
+
+                @Override
+                public String disconnectReason() {
+                    return null;
+                }
+
+                @Override
+                public String run(List<String> lines, String world) {
+                    runs.add(lines);
+                    return "ran";
+                }
+
+                @Override
+                public void close() {
+                }
+            });
+            assertThat(h.error("player_test", "actions", List.of("jump", "slot 12"), "gamemode", "creative"))
+                    .isEqualTo("error: slot is 1 to 9: slot 12");
+            assertThat(runs).isEmpty();
+            synchronized (h.agent) {
+                assertThat(h.agent.commands).as("no op, no gamemode").isEmpty();
+            }
         }
     }
 

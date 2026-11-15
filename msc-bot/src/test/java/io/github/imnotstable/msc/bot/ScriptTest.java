@@ -38,6 +38,10 @@ class ScriptTest {
         assertThatThrownBy(() -> Script.parse("tp 1,2")).hasMessage("expected 3 numbers in \"1,2\": tp 1,2");
         assertThatThrownBy(() -> Script.parse("slot 12")).hasMessage("slot is 1 to 9: slot 12");
         assertThatThrownBy(() -> Script.parse("wait")).hasMessage("missing value: wait");
+        // #717: the whole list is read without a server, so a caller refuses it before joining.
+        Bots.check(java.util.List.of("say hi", "goto 1,2,3", "/game start"));
+        assertThatThrownBy(() -> Bots.check(java.util.List.of("say hi", "jmup", "wait")))
+                .hasMessageStartingWith("unknown action \"jmup\"");
     }
 
     @Test

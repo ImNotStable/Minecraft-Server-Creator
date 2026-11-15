@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.sun.net.httpserver.HttpServer;
 import io.github.imnotstable.msc.core.fixture.FakeBuildMain;
 import io.github.imnotstable.msc.core.fixture.FakeServerMain;
+import io.github.imnotstable.msc.core.server.Platform;
 import io.github.imnotstable.msc.core.texture.PackProperties;
 import io.github.imnotstable.msc.core.tool.ToolRegistry;
 import io.github.imnotstable.msc.core.tools.LifecycleToolsAccess;
@@ -272,7 +273,7 @@ class SideEffectStepsTest {
 
         @Override
         public void consistent(CoreHarness h, Path ws, String step) throws Exception {
-            String offered = PackProperties.url(ws.resolve("run/server.properties"));
+            String offered = PackProperties.url(Platform.PAPER, ws.resolve("run/server.properties"));
             assertThat(status(offered)).as("server.properties offers %s", offered).isEqualTo(200);
             String sent;
             synchronized (h.agent) {
@@ -668,7 +669,7 @@ class SideEffectStepsTest {
         @Override
         public void consistent(CoreHarness h, Path ws, String step) throws Exception {
             assertThat(h.core.server().running()).isTrue();
-            String offered = PackProperties.url(ws.resolve("run/server.properties"));
+            String offered = PackProperties.url(Platform.PAPER, ws.resolve("run/server.properties"));
             if (offered != null) {
                 assertThat(status(offered)).as("server.properties offers %s", offered).isEqualTo(200);
             }

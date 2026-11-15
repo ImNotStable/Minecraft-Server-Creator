@@ -4,18 +4,23 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.google.gson.JsonObject;
 import io.github.imnotstable.msc.core.fixture.FakeServerMain;
+import io.github.imnotstable.msc.core.server.Platform;
 import io.github.imnotstable.msc.protocol.op.Events;
 import io.github.imnotstable.msc.protocol.transport.AgentClient;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 
 /** msc_workspace, and a resource pack that outlives detach and the session through server.properties. */
 class WorkspaceAndPackTest {
@@ -209,6 +214,46 @@ class WorkspaceAndPackTest {
         synchronized (h.agent) {
             return h.agent.packs.stream().map(p -> p.url()).toList();
         }
+    }
+
+    /** The platforms whose server does not read its pack from server.properties (ADR 0017, #718). */
+    private static final Set<Platform> NO_PACK_LINES = EnumSet.of(Platform.MINESTOM, Platform.VELOCITY);
+
+    /**
+     * #718: every call that writes the pack into server.properties (pack, server_detach, the next start) writes it only
+     * on a platform whose server reads it there, and server_detach promises a restart outside MSC only the pack it
+     * will offer. The file is one an earlier core left offering this workspace's pack.
+     */
+    @ParameterizedTest
+    @EnumSource(Platform.class)
+    void onlyAServerThatReadsThePackThereGetsItInServerProperties(Platform platform) throws Exception {
+        boolean reads = !NO_PACK_LINES.contains(platform);
+        assertThat(platform.readsPackProperties()).isEqualTo(reads);
+        Platform.remember(h.core.config(), platform);
+        h.ok("server_start", "timeoutSeconds", 30);
+        pixel();
+        String url = url(h.ok("pack", "apply", false));
+        String before = "server-port=25613\nresource-pack=" + url.replace(":", "\\:") + "\n";
+        serverProperties(first, before);
+        Path props = first.resolve("run/server.properties");
+        assertThat(h.ok("pack", "apply", false).contains("server.properties updated")).isEqualTo(reads);
+        String detached = h.ok("server_detach");
+        if (reads) {
+            assertThat(detached).contains("\nserver.properties now offers the pack too");
+            assertThat(Files.readString(props)).contains("resource-pack-sha1=" + url.substring(url.indexOf("/pack-") + 6,
+                    url.length() - 4));
+        } else {
+            assertThat(detached).doesNotContain("now offers").contains("\n" + platform.displayName()
+                    + " does not read the pack from server.properties, so a restart outside MSC does not offer it.");
+            assertThat(props).hasContent(before);
+        }
+        h.close();
+        h = new CoreHarness(first, c -> c.withServerCommand(java(FakeServerMain.class)));
+        h.ok("server_start", "timeoutSeconds", 30);
+        if (!reads) {
+            assertThat(props).hasContent(before);
+        }
+        h.ok("server_stop");
     }
 
     @Test
