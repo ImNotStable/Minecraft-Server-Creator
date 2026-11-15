@@ -147,6 +147,22 @@ class UserJsonTest {
                 .hasMessage("the keys of type a must be fixed and hold type");
     }
 
+    /** #653: collecting unknown keys names each one, at any depth, and still reads every known key. */
+    @Test
+    void collectingUnknownKeysNamesEachAndReadsTheRest() {
+        List<String> unknown = new ArrayList<>();
+        UserJson json = UserJson.collectingUnknownKeys(JsonParser.parseString(
+                "{\"a\":1,\"timeoutSeconds\":5,\"b\":2,\"checks\":[{\"widht\":3,\"width\":4}]}").getAsJsonObject(),
+                "task.json ", UserJson.Keys.of("checks", "timeoutSeconds"), unknown);
+        assertThat(json.wholeNumber("timeoutSeconds", JsonNumbers.SECONDS, 0)).isEqualTo(5);
+        assertThat(json.exactObjects("checks", CHECK).getFirst().wholeNumber("width", JsonNumbers.POSITIVE, 0))
+                .isEqualTo(4);
+        assertThat(unknown).containsExactly(
+                "task.json a: unknown key; the keys are [checks, timeoutSeconds]",
+                "task.json b: unknown key; the keys are [checks, timeoutSeconds]",
+                "task.json checks[0].widht: unknown key; the keys are [hue, pos, width]");
+    }
+
     /** A Gson tree: {@link JsonElement} or a subtype, by assignability, not by package. */
     private static boolean isGsonTree(Class<?> type) {
         return JsonElement.class.isAssignableFrom(type);

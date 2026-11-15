@@ -3,6 +3,7 @@ package io.github.imnotstable.msc.bench.run;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowable;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
@@ -321,6 +322,106 @@ class BenchConfigRulesTest {
                 .hasMessage("Bad bench config " + config + ": server.acceptEula: \"yes\" is not true or false");
     }
 
+    /** #652: a refused downloadsUrl is quoted as the file writes it, never as the trimmed value the run would use. */
+    static Stream<Arguments> downloadsUrlsAsWritten() {
+        return Stream.of(
+                Arguments.of("/", "server.downloadsUrl: \"/\" is no http or https URL"),
+                Arguments.of("https://h/#/", "server.downloadsUrl: \"https://h/#/\" has a query or fragment; give the "
+                        + "service's base URL, such as https://fill.papermc.io"),
+                Arguments.of("http://my_host:8080/", "server.downloadsUrl: \"http://my_host:8080/\" is no http or https URL"),
+                Arguments.of("https://h/?a=b/", "server.downloadsUrl: \"https://h/?a=b/\" has a query or fragment; give "
+                        + "the service's base URL, such as https://fill.papermc.io"));
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("downloadsUrlsAsWritten")
+    void aRefusedDownloadsUrlIsQuotedAsWritten(String url, String problem) throws IOException {
+        assertThat(problems("{\"server\":{\"downloadsUrl\":" + json(url) + "}}")).containsExactly(problem);
+    }
+
+    /** #652: a path that is no file is quoted as written, then named where it was looked for. */
+    @Test
+    void aMissingFileIsQuotedAsWrittenAndNamedWhereItWasLookedFor() throws IOException {
+        List<String> problems = problems("""
+                {"server":{"paperJar":"jars/../missing.jar"},"gradleWrapperFrom":"no-wrapper",
+                 "modes":{"m":{"mcpConfigTemplate":"./missing.json","serverPlugins":["lib/{nothing}.jar"]}}}""");
+        assertThat(problems).containsExactly(
+                "modes.m.mcpConfigTemplate: no such file \"./missing.json\" (" + dir.resolve("missing.json") + ")",
+                "modes.m.serverPlugins: {nothing} in \"lib/{nothing}.jar\" is no placeholder; name a key of paths, "
+                        + "such as {agentJar}",
+                "server.paperJar: no such file \"jars/../missing.jar\" (" + dir.resolve("missing.jar") + ")",
+                "gradleWrapperFrom: \"no-wrapper\" (" + dir.resolve("no-wrapper") + ") has no gradlew, so Gradle "
+                        + "workspaces would get no wrapper");
+    }
+
+    /**
+     * #653: problems found by the typed reads or the rules on values as written no longer hide those of the filled-in
+     * config; every one is listed in one refusal. The first three are the cases of the issue.
+     */
+    static Stream<Arguments> problemsOfEveryPhase() {
+        return Stream.of(
+                Arguments.of("{\"server\":{\"paperJar\":\"\",\"downloadsUrl\":\"ftp://x\"}}", List.of(
+                        "server.paperJar: is blank; leave it out or give a value",
+                        "server.downloadsUrl: \"ftp://x\" is no http or https URL")),
+                Arguments.of("{\"corePort\":\"x\",\"server\":{\"rconPassword\":\"\"}}", List.of(
+                        "corePort: \"x\" is not a TCP port, a whole number from 1 to 65535",
+                        "server.rconPassword: is empty; the server turns RCON off without a password, so leave it out "
+                                + "for the default or set one")),
+                Arguments.of("{\"server\":{\"paperCacheDirs\":[\"\"],\"rconPort\":25566}}", List.of(
+                        "server.paperCacheDirs: entry 0 is blank",
+                        "server.serverPort: 25566 is also server.rconPort; each needs its own port")),
+                Arguments.of("""
+                        {"agnt":{},"agent":{"timeoutSecond":5,"command":[]},"server":{"acceptEula":"yes",
+                         "paperJar":"missing.jar","serverPort":25590},"modes":{"m":null,"n":{"serverPlugins":["{x}"]}},
+                         "gradleWrapperFrom":" "}""", List.of(
+                        "agnt: unknown key; the keys are " + BenchConfig.KEYS.names(),
+                        "agent.timeoutSecond: unknown key; the keys are " + BenchConfig.AGENT.names(),
+                        "server.acceptEula: \"yes\" is not true or false",
+                        "agent.command: is empty; leave it out for the default or name a program",
+                        "modes.m: is null; use {} for a mode with no settings",
+                        "gradleWrapperFrom: is blank; leave it out or give a value",
+                        "modes.n.serverPlugins: {x} in \"{x}\" is no placeholder; name a key of paths, such as {agentJar}",
+                        "server.paperJar: no such file \"missing.jar\" (<dir>/missing.jar)",
+                        "corePort: 25590 is also server.serverPort; each needs its own port")));
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("problemsOfEveryPhase")
+    void everyProblemIsListedInOneRefusal(String config, List<String> expected) throws IOException {
+        String missing = dir.resolve("missing.jar").toString();
+        assertThat(problems(config)).containsExactlyElementsOf(
+                expected.stream().map(p -> p.replace("<dir>/missing.jar", missing)).toList());
+    }
+
+    /**
+     * #653: what the filled-in config's rules leave out is only what depends on a value refused already, so no
+     * refusal names a value the file does not hold, such as a default port it would clash with.
+     */
+    static Stream<Arguments> rulesThatDependOnARefusedValue() {
+        return Stream.of(
+                // corePort's default, 25590, would clash: the refused corePort is not checked against it.
+                Arguments.of("{\"corePort\":\"x\",\"server\":{\"serverPort\":25590}}",
+                        "corePort: \"x\" is not a TCP port, a whole number from 1 to 65535"),
+                Arguments.of("{\"corePort\":25576,\"server\":{\"rconPort\":1.5}}",
+                        "server.rconPort: 1.5 is not a TCP port, a whole number from 1 to 65535"),
+                // server's default ports are not checked against corePort while server cannot be read.
+                Arguments.of("{\"corePort\":25566,\"server\":\"yes\"}", "server: \"yes\" is not an object"),
+                // {agentJar} cannot be checked against paths that cannot be read.
+                Arguments.of("{\"paths\":[],\"modes\":{\"m\":{\"serverPlugins\":[\"{agentJar}\"]}}}",
+                        "paths: [] is not an object"),
+                // a null path still names a placeholder; a blank file path is not looked for on disk.
+                Arguments.of("{\"paths\":{\"agentJar\":null},\"modes\":{\"m\":{\"serverPlugins\":[\"{agentJar}\"]}}}",
+                        "paths.agentJar: is null; leave it out or give a value"),
+                Arguments.of("{\"modes\":{\"m\":{\"mcpConfigTemplate\":\"\"}}}",
+                        "modes.m.mcpConfigTemplate: is blank; leave it out or give a value"));
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("rulesThatDependOnARefusedValue")
+    void aRuleThatDependsOnARefusedValueIsLeftOut(String config, String only) throws IOException {
+        assertThat(problems(config)).containsExactly(only);
+    }
+
     @Test
     void theEmptyRconPasswordSaysWhyBeforeAnyServerStarts() throws IOException {
         // #406: an empty password made the server turn RCON off, and each attempt waited 180 s for it.
@@ -450,6 +551,17 @@ class BenchConfigRulesTest {
         }
         holder.add(parts[parts.length - 1], value);
         return root;
+    }
+
+    /** The problems {@code BenchConfig.load} lists for the config {@code json}, one per entry. */
+    private List<String> problems(String json) throws IOException {
+        Path config = write(JsonParser.parseString(json));
+        Throwable refusal = catchThrowable(() -> BenchConfig.load(config, home()));
+        assertThat(refusal).isInstanceOf(IOException.class);
+        String head = "Bad bench config " + config + ":";
+        assertThat(refusal.getMessage()).startsWith(head);
+        String rest = refusal.getMessage().substring(head.length());
+        return rest.startsWith("\n  ") ? List.of(rest.substring(3).split("\n  ")) : List.of(rest.substring(1));
     }
 
     private Path write(JsonElement config) throws IOException {
