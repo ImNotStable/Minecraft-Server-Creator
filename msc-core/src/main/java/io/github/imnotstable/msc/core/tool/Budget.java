@@ -149,6 +149,15 @@ public final class Budget {
     public static final String RAISE = "Raise maxChars (at most " + MAX_CHARS + ") to see more.";
 
     /**
+     * The hint of a cut of a result capped at {@code maxChars} (#614): {@link #RAISE} while a larger {@code maxChars}
+     * is allowed, else {@code otherwise}, the tool's own way to narrow the call. Every cut hint that would name
+     * maxChars comes from here, so none says to raise it past {@link #MAX_CHARS}, which {@link ArgCheck} refuses.
+     */
+    public static String raise(int maxChars, String otherwise) {
+        return maxChars < MAX_CHARS ? RAISE : otherwise;
+    }
+
+    /**
      * Splits {@code total} characters between parts that want {@code wants}: a part that wants no more than an even
      * share gets all it wants, and what it leaves goes to the others. The shares never add up to more than
      * {@code total}.

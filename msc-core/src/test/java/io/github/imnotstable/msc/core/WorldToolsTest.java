@@ -335,7 +335,7 @@ class WorldToolsTest {
                 + rows.substring(33) + "ab".repeat(16) + "\nend");
         String slice = h.ok("world_slice", "region", "0,64,0 31,65,15", "maxChars", 400);
         assertThat(slice.length()).isLessThan(520);
-        assertThat(slice).contains("[truncated:").contains("smaller area");
+        assertThat(slice).contains("[truncated:").contains("Raise maxChars (at most 24000)");
     }
 
     @Test

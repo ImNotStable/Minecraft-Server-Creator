@@ -62,7 +62,7 @@ class TextureToolsTest {
         }
         h.ok("texture", "name", "block/big", "palette", palette, "rows", rows);
         assertThat(h.ok("texture_view", "name", "block/big")).hasSizeLessThanOrEqualTo(6000)
-                .endsWith("Raise maxChars (at most 24000) to see more rows.]");
+                .endsWith("Raise maxChars (at most 24000) to see more.]");
         assertThat(h.ok("texture_view", "name", "block/big", "maxChars", 24000)).hasSizeLessThanOrEqualTo(24000)
                 .hasSizeGreaterThan(20000).endsWith("Texture too large to show in full.]");
         assertThat(h.ok("texture_view", "name", "block/big", "maxChars", 400)).hasSizeLessThanOrEqualTo(400);
