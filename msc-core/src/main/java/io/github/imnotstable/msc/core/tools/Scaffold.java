@@ -10,7 +10,6 @@ import io.github.imnotstable.msc.templates.ScaffoldResult;
 import io.github.imnotstable.msc.templates.TemplateVariables;
 import io.github.imnotstable.msc.templates.Templates;
 import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
@@ -18,19 +17,11 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
-import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 /** {@code project_scaffold}: a new project from a template, and what to do next. */
 final class Scaffold {
-    /**
-     * Entries of other tools a folder may already hold and still count as empty for a scaffold: Claude Code's project
-     * config, git and editor folders. What MSC itself creates there counts too ({@link CoreConfig#ownPaths}). None of
-     * them collide with template files.
-     */
-    private static final Set<String> TOOL_FILES = Set.of(".mcp.json", ".claude", ".git", ".idea", ".vscode");
-
     private final CoreConfig config;
     private final EulaPrompts eula;
     private final BuildWarmup warmup;
@@ -72,6 +63,12 @@ final class Scaffold {
         // paper-server writes only server files (server.properties, eula.txt), used by every platform: not a project,
         // so it neither moves the workspace nor is a project the workspace's server could fail to run (#643).
         boolean isProject = platform != null && !template.equals(Templates.PAPER_SERVER);
+        // A project where the other tools' next steps never look for one would be built only by a dev_cycle that names
+        // it, and every other step would say to create it again (#679).
+        String unfindable = isProject ? WorkspaceProjects.unfindable(config, dir) : null;
+        if (unfindable != null) {
+            throw new ToolException(unfindable);
+        }
         // The server that runs the project: a workspace set up as Quilt or Purpur keeps its own for a Fabric mod or a
         // Paper plugin, so its platform is neither overwritten nor reported as not set up (#631). The same rule as
         // dev_cycle's, which reads the project's files: a template's show its platform only. Server files: the
@@ -147,7 +144,8 @@ final class Scaffold {
     }
 
     /**
-     * True when {@code dir} exists and holds nothing but {@link #TOOL_FILES} and what MSC created, as a workspace does
+     * True when {@code dir} exists and holds nothing but {@link WorkspaceProjects#TOOL_FILES} and what MSC created
+     * ({@link WorkspaceProjects#mscOwn}), as a workspace does
      * before its project: after server_setup that is the server folder too (#664). A folder that holds anything else
      * is refused with the step that works, not the template's bare "not empty".
      */
@@ -155,16 +153,12 @@ final class Scaffold {
         if (!Files.isDirectory(dir)) {
             return false;
         }
-        List<Path> own = config.ownPaths();
-        List<Path> other;
         try (Stream<Path> list = Files.list(dir)) {
-            List<Path> entries = list.toList();
-            if (entries.isEmpty()) {
+            if (list.findAny().isEmpty()) {
                 return false;
             }
-            other = entries.stream().filter(e -> !TOOL_FILES.contains(e.getFileName().toString()) && !mscOwn(e, own))
-                    .sorted().toList();
         }
+        List<Path> other = WorkspaceProjects.notMsc(config, dir);
         if (other.isEmpty()) {
             return true;
         }
@@ -172,25 +166,6 @@ final class Scaffold {
                 + (other.size() > 3 ? ", ..." : "");
         throw new ToolException(dir + " already holds files that are not MSC's (" + names + "): give dir=<new folder> "
                 + "to create the project beside them");
-    }
-
-    /**
-     * True when MSC created {@code entry}: one of {@code own}, or a folder that holds only such entries on the way to
-     * one (an MSC_SERVER_DIR of {@code servers/dev}).
-     */
-    private static boolean mscOwn(Path entry, List<Path> own) {
-        Path e = entry.toAbsolutePath().normalize();
-        if (own.contains(e)) {
-            return true;
-        }
-        if (own.stream().noneMatch(p -> p.startsWith(e)) || !Files.isDirectory(e, LinkOption.NOFOLLOW_LINKS)) {
-            return false;
-        }
-        try (Stream<Path> list = Files.list(e)) {
-            return list.toList().stream().allMatch(child -> mscOwn(child, own));
-        } catch (IOException | UncheckedIOException ex) {
-            return false;
-        }
     }
 
     /**
@@ -213,7 +188,7 @@ final class Scaffold {
             for (Path entry : entries) {
                 Path to = dir.resolve(entry.getFileName().toString());
                 if (Files.exists(to, LinkOption.NOFOLLOW_LINKS) && !(Files.isDirectory(entry)
-                        && Files.isDirectory(to, LinkOption.NOFOLLOW_LINKS) && mscOwn(to, own))) {
+                        && Files.isDirectory(to, LinkOption.NOFOLLOW_LINKS) && WorkspaceProjects.mscOwn(to, own))) {
                     throw new ToolException("the template writes " + entry.getFileName() + ", which " + dir
                             + " already holds: give dir=<new folder> to create the project beside it");
                 }

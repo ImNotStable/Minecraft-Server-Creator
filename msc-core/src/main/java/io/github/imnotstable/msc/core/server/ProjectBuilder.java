@@ -99,14 +99,17 @@ public final class ProjectBuilder {
         return new BuildResult(r.ok(), output, r.ok() && !noJar ? newestJar(projectDir) : null, r.millis(), null);
     }
 
-    /** What works instead of a folder with no wrapper: the project a subfolder of it holds, else a new one (#665). */
+    /**
+     * What works instead of a folder with no wrapper: a project the workspace's server runs in a subfolder of it, at
+     * any depth (#665, #679), else the workspace's next step (#680).
+     */
     private String noWrapperStep(Path projectDir) {
-        List<Path> found = WorkspaceProjects.inSubfolders(projectDir);
-        if (found.isEmpty()) {
-            return "Create the project with project_scaffold.";
+        List<Path> found = WorkspaceProjects.find(config, projectDir).stream()
+                .filter(p -> WorkspaceProjects.served(config, p)).toList();
+        if (!found.isEmpty()) {
+            return "A subfolder holds one: " + WorkspaceProjects.devCycles(config, found) + ".";
         }
-        return "A subfolder holds one: " + String.join(" or ",
-                found.stream().map(p -> WorkspaceProjects.devCycle(config, p)).toList()) + ".";
+        return "Run " + WorkspaceProjects.nextDevCycle(config) + ".";
     }
 
     /** {@code .msc/msc-init.gradle}, rewritten when this core ships a different one. */
