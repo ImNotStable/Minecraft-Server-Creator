@@ -46,8 +46,9 @@ public final class ServerManager implements AutoCloseable {
     private volatile boolean sawDone;
     private volatile boolean detached;
     /**
-     * {@link #stop} asked the running server to stop; a launch clears it. Under this monitor. The whole answer to
-     * "is it stopping" is {@link #stopping()}, which adds the stop its agent announced.
+     * {@link #stop} asked the running server to stop; a launch clears it. Under this monitor. Read through
+     * {@link #stopRequested()}, which every decision on the process goes by; {@link #reportsStopping()} adds the stop
+     * its agent announced, for what the user is told.
      */
     private boolean stopping;
     /** Set by {@link #close()} under this monitor; {@link #start} checks it under the same monitor (#282). */
@@ -175,27 +176,38 @@ public final class ServerManager implements AutoCloseable {
      * is woken when either changes ({@link AgentHub#serverChanged}).
      */
     public synchronized boolean awaitsAgent() {
-        return running() && !stopping();
+        return running() && !reportsStopping();
     }
 
     /**
-     * The one answer to "is this session's server stopping" (#723): it runs, and {@link #stop} asked it to stop or its
-     * agent announced a stop of this run ({@code server.stopping}, {@link AgentHub#stopAnnounced}). The world tools,
-     * server_detach, server_start and msc_status go by it. It takes no hub lock ({@link AgentHub#stopAnnounced} reads
-     * one field), so the hub may ask it at any time.
+     * Whether this session's own {@link #stop} asked its running server to stop. Every decision that acts on the
+     * process goes by this alone: whether it is detached ({@link #detach}, {@link #detached}), so whether
+     * {@link #close()} stops it and the pack host outlives the session, and whether {@link #stop} types {@code stop}
+     * (#733). An agent's announce never counts here: it is a hint ({@link #reportsStopping()}).
+     */
+    public synchronized boolean stopRequested() {
+        return running() && stopping;
+    }
+
+    /**
+     * What the user is told (#723): the server runs, and {@link #stop} asked it to stop or its agent announced a stop
+     * of this run ({@code server.stopping}, {@link AgentHub#stopAnnounced}). msc_status and the refusals of the world
+     * tools, server_detach and server_start go by it. It takes no hub lock ({@link AgentHub#stopAnnounced} reads one
+     * field), so the hub may ask it at any time.
      *
      * <p>The announce is only a hint, kept until a new agent connects or the process exits: an agent also says it
      * when only the agent stops (Paper's {@code /reload}, a plugin manager, Minestom's {@code MscAgent.stop()}) and the
-     * server runs on (#729). So the console goes by this session's own stop alone: server_command still types into it
-     * ({@link #command}), and {@link #stop} still types {@code stop} unless it already did.
+     * server runs on (#729). So nothing done to the process goes by it ({@link #stopRequested()}): server_command
+     * still types into the console ({@link #command}), {@link #stop} still types {@code stop} unless it already did,
+     * and a detached server stays detached (#733).
      */
-    public synchronized boolean stopping() {
+    public synchronized boolean reportsStopping() {
         return running() && (stopping || hub.stopAnnounced(process));
     }
 
     /** The refusal of a start while this session's server runs: a stopping one is waited for, not stopped (#723). */
     public synchronized String alreadyRunning() {
-        return stopping() ? "the server is still stopping: server_stop waits until it has exited, then server_start "
+        return reportsStopping() ? "the server is still stopping: server_stop waits until it has exited, then server_start "
                 + "starts it again." : "server is already running. Use server_stop or dev_cycle.";
     }
 
@@ -487,7 +499,7 @@ public final class ServerManager implements AutoCloseable {
      * down, as the Minestom template's does on {@code stop}, or has just exited (#716).
      */
     public synchronized void console(String line) {
-        console(line, stopping());
+        console(line, reportsStopping());
     }
 
     /**
@@ -664,9 +676,10 @@ public final class ServerManager implements AutoCloseable {
             detached = false;
             // Only this session's own stop is waited for without asking again (#723). A stop its agent announced may
             // be no stop at all (Paper's /reload, a disabled agent): "stop" is typed, or the server would be killed
-            // unsaved (#729). A console it closed on its way down is no reason to kill it.
+            // unsaved (#729). A console it closed on its way down is no reason to kill it: the announce only spares
+            // the process an early destroy here, it never decides that it stops or stays up.
             boolean asked = stopping;
-            boolean announced = stopping();
+            boolean announced = reportsStopping();
             stopping = true;
             try {
                 if (!asked) {
@@ -717,14 +730,18 @@ public final class ServerManager implements AutoCloseable {
         if (closed) {
             throw ToolException.workspaceClosed("the server was not detached");
         }
-        // A stopping server does not run on after this session: refused as server_command refuses it (#723).
-        detached = running() && !stopping();
+        // A server this session asked to stop does not run on after it (#723). server_detach refuses an announced
+        // stop too, but a detach once granted holds through one: the announce is a hint (#733).
+        detached = running() && !stopRequested();
         return detached;
     }
 
-    /** True while a detached server is still running and not stopping: {@link #close()} leaves it alone. */
+    /**
+     * True while a detached server is still running and this session did not ask it to stop: {@link #close()} leaves
+     * it alone. A stop only its agent announced does not end the detach (#733).
+     */
     public synchronized boolean detached() {
-        return detached && running() && !stopping();
+        return detached && running() && !stopRequested();
     }
 
     /**

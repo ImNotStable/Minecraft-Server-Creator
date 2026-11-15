@@ -143,7 +143,7 @@ public final class Core implements AutoCloseable {
             }
             hub.notRunning(server::notRunning);
             hub.lastRun(server::lastRun);
-            hub.serverStopping(server::stopping);
+            hub.serverStopping(server::reportsStopping);
             hub.noAgentReason(() -> server.platform().noWorldTools());
             ResourcePack pack = new ResourcePack(config.packDir(), config.packBuildDir(),
                     config.packHost(), config.packPort(), config.packFormat());

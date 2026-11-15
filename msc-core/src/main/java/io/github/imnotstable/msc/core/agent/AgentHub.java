@@ -213,7 +213,7 @@ public final class AgentHub implements AutoCloseable {
     }
 
     /**
-     * Whether this session's server is stopping (ServerManager's {@code stopping()}, the one answer, #723): an agent
+     * Whether this session's server is stopping (ServerManager's {@code reportsStopping()}, #723): an agent
      * still connected to it is not handed out, so every tool refuses alike. Asked without the hub lock.
      */
     public void serverStopping(java.util.function.BooleanSupplier stopping) {

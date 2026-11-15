@@ -171,7 +171,7 @@ final class ServerRun {
      * the call still detaches.
      */
     String detach(Args args) throws IOException, InterruptedException {
-        if (!server.running() || server.stopping()) {
+        if (!server.running() || server.reportsStopping()) {
             throw new ToolException(server.notRunning());
         }
         Platform platform = server.platform();
