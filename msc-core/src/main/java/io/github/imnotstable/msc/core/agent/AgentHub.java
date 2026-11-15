@@ -39,6 +39,7 @@ public final class AgentHub implements AutoCloseable {
     private boolean closed;
     private volatile Duration connectWait = CONNECT_WAIT;
     private volatile java.util.function.BooleanSupplier agentExpected = () -> true;
+    private volatile java.util.function.Supplier<String> noAgentReason = () -> null;
 
     public AgentHub(int port, String token) throws IOException {
         this.token = token;
@@ -107,6 +108,14 @@ public final class AgentHub implements AutoCloseable {
         this.agentExpected = expected;
     }
 
+    /**
+     * Why no agent will ever connect (a proxy runs none), or null. When it says so and none is connected,
+     * {@link #require} fails at once with that line (ADR 0045).
+     */
+    public void noAgentReason(java.util.function.Supplier<String> reason) {
+        this.noAgentReason = reason;
+    }
+
     /** Shorten the wait for an agent; tests use this. */
     public void connectWait(Duration wait) {
         this.connectWait = wait;
@@ -160,6 +169,10 @@ public final class AgentHub implements AutoCloseable {
             if (closed()) {
                 throw ToolException.workspaceClosed("no server agent can connect any more");
             }
+            String never = noAgentReason.get();
+            if (never != null) {
+                throw new ToolException(never);
+            }
             // Asked without the hub lock: the answer may need another lock (ServerManager's monitor), whose holder
             // may be waiting for this one.
             if (!agentExpected.getAsBoolean()) {
@@ -190,7 +203,8 @@ public final class AgentHub implements AutoCloseable {
     public <P, R> R call(OpSpec<P, R> op, P params) throws InterruptedException {
         CoreServer.AgentSession s = require();
         if (!s.agent().operations().contains(op.name())) {
-            throw new ToolException("the " + s.agent().platform() + " agent does not support " + op.name());
+            throw new ToolException("the " + s.agent().platform() + " agent does not support " + op.name()
+                    + "; server_command still works");
         }
         try {
             return s.connection().call(op, params, CALL_TIMEOUT).get(CALL_TIMEOUT.toSeconds() + 5, TimeUnit.SECONDS);

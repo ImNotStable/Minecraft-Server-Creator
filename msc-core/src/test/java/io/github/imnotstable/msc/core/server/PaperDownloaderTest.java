@@ -53,6 +53,46 @@ class PaperDownloaderTest {
         }
     }
 
+    /** ADR 0045: Folia and Velocity come from their own Fill projects, cached under their own names, offline too. */
+    @Test
+    void foliaAndVelocityComeFromTheirOwnProjects() throws Exception {
+        HttpServer http = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        String base = "http://127.0.0.1:" + http.getAddress().getPort();
+        http.createContext("/", ex -> {
+            String path = ex.getRequestURI().getPath();
+            String project = path.startsWith("/v3/projects/folia/versions/26.3/") ? "folia"
+                    : path.startsWith("/v3/projects/velocity/versions/4.3.1/") ? "velocity" : null;
+            byte[] body = project == null ? null : path.endsWith("/builds")
+                    ? ("[{\"id\":4,\"channel\":\"STABLE\",\"downloads\":{\"server:default\":{\"url\":\"" + base
+                    + "/v3/projects/" + project + "/versions/" + (project.equals("folia") ? "26.3" : "4.3.1")
+                    + "/jar\"}}}]").getBytes(StandardCharsets.UTF_8) : (project + " jar").getBytes(StandardCharsets.UTF_8);
+            ex.sendResponseHeaders(body == null ? 404 : 200, body == null ? -1 : body.length);
+            if (body != null) {
+                try (OutputStream out = ex.getResponseBody()) {
+                    out.write(body);
+                }
+            }
+            ex.close();
+        });
+        http.start();
+        try {
+            PaperDownloader fill = new PaperDownloader(base, cache);
+            assertThat(fill.download(Platform.FOLIA, "26.3").jar()).isEqualTo(cache.resolve("folia-26.3-4.jar"))
+                    .hasContent("folia jar");
+            assertThat(fill.download(Platform.VELOCITY, "4.3.1").jar()).isEqualTo(cache.resolve("velocity-4.3.1-4.jar"))
+                    .hasContent("velocity jar");
+            assertThatThrownBy(() -> fill.download(Platform.FOLIA, "1.0")).isInstanceOf(ToolException.class)
+                    .hasMessage("Folia has no version 1.0");
+        } finally {
+            http.stop(0);
+        }
+        try (ClosedPort unreachable = ClosedPort.reserve()) {
+            PaperDownloader offline = new PaperDownloader("http://127.0.0.1:" + unreachable.port(), cache);
+            assertThat(offline.download(Platform.VELOCITY, "4.3.1"))
+                    .isEqualTo(new PaperDownloader.Download(cache.resolve("velocity-4.3.1-4.jar"), "4.3.1", 4, true));
+        }
+    }
+
     /** #428: with the builds service unreachable, the cached build with the highest number, digits counted. */
     @ParameterizedTest
     @CsvSource({"9 10, 10", "999 1000, 1000", "9999 10000, 10000"})

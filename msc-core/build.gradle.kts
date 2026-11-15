@@ -146,7 +146,7 @@ val installMsc = tasks.register("installMsc") {
             }
             println("Minecraft EULA (https://aka.ms/MinecraftEULA) accepted for this machine, saved in $file.")
             println("By -Pmsc.acceptEula=true you confirm you read and accept Mojang's EULA; MSC now writes eula=true for")
-            println("every Paper, Purpur, Fabric, Quilt, NeoForge and Forge dev server here without asking. Terms: TERMS.md")
+            println("every Paper, Purpur, Folia, Fabric, Quilt, NeoForge and Forge dev server here without asking. Terms: TERMS.md")
             println("in this repo. Undo: the line in")
             println("eula-accept.txt with revoke instead of accept.")
         }

@@ -38,16 +38,17 @@ public final class LifecycleTools {
         registry.add("project_scaffold",
                 "Create a new project from a template (Gradle KTS, tests wired in). Target directory must be empty.",
                 Schema.of().req("name", "string", "Project name, for example MyPlugin")
-                        .opt("dir", "string", "Target directory in the workspace. Default: the workspace")
-                        .opt("template", "string", "paper-plugin (default), fabric-mod (also Quilt), neoforge-mod, forge-mod, minestom-server, or a minigame base (kit, stages, saved progress, /game debug "
-                                + "commands): paper-game, fabric-game, minestom-game")
+                        .opt("dir", "string", "Folder in the workspace. Default: the workspace")
+                        .opt("template", "string", "paper-plugin (default), fabric-mod (also Quilt), neoforge-mod, forge-mod, minestom-server, velocity-plugin, or a minigame base (kit, stages, /game"
+                                + "): paper-game, fabric-game, minestom-game")
                         .opt("package", "string", "Java package. Default com.example.<name>")
                         .opt("acceptEula", "boolean", EulaPrompts.SCAFFOLD_EULA_ARG),
                 scaffold::run);
         registry.add("server_setup",
                 "Prepare the dev server: download or install it, write dev defaults, install the msc agent.",
                 Schema.of().opt("version", "string", "Minecraft version. Default " + config.minecraft())
-                        .opt("platform", "string", "paper, purpur, fabric, quilt, neoforge, forge or minestom. Default: the project's")
+                        .opt("platform", "string", "paper, purpur, folia, fabric, quilt, neoforge, forge, minestom or velocity")
+                        .opt("proxy", "string", "velocity: backend behind Velocity; none: off")
                         .opt("mode", "string", "build (creative, peaceful) or game (survival, normal)")
                         .opt("acceptEula", "boolean", EulaPrompts.EULA_ARG),
                 setup::run);
@@ -62,7 +63,7 @@ public final class LifecycleTools {
         registry.add("dev_cycle",
                 "Build, deploy and restart in one call. Tests run during the restart; an unchanged "
                         + "jar skips it. Returns build, test and startup errors, and phase times.",
-                Schema.of().opt("project", "string", "Project directory in the workspace. Default: the workspace")
+                Schema.of().opt("project", "string", "Project folder in the workspace. Default: the workspace")
                         .opt("restart", "boolean", "Restart the server after deploying. Default true")
                         .maxChars(),
                 cycle::run);

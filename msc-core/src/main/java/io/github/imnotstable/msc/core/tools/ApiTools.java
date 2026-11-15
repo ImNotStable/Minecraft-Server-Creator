@@ -74,7 +74,7 @@ public final class ApiTools {
 
     public void register(ToolRegistry registry) {
         registry.add("api_search",
-                "Search the platform API (Paper, Fabric, NeoForge, Forge or Minestom) by class, method, field or constant name; "
+                "Search the workspace platform's API by class, method, field or constant name; "
                         + "one line per match with full signature.",
                 Schema.of().req("query", "string", "Words that must all match, for example \"player teleport\"")
                         .opt("kind", "string", "class, interface, enum, record, annotation or event")
@@ -91,7 +91,7 @@ public final class ApiTools {
                 });
         registry.add("api_class",
                 "Show one API class: supertypes, constants (with inherited) and public members with signatures.",
-                Schema.of().req("name", "string", "Simple or full class name, for example Player or org.bukkit.entity.Player")
+                Schema.of().req("name", "string", "Simple or full class name, such as Player")
                         .opt("filter", "string", "Only members whose name contains this")
                         .opt("inherited", "boolean", "Include members of supertypes")
                         .range("limit", 1, MAX_MEMBERS, "Default 40")

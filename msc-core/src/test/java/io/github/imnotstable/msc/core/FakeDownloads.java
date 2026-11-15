@@ -9,12 +9,14 @@ import java.nio.charset.StandardCharsets;
 import java.util.Map;
 
 /**
- * Local stand-ins for every download service server_setup uses (Paper, Purpur, Fabric meta and Maven, and the
- * NeoForge, Forge and Quilt installers, which are {@link FakeLoaderInstaller}). No real download, no real server.
+ * Local stand-ins for every download service server_setup uses (Paper, Folia and Velocity, Purpur, Fabric meta and
+ * Maven, and the NeoForge, Forge and Quilt installers, which are {@link FakeLoaderInstaller}). No real download, no real server.
  */
 final class FakeDownloads implements AutoCloseable {
     /** The Minecraft version the fakes serve: the one the templates' Fabric API is built for. */
     static final String MINECRAFT = minecraft();
+    /** The Velocity version server_setup installs: the pinned one. */
+    static final String VELOCITY = Templates.versions().get("velocityVersion");
 
     private final HttpServer http;
     private final String base;
@@ -34,6 +36,10 @@ final class FakeDownloads implements AutoCloseable {
                 "[{\"id\":5,\"channel\":\"STABLE\",\"downloads\":{\"server:default\":{\"name\":\"paper-" + MINECRAFT
                         + "-5.jar\",\"url\":\"" + base + "/fill/paper.jar\"}}}]",
                 "/fill/paper.jar", "paper server",
+                "/fill/v3/projects/folia/versions/" + MINECRAFT + "/builds", build(base, "folia", 3),
+                "/fill/folia.jar", "folia server",
+                "/fill/v3/projects/velocity/versions/" + VELOCITY + "/builds", build(base, "velocity", 45),
+                "/fill/velocity.jar", "velocity server",
                 "/purpur/v2/purpur/" + MINECRAFT + "/latest", "{\"build\":\"9\"}",
                 "/purpur/v2/purpur/" + MINECRAFT + "/9/download", "purpur server",
                 "/meta/v2/versions/installer", "[{\"version\":\"1.1.2\",\"stable\":true}]",
@@ -71,6 +77,12 @@ final class FakeDownloads implements AutoCloseable {
     @Override
     public void close() {
         http.stop(0);
+    }
+
+    /** A Fill builds answer with one stable build of {@code project}, served at {@code /fill/<project>.jar}. */
+    private static String build(String base, String project, int id) {
+        return "[{\"id\":" + id + ",\"channel\":\"STABLE\",\"downloads\":{\"server:default\":{\"name\":\"" + project
+                + "-" + id + ".jar\",\"url\":\"" + base + "/fill/" + project + ".jar\"}}}]";
     }
 
     private static String minecraft() {

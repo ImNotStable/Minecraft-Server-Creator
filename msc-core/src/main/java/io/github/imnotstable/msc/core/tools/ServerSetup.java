@@ -6,6 +6,7 @@ import io.github.imnotstable.msc.core.server.LoaderInstaller;
 import io.github.imnotstable.msc.core.server.MachineEula;
 import io.github.imnotstable.msc.core.server.PaperDownloader;
 import io.github.imnotstable.msc.core.server.Platform;
+import io.github.imnotstable.msc.core.server.ProxyForwarding;
 import io.github.imnotstable.msc.core.server.ServerManager;
 import io.github.imnotstable.msc.core.server.ServerFiles;
 import io.github.imnotstable.msc.core.server.ServerProperties;
@@ -68,10 +69,14 @@ final class ServerSetup {
         // (unsupported version, download error) leaves the workspace as it was, its working server included.
         Platform chosen = args.str("platform", null) == null ? null : Platform.of(args.str("platform"));
         Platform platform = chosen == null ? server.platform() : chosen;
+        Boolean forwarding = forwarding(args.str("proxy", null), platform);
         Path dir = OutputFile.checkFolder(config.serverDir(), "server folder");
         Steps steps = new Steps("server_setup");
         String rememberFails = "the server folder is set up, but the workspace platform is still "
                 + Platform.current(config).id() + ": run server_setup again";
+        if (platform == Platform.VELOCITY) {
+            return velocity(steps, chosen, dir, mode, rememberFails);
+        }
         if (platform == Platform.MINESTOM) {
             steps.then(CREATE_FOLDER);
             if (chosen != null) {
@@ -95,12 +100,15 @@ final class ServerSetup {
         if (mode != null) {
             steps.then(MODE);
         }
+        if (forwarding != null) {
+            steps.then(FORWARDING);
+        }
         steps.then(AGENT).then(EULA);
         if (chosen != null) {
             steps.then(REMEMBER).ifFails(REMEMBER, rememberFails);
         }
         String partly = "server_setup again finishes it";
-        for (String step : List.of(DEFAULTS, MODE, AGENT, EULA)) {
+        for (String step : List.of(DEFAULTS, MODE, FORWARDING, AGENT, EULA)) {
             steps.ifFails(step, "the server is installed but not fully set up; " + partly);
         }
         StringBuilder installed = new StringBuilder();
@@ -111,6 +119,7 @@ final class ServerSetup {
                 case NEOFORGE -> neoforge(version, dir, installed);
                 case FORGE -> forge(version, dir, installed);
                 case PURPUR -> report("purpur", loaders.purpur(version, dir), installed);
+                case FOLIA -> fill(Platform.FOLIA, version, dir, installed).append(FOLIA_NOTE).append('\n');
                 default -> paper(version, dir, installed);
             }
         });
@@ -125,6 +134,12 @@ final class ServerSetup {
             steps.run(MODE, () -> ServerPropertiesFile.set(dir.resolve(ServerPropertiesFile.NAME), mode.settings()));
             out.append("mode ").append(mode.id()).append(": ").append(mode.settings().get("gamemode")).append(", ")
                     .append(mode.settings().get("difficulty")).append(" difficulty from the next start\n");
+        }
+        if (forwarding != null) {
+            steps.run(FORWARDING, () -> ProxyForwarding.backend(dir,
+                    forwarding ? ProxyForwarding.secret(config.proxySecretFile()) : null));
+            out.append(forwarding ? "proxy velocity: players join only through the Velocity proxy (modern forwarding, "
+                    + "this machine's secret); proxy=none undoes it\n" : "proxy none: players join directly\n");
         }
         out.append(installed);
         // The addon folder exists after setup even without an agent, for the deploys that follow.
@@ -144,6 +159,54 @@ final class ServerSetup {
     static final String AGENT = "install the msc agent";
     static final String EULA = "apply the EULA answer";
     static final String REMEMBER = "remember the workspace platform";
+    static final String FORWARDING = "set up Velocity forwarding";
+    /** Said once a Folia server is installed: what a plugin needs there, and what MSC does not do there (ADR 0045). */
+    static final String FOLIA_NOTE = "folia: plugins load only with folia-supported: true in plugin.yml and must use "
+            + "Folia's region schedulers; world, build and player tools do not work on Folia yet (server_command does)";
+
+    /** {@code proxy=}: true for velocity, false for none, null when not given. Refused before anything changes. */
+    static Boolean forwarding(String proxy, Platform platform) {
+        if (proxy == null) {
+            return null;
+        }
+        Boolean on = switch (proxy.strip().toLowerCase(java.util.Locale.ROOT)) {
+            case "velocity" -> true;
+            case "none" -> false;
+            default -> throw new ToolException("proxy must be velocity or none, not \"" + proxy.strip() + "\"");
+        };
+        if (!platform.agent().equals("paper")) {
+            throw new ToolException("proxy= sets up a paper, purpur or folia backend, not " + platform.id()
+                    + (platform.proxy() ? ": the proxy itself always forwards" : ""));
+        }
+        return on;
+    }
+
+    /**
+     * Velocity: the pinned Velocity jar (it serves every recent Minecraft version, so {@code version} is not used),
+     * its config and the machine's forwarding secret. No defaults, game mode, agent or EULA: it is not a Minecraft
+     * server.
+     */
+    private String velocity(Steps steps, Platform chosen, Path dir, ServerProperties.Mode mode, String rememberFails)
+            throws InterruptedException {
+        String velocity = pinned("velocityVersion", "Velocity");
+        steps.then(INSTALL).then(FORWARDING)
+                .ifFails(FORWARDING, "the proxy is installed but not fully set up; server_setup again finishes it");
+        if (chosen != null) {
+            steps.then(REMEMBER).ifFails(REMEMBER, rememberFails);
+        }
+        StringBuilder out = new StringBuilder();
+        if (mode != null) {
+            out.append("mode ignored: a proxy has no world\n");
+        }
+        steps.run(INSTALL, () -> fill(Platform.VELOCITY, velocity, dir, out));
+        steps.run(FORWARDING, () -> {
+            out.append(ProxyForwarding.proxy(dir, ProxyForwarding.secret(config.proxySecretFile())));
+            Files.createDirectories(dir.resolve(Platform.VELOCITY.addonDir()));
+        });
+        remember(steps, chosen);
+        return out.append("velocity proxy ready in ").append(dir).append(" (no EULA step, no msc agent); next: "
+                + "server_start or dev_cycle").toString();
+    }
 
     /** Last: a refused or failed setup leaves the workspace's platform, and with it its working server, as it was. */
     private void remember(Steps steps, Platform chosen) throws InterruptedException {
@@ -178,9 +241,15 @@ final class ServerSetup {
     }
 
     private void paper(String version, Path dir, StringBuilder out) throws IOException, InterruptedException {
-        PaperDownloader.Download d = paper.download(version);
-        ServerFiles.place(d.jar(), dir, Platform.PAPER.serverJar());
-        out.append("paper ").append(d.version()).append(" build ").append(d.build())
+        fill(Platform.PAPER, version, dir, out);
+    }
+
+    /** A jar from PaperMC's Fill service (Paper, Folia, Velocity), placed as the platform's server jar. */
+    private StringBuilder fill(Platform platform, String version, Path dir, StringBuilder out)
+            throws IOException, InterruptedException {
+        PaperDownloader.Download d = paper.download(platform, version);
+        ServerFiles.place(d.jar(), dir, platform.serverJar());
+        return out.append(platform.id()).append(' ').append(d.version()).append(" build ").append(d.build())
                 .append(d.cached() ? " (cached)" : " (downloaded)").append('\n');
     }
 
