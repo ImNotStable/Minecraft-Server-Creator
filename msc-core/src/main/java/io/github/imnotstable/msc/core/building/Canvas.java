@@ -1,10 +1,12 @@
 package io.github.imnotstable.msc.core.building;
 
 import io.github.imnotstable.msc.core.world.BlockNames;
+import io.github.imnotstable.msc.core.world.Footprint;
 import io.github.imnotstable.msc.protocol.world.BlockGrid;
 import io.github.imnotstable.msc.protocol.world.Region;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.BitSet;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -216,6 +218,23 @@ public final class Canvas {
             }
         }
         return lo[0] == Integer.MAX_VALUE ? null : Region.of(bounds.world(), lo[0], lo[1], lo[2], hi[0], hi[1], hi[2]);
+    }
+
+    /** The positions this build sets, within {@code used}, the box {@link #used()} returned. */
+    public Footprint footprint(Region used) {
+        BitSet set = new BitSet(Math.toIntExact(used.volume()));
+        int i = 0;
+        for (int y = used.min().y(); y <= used.max().y(); y++) {
+            for (int z = used.min().z(); z <= used.max().z(); z++) {
+                int base = bounds.index(used.min().x(), y, z);
+                for (int x = 0; x < used.sizeX(); x++, i++) {
+                    if (cells[base + x] >= 0) {
+                        set.set(i);
+                    }
+                }
+            }
+        }
+        return new Footprint(used, set);
     }
 
     /**

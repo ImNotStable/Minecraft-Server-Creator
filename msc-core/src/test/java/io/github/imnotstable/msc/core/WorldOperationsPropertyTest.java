@@ -130,6 +130,79 @@ class WorldOperationsPropertyTest {
         assertThat(h.error("build_undo")).contains("nothing to undo");
     }
 
+    /**
+     * #695 (ADR 0049): random builds and undos, of the latest edit or any other, over a small area so they often
+     * overlap. An undo is refused, naming the later applied edits that set any of its positions newest first, and
+     * changes nothing; any other undo goes through. After every call the world is what replaying the edits still
+     * applied, oldest first, onto the starting world gives.
+     */
+    @Test
+    void undoInAnyOrderLeavesTheWorldAsTheEditsStillAppliedMakeIt() {
+        Region area = Region.of("world", 0, 62, 0, 4, 65, 4);
+        String[] blocks = {"gold_block", "glass", "dirt", "air"};
+        for (long seed = 0; seed < SEEDS; seed++) {
+            Random rnd = new Random(seed);
+            scatter(rnd, area);
+            Map<BlockPos, String> start = snapshot(area);
+            java.util.SequencedMap<String, Map<BlockPos, String>> applied = new LinkedHashMap<>();
+            for (int call = 0; call < 16; call++) {
+                if (applied.isEmpty() || rnd.nextInt(5) < 3) {
+                    Map<BlockPos, String> sets = new LinkedHashMap<>();
+                    StringBuilder steps = new StringBuilder();
+                    for (int s = 1 + rnd.nextInt(2); s > 0; s--) {
+                        BlockPos a = new BlockPos(rnd.nextInt(5), 62 + rnd.nextInt(4), rnd.nextInt(5));
+                        BlockPos b = new BlockPos(rnd.nextInt(5), 62 + rnd.nextInt(4), rnd.nextInt(5));
+                        String block = blocks[rnd.nextInt(blocks.length)];
+                        String shape = List.of("", " outline", "set").get(rnd.nextInt(3));
+                        if (shape.equals("set")) {
+                            steps.append("set ").append(show(a)).append(' ').append(block).append('\n');
+                            sets.put(a, "minecraft:" + block);
+                            continue;
+                        }
+                        Region box = new Region("world", a, b);
+                        steps.append("fill ").append(show(a)).append(' ').append(show(b)).append(' ').append(block)
+                                .append(shape).append('\n');
+                        for (BlockPos p : snapshot(box).keySet()) {
+                            if (!expectedFill(box, p, shape.strip(), "kept").equals("kept")) {
+                                sets.put(p, "minecraft:" + block);
+                            }
+                        }
+                    }
+                    applied.put(editId(h.ok("build_batch", "steps", steps.toString())), sets);
+                } else {
+                    List<String> ids = new ArrayList<>(applied.keySet());
+                    boolean latest = rnd.nextBoolean();
+                    String target = latest ? ids.getLast() : ids.get(rnd.nextInt(ids.size()));
+                    List<String> over = new ArrayList<>();
+                    for (String later : ids.subList(ids.indexOf(target) + 1, ids.size())) {
+                        if (applied.get(later).keySet().stream().anyMatch(applied.get(target)::containsKey)) {
+                            over.addFirst(later);
+                        }
+                    }
+                    if (over.isEmpty()) {
+                        String out = latest ? h.ok("build_undo") : h.ok("build_undo", "edit", target);
+                        assertThat(out).as("seed %d", seed).startsWith("undid " + target + ":");
+                        applied.remove(target);
+                    } else {
+                        assertThat(h.error("build_undo", "edit", target)).as("seed %d", seed)
+                                .startsWith("error: " + target + " not undone: later edit"
+                                        + (over.size() == 1 ? " " : "s ") + String.join(", ", over) + " set ")
+                                .contains("(build_undo edit=" + over.getFirst() + "), then " + target + ".");
+                    }
+                }
+                Map<BlockPos, String> replay = new HashMap<>(start);
+                applied.values().forEach(replay::putAll);
+                assertThat(snapshot(area)).as("seed %d after call %d, applied %s", seed, call, applied.keySet())
+                        .isEqualTo(replay);
+            }
+            while (!applied.isEmpty()) {
+                assertThat(h.ok("build_undo")).startsWith("undid " + applied.lastEntry().getKey() + ":");
+                applied.pollLastEntry();
+            }
+            assertThat(snapshot(area)).as("seed %d, all undone", seed).isEqualTo(start);
+        }
+    }
+
     /** A few steps of every kind, all inside 4..19 on x and z and 60..69 on y, so they stay inside the test's area. */
     private static String randomSteps(Random rnd) {
         // One block that is always placed, so every batch is an edit with an id.

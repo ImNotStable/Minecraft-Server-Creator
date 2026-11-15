@@ -28,7 +28,8 @@ public final class WorldService {
     public static final long MAX_BULK_VOLUME = 8L * Limits.MAX_REGION_VOLUME;
 
     private final AgentHub hub;
-    private final Map<String, List<String>> edits = new LinkedHashMap<>();
+    /** The edits still applied, oldest first: each one's agent parts and the positions it set. */
+    private final Map<String, Edit> edits = new LinkedHashMap<>();
     /** Edits an undo is working on, so two calls do not undo the same parts. */
     private final java.util.Set<String> undoing = new java.util.HashSet<>();
     /** The agents' undo budget ({@code AgentDefaults.UNDO_BLOCKS}), for messages. */
@@ -444,17 +445,25 @@ public final class WorldService {
         edits.clear();
     }
 
-    /** Keep agent edit ids under one new edit id for {@code build_undo}, and return that id. */
-    public synchronized String remember(List<String> agentEdits) {
+    private record Edit(List<String> parts, Footprint where) {
+    }
+
+    /**
+     * Keep agent edit ids under one new edit id for {@code build_undo}, with the positions the edit set, and return
+     * that id.
+     */
+    public synchronized String remember(List<String> agentEdits, Footprint where) {
         String id = "e" + (++editCounter);
-        edits.put(id, new ArrayList<>(agentEdits));
+        edits.put(id, new Edit(new ArrayList<>(agentEdits), where));
         return id;
     }
 
     /**
      * Undo one edit, or the most recent one when {@code id} is null, newest part first. Each agent part is dropped
      * only once the agent has undone it, so after a failure the same id undoes the rest. A part the agent no
-     * longer keeps (its undo history is bounded) is skipped and reported.
+     * longer keeps (its undo history is bounded) is skipped and reported. An edit is refused while a later edit,
+     * still applied, set any of its positions (ADR 0049): its undo would wipe that edit's blocks there, and that
+     * edit's own undo would then bring back blocks of the edit already undone.
      */
     public String undo(String id) throws InterruptedException {
         List<String> agentEdits;
@@ -468,10 +477,25 @@ public final class WorldService {
                     target = key;
                 }
             }
-            agentEdits = edits.get(target);
-            if (agentEdits == null) {
+            Edit edit = edits.get(target);
+            if (edit == null) {
                 throw new ToolException("unknown edit " + target + " (already undone, or from an earlier session)");
             }
+            List<String> over = new ArrayList<>();
+            boolean later = false;
+            for (Map.Entry<String, Edit> e : edits.entrySet()) {
+                if (later && e.getValue().where().overlaps(edit.where())) {
+                    over.addFirst(e.getKey());
+                }
+                later |= e.getKey().equals(target);
+            }
+            if (!over.isEmpty()) {
+                throw new ToolException(target + " not undone: later edit" + (over.size() == 1 ? " " : "s ")
+                        + String.join(", ", over) + " set some of the same blocks, which undoing " + target
+                        + " would wipe. Undo " + (over.size() == 1 ? "it" : "them, newest first,")
+                        + " first (build_undo edit=" + over.getFirst() + "), then " + target + ".");
+            }
+            agentEdits = edit.parts();
             if (!undoing.add(target)) {
                 throw new ToolException(target + " is being undone already");
             }

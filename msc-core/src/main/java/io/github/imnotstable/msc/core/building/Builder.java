@@ -3,6 +3,7 @@ package io.github.imnotstable.msc.core.building;
 import io.github.imnotstable.msc.core.agent.AgentHub;
 import io.github.imnotstable.msc.core.tool.ToolException;
 import io.github.imnotstable.msc.core.world.Coords;
+import io.github.imnotstable.msc.core.world.Footprint;
 import io.github.imnotstable.msc.core.world.WorldService;
 import io.github.imnotstable.msc.protocol.message.ErrorCodes;
 import io.github.imnotstable.msc.protocol.op.Ops;
@@ -96,9 +97,9 @@ public final class Builder {
             if (e instanceof OpException op) {
                 PartialEdit.editId(op.detail()).ifPresent(ids::add);
             }
-            throw cleanUp(ids, e);
+            throw cleanUp(ids, canvas.footprint(used), e);
         }
-        String id = world.remember(ids);
+        String id = world.remember(ids, canvas.footprint(used));
         // One kind of block, or nothing left unchanged: the extra numbers say nothing new.
         return "edit " + id + ": " + changed + " blocks changed"
                 + (changed == canvas.placed() ? "" : " (" + canvas.placed() + " placed)") + ", region "
@@ -109,9 +110,11 @@ public final class Builder {
     /**
      * Undo the parts a failed build changed, newest first, and return the error to throw. The agent's undo id in
      * {@code failure} is stripped: build_undo does not know it. Parts whose undo fails go under a core id that the
-     * error names, so no block the build changed is left without a build_undo id (#292).
+     * error names, so no block the build changed is left without a build_undo id (#292). {@code where}: the whole
+     * build's positions, which hold those parts' (ADR 0049).
      */
-    private RuntimeException cleanUp(List<String> ids, Exception failure) throws InterruptedException {
+    private RuntimeException cleanUp(List<String> ids, Footprint where, Exception failure)
+            throws InterruptedException {
         List<String> kept = new ArrayList<>();
         String why = null;
         boolean interrupted = false;
@@ -136,7 +139,7 @@ public final class Builder {
                 : failure instanceof InterruptedException ? "interrupted" : String.valueOf(failure.getMessage());
         if (!kept.isEmpty()) {
             return new ToolException(reason + "; undoing it failed (" + why + "), build_undo edit="
-                    + world.remember(kept) + " removes the rest");
+                    + world.remember(kept, where) + " removes the rest");
         }
         if (failure instanceof OpException op) {
             return new OpException(op.code(), PartialEdit.strip(op.detail()));
