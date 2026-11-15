@@ -44,16 +44,22 @@ Both: the prompt leaves the command line, and every command line is built in one
    - a program ending in `.cmd` or `.bat` becomes `cmd.exe /d /v:off /s /c ""<script>" <args>"`, each argument quoted
      as above and every cmd.exe metacharacter (`" % ! ^ & | < > ( )`) escaped with `^` twice: once for this cmd.exe,
      once for the script's own line that expands `%*`, as cross-spawn does for npm launchers. With every quote escaped
-     cmd.exe never enters a quoted part, so every escape works, and `%NAME%` becomes `^%NAME^%`, a variable no one
-     defines. An argument with a line break is refused for a script, naming it, instead of cut;
+     cmd.exe never enters a quoted part, so every escape works. cmd.exe expands variables before it reads a caret,
+     and besides `%NAME%` it takes `%NAME:old=new%` and `%NAME:~start,length%`, whose name ends at the `:`; so the
+     character after each `%` is escaped too (`%PATH:a=b%` becomes `^^^%^^PATH:a=b^^^%`), and every name cmd.exe can
+     read after a `%` starts with `^`. cmd.exe defines no such variable, and `prepare` removes any from a script's
+     environment, so no argument expands one (#630; the first version escaped only the `%` itself, which broke
+     `%NAME%` but let `%TEMP:\=/%` expand). An argument with a line break is refused for a script, naming it, instead
+     of cut;
    - Java's strict mode would quote the encoded arguments a second time, so with it set every start is refused,
      naming the property.
    Off Windows the list is left as it is: Linux and macOS pass arguments as a list.
 
 Tests run on any OS: the encoded list is joined as JDK 25's legacy `createCommandLine` joins it and split again with
-`ProcessArguments.splitWindows`; for a script, cmd.exe's variable and caret passes are modelled twice before the split.
-Inputs cover quotes, backslashes before quotes, trailing backslashes, empty strings, blanks, `%`, `^`, `!` and the
-redirection characters, and every shipped prompt with each preamble.
+`ProcessArguments.splitWindows`; for a script, cmd.exe's variable pass (`%NAME%` and both `:` forms, in an environment
+that defines every name not starting with `^`) and its caret pass, then the launcher's caret pass, are modelled before
+the split. Inputs cover quotes, backslashes before quotes, trailing backslashes, empty strings, blanks, `%` (with the
+`:` forms), `^`, `!` and the redirection characters, and every shipped prompt with each preamble.
 
 ## Consequences
 
@@ -65,5 +71,6 @@ redirection characters, and every shipped prompt with each preamble.
 - The encoding relies on the JDK's default join passing an argument that starts and ends with a quote through
   verbatim. The test models that join from JDK 25's source, so a JDK upgrade should recheck
   `ProcessImpl.createCommandLine` on Windows.
+- A `.cmd`/`.bat` launcher and what it starts do not see an environment variable whose name starts with `^`.
 - Not verified on a Windows machine yet: the tests model the JDK join and cmd.exe; the first Windows run of
   `game-sky-sprint` is the proof.
