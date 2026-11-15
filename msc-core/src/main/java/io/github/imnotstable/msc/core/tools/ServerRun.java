@@ -393,8 +393,8 @@ final class ServerRun {
     /**
      * dev_cycle that keeps the server running (an unchanged jar, restart=false, or no jar; #690): the workspace's
      * pack, rebuilt, goes to the connected agent only when it differs from what that connection was last sent (#667),
-     * so the players do not download and reload the same pack on every cycle. Says nothing when it was not sent, also
-     * with no agent connected (a proxy, #694).
+     * so the players do not download and reload the same pack on every cycle. Says nothing when it was unchanged, or on
+     * a proxy, which never has an agent (#694); with no agent connected anywhere else, says it is sent when one is (#698).
      */
     String packIfChanged() {
         synchronized (sending) {
@@ -404,11 +404,14 @@ final class ServerRun {
 
     private String sendPack(boolean onlyChanged) {
         ResourcePack.Applied applied = pack.applied();
-        // No agent connection, nothing to send to: a proxy never has one (#694), and the next connection of any
-        // other server gets the pack from packForAgent. Nothing is sent, so nothing is said.
+        // No agent connection, nothing to send to. A proxy never has one, so nothing is said there (#694); any other
+        // server's agent gets the pack from packForAgent when it connects (#698).
         CoreServer.AgentSession to = hub.current();
-        if (applied == null || to == null) {
+        if (applied == null || to == null && hub.noAgentReason() != null) {
             return "";
+        }
+        if (to == null) {
+            return "\nresource pack not sent: no server agent connected; it is sent when one connects";
         }
         try {
             ResourcePack.Snapshot before = pack.snapshot();

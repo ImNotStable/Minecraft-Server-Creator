@@ -82,6 +82,23 @@ public final class Builder {
         }
         check(canvas, used);
         String backup = beforeWrite.before(canvas.placed());
+        // Written and remembered while no other edit is written or undone (ADR 0049).
+        Written written = world.oneAtATime(() -> write(canvas, used, physics));
+        String id = written.id();
+        long changed = written.changed();
+        // One kind of block, or nothing left unchanged: the extra numbers say nothing new.
+        return "edit " + id + ": " + changed + " blocks changed"
+                + (changed == canvas.placed() ? "" : " (" + canvas.placed() + " placed)") + ", region "
+                + Coords.show(used) + (canvas.counts().size() > 1 ? "\n" + counts : "")
+                + (backup.isEmpty() ? "" : "\n" + backup);
+    }
+
+    private record Written(String id, long changed) {
+    }
+
+    /** Write the canvas in protocol-sized parts and remember them under one new edit id. */
+    private Written write(Canvas canvas, Region used, boolean physics) throws InterruptedException {
+        Footprint where = canvas.footprint(used);
         List<String> ids = new ArrayList<>();
         long changed = 0;
         try {
@@ -97,14 +114,9 @@ public final class Builder {
             if (e instanceof OpException op) {
                 PartialEdit.editId(op.detail()).ifPresent(ids::add);
             }
-            throw cleanUp(ids, canvas.footprint(used), e);
+            throw cleanUp(ids, where, e);
         }
-        String id = world.remember(ids, canvas.footprint(used));
-        // One kind of block, or nothing left unchanged: the extra numbers say nothing new.
-        return "edit " + id + ": " + changed + " blocks changed"
-                + (changed == canvas.placed() ? "" : " (" + canvas.placed() + " placed)") + ", region "
-                + Coords.show(used) + (canvas.counts().size() > 1 ? "\n" + counts : "")
-                + (backup.isEmpty() ? "" : "\n" + backup);
+        return new Written(world.remember(ids, where), changed);
     }
 
     /**

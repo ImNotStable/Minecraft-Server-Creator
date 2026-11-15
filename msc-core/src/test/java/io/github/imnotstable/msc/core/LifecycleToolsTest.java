@@ -1094,6 +1094,70 @@ class LifecycleToolsTest {
     }
 
     /**
+     * #699: an edit id lasts as long as the server run it was made in. After a server_stop, a dev_cycle restart, or a
+     * server that stopped on its own, the agent's undo history is gone, so build_undo answers that the id is unknown
+     * (not that the undo budget ran out), and the dead ids no longer block undoing anything.
+     */
+    @Test
+    void editIdsEndWithTheServerRunTheyWereMadeIn() throws Exception {
+        String unknown = " (already undone, or made before the server last stopped: build_undo backup= rolls the "
+                + "world back)";
+        assertThat(h.ok("dev_cycle", "project", "demo")).contains("agent connected");
+        String e1 = editId(h.ok("build_batch", "steps", "fill 0,70,0 3,70,3 stone"));
+        String e2 = editId(h.ok("build_batch", "steps", "fill 2,70,2 5,70,5 dirt"));
+        h.ok("server_stop");
+        assertThat(h.error("build_undo", "edit", e1)).isEqualTo("error: unknown edit " + e1 + unknown);
+        h.ok("server_start", "timeoutSeconds", 30);
+        assertThat(h.error("build_undo", "edit", e2)).isEqualTo("error: unknown edit " + e2 + unknown);
+        assertThat(h.error("build_undo")).contains("nothing to undo");
+        String e3 = editId(h.ok("build_batch", "steps", "fill 0,70,0 3,70,3 stone"));
+        Files.writeString(project.resolve("version.txt"), "2.0");
+        assertThat(h.ok("dev_cycle", "project", "demo")).contains("server ready");
+        assertThat(h.error("build_undo", "edit", e3)).isEqualTo("error: unknown edit " + e3 + unknown);
+        String e4 = editId(h.ok("build_batch", "steps", "fill 0,70,0 3,70,3 stone"));
+        // Stopped on its own, as far as the core knows: the console line goes straight to the process.
+        h.core.server().console("stop");
+        long deadline = System.nanoTime() + java.time.Duration.ofSeconds(60).toNanos();
+        while (h.core.server().running() && System.nanoTime() < deadline) {
+            Thread.sleep(50);
+        }
+        assertThat(h.error("build_undo")).contains("nothing to undo");
+        h.ok("server_start", "timeoutSeconds", 30);
+        assertThat(h.error("build_undo", "edit", e4)).isEqualTo("error: unknown edit " + e4 + unknown);
+        String e5 = editId(h.ok("build_batch", "steps", "fill 0,70,0 3,70,3 stone"));
+        assertThat(h.ok("build_undo")).isEqualTo("undid " + e5 + ": 16 blocks restored");
+        h.ok("server_stop");
+    }
+
+    private static String editId(String result) {
+        assertThat(result).startsWith("edit e");
+        return result.substring(5, result.indexOf(':'));
+    }
+
+    /**
+     * #698: a server that can have an agent but has none connected (here it never connects) does not get the pack, and
+     * every dev_cycle that keeps it running says so, as pack promised; once its agent connects, it gets the pack.
+     */
+    @Test
+    void devCycleWithNoAgentConnectedSaysThePackWasNotSent() throws Exception {
+        Path run = Files.createDirectories(workspace.resolve("run"));
+        Files.writeString(run.resolve("no-agent.flag"), "");
+        assertThat(h.ok("dev_cycle", "project", "demo")).contains("no agent connected").doesNotContain("resource pack");
+        h.ok("texture", "name", "item/dot", "palette", List.of("a=#000001"), "rows", List.of("a"));
+        assertThat(h.ok("pack")).contains("\nnot sent yet: no server agent connected; the next server_start or "
+                + "dev_cycle sends it");
+        String notSent = "\nresource pack not sent: no server agent connected; it is sent when one connects";
+        assertThat(h.ok("dev_cycle", "project", "demo")).contains("jar unchanged").contains(notSent);
+        Files.writeString(project.resolve("version.txt"), "1.1");
+        assertThat(h.ok("dev_cycle", "project", "demo", "restart", false)).contains("old jar").contains(notSent);
+        Files.delete(run.resolve("no-agent.flag"));
+        assertThat(h.ok("dev_cycle", "project", "demo")).contains("server ready").doesNotContain(notSent)
+                .contains("\nresource pack sent: players who join get it\n");
+        assertThat(packSends()).isEqualTo(1);
+        h.ok("server_stop");
+    }
+
+    /**
      * #694: a proxy has no agent, so no pack ever reaches it. pack says why; every dev_cycle, whatever happens to the
      * jar and the pack, says nothing about the pack, as server_start does there.
      */

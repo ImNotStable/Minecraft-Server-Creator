@@ -38,7 +38,8 @@ public final class ServerManager implements AutoCloseable {
     private final AgentHub hub;
     /** At most 20,000 lines of at most {@link LogReader#MAX_LINE_CHARS} chars, and 4M chars in all. */
     private final LogBuffer log = new LogBuffer(20_000, 4_000_000);
-    private Process process;
+    /** Changed under this monitor; volatile for {@link #serverRun}. */
+    private volatile Process process;
     /** Reads {@link #process}'s output; null before the first start. */
     private LogPump pump;
     private volatile boolean sawDone;
@@ -156,6 +157,15 @@ public final class ServerManager implements AutoCloseable {
 
     public synchronized boolean running() {
         return process != null && process.isAlive();
+    }
+
+    /**
+     * The server process this core started, while it runs; else null. Every start makes a new one and a stop, a crash
+     * or an exit of its own ends it, so build_undo forgets the edits of an earlier one (#699). Takes no lock.
+     */
+    public Object serverRun() {
+        Process p = process;
+        return p != null && p.isAlive() ? p : null;
     }
 
     /** The platform this workspace targets. */

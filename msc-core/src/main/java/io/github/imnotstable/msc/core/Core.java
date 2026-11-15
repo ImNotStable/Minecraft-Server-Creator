@@ -144,6 +144,7 @@ public final class Core implements AutoCloseable {
                     config.packHost(), config.packPort(), config.packFormat());
             ToolRegistry tools = new ToolRegistry(log);
             WorldService world = new WorldService(hub);
+            world.serverRun(server::serverRun);
             ApiTools api = new ApiTools(config);
             MetaTools.register(tools, config, hub, server, log, api);
             WorldBackups backups = LifecycleTools.register(tools, config, hub, server, pack, new ProjectBuilder(config),
