@@ -170,7 +170,7 @@ public final class TextGrid {
         appendRun(out, pending, runStart, runEnd);
         appendData(out, grid);
         return Budget.truncate(out.toString().stripTrailing(), maxChars,
-                "Ask for fewer layers or a smaller area, or raise maxChars.");
+                Budget.raise(maxChars, "Ask for fewer layers or a smaller area."));
     }
 
     /**

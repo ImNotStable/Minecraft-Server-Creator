@@ -58,7 +58,8 @@ final class ServerConsole {
         int count = args.integer("lines", 30);
         return switch (mode) {
             case "errors" -> LogCondenser.condense(lines, maxChars);
-            case "tail" -> Budget.tail(LogText.tail(lines, count), maxChars, Budget.RAISE);
+            case "tail" -> Budget.tail(LogText.tail(lines, count), maxChars,
+                    Budget.raise(maxChars, "Use mode=grep to narrow."));
             default -> grep(lines, pattern(args.str("pattern")), count, maxChars);
         };
     }

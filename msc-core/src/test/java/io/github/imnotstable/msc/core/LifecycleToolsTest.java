@@ -882,7 +882,8 @@ class LifecycleToolsTest {
                 .matcher(result);
         while (m.find()) {
             assertThat(m.group(1)).isIn("Fix the first errors and build again.", "Use server_logs with grep to narrow.",
-                    io.github.imnotstable.msc.core.tool.Budget.RAISE);
+                    io.github.imnotstable.msc.core.tool.Budget.raise(Integer.MIN_VALUE, "Use server_logs for the rest."),
+                    "Use server_logs for the rest.");
         }
     }
 

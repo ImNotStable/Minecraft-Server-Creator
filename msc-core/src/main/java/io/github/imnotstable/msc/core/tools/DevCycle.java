@@ -117,7 +117,7 @@ final class DevCycle {
 
     /** The hint of a cut of dev_cycle's fixed lines: a larger maxChars shows more, as they do not grow with it. */
     private static String hint(int maxChars) {
-        return maxChars < Budget.MAX_CHARS ? Budget.RAISE : "Narrow the call.";
+        return Budget.raise(maxChars, "Use server_logs for the rest.");
     }
 
     /**
