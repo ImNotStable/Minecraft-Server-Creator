@@ -154,7 +154,7 @@ class CommandLineTest {
                 + "{a\\u2028b\\u202ec} at index 8"});
         // #519: a task refusal names its file and key path.
         BAD_TASKS.put("missing-fixture", new String[] {"{\"category\":\"code\",\"title\":\"t\",\"fixtures\":[\"_nope\"],"
-                + check + "}", "fixtures: no folder _nope next to the task folders"});
+                + check + "}", "fixtures: no folder \"_nope\" next to the task folders"});
         BAD_TASKS.put("bad-platform", new String[] {"{\"category\":\"code\",\"title\":\"t\",\"platform\":\"spigot\","
                 + check + "}", "platform: \"spigot\" is no platform; use paper or minestom"});
         BAD_TASKS.put("no-category", new String[] {"{\"title\":\"t\"," + check + "}", "category: is missing"});
@@ -163,7 +163,7 @@ class CommandLineTest {
                 "scaffold.template: \"nope\" is no template; use one of"});
         BAD_TASKS.put("missing-add-files", new String[] {"{\"category\":\"code\",\"title\":\"t\",\"checks\":[{\"type\":"
                 + "\"command\",\"run\":[\"x\"],\"addFiles\":\"tests\"}]}",
-                "checks[0].addFiles: no folder tests in the task"});
+                "checks[0].addFiles: no folder \"tests\" in the task"});
         // #519: a paths entry a selected mode uses that does not exist is refused before the run folder.
         BAD_CONFIGS.put("missing-core-lib", new String[] {"{\"modes\":{\"toolset\":{\"mcpConfigTemplate\":"
                 + "\"mcp.template\"}},\"paths\":{\"coreLib\":\"no-lib\"}}",

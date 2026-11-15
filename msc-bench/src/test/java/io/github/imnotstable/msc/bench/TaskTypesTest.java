@@ -328,6 +328,31 @@ class TaskTypesTest {
                 .hasMessage("Task t: task.json " + message);
     }
 
+    /**
+     * #686: a check missing a key it needs, or naming a folder the task lacks, is refused naming the key path, with
+     * no user text shown raw: the rest of the check, full of hidden characters, is left out, and the folder is quoted.
+     */
+    @ParameterizedTest(name = "{0}")
+    @CsvSource(delimiter = '|', quoteCharacter = '`', value = {
+            "`{\"type\":\"rcon\",\"name\":\"x\u202e\u200b\u0085\u3164y\",\"expect\":\"a\"}` | checks[0].command: is missing",
+            "`{\"type\":\"rcon\",\"name\":\"x\u202ey\",\"command\":\"list\"}` | checks[0].expect: is missing",
+            "`{\"type\":\"command\",\"name\":\"x\u202ey\"}` | checks[0].run: is missing",
+            "`{\"type\":\"file\",\"name\":\"x\u202ey\"}` | checks[0].path: is missing",
+            "`{\"type\":\"zip\",\"path\":\"a.zip\",\"textEntries\":[{\"contains\":\"x\u202ey\"}]}` "
+                    + "| checks[0].textEntries[0].entry: is missing",
+            "`{\"type\":\"command\",\"run\":[\"x\"],\"addFiles\":\"no\u007fdir\"}` "
+                    + "| checks[0].addFiles: no folder \"no\\u007fdir\" in the task"})
+    void aCheckMissingWhatItNeedsIsRefusedByKeyPathShowingNothingRaw(String check, String message) {
+        JsonObject json = JsonParser.parseString(VALID).getAsJsonObject();
+        JsonArray checks = new JsonArray();
+        checks.add(JsonParser.parseString(check));
+        json.add("checks", checks);
+        assertThatThrownBy(() -> load(json))
+                .isInstanceOf(IOException.class)
+                .hasMessage("Task t: task.json " + message)
+                .satisfies(e -> assertThat(ReaderView.firstHidden(e.getMessage())).isNull());
+    }
+
     /** The objects along {@code path}, such as {@code checks[3].pngEntries[0]}, from the root's child on. */
     private static List<JsonElement> steps(JsonObject root, String path) {
         List<JsonElement> out = new ArrayList<>();

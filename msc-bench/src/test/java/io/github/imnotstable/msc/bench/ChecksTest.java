@@ -105,7 +105,7 @@ class ChecksTest {
         assertThat(workspace.resolve("Shared.txt")).hasContent("agent's");
         assertThat(catchThrowable(() -> run(
                 "{\"type\":\"command\",\"addFiles\":\"../outside\",\"run\":[\"x\"]}")))
-                .hasMessageContaining("no folder ../outside");
+                .hasMessageContaining("no folder \"../outside\" in the task");
     }
 
     @Test
