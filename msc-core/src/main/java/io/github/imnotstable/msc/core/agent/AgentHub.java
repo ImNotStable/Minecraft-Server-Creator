@@ -3,6 +3,7 @@ package io.github.imnotstable.msc.core.agent;
 import io.github.imnotstable.msc.core.tool.PortPatience;
 import io.github.imnotstable.msc.core.tool.ToolException;
 import io.github.imnotstable.msc.protocol.Limits;
+import io.github.imnotstable.msc.protocol.message.ErrorCodes;
 import io.github.imnotstable.msc.protocol.message.Event;
 import io.github.imnotstable.msc.protocol.op.Events;
 import io.github.imnotstable.msc.protocol.op.OpSpec;
@@ -13,9 +14,11 @@ import io.github.imnotstable.msc.protocol.transport.RequestHandler;
 import java.io.IOException;
 import java.io.InterruptedIOException;
 import java.time.Duration;
+import java.util.List;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -42,6 +45,9 @@ public final class AgentHub implements AutoCloseable {
     private final Condition changed = lock.newCondition();
     private final CoreServer server;
     private final String token;
+    private final String serverToken;
+    /** Agents refused for a token this hub does not take: a server another workspace started (ADR 0050). */
+    private final AtomicInteger refused = new AtomicInteger();
     private CoreServer.AgentSession session;
     private long readyCount;
     /**
@@ -72,7 +78,16 @@ public final class AgentHub implements AutoCloseable {
     private volatile Runnable onReady = () -> { };
 
     public AgentHub(int port, String token) throws IOException {
+        this(port, token, token);
+    }
+
+    /**
+     * Takes an agent that proves {@code token} (a server attached through {@code MSC_CORE_ADDRESS}) or
+     * {@code serverToken} (a server this workspace starts, {@code CoreConfig.serverToken()}), and no other (ADR 0050).
+     */
+    public AgentHub(int port, String token, String serverToken) throws IOException {
         this.token = token;
+        this.serverToken = serverToken;
         CoreServer.AgentListener listener = new CoreServer.AgentListener() {
             @Override
             public void connected(CoreServer.AgentSession s) {
@@ -107,6 +122,13 @@ public final class AgentHub implements AutoCloseable {
             }
 
             @Override
+            public void rejected(String reason) {
+                if (reason.startsWith(ErrorCodes.UNAUTHORIZED)) {
+                    refused.incrementAndGet();
+                }
+            }
+
+            @Override
             public void disconnected(CoreServer.AgentSession s, Throwable cause) {
                 update(() -> {
                     if (session == s) {
@@ -119,7 +141,8 @@ public final class AgentHub implements AutoCloseable {
         // is just exiting.
         try {
             this.server = PortPatience.bind(port, PortPatience.PATIENCE,
-                    () -> CoreServer.start(port, token, RequestHandler.none(), listener, Duration.ofSeconds(10)));
+                    () -> CoreServer.start(port, List.of(token, serverToken), RequestHandler.none(), listener,
+                            Duration.ofSeconds(10)));
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new InterruptedIOException("interrupted while waiting for port " + port);
@@ -144,6 +167,16 @@ public final class AgentHub implements AutoCloseable {
 
     public String token() {
         return token;
+    }
+
+    /** The token a server this workspace starts gets: its agent proves it, and no other workspace takes it. */
+    public String serverToken() {
+        return serverToken;
+    }
+
+    /** How many agents were refused for a token this hub does not take, such as another workspace's server. */
+    public int refusedAgents() {
+        return refused.get();
     }
 
     /**

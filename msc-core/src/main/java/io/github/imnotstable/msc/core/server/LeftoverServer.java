@@ -17,10 +17,14 @@ final class LeftoverServer {
     private LeftoverServer() {
     }
 
-    /** The refusal: the pid, what was tried, that nothing started, and what the user can do. */
-    static String stillRunning(long pid, String tried) {
+    /**
+     * The refusal: the pid, what was tried, that nothing started, and what the user can do. A proxy has no world to
+     * take ({@link Platform#proxy()}, #728).
+     */
+    static String stillRunning(long pid, String tried, boolean proxy) {
         return "a server an earlier session left running (pid " + pid + ") could not be stopped: " + tried + ". "
-                + "Nothing was started or deployed: a new server could not take its world or port, and MSC would lose "
+                + "Nothing was started or deployed: a new server could not take its " + (proxy ? "" : "world or ")
+                + "port, and MSC would lose "
                 + "track of this one. Stop process " + pid + " by hand (Windows: Task Manager, or taskkill /F /PID "
                 + pid + " from a prompt with the rights it was started with, for example as administrator; "
                 + "elsewhere: kill -9 " + pid + "; a process stuck in disk IO ends when the IO does, or at a "

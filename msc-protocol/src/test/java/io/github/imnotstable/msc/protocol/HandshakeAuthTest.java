@@ -61,7 +61,11 @@ class HandshakeAuthTest {
     }
 
     private CoreServer core(Duration deadline) throws IOException {
-        core = CoreServer.start(0, TOKEN, RequestHandler.none(), new CoreServer.AgentListener() {
+        return core(deadline, List.of(TOKEN));
+    }
+
+    private CoreServer core(Duration deadline, List<String> tokens) throws IOException {
+        core = CoreServer.start(0, tokens, RequestHandler.none(), new CoreServer.AgentListener() {
             @Override
             public void connected(CoreServer.AgentSession session) {
                 sessions.add(session);
@@ -97,6 +101,24 @@ class HandshakeAuthTest {
                 }, Duration.ofSeconds(5));
         assertThat(sessions.poll(5, TimeUnit.SECONDS)).isNotNull();
         agent.connection().close();
+    }
+
+    @Test
+    void aCoreWithSeveralTokensTakesAnAgentOfEachAndProvesItselfWithThatOne() throws Exception {
+        // ADR 0050: the shared token and a workspace's own; the agent checks the core's proof with the token it has.
+        core(Duration.ofSeconds(5), List.of(TOKEN, "workspace-token"));
+        for (String token : List.of(TOKEN, "workspace-token")) {
+            AgentClient.Session agent = AgentClient.connect("127.0.0.1", core.port(), token, INFO,
+                    RequestHandler.none(), new Connection.Listener() {
+                    }, Duration.ofSeconds(5));
+            assertThat(sessions.poll(5, TimeUnit.SECONDS)).isNotNull();
+            agent.connection().close();
+        }
+        assertThatThrownBy(() -> AgentClient.connect("127.0.0.1", core.port(), "another-workspace-token", INFO,
+                RequestHandler.none(), new Connection.Listener() {
+                }, Duration.ofSeconds(5))).isInstanceOf(OpException.class);
+        assertThat(rejections.poll(5, TimeUnit.SECONDS)).startsWith(ErrorCodes.UNAUTHORIZED);
+        assertThat(sessions).isEmpty();
     }
 
     @Test

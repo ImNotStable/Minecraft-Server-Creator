@@ -117,7 +117,7 @@ public final class Core implements AutoCloseable {
         /** Opens a workspace's parts; when a step fails, closes those already opened (the agent socket). */
         static Bench open(CoreConfig config, ToolLog log, OpenCheck check) throws IOException {
             BackgroundWork background = new BackgroundWork();
-            AgentHub hub = new AgentHub(config.agentPort(), config.token());
+            AgentHub hub = new AgentHub(config.agentPort(), config.token(), config.serverToken());
             try {
                 Bench bench = wire(config, log, background, hub);
                 check.check(config, hub);
@@ -134,6 +134,7 @@ public final class Core implements AutoCloseable {
         }
 
         private static Bench wire(CoreConfig config, ToolLog log, BackgroundWork background, AgentHub hub) {
+            AtomicBoolean closed = new AtomicBoolean();
             ServerManager server = new ServerManager(config, hub);
             if (config.agentPort() == 0) {
                 // No fixed address, so only a server this core starts can connect (MSC_CORE_ADDRESS attaches others).
@@ -150,7 +151,7 @@ public final class Core implements AutoCloseable {
             WorldService world = new WorldService(hub);
             world.serverRun(server::serverRun);
             ApiTools api = new ApiTools(config);
-            MetaTools.register(tools, config, hub, server, log, api);
+            MetaTools.register(tools, config, hub, server, log, api, closed::get);
             WorldBackups backups = LifecycleTools.register(tools, config, hub, server, pack, new ProjectBuilder(config),
                     new PaperDownloader(config.downloadsUrl(), config.cacheDir(),
                             config.downloadStore()),
@@ -164,7 +165,7 @@ public final class Core implements AutoCloseable {
             // On a proxy every world, build and player tool answers one line before it sends, saves or stops anything,
             // whether or not it reaches the agent (ADR 0045, #591).
             tools.gate(WORLD_TOOLS, () -> server.platform().noWorldTools());
-            return new Bench(config, hub, server, pack, players, tools, background, new AtomicBoolean());
+            return new Bench(config, hub, server, pack, players, tools, background, closed);
         }
 
         /**
@@ -338,7 +339,8 @@ public final class Core implements AutoCloseable {
         CoreConfig current = bench.config();
         WayArgs.check(args, java.util.Set.of(args.has("path") ? "switch" : "show"), WayArgs.WORKSPACE);
         if (!args.has("path")) {
-            return "workspace: " + current.workspace();
+            return "workspace: " + (bench.closed().get() ? MetaTools.closedWorkspace(current.workspace())
+                    : current.workspace());
         }
         Path target = PathArg.anywhere(current.workspace()).resolve("path", args.str("path").strip());
         if (!Files.isDirectory(target)) {
@@ -378,7 +380,10 @@ public final class Core implements AutoCloseable {
             try {
                 next = Bench.open(old.config().withWorkspace(target), log, openCheck);
             } catch (IOException | RuntimeException e) {
-                throw new ToolException(reopen(old, "could not open " + target + " (" + e.getMessage() + ")", closing));
+                String failure = "could not open " + target + " (" + e.getMessage() + ")";
+                // The closed workspace itself (#727): reopening it would only try the same open once more.
+                boolean same = target.equals(realOrSelf(old.config().workspace()));
+                throw new ToolException(same ? noWorkspace(failure, target, closing) : reopen(old, failure, closing));
             }
             install(next);
             log.moveTo(next.config().toolLog());
@@ -428,11 +433,16 @@ public final class Core implements AutoCloseable {
         try {
             back = Bench.open(old.config(), log, openCheck);
         } catch (IOException | RuntimeException e) {
-            return failure + ", nor reopen " + ws + " (" + e.getMessage() + "), so no workspace is open" + done
-                    + "\nmsc_workspace path=" + ws + " opens it again";
+            return noWorkspace(failure + ", nor reopen " + ws + " (" + e.getMessage() + ")", ws, closing);
         }
         install(back);
         return failure + "; still in " + ws + done;
+    }
+
+    /** The answer when no workspace is open after a switch: {@code ws}, closed, opens again with a switch to it. */
+    private static String noWorkspace(String failure, Path ws, String closing) {
+        return failure + ", so no workspace is open" + (closing == null ? "" : "\n" + closing)
+                + "\nmsc_workspace path=" + ws + " opens it again";
     }
 
     private static Path realOrSelf(Path p) {

@@ -7,11 +7,17 @@ import io.github.imnotstable.msc.core.server.MachineEula;
 import io.github.imnotstable.msc.core.tool.PathArg;
 import io.github.imnotstable.msc.protocol.Limits;
 import io.github.imnotstable.msc.protocol.transport.HandshakeProof;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.security.GeneralSecurityException;
 import java.util.ArrayList;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
 
 /**
  * Everything the core reads from its environment. Tests build one by hand.
@@ -138,6 +144,30 @@ public record CoreConfig(Path workspace, Path serverDir, int agentPort, String t
     static String token(Map<String, String> env, String random) {
         String token = env.get(Limits.ENV_TOKEN);
         return token == null || token.isBlank() ? random : token;
+    }
+
+    /**
+     * The token the servers this workspace starts get, in place of {@link #token} (ADR 0050): HMAC-SHA256 of the
+     * workspace's real path under the token. The core takes an agent with either; one that proves another workspace's
+     * token, such as the agent of a server detached in the workspace a switch left, is refused, also on a fixed
+     * {@code MSC_CORE_ADDRESS} with a shared {@code MSC_TOKEN}. A server started outside MSC still attaches with
+     * {@link #token}.
+     */
+    public String serverToken() {
+        Path ws;
+        try {
+            ws = workspace.toRealPath();
+        } catch (IOException e) {
+            ws = workspace.toAbsolutePath().normalize();
+        }
+        try {
+            Mac mac = Mac.getInstance("HmacSHA256");
+            mac.init(new SecretKeySpec(token.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+            return HexFormat.of().formatHex(mac.doFinal(("msc-workspace-server\n" + ws)
+                    .getBytes(StandardCharsets.UTF_8)));
+        } catch (GeneralSecurityException e) {
+            throw new IllegalStateException("HmacSHA256 is part of every Java runtime", e);
+        }
     }
 
     /** {@code <workspace>/.msc}: caches, the resource pack source and logs. */

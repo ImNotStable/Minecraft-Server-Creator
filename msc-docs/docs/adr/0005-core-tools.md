@@ -1,6 +1,6 @@
 # ADR 0005: msc-core tool design
 
-Date: 2026-11-10. Status: accepted. Decided by Claude under Jeremiah's instruction to build autonomously. Amended 2026-11-14 (see the end).
+Date: 2026-11-10. Status: accepted. Decided by Claude under Jeremiah's instruction to build autonomously. Amended 2026-11-14 (see the end). Point 8 amended by [ADR 0050](0050-agent-belongs-to-its-workspace.md): a server another workspace started is refused.
 
 ## Context
 

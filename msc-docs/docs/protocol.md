@@ -6,7 +6,7 @@ Source of truth is the code in `msc-protocol` (`io.github.imnotstable.msc.protoc
 
 1. The core listens on `127.0.0.1` only, whatever host `MSC_CORE_ADDRESS` names (`CoreServer.start`), and starts the game server with two environment variables:
    - `MSC_CORE_ADDRESS`: `host:port` of the core
-   - `MSC_TOKEN`: a random token for this session (64 hex characters; never sent on the wire, see [Handshake](#handshake))
+   - `MSC_TOKEN`: a token for this workspace's servers (64 hex characters; never sent on the wire, see [Handshake](#handshake)): HMAC-SHA256 of the workspace under the session's token, so another workspace's core refuses it even on a fixed address ([ADR 0050](adr/0050-agent-belongs-to-its-workspace.md)). The core also takes the session's own token, for a server attached through `MSC_CORE_ADDRESS`
 2. The agent connects through `AgentLink` in `msc-agent-common` ([ADR 0024](adr/0024-agent-common.md)), which finds the core with `CoreAddress.resolve()`: the two environment variables, or else the system properties `msc.core.address` (`host:port`) and `msc.token` (or `msc.token.file`, a file holding the token) for servers started by hand and for tests. A system property is on the command line, which every user of the machine can see with `ps`; on a shared machine use `msc.token.file` with a file only you can read. If neither is set, the agent stays idle. `AgentLink` retries with backoff, reconnects when the core drops it, and sends `server.ready` once both the connection is up and the server has finished starting.
 3. Every frame is one JSON object on one line, UTF-8, ending in `\n`, at most 16 MiB (`Limits.MAX_FRAME_BYTES`). The `type` field names the message. See [Size limits](#size-limits) for what happens to a message that would not fit.
 

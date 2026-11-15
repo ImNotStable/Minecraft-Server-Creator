@@ -14,14 +14,23 @@ import java.net.URISyntaxException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.temporal.ChronoUnit;
+import java.util.function.BooleanSupplier;
 
 /** Health and usage tools. */
 public final class MetaTools {
     private MetaTools() {
     }
 
+    /**
+     * How msc_status and msc_workspace name a workspace whose bench is closed: a switch failed and could not reopen
+     * it, so no workspace is open until a switch opens one (#727).
+     */
+    public static String closedWorkspace(Path workspace) {
+        return "none open (" + workspace + " was closed; msc_workspace path=" + workspace + " opens it again)";
+    }
+
     public static void register(ToolRegistry registry, CoreConfig config, AgentHub hub, ServerManager server,
-                                ToolLog log, ApiTools api) {
+                                ToolLog log, ApiTools api, BooleanSupplier closed) {
         registry.add("msc_status", "Where things stand: workspace, platform, server, agent, API index. stats=true: this "
                         + "session's calls, errors, time and result tokens per tool instead.",
                 Schema.of().opt("stats", "boolean", "Show call stats"), args -> {
@@ -30,7 +39,8 @@ public final class MetaTools {
                     }
                     StringBuilder out = new StringBuilder();
                     out.append("msc-core ").append(Core.VERSION).append(built()).append('\n');
-                    out.append("workspace: ").append(config.workspace()).append('\n');
+                    out.append("workspace: ").append(closed.getAsBoolean() ? closedWorkspace(config.workspace())
+                            : config.workspace()).append('\n');
                     out.append("platform: ").append(server.platform().id()).append('\n');
                     out.append("server: ").append(serverState(server)).append(" (").append(config.serverDir())
                             .append(")\n");
@@ -42,6 +52,16 @@ public final class MetaTools {
                         out.append(s.agent().platform()).append(' ').append(s.agent().platformVersion())
                                 .append(", minecraft ").append(s.agent().minecraftVersion()).append(", ")
                                 .append(s.agent().operations().size()).append(" operations");
+                        if (!server.running()) {
+                            // Not a server this session runs: one attached through MSC_CORE_ADDRESS (ADR 0005).
+                            out.append(", of a server started outside this session");
+                        }
+                    }
+                    int refused = hub.refusedAgents();
+                    if (refused > 0) {
+                        // ADR 0050: say why an agent that knocked is not the one world tools reach.
+                        out.append("; refused ").append(refused).append(refused == 1 ? " agent" : " agents")
+                                .append(" without this workspace's token (another workspace's server)");
                     }
                     out.append("\napi index: ").append(api.status());
                     for (String w : SetupCheck.warnings(config)) {

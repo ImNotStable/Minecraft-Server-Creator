@@ -16,6 +16,8 @@ import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.time.Duration;
+import java.util.Collections;
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.Semaphore;
 
@@ -48,17 +50,18 @@ public final class CoreServer implements AutoCloseable {
     static final int MAX_PENDING_HANDSHAKES = 16;
 
     private final ServerSocket serverSocket;
-    private final String token;
+    /** Every token an agent may prove; the core proves back with the one it proved. */
+    private final List<String> tokens;
     private final RequestHandler handler;
     private final AgentListener listener;
     private final Duration handshakeTimeout;
     private final Semaphore handshakes = new Semaphore(MAX_PENDING_HANDSHAKES);
     private Thread acceptor;
 
-    private CoreServer(ServerSocket serverSocket, String token, RequestHandler handler, AgentListener listener,
+    private CoreServer(ServerSocket serverSocket, List<String> tokens, RequestHandler handler, AgentListener listener,
                        Duration handshakeTimeout) {
         this.serverSocket = serverSocket;
-        this.token = token;
+        this.tokens = tokens;
         this.handler = handler;
         this.listener = listener;
         this.handshakeTimeout = handshakeTimeout;
@@ -71,12 +74,22 @@ public final class CoreServer implements AutoCloseable {
      */
     public static CoreServer start(int port, String token, RequestHandler handler, AgentListener listener,
                                    Duration handshakeTimeout) throws IOException {
-        if (token == null || token.isEmpty()) {
+        return start(port, Collections.singletonList(token), handler, listener, handshakeTimeout);
+    }
+
+    /**
+     * As {@link #start(int, String, RequestHandler, AgentListener, Duration)}, accepting an agent that proves any one
+     * of {@code tokens}: the core keeps a token per workspace for the servers it starts besides the shared one
+     * (ADR 0050). An agent sees no difference.
+     */
+    public static CoreServer start(int port, List<String> tokens, RequestHandler handler, AgentListener listener,
+                                   Duration handshakeTimeout) throws IOException {
+        if (tokens.isEmpty() || tokens.stream().anyMatch(t -> t == null || t.isEmpty())) {
             throw new IllegalArgumentException("the msc token is empty");
         }
         // Loopback only, whatever host MSC_CORE_ADDRESS names: agents on other machines are not supported (ADR 0043).
         ServerSocket socket = new ServerSocket(port, 50, InetAddress.getLoopbackAddress());
-        CoreServer server = new CoreServer(socket, token, handler, listener, handshakeTimeout);
+        CoreServer server = new CoreServer(socket, List.copyOf(tokens), handler, listener, handshakeTimeout);
         server.acceptor = Thread.ofVirtual().name("msc-core-accept").start(server::acceptLoop);
         return server;
     }
@@ -155,8 +168,8 @@ public final class CoreServer implements AutoCloseable {
             String coreNonce = HandshakeProof.nonce();
             connection.send(new Challenge(coreNonce));
             Message answer = MessageCodec.decode(connection.readHandshakeFrame());
-            if (!(answer instanceof Proof proof)
-                    || !HandshakeProof.matches(HandshakeProof.agent(token, hello.nonce(), coreNonce), proof.proof())) {
+            String token = answer instanceof Proof proof ? proved(proof, hello.nonce(), coreNonce) : null;
+            if (token == null) {
                 reject(connection, ErrorCodes.UNAUTHORIZED, "bad token");
                 return;
             }
@@ -184,6 +197,17 @@ public final class CoreServer implements AutoCloseable {
             listener.rejected(e.toString());
             closeQuietly(socket);
         }
+    }
+
+    /** The token {@code proof} proves, or null. Every token is checked, so the time says nothing about which. */
+    private String proved(Proof proof, String agentNonce, String coreNonce) {
+        String proved = null;
+        for (String token : tokens) {
+            if (HandshakeProof.matches(HandshakeProof.agent(token, agentNonce, coreNonce), proof.proof())) {
+                proved = token;
+            }
+        }
+        return proved;
     }
 
     /** A request line such as {@code GET / HTTP/1.1}. */

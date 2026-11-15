@@ -259,7 +259,14 @@ class WorkspaceAndPackTest {
         }
         h.close();
         h = new CoreHarness(first, c -> c.withServerCommand(java(FakeServerMain.class)));
-        h.ok("server_start", "timeoutSeconds", 30);
+        // #728: the start stops the leftover first, and on a proxy says nothing about a world it does not have.
+        String took = h.ok("server_start", "timeoutSeconds", 30).lines().findFirst().orElseThrow();
+        assertThat(took).startsWith("stopped a server left running by an earlier session (pid ");
+        if (platform.proxy()) {
+            assertThat(took).doesNotContain("orld").doesNotContain("save").endsWith(")");
+        } else {
+            assertThat(took).containsAnyOf("saved over RCON)", "killed: world changes since its last autosave");
+        }
         if (!reads) {
             assertThat(props).hasContent(before);
         }

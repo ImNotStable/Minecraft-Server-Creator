@@ -325,7 +325,8 @@ public final class ServerManager implements AutoCloseable {
         long mark;
         // Read from the hub before taking this monitor: the hub's lock holder may be waiting for it (running()).
         String address = hub.address();
-        String token = hub.token();
+        // The workspace's own token: a server it starts attaches to no other workspace (ADR 0050).
+        String token = hub.serverToken();
         long readyBefore = hub.readyCount();
         Process started;
         LogPump startedPump;
@@ -390,7 +391,7 @@ public final class ServerManager implements AutoCloseable {
         ProcessHandle left = leftovers.find().apply(pidFile()).orElse(null);
         if (left != null) {
             throw new ToolException(LeftoverServer.stillRunning(left.pid(), PidFile.resisting(pidFile())
-                    ? LeftoverServer.RESISTED : LeftoverServer.NOT_STOPPED));
+                    ? LeftoverServer.RESISTED : LeftoverServer.NOT_STOPPED, platform().proxy()));
         }
         Files.createDirectories(config.serverDir());
         // MSC reads the output and writes commands as UTF-8; so must the server's Java (#466, #478).
@@ -563,6 +564,7 @@ public final class ServerManager implements AutoCloseable {
         long pid = h.pid();
         boolean saved = false;
         String tried;
+        boolean proxy = platform().proxy();
         if (PidFile.resisting(pidFile()) && !whole) {
             // It already survived every way below: kill it once more, briefly, rather than wait it all out again.
             l.kill().accept(h);
@@ -592,10 +594,11 @@ public final class ServerManager implements AutoCloseable {
             }
         });
         if (alive) {
-            throw new ToolException(LeftoverServer.stillRunning(pid, tried));
+            throw new ToolException(LeftoverServer.stillRunning(pid, tried, proxy));
         }
-        return "stopped a server left running by an earlier session (pid " + pid + ", "
-                + (saved ? "saved over RCON)" : "killed: world changes since its last autosave may be lost)")
+        return "stopped a server left running by an earlier session (pid " + pid + ", " + (proxy
+                ? (saved ? "stopped over RCON)" : "killed)") // a proxy has no world to save or lose (#728)
+                : saved ? "saved over RCON)" : "killed: world changes since its last autosave may be lost)")
                 + (recorded ? "" : "; its record in " + pidFile() + " was not cleared, as another session held "
                 + "the file's lock: the next start replaces it");
     }

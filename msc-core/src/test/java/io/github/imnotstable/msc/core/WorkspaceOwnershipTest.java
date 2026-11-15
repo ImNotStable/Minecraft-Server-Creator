@@ -25,6 +25,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
@@ -460,6 +461,47 @@ class WorkspaceOwnershipTest {
             agentConnects();
         }
 
+        /**
+         * #726: the agent of a server detached in one workspace reconnects to the same fixed address once a switch
+         * closed that workspace, with the token its server was started with. The next workspace refuses it: its world
+         * tools must never reach another workspace's server (ADR 0050).
+         */
+        @Test
+        void aServerDetachedInOneWorkspaceDoesNotAttachToTheNext() throws Exception {
+            Files.createDirectories(workspace.resolve("run"));
+            Files.writeString(workspace.resolve("run/reconnect.flag"), "");
+            h.ok("server_start", "timeoutSeconds", 30);
+            ProcessHandle left = ProcessHandle.of(Long.parseLong(
+                    Files.readString(workspace.resolve(".msc/server.pid")).split(" ")[0])).orElseThrow();
+            try {
+                h.ok("server_detach");
+                Path other = Files.createDirectories(workspace.resolve("other"));
+                h.ok("msc_workspace", "path", other.toString());
+                AgentHub hub = h.core.hub();
+                long end = System.nanoTime() + Duration.ofSeconds(20).toNanos();
+                while (hub.refusedAgents() == 0 && System.nanoTime() < end) {
+                    Thread.sleep(50);
+                }
+                assertThat(hub.refusedAgents()).isEqualTo(1);
+                assertThat(hub.current()).isNull();
+                assertThat(left.isAlive()).isTrue();
+                assertThat(h.ok("msc_status")).contains("\nserver: not set up (")
+                        .contains("\nagent: not connected; refused 1 agent without this workspace's token "
+                                + "(another workspace's server)\n");
+                // A fixed address waits for an agent that may attach (ADR 0005); the refused one never does.
+                hub.connectWait(Duration.ofMillis(300));
+                assertThat(h.error("world_summary", "region", "world 0 -64 0 15 0 15"))
+                        .contains("no server agent connected");
+                // The workspace's own server still attaches, on the same port.
+                assertThat(h.ok("server_start", "timeoutSeconds", 30)).contains("agent connected");
+                assertThat(h.ok("msc_status")).contains("\nagent: paper fake, minecraft 26.3, ")
+                        .doesNotContain("started outside this session");
+                h.ok("server_stop");
+            } finally {
+                left.destroyForcibly();
+            }
+        }
+
         @Test
         void aFailedSwitchSaysWhatItsCloseStoppedAndKeepsThePort() {
             h.ok("server_start", "timeoutSeconds", 30);
@@ -477,14 +519,27 @@ class WorkspaceOwnershipTest {
         }
 
         @Test
-        void aSwitchThatCannotReopenTheOldFolderLeavesOneTheNextSwitchOpens() {
+        void aSwitchThatCannotReopenTheOldFolderLeavesOneTheNextSwitchOpens() throws Exception {
+            List<Path> opens = new CopyOnWriteArrayList<>();
             h.core.openCheck((config, hub) -> {
+                opens.add(config.workspace());
                 throw new IOException("refused by the test");
             });
             assertThat(h.error("msc_workspace", "path", "other", "create", true))
                     .contains(", nor reopen " + workspace + " (refused by the test), so no workspace is open")
                     .endsWith("\nmsc_workspace path=" + workspace + " opens it again");
             assertThat(h.error("server_start")).startsWith(CLOSED);
+            // #727: every status says no workspace is open, and how to open it again.
+            String closed = "none open (" + workspace + " was closed; msc_workspace path=" + workspace
+                    + " opens it again)";
+            assertThat(h.ok("msc_workspace")).isEqualTo("workspace: " + closed);
+            assertThat(h.ok("msc_status")).contains("\nworkspace: " + closed + "\n");
+            // Following the hint while the folder still cannot open tries it once and names it once.
+            opens.clear();
+            assertThat(h.error("msc_workspace", "path", workspace.toString())).isEqualTo("error: could not open "
+                    + workspace + " (refused by the test), so no workspace is open\nmsc_workspace path=" + workspace
+                    + " opens it again");
+            assertThat(opens).containsExactly(workspace);
             h.core.openCheck((config, hub) -> {
             });
             assertThat(h.ok("msc_workspace", "path", workspace.toString())).startsWith("workspace: ");
