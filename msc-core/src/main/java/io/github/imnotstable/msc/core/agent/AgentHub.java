@@ -5,6 +5,7 @@ import io.github.imnotstable.msc.protocol.Limits;
 import io.github.imnotstable.msc.protocol.message.Event;
 import io.github.imnotstable.msc.protocol.op.Events;
 import io.github.imnotstable.msc.protocol.op.OpSpec;
+import io.github.imnotstable.msc.protocol.transport.ConnectionClosedException;
 import io.github.imnotstable.msc.protocol.transport.CoreServer;
 import io.github.imnotstable.msc.protocol.transport.OpException;
 import io.github.imnotstable.msc.protocol.transport.RequestHandler;
@@ -260,6 +261,11 @@ public final class AgentHub implements AutoCloseable {
             }
             if (e.getCause() instanceof TimeoutException) {
                 throw timedOut(op.name());
+            }
+            if (e.getCause() instanceof ConnectionClosedException) {
+                // A transport class name is no answer: the server went away (#708).
+                throw new ToolException("the server's agent connection closed during " + op.name()
+                        + ": the server stopped or restarted");
             }
             throw new ToolException("agent call " + op.name() + " failed: " + e.getCause());
         } catch (TimeoutException e) {

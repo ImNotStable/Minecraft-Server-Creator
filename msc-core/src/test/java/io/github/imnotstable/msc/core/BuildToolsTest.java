@@ -4,11 +4,13 @@ import org.junit.jupiter.api.Timeout;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.imnotstable.msc.protocol.op.Ops;
+import io.github.imnotstable.msc.protocol.world.BlockPos;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
@@ -236,42 +238,65 @@ class BuildToolsTest {
         assertThat(h.agent.blocks.values()).allMatch("minecraft:air"::equals);
     }
 
-    /**
-     * #701, #702: a build cut off by a server restart undoes nothing on the new server, which never had its parts (and
-     * numbers its own edits from the start again), and names no id, which would be gone by the next call: it says
-     * what stays placed and how to roll it back.
-     */
-    @Test
-    void aBuildCutOffByARestartSaysWhatStaysAndSendsTheNewServerNothing() throws Exception {
-        List<Object> undos = new java.util.concurrent.CopyOnWriteArrayList<>();
-        String err = stoppedDuring(2, undos, () -> h.error("build_batch", "steps",
-                "set 0,64,0 stone\nset 200,90,200 andesite"));
-        assertThat(err).startsWith("error: agent call world.write failed: ").endsWith("; the server stopped before the "
-                + "build was undone, so 1 blocks it changed stay in world 0,64,0 200,90,200: build_undo backup= rolls "
-                + "the world back, or the same build_batch completes it");
-        assertThat(undos).isEmpty();
-        assertThat(h.agent.get(0, 64, 0)).isEqualTo("minecraft:stone");
-        assertThat(h.error("build_undo")).contains("nothing to undo");
+    /** The one answer of a build (or the undo of e1) over world 0,64,0 200,90,200 cut off by its server stopping. */
+    private static String cutOff(String what) {
+        return "error: " + what + " was cut off by the server stopping: world 0,64,0 200,90,200 may be partly changed, "
+                + "by an amount that depends on what the server saved. world_summary there shows what stayed; then "
+                + "build_undo backup= rolls the world back if a backup exists, or a build_batch over it sets the "
+                + "blocks you want";
     }
 
-    /** #701: an undo cut off by a server restart does not offer the same id again: it is gone by the next call. */
+    private static final String TWO_PARTS = "set 0,64,0 stone\nset 200,90,200 andesite";
+
+    /**
+     * #701, #702, #708: a build cut off by a server restart undoes nothing on the new server, which never had its parts
+     * (and numbers its own edits from the start again), and names no id, which would be gone by the next call. The
+     * part in flight may be half written, and what stays is what the server saved, so wherever it stops (in the first
+     * part, between parts, in the last part) the answer is the same: the box may be partly changed, by an unknown
+     * amount, and the way to look and back. Never a count, and never the transport's exception.
+     */
     @Test
-    void anUndoCutOffByARestartPointsToABackupNotItsId() throws Exception {
-        h.ok("build_batch", "steps", "set 0,64,0 stone\nset 200,90,200 andesite");
-        String err = stoppedDuring(2, new ArrayList<>(), () -> h.error("build_undo", "edit", "e1"));
-        assertThat(err).startsWith("error: undo of e1 stopped after 1 blocks restored: agent call world.undo failed: ")
-                .endsWith("; the server that made e1 has stopped, so the rest stay placed: build_undo backup= rolls "
-                        + "the world back");
+    void aBuildCutOffAnywhereGivesOneAnswerAndSendsTheNewServerNothing() throws Exception {
+        List<Object> undos = new java.util.concurrent.CopyOnWriteArrayList<>();
+        Runnable drop = () -> {
+            throw new IllegalStateException("the server stopped before this part");
+        };
+        Runnable half = () -> {
+            synchronized (h.agent) {
+                h.agent.blocks.put(new BlockPos(200, 90, 200), "minecraft:dirt");
+            }
+            throw new IllegalStateException("the server stopped in this part");
+        };
+        // Before any part, in the first part (applied, never answered), between the parts, half-way through the last.
+        for (var stop : List.of(Map.entry(1, drop), Map.entry(1, (Runnable) () -> { }), Map.entry(2, drop),
+                Map.entry(2, half))) {
+            String err = stoppedDuring(stop.getKey(), undos, stop.getValue(), () -> h.error("build_batch", "steps",
+                    TWO_PARTS));
+            assertThat(err).as("cut off at change %d", stop.getKey()).isEqualTo(cutOff("the build"));
+            assertThat(h.error("build_undo")).contains("nothing to undo");
+        }
+        assertThat(undos).isEmpty();
         assertThat(h.agent.get(0, 64, 0)).isEqualTo("minecraft:stone");
-        assertThat(h.agent.get(200, 90, 200)).isEqualTo("minecraft:air");
-        assertThat(h.error("build_undo", "edit", "e1")).contains("unknown edit e1");
+        assertThat(h.agent.get(200, 90, 200)).isEqualTo("minecraft:dirt");
+    }
+
+    /** #701, #708: an undo cut off by a server restart gives the same answer, not its id: it is gone by the next call. */
+    @Test
+    void anUndoCutOffAnywhereGivesTheSameAnswerNotItsId() throws Exception {
+        for (int nth = 1; nth <= 2; nth++) {
+            String id = h.ok("build_batch", "steps", TWO_PARTS).substring(5, 7);
+            String err = stoppedDuring(nth, new ArrayList<>(), () -> { }, () -> h.error("build_undo", "edit", id));
+            assertThat(err).isEqualTo(cutOff("the undo of " + id));
+            assertThat(h.error("build_undo", "edit", id)).contains("unknown edit " + id);
+        }
     }
 
     /**
      * Send {@code call}, hold it at the agent at its {@code nth} write that places blocks or undo, restart the server
-     * while it is held, then let it go: the call's answer. {@code undos} gets every undo the agent is sent.
+     * while it is held, then let it go, running {@code atStop} first where the agent would apply it (throw to apply
+     * nothing): the call's answer. {@code undos} gets every undo the agent is sent.
      */
-    private String stoppedDuring(int nth, List<Object> undos, Callable<String> call) throws Exception {
+    private String stoppedDuring(int nth, List<Object> undos, Runnable atStop, Callable<String> call) throws Exception {
         CountDownLatch reached = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
         AtomicInteger changes = new AtomicInteger();
@@ -288,6 +313,7 @@ class BuildToolsTest {
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                 }
+                atStop.run();
             }
         };
         try (var calls = Executors.newVirtualThreadPerTaskExecutor()) {
