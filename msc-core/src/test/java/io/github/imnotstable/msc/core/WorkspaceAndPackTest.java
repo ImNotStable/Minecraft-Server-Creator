@@ -247,6 +247,16 @@ class WorkspaceAndPackTest {
                     + " does not read the pack from server.properties, so a restart outside MSC does not offer it.");
             assertThat(props).hasContent(before);
         }
+        // #722: world tools always refuse on a proxy, and it has no world to save.
+        String last = detached.lines().toList().getLast();
+        if (platform.proxy()) {
+            assertThat(last).startsWith("server_command works until this session ends;").doesNotContain("orld");
+            assertThat(h.error("world_summary", "region", "world 0 -64 0 15 0 15"))
+                    .contains("is a proxy with no world");
+        } else {
+            assertThat(last).startsWith("World tools and server_command work until this session ends;")
+                    .contains("stops the server (world saved) and the pack host.");
+        }
         h.close();
         h = new CoreHarness(first, c -> c.withServerCommand(java(FakeServerMain.class)));
         h.ok("server_start", "timeoutSeconds", 30);
