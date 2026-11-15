@@ -122,6 +122,18 @@ public final class FakeServerMain {
                 break;
             }
             System.out.println("[12:00:05 INFO]: console: " + line);
+            // The agent says the server is stopping, and the server runs on (#729): "announce" keeps the agent
+            // connected, "unload" closes it (a plugin manager, Minestom's MscAgent.stop()), "load" connects a new
+            // one, as the second half of Paper's /reload does.
+            if (session != null && (line.equals("announce") || line.equals("unload"))) {
+                session.connection().sendEvent(Events.SERVER_STOPPING, new JsonObject());
+                if (line.equals("unload")) {
+                    session.connection().close();
+                    session = null;
+                }
+            } else if (session == null && line.equals("load")) {
+                session = connect(new AgentInfo("paper", "fake", "26.3", router.operations()), router);
+            }
             // "spam": ten more lines of 1,000 characters, more than a command's output holds (#611).
             if (line.equals("spam")) {
                 for (int i = 0; i < 10; i++) {

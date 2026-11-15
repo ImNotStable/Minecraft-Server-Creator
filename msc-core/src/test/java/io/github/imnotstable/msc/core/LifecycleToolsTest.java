@@ -1570,9 +1570,17 @@ class LifecycleToolsTest {
                 assertThat(h.core.server().running()).as(way + ": the process lingers").isTrue();
                 assertThat(h.core.hub().current() != null).as(way + ": its agent is still connected").isEqualTo(ours);
                 java.util.Map<String, String> answers = new java.util.LinkedHashMap<>();
-                table.forEach((tool, args) -> answers.put(tool, h.error(tool, args)));
+                table.forEach((tool, args) -> {
+                    if (ours || !tool.equals("server_command")) {
+                        answers.put(tool, h.error(tool, args));
+                    }
+                });
                 assertThat(answers).as(way).allSatisfy((tool, answer) -> assertThat(answer).as(way + ": " + tool)
                         .isEqualTo(stopping));
+                if (!ours) {
+                    // #729: an announced stop is a hint, as the server may run on; its open console takes commands.
+                    assertThat(h.ok("server_command", "command", "list")).isEqualTo("sent (no output within 0.7s)");
+                }
                 assertThat(h.ok("msc_status")).as(way).contains("\nserver: stopping (");
                 assertThat(h.error("server_start")).as(way).isEqualTo("error: the server is still stopping: "
                         + "server_stop waits until it has exited, then server_start starts it again.");
@@ -1584,11 +1592,49 @@ class LifecycleToolsTest {
             if (ours) {
                 assertThat(stopped.get(60, java.util.concurrent.TimeUnit.SECONDS).text()).isEqualTo("server stopped");
             } else {
-                // A stop the server announced is waited for, not asked again into a console nothing reads.
+                // "stop" is typed (#729), into a console nothing reads any more: the server exits as it was going to.
                 assertThat(h.ok("server_stop")).isEqualTo("server stopped");
             }
             assertThat(h.error("server_detach")).as(way).isEqualTo("error: "
                     + io.github.imnotstable.msc.core.agent.AgentHub.NOT_RUNNING);
+        }
+    }
+
+    @Test
+    void anAgentThatAnnouncesAStopWhileItsServerRunsOnLeavesTheServerToAGracefulStop() throws Exception {
+        // #729: an agent says server.stopping also when only the agent stops (Paper's /reload, a plugin manager,
+        // Minestom's MscAgent.stop()). server_stop then skipped "stop", waited 30 s and killed the server unsaved, and
+        // server_command and server_start refused a live server until then.
+        for (String way : List.of("announce", "unload", "reload")) {
+            h.ok("server_start", "timeoutSeconds", 30);
+            h.core.server().console(way.equals("reload") ? "unload" : way);
+            until(way, () -> h.core.server().stopping() && (way.equals("announce") || h.core.hub().current() == null));
+            assertThat(h.ok("msc_status")).as(way).contains("\nserver: stopping (");
+            if (way.equals("reload")) {
+                assertThat(h.ok("server_command", "command", "load")).as(way).contains("console: load");
+                until(way, () -> h.core.hub().current() != null && !h.core.server().stopping());
+                assertThat(h.ok("msc_status")).as(way).contains("\nserver: running (");
+                assertThat(h.ok("world_summary", "region", "0,60,0 1,61,1")).as(way).contains("blocks: stone 8");
+            } else {
+                assertThat(h.ok("server_command", "command", "say still here")).as(way)
+                        .contains("console: say still here");
+            }
+            long mark = h.core.server().log().mark();
+            long begin = System.nanoTime();
+            assertThat(h.ok("server_stop")).as(way).isEqualTo("server stopped");
+            assertThat(java.time.Duration.ofNanos(System.nanoTime() - begin)).as(way + ": not waited out")
+                    .isLessThan(java.time.Duration.ofSeconds(20));
+            assertThat(h.core.server().log().since(mark)).as(way + ": stopped by its own stop, so saved")
+                    .anyMatch(l -> l.contains("Stopping server"));
+            assertThat(h.core.server().running()).as(way).isFalse();
+        }
+    }
+
+    private static void until(String what, java.util.function.BooleanSupplier done) throws InterruptedException {
+        long deadline = System.nanoTime() + java.time.Duration.ofSeconds(20).toNanos();
+        while (!done.getAsBoolean()) {
+            assertThat(System.nanoTime()).as(what).isLessThan(deadline);
+            Thread.sleep(10);
         }
     }
 
