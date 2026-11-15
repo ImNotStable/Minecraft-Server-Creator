@@ -95,7 +95,7 @@ public final class ApiIndex {
      * the Minecraft server, Fabric API and loader for {@code fabric}, Minestom and Adventure for {@code minestom}, the
      * NeoForge or Forge API jars for {@code neoforge} and {@code forge}, Velocity API and Adventure for {@code velocity}.
      *
-     * @param gradleHome usually {@code ~/.gradle}
+     * @param gradleHome the Gradle user home ({@link io.github.imnotstable.msc.core.server.GradleUserHome})
      * @param platform   an agent family ({@link io.github.imnotstable.msc.core.server.Platform#agent()}): paper,
      *                   fabric, neoforge, forge, minestom or velocity
      */

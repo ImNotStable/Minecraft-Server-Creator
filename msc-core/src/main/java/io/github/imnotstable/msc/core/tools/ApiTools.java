@@ -19,7 +19,6 @@ import java.util.List;
  */
 public final class ApiTools {
     private final CoreConfig config;
-    private final Path gradleHome;
     private ApiIndex index;
     /** The jars and their modification times the index was built from. */
     private List<JarStamp> builtFrom;
@@ -28,21 +27,18 @@ public final class ApiTools {
     }
 
     public ApiTools(CoreConfig config) {
-        this(config, Path.of(System.getProperty("user.home"), ".gradle"));
-    }
-
-    ApiTools(CoreConfig config, Path gradleHome) {
         this.config = config;
-        this.gradleHome = gradleHome;
     }
 
     synchronized ApiIndex index() throws IOException {
         List<Path> jars = config.apiJars();
         if (jars.isEmpty()) {
             String platform = Platform.current(config).agent();
-            jars = ApiIndex.findJars(gradleHome, platform);
+            // The Gradle user home the core's builds use, also when GRADLE_USER_HOME moves it (#666).
+            jars = ApiIndex.findJars(config.gradleUserHome(), platform);
             if (jars.isEmpty()) {
-                throw new ToolException("no " + platform + " API jar found. Build the project once (dev_cycle) so "
+                throw new ToolException("no " + platform + " API jar found in the Gradle caches of "
+                        + config.gradleUserHome() + ". Build the project once (dev_cycle) so "
                         + "Gradle downloads it, or set MSC_API_JARS.");
             }
         }

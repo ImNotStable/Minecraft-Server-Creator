@@ -73,7 +73,10 @@ public final class FakeServerMain {
             System.out.println("[12:00:02 INFO]: Done (0.1s)! For help, type \"help\"");
             Thread.sleep(800);
         }
-        OpRouter router = new FakeAgent().router();
+        FakeAgent agent = new FakeAgent();
+        // Each pack sent, as a line a test counts (#667).
+        agent.onPack = p -> System.out.println("[12:00:05 INFO]: [fake] pack sent " + p.sha1());
+        OpRouter router = agent.router();
         // no-agent.flag: the agent never connects, as when it failed to load.
         AgentClient.Session session = Files.exists(Path.of("no-agent.flag")) ? null
                 : connect(new AgentInfo("paper", "fake", "26.3", router.operations()), router);
