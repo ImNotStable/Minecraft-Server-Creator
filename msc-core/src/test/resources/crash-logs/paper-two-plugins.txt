@@ -1,0 +1,8 @@
+[12:00:02] [Server thread/ERROR]: Error occurred while enabling Shops v1.0 (Is it up to date?)
+java.lang.NoClassDefFoundError: net/milkbowl/vault/economy/Economy
+	at com.example.shops.Shops.onEnable(Shops.java:20) ~[shops.jar:?]
+	at org.bukkit.plugin.java.JavaPlugin.setEnabled(JavaPlugin.java:288) ~[paper.jar:?]
+[12:00:03] [Server thread/ERROR]: Error occurred while enabling Jobs v2.0 (Is it up to date?)
+java.lang.NoClassDefFoundError: net/milkbowl/vault/economy/Economy
+	at com.example.jobs.Jobs.onEnable(Jobs.java:31) ~[jobs.jar:?]
+	at org.bukkit.plugin.java.JavaPlugin.setEnabled(JavaPlugin.java:288) ~[paper.jar:?]
