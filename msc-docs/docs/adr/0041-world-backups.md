@@ -20,15 +20,16 @@ Where each platform keeps its world, all directly in the server folder (`run/`):
 | --- | --- |
 | Paper, Purpur | `world`, `world_nether`, `world_the_end`, each with `level.dat` |
 | Fabric, Quilt, NeoForge, Forge | one `world` with `level.dat`, the other dimensions inside it |
-| Minestom | what the project's code saves. The `minestom-*` templates use `AnvilLoader` on `run/world` (region files, no `level.dat`) and save **only on stop**; a project that sets no chunk loader persists nothing |
+| Minestom | what the project's code saves. The `minestom-*` templates use `AnvilLoader` on `run/world` with the key `minecraft:overworld`, which writes `run/world/dimensions/minecraft/overworld/region/` and no `level.dat`, and save **only on stop**; a project that sets no chunk loader persists nothing |
 
 The tool list is at its guard (30 tools, under 16,000 characters), so no new tool.
 
 ## Decision
 
 1. **Backups are plain folder copies** in `<workspace>/.msc/backups/<yyyyMMdd-HHmmss>-<label>/`, one sub-folder per
-   world folder. A world folder is any folder directly in the server folder holding a `level.dat` or a `region/`
-   folder, which covers every layout above without a per-platform list. Copied to `<name>.part` and renamed when
+   world folder. A world folder is any folder directly in the server folder holding a `level.dat`, a `region/`
+   folder, a `DIM-1/region/` or `DIM1/region/`, or a `dimensions/<namespace>/<name>/region/` (#654), which covers
+   every layout above without a per-platform list. Copied to `<name>.part` and renamed when
    complete, so a crash never leaves a backup that looks whole. No zip: copying is fastest, and restoring is a rename.
 2. **Kept: the newest 5, and fewer once they pass 2 GiB together**; the newest, and the one a rollback restores, always
    stay.

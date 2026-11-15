@@ -11,8 +11,11 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
 class BackupsTest {
     @TempDir
@@ -31,20 +34,89 @@ class BackupsTest {
         Files.writeString(p, text);
     }
 
-    @Test
-    void findsEveryPlatformsWorldFoldersAndNothingElse() throws IOException {
+    /** A server folder as a platform leaves it: each world folder's files, and the world folders among them. */
+    private record Layout(String name, List<String> files, List<String> worlds) {
+        @Override
+        public String toString() {
+            return name;
+        }
+    }
+
+    /** The region files each platform writes, under the folder names MSC's server_setup and templates give. */
+    static Stream<Layout> layouts() {
+        return Stream.of(
+                // Paper, Purpur and Folia: a world folder per dimension, each with level.dat.
+                new Layout("paper", List.of("world/level.dat", "world/region/r.0.0.mca", "world/entities/r.0.0.mca",
+                        "world_nether/level.dat", "world_nether/DIM-1/region/r.0.0.mca",
+                        "world_the_end/level.dat", "world_the_end/DIM1/region/r.0.0.mca"),
+                        List.of("world", "world_nether", "world_the_end")),
+                // Vanilla 26.x, which Fabric, Quilt, NeoForge and Forge run: one world, its dimensions inside.
+                new Layout("fabric, quilt, neoforge, forge", List.of("world/level.dat", "world/players/data/p.dat",
+                        "world/dimensions/minecraft/overworld/region/r.0.0.mca",
+                        "world/dimensions/minecraft/the_nether/region/r.0.0.mca",
+                        "world/dimensions/minecraft/the_end/region/r.0.0.mca"), List.of("world")),
+                // Before 26.1: the nether and end as DIM folders inside the one world.
+                new Layout("fabric before 26.1", List.of("world/level.dat", "world/region/r.0.0.mca",
+                        "world/DIM-1/region/r.0.0.mca", "world/DIM1/region/r.0.0.mca"), List.of("world")),
+                // The templates' new AnvilLoader(Path.of("world"), Key.key("minecraft:overworld")): what Minestom
+                // 2026.10.07-26.2 wrote in #654's reproduction, with no level.dat.
+                new Layout("minestom templates", List.of("world/dimensions/minecraft/overworld/region/r.0.0.mca",
+                        "world/dimensions/minecraft/overworld/region/r.-1.0.mca",
+                        "world/dimensions/minecraft/overworld/region/r.0.-1.mca",
+                        "world/dimensions/minecraft/overworld/region/r.-1.-1.mca"), List.of("world")),
+                // new AnvilLoader("arena"), and a loader for a key with a path, msc:games/duel.
+                new Layout("minestom other loaders", List.of("arena/region/r.0.0.mca",
+                        "duel/dimensions/msc/games/duel/region/r.0.0.mca"), List.of("arena", "duel")));
+    }
+
+    /**
+     * Files no layout counts as a world: plugin data, configs, logs, MSC's own staging, and a Minestom world folder
+     * before its first save.
+     */
+    private static final List<String> NOT_WORLDS = List.of("plugins/Demo/region/r.0.0.mca", "logs/latest.log",
+            "config/dimensions/region/x.toml", "mods/dimensions/minecraft/region.jar", ".msc-restore/new/world/level.dat",
+            "libraries/dimensions/a/b/c/notes.txt", "lobby/dimensions/minecraft/overworld/notes.txt");
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("layouts")
+    void findsEachPlatformsWorldFoldersAndNothingElse(Layout layout) throws IOException {
         Path run = server();
-        // Paper: one folder per dimension, each with level.dat.
-        file(run.resolve("world/level.dat"), "a");
-        file(run.resolve("world_nether/DIM-1/region/r.0.0.mca"), "n");
-        file(run.resolve("world_nether/level.dat"), "b");
-        // Minestom's AnvilLoader: region files, no level.dat.
-        file(run.resolve("arena/region/r.0.0.mca"), "m");
-        file(run.resolve("plugins/Demo/region/x"), "not a world");
-        file(run.resolve("logs/latest.log"), "log");
-        file(run.resolve(".msc-restore/new/world/level.dat"), "stage");
-        assertThat(WorldFolders.in(run)).containsExactly("arena", "world", "world_nether");
+        for (String f : layout.files()) {
+            file(run.resolve(f), f);
+        }
+        for (String f : NOT_WORLDS) {
+            file(run.resolve(f), "not a world");
+        }
+        assertThat(WorldFolders.in(run)).containsExactlyElementsOf(layout.worlds());
         assertThat(WorldFolders.in(root.resolve("missing"))).isEmpty();
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("layouts")
+    void eachLayoutSurvivesASaveAndARestore(Layout layout) throws Exception {
+        Path run = server();
+        for (String f : layout.files()) {
+            file(run.resolve(f), "v1 " + f);
+        }
+        Backups b = backups("2026-11-14T10:00:00Z");
+        Backups.Backup saved = b.save(run, "before", null);
+        assertThat(saved.worlds()).containsExactlyElementsOf(layout.worlds());
+        assertThat(b.list()).singleElement().extracting(Backups.Backup::worlds).isEqualTo(layout.worlds());
+
+        // Every file changes, and a world folder and a dimension appear after the backup.
+        for (String f : layout.files()) {
+            file(run.resolve(f), "v2 " + f);
+        }
+        String first = layout.worlds().getFirst();
+        file(run.resolve(first + "/dimensions/minecraft/the_end/region/r.9.9.mca"), "new dimension");
+        file(run.resolve("world_new/dimensions/minecraft/overworld/region/r.0.0.mca"), "new world");
+        b.restore(b.find("before"), run);
+        for (String f : layout.files()) {
+            assertThat(run.resolve(f)).hasContent("v1 " + f);
+        }
+        assertThat(run.resolve(first + "/dimensions/minecraft/the_end/region/r.9.9.mca")).doesNotExist();
+        assertThat(run.resolve("world_new")).doesNotExist();
+        assertThat(run.resolve(Backups.STAGE)).doesNotExist();
     }
 
     @Test
@@ -78,7 +150,8 @@ class BackupsTest {
     void refusesWithoutWorldsAndNamesKeptBackupsWhenNoneMatches() throws Exception {
         Path run = server();
         Backups b = backups("2026-11-14T10:00:00Z");
-        assertThatThrownBy(() -> b.save(run, "x", null)).isInstanceOf(ToolException.class).hasMessageContaining("no world folder");
+        assertThatThrownBy(() -> b.save(run, "x", null)).isInstanceOf(ToolException.class)
+                .hasMessageContaining("no world folder").hasMessageEndingWith("a server writes its world when it saves or stops");
         assertThatThrownBy(() -> b.find("x")).hasMessage("no backup x; none taken yet");
         file(run.resolve("world/level.dat"), "v1");
         b.save(run, "one", null);
