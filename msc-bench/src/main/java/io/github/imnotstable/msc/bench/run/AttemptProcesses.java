@@ -2,47 +2,108 @@ package io.github.imnotstable.msc.bench.run;
 
 import io.github.imnotstable.msc.process.ProcessTree;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-import java.util.regex.Pattern;
 
 /**
- * The processes an attempt left running after its agent exited (#577). An agent can leave a server behind outside its
- * own process tree: started with {@code nohup}, {@code setsid} or {@code &} from a shell that then exited, or through
- * msc-core's {@code server_detach}. Such a process is no descendant of anything the bench started any more, so no tree
- * kill reaches it, and on the bench's game port it fails every later attempt that needs that port.
+ * The processes one bench run started for its attempts, and the only ones it ever kills (#577, #587; ADR 0044).
  *
- * <p>A process is proven to belong to an attempt folder when it runs inside it (its working folder, where the system
- * shows it: Linux) or names it on its command line (a jar or classpath in the workspace, msc-core's
- * {@code -Dmsc.bench.attempt=} marker). A Gradle daemon the attempt used runs in Gradle's own folder and stays.
+ * <p>An agent can leave a server behind outside its own process tree: started with {@code nohup}, {@code setsid} or
+ * {@code &} from a shell that then exited, through a Gradle daemon, or by msc-core's {@code server_detach}. No tree
+ * kill reaches it, and on the bench's ports it fails every later attempt. To find such processes without touching
+ * anyone else's, the run puts two variables into the environment of every process it starts for an attempt (the
+ * agent, msc-core through the MCP config, the server, a check's process): {@link #RUN}, an id only this run knows,
+ * and {@link #ATTEMPT}, the attempt folder. Every process those start inherits them. A process belongs to an attempt
+ * folder when its environment, as the system shows it in {@code /proc/<pid>/environ} (Linux), holds this run's id
+ * and an attempt inside that folder. A shell or {@code tail -f} the user started in or on an attempt folder, another
+ * run's processes and everything the system shows no environment of (other systems, another user's processes) are
+ * never killed: a port such a process holds is refused, naming it.
+ *
+ * <p>A Gradle daemon an attempt started is left running, as its next build may reuse it; the server it forks gets the
+ * attempt's environment of the build that forked it, and is killed.
  */
 public final class AttemptProcesses {
 
-    private AttemptProcesses() {
+    /** The variable that holds the run's id. */
+    public static final String RUN = "MSC_BENCH_RUN";
+    /** The variable that holds the attempt folder. */
+    public static final String ATTEMPT = "MSC_BENCH_ATTEMPT";
+
+    /** The main class of a Gradle daemon, which outlives the build that started it by design. */
+    static final String GRADLE_DAEMON = "org.gradle.launcher.daemon.bootstrap.GradleDaemon";
+
+    private final String run;
+
+    AttemptProcesses(String run) {
+        this.run = run;
     }
 
-    /** Processes still running that belong to {@code folder}, never this bench or a process above it. */
-    static List<ProcessHandle> in(Path folder) {
+    /** The processes of a new run, with an id of its own. */
+    public static AttemptProcesses newRun() {
+        return new AttemptProcesses(UUID.randomUUID().toString());
+    }
+
+    /** The run's id, the value of {@link #RUN}. */
+    public String run() {
+        return run;
+    }
+
+    /** The variables that mark a process as started by this run for the attempt in {@code attempt}. */
+    public Map<String, String> marks(Path attempt) {
+        return Map.of(RUN, run, ATTEMPT, attempt.toAbsolutePath().normalize().toString());
+    }
+
+    /** Puts {@link #marks} into {@code environment}, over any value it had. */
+    public void mark(Map<String, String> environment, Path attempt) {
+        environment.putAll(marks(attempt));
+    }
+
+    /** True when this system shows a process's environment, so ownership can be proven at all. */
+    public static boolean canProve() {
+        return environment(ProcessHandle.current().pid()).isPresent();
+    }
+
+    /** Processes still running that this run started for an attempt in {@code folder}, never this bench or above it. */
+    List<ProcessHandle> in(Path folder) {
         Path absolute = folder.toAbsolutePath().normalize();
-        Path real = realPath(absolute);
-        Pattern named = named(absolute);
         ProcessHandle self = ProcessHandle.current();
         return ProcessHandle.allProcesses()
                 .filter(p -> p.pid() != self.pid() && !isAncestor(p, self))
-                .filter(p -> runsIn(p, absolute, real) || namedOnCommandLine(p, named))
+                .filter(p -> owns(p, absolute))
+                .filter(p -> !runs(p, GRADLE_DAEMON))
                 .toList();
     }
 
+    /** True when {@code process} carries this run's marks for an attempt inside {@code folder}. */
+    boolean owns(ProcessHandle process, Path folder) {
+        Path inside = folder.toAbsolutePath().normalize();
+        Optional<Map<String, String>> environment = environment(process.pid());
+        if (environment.isEmpty() || !run.equals(environment.get().get(RUN))) {
+            return false;
+        }
+        String attempt = environment.get().get(ATTEMPT);
+        try {
+            return attempt != null && Path.of(attempt).toAbsolutePath().normalize().startsWith(inside);
+        } catch (InvalidPathException e) {
+            return false;
+        }
+    }
+
     /**
-     * Kills every process that belongs to {@code folder} with its descendants, waits briefly for each, and returns how
-     * many there were.
+     * Kills every process this run started for an attempt in {@code folder}, with its descendants, waits briefly for
+     * each, and returns how many there were.
      */
-    public static int kill(Path folder) {
+    public int kill(Path folder) {
         List<ProcessHandle> found = in(folder);
         for (ProcessHandle process : found) {
             ProcessTree.destroy(process);
@@ -61,39 +122,33 @@ public final class AttemptProcesses {
     }
 
     /**
-     * The folder written on a command line, followed by its end, a path separator or a character that ends an
-     * argument, so {@code toolset-1} does not match {@code toolset-1-try2}. Either slash, as the runner writes paths
-     * with {@code /} on every system.
+     * The environment {@code pid} started with, empty when the system does not show it: not Linux, the process is
+     * gone, or it is another user's.
      */
-    private static Pattern named(Path folder) {
-        String native_ = folder.toString();
-        String slashes = native_.replace('\\', '/');
-        return Pattern.compile("(?:" + Pattern.quote(native_) + "|" + Pattern.quote(slashes) + ")(?=$|[/\\\\\\s\"';:,*])");
-    }
-
-    private static boolean namedOnCommandLine(ProcessHandle process, Pattern named) {
-        ProcessHandle.Info info = process.info();
-        Optional<String[]> arguments = info.arguments();
-        if (arguments.isPresent()) {
-            for (String argument : arguments.get()) {
-                if (named.matcher(argument).find()) {
-                    return true;
-                }
-            }
-            return info.command().map(c -> named.matcher(c).find()).orElse(false);
-        }
-        return info.commandLine().map(c -> named.matcher(c).find()).orElse(false);
-    }
-
-    /** True when the system shows {@code process}'s working folder (Linux) and it is inside {@code folder}. */
-    private static boolean runsIn(ProcessHandle process, Path folder, Path real) {
-        Path link = Path.of("/proc", Long.toString(process.pid()), "cwd");
+    static Optional<Map<String, String>> environment(long pid) {
+        byte[] bytes;
         try {
-            Path cwd = Files.readSymbolicLink(link);
-            return cwd.startsWith(folder) || cwd.startsWith(real);
-        } catch (IOException | UnsupportedOperationException | SecurityException e) {
-            return false; // not Linux, gone, or another user's process
+            bytes = Files.readAllBytes(Path.of("/proc", Long.toString(pid), "environ"));
+        } catch (IOException | UnsupportedOperationException | SecurityException | InvalidPathException e) {
+            return Optional.empty();
         }
+        Map<String, String> environment = new HashMap<>();
+        for (String entry : new String(bytes, StandardCharsets.UTF_8).split("\0")) {
+            int equals = entry.indexOf('=');
+            if (equals > 0) {
+                environment.putIfAbsent(entry.substring(0, equals), entry.substring(equals + 1));
+            }
+        }
+        return Optional.of(environment);
+    }
+
+    /** True when {@code process} runs {@code mainClass}, as one of its arguments or on its command line. */
+    static boolean runs(ProcessHandle process, String mainClass) {
+        ProcessHandle.Info info = process.info();
+        if (info.arguments().isPresent()) {
+            return List.of(info.arguments().get()).contains(mainClass);
+        }
+        return info.commandLine().map(line -> line.contains(mainClass)).orElse(false);
     }
 
     private static boolean isAncestor(ProcessHandle candidate, ProcessHandle of) {
@@ -105,13 +160,5 @@ public final class AttemptProcesses {
             parent = parent.get().parent();
         }
         return false;
-    }
-
-    private static Path realPath(Path path) {
-        try {
-            return path.toRealPath();
-        } catch (IOException e) {
-            return path;
-        }
     }
 }

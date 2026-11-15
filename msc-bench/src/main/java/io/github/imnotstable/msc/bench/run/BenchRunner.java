@@ -2,6 +2,9 @@ package io.github.imnotstable.msc.bench.run;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import io.github.imnotstable.msc.bench.RunSelection;
 import io.github.imnotstable.msc.bench.Text;
 import io.github.imnotstable.msc.bench.check.Check;
@@ -44,6 +47,8 @@ public final class BenchRunner {
     private final Disk disk;
     /** The agent, servers and check processes of the attempt under way, killed if the run is cut short. */
     private final ChildProcesses children = new ChildProcesses();
+    /** The processes this run starts for its attempts, the only ones it kills besides its own children (#587). */
+    private final AttemptProcesses processes = AttemptProcesses.newRun();
     /** True while an attempt whose task uses the bench's ports is under way ({@link TaskDef#usesBenchPorts}). */
     private volatile boolean portsTask;
     private String stoppedBy;
@@ -124,16 +129,16 @@ public final class BenchRunner {
 
     /**
      * Stops the run for good: kills the agent, server and check processes under way with their descendants, sends
-     * {@code stop} to a server on the bench's RCON port, and kills what runs in the run's attempt folders (the agent
-     * may have started a server outside its own process tree, through a Gradle daemon or detached, #577). Runs from
-     * the shutdown hook; later attempts do not start.
+     * {@code stop} to a server on the bench's RCON port, and kills what this run started for its attempts and is still
+     * running (the agent may have started a server outside its own process tree, through a Gradle daemon or detached,
+     * #577; {@link AttemptProcesses}). Runs from the shutdown hook; later attempts do not start.
      */
     public void abort() {
         children.killAll();
         if (portsTask) {
             ServerManager.sendStop(config.server());
         }
-        AttemptProcesses.kill(attemptsDir());
+        processes.kill(attemptsDir());
     }
 
     /** The folder holding every attempt folder of this run. */
@@ -229,12 +234,14 @@ public final class BenchRunner {
         if (mcpTemplate != null) {
             Path mcpConfig = attemptDir.resolve("mcp.json");
             Files.createDirectories(attemptDir);
-            PrivateFile.write(mcpConfig, fillJson(Text.readOwn(mcpTemplate), values));
+            PrivateFile.write(mcpConfig, withMarks(fillJson(Text.readOwn(mcpTemplate), values),
+                    processes.marks(attemptDir)));
             values.put("mcpConfig", slashes(mcpConfig));
         }
 
         Map<String, String> serverEnv = new LinkedHashMap<>();
         mode.serverEnv().forEach((k, v) -> serverEnv.put(k, Placeholders.fill(v, values)));
+        processes.mark(serverEnv, attemptDir);
 
         long wallMs = 0;
         boolean timedOut = false;
@@ -251,12 +258,13 @@ public final class BenchRunner {
             if (task.usesBenchPorts()) {
                 // A server an earlier attempt of this run left there is killed; anything else is refused here, before
                 // the agent works for nothing.
-                ServerManager.clearPorts(config.server(), attemptsDir());
+                ServerManager.clearPorts(config.server(), processes, attemptsDir());
             }
             setupStep = "preparing the workspace";
             if (mcpTemplate != null) {
                 setupStep = "checking the core port";
-                CoreProcesses.requireFreePort(config.corePort());
+                CoreProcesses.requireFreePort(config.corePort(), () -> processes.kill(attemptsDir()),
+                        p -> processes.owns(p, attemptsDir()));
                 setupStep = "preparing the workspace";
             }
             Workspaces.prepare(task, workspace, config, mode, task.needsServer() ? paperJar() : null, values);
@@ -288,6 +296,7 @@ public final class BenchRunner {
                     .redirectError(attemptDir.resolve("agent-stderr.log").toFile());
             AgentEnvironment.dropParentSession(builder.environment());
             mode.env().forEach((k, v) -> builder.environment().put(k, Placeholders.fill(v, values)));
+            processes.mark(builder.environment(), attemptDir);
             Files.writeString(attemptDir.resolve("prompt.md"), values.get("prompt"));
 
             int timeout = task.timeoutSeconds() > 0 ? task.timeoutSeconds() : config.agent().timeoutSeconds();
@@ -338,6 +347,7 @@ public final class BenchRunner {
 
                 @Override
                 public Process start(ProcessBuilder builder) throws IOException {
+                    processes.mark(builder.environment(), attemptDir);
                     return children.start(builder);
                 }
             };
@@ -372,18 +382,9 @@ public final class BenchRunner {
                 }
             }
             portsTask = false;
-            if (mcpTemplate != null) {
-                // Claude Code does not always stop its MCP servers when it exits: a core left running keeps the core
-                // port, and the next toolset attempt's core cannot start.
-                int left = CoreProcesses.stop(CoreProcesses.marker(values.get("attemptDir")));
-                if (left > 0) {
-                    log.printf("[%s] %s #%d: stopped %d msc-core process(es) the agent left running%n",
-                            modeName, task.id(), repeat, left);
-                }
-            }
-            // What the agent left running anywhere in its folder, such as a server it detached (#577): the attempt
-            // is over, and the next one must not meet it.
-            int left = AttemptProcesses.kill(attemptDir);
+            // What the attempt left running, such as a server the agent detached (#577) or the msc-core Claude Code
+            // did not stop: the attempt is over, and the next one must not meet it on a port.
+            int left = processes.kill(attemptDir);
             if (left > 0) {
                 log.printf("[%s] %s #%d: stopped %d process(es) the attempt left running%n",
                         modeName, task.id(), repeat, left);
@@ -400,7 +401,7 @@ public final class BenchRunner {
 
     private void freePortsBeforeChecks(Path attemptDir) throws IOException {
         try {
-            ServerManager.clearPorts(config.server(), attemptDir);
+            ServerManager.clearPorts(config.server(), processes, attemptDir);
         } catch (IOException e) {
             throw new IOException("freeing the bench's ports before the checks: " + e.getMessage(), e);
         }
@@ -480,6 +481,25 @@ public final class BenchRunner {
             return preambles.get(PAPER_NO_SERVER);
         }
         return preambles.getOrDefault(task.platform(), "");
+    }
+
+    /**
+     * The MCP config {@code json} with {@code marks} in the {@code env} of each of its servers, so msc-core carries the
+     * run's marks however Claude Code passes its own environment on (#587). A config without servers stays as it is.
+     */
+    static String withMarks(String json, Map<String, String> marks) {
+        JsonElement tree = JsonParser.parseString(json);
+        if (!tree.isJsonObject() || !(tree.getAsJsonObject().get("mcpServers") instanceof JsonObject servers)) {
+            return json;
+        }
+        for (Map.Entry<String, JsonElement> server : servers.entrySet()) {
+            if (server.getValue() instanceof JsonObject definition) {
+                JsonObject env = definition.get("env") instanceof JsonObject given ? given : new JsonObject();
+                definition.add("env", env);
+                marks.forEach(env::addProperty);
+            }
+        }
+        return GSON.toJson(tree);
     }
 
     /** Fills placeholders in a JSON template, escaping values so paths with backslashes stay valid. */
