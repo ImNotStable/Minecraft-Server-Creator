@@ -304,9 +304,16 @@ public final class PlayerTools implements AutoCloseable {
      */
     @Override
     public void close() {
-        Bot left;
         synchronized (slot) {
             closed = true;
+        }
+        leave();
+    }
+
+    /** Disconnect the test player; a later player_test joins again (a switch away and back, #735). */
+    public void leave() {
+        Bot left;
+        synchronized (slot) {
             left = player;
             player = null;
         }

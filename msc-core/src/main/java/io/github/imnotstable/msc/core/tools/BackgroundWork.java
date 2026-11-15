@@ -36,14 +36,21 @@ public final class BackgroundWork implements AutoCloseable {
         return thread;
     }
 
-    /** Interrupt every thread still running and wait up to a few seconds for them to end. */
+    /** Interrupt every thread still running and wait up to a few seconds for them to end; nothing starts after. */
     @Override
     public void close() {
-        List<Thread> stopping;
         synchronized (this) {
             closed = true;
-            stopping = List.copyOf(threads);
         }
+        stop();
+    }
+
+    /**
+     * Interrupt every thread still running and wait up to a few seconds for them to end; later ones may start: a switch
+     * away from a workspace the session keeps for its detached server (#735).
+     */
+    public void stop() {
+        List<Thread> stopping = List.copyOf(threads);
         stopping.forEach(Thread::interrupt);
         long deadline = System.nanoTime() + JOIN.toNanos();
         try {
