@@ -502,6 +502,19 @@ class LifecycleToolsTest {
     }
 
     @Test
+    void scaffoldSaysWhatEachPlatformNeedsBeforeTheFirstDevCycle() throws Exception {
+        // #627: Velocity has no EULA but needs server_setup (velocity.jar, velocity.toml, the forwarding secret).
+        assertThat(h.ok("project_scaffold", "name", "Proxy", "dir", "proxy", "template", "velocity-plugin"))
+                .doesNotContain("EULA").endsWith("\nnext: server_setup platform=velocity, then edit the code and dev_cycle");
+        Files.writeString(Files.createDirectories(workspace.resolve("run")).resolve("velocity.jar"), "set up");
+        assertThat(h.ok("project_scaffold", "name", "Proxy", "dir", "proxy2", "template", "velocity-plugin"))
+                .endsWith("\nnext: edit the code, then dev_cycle");
+        // Minestom's server is the project's own jar, which dev_cycle builds: nothing to set up first.
+        assertThat(h.ok("project_scaffold", "name", "Game", "dir", "game", "template", "minestom-server"))
+                .endsWith("\nnext: edit the code, then dev_cycle");
+    }
+
+    @Test
     void scaffoldUsesTheChosenPackage() {
         assertThat(h.ok("project_scaffold", "name", "Lobby", "dir", "pkg", "package", "io.github.alex.lobby"))
                 .contains("\npackageName: io.github.alex.lobby\n");

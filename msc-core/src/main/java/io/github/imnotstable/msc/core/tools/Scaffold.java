@@ -98,11 +98,14 @@ final class Scaffold {
             out.append("\nfirst build started in the background (the loader sets up Minecraft once, which takes "
                     + "minutes); dev_cycle waits for it");
         }
-        if (platform != null && platform.needsEula()
+        if (platform != null && platform.needsServerSetup()
                 && !Files.exists(config.serverDir().resolve(platform.serverJar()))) {
-            // The server is not set up yet: a first dev_cycle would build for nothing and then stop there.
+            // The server is not set up yet: a first dev_cycle would build for nothing and then stop there (#627).
             Optional<MachineEula.Acceptance> machine = config.machineEula().read();
-            if (machine.isPresent()) {
+            if (!platform.needsEula()) {
+                out.append("\nnext: server_setup platform=").append(platform.id())
+                        .append(", then edit the code and dev_cycle");
+            } else if (machine.isPresent()) {
                 out.append("\nnext: server_setup (the Minecraft EULA is accepted for this machine by ")
                         .append(machine.get().describe()).append("), then edit the code and dev_cycle");
             } else {
