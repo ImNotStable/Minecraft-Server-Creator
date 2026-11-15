@@ -18,8 +18,9 @@ import java.util.List;
 /**
  * Whole-world backups and rollback (ADR 0041), on {@code build_undo backup=}: {@code list}, {@code save [label]}, or
  * a backup to restore. A running server is told {@code save-off} and {@code save-all flush} first, so the copy is
- * consistent and no autosave writes during it, and {@code save-on} after. A rollback saves the current world as a
- * backup, stops the server, restores, and starts it again when it was running. A build placing
+ * consistent and no autosave writes during it, and {@code save-on} after. A rollback stops the server (also one an
+ * earlier session left running), saves the current world as a backup, restores, and starts the server again when it
+ * was running. A build placing
  * {@link #AUTO_BLOCKS} or more takes a backup first, unless one is younger than {@link #AUTO_EVERY}.
  */
 public final class WorldBackups {
@@ -86,21 +87,18 @@ public final class WorldBackups {
     private String rollback(String name) throws IOException, InterruptedException {
         server.checkNoOtherSession();
         Backups.Backup target = backups.find(name);
-        boolean running = server.running();
-        if (!running && hub.current() != null) {
+        if (!server.running() && hub.current() != null) {
             throw new ToolException("the connected server was not started by this session; stop it, then roll back");
         }
         // Stopped first: every platform saves its world on stop (Minestom only then), so the copy of the current
-        // world is whole, and nothing writes while the folders are swapped.
-        Steps steps = new Steps("build_undo").then(STOP).then(SAVE_CURRENT).then(RESTORE)
+        // world is whole, and nothing writes while the folders are swapped. A server an earlier session left running
+        // is stopped too, reported as server_start reports it, and started again under this session (#583).
+        Steps steps = new Steps("build_undo").then(ServerRun.LEFTOVER_SERVER).then(STOP).then(SAVE_CURRENT)
+                .then(RESTORE)
                 .ifFails(SAVE_CURRENT, "the world is unchanged; the server is stopped: server_start starts it")
                 .ifFails(RESTORE, "the world is as it was before this call; the server is stopped: server_start "
                         + "starts it");
-        steps.run(STOP, () -> {
-            if (!server.stop(Duration.ofSeconds(30))) {
-                server.stopLeftover();
-            }
-        });
+        ServerRun.Stopped stopped = run.stopAny(steps, STOP);
         Taken current = steps.run(SAVE_CURRENT,
                 () -> WorldFolders.in(config.serverDir()).isEmpty() ? null : take("before-rollback", target.name(), false));
         world.forgetEdits();
@@ -109,7 +107,10 @@ public final class WorldBackups {
         if (current != null) {
             out.append("\nthe world before it is backup ").append(current.backup().name());
         }
-        if (!running) {
+        if (stopped.leftover() != null) {
+            out.append('\n').append(stopped.leftover());
+        }
+        if (!stopped.wasRunning()) {
             return out.append("\nserver not started (it was not running)").toString();
         }
         out.append('\n');

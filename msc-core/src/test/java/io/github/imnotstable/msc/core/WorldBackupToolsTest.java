@@ -3,16 +3,23 @@ package io.github.imnotstable.msc.core;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.imnotstable.msc.core.fixture.FakeServerMain;
+import io.github.imnotstable.msc.core.fixture.SleepMain;
+import io.github.imnotstable.msc.core.server.PidFile;
 import io.github.imnotstable.msc.core.server.Platform;
 import io.github.imnotstable.msc.core.tools.WorldBackupsAccess;
 import java.time.Duration;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
 /** build_undo backup=: whole-world backups, the one a big build takes first, and rollback (ADR 0041). */
 @Timeout(value = 2, unit = TimeUnit.MINUTES, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
@@ -104,6 +111,72 @@ class WorldBackupToolsTest {
             assertThat(h.ok("build_undo", "backup", "list").lines()).hasSize(2);
             assertThat(h.ok("build_undo")).startsWith("undid e3");
         }
+    }
+
+    /** Who runs a server in the folder when a rollback starts. */
+    enum Running { NONE, THIS_SESSION, EARLIER_SESSION, ATTACHED }
+
+    /**
+     * Rollback over every server state (#583), on a platform that saves while running and on Minestom: the state comes
+     * from the stop itself, so a server an earlier session left running is reported as server_start reports its stop,
+     * and started again like one this session started. An attached server this session cannot stop is refused.
+     */
+    @ParameterizedTest(name = "{0} {1}")
+    @MethodSource("serverStates")
+    void rollbackStopsWhicheverServerRunsAndStartsItAgain(Platform platform, Running running) throws Exception {
+        Path level = world("before");
+        if (platform != Platform.PAPER) {
+            Platform.remember(CoreConfig.forWorkspace(workspace), platform);
+        }
+        Process leftover = null;
+        try (CoreHarness h = new CoreHarness(workspace, c -> c.withServerCommand(fakeServer()))) {
+            String saved = h.ok("build_undo", "backup", "save").split(" ")[1];
+            Files.writeString(level, "after");
+            switch (running) {
+                case NONE -> { }
+                case THIS_SESSION -> h.ok("server_start", "timeoutSeconds", 30);
+                case EARLIER_SESSION -> {
+                    leftover = new ProcessBuilder(Path.of(System.getProperty("java.home"), "bin", "java").toString(),
+                            "-cp", System.getProperty("java.class.path"), SleepMain.class.getName()).start();
+                    PidFile.write(workspace.resolve(".msc/server.pid"), leftover.toHandle());
+                    assertThat(h.ok("msc_status")).contains("server: running, left by an earlier session (pid "
+                            + leftover.pid());
+                }
+                case ATTACHED -> h.withAgent();
+            }
+
+            if (running == Running.ATTACHED) {
+                assertThat(h.error("build_undo", "backup", saved)).isEqualTo(
+                        "error: the connected server was not started by this session; stop it, then roll back");
+                assertThat(level).hasContent("after");
+                return;
+            }
+            String out = h.ok("build_undo", "backup", saved);
+            assertThat(level).hasContent("before");
+            String stoppedLeftover = "\nstopped a server left running by an earlier session (pid ";
+            if (running == Running.EARLIER_SESSION) {
+                assertThat(out).contains(stoppedLeftover + leftover.pid() + ", killed: ");
+                assertThat(leftover.waitFor(10, TimeUnit.SECONDS)).isTrue();
+            } else {
+                assertThat(out).doesNotContain(stoppedLeftover);
+            }
+            if (running == Running.NONE) {
+                assertThat(out).endsWith("\nserver not started (it was not running)");
+                assertThat(h.ok("msc_status")).doesNotContain("server: running");
+            } else {
+                assertThat(out).contains("server ready in ").doesNotContain("not started");
+                assertThat(h.ok("msc_status")).contains("server: running (");
+            }
+        } finally {
+            if (leftover != null) {
+                leftover.destroyForcibly();
+            }
+        }
+    }
+
+    static Stream<Arguments> serverStates() {
+        return Stream.concat(Arrays.stream(Running.values()).map(r -> Arguments.of(Platform.PAPER, r)),
+                Stream.of(Running.THIS_SESSION, Running.EARLIER_SESSION).map(r -> Arguments.of(Platform.MINESTOM, r)));
     }
 
     @Test
