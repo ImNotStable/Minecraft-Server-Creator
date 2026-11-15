@@ -17,8 +17,8 @@ import java.util.regex.Pattern;
  * The quote and the backslash are escaped as in JSON, and so is every character that would split the line or hide
  * itself: control characters (a line break is shown as backslash n, a tab as backslash t), the line and paragraph
  * separators, every space but the plain one (a no-break space), invisible format characters (a zero-width space, a
- * right-to-left override), unassigned and private-use characters and a lone surrogate, each as a JSON unicode
- * escape.</li>
+ * right-to-left override), unassigned and private-use characters, a lone surrogate and every other character Unicode
+ * calls default ignorable (a Hangul filler, a variation selector), each as a JSON unicode escape.</li>
  * <li>A value is cut after {@link #MAX} characters, with {@code ...} after it; an escape is never cut in two.</li>
  * <li>A secret, such as {@code server.rconPassword} or a value under {@code modes.<name>.env}, is never shown: only
  * its JSON type and length ({@code a number of 8 characters}, {@code a list of 1 entry}).</li>
@@ -266,7 +266,10 @@ public final class Quoted {
         };
     }
 
-    /** Whether {@code c} would split the line, or could not be seen or told from a plain space. */
+    /**
+     * Whether {@code c} would split the line, or could not be seen or told from a plain space: a character of one of
+     * the categories below, or a {@link #DEFAULT_IGNORABLE} one, which renders as nothing whatever its category (#688).
+     */
     private static boolean hidden(int c) {
         if (c == ' ') {
             return false;
@@ -274,8 +277,30 @@ public final class Quoted {
         return switch (Character.getType(c)) {
             case Character.CONTROL, Character.FORMAT, Character.LINE_SEPARATOR, Character.PARAGRAPH_SEPARATOR,
                  Character.SPACE_SEPARATOR, Character.SURROGATE, Character.UNASSIGNED, Character.PRIVATE_USE -> true;
-            default -> false;
+            default -> defaultIgnorable(c);
         };
+    }
+
+    /**
+     * Unicode's Default_Ignorable_Code_Point, as first and last code point of each range, from DerivedCoreProperties.txt
+     * of Unicode 16.0.0 (the version Java 25 implements). Besides format characters it holds letters and marks that
+     * render as nothing, such as the Hangul fillers U+3164 and U+FFA0, the combining grapheme joiner U+034F and every
+     * variation selector, U+FE0F included.
+     */
+    private static final int[] DEFAULT_IGNORABLE = {
+        0x00AD, 0x00AD, 0x034F, 0x034F, 0x061C, 0x061C, 0x115F, 0x1160, 0x17B4, 0x17B5, 0x180B, 0x180D,
+        0x180E, 0x180E, 0x180F, 0x180F, 0x200B, 0x200F, 0x202A, 0x202E, 0x2060, 0x2064, 0x2065, 0x2065,
+        0x2066, 0x206F, 0x3164, 0x3164, 0xFE00, 0xFE0F, 0xFEFF, 0xFEFF, 0xFFA0, 0xFFA0, 0xFFF0, 0xFFF8,
+        0x1BCA0, 0x1BCA3, 0x1D173, 0x1D17A, 0xE0000, 0xE0000, 0xE0001, 0xE0001, 0xE0002, 0xE001F,
+        0xE0020, 0xE007F, 0xE0080, 0xE00FF, 0xE0100, 0xE01EF, 0xE01F0, 0xE0FFF};
+
+    private static boolean defaultIgnorable(int c) {
+        for (int i = 0; i < DEFAULT_IGNORABLE.length; i += 2) {
+            if (c >= DEFAULT_IGNORABLE[i] && c <= DEFAULT_IGNORABLE[i + 1]) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static String unicode(int c) {

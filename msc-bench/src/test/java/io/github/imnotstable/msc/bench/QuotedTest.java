@@ -3,6 +3,7 @@ package io.github.imnotstable.msc.bench;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.google.gson.JsonParser;
+import io.github.imnotstable.msc.bench.check.CheckResult;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -148,5 +149,28 @@ class QuotedTest {
         assertThat(shown).isEqualTo("\\u200b".repeat(5) + Text.CUT_MARK + "y".repeat(5) + "\\u202e".repeat(10));
         assertThat(Quoted.visible("\uD83D\uDE00".repeat(30), 30)).isEqualTo("\uD83D\uDE00".repeat(30));
         assertThat(Quoted.visible(Text.cut(text, 25), 25)).isEqualTo(Quoted.visible(Text.cut(text, 25)));
+    }
+
+    @Test
+    void invisibleLettersAndMarksAreEscapedToo() {
+        // #688: default ignorable characters outside the escaped categories, such as #677's reply with a Hangul filler
+        assertThat(CheckResult.fail("rcon say", "reply \"Hello builders\u3164\" has no match").shown())
+                .isEqualTo("rcon say: reply \"Hello builders\\u3164\" has no match");
+        assertThat(Quoted.visible("a\uffa0\u115f\u1160\u034f\ufe0f\u180b\u17b4b")).isEqualTo(
+                "a\\uffa0\\u115f\\u1160\\u034f\\ufe0f\\u180b\\u17b4b");
+        assertThat(Quoted.visible("x" + Character.toString(0xE0100))).isEqualTo("x\\udb40\\udd00");
+        assertThat(Quoted.text("\u3164")).isEqualTo("\"\\u3164\"");
+    }
+
+    @Test
+    void everyCodePointIsEscapedExactlyWhenTheReaderModelCannotSeeIt() {
+        // the model reads Unicode's own Default_Ignorable_Code_Point lines, not Quoted's list
+        for (int c = 0; c <= Character.MAX_CODE_POINT; c++) {
+            String text = Character.toString(c);
+            String shown = Quoted.visible(text);
+            if (!shown.equals(ReaderView.expected(text))) {
+                assertThat(shown).as("U+%04X", c).isEqualTo(ReaderView.expected(text));
+            }
+        }
     }
 }
