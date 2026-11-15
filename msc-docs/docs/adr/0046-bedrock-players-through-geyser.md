@@ -34,7 +34,8 @@ and port are not settings: Geyser fronts the server it runs in.
    newest Geyser-Spigot and Floodgate builds from the GeyserMC API (`GeyserDownloader`), checks each against the API's
    sha256 (an answer without one is refused), caches them as `.msc/cache/<project>-spigot-<build>.jar`, keeps them in
    the machine's store, and copies them into `plugins/` under the API's names, so a newer build replaces the older one.
-   Offline, the newest cached build is used, as for Paper. The downloads run in the setup's install step; placing the
+   While the API is down (unreachable, stalled, or answering 408, 429 or a 5xx), the newest cached build is used with a
+   one-line note, as for Paper (#589); only with none cached does the setup fail. The downloads run in the setup's install step; placing the
    jars and the config is its own step after the agent (`Steps`).
 2. **A folder that has Geyser keeps it up to date**: a later `server_setup` without `bedrock` updates both jars too.
    `bedrock=false` removes the two jars and keeps their config folders. Other platforms refuse `bedrock=true` in one

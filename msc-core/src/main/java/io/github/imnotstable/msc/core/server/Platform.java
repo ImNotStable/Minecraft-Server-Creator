@@ -18,42 +18,68 @@ import java.util.stream.Collectors;
  */
 public enum Platform {
     /** Paper jar, plugins in {@code plugins/}. */
-    PAPER("Paper", "paper.jar", "plugins", true, "paper"),
+    PAPER("Paper", "paper.jar", "plugins", true, "paper", Packages.PAPER),
     /** Purpur, a Paper fork: Paper plugins and the Paper agent run on it unchanged. See ADR 0027. */
-    PURPUR("Purpur", "purpur.jar", "plugins", true, "paper"),
+    PURPUR("Purpur", "purpur.jar", "plugins", true, "paper", Packages.with(Packages.PAPER, "org.purpurmc.")),
     /**
      * Folia, Paper with regionised multithreading: Paper plugins that declare {@code folia-supported: true} run on it.
      * The Paper agent runs server operations only there; world operations are not offered (ADR 0045).
      */
-    FOLIA("Folia", "folia.jar", "plugins", true, "paper"),
+    FOLIA("Folia", "folia.jar", "plugins", true, "paper", Packages.PAPER),
     /** Fabric server launcher, mods in {@code mods/}. */
-    FABRIC("Fabric", "fabric-server-launch.jar", "mods", true, "fabric"),
+    FABRIC("Fabric", "fabric-server-launch.jar", "mods", true, "fabric", Packages.FABRIC),
     /** Quilt server launcher; Quilt loads Fabric mods, so the Fabric agent and Fabric API run on it. See ADR 0027. */
-    QUILT("Quilt", "quilt-server-launch.jar", "mods", true, "fabric"),
+    QUILT("Quilt", "quilt-server-launch.jar", "mods", true, "fabric", Packages.with(Packages.FABRIC, "org.quiltmc.")),
     /** NeoForge's server starter jar (it reads the installer's argument files), mods in {@code mods/}. */
-    NEOFORGE("NeoForge", "server.jar", "mods", true, "neoforge"),
+    NEOFORGE("NeoForge", "server.jar", "mods", true, "neoforge", List.of("net.minecraft.", "com.mojang.", "net.neoforged.",
+            "cpw.mods.", "org.spongepowered.")),
     /** Minecraft Forge's runnable shim jar, copied to a fixed name, mods in {@code mods/}. */
-    FORGE("Forge", "forge-server.jar", "mods", true, "forge"),
+    FORGE("Forge", "forge-server.jar", "mods", true, "forge", List.of("net.minecraft.", "com.mojang.",
+            "net.minecraftforge.", "cpw.mods.", "org.spongepowered.")),
     /** The project's own runnable jar is the server; the agent is built into it. No Mojang EULA step. */
-    MINESTOM("Minestom", "server.jar", null, false, "minestom"),
+    MINESTOM("Minestom", "server.jar", null, false, "minestom", List.of("net.minestom.", "net.kyori.")),
     /**
      * The Velocity proxy, plugins in {@code plugins/}. Not a Minecraft server: no world, no msc agent and no EULA step;
      * players reach a Paper backend through it (ADR 0045).
      */
-    VELOCITY("Velocity", "velocity.jar", "plugins", false, "velocity");
+    VELOCITY("Velocity", "velocity.jar", "plugins", false, "velocity", List.of("com.velocitypowered.", "net.kyori."));
 
     private final String displayName;
     private final String serverJar;
     private final String addonDir;
     private final boolean eula;
     private final String agent;
+    private final List<String> packages;
 
-    Platform(String displayName, String serverJar, String addonDir, boolean eula, String agent) {
+    Platform(String displayName, String serverJar, String addonDir, boolean eula, String agent, List<String> packages) {
         this.displayName = displayName;
         this.serverJar = serverJar;
         this.addonDir = addonDir;
         this.eula = eula;
         this.agent = agent;
+        this.packages = packages;
+    }
+
+    /** Package lists more than one platform shares; a holder, since enum constants cannot read the enum's statics. */
+    private static final class Packages {
+        /** A Paper server's: Minecraft's, Bukkit's, Spigot's, Paper's and the libraries it ships as its own API. */
+        static final List<String> PAPER = List.of("net.minecraft.", "com.mojang.", "org.bukkit.", "org.spigotmc.",
+                "io.papermc.", "com.destroystokyo.", "co.aikar.", "ca.spottedleaf.", "net.md_5.", "net.kyori.");
+        /** A Fabric server's: Minecraft's, Fabric's (loader and API) and Mixin's. */
+        static final List<String> FABRIC = List.of("net.minecraft.", "com.mojang.", "net.fabricmc.",
+                "org.spongepowered.");
+
+        static List<String> with(List<String> packages, String more) {
+            return java.util.stream.Stream.concat(packages.stream(), java.util.stream.Stream.of(more)).toList();
+        }
+    }
+
+    /**
+     * The package prefixes of the server's own code, such as {@code com.velocitypowered.} for Velocity: a stack frame
+     * there is the server's, never the project's ({@link LogCondenser}, #592). Every platform must name its own.
+     */
+    public List<String> packages() {
+        return packages;
     }
 
     public String id() {
@@ -156,29 +182,51 @@ public enum Platform {
         return detected != null ? detected : PAPER;
     }
 
+    /**
+     * What a project file says about the platform: a resource file the server loads ({@code file} under
+     * {@code src/main/resources}), or a word in a build file ({@code word}).
+     */
+    private record Sign(String file, String word, Platform platform) {
+        static Sign resource(String file, Platform platform) {
+            return new Sign(file, null, platform);
+        }
+
+        static Sign build(String word, Platform platform) {
+            return new Sign(null, word, platform);
+        }
+
+        boolean shows(Path project) {
+            return file != null ? Files.isRegularFile(project.resolve("src/main/resources").resolve(file))
+                    : mentions(project, word);
+        }
+    }
+
+    /**
+     * The signs {@link #detect} reads, first match wins (#593). Every resource file comes before every build-file word,
+     * since the file is what the server actually loads, while a build file also names the APIs of other platforms a
+     * jar is built for: a plugin built for Paper and Velocity has {@code plugin.yml} and names {@code velocity-api}.
+     * Among resource files a game server comes before the proxy, so a jar that is both a Paper and a Velocity plugin
+     * is Paper (a proxy workspace is {@code server_setup platform=velocity}).
+     */
+    private static final List<Sign> SIGNS = List.of(
+            Sign.resource("quilt.mod.json", QUILT),
+            Sign.resource("fabric.mod.json", FABRIC),
+            Sign.resource("META-INF/neoforge.mods.toml", NEOFORGE),
+            Sign.resource("META-INF/mods.toml", FORGE),
+            Sign.resource("paper-plugin.yml", PAPER),
+            Sign.resource("plugin.yml", PAPER),
+            Sign.resource("velocity-plugin.json", VELOCITY),
+            Sign.build("velocity-api", VELOCITY),
+            Sign.build("minestom", MINESTOM));
+
     /** Platform of the Gradle project in {@code project}, or null when it does not say. */
     public static Platform detect(Path project) {
-        Path resources = project.resolve("src/main/resources");
-        if (Files.isRegularFile(resources.resolve("quilt.mod.json"))) {
-            return QUILT;
+        for (Sign sign : SIGNS) {
+            if (sign.shows(project)) {
+                return sign.platform();
+            }
         }
-        if (Files.isRegularFile(resources.resolve("fabric.mod.json"))) {
-            return FABRIC;
-        }
-        if (Files.isRegularFile(resources.resolve("META-INF/neoforge.mods.toml"))) {
-            return NEOFORGE;
-        }
-        if (Files.isRegularFile(resources.resolve("META-INF/mods.toml"))) {
-            return FORGE;
-        }
-        if (mentions(project, "velocity-api")) {
-            return VELOCITY;
-        }
-        if (Files.isRegularFile(project.resolve("src/main/resources/paper-plugin.yml"))
-                || Files.isRegularFile(project.resolve("src/main/resources/plugin.yml"))) {
-            return PAPER;
-        }
-        return mentions(project, "minestom") ? MINESTOM : null;
+        return null;
     }
 
     /** True when one of the project's build files names {@code word}, ignoring case. */

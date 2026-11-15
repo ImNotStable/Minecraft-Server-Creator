@@ -2,24 +2,29 @@ package io.github.imnotstable.msc.core.server;
 
 import io.github.imnotstable.msc.core.tool.Budget;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Stream;
 
 /**
  * Turns server logs and build output into the few lines worth a model's attention: warnings and
  * errors, stack traces cut down to the project's own frames, repeats collapsed.
  */
 public final class LogCondenser {
-    /** Frames from these packages are noise unless nothing else is there. */
-    private static final List<String> FRAMEWORK = List.of("java.", "javax.", "jdk.", "sun.", "com.sun.",
-            "net.minecraft.", "com.mojang.", "org.bukkit.", "org.spigotmc.", "io.papermc.", "com.destroystokyo.",
-            "io.netty.", "org.apache.", "com.google.", "it.unimi.", "org.slf4j.", "co.aikar.", "ca.spottedleaf.",
+    /**
+     * Frames from these packages are noise unless nothing else is there: the JDK, the libraries servers and builds
+     * ship, Geyser and Floodgate (server_setup installs them, ADR 0046), and every {@link Platform}'s own packages, so a
+     * new platform's frames are framework without anyone having to remember this list (#592).
+     */
+    private static final List<String> FRAMEWORK = Stream.concat(Stream.of("java.", "javax.",
+            "jdk.", "sun.", "com.sun.", "io.netty.", "org.apache.", "com.google.", "it.unimi.", "org.slf4j.",
             "org.gradle.", "org.junit.", "org.mockbukkit.", "be.seeseemelk.", "kotlin.", "worker.org.gradle.", "oshi.",
-            "net.minestom.", "org.purpurmc.", "net.fabricmc.", "org.quiltmc.", "net.neoforged.", "net.minecraftforge.",
-            "cpw.mods.", "org.spongepowered.");
+            "org.geysermc."), Arrays.stream(Platform.values()).flatMap(p -> p.packages().stream()))
+            .distinct().toList();
 
     /**
      * Entries every dev server prints and the AI can do nothing about: Paper's banners for running as root or

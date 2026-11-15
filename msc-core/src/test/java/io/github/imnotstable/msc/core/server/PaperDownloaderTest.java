@@ -88,8 +88,10 @@ class PaperDownloaderTest {
         }
         try (ClosedPort unreachable = ClosedPort.reserve()) {
             PaperDownloader offline = new PaperDownloader("http://127.0.0.1:" + unreachable.port(), cache);
-            assertThat(offline.download(Platform.VELOCITY, "4.3.1"))
+            PaperDownloader.Download cached = offline.download(Platform.VELOCITY, "4.3.1");
+            assertThat(cached).usingRecursiveComparison().ignoringFields("note")
                     .isEqualTo(new PaperDownloader.Download(cache.resolve("velocity-4.3.1-4.jar"), "4.3.1", 4, true));
+            assertThat(cached.note()).startsWith("cannot reach ").endsWith("; using the newest cached build");
         }
     }
 
@@ -102,7 +104,7 @@ class PaperDownloaderTest {
         }
         try (ClosedPort unreachable = ClosedPort.reserve()) {
             PaperDownloader paper = new PaperDownloader("http://127.0.0.1:" + unreachable.port(), cache);
-            assertThat(paper.download("26.3"))
+            assertThat(paper.download("26.3")).usingRecursiveComparison().ignoringFields("note")
                     .isEqualTo(new PaperDownloader.Download(cache.resolve("paper-26.3-" + newest + ".jar"), "26.3",
                             newest, true));
             assertThatThrownBy(() -> paper.download("1.0")).isInstanceOf(ToolException.class)
