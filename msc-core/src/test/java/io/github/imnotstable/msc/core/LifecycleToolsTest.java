@@ -1002,6 +1002,47 @@ class LifecycleToolsTest {
         h.ok("server_stop");
     }
 
+    /**
+     * #668: every line of a dev_cycle result is true for each outcome of the tests and of the jar. Only a jar this call
+     * deployed is "deployed anyway"; an unchanged one is kept, and the result says only that.
+     */
+    @Test
+    void devCycleLinesAreTrueForEveryTestsAndJarOutcome() throws Exception {
+        assertThat(h.ok("dev_cycle", "project", "demo")).contains("deployed demo-1.0.jar as plugins/demo.jar");
+        int version = 0;
+        for (String tests : List.of("pass", "fail", "skipped")) {
+            for (boolean changed : List.of(true, false)) {
+                Files.deleteIfExists(project.resolve("failing-test.flag"));
+                Files.deleteIfExists(project.resolve("no-tests.flag"));
+                if (!tests.equals("pass")) {
+                    Files.writeString(project.resolve(tests.equals("fail") ? "failing-test.flag" : "no-tests.flag"), "");
+                }
+                if (changed) {
+                    Files.writeString(project.resolve("version.txt"), "1." + ++version);
+                }
+                String result = h.ok("dev_cycle", "project", "demo");
+                var row = assertThat(result).as("tests %s, jar %s:%n%s", tests, changed ? "changed" : "unchanged", result);
+                if (tests.equals("fail")) {
+                    row.startsWith("TESTS FAILED in ").contains("DemoTest > greets() FAILED");
+                } else {
+                    row.doesNotContain("TESTS FAILED").doesNotContain("FAILED");
+                }
+                if (changed) {
+                    row.contains("deployed demo-1.0.jar as plugins/demo.jar").contains("server ready")
+                            .doesNotContain("jar unchanged").containsPattern("\ntime: jar [^,]+, stop [^\n]*, tests ");
+                    if (tests.equals("fail")) {
+                        row.contains("TESTS FAILED in ").contains("s (the new jar is deployed anyway)\n");
+                    }
+                } else {
+                    row.contains("build ok in ").contains(", jar unchanged: plugins/demo.jar kept, server not restarted")
+                            .doesNotContain("deployed").doesNotContain("server ready")
+                            .containsPattern("\ntime: jar [^,]+, tests [^,]+, total [^,\n]+$");
+                }
+            }
+        }
+        h.ok("server_stop");
+    }
+
     /** Waits (generously: a loaded machine) until the server log holds a line containing {@code text}. */
     private void awaitLogLine(String text) throws InterruptedException {
         long deadline = System.nanoTime() + java.time.Duration.ofSeconds(60).toNanos();

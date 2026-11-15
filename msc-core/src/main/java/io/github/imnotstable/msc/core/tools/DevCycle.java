@@ -97,7 +97,7 @@ final class DevCycle {
         Check tests = check(project);
         long logMark = server.log().mark();
         Budget.Parts out = new Budget.Parts();
-        Budget.Parts rest;
+        Deployed rest;
         ProjectBuilder.BuildResult checked;
         try {
             rest = deployAndRestart(project, platform, jar, restart, time);
@@ -111,14 +111,15 @@ final class DevCycle {
         }
         time.add("tests", checked.millis());
         if (!checked.ok()) {
+            // Only a jar this call deployed is "deployed anyway": an unchanged one was kept, as its line says (#668).
             out.add("TESTS FAILED in " + LogText.seconds(checked.millis())
-                    + (jar.jar() == null ? "" : " (the new jar is deployed anyway)") + "\n")
+                    + (rest.deployed() ? " (the new jar is deployed anyway)" : "") + "\n")
                     .cut(n -> LogCondenser.condenseBuild(checked.output(), n)).add("\n");
         }
         // One budget (#473): the time line is kept last, the test output and the startup log share what is left.
         String results = checked.ok() ? null : testResults(project, checkStarted);
         boolean started = restart && !server.log().since(logMark).isEmpty();
-        return out.add(rest).text(maxChars, time.line(), hint(maxChars, results, started));
+        return out.add(rest.parts()).text(maxChars, time.line(), hint(maxChars, results, started));
     }
 
     /**
@@ -264,11 +265,11 @@ final class DevCycle {
      * temp file), remove an earlier deploy under another name (after the deploy, so a failed deploy leaves the earlier
      * jar working), mirror libs/, record the deploy, remember the platform, then the start's own steps.
      */
-    private Budget.Parts deployAndRestart(Path project, Platform platform, ProjectBuilder.BuildResult build,
-                                          boolean restart, Timings time) throws IOException, InterruptedException {
+    private Deployed deployAndRestart(Path project, Platform platform, ProjectBuilder.BuildResult build,
+                                      boolean restart, Timings time) throws IOException, InterruptedException {
         if (build.jar() == null) {
-            return new Budget.Parts().add("build ok in " + LogText.seconds(build.millis()) + " but no jar in " + project.resolve("build/libs")
-                    + "; nothing deployed");
+            return Deployed.not(new Budget.Parts().add("build ok in " + LogText.seconds(build.millis()) + " but no jar in " + project.resolve("build/libs")
+                    + "; nothing deployed"));
         }
         Path target = OutputFile.check(target(platform, build.jar(), project), "deploy target");
         Path libs = config.serverDir().resolve("libs");
@@ -296,10 +297,10 @@ final class DevCycle {
             } catch (IOException e) {
                 // Best effort: the next dev_cycle that deploys sweeps again, as a step that reports a failure.
             }
-            return new Budget.Parts().add(out.append("build ok in ").append(LogText.seconds(build.millis()))
+            return Deployed.not(new Budget.Parts().add(out.append("build ok in ").append(LogText.seconds(build.millis()))
                     .append(", jar unchanged: ").append(shown)
                     .append(" kept, server not restarted (server_stop then server_start restarts it)")
-                    .append(run.resendPack()).toString());
+                    .append(run.resendPack()).toString()));
         }
         Steps steps = new Steps("dev_cycle").then(STOP_LEFTOVER);
         boolean stopping = wasRunning && restart;
@@ -392,19 +393,26 @@ final class DevCycle {
             out.append('\n').append(LoaderInstaller.removedLine(claimed[0], "the project's jar replaces it").strip());
         }
         if (!restart) {
-            return new Budget.Parts()
-                    .add(out.append(wasRunning ? "; server still running the old jar until restarted" : "").toString());
+            return new Deployed(new Budget.Parts()
+                    .add(out.append(wasRunning ? "; server still running the old jar until restarted" : "").toString()), true);
         }
         if (server.serverJar() == null && config.serverCommand() == null) {
-            return new Budget.Parts().add(
-                    out.append("\nserver not set up, so nothing was started. Run server_setup, then dev_cycle.").toString());
+            return new Deployed(new Budget.Parts().add(
+                    out.append("\nserver not set up, so nothing was started. Run server_setup, then dev_cycle.").toString()), true);
         }
         ServerRun.Report report = run.startAndReport(steps, false, 180);
         time.add("start", report.result().millis());
         if (report.result().agentMillis() >= 0) {
             time.add("agent", report.result().agentMillis());
         }
-        return new Budget.Parts().add(out.append('\n').toString()).add(report.parts());
+        return new Deployed(new Budget.Parts().add(out.append('\n').toString()).add(report.parts()), true);
+    }
+
+    /** What the deploy step says, and whether it deployed the built jar (not when there was none or it was unchanged). */
+    private record Deployed(Budget.Parts parts, boolean deployed) {
+        static Deployed not(Budget.Parts parts) {
+            return new Deployed(parts, false);
+        }
     }
 
     private Path server() {
