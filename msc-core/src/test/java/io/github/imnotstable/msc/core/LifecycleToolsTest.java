@@ -1526,6 +1526,73 @@ class LifecycleToolsTest {
     }
 
     @Test
+    void everyToolThatNeedsTheServerGivesOneAnswerWhileItStops() throws Exception {
+        // #723: server_detach said the server keeps running (and started a pack host), msc_status said "running,
+        // detached" and server_command typed into the console, while the world tools said "the server is stopping".
+        java.util.Map<String, Object[]> table = new java.util.LinkedHashMap<>();
+        table.put("world_slice", new Object[] {"region", "0,60,0 1,60,1"});
+        table.put("world_heightmap", new Object[] {"area", "0,0 1,1"});
+        table.put("world_render", new Object[] {"region", "0,60,0 1,60,1"});
+        table.put("world_summary", new Object[] {"region", "0,60,0 1,61,1"});
+        table.put("world_entities", new Object[] {"region", "0,60,0 1,61,1"});
+        table.put("build_undo", new Object[] {"backup", "save"});
+        table.put("structure_save", new Object[] {"region", "0,60,0 1,60,1", "file", "s.schem"});
+        table.put("build_batch", new Object[] {"steps", "fill 0,64,0 1,64,1 stone"});
+        table.put("player_test", new Object[] {"actions", List.of("say hi")});
+        table.put("server_command", new Object[] {"command", "list"});
+        table.put("server_detach", new Object[] {});
+        assertThat(table.keySet()).as("every world tool is in the table").containsAll(Core.WORLD_TOOLS);
+        String stopping = "error: " + io.github.imnotstable.msc.core.agent.AgentHub.STOPPING;
+        Path run = Files.createDirectories(workspace.resolve("run"));
+        h.ok("server_start", "timeoutSeconds", 30);
+        h.ok("texture", "name", "item/dot", "palette", List.of("a=#ff0000"), "rows", List.of("a"));
+        h.ok("pack", "apply", false); // a built pack: a detach would hand it to a standalone host
+        h.ok("server_stop");
+        for (String way : List.of("server_stop", "a stop the agent announced")) {
+            boolean ours = way.equals("server_stop");
+            Files.deleteIfExists(run.resolve("release.flag"));
+            Files.deleteIfExists(run.resolve("hold-stop.flag"));
+            Files.deleteIfExists(run.resolve("announce-stop.flag"));
+            Files.writeString(run.resolve(ours ? "hold-stop.flag" : "announce-stop.flag"), "");
+            h.ok("server_start", "timeoutSeconds", 30);
+            long mark = h.core.server().log().mark();
+            var stopped = ours ? java.util.concurrent.CompletableFuture.supplyAsync(() -> h.call("server_stop")) : null;
+            if (!ours) {
+                h.core.server().console("stop"); // typed into the server: only its agent tells MSC
+            }
+            try {
+                long deadline = System.nanoTime() + java.time.Duration.ofSeconds(20).toNanos();
+                while (h.core.server().log().since(mark).stream().noneMatch(l -> l.contains("lingering"))
+                        || !ours && h.core.hub().current() != null) {
+                    assertThat(System.nanoTime()).as(way + ": the server begins to stop").isLessThan(deadline);
+                    Thread.sleep(10);
+                }
+                assertThat(h.core.server().running()).as(way + ": the process lingers").isTrue();
+                assertThat(h.core.hub().current() != null).as(way + ": its agent is still connected").isEqualTo(ours);
+                java.util.Map<String, String> answers = new java.util.LinkedHashMap<>();
+                table.forEach((tool, args) -> answers.put(tool, h.error(tool, args)));
+                assertThat(answers).as(way).allSatisfy((tool, answer) -> assertThat(answer).as(way + ": " + tool)
+                        .isEqualTo(stopping));
+                assertThat(h.ok("msc_status")).as(way).contains("\nserver: stopping (");
+                assertThat(h.error("server_start")).as(way).isEqualTo("error: the server is still stopping: "
+                        + "server_stop waits until it has exited, then server_start starts it again.");
+                assertThat(h.core.server().detached()).as(way + ": nothing detached").isFalse();
+                assertThat(workspace.resolve(".msc/pack-host.pid")).as(way + ": no pack host").doesNotExist();
+            } finally {
+                Files.writeString(run.resolve("release.flag"), "");
+            }
+            if (ours) {
+                assertThat(stopped.get(60, java.util.concurrent.TimeUnit.SECONDS).text()).isEqualTo("server stopped");
+            } else {
+                // A stop the server announced is waited for, not asked again into a console nothing reads.
+                assertThat(h.ok("server_stop")).isEqualTo("server stopped");
+            }
+            assertThat(h.error("server_detach")).as(way).isEqualTo("error: "
+                    + io.github.imnotstable.msc.core.agent.AgentHub.NOT_RUNNING);
+        }
+    }
+
+    @Test
     void anAttachedCoreSaysNotRunningOnceTheStoppedServerIsGone() throws Exception {
         // #711: with MSC_CORE_ADDRESS set an agent is always expected (Core leaves agentExpected true), and the
         // server.stopping its agent sent made every world tool say "stopping" after server_stop said "stopped".

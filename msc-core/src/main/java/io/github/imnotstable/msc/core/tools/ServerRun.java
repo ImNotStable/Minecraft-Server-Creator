@@ -79,7 +79,7 @@ final class ServerRun {
     String start(Args args) throws IOException, InterruptedException {
         int timeoutSeconds = args.integer("timeoutSeconds", 180);
         if (server.running()) {
-            throw new ToolException("server is already running. Use server_stop or dev_cycle.");
+            throw new ToolException(server.alreadyRunning());
         }
         server.checkNoOtherSession();
         Platform platform = server.platform();
@@ -171,7 +171,7 @@ final class ServerRun {
      * the call still detaches.
      */
     String detach(Args args) throws IOException, InterruptedException {
-        if (!server.running()) {
+        if (!server.running() || server.stopping()) {
             throw new ToolException(server.notRunning());
         }
         Platform platform = server.platform();

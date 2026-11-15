@@ -68,10 +68,11 @@ public final class PlayerTools implements AutoCloseable {
                 throw ToolException.workspaceClosed("player_test did not run");
             }
         }
-        if (hub.current() == null) {
-            // The same reason as the world tools give (#705), else that this session's server has no agent (yet).
-            String why = hub.refusal();
-            throw new ToolException(why != null ? why
+        // The same reason as the world tools give (#705, #723), else that this session's server has no agent (yet).
+        boolean connected = hub.current() != null;
+        String refused = connected ? hub.stopping() : hub.refusal();
+        if (!connected || refused != null) {
+            throw new ToolException(refused != null ? refused
                     : "the server is not running with the agent. Start it with server_start first.");
         }
         List<String> actions = args.strings("actions");

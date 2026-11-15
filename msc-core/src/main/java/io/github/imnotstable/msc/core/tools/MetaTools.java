@@ -54,7 +54,7 @@ public final class MetaTools {
     /** Running, also when an earlier session detached it: world tools then fail until a start takes it over. */
     static String serverState(ServerManager server) {
         if (server.running()) {
-            return server.detached() ? "running, detached" : "running";
+            return server.stopping() ? "stopping" : server.detached() ? "running, detached" : "running";
         }
         var other = server.otherSession();
         if (other.isPresent()) {

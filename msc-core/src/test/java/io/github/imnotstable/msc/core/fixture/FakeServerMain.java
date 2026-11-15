@@ -104,6 +104,16 @@ public final class FakeServerMain {
                     in.close();
                     System.out.println("[12:00:09 INFO]: console closed, lingering");
                     linger();
+                } else if (session != null && Files.exists(Path.of("hold-stop.flag"))) {
+                    // The agent stays connected while the server saves its worlds (#723).
+                    System.out.println("[12:00:09 INFO]: agent stays, lingering");
+                    linger();
+                } else if (session != null && Files.exists(Path.of("announce-stop.flag"))) {
+                    // The agent says so and leaves; the console stays open but nothing reads it any more (#723).
+                    session.connection().sendEvent(Events.SERVER_STOPPING, new JsonObject());
+                    session.connection().close();
+                    System.out.println("[12:00:09 INFO]: announced, lingering");
+                    linger();
                 } else if (session != null) {
                     // As a real agent does when its server begins to stop (#711).
                     session.connection().sendEvent(Events.SERVER_STOPPING, new JsonObject());
