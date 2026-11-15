@@ -126,4 +126,27 @@ class QuotedTest {
         assertThat(Quoted.path("/home/me/x ")).isEqualTo("\"/home/me/x \"");
         assertThat(Quoted.path("/" + "a".repeat(200))).hasSize(201);
     }
+
+    @Test
+    void runTextIsShownUnquotedWithEveryHiddenCharacterEscaped() {
+        // #677: what the issue's RCON reply looked like, and C1, ESC and a bidi isolate
+        assertThat(Quoted.visible("reply \"Hello\u200bbuilders \u202eabc\" C:\\x")).isEqualTo(
+                "reply \"Hello\\u200bbuilders \\u202eabc\" C:\\x");
+        assertThat(Quoted.visible(" a\u0080\u009f\u001b[0m\u2066b\u2069\r\n")).isEqualTo(
+                " a\\u0080\\u009f\\u001b[0m\\u2066b\\u2069\\r\\n");
+        assertThat(Quoted.visible("x".repeat(500))).hasSize(500);
+        assertThat(Quoted.visible(null)).isEmpty();
+    }
+
+    @Test
+    void runTextIsCutByCharactersKeepingHeadAndTailAndWholeEscapes() {
+        String text = "\u200b".repeat(10) + "y".repeat(100) + "\u202e".repeat(10);
+
+        String shown = Quoted.visible(text, 25);
+
+        // 20 characters but the mark: 5 of the head, 15 of the tail, each escape whole
+        assertThat(shown).isEqualTo("\\u200b".repeat(5) + Text.CUT_MARK + "y".repeat(5) + "\\u202e".repeat(10));
+        assertThat(Quoted.visible("\uD83D\uDE00".repeat(30), 30)).isEqualTo("\uD83D\uDE00".repeat(30));
+        assertThat(Quoted.visible(Text.cut(text, 25), 25)).isEqualTo(Quoted.visible(Text.cut(text, 25)));
+    }
 }

@@ -120,6 +120,52 @@ public final class Quoted {
     }
 
     /**
+     * {@code text}, text a run produced or a user wrote (a check's detail, a task id, a category, a mode or tool name),
+     * as a reader is shown it on the terminal and in {@code report.md} (#677): without quotes, with every character
+     * that would split the line or hide itself escaped as {@link #text} escapes it (a line break as backslash n, an ESC
+     * or a C1 control, a zero-width space, a right-to-left override or a bidi isolate as a unicode escape), so it stays
+     * on one line, reads left to right and every character in it can be seen. A quote and a backslash are shown as they
+     * are, as in {@link #message}. Not cut and not stripped; null is empty.
+     */
+    public static String visible(String text) {
+        return visible(text, Integer.MAX_VALUE);
+    }
+
+    /**
+     * {@link #visible(String)}, cut when {@code text} has more than {@code max} characters (code points, an escape
+     * counted as the one character it stands for): its head and its tail are kept with {@link Text#CUT_MARK} between
+     * them, the tail three quarters of the room, as {@link Text#cut} cuts. An escape is never cut in two, and a text
+     * {@link Text#cut} already fitted to {@code max} chars is never cut again.
+     */
+    public static String visible(String text, int max) {
+        if (text == null) {
+            return "";
+        }
+        int count = text.codePointCount(0, text.length());
+        if (count <= max) {
+            return escapedAll(text);
+        }
+        int keep = max - Text.CUT_MARK.length();
+        if (keep <= 0) {
+            return escapedAll(text.substring(text.offsetByCodePoints(0, count - Math.max(0, max))));
+        }
+        int head = keep / 4;
+        return escapedAll(text.substring(0, text.offsetByCodePoints(0, head))) + Text.CUT_MARK
+                + escapedAll(text.substring(text.offsetByCodePoints(0, count - (keep - head))));
+    }
+
+    /** Each character of {@code text} as {@link #visible(String)} shows it. */
+    private static String escapedAll(String text) {
+        StringBuilder out = new StringBuilder(text.length());
+        for (int i = 0; i < text.length(); ) {
+            int c = text.codePointAt(i);
+            out.append(c == '"' || c == '\\' ? Character.toString(c) : escaped(c));
+            i += Character.charCount(c);
+        }
+        return out.toString();
+    }
+
+    /**
      * {@code name}, a key a user chose (a mode, a {@code paths} entry, an unknown key), as one step of a key path:
      * as it is when it is a plain name of letters, digits, {@code _ . - $}, else as {@link #text}, so
      * {@code modes."a\nb".env} stays on one line.

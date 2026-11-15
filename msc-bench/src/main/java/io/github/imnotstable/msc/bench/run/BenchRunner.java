@@ -7,6 +7,7 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import io.github.imnotstable.msc.bench.RunSelection;
 import io.github.imnotstable.msc.bench.StrictJson;
+import io.github.imnotstable.msc.bench.Quoted;
 import io.github.imnotstable.msc.bench.Text;
 import io.github.imnotstable.msc.bench.check.Check;
 import io.github.imnotstable.msc.bench.check.CheckContext;
@@ -155,33 +156,35 @@ public final class BenchRunner {
             if (task.needsServer() && !config.server().acceptEula()) {
                 skipped++;
                 log.printf("skipped %s: it runs a Paper server, and the Minecraft EULA is not accepted on this machine "
-                        + "(%s)%n", task.id(), MachineEula.location(Path.of(System.getProperty("user.home"))));
+                        + "(%s)%n", Quoted.visible(task.id()),
+                        MachineEula.location(Path.of(System.getProperty("user.home"))));
                 continue;
             }
             for (int repeat = 1; repeat <= repeats; repeat++) {
                 for (String mode : modes) {
-                    log.printf("[%s] %s #%d ...%n", mode, task.id(), repeat);
+                    log.printf("%s ...%n", label(mode, task.id(), repeat));
                     RunRecord record;
                     try {
                         record = runWithMcpRetries(task, mode, repeat);
                         if (children.closed() || Thread.currentThread().isInterrupted()) {
                             // Cut short: the attempt's agent was killed, so its record would score nothing real.
-                            log.printf("[%s] %s #%d: stopped, the run was interrupted%n", mode, task.id(), repeat);
+                            log.printf("%s: stopped, the run was interrupted%n", label(mode, task.id(), repeat));
                             return records;
                         }
                         Path results = runDir.resolve(RESULTS_FILE);
                         RunRecord done = record;
                         own(results, () -> ResultsFile.append(results, done, disk));
                     } catch (UsageLimitReached e) {
-                        stoppedBy = e.getMessage();
-                        log.printf("[%s] %s #%d: stopped, the agent hit a usage limit: %s%n",
-                                mode, task.id(), repeat, stoppedBy);
+                        stoppedBy = Quoted.visible(e.getMessage());
+                        log.printf("%s: stopped, the agent hit a usage limit: %s%n",
+                                label(mode, task.id(), repeat), stoppedBy);
                         return records;
                     } catch (RunFolderUnwritable e) {
                         // Later attempts would be lost the same way, so the run stops with the records results.jsonl
                         // holds, and the caller still writes their report.
                         notRecorded = e;
-                        log.printf("[%s] %s #%d: stopped, %s%n", mode, task.id(), repeat, e.getMessage());
+                        log.printf("%s: stopped, %s%n", label(mode, task.id(), repeat),
+                                Quoted.visible(e.getMessage()));
                         return records;
                     }
                     records.add(record);
@@ -212,8 +215,8 @@ public final class BenchRunner {
                     || record.tools().calls() > 0) {
                 return record;
             }
-            log.printf("[%s] %s #%d: %s, and no tool call was logged (try %d of %d)%n",
-                    modeName, task.id(), repeat, problem, attempt, MCP_TRIES);
+            log.printf("%s: %s, and no tool call was logged (try %d of %d)%n",
+                    label(modeName, task.id(), repeat), Quoted.visible(problem), attempt, MCP_TRIES);
         }
         return record.failed("MCP server " + required + " was not connected when the agent started, "
                 + MCP_TRIES + " tries: " + problem);
@@ -420,7 +423,8 @@ public final class BenchRunner {
                     try {
                         ServerFiles.save(workspace.resolve("server"), sharedServerFiles());
                     } catch (IOException e) {
-                        log.println("could not save server files for later runs: " + e.getMessage());
+                        log.println("could not save server files for later runs: "
+                                + Quoted.message(StepFailed.describe(e)));
                     }
                 }
             }
@@ -429,8 +433,8 @@ public final class BenchRunner {
             // did not stop: the attempt is over, and the next one must not meet it on a port.
             int left = processes.kill(attemptDir);
             if (left > 0) {
-                log.printf("[%s] %s #%d: stopped %d process(es) the attempt left running%n",
-                        modeName, task.id(), repeat, left);
+                log.printf("%s: stopped %d process(es) the attempt left running%n",
+                        label(modeName, task.id(), repeat), left);
             }
         }
 
@@ -450,10 +454,18 @@ public final class BenchRunner {
     /** The terminal line for one finished attempt; a failed one ends with {@link RunRecord#failureReason()}. */
     static String progressLine(RunRecord record) {
         String reason = record.failureReason();
-        return String.format(Locale.ROOT, "[%s] %s #%d %s in %ds, %d tokens, %d/%d checks%s",
-                record.mode(), record.task(), record.repeat(), record.passed() ? "PASS" : "FAIL",
+        return String.format(Locale.ROOT, "%s %s in %ds, %d tokens, %d/%d checks%s",
+                label(record.mode(), record.task(), record.repeat()), record.passed() ? "PASS" : "FAIL",
                 record.wallMs() / 1000, record.agent().totalTokens(), record.checksPassed(), record.checks().size(),
                 reason == null ? "" : " (" + reason + ")");
+    }
+
+    /**
+     * {@code [mode] task #repeat}, how every terminal line names an attempt; the mode (bench.json's) and the task id (a
+     * folder's name) are shown as run text is ({@link Quoted#visible(String)}, #677), so neither can split or hide.
+     */
+    static String label(String mode, String task, int repeat) {
+        return "[" + Quoted.visible(mode) + "] " + Quoted.visible(task) + " #" + repeat;
     }
 
     /** The agent's run ended on an account usage limit; carries its error text. */

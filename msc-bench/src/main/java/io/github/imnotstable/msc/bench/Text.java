@@ -109,12 +109,14 @@ public final class Text {
     }
 
     /**
-     * {@code text} as one bounded line: every run of line breaks, tabs and other control characters becomes one space,
-     * the ends are stripped, and text over {@code max} chars is cut by {@link #cut}, keeping its head and its tail.
-     * Collapsing never makes text longer, so a text {@link #cut} already fitted to {@code max} is not cut again.
+     * {@code text} as one bounded line a reader is shown: the ends are stripped, text over {@code max} characters is
+     * cut like {@link #cut}, keeping its head and its tail, and every character that would split the line or hide
+     * itself is escaped by {@link Quoted#visible(String, int)} (#677), a line break as backslash n, a zero-width space
+     * or a right-to-left override as a unicode escape. An escape counts as one character, so a text {@link #cut}
+     * already fitted to {@code max} is not cut again.
      */
     public static String singleLine(String text, int max) {
-        return cut(text.replaceAll("[\\p{Cntrl}\\u0085\\u2028\\u2029\\s]+", " ").strip(), max);
+        return Quoted.visible(text.strip(), max);
     }
 
     /**

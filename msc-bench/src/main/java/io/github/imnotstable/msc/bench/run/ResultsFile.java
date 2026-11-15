@@ -4,6 +4,7 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonElement;
 import io.github.imnotstable.msc.bench.JsonNumbers;
+import io.github.imnotstable.msc.bench.Quoted;
 import io.github.imnotstable.msc.bench.StrictJson;
 import io.github.imnotstable.msc.bench.Text;
 import io.github.imnotstable.msc.bench.UserJson;
@@ -158,8 +159,9 @@ public final class ResultsFile {
             }
             int joined = joinedAt(content);
             if (joined > 0) {
-                warnings.accept("warning: " + file + " line " + (i + 1) + " starts with a half-written run (a run was "
-                        + "stopped while writing it, and the next file was joined after it); left that part out");
+                warnings.accept("warning: " + Quoted.path(file.toString()) + " line " + (i + 1) + " starts with a "
+                        + "half-written run (a run was stopped while writing it, and the next file was joined after "
+                        + "it); left that part out");
                 content = content.substring(content.charAt(joined) == BOM ? joined + 1 : joined);
             }
             if (openEnd && !undecodableTail && i == lines.size() - 1 && !records.isEmpty() && !isJson(content)) {
@@ -185,8 +187,8 @@ public final class ResultsFile {
     }
 
     private static String halfWritten(Path file, int line) {
-        return "warning: " + file + " line " + line + " is half-written (the run was stopped while writing it); "
-                + "left it out";
+        return "warning: " + Quoted.path(file.toString()) + " line " + line + " is half-written (the run was stopped "
+                + "while writing it); left it out";
     }
 
     private static int lastLineBreak(byte[] bytes) {

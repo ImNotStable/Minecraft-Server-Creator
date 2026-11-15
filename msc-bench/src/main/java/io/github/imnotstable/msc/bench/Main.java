@@ -232,8 +232,9 @@ public final class Main {
 
     private static int list(Path tasksDir, PrintStream out) throws IOException {
         for (TaskDef task : RunSelection.all(tasksDir, TaskLoader.loadAll(tasksDir))) {
-            out.printf("%-26s %-8s %-8s %d checks  %s%n", task.id(), task.category(), task.platform(),
-                    task.checks().size(), task.title());
+            // Each text a task.json or a folder name gave is shown as run text is (#677): on one line, nothing hidden.
+            out.printf("%-26s %-8s %-8s %d checks  %s%n", Quoted.visible(task.id()), Quoted.visible(task.category()),
+                    Quoted.visible(task.platform()), task.checks().size(), Quoted.visible(task.title()));
         }
         return OK;
     }
@@ -308,7 +309,7 @@ public final class Main {
             exit = records.stream().allMatch(RunRecord::passed) ? OK : FAILED;
         }
         try {
-            out.println("Report: " + writeReport(runDir, records, disk));
+            out.println("Report: " + Quoted.path(writeReport(runDir, records, disk).toString()));
         } catch (RunFolderUnwritable e) {
             out.println("warning: " + e.getMessage() + "; once that is fixed, `report " + runDir.toAbsolutePath()
                     + "` writes it from " + ResultsFile.NAME);
@@ -462,13 +463,15 @@ public final class Main {
             }
             if (!task.reset().isEmpty()) {
                 StepFailed.during(StepFailed.RESET_BEFORE_CHECKS, () -> task.reset().apply(workspace));
-                out.printf("reset before checks: deleted %s%n", String.join(", ", task.reset().delete()));
+                out.printf("reset before checks: deleted %s%n",
+                        String.join(", ", task.reset().delete().stream().map(Quoted::visible).toList()));
             }
             boolean allPassed = true;
             for (Check check : task.checks()) {
                 CheckResult result = check.run(context);
                 allPassed &= result.passed();
-                out.printf("%s %s: %s%n", result.passed() ? "PASS" : "FAIL", result.name(), result.detail());
+                // The same text run's progress line and report.md show (#677): one line, nothing hidden.
+                out.printf("%s %s%n", result.passed() ? "PASS" : "FAIL", result.shown());
             }
             return allPassed ? OK : FAILED;
         } finally {
@@ -507,7 +510,7 @@ public final class Main {
                     + "prints after Report:");
         }
         List<RunRecord> records = ResultsFile.read(results, out::println);
-        out.println("Report: " + writeReport(runDir, records, disk));
+        out.println("Report: " + Quoted.path(writeReport(runDir, records, disk).toString()));
         return OK;
     }
 }
