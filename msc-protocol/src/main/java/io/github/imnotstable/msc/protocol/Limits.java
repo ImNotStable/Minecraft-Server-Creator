@@ -43,6 +43,12 @@ public final class Limits {
      */
     public static final Duration CORE_CALL_TIMEOUT = AGENT_WAIT.multipliedBy(AGENT_WAITS_PER_OP).plusSeconds(10);
 
+    /**
+     * Largest handshake frame either side reads, in bytes: a hello with its operation list is well under 1 KiB. A
+     * peer that has not proved it holds the token gets no {@link #MAX_FRAME_BYTES} buffer (ADR 0043).
+     */
+    public static final int MAX_HANDSHAKE_FRAME_BYTES = 64 * 1024;
+
     /** Environment variable the core sets for the agent: {@code host:port} to connect to. */
     public static final String ENV_CORE_ADDRESS = "MSC_CORE_ADDRESS";
 
