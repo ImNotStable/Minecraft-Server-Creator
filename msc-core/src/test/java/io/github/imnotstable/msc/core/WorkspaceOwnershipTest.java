@@ -178,6 +178,43 @@ class WorkspaceOwnershipTest {
             assertThat(h.ok("server_start", "timeoutSeconds", 30)).startsWith("server ready");
         }
 
+        /**
+         * #735: a switch away and back left this session's own detached server "left by an earlier session", out of
+         * reach of the world tools and server_command, and server_stop killed it.
+         */
+        @Test
+        void aServerDetachedHereIsStillThisSessionsAfterASwitchAwayAndBack() throws Exception {
+            ServerManager server = started();
+            h.ok("texture", "name", "item/dot", "palette", List.of("a=#ff0000"), "rows", List.of("a"));
+            h.ok("pack", "apply", false);
+            assertThat(h.ok("server_detach")).contains("and so does the resource pack host");
+            switchAway();
+            assertThat(server.running()).isTrue();
+            assertThat(h.ok("msc_workspace", "path", workspace.toString()))
+                    .contains("; the server this session detached here runs on, still this session's");
+            assertThat(h.ok("msc_status")).contains("\nserver: running, detached (")
+                    .contains("\nagent: paper fake, minecraft 26.3, ");
+            assertThat(h.ok("world_summary", "region", "0,60,0 1,61,1")).contains("blocks: stone 8");
+            assertThat(h.ok("server_command", "command", "say hi")).isEqualTo("ran say hi");
+            // An agent that reconnects later (Paper's /reload) finds this session at the address its server knows.
+            h.core.server().console("unload");
+            long end = System.nanoTime() + Duration.ofSeconds(20).toNanos();
+            while (h.core.hub().current() != null && System.nanoTime() < end) {
+                Thread.sleep(20);
+            }
+            assertThat(h.ok("server_command", "command", "load")).contains("console: load");
+            while ((h.core.hub().current() == null || h.core.server().reportsStopping()) && System.nanoTime() < end) {
+                Thread.sleep(20);
+            }
+            assertThat(h.ok("world_summary", "region", "0,60,0 1,61,1")).contains("blocks: stone 8");
+            long mark = h.core.server().log().mark();
+            assertThat(h.ok("server_stop")).isEqualTo("server stopped, and the pack host it kept running");
+            assertThat(workspace.resolve(".msc/pack-host.pid")).doesNotExist();
+            assertThat(h.core.server().log().since(mark)).as("its own graceful stop")
+                    .anyMatch(l -> l.contains("Stopping server"));
+            assertThat(server.running()).isFalse();
+        }
+
         /** #282: the start was reached after the bench closed; nothing would ever stop that server. */
         @Test
         void aStartAfterCloseBeganLaunchesNothing() throws Exception {
@@ -462,12 +499,13 @@ class WorkspaceOwnershipTest {
         }
 
         /**
-         * #726: the agent of a server detached in one workspace reconnects to the same fixed address once a switch
-         * closed that workspace, with the token its server was started with. The next workspace refuses it: its world
-         * tools must never reach another workspace's server (ADR 0050).
+         * #726: the agent of a server detached in one workspace reconnected to the same fixed address once a switch
+         * closed that workspace, and the next workspace's world tools reached it. Its token keeps it out (ADR 0050);
+         * since #735 its connection is kept through the switch, so it does not even knock. A switch back finds it
+         * still this session's detached server, agent connected (#735).
          */
         @Test
-        void aServerDetachedInOneWorkspaceDoesNotAttachToTheNext() throws Exception {
+        void aServerDetachedInOneWorkspaceDoesNotAttachToTheNextAndIsBackOnASwitchBack() throws Exception {
             Files.createDirectories(workspace.resolve("run"));
             Files.writeString(workspace.resolve("run/reconnect.flag"), "");
             h.ok("server_start", "timeoutSeconds", 30);
@@ -478,17 +516,11 @@ class WorkspaceOwnershipTest {
                 Path other = Files.createDirectories(workspace.resolve("other"));
                 h.ok("msc_workspace", "path", other.toString());
                 AgentHub hub = h.core.hub();
-                long end = System.nanoTime() + Duration.ofSeconds(20).toNanos();
-                while (hub.refusedAgents() == 0 && System.nanoTime() < end) {
-                    Thread.sleep(50);
-                }
-                assertThat(hub.refusedAgents()).isEqualTo(1);
+                Thread.sleep(500);
                 assertThat(hub.current()).isNull();
                 assertThat(left.isAlive()).isTrue();
-                assertThat(h.ok("msc_status")).contains("\nserver: not set up (")
-                        .contains("\nagent: not connected; refused 1 agent without this workspace's token "
-                                + "(another workspace's server)\n");
-                // A fixed address waits for an agent that may attach (ADR 0005); the refused one never does.
+                assertThat(h.ok("msc_status")).contains("\nserver: not set up (").contains("\nagent: not connected\n");
+                // A fixed address waits for an agent that may attach (ADR 0005); the other workspace's never does.
                 hub.connectWait(Duration.ofMillis(300));
                 assertThat(h.error("world_summary", "region", "world 0 -64 0 15 0 15"))
                         .contains("no server agent connected");
@@ -496,6 +528,49 @@ class WorkspaceOwnershipTest {
                 assertThat(h.ok("server_start", "timeoutSeconds", 30)).contains("agent connected");
                 assertThat(h.ok("msc_status")).contains("\nagent: paper fake, minecraft 26.3, ")
                         .doesNotContain("started outside this session");
+                assertThat(h.ok("msc_workspace", "path", workspace.toString()))
+                        .contains("; the server this session detached here runs on, still this session's");
+                assertThat(h.ok("msc_status")).contains("\nserver: running, detached (")
+                        .contains("\nagent: paper fake, minecraft 26.3, ").doesNotContain("refused");
+                assertThat(h.ok("world_summary", "region", "0,60,0 1,61,1")).contains("blocks: stone 8");
+                assertThat(h.ok("server_command", "command", "say hi")).isEqualTo("ran say hi");
+                assertThat(h.ok("server_stop")).isEqualTo("server stopped");
+                assertThat(left.onExit().get(10, TimeUnit.SECONDS).isAlive()).isFalse();
+            } finally {
+                left.destroyForcibly();
+            }
+        }
+
+        /**
+         * #734: with a fixed address and no MSC_TOKEN each session has its own token, so the next session refuses the
+         * agent of a server an earlier session of this same workspace detached. msc_status called it another
+         * workspace's server beside a server line naming it this workspace's leftover.
+         */
+        @Test
+        void anEarlierSessionsLeftoverRefusedOnTheSamePortIsNotCalledAnotherWorkspaces() throws Exception {
+            Files.createDirectories(workspace.resolve("run"));
+            Files.writeString(workspace.resolve("run/reconnect.flag"), "");
+            h.ok("server_start", "timeoutSeconds", 30);
+            ProcessHandle left = ProcessHandle.of(Long.parseLong(
+                    Files.readString(workspace.resolve(".msc/server.pid")).split(" ")[0])).orElseThrow();
+            try {
+                h.ok("server_detach");
+                h.close();
+                h = new CoreHarness(workspace, c -> c.withAgentPort(port)
+                        .withServerCommand(java(FakeServerMain.class)));
+                AgentHub hub = h.core.hub();
+                long end = System.nanoTime() + Duration.ofSeconds(20).toNanos();
+                while (hub.refusedAgents() == 0 && System.nanoTime() < end) {
+                    Thread.sleep(50);
+                }
+                assertThat(h.ok("msc_status"))
+                        .contains("\nserver: running, left by an earlier session (pid " + left.pid() + ";")
+                        .contains("\nagent: not connected; refused 1 agent without this session's token (a server "
+                                + "another workspace or an earlier session started; server_start or dev_cycle "
+                                + "restarts this workspace's leftover under this session)\n");
+                assertThat(h.ok("server_start", "timeoutSeconds", 30))
+                        .contains("stopped a server left running by an earlier session (pid " + left.pid())
+                        .contains("agent connected");
                 h.ok("server_stop");
             } finally {
                 left.destroyForcibly();

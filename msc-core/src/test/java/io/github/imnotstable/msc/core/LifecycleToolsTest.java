@@ -206,6 +206,32 @@ class LifecycleToolsTest {
     }
 
     @Test
+    void aDetachedServerWhoseAgentAnnouncesAStopOutlivesTheSessionWithItsPackHost() throws Exception {
+        // #733: the announce is a hint (#729), so the server runs on; the session end stopped it and its pack host.
+        h.ok("server_start", "timeoutSeconds", 30);
+        h.ok("texture", "name", "item/dot", "palette", List.of("a=#ff0000"), "rows", List.of("a"));
+        String url = h.ok("pack", "apply", false).lines().filter(l -> l.startsWith("url: ")).findFirst()
+                .orElseThrow().substring(5);
+        h.ok("server_detach");
+        ProcessHandle server = ProcessHandle.of(Long.parseLong(
+                Files.readString(workspace.resolve(".msc/server.pid")).split(" ")[0])).orElseThrow();
+        try {
+            h.core.server().console("announce"); // typed into the server: its agent announces, the server runs on
+            until("announced", () -> h.core.server().reportsStopping());
+            assertThat(h.ok("msc_status")).contains("\nserver: stopping (");
+            assertThat(h.core.server().detached()).as("the detach holds").isTrue();
+            h.close();
+            assertThat(server.isAlive()).as("the detached server runs on").isTrue();
+            assertThat(fetch(url)).as("and so does its pack host").isEqualTo(200);
+        } finally {
+            server.destroyForcibly();
+            server.onExit().get(10, java.util.concurrent.TimeUnit.SECONDS);
+            h = new CoreHarness(workspace, c -> c.withServerCommand(java(FakeServerMain.class)));
+            h.ok("server_stop"); // the leftover pack host
+        }
+    }
+
+    @Test
     void aServerStartedAfterADetachedOneExitedIsNotDetached() throws Exception {
         h.ok("server_start", "timeoutSeconds", 30);
         h.ok("server_detach");
@@ -1608,11 +1634,11 @@ class LifecycleToolsTest {
         for (String way : List.of("announce", "unload", "reload")) {
             h.ok("server_start", "timeoutSeconds", 30);
             h.core.server().console(way.equals("reload") ? "unload" : way);
-            until(way, () -> h.core.server().stopping() && (way.equals("announce") || h.core.hub().current() == null));
+            until(way, () -> h.core.server().reportsStopping() && (way.equals("announce") || h.core.hub().current() == null));
             assertThat(h.ok("msc_status")).as(way).contains("\nserver: stopping (");
             if (way.equals("reload")) {
                 assertThat(h.ok("server_command", "command", "load")).as(way).contains("console: load");
-                until(way, () -> h.core.hub().current() != null && !h.core.server().stopping());
+                until(way, () -> h.core.hub().current() != null && !h.core.server().reportsStopping());
                 assertThat(h.ok("msc_status")).as(way).contains("\nserver: running (");
                 assertThat(h.ok("world_summary", "region", "0,60,0 1,61,1")).as(way).contains("blocks: stone 8");
             } else {

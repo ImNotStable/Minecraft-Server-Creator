@@ -168,7 +168,7 @@ final class ServerConsole {
         }
         // The agent of a stopping server is not asked, its console is: it refuses this session's own stop as the agent
         // would (#723), and still takes a command after a stop only the agent announced (#729).
-        if (hub.current() != null && !server.stopping()) {
+        if (hub.current() != null && !server.reportsStopping()) {
             long before = server.log().mark();
             marks.waitFrom = before;
             Ops.CommandResult r = hub.call(Ops.SERVER_COMMAND, new Ops.CommandParams(command));

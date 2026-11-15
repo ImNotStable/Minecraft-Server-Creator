@@ -59,9 +59,13 @@ public final class MetaTools {
                     }
                     int refused = hub.refusedAgents();
                     if (refused > 0) {
-                        // ADR 0050: say why an agent that knocked is not the one world tools reach.
+                        // ADR 0050: say why an agent that knocked is not the one world tools reach. Whose it is the
+                        // hub cannot know: an earlier session's leftover here carries that session's token (#734).
                         out.append("; refused ").append(refused).append(refused == 1 ? " agent" : " agents")
-                                .append(" without this workspace's token (another workspace's server)");
+                                .append(" without this session's token (a server another workspace or an earlier "
+                                        + "session started")
+                                .append(server.leftoverPid() >= 0 ? "; server_start or dev_cycle restarts this "
+                                        + "workspace's leftover under this session)" : ")");
                     }
                     out.append("\napi index: ").append(api.status());
                     for (String w : SetupCheck.warnings(config)) {
@@ -74,7 +78,7 @@ public final class MetaTools {
     /** Running, also when an earlier session detached it: world tools then fail until a start takes it over. */
     static String serverState(ServerManager server) {
         if (server.running()) {
-            return server.stopping() ? "stopping" : server.detached() ? "running, detached" : "running";
+            return server.reportsStopping() ? "stopping" : server.detached() ? "running, detached" : "running";
         }
         var other = server.otherSession();
         if (other.isPresent()) {
