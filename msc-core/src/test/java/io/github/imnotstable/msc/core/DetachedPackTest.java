@@ -140,7 +140,7 @@ class DetachedPackTest {
         assertThat(h.ok("server_detach")).startsWith("server detached: it keeps running after this session ends.\n"
                 + why + ", so the resource pack is served by this session only, until it ends\nWorld tools");
         assertThat(h.ok("msc_workspace", "path", "other", "create", true))
-                .contains("\n" + why + ", so nothing serves the resource pack until the switch back\n");
+                .contains(" keeps running; " + why + ", so nothing serves the resource pack until the switch back\n");
         h.ok("msc_workspace", "path", workspace.toString());
         assertThat(serves(url)).as("served again after the switch back").isTrue();
 

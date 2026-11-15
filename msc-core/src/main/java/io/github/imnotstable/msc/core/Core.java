@@ -502,7 +502,8 @@ public final class Core implements AutoCloseable {
             // lets it go before its close returns, and the bind waits PortPatience for it (#721).
             String unserved = old.leave();
             if (unserved != null) {
-                closing = closing == null ? unserved : closing + "\n" + unserved;
+                // One line with the closing one, which a detached server always has.
+                closing = closing == null ? unserved : closing + "; " + unserved;
             }
             Bench next;
             try {
