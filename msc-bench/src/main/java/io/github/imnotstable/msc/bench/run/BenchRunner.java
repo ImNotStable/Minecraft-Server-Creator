@@ -2,6 +2,7 @@ package io.github.imnotstable.msc.bench.run;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParseException;
@@ -236,7 +237,7 @@ public final class BenchRunner {
             Path mcpConfig = attemptDir.resolve("mcp.json");
             Files.createDirectories(attemptDir);
             PrivateFile.write(mcpConfig, withMarks(fillJson(Text.readOwn(mcpTemplate), values),
-                    processes.marks(attemptDir)));
+                    processes.marks(attemptDir), processes.argumentMarks(attemptDir)));
             values.put("mcpConfig", slashes(mcpConfig));
         }
 
@@ -486,10 +487,12 @@ public final class BenchRunner {
 
     /**
      * The MCP config {@code json} with {@code marks} in the {@code env} of each of its servers, so msc-core carries the
-     * run's marks however Claude Code passes its own environment on (#587). A config without servers, or that is no
-     * JSON (Claude Code refuses it and says why), stays as it is.
+     * run's marks however Claude Code passes its own environment on (#587), and with {@code argumentMarks} first in
+     * the {@code args} of each server whose command is Java, so msc-core is proven the run's by its command line where
+     * the system shows no environment (#595). A config without servers, or that is no JSON (Claude Code refuses it
+     * and says why), stays as it is.
      */
-    static String withMarks(String json, Map<String, String> marks) {
+    static String withMarks(String json, Map<String, String> marks, List<String> argumentMarks) {
         JsonElement tree;
         try {
             tree = JsonParser.parseString(json);
@@ -504,9 +507,28 @@ public final class BenchRunner {
                 JsonObject env = definition.get("env") instanceof JsonObject given ? given : new JsonObject();
                 definition.add("env", env);
                 marks.forEach(env::addProperty);
+                if (definition.get("command") instanceof JsonElement command && command.isJsonPrimitive()
+                        && isJava(command.getAsString())) {
+                    JsonArray args = new JsonArray();
+                    argumentMarks.forEach(args::add);
+                    if (definition.get("args") instanceof JsonArray given) {
+                        args.addAll(given);
+                    }
+                    definition.add("args", args);
+                }
             }
         }
         return GSON.toJson(tree);
+    }
+
+    /** True when {@code command} runs the Java launcher ({@code java} or {@code javaw}, in a folder or not). */
+    static boolean isJava(String command) {
+        String name = command.substring(Math.max(command.lastIndexOf('/'), command.lastIndexOf('\\')) + 1)
+                .toLowerCase(Locale.ROOT);
+        if (name.endsWith(".exe")) {
+            name = name.substring(0, name.length() - ".exe".length());
+        }
+        return name.equals("java") || name.equals("javaw");
     }
 
     /** Fills placeholders in a JSON template, escaping values so paths with backslashes stay valid. */

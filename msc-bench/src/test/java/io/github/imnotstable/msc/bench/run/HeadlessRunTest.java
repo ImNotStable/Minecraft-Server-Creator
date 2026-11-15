@@ -3,6 +3,8 @@ package io.github.imnotstable.msc.bench.run;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import io.github.imnotstable.msc.bench.FakeAgent;
 import io.github.imnotstable.msc.process.ClosedPort;
 import java.io.IOException;
@@ -56,13 +58,43 @@ class HeadlessRunTest {
 
     @Test
     void theRunMarksEveryMcpServerOfTheConfig() {
+        List<String> args = List.of("-Dmsc.bench.run=r", "-Dmsc.bench.attempt=/a");
         String json = BenchRunner.withMarks("""
                 {"mcpServers":{"msc":{"command":"java","env":{"MSC_TOKEN":"t"}},"other":{"command":"x"}}}
-                """, Map.of(AttemptProcesses.RUN, "r", AttemptProcesses.ATTEMPT, "/a"));
+                """, Map.of(AttemptProcesses.RUN, "r", AttemptProcesses.ATTEMPT, "/a"), args);
         assertThat(json).contains("\"env\":{\"MSC_TOKEN\":\"t\",").contains("\"MSC_BENCH_RUN\":\"r\"")
                 .contains("\"other\":{\"command\":\"x\",\"env\":{");
-        assertThat(BenchRunner.withMarks("{}", Map.of(AttemptProcesses.RUN, "r"))).isEqualTo("{}");
-        assertThat(BenchRunner.withMarks("{not json", Map.of(AttemptProcesses.RUN, "r"))).isEqualTo("{not json");
+        assertThat(BenchRunner.withMarks("{}", Map.of(AttemptProcesses.RUN, "r"), args)).isEqualTo("{}");
+        assertThat(BenchRunner.withMarks("{not json", Map.of(AttemptProcesses.RUN, "r"), args))
+                .isEqualTo("{not json");
+    }
+
+    /** #595: a Java server gets the marks first on its command line too, where a system shows no environment. */
+    @Test
+    void theRunMarksTheCommandLineOfEveryJavaMcpServer() {
+        List<String> marks = List.of("-Dmsc.bench.run=r", "-Dmsc.bench.attempt=C:\\runs\\a b");
+        JsonObject servers = JsonParser.parseString(BenchRunner.withMarks("""
+                {"mcpServers":{
+                  "msc":{"command":"C:\\\\jdk\\\\bin\\\\java.EXE","args":["-cp","lib/*","Main"]},
+                  "bare":{"command":"java"},
+                  "javaw":{"command":"/opt/jdk/bin/javaw","args":[]},
+                  "node":{"command":"node","args":["s.js"]},
+                  "javascript":{"command":"/usr/bin/java-tool","args":["x"]}}}
+                """, Map.of(AttemptProcesses.RUN, "r"), marks)).getAsJsonObject().getAsJsonObject("mcpServers");
+        assertThat(args(servers, "msc")).containsExactly("-Dmsc.bench.run=r", "-Dmsc.bench.attempt=C:\\runs\\a b",
+                "-cp", "lib/*", "Main");
+        assertThat(args(servers, "bare")).containsExactlyElementsOf(marks);
+        assertThat(args(servers, "javaw")).containsExactlyElementsOf(marks);
+        assertThat(args(servers, "node")).containsExactly("s.js");
+        assertThat(args(servers, "javascript")).containsExactly("x");
+        // The shipped template starts core with {java}: the filled config carries the marks.
+        assertThat(BenchRunner.isJava(ProcessHandle.current().info().command().orElse("java"))).isTrue();
+    }
+
+    private static List<String> args(JsonObject servers, String name) {
+        List<String> args = new ArrayList<>();
+        servers.getAsJsonObject(name).getAsJsonArray("args").forEach(a -> args.add(a.getAsString()));
+        return args;
     }
 
     @Test
