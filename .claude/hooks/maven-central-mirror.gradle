@@ -22,7 +22,11 @@ def mirrorFirst = { RepositoryHandler repos ->
 }
 
 beforeSettings { settings ->
-    mirrorFirst(settings.pluginManagement.repositories)
+    def plugins = settings.pluginManagement.repositories
+    mirrorFirst(plugins)
+    // A settings file that declares no plugin repositories gets only Gradle's default, the Plugin Portal; the mirror
+    // added above would otherwise replace that default, and plugins only the Portal hosts (foojay) would not resolve.
+    plugins.gradlePluginPortal()
     mirrorFirst(settings.dependencyResolutionManagement.repositories)
 }
 

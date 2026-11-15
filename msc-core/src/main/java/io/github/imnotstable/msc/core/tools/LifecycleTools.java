@@ -9,6 +9,7 @@ import io.github.imnotstable.msc.core.server.ServerManager;
 import io.github.imnotstable.msc.core.texture.ResourcePack;
 import io.github.imnotstable.msc.core.tool.Schema;
 import io.github.imnotstable.msc.core.tool.ToolRegistry;
+import io.github.imnotstable.msc.core.world.WorldService;
 
 /**
  * Project and server lifecycle tools: scaffold ({@link Scaffold}), set up ({@link ServerSetup}), start, stop and
@@ -22,9 +23,10 @@ public final class LifecycleTools {
     private LifecycleTools() {
     }
 
-    public static void register(ToolRegistry registry, CoreConfig config, AgentHub hub, ServerManager server,
-                                ResourcePack pack, ProjectBuilder builder, PaperDownloader downloader,
-                                FabricDownloader fabric, BackgroundWork background) {
+    /** Declares the tools; returns the world backups, which share the server start ({@code build_undo backup=}). */
+    public static WorldBackups register(ToolRegistry registry, CoreConfig config, AgentHub hub, ServerManager server,
+                                        ResourcePack pack, ProjectBuilder builder, PaperDownloader downloader,
+                                        FabricDownloader fabric, BackgroundWork background, WorldService world) {
         EulaPrompts eula = new EulaPrompts(config);
         LogMarks marks = new LogMarks();
         BuildWarmup warmup = new BuildWarmup(builder, background);
@@ -36,7 +38,7 @@ public final class LifecycleTools {
         registry.add("project_scaffold",
                 "Create a new project from a template (Gradle KTS, tests wired in). Target directory must be empty.",
                 Schema.of().req("name", "string", "Project name, for example MyPlugin")
-                        .opt("dir", "string", "Target directory in the workspace. Default: the workspace itself")
+                        .opt("dir", "string", "Target directory in the workspace. Default: the workspace")
                         .opt("template", "string", "paper-plugin (default), fabric-mod (also Quilt), neoforge-mod, forge-mod, minestom-server, or a minigame base (kit, stages, saved progress, /game debug "
                                 + "commands): paper-game, fabric-game, minestom-game")
                         .opt("package", "string", "Java package. Default com.example.<name>")
@@ -80,5 +82,6 @@ public final class LifecycleTools {
         registry.add("server_wait", "Wait until a log or chat line matches a regex, instead of polling.",
                 Schema.of().req("until", "string", "Regex, case-insensitive")
                         .range("timeoutSeconds", 1, ServerConsole.MAX_WAIT_SECONDS, "Default 60"), console::await);
+        return new WorldBackups(config, hub, server, run, world, java.time.Clock.systemDefaultZone());
     }
 }

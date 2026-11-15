@@ -121,6 +121,13 @@ class CommandLineTest {
         BAD_TASKS.put("start-before-yes", new String[] {"{\"category\":\"code\",\"title\":\"t\","
                 + "\"server\":{\"startBefore\":\"yes\"}," + check + "}",
                 "server.startBefore: \"yes\" is not true or false"});
+        // #564: setup commands the runner would never send.
+        BAD_TASKS.put("setup-without-start-before", new String[] {"{\"category\":\"world\",\"title\":\"t\","
+                + "\"server\":{\"setup\":[\"forceload add 0 0\"]}," + check + "}",
+                "server.setup: runs only before the agent, so it needs \"startBefore\": true"});
+        BAD_TASKS.put("setup-start-before-false", new String[] {"{\"category\":\"world\",\"title\":\"t\","
+                + "\"server\":{\"startBefore\":false,\"setup\":[\"say hi\"]}," + check + "}",
+                "server.setup: runs only before the agent, so it needs \"startBefore\": true"});
         BAD_CONFIGS.put("path-nul", new String[] {"{\"gradleWrapperFrom\":\"a\\u0000b\"}",
                 "gradleWrapperFrom: \"a\\u0000b\" is not a path: Nul character not allowed"});
         // #508: a bad regex is refused in one line naming its key, not in PatternSyntaxException's three lines.
