@@ -216,7 +216,8 @@ final class ServerRun {
             properties = "\n" + ServerPropertiesFile.NAME + " now offers the pack too, so a restart outside MSC keeps it.";
         }
         return "server detached: it keeps running after this session ends"
-                + (hosting ? ", and so does the resource pack host" : " (no pack built yet, so no pack host)")
+                + (hosting ? ", and so does the resource pack host"
+                : " (no pack built yet; the pack tool starts a pack host that does too)")
                 + "." + properties + "\n" + (platform.proxy() ? "server_command works" // a proxy has no world (#722)
                 : "World tools and server_command work") + " until this session ends; the next session's server_start, "
                 + "dev_cycle or server_stop stops the server" + (platform.proxy() ? "" : " (world saved)")

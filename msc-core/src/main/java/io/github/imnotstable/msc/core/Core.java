@@ -244,6 +244,7 @@ public final class Core implements AutoCloseable {
                 throw e;
             }
             kept.remove(key(), this);
+            pack.unpark();
             return this;
         }
 
