@@ -56,7 +56,11 @@ The bench runs headless on Linux: on a box set up with `scripts/setup-ubuntu.sh`
 
 1. Sign Claude Code in once: run `claude` and use `/login` (a cloud session already is).
 2. Build MSC as in step 1 above.
-3. Start the run in `tmux` (or with `nohup`) so it keeps going after you log out. Minestom tasks need nothing else; Paper tasks need your EULA acceptance on that machine.
+3. Start the run in `tmux` (or with `nohup`) so it keeps going after you log out, and add `--isolate`: each agent then runs in its own process namespace, so an agent that cleans up with `killall java` cannot kill the bench or anything else on the machine. Minestom tasks need nothing else; Paper tasks need your EULA acceptance on that machine.
+
+   ```
+   ./gradlew :msc-bench:run --args="run --tasks game-sky-sprint --repeat 1 --isolate"
+   ```
 
 Even when the bench runs inside a Claude Code session, each attempt's agent runs like Claude Code started from a plain shell. If that session's own MSC holds port 25590, toolset attempts stop and say so: set `corePort` to a free port in a copy of `bench.json` and pass `--config`.
 

@@ -326,6 +326,14 @@ public record BenchConfig(
                 gradleWrapperFrom, paths, corePort, minecraftVersion);
     }
 
+    /** This config with {@code prefix} put in front of {@code agent.command} (the {@code run --isolate} option). */
+    public BenchConfig withAgentPrefix(List<String> prefix) {
+        List<String> command = new ArrayList<>(prefix);
+        command.addAll(agent.command());
+        return new BenchConfig(new Agent(List.copyOf(command), agent.timeoutSeconds()), modes, server,
+                gradleWrapperFrom, paths, corePort, minecraftVersion);
+    }
+
     private static String resolve(Path base, String path) {
         return base.resolve(path).normalize().toString();
     }

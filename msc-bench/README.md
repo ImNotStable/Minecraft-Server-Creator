@@ -49,7 +49,7 @@ Text the agent or a child process wrote is read the same way by every check (a `
 ./gradlew :msc-bench:run --args="run --tasks build-hut --repeat 3"
 ./gradlew :msc-bench:run --args="check build-hut ~/.msc/bench-runs/<ts>/attempts/build-hut/baseline-1/workspace"
 ./gradlew :msc-bench:run --args="report ~/.msc/bench-runs/<ts>"
-./gradlew :msc-bench:run --args="run --tasks game-sky-sprint --repeat 1 --model claude-haiku-4-5"   # a smoke run
+./gradlew :msc-bench:run --args="run --tasks game-sky-sprint --repeat 1 --model claude-haiku-4-5 --isolate"   # a smoke run on Linux
 ```
 
 `--model` replaces the model `agent.command` pins (or adds `--model`), for a cheap smoke run; results from different models do not compare. The smallest useful selection is one task and one repeat: `game-sky-sprint` (Minestom: no EULA, the whole game, a Gradle build) or `texture-ruby-item` (no server and no build).
@@ -60,7 +60,9 @@ The bench needs no desktop: a Linux box set up with `scripts/setup-ubuntu.sh` (J
 
 1. Sign Claude Code in once (`claude`, then `/login`); in a cloud container it already is.
 2. `./gradlew :msc-core:installDist :msc-agent-paper:shadowJar`
-3. `./gradlew :msc-bench:run --args="run --tasks game-sky-sprint --repeat 1"`, in `tmux` or with `nohup` on a box you log out of. Paper tasks also need the owner's EULA acceptance on that machine; Minestom tasks never do.
+3. `./gradlew :msc-bench:run --args="run --tasks game-sky-sprint --repeat 1 --isolate"`, in `tmux` or with `nohup` on a box you log out of. Paper tasks also need the owner's EULA acceptance on that machine; Minestom tasks never do.
+
+`--isolate` (Linux) starts each agent in its own PID namespace (`unshare --pid --fork --mount-proc --kill-child`, with `--user --map-current-user` when not root), checked once before the run. Use it whenever anything else runs on the machine: an agent cleaning up with `killall -9 java` (a real attempt did) otherwise kills the bench itself, Gradle daemons and other sessions' msc-core. Inside, the agent sees only its own processes, and when it exits the kernel ends what it left, msc-core included. On Ubuntu 24.04, if unprivileged user namespaces are off (`kernel.apparmor_restrict_unprivileged_userns=1`), `run` refuses `--isolate` saying so.
 
 The agent runs as Claude Code started from a plain shell even when the bench itself runs inside a Claude Code session (Remote Control, a cloud session): the runner drops that session's `CLAUDECODE`, `CLAUDE_*` and `CCR_*` variables from the agent's environment, keeping the ones that pick the account or provider (`CLAUDE_CODE_OAUTH_TOKEN`, `CLAUDE_CONFIG_DIR`, `CLAUDE_SESSION_INGRESS_TOKEN_FILE`, `CLAUDE_CODE_USE_*`, `CLAUDE_CODE_SKIP_*`); a mode's `env` can set any back. If that session's msc plugin holds the core port (25590), the toolset attempt says so: set `corePort` in a copy of `bench.json` and pass it with `--config`.
 

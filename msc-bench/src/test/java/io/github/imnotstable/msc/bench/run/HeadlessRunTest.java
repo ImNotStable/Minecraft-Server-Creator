@@ -7,11 +7,14 @@ import io.github.imnotstable.msc.bench.FakeAgent;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.ServerSocket;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 
 /** The parts of a run that let it work headless on a Linux box or in a cloud container (ADR 0044). */
@@ -69,6 +72,38 @@ class HeadlessRunTest {
                 .containsExactly("claude", "-p", "{prompt}", "--output-format", "stream-json", "--verbose",
                         "--model", "small");
         assertThatThrownBy(() -> pinned.withModel(" ")).hasMessageContaining("is no model name");
+    }
+
+    @Test
+    void anIsolatedAgentSeesOnlyItsOwnProcessesAndTakesThemAlong() throws Exception {
+        assertThat(PidNamespace.prefix(true)).containsExactly("unshare", "--pid", "--fork", "--mount-proc",
+                "--kill-child");
+        assertThat(PidNamespace.prefix(false)).startsWith("unshare", "--user", "--map-current-user");
+        List<String> prefix;
+        try {
+            prefix = PidNamespace.require();
+        } catch (IllegalArgumentException unsupported) {
+            Assumptions.abort(unsupported.getMessage());
+            return;
+        }
+        String marker = CoreProcesses.marker("/runs/" + UUID.randomUUID());
+        String java = ProcessHandle.current().info().command().orElse("java");
+        // Like an agent: starts a core that outlives it, and counts the processes it can see.
+        List<String> command = new ArrayList<>(prefix);
+        command.addAll(List.of("sh", "-c", "\"$0\" \"$1\" -cp \"$2\" \"$3\" \"$4\" >/dev/null 2>&1 & "
+                + "sleep 1; ls /proc | grep -c '^[0-9]'", java, marker, System.getProperty("java.class.path"),
+                FakeAgent.class.getName(), FakeAgent.SLEEP));
+        Process agent = new ProcessBuilder(command).redirectErrorStream(true).start();
+        String seen = new String(agent.getInputStream().readAllBytes(), StandardCharsets.UTF_8).strip();
+        assertThat(agent.waitFor(30, TimeUnit.SECONDS)).isTrue();
+
+        assertThat(Integer.parseInt(seen)).as("sh, the core, ls and grep at most").isLessThanOrEqualTo(5);
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+        while (ProcessHandle.allProcesses().anyMatch(p -> CoreProcesses.hasArgument(p, marker))
+                && System.nanoTime() < deadline) {
+            Thread.sleep(100);
+        }
+        assertThat(CoreProcesses.stop(marker)).as("the core ended with the agent's namespace").isZero();
     }
 
     private static Process sleeper(String marker) throws IOException {

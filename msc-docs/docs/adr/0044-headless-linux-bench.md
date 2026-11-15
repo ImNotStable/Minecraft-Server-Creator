@@ -34,7 +34,14 @@ container, so it stops depending on the PC. A first attempt in a cloud session f
    when it is taken, it stops the cores of earlier bench attempts (two runs on the same ports cannot work anyway); when
    it is still taken, the attempt fails at once naming the msc-core processes the bench did not start and asking to
    stop them or set `corePort`. It never stops a process it did not mark.
-4. **`run --model M`** replaces the `--model` value of `agent.command` (or adds one), so a cheap smoke run needs no
+4. **`run --isolate` puts each agent in its own PID namespace (Linux).** The first proof run lost its baseline attempt
+   when the agent cleaned up with `killall -9 java`: that killed the bench JVM, every Gradle daemon and the session's
+   own msc-core. With `--isolate` the agent command is prefixed with `unshare --pid --fork --mount-proc --kill-child`
+   (plus `--user --map-current-user` when not root, so Claude Code does not run as root), tried once with `true`
+   before the run and refused with the reason when the system cannot (not Linux, user namespaces off). The agent sees
+   only its own processes, and when it exits the kernel ends what it left, msc-core included. Opt-in, since Windows
+   has no such thing and the PC's runs stay comparable; recommended on every shared Linux machine.
+5. **`run --model M`** replaces the `--model` value of `agent.command` (or adds one), so a cheap smoke run needs no
    config copy. The pinned model in `bench.json` stays the one comparisons use. The documented minimal selection is
    one task, one repeat: `run --tasks game-sky-sprint --repeat 1` (Minestom, no EULA, the whole game) or
    `texture-ruby-item` (no server, no Gradle build). No separate `--quick` flag.
@@ -46,5 +53,6 @@ container, so it stops depending on the PC. A first attempt in a cloud session f
 - A user's own `bench.json` that still uses `--output-format json` works as before; only its MCP refusals are less
   precise, and they say what to change.
 - Proof run in a Claude Code cloud container (Linux), 2026-11-15: see the pull request that added this ADR.
-- Not verified: the Ubuntu box itself (its setup script installs the same JDK and Claude Code the container has), and
+- Not verified: `--isolate` on Ubuntu 24.04 with its AppArmor user-namespace restriction (the trial run refuses it
+  with the reason), the Ubuntu box itself (its setup script installs the same JDK and Claude Code the container has), and
   Paper tasks headless, which need the owner's EULA acceptance on that machine.

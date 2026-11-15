@@ -5,6 +5,7 @@ import io.github.imnotstable.msc.bench.check.CheckContext;
 import io.github.imnotstable.msc.bench.check.CheckResult;
 import io.github.imnotstable.msc.bench.report.ReportWriter;
 import io.github.imnotstable.msc.bench.run.BenchConfig;
+import io.github.imnotstable.msc.bench.run.PidNamespace;
 import io.github.imnotstable.msc.bench.run.BenchRunner;
 import io.github.imnotstable.msc.bench.run.ChildProcesses;
 import io.github.imnotstable.msc.bench.run.Disk;
@@ -152,7 +153,9 @@ public final class Main {
         List<String> positional = new ArrayList<>();
         Map<String, String> flags = new HashMap<>();
         for (int i = 0; i < args.length; i++) {
-            if (FLAGS.contains(args[i])) {
+            if (args[i].equals("--isolate")) {
+                flags.put(args[i], "");
+            } else if (FLAGS.contains(args[i])) {
                 if (i + 1 >= args.length) {
                     throw new IllegalArgumentException(args[i] + " needs a value");
                 }
@@ -178,7 +181,7 @@ public final class Main {
             }
             case "run" -> {
                 if (positional.size() != 1) {
-                    throw new IllegalArgumentException("usage: run [--tasks a,b] [--modes m1,m2] [--repeat N] [--model M]; "
+                    throw new IllegalArgumentException("usage: run [--tasks a,b] [--modes m1,m2] [--repeat N] [--model M] [--isolate]; "
                             + "unexpected " + positional.get(1));
                 }
                 yield runBench(tasksDir, flags, out, home, temp);
@@ -200,7 +203,7 @@ public final class Main {
     }
 
     static String usage() {
-        return "usage: msc-bench list | run [--tasks a,b] [--modes m1,m2] [--repeat N] [--model M] [--out DIR, default "
+        return "usage: msc-bench list | run [--tasks a,b] [--modes m1,m2] [--repeat N] [--model M] [--isolate] [--out DIR, default "
                 + RunIsolation.DEFAULT_RUNS_SHOWN + "] | check <task> <workspace> | report <runDir>";
     }
 
@@ -236,6 +239,9 @@ public final class Main {
         BenchConfig config = loadConfig(configFile, home);
         if (flags.containsKey("--model")) {
             config = config.withModel(flags.get("--model"));
+        }
+        if (flags.containsKey("--isolate")) {
+            config = config.withAgentPrefix(PidNamespace.require());
         }
         RunSelection selection = RunSelection.resolve(tasksDir, TaskLoader.loadAll(tasksDir), flags.get("--tasks"),
                 config.modes().keySet(), configFile, flags.get("--modes"));
