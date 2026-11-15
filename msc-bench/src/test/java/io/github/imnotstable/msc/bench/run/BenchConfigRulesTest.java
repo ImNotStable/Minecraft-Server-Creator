@@ -65,7 +65,8 @@ class BenchConfigRulesTest {
         cases("server.command", "[]", "[\" \"]");
         cases("server.paperJar", "\"\"", "\"missing.jar\"");
         cases("server.paperCacheDirs", "[]", "[null]", "[\"\"]");
-        cases("server.downloadsUrl", "\"\"", "\"ftp://host/x\"", "\"not a url\"", "\"https:///nohost\"");
+        cases("server.downloadsUrl", "\"\"", "\"ftp://host/x\"", "\"not a url\"", "\"https:///nohost\"",
+                "\"https://fill.papermc.io?mirror=1\"", "\"https://fill.papermc.io/#top\"", "\"https://h/#/\"");
         cases("server.serverPort", number("0", "-5", "65536", "25576"));
         cases("server.rconPort", number("0", "70000", "25566"));
         cases("server.rconPassword", "\"\"", "\"   \"", json("x".repeat(1447)), json("é".repeat(724)),
@@ -148,6 +149,28 @@ class BenchConfigRulesTest {
     void theValidBaseLoads() throws IOException {
         BenchConfig config = BenchConfig.load(write(JsonParser.parseString(VALID)), home());
         assertThat(config.server().rconPassword()).isEqualTo("pw");
+    }
+
+    /** #649: a base URL written with a trailing slash loads without it, as msc-core trims it. */
+    @ParameterizedTest
+    @ValueSource(strings = {"https://fill.papermc.io/", "https://fill.papermc.io//", "https://fill.papermc.io"})
+    void theDownloadsUrlLoadsWithoutItsTrailingSlash(String url) throws IOException {
+        BenchConfig config = BenchConfig.load(write(with("server.downloadsUrl", new JsonPrimitive(url))), home());
+        assertThat(config.server().downloadsUrl()).isEqualTo("https://fill.papermc.io");
+    }
+
+    @Test
+    void aMirrorPathKeepsItsPathWithoutTheTrailingSlash() throws IOException {
+        JsonPrimitive url = new JsonPrimitive("http://mirror.example/papermc/");
+        BenchConfig config = BenchConfig.load(write(with("server.downloadsUrl", url)), home());
+        assertThat(config.server().downloadsUrl()).isEqualTo("http://mirror.example/papermc");
+    }
+
+    @Test
+    void aQueryInTheDownloadsUrlIsRefusedSayingWhy() throws IOException {
+        Path config = write(with("server.downloadsUrl", new JsonPrimitive("https://fill.papermc.io/?a=b")));
+        assertThatThrownBy(() -> BenchConfig.load(config, home())).hasMessageContaining(
+                "server.downloadsUrl: \"https://fill.papermc.io/?a=b\" has a query or fragment");
     }
 
     static Stream<Arguments> impossibleValues() {

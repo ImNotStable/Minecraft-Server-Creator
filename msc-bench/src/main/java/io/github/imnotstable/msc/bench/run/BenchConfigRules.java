@@ -248,11 +248,29 @@ final class BenchConfigRules {
         notBlank(problems, key + ".requireMcp", mode.requireMcp());
     }
 
+    /**
+     * A base URL as the bench joins paths to it, without its trailing slashes (#649): {@code https://fill.papermc.io/}
+     * becomes {@code https://fill.papermc.io}, as msc-core's {@code Downloads.trim} makes it, so a join never gives
+     * {@code //v3}.
+     */
+    static String baseUrl(String url) {
+        int end = url.length();
+        while (end > 0 && url.charAt(end - 1) == '/') {
+            end--;
+        }
+        return url.substring(0, end);
+    }
+
     private static void downloadsUrl(List<String> problems, String url) {
         try {
             URI uri = new URI(url);
             String scheme = uri.getScheme() == null ? "" : uri.getScheme().toLowerCase(Locale.ROOT);
             if ((scheme.equals("http") || scheme.equals("https")) && uri.getHost() != null) {
+                if (uri.getRawQuery() != null || uri.getRawFragment() != null) {
+                    // The bench puts /v3/... after the base, so a query or fragment would swallow that path (#649).
+                    problems.add("server.downloadsUrl: \"" + url + "\" has a query or fragment; give the service's "
+                            + "base URL, such as https://fill.papermc.io");
+                }
                 return;
             }
         } catch (URISyntaxException e) {
