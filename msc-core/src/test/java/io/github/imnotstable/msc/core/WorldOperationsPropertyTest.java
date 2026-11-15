@@ -2,6 +2,8 @@ package io.github.imnotstable.msc.core;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.imnotstable.msc.core.world.Coords;
+import io.github.imnotstable.msc.protocol.op.Ops;
 import io.github.imnotstable.msc.protocol.world.BlockPos;
 import io.github.imnotstable.msc.protocol.world.Region;
 import java.nio.file.Files;
@@ -201,6 +203,84 @@ class WorldOperationsPropertyTest {
             }
             assertThat(snapshot(area)).as("seed %d, all undone", seed).isEqualTo(start);
         }
+    }
+
+    /**
+     * #697 (ADR 0049): a build and an undo of overlapping blocks sent at once do not interleave. The agent holds the
+     * first call's write or undo while the second call is sent; once released, both answer, and the world is still
+     * what replaying the edits still applied, oldest first, gives.
+     */
+    @Test
+    void overlappingBuildsAndUndosSentAtOnceKeepTheWorldAsTheAppliedEditsMakeIt() throws Exception {
+        Region area = Region.of("world", 0, 62, 0, 4, 63, 4);
+        Map<BlockPos, String> start = snapshot(area);
+        String gold = "fill 0,62,0 2,62,2 gold_block";
+        String glass = "fill 0,62,0 4,63,4 glass";
+        // An older edit undone while a later overlapping build writes: the undo waits, then is refused.
+        String e1 = editId(h.ok("build_batch", "steps", gold));
+        // A write that places blocks, not the build's check of its block names.
+        java.util.function.Predicate<Object> placing = p -> p instanceof Ops.WriteParams w
+                && java.util.Arrays.stream(w.grid().blocks()).anyMatch(b -> b >= 0);
+        String[] answers = whileHeld(placing, () -> h.ok("build_batch", "steps", glass),
+                () -> h.error("build_undo", "edit", e1));
+        String e2 = editId(answers[0]);
+        assertThat(answers[1]).startsWith("error: " + e1 + " not undone: later edit " + e2 + " set ");
+        assertThat(snapshot(area)).isEqualTo(replay(start, gold, glass));
+        assertThat(h.ok("build_undo")).startsWith("undid " + e2 + ":");
+        assertThat(h.ok("build_undo")).startsWith("undid " + e1 + ":");
+        assertThat(snapshot(area)).isEqualTo(start);
+        // A build while an undo of an overlapping edit runs: the build waits, then lands on the undone world.
+        String e3 = editId(h.ok("build_batch", "steps", glass));
+        answers = whileHeld(p -> p instanceof Ops.UndoParams, () -> h.ok("build_undo"),
+                () -> h.ok("build_batch", "steps", gold));
+        assertThat(answers[0]).startsWith("undid " + e3 + ":");
+        String e4 = editId(answers[1]);
+        assertThat(snapshot(area)).isEqualTo(replay(start, gold));
+        assertThat(h.ok("build_undo")).startsWith("undid " + e4 + ":");
+        assertThat(snapshot(area)).isEqualTo(start);
+        assertThat(h.error("build_undo")).contains("nothing to undo");
+    }
+
+    /**
+     * Run {@code first}, hold it at the agent at the first write or undo {@code held} matches, send {@code second},
+     * give it time to reach the agent, then let both finish; their answers, in that order.
+     */
+    private String[] whileHeld(java.util.function.Predicate<Object> held, java.util.concurrent.Callable<String> first,
+                               java.util.concurrent.Callable<String> second) throws Exception {
+        java.util.concurrent.CountDownLatch reached = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.CountDownLatch release = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.atomic.AtomicBoolean once = new java.util.concurrent.atomic.AtomicBoolean();
+        h.agent.beforeChange = p -> {
+            if (held.test(p) && once.compareAndSet(false, true)) {
+                reached.countDown();
+                try {
+                    release.await();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+        };
+        try (var calls = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor()) {
+            var a = calls.submit(first);
+            assertThat(reached.await(30, java.util.concurrent.TimeUnit.SECONDS)).as("first call reached the agent").isTrue();
+            var b = calls.submit(second);
+            Thread.sleep(300);
+            release.countDown();
+            return new String[] {a.get(30, java.util.concurrent.TimeUnit.SECONDS), b.get(30, java.util.concurrent.TimeUnit.SECONDS)};
+        } finally {
+            h.agent.beforeChange = p -> { };
+        }
+    }
+
+    /** {@code start} with each fill step ("fill A B block", whole boxes) placed in order. */
+    private static Map<BlockPos, String> replay(Map<BlockPos, String> start, String... fills) {
+        Map<BlockPos, String> out = new HashMap<>(start);
+        for (String fill : fills) {
+            String[] w = fill.split(" ");
+            Region box = Coords.region("world", w[1] + " " + w[2]);
+            out.replaceAll((p, s) -> box.contains(p.x(), p.y(), p.z()) ? "minecraft:" + w[3] : s);
+        }
+        return out;
     }
 
     /** A few steps of every kind, all inside 4..19 on x and z and 60..69 on y, so they stay inside the test's area. */

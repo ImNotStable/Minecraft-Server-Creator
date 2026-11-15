@@ -30,8 +30,11 @@ public final class WorldService {
     private final AgentHub hub;
     /** The edits still applied, oldest first: each one's agent parts and the positions it set. */
     private final Map<String, Edit> edits = new LinkedHashMap<>();
-    /** Edits an undo is working on, so two calls do not undo the same parts. */
-    private final java.util.Set<String> undoing = new java.util.HashSet<>();
+    /**
+     * Held by every call that changes the world under an edit id, from its first write or check to its last change of
+     * {@link #edits}, so they run one at a time (ADR 0049). Never taken while this object's monitor is held.
+     */
+    private final java.util.concurrent.locks.ReentrantLock editing = new java.util.concurrent.locks.ReentrantLock(true);
     /** The agents' undo budget ({@code AgentDefaults.UNDO_BLOCKS}), for messages. */
     private static final String UNDO_BLOCKS_TEXT = String.format(java.util.Locale.ROOT, "%,d", 8 * Limits.MAX_REGION_VOLUME);
     private int editCounter;
@@ -466,6 +469,30 @@ public final class WorldService {
      * edit's own undo would then bring back blocks of the edit already undone.
      */
     public String undo(String id) throws InterruptedException {
+        return oneAtATime(() -> undoNow(id));
+    }
+
+    /** Work that changes the world under an edit id: {@link #oneAtATime} runs it. */
+    @FunctionalInterface
+    public interface EditWork<T> {
+        T run() throws InterruptedException;
+    }
+
+    /**
+     * Run {@code work} while no other call writes or undoes an edit (ADR 0049): a build from its first write to its
+     * {@link #remember}, an undo from its overlap check to its edit leaving the list. Interleaved, an undo's check
+     * would miss a build not remembered yet, and wipe its blocks or bring back blocks of an edit already undone.
+     */
+    public <T> T oneAtATime(EditWork<T> work) throws InterruptedException {
+        editing.lockInterruptibly();
+        try {
+            return work.run();
+        } finally {
+            editing.unlock();
+        }
+    }
+
+    private String undoNow(String id) throws InterruptedException {
         List<String> agentEdits;
         String target = id;
         synchronized (this) {
@@ -496,43 +523,26 @@ public final class WorldService {
                         + " first (build_undo edit=" + over.getFirst() + "), then " + target + ".");
             }
             agentEdits = edit.parts();
-            if (!undoing.add(target)) {
-                throw new ToolException(target + " is being undone already");
-            }
         }
+        // Only an undo changes an edit's parts, and undos run one at a time.
         long changed = 0;
         int lost = 0;
-        int parts;
-        try {
-            synchronized (this) {
-                parts = agentEdits.size();
-            }
-            for (int i = parts - 1; i >= 0; i--) {
-                String part;
-                synchronized (this) {
-                    part = agentEdits.get(i);
-                }
-                try {
-                    changed += hub.call(Ops.WORLD_UNDO, new Ops.UndoParams(part)).changed();
-                } catch (OpException e) {
-                    if (!e.code().equals(ErrorCodes.NOT_FOUND)) {
-                        throw stopped(target, changed, e);
-                    }
-                    lost++;
-                } catch (RuntimeException e) {
+        int parts = agentEdits.size();
+        for (int i = parts - 1; i >= 0; i--) {
+            try {
+                changed += hub.call(Ops.WORLD_UNDO, new Ops.UndoParams(agentEdits.get(i))).changed();
+            } catch (OpException e) {
+                if (!e.code().equals(ErrorCodes.NOT_FOUND)) {
                     throw stopped(target, changed, e);
                 }
-                synchronized (this) {
-                    agentEdits.remove(i);
-                }
+                lost++;
+            } catch (RuntimeException e) {
+                throw stopped(target, changed, e);
             }
-            synchronized (this) {
-                edits.remove(target);
-            }
-        } finally {
-            synchronized (this) {
-                undoing.remove(target);
-            }
+            agentEdits.remove(i);
+        }
+        synchronized (this) {
+            edits.remove(target);
         }
         if (lost == 0) {
             return "undid " + target + ": " + changed + " blocks restored";

@@ -30,6 +30,8 @@ public final class FakeAgent {
     volatile boolean failPackApply;
     /** Told of each pack sent; FakeServerMain logs it, so a test can count the sends to a server process. */
     public volatile java.util.function.Consumer<Ops.PackParams> onPack = p -> { };
+    /** Told of each write and undo before it runs, outside the agent's lock: a test holds one there (#697). */
+    volatile java.util.function.Consumer<Object> beforeChange = p -> { };
 
     final Map<BlockPos, String> blocks = new HashMap<>();
     final List<String> commands = new ArrayList<>();
@@ -89,8 +91,14 @@ public final class FakeAgent {
                 .on(Ops.WORLD_READ, this::read)
                 .on(Ops.WORLD_ENTITIES, this::entities)
                 .on(Ops.WORLD_HEIGHTMAP, this::heightmap)
-                .on(Ops.WORLD_WRITE, this::write)
-                .on(Ops.WORLD_UNDO, this::undo)
+                .on(Ops.WORLD_WRITE, p -> {
+                    beforeChange.accept(p);
+                    return write(p);
+                })
+                .on(Ops.WORLD_UNDO, p -> {
+                    beforeChange.accept(p);
+                    return undo(p);
+                })
                 .on(Ops.PACK_APPLY, p -> {
                     if (failPackApply) {
                         throw new OpException(ErrorCodes.INTERNAL, "pack apply failed");
