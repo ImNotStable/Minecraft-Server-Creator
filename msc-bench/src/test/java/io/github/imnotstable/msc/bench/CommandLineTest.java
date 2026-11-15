@@ -110,7 +110,7 @@ class CommandLineTest {
 
     static {
         BAD_CONFIGS.put("password-number", new String[] {"{\"server\":{\"rconPassword\":5}}",
-                "server.rconPassword: 5 is not a string"});
+                "server.rconPassword: a number of 1 character is not a string"});
         BAD_CONFIGS.put("command-string", new String[] {"{\"agent\":{\"command\":\"claude\"}}",
                 "agent.command: \"claude\" is not a list"});
         BAD_CONFIGS.put("eula-yes", new String[] {"{\"server\":{\"acceptEula\":\"yes\"}}",

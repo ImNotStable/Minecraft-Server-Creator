@@ -92,15 +92,15 @@ public record RunSelection(List<TaskDef> tasks, List<String> modes) {
     static List<String> names(String flag, String value, String kind) {
         List<String> names = Arrays.stream(value.split(",", -1)).map(String::strip).toList();
         if (names.stream().allMatch(String::isEmpty)) {
-            throw new IllegalArgumentException(flag + " \"" + value + "\" names no " + kind);
+            throw new IllegalArgumentException(flag + " " + UserJson.quoted(value) + " names no " + kind);
         }
         if (names.contains("")) {
-            throw new IllegalArgumentException(flag + " \"" + value + "\" has an empty " + kind + " name");
+            throw new IllegalArgumentException(flag + " " + UserJson.quoted(value) + " has an empty " + kind + " name");
         }
         Set<String> seen = new HashSet<>();
         for (String name : names) {
             if (!seen.add(name)) {
-                throw new IllegalArgumentException(flag + ": " + kind + " \"" + name + "\" is listed twice; use "
+                throw new IllegalArgumentException(flag + ": " + kind + " " + UserJson.quoted(name) + " is listed twice; use "
                         + "--repeat N for more attempts of each task and mode");
             }
         }

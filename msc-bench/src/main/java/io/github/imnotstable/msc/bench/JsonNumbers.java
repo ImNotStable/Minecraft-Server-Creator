@@ -10,7 +10,7 @@ import java.math.BigDecimal;
  * the range rules as a valid one, and a refusal named a number the file never held. Here a value is taken exactly as
  * written: anything but a JSON number (a string, {@code null}, a list), a decimal where a whole number is needed and a
  * number outside the key's {@link Range} are refused with an {@link IllegalArgumentException} that names the key and
- * shows the value as the file spells it.
+ * shows the value as the file spells it ({@link Quoted#value}), or only its type and length for a secret.
  *
  * <p>Readers reach these reads only through {@link UserJson}, which holds the file's JSON and offers no other number
  * read (#423).
@@ -82,7 +82,7 @@ public final class JsonNumbers {
     }
 
     /** The whole number {@code value} of {@code key}, refused unless it is a whole number within {@code range}. */
-    static int wholeNumber(JsonElement value, String key, Range range) {
+    static int wholeNumber(JsonElement value, String key, Range range, boolean secret) {
         if (!range.whole()) {
             throw new IllegalArgumentException(key + ": " + range.text() + " is not a whole number range");
         }
@@ -90,24 +90,24 @@ public final class JsonNumbers {
                 || range.max().compareTo(BigDecimal.valueOf(Integer.MAX_VALUE)) > 0) {
             throw new IllegalArgumentException(key + ": " + range.text() + " does not fit an int");
         }
-        return exact(value, key, range).intValueExact();
+        return exact(value, key, range, secret).intValueExact();
     }
 
     /** The whole number {@code value} of {@code key} as a {@code long}, refused unless it is within {@code range}. */
-    static long wholeLong(JsonElement value, String key, Range range) {
+    static long wholeLong(JsonElement value, String key, Range range, boolean secret) {
         if (!range.whole()) {
             throw new IllegalArgumentException(key + ": " + range.text() + " is not a whole number range");
         }
-        return exact(value, key, range).longValueExact();
+        return exact(value, key, range, secret).longValueExact();
     }
 
     /** The number {@code value} of {@code key}, refused unless it is a number within {@code range}. */
-    static double number(JsonElement value, String key, Range range) {
-        return exact(value, key, range).doubleValue();
+    static double number(JsonElement value, String key, Range range, boolean secret) {
+        return exact(value, key, range, secret).doubleValue();
     }
 
     /** The value exactly as written, once it is a number of the range's kind inside the range. */
-    private static BigDecimal exact(JsonElement value, String key, Range range) {
+    private static BigDecimal exact(JsonElement value, String key, Range range, boolean secret) {
         BigDecimal number = null;
         if (value instanceof JsonPrimitive primitive && primitive.isNumber()) {
             try {
@@ -117,17 +117,9 @@ public final class JsonNumbers {
             }
         }
         if (number == null || !range.holds(number)) {
-            throw new IllegalArgumentException(key + ": " + written(value) + " is not " + range.text());
+            throw new IllegalArgumentException(key + ": " + Quoted.value(value, secret) + " is not " + range.text());
         }
         return number;
-    }
-
-    /** The value as the file spells it: a number's own text, anything else as JSON, cut when long. */
-    static String written(JsonElement value) {
-        String text = value instanceof JsonPrimitive primitive && primitive.isNumber()
-                ? primitive.getAsString()
-                : String.valueOf(value);
-        return Text.headWithEllipsis(text, 60);
     }
 
     private static Range whole(int min, int max, String text) {

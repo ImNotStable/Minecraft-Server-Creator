@@ -1,6 +1,7 @@
 package io.github.imnotstable.msc.bench.run;
 
 import io.github.imnotstable.msc.bench.JsonNumbers;
+import io.github.imnotstable.msc.bench.Quoted;
 import io.github.imnotstable.msc.bench.StrictJson;
 import io.github.imnotstable.msc.bench.Text;
 import io.github.imnotstable.msc.bench.UserJson;
@@ -26,6 +27,12 @@ import java.util.regex.Pattern;
  * The values of {@code bench.json} that can never work, refused when the config loads so that no run starts a server
  * or an agent with them (#406: an empty RCON password turned RCON off, and every server task waited out its start
  * timeout). Each problem names its key, such as {@code server.rconPassword}, and why the value cannot work.
+ *
+ * <p>A problem shows a value the file holds, or a name it chose, only through {@link Quoted} (#662), so it stays on
+ * one line; it never shows a secret ({@code server.rconPassword}, the values under {@code env} and {@code serverEnv})
+ * at all (#661). A rule checks each entry of a list or object on its own, and leaves out an entry that was refused
+ * when it was read ({@code refused}, as {@link io.github.imnotstable.msc.bench.UserJson#collecting} names it), which
+ * reads as null, so it is not named a second time (#663).
  */
 final class BenchConfigRules {
 
@@ -63,28 +70,28 @@ final class BenchConfigRules {
      * refusal quotes the value written and not the one the run would use (#652). Numbers are checked as they are read,
      * by {@link #NUMBERS}.
      */
-    static List<String> beforeDefaults(BenchConfig raw) {
+    static List<String> beforeDefaults(BenchConfig raw, Set<String> refused) {
         List<String> problems = new ArrayList<>();
         if (raw.agent() != null) {
             BenchConfig.Agent agent = raw.agent();
-            command(problems, "agent.command", agent.command());
+            command(problems, "agent.command", agent.command(), refused);
         }
         if (raw.modes() != null) {
             if (raw.modes().isEmpty()) {
                 problems.add("modes: is empty; name at least one mode, or leave it out for a single baseline mode");
             }
-            raw.modes().forEach((name, mode) -> mode(problems, name, mode));
+            raw.modes().forEach((name, mode) -> mode(problems, name, mode, refused));
         }
         if (raw.server() != null) {
             BenchConfig.Server server = raw.server();
-            command(problems, "server.command", server.command());
+            command(problems, "server.command", server.command(), refused);
             notBlank(problems, "server.paperJar", server.paperJar());
             if (server.paperCacheDirs() != null) {
                 if (server.paperCacheDirs().isEmpty()) {
                     problems.add("server.paperCacheDirs: is empty; the Paper jar needs a cache folder, so leave it out "
                             + "for the defaults or name one");
                 }
-                entries(problems, "server.paperCacheDirs", server.paperCacheDirs());
+                entries(problems, "server.paperCacheDirs", server.paperCacheDirs(), refused);
             }
             notBlank(problems, "server.downloadsUrl", server.downloadsUrl());
             if (server.downloadsUrl() != null && !server.downloadsUrl().isBlank()) {
@@ -97,18 +104,22 @@ final class BenchConfigRules {
         notBlank(problems, "gradleWrapperFrom", raw.gradleWrapperFrom());
         if (raw.paths() != null) {
             raw.paths().forEach((name, path) -> {
+                String key = "paths." + Quoted.name(name);
                 if (!NAME.matcher(name).matches()) {
-                    problems.add("paths: the name \"" + name + "\" is no placeholder name; use letters, digits, '.', "
-                            + "'_' or '-'");
+                    problems.add("paths: the name " + quoted(name) + " is no placeholder name; use letters, digits, "
+                            + "'.', '_' or '-'");
                 } else if (BUILT_IN_PLACEHOLDERS.contains(name)) {
-                    problems.add("paths." + name + ": {" + name + "} is filled by the runner itself, which would "
+                    problems.add(key + ": {" + name + "} is filled by the runner itself, which would "
                             + "overwrite this path; pick another name");
                 }
-                notBlank(problems, "paths." + name, path, true);
+                if (!refused.contains(key)) {
+                    notBlank(problems, key, path, true);
+                }
             });
         }
         if (raw.minecraftVersion() != null && !NAME.matcher(raw.minecraftVersion()).matches()) {
-            problems.add("minecraftVersion: \"" + raw.minecraftVersion() + "\" is no Minecraft version, such as 26.3");
+            problems.add("minecraftVersion: " + quoted(raw.minecraftVersion()) + " is no Minecraft version, such as "
+                    + "26.3");
         }
         return problems;
     }
@@ -118,8 +129,9 @@ final class BenchConfigRules {
      * {@link #beforeDefaults} and the typed reads found (#653), on every value that is itself valid: a value refused
      * already ({@code unread}, null or blank) is not checked again, and a rule that depends on one is left out (a
      * port clash with a port that could not be read, or with any {@code server} port when {@code server} could not
-     * be; the {@code serverPlugins} placeholders when {@code paths} could not be read). A refusal quotes the string
-     * from {@code raw}, the config as written, followed by the absolute path a missing file was looked for at.
+     * be; the {@code serverPlugins} placeholders when {@code paths} could not be read, and a placeholder naming a
+     * refused {@code paths} entry, which stays in {@code raw} as null). A refusal quotes the string from {@code raw},
+     * the config as written, followed by the absolute path a missing file was looked for at.
      */
     static List<String> afterDefaults(BenchConfig raw, BenchConfig full, Set<String> unread) {
         List<String> problems = new ArrayList<>();
@@ -129,7 +141,7 @@ final class BenchConfigRules {
             if (written == null) {
                 return; // the default baseline mode, which has nothing to check
             }
-            String key = "modes." + name;
+            String key = "modes." + Quoted.name(name);
             if (isSet(mode.mcpConfigTemplate()) && !Files.isRegularFile(Path.of(mode.mcpConfigTemplate()))) {
                 problems.add(key + ".mcpConfigTemplate: no such file "
                         + where(written.mcpConfigTemplate(), mode.mcpConfigTemplate()));
@@ -145,7 +157,7 @@ final class BenchConfigRules {
                 while (placeholder.find()) {
                     String placeholderName = placeholder.group(1);
                     if (!pathNames.contains(placeholderName) && !BUILT_IN_PLACEHOLDERS.contains(placeholderName)) {
-                        problems.add(key + ".serverPlugins: {" + placeholderName + "} in " + quoted(plugin)
+                        problems.add(key + ".serverPlugins: " + placeholder(placeholderName) + " in " + quoted(plugin)
                                 + " is no placeholder; name a key of paths, such as {agentJar}");
                     }
                 }
@@ -182,11 +194,17 @@ final class BenchConfigRules {
      * differs, such as {@code "missing.jar" (/home/me/bench/missing.jar)} (#652).
      */
     private static String where(String written, String resolved) {
-        return quoted(written) + (resolved.equals(written) ? "" : " (" + resolved + ")");
+        return quoted(written) + (resolved.equals(written) ? "" : " (" + Quoted.path(resolved) + ")");
     }
 
     private static String quoted(String text) {
         return UserJson.quoted(text);
+    }
+
+    /** {@code {name}} as a refusal shows a placeholder: as it is for a plain name, else quoted. */
+    private static String placeholder(String name) {
+        String placeholder = "{" + name + "}";
+        return Quoted.name(name).equals(name) ? placeholder : quoted(placeholder);
     }
 
     /** What builds the {@code paths} entries of the shipped {@code bench.json}, named when one is missing. */
@@ -202,37 +220,43 @@ final class BenchConfigRules {
      * one strict JSON reader (#601): a template that is no strict JSON, or that gives a key twice, is refused naming
      * the file and the key, since Claude Code would read it its own way. Placeholders go inside JSON strings.
      */
-    static List<String> missingPaths(BenchConfig full, Collection<String> modes) throws IOException {
+    static List<String> missingPaths(BenchConfig full, Map<String, String> written, Collection<String> modes)
+            throws IOException {
         List<String> problems = new ArrayList<>();
         for (String name : modes) {
             BenchConfig.Mode mode = full.modes().get(name);
             if (mode == null) {
                 continue;
             }
+            String modeKey = "modes." + Quoted.name(name);
             Map<String, String> uses = new LinkedHashMap<>();
             if (mode.mcpConfigTemplate() != null) {
                 String template = Text.readOwn(Path.of(mode.mcpConfigTemplate()));
                 try {
-                    StrictJson.parse(template, mode.mcpConfigTemplate() + " ");
+                    StrictJson.parse(template, Quoted.path(mode.mcpConfigTemplate()) + " ");
                 } catch (IllegalArgumentException e) {
-                    problems.add("modes." + name + ".mcpConfigTemplate: " + e.getMessage());
+                    problems.add(modeKey + ".mcpConfigTemplate: " + e.getMessage());
                 }
                 for (String key : placeholders(template)) {
-                    uses.putIfAbsent(key, "modes." + name + ".mcpConfigTemplate");
+                    uses.putIfAbsent(key, modeKey + ".mcpConfigTemplate");
                 }
             }
             for (String plugin : mode.serverPlugins()) {
                 for (String key : placeholders(plugin)) {
-                    uses.putIfAbsent(key, "modes." + name + ".serverPlugins");
+                    uses.putIfAbsent(key, modeKey + ".serverPlugins");
                 }
             }
             uses.forEach((key, usedBy) -> {
                 String path = full.paths().get(key);
-                String problem = "paths." + key + ": no such file or folder " + path + " (used by " + usedBy + "); "
-                        + (BUILT_BY.containsKey(key) ? "run " + BUILT_BY.get(key) + " first" : "build it first")
-                        + " or fix the path";
-                if (path != null && !Files.exists(Path.of(path)) && problems.stream().noneMatch(p -> p.startsWith("paths." + key + ":"))) {
-                    problems.add(problem);
+                String pathKey = "paths." + Quoted.name(key) + ":";
+                if (path != null && !Files.exists(Path.of(path))
+                        && problems.stream().noneMatch(p -> p.startsWith(pathKey))) {
+                    String writtenPath = written == null ? null : written.get(key);
+                    problems.add(pathKey + " no such file or folder "
+                            + (writtenPath == null ? Quoted.path(path) : where(writtenPath, path))
+                            + " (used by " + usedBy + "); "
+                            + (BUILT_BY.containsKey(key) ? "run " + BUILT_BY.get(key) + " first" : "build it first")
+                            + " or fix the path");
                 }
             });
         }
@@ -274,26 +298,29 @@ final class BenchConfigRules {
         }
     }
 
-    private static void mode(List<String> problems, String name, BenchConfig.Mode mode) {
-        String key = "modes." + name;
+    private static void mode(List<String> problems, String name, BenchConfig.Mode mode, Set<String> refused) {
+        String key = "modes." + Quoted.name(name);
         if (!NAME.matcher(name).matches()) {
             problems.add(key + ": the name is no mode name (it names attempt folders and --modes lists); use letters, "
                     + "digits, '.', '_' or '-'");
         }
         if (mode == null) {
-            problems.add(key + ": is null; use {} for a mode with no settings");
+            if (!refused.contains(key)) {
+                problems.add(key + ": is null; use {} for a mode with no settings");
+            }
             return;
         }
-        entries(problems, key + ".extraArgs", mode.extraArgs());
-        environment(problems, key + ".env", mode.env());
+        entries(problems, key + ".extraArgs", mode.extraArgs(), refused);
+        environment(problems, key + ".env", mode.env(), refused);
         notBlank(problems, key + ".mcpConfigTemplate", mode.mcpConfigTemplate());
-        environment(problems, key + ".serverEnv", mode.serverEnv());
-        entries(problems, key + ".serverPlugins", mode.serverPlugins());
+        environment(problems, key + ".serverEnv", mode.serverEnv(), refused);
+        entries(problems, key + ".serverPlugins", mode.serverPlugins(), refused);
         notBlank(problems, key + ".paperCacheSeed", mode.paperCacheSeed());
         if (mode.paperCacheSeed() != null && !mode.paperCacheSeed().isBlank()) {
             Path seed = Path.of(mode.paperCacheSeed());
             if (seed.isAbsolute() || seed.getRoot() != null || seed.normalize().startsWith("..")) {
-                problems.add(key + ".paperCacheSeed: " + mode.paperCacheSeed() + " is not a folder inside the workspace");
+                problems.add(key + ".paperCacheSeed: " + quoted(mode.paperCacheSeed())
+                        + " is not a folder inside the workspace");
             }
         }
         notBlank(problems, key + ".requireMcp", mode.requireMcp());
@@ -319,7 +346,7 @@ final class BenchConfigRules {
             if ((scheme.equals("http") || scheme.equals("https")) && uri.getHost() != null) {
                 if (uri.getRawQuery() != null || uri.getRawFragment() != null) {
                     // The bench puts /v3/... after the base, so a query or fragment would swallow that path (#649).
-                    problems.add("server.downloadsUrl: \"" + url + "\" has a query or fragment; give the service's "
+                    problems.add("server.downloadsUrl: " + quoted(url) + " has a query or fragment; give the service's "
                             + "base URL, such as https://fill.papermc.io");
                 }
                 return;
@@ -327,36 +354,46 @@ final class BenchConfigRules {
         } catch (URISyntaxException e) {
             // reported below
         }
-        problems.add("server.downloadsUrl: \"" + url + "\" is no http or https URL");
+        problems.add("server.downloadsUrl: " + quoted(url) + " is no http or https URL");
     }
 
-    private static void command(List<String> problems, String key, List<String> command) {
+    private static void command(List<String> problems, String key, List<String> command, Set<String> refused) {
         if (command == null) {
             return;
         }
         if (command.isEmpty()) {
             problems.add(key + ": is empty; leave it out for the default or name a program");
         }
-        entries(problems, key, command);
+        entries(problems, key, command, refused);
     }
 
-    private static void entries(List<String> problems, String key, List<String> entries) {
+    /** Refuses each null or blank entry of {@code entries}, except one refused when it was read. */
+    private static void entries(List<String> problems, String key, List<String> entries, Set<String> refused) {
         for (int i = 0; i < entries.size(); i++) {
-            if (entries.get(i) == null || entries.get(i).isBlank()) {
+            if (entries.get(i) == null ? !refused.contains(key + "[" + i + "]") : entries.get(i).isBlank()) {
                 problems.add(key + ": entry " + i + " is " + (entries.get(i) == null ? "null" : "blank"));
             }
         }
     }
 
-    private static void environment(List<String> problems, String key, Map<String, String> env) {
+    /**
+     * Refuses each name of {@code env} no environment can hold and each value that is null or holds a NUL, except a
+     * value refused when it was read. Its values are secret, and so is a name's text after an {@code =}
+     * ({@link Quoted#secretName}): neither is ever shown.
+     */
+    private static void environment(List<String> problems, String key, Map<String, String> env,
+            Set<String> refused) {
         env.forEach((name, value) -> {
+            String entry = key + "." + Quoted.secretName(name);
             if (name.isEmpty() || name.indexOf('=') >= 0 || name.indexOf('\0') >= 0) {
-                problems.add(key + ": \"" + name + "\" is no environment variable name");
+                problems.add(key + ": " + Quoted.secretName(name) + " is no environment variable name");
             }
             if (value == null) {
-                problems.add(key + "." + name + ": is null");
+                if (!refused.contains(entry)) {
+                    problems.add(entry + ": is null");
+                }
             } else if (value.indexOf('\0') >= 0) {
-                problems.add(key + "." + name + ": holds a NUL character, which no environment can hold");
+                problems.add(entry + ": holds a NUL character, which no environment can hold");
             }
         });
     }
