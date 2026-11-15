@@ -145,16 +145,16 @@ public final class Budget {
         return Math.max(1, lines);
     }
 
-    /** The hint of a cut a larger {@code maxChars} undoes: "Raise maxChars (at most 24000) to see more." */
-    public static final String RAISE = "Raise maxChars (at most " + MAX_CHARS + ") to see more.";
+    /** What {@link #raise} adds below the largest cap: "Or raise maxChars (at most 24000)." */
+    public static final String RAISE = "Or raise maxChars (at most " + MAX_CHARS + ").";
 
     /**
-     * The hint of a cut of a result capped at {@code maxChars} (#614): {@link #RAISE} while a larger {@code maxChars}
-     * is allowed, else {@code otherwise}, the tool's own way to narrow the call. Every cut hint that would name
+     * The hint of a cut of a result capped at {@code maxChars} (#614): {@code narrow}, the tool's own way to narrow
+     * the call, first, then {@link #RAISE} while a larger {@code maxChars} is allowed. Every cut hint that names
      * maxChars comes from here, so none says to raise it past {@link #MAX_CHARS}, which {@link ArgCheck} refuses.
      */
-    public static String raise(int maxChars, String otherwise) {
-        return maxChars < MAX_CHARS ? RAISE : otherwise;
+    public static String raise(int maxChars, String narrow) {
+        return maxChars < MAX_CHARS ? narrow + " " + RAISE : narrow;
     }
 
     /**

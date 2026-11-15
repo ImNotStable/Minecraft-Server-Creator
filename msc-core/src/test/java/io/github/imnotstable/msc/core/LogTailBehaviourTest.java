@@ -35,6 +35,7 @@ class LogTailBehaviourTest {
             h.ok("server_start", "timeoutSeconds", 30);
             String tail = h.ok("server_logs", "mode", "tail");
             assertThat(tail).hasSizeLessThanOrEqualTo(Budget.DEFAULT_CHARS).startsWith("[truncated: ")
+                    .contains(" chars. Use mode=grep to narrow. Or raise maxChars (at most 24000).]\n")
                     .contains("step 9 s").endsWith("For help, type \"help\"");
             String grep = h.ok("server_logs", "mode", "grep", "pattern", "step", "lines", 5);
             assertThat(grep).hasSizeLessThanOrEqualTo(Budget.DEFAULT_CHARS)

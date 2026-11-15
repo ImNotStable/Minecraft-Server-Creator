@@ -84,7 +84,7 @@ public final class TextureTools {
                     Texture t = source.readTexture(id);
                     Texture frame = firstFrame(source, id, t);
                     String note = frame == t ? "" : "frame 1 of " + (t.height() / t.width()) + "\n";
-                    String hint = Budget.raise(maxChars, "Texture too large to show in full.");
+                    String hint = Budget.raise(maxChars, "Not all rows fit.");
                     return note + Budget.truncate(PaletteText.view(frame), maxChars - note.length(), hint);
                 }));
         registry.add("model_create",

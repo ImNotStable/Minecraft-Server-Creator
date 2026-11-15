@@ -68,6 +68,14 @@ class BudgetTruncateTest {
         }
     }
 
+    /** #614: the narrowing advice comes first; raising maxChars is offered only while a larger one is allowed. */
+    @Test
+    void raiseIsOfferedOnlyBelowTheLargestCap() {
+        assertThat(Budget.raise(Budget.MAX_CHARS - 1, "Ask for less."))
+                .isEqualTo("Ask for less. Or raise maxChars (at most 24000).");
+        assertThat(Budget.raise(Budget.MAX_CHARS, "Ask for less.")).isEqualTo("Ask for less.");
+    }
+
     @Test
     void theIssuesOutputIsNeverReplacedByALongerMarker() {
         String output = "Successfully filled 726 block(s)";
