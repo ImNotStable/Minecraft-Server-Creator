@@ -486,8 +486,8 @@ class WorkspaceOwnershipTest {
                 assertThat(hub.current()).isNull();
                 assertThat(left.isAlive()).isTrue();
                 assertThat(h.ok("msc_status")).contains("\nserver: not set up (")
-                        .contains("\nagent: not connected; refused 1 agent without this workspace's token "
-                                + "(another workspace's server)\n");
+                        .contains("\nagent: not connected; refused 1 agent without this session's token (a server "
+                                + "another workspace or an earlier session started)\n");
                 // A fixed address waits for an agent that may attach (ADR 0005); the refused one never does.
                 hub.connectWait(Duration.ofMillis(300));
                 assertThat(h.error("world_summary", "region", "world 0 -64 0 15 0 15"))
@@ -496,6 +496,42 @@ class WorkspaceOwnershipTest {
                 assertThat(h.ok("server_start", "timeoutSeconds", 30)).contains("agent connected");
                 assertThat(h.ok("msc_status")).contains("\nagent: paper fake, minecraft 26.3, ")
                         .doesNotContain("started outside this session");
+                h.ok("server_stop");
+            } finally {
+                left.destroyForcibly();
+            }
+        }
+
+        /**
+         * #734: with a fixed address and no MSC_TOKEN each session has its own token, so the next session refuses the
+         * agent of a server an earlier session of this same workspace detached. msc_status called it another
+         * workspace's server beside a server line naming it this workspace's leftover.
+         */
+        @Test
+        void anEarlierSessionsLeftoverRefusedOnTheSamePortIsNotCalledAnotherWorkspaces() throws Exception {
+            Files.createDirectories(workspace.resolve("run"));
+            Files.writeString(workspace.resolve("run/reconnect.flag"), "");
+            h.ok("server_start", "timeoutSeconds", 30);
+            ProcessHandle left = ProcessHandle.of(Long.parseLong(
+                    Files.readString(workspace.resolve(".msc/server.pid")).split(" ")[0])).orElseThrow();
+            try {
+                h.ok("server_detach");
+                h.close();
+                h = new CoreHarness(workspace, c -> c.withAgentPort(port)
+                        .withServerCommand(java(FakeServerMain.class)));
+                AgentHub hub = h.core.hub();
+                long end = System.nanoTime() + Duration.ofSeconds(20).toNanos();
+                while (hub.refusedAgents() == 0 && System.nanoTime() < end) {
+                    Thread.sleep(50);
+                }
+                assertThat(h.ok("msc_status"))
+                        .contains("\nserver: running, left by an earlier session (pid " + left.pid() + ";")
+                        .contains("\nagent: not connected; refused 1 agent without this session's token (a server "
+                                + "another workspace or an earlier session started; server_start or dev_cycle "
+                                + "restarts this workspace's leftover under this session)\n");
+                assertThat(h.ok("server_start", "timeoutSeconds", 30))
+                        .contains("stopped a server left running by an earlier session (pid " + left.pid())
+                        .contains("agent connected");
                 h.ok("server_stop");
             } finally {
                 left.destroyForcibly();

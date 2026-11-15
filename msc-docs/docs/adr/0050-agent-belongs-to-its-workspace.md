@@ -37,7 +37,11 @@ Option 3.
    difference. The wire protocol, `ProtocolVersion` and every agent are unchanged.
 3. Another workspace's agent fails the proof and gets the `unauthorized` goodbye, so its `AgentLink` stops trying (it
    logs `msc-core refused the connection`), as for any wrong token. The hub counts these, and `msc_status` ends its
-   agent line with `refused N agent(s) without this workspace's token (another workspace's server)`.
+   agent line with `refused N agent(s) without this session's token (a server another workspace or an earlier session
+   started)`. Amended 2026-11-15 (#734): the first wording said "another workspace's server", but with a fixed
+   `MSC_CORE_ADDRESS` and no `MSC_TOKEN` each session has its own random token, so a server an earlier session of
+   this same workspace detached is refused too, and the hub cannot tell the two apart. When this workspace has such a
+   leftover, the line adds that `server_start` or `dev_cycle` restarts it under this session.
 4. An agent connected while this session runs no server (an attached one) is marked in `msc_status` with
    `of a server started outside this session`, so `server: stopped` beside a live agent is explained.
 5. The same workspace reopened later (a switch back, or a new session with the same `MSC_TOKEN`) derives the same token,

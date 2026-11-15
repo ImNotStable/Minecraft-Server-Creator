@@ -46,7 +46,10 @@ public final class AgentHub implements AutoCloseable {
     private final CoreServer server;
     private final String token;
     private final String serverToken;
-    /** Agents refused for a token this hub does not take: a server another workspace started (ADR 0050). */
+    /**
+     * Agents refused for a token this hub does not take (ADR 0050): a server another workspace started, or one an
+     * earlier session of this workspace left running with that session's own token (#734).
+     */
     private final AtomicInteger refused = new AtomicInteger();
     private CoreServer.AgentSession session;
     private long readyCount;
@@ -174,7 +177,7 @@ public final class AgentHub implements AutoCloseable {
         return serverToken;
     }
 
-    /** How many agents were refused for a token this hub does not take, such as another workspace's server. */
+    /** How many agents were refused for a token this hub does not take: another workspace's or session's server. */
     public int refusedAgents() {
         return refused.get();
     }
