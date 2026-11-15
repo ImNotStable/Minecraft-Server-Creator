@@ -1008,52 +1008,84 @@ class LifecycleToolsTest {
      * without a restart. Only a jar this call deployed is "deployed anyway"; an unchanged one is kept, also with
      * restart=false, and the result says only that. A kept jar keeps its file time, so the next dev_cycle does not
      * restart for nothing. Each changed jar is deployed first without a restart, then with one, so an unchanged jar is
-     * always the one the running server loaded.
+     * always the one the running server loaded. #690: a changed pack reaches the players of every server the call
+     * leaves running, whatever happens to the jar; an unchanged one only a new connection (a restart).
      */
     @Test
     void devCycleLinesAreTrueForEveryTestsJarAndRestartOutcome() throws Exception {
         assertThat(h.ok("dev_cycle", "project", "demo")).contains("deployed demo-1.0.jar as plugins/demo.jar");
+        h.ok("texture", "name", "item/dot", "palette", List.of("a=#000001"), "rows", List.of("a"));
+        assertThat(h.ok("pack")).contains("applied: sent to 1 players");
+        long sends = packSends();
         Path deployed = h.core.config().serverDir().resolve("plugins/demo.jar");
         int version = 0;
+        int color = 1;
         for (String tests : List.of("pass", "fail", "skipped")) {
-            for (boolean changed : List.of(true, false)) {
+            for (String jar : List.of("changed", "unchanged", "none")) {
                 for (boolean restart : List.of(false, true)) {
-                    Files.deleteIfExists(project.resolve("failing-test.flag"));
-                    Files.deleteIfExists(project.resolve("no-tests.flag"));
-                    if (!tests.equals("pass")) {
-                        Files.writeString(project.resolve(tests.equals("fail") ? "failing-test.flag" : "no-tests.flag"),
-                                "");
-                    }
-                    if (changed) {
-                        Files.writeString(project.resolve("version.txt"), "1." + ++version);
-                    }
-                    var before = Files.getLastModifiedTime(deployed);
-                    String result = h.ok("dev_cycle", "project", "demo", "restart", restart);
-                    var row = assertThat(result).as("tests %s, jar %s, restart %s:%n%s", tests,
-                            changed ? "changed" : "unchanged", restart, result);
-                    if (tests.equals("fail")) {
-                        row.startsWith("TESTS FAILED in ").contains("DemoTest > greets() FAILED");
-                    } else {
-                        row.doesNotContain("TESTS FAILED").doesNotContain("FAILED");
-                    }
-                    if (changed) {
-                        row.contains("deployed demo-1.0.jar as plugins/demo.jar").doesNotContain("jar unchanged");
-                        if (restart) {
-                            row.contains("server ready").doesNotContain("old jar")
-                                    .containsPattern("\ntime: jar [^,]+, stop [^\n]*, tests ");
-                        } else {
-                            row.contains("as plugins/demo.jar; server still running the old jar until restarted")
-                                    .doesNotContain("server ready")
-                                    .containsPattern("\ntime: jar [^,]+, tests [^,]+, total [^,\n]+$");
+                    for (boolean packChanged : List.of(true, false)) {
+                        boolean changed = jar.equals("changed");
+                        Files.deleteIfExists(project.resolve("failing-test.flag"));
+                        Files.deleteIfExists(project.resolve("no-tests.flag"));
+                        Files.deleteIfExists(project.resolve("no-jar.flag"));
+                        if (!tests.equals("pass")) {
+                            Files.writeString(project.resolve(tests.equals("fail") ? "failing-test.flag"
+                                    : "no-tests.flag"), "");
                         }
+                        if (jar.equals("none")) {
+                            Files.writeString(project.resolve("no-jar.flag"), "");
+                        }
+                        if (changed) {
+                            Files.writeString(project.resolve("version.txt"), "1." + ++version);
+                        }
+                        if (packChanged) {
+                            h.ok("texture", "name", "item/dot", "palette",
+                                    List.of("a=#" + "%06x".formatted(++color)), "rows", List.of("a"));
+                        }
+                        var before = Files.getLastModifiedTime(deployed);
+                        String result = h.ok("dev_cycle", "project", "demo", "restart", restart);
+                        var row = assertThat(result).as("tests %s, jar %s, restart %s, pack %s:%n%s", tests, jar,
+                                restart, packChanged ? "changed" : "unchanged", result);
                         if (tests.equals("fail")) {
-                            row.contains("TESTS FAILED in ").contains("s (the new jar is deployed anyway)\n");
+                            row.startsWith("TESTS FAILED in ").contains("DemoTest > greets() FAILED");
+                        } else {
+                            row.doesNotContain("TESTS FAILED").doesNotContain("FAILED");
                         }
-                    } else {
-                        row.contains("build ok in ").contains(", jar unchanged: plugins/demo.jar kept, server not restarted")
-                                .doesNotContain("deployed").doesNotContain("server ready").doesNotContain("old jar")
-                                .containsPattern("\ntime: jar [^,]+, tests [^,]+, total [^,\n]+$");
-                        assertThat(Files.getLastModifiedTime(deployed)).as("kept jar's time").isEqualTo(before);
+                        // A restart's new connection always gets the pack; a server kept running only a changed one.
+                        boolean sent = packChanged || changed && restart;
+                        if (sent) {
+                            row.contains("\nresource pack sent: players who join get it\n");
+                        } else {
+                            row.doesNotContain("resource pack");
+                        }
+                        long now = packSends();
+                        assertThat(now - sends).as("packs sent: %s", result).isEqualTo(sent ? 1 : 0);
+                        sends = now;
+                        if (jar.equals("none")) {
+                            row.contains("build ok in ").contains(" but no jar in ").contains("; nothing deployed")
+                                    .doesNotContain("deployed demo").doesNotContain("server ready")
+                                    .containsPattern("\ntime: jar [^,]+, tests [^,]+, total [^,\n]+$");
+                            assertThat(Files.getLastModifiedTime(deployed)).as("kept jar's time").isEqualTo(before);
+                        } else if (changed) {
+                            row.contains("deployed demo-1.0.jar as plugins/demo.jar").doesNotContain("jar unchanged");
+                            if (restart) {
+                                row.contains("server ready").doesNotContain("old jar")
+                                        .containsPattern("\ntime: jar [^,]+, stop [^\n]*, tests ");
+                            } else {
+                                row.contains("as plugins/demo.jar; server still running the old jar until restarted")
+                                        .doesNotContain("server ready")
+                                        .containsPattern("\ntime: jar [^,]+, tests [^,]+, total [^,\n]+$");
+                            }
+                            if (tests.equals("fail")) {
+                                row.contains("TESTS FAILED in ").contains("s (the new jar is deployed anyway)\n");
+                            }
+                        } else {
+                            row.contains("build ok in ")
+                                    .contains(", jar unchanged: plugins/demo.jar kept, server not restarted")
+                                    .doesNotContain("deployed").doesNotContain("server ready").doesNotContain("old jar")
+                                    .containsPattern("\ntime: jar [^,]+, tests [^,]+, total [^,\n]+$");
+                            assertThat(Files.getLastModifiedTime(deployed)).as("kept jar's time").isEqualTo(before);
+                        }
                     }
                 }
             }
