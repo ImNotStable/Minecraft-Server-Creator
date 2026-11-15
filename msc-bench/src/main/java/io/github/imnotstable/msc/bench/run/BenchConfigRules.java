@@ -107,7 +107,6 @@ final class BenchConfigRules {
     /** Problems of the filled-in config: values that clash, files that must exist, and the RCON password. */
     static List<String> afterDefaults(BenchConfig full) {
         List<String> problems = new ArrayList<>();
-        prompt(problems, full);
         full.modes().forEach((name, mode) -> {
             if (mode.mcpConfigTemplate() != null && !Files.isRegularFile(Path.of(mode.mcpConfigTemplate()))) {
                 problems.add("modes." + name + ".mcpConfigTemplate: no such file " + mode.mcpConfigTemplate());
@@ -247,28 +246,6 @@ final class BenchConfigRules {
             }
         }
         notBlank(problems, key + ".requireMcp", mode.requireMcp());
-    }
-
-    /** The agent needs the task: {@code {prompt}} must reach it through the command or each mode's args or env. */
-    private static void prompt(List<String> problems, BenchConfig full) {
-        if (mentionsPrompt(full.agent().command())) {
-            return;
-        }
-        full.modes().forEach((name, mode) -> {
-            if (!mentionsPrompt(mode.extraArgs()) && !mentionsPrompt(mode.env().values())) {
-                problems.add("agent.command: has no {prompt}, and neither has modes." + name + ".extraArgs or .env, so "
-                        + "the agent would never get the task");
-            }
-        });
-    }
-
-    private static boolean mentionsPrompt(Iterable<String> texts) {
-        for (String text : texts) {
-            if (text.contains("{prompt}")) {
-                return true;
-            }
-        }
-        return false;
     }
 
     private static void downloadsUrl(List<String> problems, String url) {

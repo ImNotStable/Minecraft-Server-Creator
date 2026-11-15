@@ -44,10 +44,32 @@ public record BenchConfig(
     public static final Set<String> RUNNER_PLACEHOLDERS = BenchConfigRules.BUILT_IN_PLACEHOLDERS;
 
     /**
-     * @param command        program and arguments; {@code {prompt}} is replaced by the full prompt
+     * @param command        program and arguments; the agent reads the full prompt on stdin, unless {@code {prompt}}
+     *                       is here or in the mode's {@code extraArgs} or {@code env}, where it is filled in instead
+     *                       ({@link #promptOnStdin})
      * @param timeoutSeconds default limit per run
      */
     public record Agent(List<String> command, int timeoutSeconds) {
+    }
+
+    /**
+     * True when the agent gets the prompt on stdin: when neither {@code agent.command} nor {@code mode}'s
+     * {@code extraArgs} or {@code env} holds {@code {prompt}} (#624). On Windows a command line cannot carry every
+     * prompt through every launcher (cmd.exe ends a command at a line break), so the shipped config uses stdin, which
+     * {@code claude -p} reads when it is given no prompt argument.
+     */
+    public boolean promptOnStdin(Mode mode) {
+        return !mentionsPrompt(agent.command()) && !mentionsPrompt(mode.extraArgs())
+                && !mentionsPrompt(mode.env().values());
+    }
+
+    private static boolean mentionsPrompt(Iterable<String> texts) {
+        for (String text : texts) {
+            if (text != null && text.contains("{prompt}")) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -265,7 +287,7 @@ public record BenchConfig(
         Agent a = agent == null ? new Agent(null, 0) : agent;
         Agent fullAgent = new Agent(
                 a.command() == null || a.command().isEmpty()
-                        ? List.of("claude", "-p", "{prompt}", "--output-format", "stream-json", "--verbose")
+                        ? List.of("claude", "-p", "--output-format", "stream-json", "--verbose")
                         : List.copyOf(a.command()),
                 a.timeoutSeconds() > 0 ? a.timeoutSeconds() : 1800);
 

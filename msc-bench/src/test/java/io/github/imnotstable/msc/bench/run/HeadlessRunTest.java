@@ -104,7 +104,7 @@ class HeadlessRunTest {
         assertThat(pinned.withModel("small").agent().command()).containsExactly("claude", "-p", "{prompt}",
                 "--model", "small");
         assertThat(BenchConfig.defaults().withModel("small").agent().command())
-                .containsExactly("claude", "-p", "{prompt}", "--output-format", "stream-json", "--verbose",
+                .containsExactly("claude", "-p", "--output-format", "stream-json", "--verbose",
                         "--model", "small");
         assertThatThrownBy(() -> pinned.withModel(" ")).hasMessageContaining("is no model name");
     }

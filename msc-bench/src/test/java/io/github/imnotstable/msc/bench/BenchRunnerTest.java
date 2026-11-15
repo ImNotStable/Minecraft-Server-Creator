@@ -115,6 +115,35 @@ class BenchRunnerTest {
         assertThat(log.toString(StandardCharsets.UTF_8)).contains("[toolset] write-file #1 PASS");
     }
 
+    /**
+     * #624: an agent command without {prompt} gets the whole prompt on stdin, quotes, backslashes and line breaks as
+     * written, as claude -p reads it; prompt.md holds the same text.
+     */
+    @Test
+    void anAgentCommandWithoutPromptGetsThePromptOnStdin() throws IOException {
+        String prompt = "Turn it into \"Sky Sprint\", a race.\nPaths end in C:\\dir\\ and \\\"; 100% ^done & more";
+        Path task = Files.createDirectories(dir.resolve("tasks/quoted"));
+        Files.writeString(task.resolve("task.json"),
+                "{\"category\":\"code\",\"title\":\"x\",\"checks\":[{\"type\":\"file\",\"path\":\"done.txt\"}]}");
+        Files.writeString(task.resolve("prompt.md"), prompt);
+        Path configFile = dir.resolve("bench.json");
+        Files.writeString(configFile, """
+                {"agent":{"command":["%s","-cp","%s","io.github.imnotstable.msc.bench.FakeAgent"]},
+                 "modes":{"baseline":{}}, "server":{"rconPort":%d,"serverPort":%d}}
+                """.formatted(JAVA, CLASSPATH, rconPort.port(), gamePort.port()));
+        BenchConfig config = BenchConfig.load(configFile, dir);
+
+        List<RunRecord> records = new BenchRunner(config, dir.resolve("run"), "Preamble \"quoted\".",
+                new PrintStream(new ByteArrayOutputStream(), true, StandardCharsets.UTF_8))
+                .run(new RunSelection(TaskLoader.loadAll(dir.resolve("tasks")), List.of("baseline")), 1);
+
+        assertThat(records).singleElement().satisfies(r -> assertThat(r.passed()).as(r.toString()).isTrue());
+        Path attempt = dir.resolve("run/attempts/quoted/baseline-1");
+        String expected = "Preamble \"quoted\".\n\n" + prompt;
+        assertThat(attempt.resolve("workspace/done.txt")).hasContent(expected);
+        assertThat(attempt.resolve("prompt.md")).hasContent(expected);
+    }
+
     @Test
     void checkFillsTheSamePlaceholdersAsTheRun() throws IOException {
         // #554: check filled 5 of the run's placeholders and left {minecraftVersion} and the rest as written, so a
