@@ -52,7 +52,14 @@ Option 3.
    so a fixed port is free, but the session keeps the connection with the server's process and pack host, and the
    workspace opened again takes all three over. The agent never reconnects, so the next workspace never sees it, and
    the switch back finds its own detached server, agent connected, with a random or a fixed address. The session end
-   closes the kept connections as it closes any workspace's.
+   closes the kept connections as it closes any workspace's. Amended 2026-11-15 (#737, #738, #739): the first
+   version opened new parts on the switch back and grafted the kept server, pack host and connection onto them, so
+   every part it missed leaked (each round trip left a workspace's objects and threads behind) or was lost (the edit
+   history, so `build_undo` found nothing). The rule now: the session keeps the **whole** workspace, as one object,
+   with its listeners stopped, and the switch back reopens that same workspace and listens again. A kept workspace
+   ends one way, closed as a session end closes any workspace: as soon as its server exits (the pack host goes with
+   it), when a switch back finds the server gone, and at the session end (a server still running runs on with its
+   pack host, as after any detach).
 
 Rejected: option 1 (a protocol change in every agent for what the token already does); option 2 (ends attach mode).
 
