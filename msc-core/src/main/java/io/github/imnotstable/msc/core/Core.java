@@ -117,7 +117,7 @@ public final class Core implements AutoCloseable {
         /** Opens a workspace's parts; when a step fails, closes those already opened (the agent socket). */
         static Bench open(CoreConfig config, ToolLog log, OpenCheck check) throws IOException {
             BackgroundWork background = new BackgroundWork();
-            AgentHub hub = new AgentHub(config.agentPort(), config.token());
+            AgentHub hub = new AgentHub(config.agentPort(), config.token(), config.serverToken());
             try {
                 Bench bench = wire(config, log, background, hub);
                 check.check(config, hub);

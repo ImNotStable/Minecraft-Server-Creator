@@ -1,6 +1,6 @@
 # ADR 0014: Detach the dev server so the user can play
 
-Status: accepted, 2026-11-12. Decided by Claude under Jeremiah's hand-over of build decisions. Amended by [ADR 0037](0037-server-belongs-to-its-live-core.md): a detached server keeps the detaching session as its owner, so other sessions refuse to touch it until that session ends.
+Status: accepted, 2026-11-12. Decided by Claude under Jeremiah's hand-over of build decisions. Amended by [ADR 0037](0037-server-belongs-to-its-live-core.md): a detached server keeps the detaching session as its owner, so other sessions refuse to touch it until that session ends. Amended by [ADR 0050](0050-agent-belongs-to-its-workspace.md): point 4's random address does not hold with a fixed `MSC_CORE_ADDRESS`; a detached server's agent carries its workspace's own token, so another workspace refuses it.
 
 ## Context
 

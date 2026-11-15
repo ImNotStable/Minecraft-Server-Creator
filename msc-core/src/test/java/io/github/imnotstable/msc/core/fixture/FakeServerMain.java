@@ -7,6 +7,7 @@ import io.github.imnotstable.msc.protocol.message.AgentInfo;
 import io.github.imnotstable.msc.protocol.op.Events;
 import io.github.imnotstable.msc.protocol.transport.AgentClient;
 import io.github.imnotstable.msc.protocol.transport.Connection;
+import io.github.imnotstable.msc.protocol.transport.OpException;
 import io.github.imnotstable.msc.protocol.transport.OpRouter;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
@@ -143,7 +144,11 @@ public final class FakeServerMain {
         }
     }
 
-    /** Connects like a real agent's CoreAddress does, or returns null when started without a core. */
+    /**
+     * Connects like a real agent's CoreAddress does, or returns null when started without a core. reconnect.flag: when
+     * the connection closes, it connects again to the same address with the same token, as AgentLink does, until a core
+     * takes it or refuses it (ADR 0050).
+     */
     private static AgentClient.Session connect(AgentInfo info, OpRouter router) throws Exception {
         String address = System.getenv(Limits.ENV_CORE_ADDRESS);
         String token = System.getenv(Limits.ENV_TOKEN);
@@ -151,8 +156,38 @@ public final class FakeServerMain {
             return null;
         }
         int colon = address.lastIndexOf(':');
-        return AgentClient.connect(address.substring(0, colon), Integer.parseInt(address.substring(colon + 1)), token,
-                info, router, new Connection.Listener() {
-                }, Duration.ofSeconds(5));
+        String host = address.substring(0, colon);
+        int port = Integer.parseInt(address.substring(colon + 1));
+        boolean reconnect = Files.exists(Path.of("reconnect.flag"));
+        Connection.Listener listener = new Connection.Listener() {
+            @Override
+            public void onClose(Throwable cause) {
+                if (reconnect) {
+                    Thread.ofVirtual().start(() -> reconnect(host, port, token, info, router, this));
+                }
+            }
+        };
+        return AgentClient.connect(host, port, token, info, router, listener, Duration.ofSeconds(5));
+    }
+
+    private static void reconnect(String host, int port, String token, AgentInfo info, OpRouter router,
+                                  Connection.Listener listener) {
+        long end = System.nanoTime() + Duration.ofSeconds(30).toNanos();
+        while (System.nanoTime() < end) {
+            try {
+                AgentClient.connect(host, port, token, info, router, listener, Duration.ofSeconds(5));
+                System.out.println("[12:00:10 INFO]: agent reconnected");
+                return;
+            } catch (OpException e) {
+                System.out.println("[12:00:10 INFO]: msc-core refused the agent: " + e.getMessage());
+                return;
+            } catch (Exception e) {
+                try {
+                    Thread.sleep(100);
+                } catch (InterruptedException interrupted) {
+                    return;
+                }
+            }
+        }
     }
 }

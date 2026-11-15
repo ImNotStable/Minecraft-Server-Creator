@@ -52,6 +52,16 @@ public final class MetaTools {
                         out.append(s.agent().platform()).append(' ').append(s.agent().platformVersion())
                                 .append(", minecraft ").append(s.agent().minecraftVersion()).append(", ")
                                 .append(s.agent().operations().size()).append(" operations");
+                        if (!server.running()) {
+                            // Not a server this session runs: one attached through MSC_CORE_ADDRESS (ADR 0005).
+                            out.append(", of a server started outside this session");
+                        }
+                    }
+                    int refused = hub.refusedAgents();
+                    if (refused > 0) {
+                        // ADR 0050: say why an agent that knocked is not the one world tools reach.
+                        out.append("; refused ").append(refused).append(refused == 1 ? " agent" : " agents")
+                                .append(" without this workspace's token (another workspace's server)");
                     }
                     out.append("\napi index: ").append(api.status());
                     for (String w : SetupCheck.warnings(config)) {

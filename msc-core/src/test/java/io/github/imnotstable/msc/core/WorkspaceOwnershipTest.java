@@ -461,6 +461,47 @@ class WorkspaceOwnershipTest {
             agentConnects();
         }
 
+        /**
+         * #726: the agent of a server detached in one workspace reconnects to the same fixed address once a switch
+         * closed that workspace, with the token its server was started with. The next workspace refuses it: its world
+         * tools must never reach another workspace's server (ADR 0050).
+         */
+        @Test
+        void aServerDetachedInOneWorkspaceDoesNotAttachToTheNext() throws Exception {
+            Files.createDirectories(workspace.resolve("run"));
+            Files.writeString(workspace.resolve("run/reconnect.flag"), "");
+            h.ok("server_start", "timeoutSeconds", 30);
+            ProcessHandle left = ProcessHandle.of(Long.parseLong(
+                    Files.readString(workspace.resolve(".msc/server.pid")).split(" ")[0])).orElseThrow();
+            try {
+                h.ok("server_detach");
+                Path other = Files.createDirectories(workspace.resolve("other"));
+                h.ok("msc_workspace", "path", other.toString());
+                AgentHub hub = h.core.hub();
+                long end = System.nanoTime() + Duration.ofSeconds(20).toNanos();
+                while (hub.refusedAgents() == 0 && System.nanoTime() < end) {
+                    Thread.sleep(50);
+                }
+                assertThat(hub.refusedAgents()).isEqualTo(1);
+                assertThat(hub.current()).isNull();
+                assertThat(left.isAlive()).isTrue();
+                assertThat(h.ok("msc_status")).contains("\nserver: not set up (")
+                        .contains("\nagent: not connected; refused 1 agent without this workspace's token "
+                                + "(another workspace's server)\n");
+                // A fixed address waits for an agent that may attach (ADR 0005); the refused one never does.
+                hub.connectWait(Duration.ofMillis(300));
+                assertThat(h.error("world_summary", "region", "world 0 -64 0 15 0 15"))
+                        .contains("no server agent connected");
+                // The workspace's own server still attaches, on the same port.
+                assertThat(h.ok("server_start", "timeoutSeconds", 30)).contains("agent connected");
+                assertThat(h.ok("msc_status")).contains("\nagent: paper fake, minecraft 26.3, ")
+                        .doesNotContain("started outside this session");
+                h.ok("server_stop");
+            } finally {
+                left.destroyForcibly();
+            }
+        }
+
         @Test
         void aFailedSwitchSaysWhatItsCloseStoppedAndKeepsThePort() {
             h.ok("server_start", "timeoutSeconds", 30);

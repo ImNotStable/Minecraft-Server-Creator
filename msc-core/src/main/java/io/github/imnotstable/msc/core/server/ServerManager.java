@@ -325,7 +325,8 @@ public final class ServerManager implements AutoCloseable {
         long mark;
         // Read from the hub before taking this monitor: the hub's lock holder may be waiting for it (running()).
         String address = hub.address();
-        String token = hub.token();
+        // The workspace's own token: a server it starts attaches to no other workspace (ADR 0050).
+        String token = hub.serverToken();
         long readyBefore = hub.readyCount();
         Process started;
         LogPump startedPump;
