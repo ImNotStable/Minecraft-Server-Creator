@@ -56,7 +56,7 @@ import java.util.Objects;
  * </pre>
  *
  * <p>Exit codes: {@link #OK}, {@link #USAGE}, {@link #BAD_INPUT}, {@link #FAILED}, {@link #USAGE_LIMIT},
- * {@link #NOT_RECORDED} and {@link #INTERNAL_ERROR}; every refusal and error is one {@code msc-bench: } message on standard error, never a stack
+ * {@link #NOT_WRITTEN} and {@link #INTERNAL_ERROR}; every refusal and error is one {@code msc-bench: } message on standard error, never a stack
  * trace.
  */
 public final class Main {
@@ -78,10 +78,13 @@ public final class Main {
     /** {@code run} stopped early on an account usage limit. */
     static final int USAGE_LIMIT = 4;
     /**
-     * {@code run} stopped early: one of the run's own files (an attempt's folder or files, {@code results.jsonl}) could
-     * not be written ({@link RunFolderUnwritable}).
+     * One of the bench's own output files could not be written ({@link RunFolderUnwritable}), such as on a full disk:
+     * {@code run} could not create its run folder, or stopped early on an attempt's folder or files or
+     * {@code results.jsonl}; {@code report} could not write {@code report.md} (#644). Never a bad argument: the
+     * message names the file. A {@code report.md} that {@code run} cannot write at its end is a warning instead
+     * ({@link #endRun}).
      */
-    static final int NOT_RECORDED = 5;
+    static final int NOT_WRITTEN = 5;
     /** An error the bench did not expect: a bug to report. */
     static final int INTERNAL_ERROR = 70;
 
@@ -110,8 +113,10 @@ public final class Main {
     /**
      * {@code command}'s exit code, with every exception it throws turned into one line on {@code err} and a code. This
      * is the one place that decides which failure gets which code (#639): a step of the bench's own work that failed
-     * ({@link StepFailed}) is {@link #FAILED}, as the same step fails an attempt in a run; any other IO failure or
-     * refused argument is a bad argument or input file, {@link #BAD_INPUT}; anything else is {@link #INTERNAL_ERROR}.
+     * ({@link StepFailed}) is {@link #FAILED}, as the same step fails an attempt in a run; one of the bench's own
+     * output files that could not be written ({@link RunFolderUnwritable}, naming the file) is {@link #NOT_WRITTEN}
+     * (#644); any other IO failure or refused argument is a bad argument or input file, {@link #BAD_INPUT}; anything
+     * else is {@link #INTERNAL_ERROR}.
      */
     static int guarded(PrintStream err, Command command) {
         try {
@@ -119,6 +124,9 @@ public final class Main {
         } catch (StepFailed e) {
             err.println("msc-bench: " + oneLine(e.getMessage()));
             return FAILED;
+        } catch (RunFolderUnwritable e) {
+            err.println("msc-bench: " + oneLine(e.getMessage()));
+            return NOT_WRITTEN;
         } catch (IOException | IllegalArgumentException e) {
             err.println("msc-bench: " + oneLine(message(e)));
             return BAD_INPUT;
@@ -193,7 +201,7 @@ public final class Main {
                 if (rest.size() != 1) {
                     throw new IllegalArgumentException("usage: report <runDir>");
                 }
-                yield report(runFolder(expandHome(rest.getFirst(), home)), out);
+                yield report(runFolder(expandHome(rest.getFirst(), home)), out, Disk.REAL);
             }
             default -> throw new IllegalStateException("no case for command " + line.command());
         };
@@ -262,7 +270,12 @@ public final class Main {
                     + "them elsewhere");
         }
         // A new folder of its own: runs started side by side never share results.jsonl or report.md (#621).
-        Path runDir = RunFolder.claim(runsDir, LocalDateTime.now());
+        Path runDir;
+        try {
+            runDir = RunFolder.claim(runsDir, LocalDateTime.now());
+        } catch (IOException e) {
+            throw new RunFolderUnwritable(runsDir, e);
+        }
 
         BenchRunner runner = new BenchRunner(config, runDir, preambles, out);
         List<RunRecord> records = runner.run(selection, repeat);
@@ -273,7 +286,7 @@ public final class Main {
      * The end of a run, in an order that cannot lose its verdict (#476): the exit code is decided and a stop is
      * explained first, then {@code report.md} is written whole or not at all. A report that cannot be written (a full
      * disk) is one warning line naming {@code report <runDir>}, which rebuilds it from {@code results.jsonl} once the
-     * cause is fixed, and never changes the exit code: {@link #NOT_RECORDED} stays, and a run that recorded every
+     * cause is fixed, and never changes the exit code: {@link #NOT_WRITTEN} stays, and a run that recorded every
      * attempt keeps {@link #OK}, {@link #FAILED} or {@link #USAGE_LIMIT}, since those speak for the attempts and every
      * one of them is in {@code results.jsonl}. The earlier {@code report.md}, if any, is left as it was.
      */
@@ -285,7 +298,7 @@ public final class Main {
                     + records.size() + " attempts "
                     + "recorded. Fix the cause, run the rest into a new folder and put the results.jsonl files "
                     + "together before `report`.");
-            exit = NOT_RECORDED;
+            exit = NOT_WRITTEN;
         } else if (stoppedBy != null) {
             out.println("Stopped early on a usage limit (" + stoppedBy + "). After it resets, run the rest into "
                     + "a new folder and put the results.jsonl files together before `report`.");
@@ -293,27 +306,33 @@ public final class Main {
         } else {
             exit = records.stream().allMatch(RunRecord::passed) ? OK : FAILED;
         }
-        Path reportFile = runDir.resolve(REPORT);
         try {
-            writeReport(reportFile, records, disk);
-            out.println("Report: " + reportFile.toAbsolutePath());
-        } catch (IOException e) {
-            out.println("warning: " + reportFile.toAbsolutePath() + " could not be written (" + message(e)
-                    + "); once that is fixed, `report " + runDir.toAbsolutePath() + "` writes it from "
-                    + ResultsFile.NAME);
+            out.println("Report: " + writeReport(runDir, records, disk));
+        } catch (RunFolderUnwritable e) {
+            out.println("warning: " + e.getMessage() + "; once that is fixed, `report " + runDir.toAbsolutePath()
+                    + "` writes it from " + ResultsFile.NAME);
         }
         return exit;
     }
 
-    /** Writes the report of {@code records} whole or not at all: a failed write leaves the file as it was. */
-    private static void writeReport(Path reportFile, List<RunRecord> records, Disk disk) throws IOException {
+    /**
+     * Writes the report of {@code records} to {@code report.md} in {@code runDir}, whole or not at all: a failed write
+     * leaves the file as it was and is a {@link RunFolderUnwritable} naming it. Returns the file's absolute path.
+     */
+    private static Path writeReport(Path runDir, List<RunRecord> records, Disk disk) throws RunFolderUnwritable {
+        Path reportFile = runDir.resolve(REPORT).toAbsolutePath();
         byte[] text = ReportWriter.render(records).getBytes(StandardCharsets.UTF_8);
-        AtomicFile.write(reportFile, to -> {
-            try (FileChannel channel = FileChannel.open(to, StandardOpenOption.WRITE,
-                    StandardOpenOption.TRUNCATE_EXISTING)) {
-                disk.write(reportFile, channel, ByteBuffer.wrap(text));
-            }
-        });
+        try {
+            AtomicFile.write(reportFile, to -> {
+                try (FileChannel channel = FileChannel.open(to, StandardOpenOption.WRITE,
+                        StandardOpenOption.TRUNCATE_EXISTING)) {
+                    disk.write(reportFile, channel, ByteBuffer.wrap(text));
+                }
+            });
+        } catch (IOException e) {
+            throw new RunFolderUnwritable(reportFile, e);
+        }
+        return reportFile;
     }
 
     /** The {@code --repeat} value: a whole number of attempts per task and mode, at least 1. */
@@ -364,6 +383,8 @@ public final class Main {
      * running; when none answers and the machine's owner accepted the EULA, the workspace's own {@code server/} is
      * started for the checks and stopped after them, as in a run. Its arguments are already accepted: every IO
      * failure from here on is a step of its own work that failed ({@link StepFailed}), a failed check as in a run.
+     * Stopping that server is no such step: {@link ServerManager#close} throws nothing, and kills a server that does
+     * not stop (#645).
      */
     static int check(TaskDef task, Path workspace, BenchConfig config, PrintStream out) throws IOException {
         // The run's own placeholders (#554); an attempt's workspace sits in its attempt folder.
@@ -379,11 +400,6 @@ public final class Main {
                 ? new ServerManager(workspace.resolve("server"), config.server(), Map.of(), children)
                 : null) {
             return check(task, workspace, values, config, server, children, out);
-        } catch (StepFailed e) {
-            throw e;
-        } catch (IOException e) {
-            // Only the server's stop throws a bare IOException here: every step inside names itself.
-            throw new StepFailed("stopping the workspace's server", e);
         } finally {
             try {
                 Runtime.getRuntime().removeShutdownHook(hook);
@@ -473,7 +489,12 @@ public final class Main {
         return reportPath ? parent : arg;
     }
 
-    private static int report(Path runDir, PrintStream out) throws IOException {
+    /**
+     * Rewrites {@code report.md} in {@code runDir} from its {@code results.jsonl}, writing through {@code disk}. A
+     * report that cannot be written is a {@link RunFolderUnwritable} naming it ({@link #NOT_WRITTEN}, #644), never a
+     * bad argument: the arguments and {@code results.jsonl} were fine.
+     */
+    static int report(Path runDir, PrintStream out, Disk disk) throws IOException {
         if (!Files.isDirectory(runDir)) {
             throw new IOException("run folder " + runDir.toAbsolutePath() + (Files.exists(runDir) ? " is not a folder"
                     : " does not exist") + ": give the run folder, or the path that `run` prints after Report:");
@@ -485,9 +506,7 @@ public final class Main {
                     + "prints after Report:");
         }
         List<RunRecord> records = ResultsFile.read(results, out::println);
-        Path reportFile = runDir.resolve(REPORT);
-        writeReport(reportFile, records, Disk.REAL);
-        out.println("Report: " + reportFile.toAbsolutePath());
+        out.println("Report: " + writeReport(runDir, records, disk));
         return OK;
     }
 }

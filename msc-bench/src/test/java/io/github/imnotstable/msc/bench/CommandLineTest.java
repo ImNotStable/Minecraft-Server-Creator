@@ -548,7 +548,7 @@ class CommandLineTest {
         });
 
         assertThat(exit).isEqualTo(Main.INTERNAL_ERROR).isNotIn(Main.OK, Main.USAGE, Main.BAD_INPUT, Main.FAILED,
-                Main.USAGE_LIMIT, Main.NOT_RECORDED);
+                Main.USAGE_LIMIT, Main.NOT_WRITTEN);
         assertThat(err.toString(StandardCharsets.UTF_8).lines().toList()).singleElement().asString()
                 .isEqualTo("msc-bench: internal error (java.lang.IllegalStateException: broken); please report it");
     }
