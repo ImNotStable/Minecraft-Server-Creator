@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 /**
  * The one place the bench turns a command into what Java needs on Windows, so every argument reaches the program
@@ -26,9 +27,16 @@ import java.util.Locale;
  * {@code cmd.exe /d /v:off /s /c ""<script>" <args>"}: each argument is encoded as above, and every cmd.exe
  * metacharacter in it, the quotes included, is escaped with {@code ^} twice, once for this {@code cmd.exe} and once for
  * the script's own line that passes {@code %*} on to the real program (node, java), as cross-spawn does for npm. With
- * every quote escaped, cmd.exe never enters a quoted part, so every escape works, and {@code %NAME%} becomes
- * {@code ^%NAME^%}, a variable no one defines. cmd.exe ends the command at a line break whatever the quoting, so an
- * argument with one is refused for a script rather than cut; the agent's prompt goes over stdin instead (ADR 0047).
+ * every quote escaped, cmd.exe never enters a quoted part, so every escape works.
+ *
+ * <p>A {@code %} needs more than its own caret: cmd.exe expands variables before it reads any caret, and besides
+ * {@code %NAME%} it takes {@code %NAME:old=new%} and {@code %NAME:~start,length%}, where the name ends at the
+ * {@code :} (#630). So the character after each {@code %} is escaped too, whatever it is: the text after any
+ * {@code %} of an argument then starts with {@code ^}, so every name cmd.exe could look up there, in any of the three
+ * forms, starts with {@code ^}. cmd.exe defines no such variable itself, and {@link #prepare} removes any from a
+ * script's environment, so no argument expands one. The script's own line expands only {@code %*}, and not again in
+ * the text it puts there. cmd.exe ends the command at a line break whatever the quoting, so an argument with one is
+ * refused for a script rather than cut; the agent's prompt goes over stdin instead (ADR 0047).
  */
 public final class WindowsCommandLine {
 
@@ -46,10 +54,15 @@ public final class WindowsCommandLine {
 
     /**
      * {@code builder} with its command made safe for Windows ({@link #forJdk}); on any other system it is left as it
-     * is. Throws when a command cannot be passed whole, naming the argument.
+     * is. For a {@code .cmd} or {@code .bat} program it also removes every variable whose name starts with {@code ^}
+     * from the builder's environment ({@link #dropCaretVariables}). Throws when a command cannot be passed whole,
+     * naming the argument.
      */
     public static ProcessBuilder prepare(ProcessBuilder builder) throws IOException {
         if (WINDOWS) {
+            if (!builder.command().isEmpty() && isScript(builder.command().getFirst())) {
+                dropCaretVariables(builder.environment());
+            }
             try {
                 builder.command(forJdk(builder.command(), System.getProperty(STRICT_PROPERTY, "true"),
                         System.getenv("ComSpec")));
@@ -149,17 +162,30 @@ public final class WindowsCommandLine {
         return out.repeat('\\', backslashes * 2).append('"').toString();
     }
 
-    /** {@code text} with each cmd.exe metacharacter escaped by a {@code ^}. */
+    /**
+     * {@code text} with each cmd.exe metacharacter, and each character right after a {@code %}, escaped by a
+     * {@code ^}. Applied twice, {@code %x} becomes {@code ^^^%^^x} (and {@code %&} becomes {@code ^^^%^^^&}): cmd.exe
+     * and then the script's {@code %*} line each take one caret level off, and a variable name read after the
+     * {@code %} starts with {@code ^}.
+     */
     static String escapeForCmd(String text) {
         StringBuilder out = new StringBuilder(text.length() + 8);
         for (int i = 0; i < text.length(); i++) {
             char c = text.charAt(i);
-            if (CMD_METACHARACTERS.indexOf(c) >= 0) {
+            if (CMD_METACHARACTERS.indexOf(c) >= 0 || i > 0 && text.charAt(i - 1) == '%') {
                 out.append('^');
             }
             out.append(c);
         }
         return out.toString();
+    }
+
+    /**
+     * Removes from {@code environment} every variable whose name starts with {@code ^}, the names
+     * {@link #escapeForCmd} leaves after a {@code %}, so none of them is defined for the cmd.exe that runs a script.
+     */
+    static void dropCaretVariables(Map<String, String> environment) {
+        environment.keySet().removeIf(name -> name.startsWith("^"));
     }
 
     private static String abbreviate(String text) {
