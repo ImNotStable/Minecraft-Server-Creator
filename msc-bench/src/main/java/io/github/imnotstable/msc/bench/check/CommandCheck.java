@@ -2,7 +2,6 @@ package io.github.imnotstable.msc.bench.check;
 
 import io.github.imnotstable.msc.bench.Text;
 import io.github.imnotstable.msc.bench.run.ChildProcesses;
-import io.github.imnotstable.msc.bench.run.Workspaces;
 import io.github.imnotstable.msc.process.ServerJava;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -14,8 +13,8 @@ import java.util.regex.Pattern;
 /**
  * Runs a command in the workspace and passes on the expected exit code (and output pattern, if
  * given). The {@code {gradlew}} placeholder (filled, like every check key, by {@link Checks}) is the workspace's
- * Gradle wrapper for the current OS. {@code addFiles} is a folder of the task copied into the workspace first, such as tests
- * the agent never saw.
+ * Gradle wrapper for the current OS. {@code addFiles} is a folder of the task copied into the workspace while the command
+ * runs, such as tests the agent never saw, and taken out again afterwards ({@link AddedFiles}).
  */
 record CommandCheck(String name, List<String> run, int timeoutSeconds, int expectExit, Pattern outputMatches,
         Path addFiles) implements Check {
@@ -27,14 +26,45 @@ record CommandCheck(String name, List<String> run, int timeoutSeconds, int expec
         }
     }
 
+    /**
+     * Runs the command; {@code addFiles} is in the workspace only while it runs (#603), and is taken out again (each
+     * file it replaced put back) however the command ends, so a later check of the same workspace meets the agent's
+     * files as this one did. A workspace that cannot be put back fails the check, naming why.
+     */
     @Override
     public CheckResult run(CheckContext context) {
+        if (addFiles == null) {
+            return runCommand(context);
+        }
+        AddedFiles added;
+        try {
+            added = AddedFiles.copy(addFiles, context.workspace());
+        } catch (IOException e) {
+            return CheckResult.fail(name, "cannot add " + addFiles + ": " + e.getMessage());
+        }
+        CheckResult result;
+        try {
+            result = runCommand(context);
+        } catch (RuntimeException | Error e) {
+            try {
+                added.close();
+            } catch (IOException undo) {
+                e.addSuppressed(undo);
+            }
+            throw e;
+        }
+        try {
+            added.close();
+        } catch (IOException e) {
+            return CheckResult.fail(name, "cannot take addFiles out of the workspace again: " + e.getMessage());
+        }
+        return result;
+    }
+
+    private CheckResult runCommand(CheckContext context) {
         List<String> command = run;
         Path log = null;
         try {
-            if (addFiles != null) {
-                Workspaces.copyTree(addFiles, context.workspace());
-            }
             log = Files.createTempFile("msc-bench-check", ".log");
             // A Java tool (or a Gradle build) writes its output as UTF-8, as it is read below (#478).
             Process process = context.start(ServerJava.processBuilder(command)

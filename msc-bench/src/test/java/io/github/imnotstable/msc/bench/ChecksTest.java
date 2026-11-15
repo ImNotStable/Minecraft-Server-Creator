@@ -18,6 +18,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
@@ -80,18 +81,71 @@ class ChecksTest {
         });
     }
 
+    /** A command check that passes when {@code file} in the workspace holds {@code text}. */
+    private static String fileHolds(String file, String text) {
+        return "{\"type\":\"command\",\"addFiles\":\"hidden\",\"outputMatches\":\"^" + text + "$\",\"run\":[\"{java}\","
+                + "\"-cp\",\"{classpath}\",\"io.github.imnotstable.msc.bench.CatFile\",\"" + file + "\"]}";
+    }
+
     @Test
-    void commandCheckAddsTheTasksHiddenFilesFirst() throws IOException {
-        Files.createDirectories(taskDir.resolve("hidden/src"));
-        Files.writeString(taskDir.resolve("hidden/src/Hidden.txt"), "secret");
+    void commandCheckHasTheTasksHiddenFilesWhileItRunsOnly() throws IOException {
+        // #603: addFiles is in the workspace while the command runs, and the workspace is the agent's again after.
+        Files.createDirectories(taskDir.resolve("hidden/src/test"));
+        Files.writeString(taskDir.resolve("hidden/src/test/Hidden.txt"), "secret");
+        Files.writeString(taskDir.resolve("hidden/Shared.txt"), "hidden");
+        Files.createDirectories(workspace.resolve("src"));
+        Files.writeString(workspace.resolve("src/Agent.txt"), "agent");
+        Files.writeString(workspace.resolve("Shared.txt"), "agent's");
 
-        CheckResult result = run("{\"type\":\"command\",\"addFiles\":\"hidden\",\"run\":[\"{java}\",\"-version\"]}");
+        assertThat(run(fileHolds("src/test/Hidden.txt", "secret")).passed()).isTrue();
+        assertThat(run(fileHolds("Shared.txt", "hidden")).passed()).isTrue();
 
-        assertThat(result.passed()).isTrue();
-        assertThat(workspace.resolve("src/Hidden.txt")).hasContent("secret");
+        assertThat(workspace.resolve("src/test")).doesNotExist();
+        assertThat(workspace.resolve("src/Agent.txt")).hasContent("agent");
+        assertThat(workspace.resolve("Shared.txt")).hasContent("agent's");
         assertThat(catchThrowable(() -> run(
                 "{\"type\":\"command\",\"addFiles\":\"../outside\",\"run\":[\"x\"]}")))
                 .hasMessageContaining("no folder ../outside");
+    }
+
+    @Test
+    void commandCheckTakesItsFilesOutWhenTheCommandFailsOrCannotStart() throws IOException {
+        Files.createDirectories(taskDir.resolve("hidden/src"));
+        Files.writeString(taskDir.resolve("hidden/src/Hidden.txt"), "secret");
+        Files.writeString(taskDir.resolve("hidden/Shared.txt"), "hidden");
+        Files.writeString(workspace.resolve("Shared.txt"), "agent's");
+
+        for (String command : new String[] {"\"{java}\",\"-cp\",\"{classpath}\",\"no.such.Main\"",
+                "\"no-such-program-msc-bench\""}) {
+            CheckResult result = run("{\"type\":\"command\",\"addFiles\":\"hidden\",\"run\":[" + command + "]}");
+
+            assertThat(result.passed()).as(command).isFalse();
+            assertThat(workspace.resolve("src")).as(command).doesNotExist();
+            assertThat(workspace.resolve("Shared.txt")).as(command).hasContent("agent's");
+        }
+    }
+
+    @Test
+    void checksRunTwiceOnOneWorkspaceGiveTheSameResults() throws IOException {
+        // #603: the issue's case. The first check stands for "gradlew build", which runs everything in src/test; the
+        // second adds hidden tests that fail. A second check of the kept workspace must meet what the first met.
+        Files.createDirectories(taskDir.resolve("hidden/src/test"));
+        Files.writeString(taskDir.resolve("hidden/src/test/HiddenTest.txt"), "hidden");
+        Check builds = parse("{\"type\":\"command\",\"name\":\"builds\",\"run\":[\"{java}\",\"-cp\",\"{classpath}\","
+                + "\"io.github.imnotstable.msc.bench.CatFile\",\"src/test/HiddenTest.txt\"],\"expectExit\":1}");
+        Check hidden = parse("{\"type\":\"command\",\"name\":\"hidden\",\"addFiles\":\"hidden\",\"run\":[\"{java}\","
+                + "\"-cp\",\"{classpath}\",\"no.such.Main\"]}");
+
+        List<CheckResult> first = List.of(run(builds, null), run(hidden, null));
+        List<CheckResult> second = List.of(run(builds, null), run(hidden, null));
+
+        assertThat(first).extracting(CheckResult::passed).containsExactly(true, false);
+        assertThat(second).isEqualTo(first);
+    }
+
+    private Check parse(String json) {
+        return Checks.parse(UserJson.of(JsonParser.parseString(json).getAsJsonObject(), "check.", Checks.KEYS),
+                taskDir);
     }
 
     @Test
