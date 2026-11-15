@@ -42,15 +42,22 @@ public final class UserJson {
     private final List<String> allowed;
     /** The placeholder values filled into every string read; empty when not filled. */
     private final Map<String, String> values;
+    /** Where unknown keys are reported, at this depth and below, instead of refused; null when they are refused. */
+    private final List<String> unknown;
 
-    private UserJson(JsonObject tree, String at, Keys keys) {
+    private UserJson(JsonObject tree, String at, Keys keys, List<String> unknown) {
         this.tree = tree;
         this.at = at;
         this.allowed = keys.of(this);
         this.values = Map.of();
+        this.unknown = unknown;
         for (String field : tree.keySet()) {
             if (!allowed.contains(field)) {
-                throw new IllegalArgumentException(key(field) + ": unknown key; the keys are " + allowed);
+                String problem = key(field) + ": unknown key; the keys are " + allowed;
+                if (unknown == null) {
+                    throw new IllegalArgumentException(problem);
+                }
+                unknown.add(problem);
             }
         }
     }
@@ -60,6 +67,7 @@ public final class UserJson {
         this.at = at;
         this.allowed = keysFrom.allowed;
         this.values = values;
+        this.unknown = keysFrom.unknown;
     }
 
     /**
@@ -77,7 +85,16 @@ public final class UserJson {
      * A key outside {@code keys} is refused here, naming its path and the keys there are.
      */
     public static UserJson of(JsonObject tree, String at, Keys keys) {
-        return new UserJson(tree, at, keys);
+        return new UserJson(tree, at, keys, null);
+    }
+
+    /**
+     * {@link #of}, except that a key outside its {@link Keys}, here or in any object read from it, is added to
+     * {@code unknown} (as {@link #of} would refuse it) and left unread, so the object's other keys are still read and
+     * checked (#653). Every unknown key is reported, not only the first.
+     */
+    public static UserJson collectingUnknownKeys(JsonObject tree, String at, Keys keys, List<String> unknown) {
+        return new UserJson(tree, at, keys, Objects.requireNonNull(unknown));
     }
 
     /**
@@ -438,7 +455,7 @@ public final class UserJson {
     }
 
     private UserJson child(JsonElement value, String at, Keys keys) {
-        UserJson child = new UserJson(requireObject(value, at), at + ".", keys);
+        UserJson child = new UserJson(requireObject(value, at), at + ".", keys, unknown);
         return values.isEmpty() ? child : child.filled(values);
     }
 
