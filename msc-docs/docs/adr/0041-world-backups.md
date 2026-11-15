@@ -68,3 +68,16 @@ No protocol change.
 - A server MSC attached over `MSC_CORE_ADDRESS` (not in the server folder) has no world folders here: big builds skip
   the backup, and `save` says no world folder was found.
 - Not verified on Windows: the lock and retry behaviour is from how Java opens files there, not from a run.
+
+## Amendment, 2026-11-15: no guessing which backup (#573, #574)
+
+- Decision 4 picked "the newest containing the text", and every name contains the empty text, so `backup=""` (which
+  clients send for an unset string) rolled the world back to the newest backup. Now a blank `backup`, or a part that
+  more than one name contains, is refused in one line before anything stops; only an exact name or a part one name
+  has restores.
+- "Newest" was the name order, so two backups from one second sorted by label. Each backup now holds a `.order` file,
+  its place in the order backups were taken; the list, the pick and the prune go by it (backups without one sort
+  last, by name).
+- The console path of decision 3 (no agent: wait for "Saved the game", refuse and still send `save-on` when it never
+  comes) and the Minestom note have behaviour tests (`WorldBackupToolsTest`, with `FakeServerMain` answering
+  `save-all flush`).

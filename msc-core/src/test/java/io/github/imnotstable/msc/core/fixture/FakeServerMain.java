@@ -62,7 +62,9 @@ public final class FakeServerMain {
             Thread.sleep(800);
         }
         OpRouter router = new FakeAgent().router();
-        AgentClient.Session session = connect(new AgentInfo("paper", "fake", "26.3", router.operations()), router);
+        // no-agent.flag: the agent never connects, as when it failed to load.
+        AgentClient.Session session = Files.exists(Path.of("no-agent.flag")) ? null
+                : connect(new AgentInfo("paper", "fake", "26.3", router.operations()), router);
         if (session != null) {
             session.connection().sendEvent(Events.SERVER_READY, new JsonObject());
         }
@@ -77,6 +79,10 @@ public final class FakeServerMain {
                 break;
             }
             System.out.println("[12:00:05 INFO]: console: " + line);
+            // Like vanilla's save-all; no-save.flag: a server that never confirms it.
+            if (line.equals("save-all flush") && !Files.exists(Path.of("no-save.flag"))) {
+                System.out.println("[12:00:05 INFO]: Saved the game");
+            }
         }
         System.exit(0);
     }

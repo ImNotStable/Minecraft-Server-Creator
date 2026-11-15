@@ -39,6 +39,8 @@ public final class WorldBackups {
     private final ServerRun run;
     private final WorldService world;
     private final Backups backups;
+    /** How long a server with no agent may take to answer save-all flush; tests shorten it. */
+    static volatile Duration saveWait = Duration.ofSeconds(60);
 
     WorldBackups(CoreConfig config, AgentHub hub, ServerManager server, ServerRun run, WorldService world, Clock clock) {
         this.config = config;
@@ -144,8 +146,9 @@ public final class WorldBackups {
             } else if (console) {
                 long mark = server.log().mark();
                 server.console("save-all flush");
-                if (server.awaitLine(mark, l -> l.contains("Saved the game"), Duration.ofSeconds(60)) == null) {
-                    throw new ToolException("the server did not confirm save-all flush within 60s; no backup taken");
+                if (server.awaitLine(mark, l -> l.contains("Saved the game"), saveWait) == null) {
+                    throw new ToolException("the server did not confirm save-all flush within " + saveWait.toSeconds()
+                            + "s; no backup taken");
                 }
             }
             b = backups.save(config.serverDir(), label, keep);
