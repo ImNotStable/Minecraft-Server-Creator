@@ -9,6 +9,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -156,10 +157,19 @@ public record BenchConfig(
      * value that can never work ({@link BenchConfigRules}), so a run fails here and not after a server's start timeout.
      * Every key is read by its type through {@link UserJson}'s exact reads (#416, #462): a value of another type, such
      * as {@code "acceptEula": "yes"} or {@code "command": "claude"}, is refused naming the key and the type it takes.
+     *
+     * <p>Every problem of the file is listed in one refusal (#653): unknown keys, values of the wrong type, the rules
+     * on the values as written and the rules on the filled-in config all run in one pass. A rule of the filled-in
+     * config leaves out only what depends on a value refused already: the port clashes of a port that could not be
+     * read (every {@code server} port when {@code server} could not be), and the {@code serverPlugins} placeholders
+     * when {@code paths} could not be read; a blank path is not looked for on disk either. Every refusal quotes a
+     * string value as the file writes it (#652); a file that is not found also names the absolute path it was looked
+     * for at.
      */
     public static BenchConfig load(Path file, Path home) throws IOException {
         BenchConfig raw;
-        List<String> problems;
+        List<String> problems = new ArrayList<>();
+        Set<String> unread = new HashSet<>();
         String text = Text.readOwn(file);
         if (text.isBlank()) {
             throw new IOException("Empty bench config " + file);
@@ -169,25 +179,13 @@ public record BenchConfig(
             if (!parsed.isJsonObject()) {
                 throw new IllegalArgumentException("is not a JSON object");
             }
-            problems = new ArrayList<>();
-            UserJson root = null;
-            try {
-                root = UserJson.of(parsed.getAsJsonObject(), "", KEYS);
-            } catch (IllegalArgumentException e) {
-                problems.add(e.getMessage());
-            }
-            raw = root == null ? null : read(root, problems);
+            raw = read(UserJson.collectingUnknownKeys(parsed.getAsJsonObject(), "", KEYS, problems), problems, unread);
         } catch (IllegalArgumentException | IllegalStateException e) {
             throw new IOException("Bad bench config " + file + ": " + e.getMessage(), e);
         }
-        if (raw != null) {
-            problems.addAll(BenchConfigRules.beforeDefaults(raw));
-        }
-        BenchConfig full = null;
-        if (problems.isEmpty()) {
-            full = raw.withDefaults(file.toAbsolutePath().getParent(), MachineEula.accepted(home));
-            problems = BenchConfigRules.afterDefaults(full);
-        }
+        problems.addAll(BenchConfigRules.beforeDefaults(raw));
+        BenchConfig full = raw.withDefaults(file.toAbsolutePath().getParent(), MachineEula.accepted(home));
+        problems.addAll(BenchConfigRules.afterDefaults(raw, full, unread));
         if (!problems.isEmpty()) {
             // One problem stays one line, as every other refusal of the command line is.
             throw new IOException("Bad bench config " + file + ":" + (problems.size() == 1 ? " " : "\n  ")
@@ -211,14 +209,15 @@ public record BenchConfig(
 
     /**
      * The config as the file writes it, every key read by its type; a refused key goes to {@code problems} and reads
-     * as absent, so the rest of the file is still read and checked. Null entries of lists and maps are kept for
-     * {@link BenchConfigRules} to name.
+     * as absent, so the rest of the file is still read and checked. A refused key a later rule depends on
+     * ({@code server}, {@code paths} and the number keys) is also added to {@code unread}. Null entries of lists and
+     * maps are kept for {@link BenchConfigRules} to name.
      */
-    static BenchConfig read(UserJson json, List<String> problems) {
+    static BenchConfig read(UserJson json, List<String> problems, Set<String> unread) {
         UserJson a = field(problems, () -> json.exactObject("agent", AGENT));
         Agent agent = a == null ? null : new Agent(
                 field(problems, () -> a.stringsOrNulls("command")),
-                number(problems, a, "agent.", "timeoutSeconds"));
+                number(problems, unread, a, "agent.", "timeoutSeconds"));
         Map<String, UserJson> m = field(problems, () -> json.objectMapOrNulls("modes", MODE));
         Map<String, Mode> modes = null;
         if (m != null) {
@@ -235,7 +234,7 @@ public record BenchConfig(
                         field(problems, () -> mode.exactString("requireMcp", null))));
             }
         }
-        UserJson s = field(problems, () -> json.exactObject("server", SERVER));
+        UserJson s = field(problems, unread, "server", () -> json.exactObject("server", SERVER));
         Server server = s == null ? null : new Server(
                 field(problems, () -> s.stringsOrNulls("command")),
                 field(problems, () -> s.path("paperJar", null)),
@@ -243,17 +242,17 @@ public record BenchConfig(
                 field(problems, () -> s.exactString("downloadsUrl", null)),
                 // Read only for its type: the EULA choice comes from the machine, never from this file.
                 Boolean.TRUE.equals(field(problems, () -> s.exactBool("acceptEula", false))),
-                number(problems, s, "server.", "serverPort"),
-                number(problems, s, "server.", "rconPort"),
+                number(problems, unread, s, "server.", "serverPort"),
+                number(problems, unread, s, "server.", "rconPort"),
                 field(problems, () -> s.exactString("rconPassword", null)),
-                number(problems, s, "server.", "startTimeoutSeconds"));
+                number(problems, unread, s, "server.", "startTimeoutSeconds"));
         return new BenchConfig(
                 agent,
                 modes,
                 server,
                 field(problems, () -> json.path("gradleWrapperFrom", null)),
-                field(problems, () -> json.pathMapOrNulls("paths")),
-                number(problems, json, "", "corePort"),
+                field(problems, unread, "paths", () -> json.pathMapOrNulls("paths")),
+                number(problems, unread, json, "", "corePort"),
                 field(problems, () -> json.exactString("minecraftVersion", null)));
     }
 
@@ -267,9 +266,25 @@ public record BenchConfig(
         }
     }
 
-    /** The whole number {@code field} of {@code holder} in its {@link BenchConfigRules#NUMBERS} range, 0 when absent. */
-    private static int number(List<String> problems, UserJson holder, String prefix, String field) {
-        Integer value = field(problems, () -> holder.wholeNumber(field, BenchConfigRules.NUMBERS.get(prefix + field), 0));
+    /** {@link #field}, adding {@code key} to {@code unread} when its value is refused. */
+    private static <T> T field(List<String> problems, Set<String> unread, String key, Supplier<T> read) {
+        int before = problems.size();
+        T value = field(problems, read);
+        if (problems.size() > before) {
+            unread.add(key);
+        }
+        return value;
+    }
+
+    /**
+     * The whole number {@code field} of {@code holder} in its {@link BenchConfigRules#NUMBERS} range, 0 when absent or
+     * refused; a refused one is added to {@code unread}.
+     */
+    private static int number(List<String> problems, Set<String> unread, UserJson holder, String prefix,
+            String field) {
+        String key = prefix + field;
+        Integer value = field(problems, unread, key,
+                () -> holder.wholeNumber(field, BenchConfigRules.NUMBERS.get(key), 0));
         return value == null ? 0 : value;
     }
 
@@ -288,29 +303,34 @@ public record BenchConfig(
         Agent fullAgent = new Agent(
                 a.command() == null || a.command().isEmpty()
                         ? List.of("claude", "-p", "--output-format", "stream-json", "--verbose")
-                        : List.copyOf(a.command()),
+                        : keepingNulls(a.command()),
                 a.timeoutSeconds() > 0 ? a.timeoutSeconds() : 1800);
 
         Map<String, Mode> fullModes = new LinkedHashMap<>();
         if (modes == null || modes.isEmpty()) {
             fullModes.put("baseline", new Mode(null, null, null, null, null, null, null));
         } else {
-            modes.forEach((name, mode) -> fullModes.put(name, new Mode(
-                    mode.extraArgs(),
-                    mode.env(),
-                    mode.mcpConfigTemplate() == null ? null : resolve(base, mode.mcpConfigTemplate()),
-                    mode.serverEnv(),
-                    mode.serverPlugins().stream().map(p -> p.startsWith("{") ? p : resolve(base, p)).toList(),
-                    mode.paperCacheSeed(),
-                    mode.requireMcp())));
+            modes.forEach((name, mode) -> {
+                if (mode != null) { // a null mode is refused; the other modes are still checked
+                    fullModes.put(name, new Mode(
+                            mode.extraArgs(),
+                            mode.env(),
+                            resolve(base, mode.mcpConfigTemplate()),
+                            mode.serverEnv(),
+                            mode.serverPlugins().stream()
+                                    .map(p -> p != null && p.startsWith("{") ? p : resolve(base, p)).toList(),
+                            mode.paperCacheSeed(),
+                            mode.requireMcp()));
+                }
+            });
         }
 
         Server s = server == null ? new Server(null, null, null, null, false, 0, 0, null, 0) : server;
         Server fullServer = new Server(
                 s.command() == null || s.command().isEmpty()
                         ? List.of("java", "-Xmx2G", "-jar", "paper.jar", "--nogui")
-                        : List.copyOf(s.command()),
-                s.paperJar() == null ? null : resolve(base, s.paperJar()),
+                        : keepingNulls(s.command()),
+                resolve(base, s.paperJar()),
                 (s.paperCacheDirs() == null ? List.of(".cache", "../.msc/cache") : s.paperCacheDirs())
                         .stream().map(d -> resolve(base, d)).toList(),
                 s.downloadsUrl() == null ? "https://fill.papermc.io" : BenchConfigRules.baseUrl(s.downloadsUrl()),
@@ -322,14 +342,18 @@ public record BenchConfig(
 
         Map<String, String> fullPaths = new LinkedHashMap<>();
         if (paths != null) {
-            paths.forEach((k, v) -> fullPaths.put(k, resolve(base, v)));
+            paths.forEach((k, v) -> {
+                if (v != null) { // a null path is refused; placeholder names are read from the paths as written
+                    fullPaths.put(k, resolve(base, v));
+                }
+            });
         }
 
         return new BenchConfig(
                 fullAgent,
                 Map.copyOf(fullModes),
                 fullServer,
-                gradleWrapperFrom == null ? null : resolve(base, gradleWrapperFrom),
+                resolve(base, gradleWrapperFrom),
                 Map.copyOf(fullPaths),
                 corePort > 0 ? corePort : 25590,
                 minecraftVersion == null ? "26.3" : minecraftVersion);
@@ -363,7 +387,16 @@ public record BenchConfig(
                 gradleWrapperFrom, paths, corePort, minecraftVersion);
     }
 
+    /** An unmodifiable copy of {@code list} that keeps a null entry, which is refused, so the other rules still run. */
+    private static List<String> keepingNulls(List<String> list) {
+        return Collections.unmodifiableList(new ArrayList<>(list));
+    }
+
+    /**
+     * {@code path} resolved against {@code base}; null and blank stay as written: both are refused
+     * ({@link BenchConfigRules}), and a blank path resolved would name {@code base} itself.
+     */
     private static String resolve(Path base, String path) {
-        return base.resolve(path).normalize().toString();
+        return path == null || path.isBlank() ? path : base.resolve(path).normalize().toString();
     }
 }

@@ -3,6 +3,7 @@ package io.github.imnotstable.msc.bench.run;
 import io.github.imnotstable.msc.bench.JsonNumbers;
 import io.github.imnotstable.msc.bench.StrictJson;
 import io.github.imnotstable.msc.bench.Text;
+import io.github.imnotstable.msc.bench.UserJson;
 import io.github.imnotstable.msc.process.rcon.RconClient;
 import java.io.IOException;
 import java.net.URI;
@@ -57,8 +58,10 @@ final class BenchConfigRules {
     }
 
     /**
-     * Problems visible before defaults are filled in: null or blank entries and lists and maps given empty. Numbers
-     * are checked as they are read, by {@link #NUMBERS}.
+     * Problems visible before defaults are filled in: null or blank entries, lists and maps given empty, and the
+     * strings checked as the file writes them ({@code server.downloadsUrl}, {@code server.rconPassword}), so that a
+     * refusal quotes the value written and not the one the run would use (#652). Numbers are checked as they are read,
+     * by {@link #NUMBERS}.
      */
     static List<String> beforeDefaults(BenchConfig raw) {
         List<String> problems = new ArrayList<>();
@@ -84,6 +87,12 @@ final class BenchConfigRules {
                 entries(problems, "server.paperCacheDirs", server.paperCacheDirs());
             }
             notBlank(problems, "server.downloadsUrl", server.downloadsUrl());
+            if (server.downloadsUrl() != null && !server.downloadsUrl().isBlank()) {
+                downloadsUrl(problems, server.downloadsUrl());
+            }
+            if (server.rconPassword() != null) {
+                rconPassword(problems, server.rconPassword());
+            }
         }
         notBlank(problems, "gradleWrapperFrom", raw.gradleWrapperFrom());
         if (raw.paths() != null) {
@@ -104,38 +113,80 @@ final class BenchConfigRules {
         return problems;
     }
 
-    /** Problems of the filled-in config: values that clash, files that must exist, and the RCON password. */
-    static List<String> afterDefaults(BenchConfig full) {
+    /**
+     * Problems of the filled-in config {@code full}: values that clash and files that must exist. They run whatever
+     * {@link #beforeDefaults} and the typed reads found (#653), on every value that is itself valid: a value refused
+     * already ({@code unread}, null or blank) is not checked again, and a rule that depends on one is left out (a
+     * port clash with a port that could not be read, or with any {@code server} port when {@code server} could not
+     * be; the {@code serverPlugins} placeholders when {@code paths} could not be read). A refusal quotes the string
+     * from {@code raw}, the config as written, followed by the absolute path a missing file was looked for at.
+     */
+    static List<String> afterDefaults(BenchConfig raw, BenchConfig full, Set<String> unread) {
         List<String> problems = new ArrayList<>();
+        Set<String> pathNames = raw.paths() == null ? Set.of() : raw.paths().keySet();
         full.modes().forEach((name, mode) -> {
-            if (mode.mcpConfigTemplate() != null && !Files.isRegularFile(Path.of(mode.mcpConfigTemplate()))) {
-                problems.add("modes." + name + ".mcpConfigTemplate: no such file " + mode.mcpConfigTemplate());
+            BenchConfig.Mode written = raw.modes() == null ? null : raw.modes().get(name);
+            if (written == null) {
+                return; // the default baseline mode, which has nothing to check
             }
-            for (String plugin : mode.serverPlugins()) {
+            String key = "modes." + name;
+            if (isSet(mode.mcpConfigTemplate()) && !Files.isRegularFile(Path.of(mode.mcpConfigTemplate()))) {
+                problems.add(key + ".mcpConfigTemplate: no such file "
+                        + where(written.mcpConfigTemplate(), mode.mcpConfigTemplate()));
+            }
+            if (unread.contains("paths")) {
+                return;
+            }
+            for (String plugin : written.serverPlugins()) {
+                if (plugin == null) {
+                    continue;
+                }
                 Matcher placeholder = PLACEHOLDER.matcher(plugin);
                 while (placeholder.find()) {
-                    String key = placeholder.group(1);
-                    if (!full.paths().containsKey(key) && !BUILT_IN_PLACEHOLDERS.contains(key)) {
-                        problems.add("modes." + name + ".serverPlugins: {" + key + "} in \"" + plugin + "\" is no "
-                                + "placeholder; name a key of paths, such as {agentJar}");
+                    String placeholderName = placeholder.group(1);
+                    if (!pathNames.contains(placeholderName) && !BUILT_IN_PLACEHOLDERS.contains(placeholderName)) {
+                        problems.add(key + ".serverPlugins: {" + placeholderName + "} in " + quoted(plugin)
+                                + " is no placeholder; name a key of paths, such as {agentJar}");
                     }
                 }
             }
         });
         BenchConfig.Server server = full.server();
-        if (server.paperJar() != null && !Files.isRegularFile(Path.of(server.paperJar()))) {
-            problems.add("server.paperJar: no such file " + server.paperJar());
+        BenchConfig.Server writtenServer = raw.server();
+        if (isSet(server.paperJar()) && !Files.isRegularFile(Path.of(server.paperJar()))) {
+            problems.add("server.paperJar: no such file " + where(writtenServer.paperJar(), server.paperJar()));
         }
-        downloadsUrl(problems, server.downloadsUrl());
-        rconPassword(problems, server.rconPassword());
-        distinct(problems, "server.serverPort", server.serverPort(), "server.rconPort", server.rconPort());
-        distinct(problems, "corePort", full.corePort(), "server.serverPort", server.serverPort());
-        distinct(problems, "corePort", full.corePort(), "server.rconPort", server.rconPort());
-        if (full.gradleWrapperFrom() != null && !Files.isRegularFile(Path.of(full.gradleWrapperFrom(), "gradlew"))) {
-            problems.add("gradleWrapperFrom: " + full.gradleWrapperFrom() + " has no gradlew, so Gradle workspaces "
-                    + "would get no wrapper");
+        Map<String, Integer> ports = new LinkedHashMap<>();
+        if (!unread.contains("server")) {
+            ports.put("server.serverPort", server.serverPort());
+            ports.put("server.rconPort", server.rconPort());
+        }
+        ports.put("corePort", full.corePort());
+        ports.keySet().removeAll(unread);
+        distinct(problems, ports, "server.serverPort", "server.rconPort");
+        distinct(problems, ports, "corePort", "server.serverPort");
+        distinct(problems, ports, "corePort", "server.rconPort");
+        if (isSet(full.gradleWrapperFrom()) && !Files.isRegularFile(Path.of(full.gradleWrapperFrom(), "gradlew"))) {
+            problems.add("gradleWrapperFrom: " + where(raw.gradleWrapperFrom(), full.gradleWrapperFrom())
+                    + " has no gradlew, so Gradle workspaces would get no wrapper");
         }
         return problems;
+    }
+
+    private static boolean isSet(String value) {
+        return value != null && !value.isBlank();
+    }
+
+    /**
+     * A path as a refusal shows it: quoted as the file writes it, then the absolute path it resolved to when that
+     * differs, such as {@code "missing.jar" (/home/me/bench/missing.jar)} (#652).
+     */
+    private static String where(String written, String resolved) {
+        return quoted(written) + (resolved.equals(written) ? "" : " (" + resolved + ")");
+    }
+
+    private static String quoted(String text) {
+        return UserJson.quoted(text);
     }
 
     /** What builds the {@code paths} entries of the shipped {@code bench.json}, named when one is missing. */
@@ -320,8 +371,10 @@ final class BenchConfigRules {
         }
     }
 
-    private static void distinct(List<String> problems, String key, int port, String otherKey, int otherPort) {
-        if (port == otherPort) {
+    /** Refuses {@code key} and {@code otherKey} sharing a port, when {@code ports} holds both (both could be read). */
+    private static void distinct(List<String> problems, Map<String, Integer> ports, String key, String otherKey) {
+        Integer port = ports.get(key);
+        if (port != null && port.equals(ports.get(otherKey))) {
             problems.add(key + ": " + port + " is also " + otherKey + "; each needs its own port");
         }
     }
