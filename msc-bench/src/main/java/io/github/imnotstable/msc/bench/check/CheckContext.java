@@ -1,5 +1,6 @@
 package io.github.imnotstable.msc.bench.check;
 
+import io.github.imnotstable.msc.bench.run.WindowsCommandLine;
 import io.github.imnotstable.msc.process.rcon.RconClient;
 import java.io.IOException;
 import java.nio.file.Path;
@@ -18,9 +19,9 @@ public interface CheckContext {
 
     /**
      * Starts a process for a check. A run tracks it, so a run cut short (Ctrl-C) kills it with the agent and server
-     * instead of leaving it behind.
+     * instead of leaving it behind. On Windows each argument reaches the program whole ({@link WindowsCommandLine}).
      */
     default Process start(ProcessBuilder builder) throws IOException {
-        return builder.start();
+        return WindowsCommandLine.prepare(builder).start();
     }
 }
