@@ -2,6 +2,8 @@
 
 Status: accepted, 2026-11-16, decided by Claude (#752, #753). Amends [ADR 0051](0051-publish-the-pack-from-one-state.md)
 (its #750 amendment, points 3 and 4) and [ADR 0017](0017-workspace-and-pack-lifetime.md) (the standalone host).
+Point 6's free pack port is amended by [ADR 0054](0054-pack-ports-and-host-identity.md) (#755): it is never a port the
+workspace uses otherwise, and a leftover host is reused by its identity, not by what its port serves (#756).
 
 ## Context
 
@@ -59,7 +61,8 @@ Two holes were left after #750, each in a class of paths rather than one call.
    - A free pack port (the first one, and the one taken when the remembered port is not free) is picked at random
      below the ephemeral range: 20000 to 32767 by default, or below the start of Linux's
      `ip_local_port_range` when that is lower. Only a bind that names the port can take it there. If that range has
-     nothing free, it falls back to port 0.
+     nothing free, it falls back to port 0. Amended by [ADR 0054](0054-pack-ports-and-host-identity.md): never a
+     port the workspace uses otherwise, such as 25565 or 25577, which that range holds (#755).
    - The standalone host prints `pack host serving on port <port>` once it serves, and only that line counts as
      the host coming up. A listener that is not the host, or a host that exits or stays silent for 15 s, is a host
      that did not come up (point 3 of ADR 0051).

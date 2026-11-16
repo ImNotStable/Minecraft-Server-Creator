@@ -1,6 +1,6 @@
 # ADR 0051: Publish the pack from one state
 
-Status: accepted, 2026-11-15, decided by Claude (#743, #744, #745). Amended 2026-11-15 (#747) and 2026-11-16 (#750), see the end; points 3 and 4 of the #750 amendment are amended by [ADR 0053](0053-builds-by-hash-and-hosts-end-with-their-server.md) (#752, #753). Amends [ADR 0017](0017-workspace-and-pack-lifetime.md)
+Status: accepted, 2026-11-15, decided by Claude (#743, #744, #745). Amended 2026-11-15 (#747) and 2026-11-16 (#750), see the end; points 3 and 4 of the #750 amendment are amended by [ADR 0053](0053-builds-by-hash-and-hosts-end-with-their-server.md) (#752, #753), and point 3 again by [ADR 0054](0054-pack-ports-and-host-identity.md) (#756). Amends [ADR 0017](0017-workspace-and-pack-lifetime.md)
 points 3 and 4; the workspaces a switch keeps ([ADR 0050](0050-agent-belongs-to-its-workspace.md) point 5) publish
 through it.
 
