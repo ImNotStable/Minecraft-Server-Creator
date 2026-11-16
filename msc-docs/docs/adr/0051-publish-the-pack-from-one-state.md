@@ -1,6 +1,6 @@
 # ADR 0051: Publish the pack from one state
 
-Status: accepted, 2026-11-15, decided by Claude (#743, #744, #745). Amended 2026-11-15 (#747, see the end). Amends [ADR 0017](0017-workspace-and-pack-lifetime.md)
+Status: accepted, 2026-11-15, decided by Claude (#743, #744, #745). Amended 2026-11-15 (#747) and 2026-11-16 (#750), see the end. Amends [ADR 0017](0017-workspace-and-pack-lifetime.md)
 points 3 and 4; the workspaces a switch keeps ([ADR 0050](0050-agent-belongs-to-its-workspace.md) point 5) publish
 through it.
 
@@ -74,3 +74,42 @@ own, from whether the file was written.
 3. `PackLifecycleOrderTest` adds a table where the host stops coming up and comes back among detach, pack and a
    switch, with and without an earlier offer kept by a stop and a start, and checks each answer's claims on the host
    and the offer against what runs and what the file says, also after the session end.
+
+## Amendment, 2026-11-16: the state is whether the server outlives the session (#750)
+
+Point 1's state was `ServerManager.detached`, which only a detach in this session sets. A server an earlier session
+detached and left running outlives this session as well, but its state said "ends with the session": a `pack` before
+any start, dev_cycle or stop rewrote that server's offer to this session's in-process URL (after waiting 5 s for the
+port its standalone host still held, then moving to a free one), so after the session ended the server and its host
+ran on while `server.properties` offered a URL nothing served.
+
+1. **The one state is the server's lifetime** (`ServerManager.lifetime`), worked out from every server MSC knows about
+   on the workspace: `OUTLIVES` for this session's detached server and for a leftover (a server an earlier session left
+   running that no start, dev_cycle or stop has taken over), `SESSION` for this session's own server that is not
+   detached or for none, `OTHER_SESSION` for a server another live session runs (ADR 0037). `ResourcePack.serve`, the
+   offer, `Published`'s answer lines and the session end (whether the standalone host is kept) all go by it; nothing
+   asks `detached` for the pack any more.
+2. **A leftover's pack is published as a detached server's.** While it outlives the session, the standalone host
+   serves the build and `server.properties` offers it, or, when no standalone host comes up, an offer of this
+   workspace's pack is withdrawn (#747). `pack`, a switch away (which closes the workspace, as no detach of this
+   session keeps it) and the session end publish it; `server_detach` still refuses, as the server is not this
+   session's to detach.
+3. **The earlier session's host is reused or replaced, never doubled.** Before this session serves the pack while the
+   server outlives it, the host named in `.msc/pack-host.pid` is reused when it serves this build (it serves
+   `.msc/build/pack.zip` itself) on the port this workspace's pack is served on (`MSC_PACK_PORT`, else
+   `.msc/pack-port`); otherwise it is stopped, and the host that replaces it takes that port. So the offer always
+   names the URL of a running host that outlives the session, or no URL. A reused host is this session's from then
+   on: the take-over by `server_start`, `dev_cycle` or `server_stop` stops it with the same note as before (`stopped
+   the pack host left running by an earlier session`), and a host this session started for the leftover goes with
+   it too.
+4. **Another live session's server keeps its offer.** A publish while another session runs the server leaves
+   `server.properties` as that session wrote it and starts no standalone host: its pack is that session's.
+
+Consequences: the leftover server's agent, which this session cannot reach, still hands joining players the URL of
+the build it was last sent; once a new build replaces `.msc/build/pack.zip` that URL is gone, as it was before this
+amendment, until the next start sends the new one. A session that opens a workspace with a leftover and ends without
+a call publishes once at its end, which reuses the host as it is. `PackLifecycleOrderTest` adds a table that starts
+from a leftover with its host running, with its host gone since (an offer of a URL nothing serves), and with no host
+(one that never came up), then runs pack, dev_cycle, `server_start`, `server_stop`, `server_detach` and a switch, alone,
+in pairs and with a failing host, and checks after each step and after the session end that the offer names a URL that
+is served, and past the session that the build is served exactly when it is offered.
