@@ -2,7 +2,7 @@
 # module work asks for additions here instead of hard-coding versions in a module build.
 
 [versions]
-paper = "26.3.build.+"   # Paper's recommended form: latest build of the 26.3 line
+paper = "26.3.build.252-stable"  # pinned: build 253 breaks MockBukkit 4.120.0 (world_clock registry); raise with MockBukkit (ADR 0052)
 gson = "2.15.0"
 mcp = "2.1.0"
 jackson = "3.3.0"  # floor for the MCP SDK's Jackson 3 (2.1.0 pulls 3.1.4, which has open advisories)

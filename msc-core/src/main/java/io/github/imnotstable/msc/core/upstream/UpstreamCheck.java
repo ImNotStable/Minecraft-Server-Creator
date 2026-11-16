@@ -85,7 +85,7 @@ final class UpstreamCheck {
     /** The components to check, from the catalog's pins and the core's default Minecraft version. */
     static List<Component> components(Map<String, String> catalog, String coreMinecraft) {
         String minecraft = catalog.getOrDefault("minecraft", coreMinecraft);
-        String paper = catalog.getOrDefault("paper", "?").replace(".build.+", "");
+        String paper = catalog.getOrDefault("paper", "?").replaceFirst("\\.build\\..*$", "");
         List<Component> list = new ArrayList<>();
         list.add(new Component("minecraft", minecraft, UpstreamCheck::minecraft));
         if (!coreMinecraft.equals(minecraft)) {
