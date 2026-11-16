@@ -92,6 +92,19 @@ public final class BedrockConfig {
         }
     }
 
+    /** The {@code bedrock.port} the server folder's Geyser config sets (its default when unreadable), or 0 for none. */
+    public static int configuredPort(Path serverDir) {
+        Path file = file(serverDir);
+        if (!Files.isRegularFile(file)) {
+            return 0;
+        }
+        try {
+            return port(get(Files.readAllLines(file, StandardCharsets.UTF_8), "bedrock", "port"));
+        } catch (IOException | RuntimeException e) {
+            return 0;
+        }
+    }
+
     /** {@code bedrock: UDP 127.0.0.1:19132 (Geyser), Java port 25565; ...}: one line, for setup and start. */
     public static String describe(String address, int port, Map<String, String> properties) {
         ServerAddress java = ServerAddress.game(properties);
