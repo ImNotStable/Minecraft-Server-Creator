@@ -725,7 +725,8 @@ public final class ResourcePack implements AutoCloseable {
     public record Released(long earlier, boolean own) {
         /** The note on the earlier session's host, or null. */
         public String note() {
-            return earlier < 0 ? null : "stopped the pack host left running by an earlier session (pid " + earlier + ")";
+            return earlier < 0 ? null
+                    : "stopped the pack host left running by an earlier session (pid " + earlier + ")";
         }
     }
 

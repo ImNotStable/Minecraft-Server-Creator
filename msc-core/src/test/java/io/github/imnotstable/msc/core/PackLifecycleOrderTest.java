@@ -384,7 +384,8 @@ class PackLifecycleOrderTest {
             return;
         }
         String offer = PackProperties.url(Platform.PAPER, ws.resolve("run/server.properties"));
-        assertThat(offer == null || serves(offer)).as("%s: the offered %s served", when, offer).isTrue();
+        assertThat(offer == null || serves(offer))
+                .as("%s: the offered %s served (%s)", when, offer, hostState()).isTrue();
         String sent = lastSent(server.get().pid());
         assertThat(sent == null || serves(sent)).as("%s: the sent %s served", when, sent).isTrue();
     }
@@ -648,7 +649,7 @@ class PackLifecycleOrderTest {
     private void check(Platform platform, String when, boolean ended) throws Exception {
         if (ended) {
             // Past the session, only a standalone host serves the pack.
-            assertThat(serves(url)).as("%s: %s served", when, url).isEqualTo(built && hostUp);
+            assertThat(serves(url)).as("%s: %s served (%s)", when, url, hostState()).isEqualTo(built && hostUp);
         } else if (built && (running || detached)) {
             // This session's server; a leftover's agent has no connection to it, so only its offer is checked below.
             assertThat(serves(url)).as("%s: %s served", when, url).isTrue();
@@ -663,7 +664,8 @@ class PackLifecycleOrderTest {
             // past the session what is served is offered.
             boolean outlives = detached || leftover;
             if (!stale && (ended ? outlives : running || outlives)) {
-                assertThat(offer == null || serves(offer)).as("%s: the offered %s served", when, offer).isTrue();
+                assertThat(offer == null || serves(offer))
+                        .as("%s: the offered %s served (%s)", when, offer, hostState()).isTrue();
                 if (ended) {
                     assertThat(serves(url)).as("%s: %s served exactly when offered", when, url)
                             .isEqualTo(offer != null);
@@ -672,6 +674,27 @@ class PackLifecycleOrderTest {
         }
         assertThat(PidFile.peek(ws.resolve(".msc/pack-host.pid")).filter(ProcessHandle::isAlive).isPresent())
                 .as("%s: a standalone pack host runs", when).isEqualTo(hostUp);
+    }
+
+    /** What a failed check of the pack host shows: the offer, the remembered port, the host, its log, the build files. */
+    private String hostState() {
+        try {
+            Path msc = ws.resolve(".msc");
+            List<String> builds;
+            try (Stream<Path> files = Files.list(msc.resolve("build"))) {
+                builds = files.map(f -> f.getFileName().toString()).sorted().toList();
+            }
+            Path port = msc.resolve("pack-port");
+            Path log = msc.resolve("pack-host.log");
+            return "offer " + PackProperties.url(Platform.PAPER, ws.resolve("run/server.properties"))
+                    + ", pack-port " + (Files.exists(port) ? Files.readString(port).strip() : "none")
+                    + ", host " + PidFile.peek(msc.resolve("pack-host.pid"))
+                            .map(p -> p.pid() + (p.isAlive() ? " alive" : " dead")).orElse("none")
+                    + ", host log " + (Files.exists(log) ? Files.readAllLines(log) : "none")
+                    + ", builds " + builds;
+        } catch (IOException e) {
+            return e.toString();
+        }
     }
 
     /** True when {@code url} serves the pack now (a 200). */
