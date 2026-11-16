@@ -197,7 +197,7 @@ class PackHostTest {
         int[] pick = PackHost.freePortRange(PackHost.ephemeralStart());
         org.junit.jupiter.api.Assumptions.assumeTrue(pick != null, "this system hands out every port by itself");
         for (int i = 0; i < 5; i++) {
-            PackHost.Host host = PackHost.startOnFreePort("127.0.0.1", () -> PackHost.Served.NONE);
+            PackHost.Host host = PackHost.startOnFreePort("127.0.0.1", () -> PackHost.Served.NONE, p -> false, null);
             try {
                 assertThat(host.port()).isBetween(pick[0], pick[1] - 1);
             } finally {
@@ -285,5 +285,124 @@ class PackHostTest {
             // A reset ends it as well as a close.
         }
         return total;
+    }
+
+    /**
+     * #755, ADR 0054: the pick never returns a port the workspace uses otherwise, for any random source and any set of
+     * reserved ports, among them the ports MSC itself uses (25565, 25575, 25577) right inside the range. A table of
+     * seeds and reserved sets, from a few ports to all but one.
+     */
+    @Test
+    void aFreePortPickNeverReturnsAReservedPort() {
+        int[] range = {20000, 32768};
+        java.util.List<java.util.Set<Integer>> sets = new ArrayList<>();
+        sets.add(java.util.Set.of(25565, 25575, 25577, 19132));
+        java.util.Set<Integer> block = new java.util.HashSet<>();
+        for (int p = 25000; p < 26000; p++) {
+            block.add(p);
+        }
+        sets.add(block);
+        java.util.Set<Integer> allButOne = new java.util.HashSet<>();
+        for (int p = range[0]; p < range[1]; p++) {
+            allButOne.add(p);
+        }
+        allButOne.remove(31000);
+        sets.add(allButOne);
+        for (long seed = 0; seed < 200; seed++) {
+            Random random = new Random(seed);
+            java.util.Set<Integer> some = new java.util.HashSet<>(java.util.Set.of(25565, 25577));
+            for (int i = 0; i < 500; i++) {
+                some.add(range[0] + random.nextInt(range[1] - range[0]));
+            }
+            sets.add(some);
+        }
+        for (int s = 0; s < sets.size(); s++) {
+            java.util.Set<Integer> reserved = sets.get(s);
+            java.util.random.RandomGenerator random = new Random(s);
+            for (int i = 0; i < 2_000; i++) {
+                int port = PackHost.pick(range, reserved::contains, random);
+                assertThat(port).as("set %d, pick %d", s, i).isBetween(range[0], range[1] - 1);
+                assertThat(reserved).as("set %d, pick %d", s, i).doesNotContain(port);
+            }
+        }
+        // Every pick lands on 25565 first: the next port that is not reserved is taken instead.
+        java.util.random.RandomGenerator onServerPort = always(25565 - range[0]);
+        assertThat(PackHost.pick(range, java.util.Set.of(25565, 25566)::contains, onServerPort)).isEqualTo(25567);
+        // At the top of the range, it wraps around.
+        assertThat(PackHost.pick(range, java.util.Set.of(32767)::contains, always(32767 - range[0])))
+                .isEqualTo(20000);
+        assertThat(PackHost.pick(new int[] {25565, 25567}, java.util.Set.of(25565)::contains, always(0)))
+                .isEqualTo(25566);
+        assertThat(PackHost.pick(new int[] {25565, 25567}, p -> true, always(0))).isEqualTo(-1);
+    }
+
+    /**
+     * #755: a host started on a free port with a random source that lands on the server's and the proxy's ports first
+     * never serves there, and neither does the system's own pick (port 0) when it is reserved.
+     */
+    @Test
+    void aHostOnAFreePortNeverTakesAReservedPort() throws Exception {
+        int[] range = PackHost.freePortRange(PackHost.ephemeralStart());
+        org.junit.jupiter.api.Assumptions.assumeTrue(range != null, "this system hands out every port by itself");
+        java.util.Set<Integer> reserved = java.util.Set.of(25565, 25577);
+        for (int at : new int[] {25565, 25577}) {
+            org.junit.jupiter.api.Assumptions.assumeTrue(at >= range[0] && at < range[1], "range holds " + at);
+            PackHost.Host host = PackHost.startOnFreePort("127.0.0.1", PackHost.one(() -> PackHost.Served.NONE),
+                    reserved::contains, always(at - range[0]), null);
+            try {
+                assertThat(host.port()).isNotIn(25565, 25577);
+            } finally {
+                host.stop();
+            }
+        }
+    }
+
+    /** A random source whose every int below a bound is {@code value}. */
+    private static java.util.random.RandomGenerator always(int value) {
+        return new java.util.random.RandomGenerator() {
+            @Override
+            public long nextLong() {
+                return value;
+            }
+
+            @Override
+            public int nextInt(int bound) {
+                return value;
+            }
+        };
+    }
+
+    /**
+     * ADR 0054: every host says who it is on its identity path, the pid of its process and its token; a port with no
+     * host, or with something that is not one, has no identity.
+     */
+    @Test
+    void aHostSaysWhoItIsAndNothingElseDoes() throws Exception {
+        PackHost.Host host = PackHost.start("127.0.0.1", 0, PackHost.one(() -> PackHost.Served.NONE), NEVER, "abc123");
+        try {
+            assertThat(PackHost.identify("127.0.0.1", host.port()))
+                    .isEqualTo(new PackHost.Identity(ProcessHandle.current().pid(), "abc123"));
+            assertThat(host.token()).isEqualTo("abc123");
+        } finally {
+            host.stop();
+        }
+        PackHost.Host fresh = PackHost.start("127.0.0.1", 0, () -> PackHost.Served.NONE);
+        try {
+            assertThat(PackHost.identify("127.0.0.1", fresh.port()).token()).isEqualTo(fresh.token())
+                    .isNotEqualTo("abc123");
+        } finally {
+            fresh.stop();
+        }
+        try (ServerSocket silent = new ServerSocket(0, 50, InetAddress.getLoopbackAddress())) {
+            CompletableFuture.runAsync(() -> {
+                try (Socket s = silent.accept(); OutputStream out = s.getOutputStream()) {
+                    out.write("HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello".getBytes(StandardCharsets.US_ASCII));
+                } catch (IOException e) {
+                    // The test ends it.
+                }
+            });
+            assertThat(PackHost.identify("127.0.0.1", silent.getLocalPort())).isNull();
+        }
+        assertThat(PackHost.identify("127.0.0.1", host.port())).isNull();
     }
 }
