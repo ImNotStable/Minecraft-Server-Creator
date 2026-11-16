@@ -161,6 +161,8 @@ final class ServerRun {
         } catch (ToolException e) {
             throw host != null ? new ToolException(host + "\n" + e.getMessage()) : e;
         }
+        // A standalone host this session started for that leftover goes with it, as the earlier session's does (#750).
+        pack.stopOwnHost();
         return leftover != null ? leftover : host != null ? host : "server was not running";
     }
 
@@ -221,6 +223,8 @@ final class ServerRun {
         String[] packNotes = new String[2];
         steps.note(TAKE_OVER_PACK, () -> {
             packNotes[0] = pack.stopLeftoverHost();
+            // Nothing outlives the session now, so neither does a standalone host this session ran (#750).
+            pack.stopOwnHost();
             boolean offered = pack.ours(PackProperties.url(server.platform(), serverProperties()));
             packNotes[1] = syncPackProperties();
             return packNotes[0] != null || offered ? "" : null;

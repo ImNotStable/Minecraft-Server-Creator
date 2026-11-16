@@ -11,7 +11,10 @@ import io.github.imnotstable.msc.textures.PackSource;
 import io.github.imnotstable.msc.textures.ResourceId;
 import io.github.imnotstable.msc.textures.Texture;
 import java.io.IOException;
+import java.net.HttpURLConnection;
 import java.net.InetSocketAddress;
+import java.net.Proxy;
+import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -92,13 +95,17 @@ public final class ResourcePack implements AutoCloseable {
     private PackHost.Host server;
     private volatile Built lastBuilt;
     private volatile PackHost.Served served = PackHost.Served.NONE;
-    private Process hostProcess;
+    /** The standalone host this session serves the pack with: one it started, or an earlier session's it reuses. */
+    private ProcessHandle hostProcess;
     private int hostPort;
+    /** Whether {@link #hostProcess} is an earlier session's host, reused rather than started here (#750). */
+    private boolean adopted;
     /**
-     * Whether this workspace's server is detached ({@code ServerManager.detached}), the one state {@link #serve} goes
-     * by: while it is, the pack must outlive this session, so the standalone host serves it (ADR 0051).
+     * Whether this workspace's server outlives this session ({@code ServerManager.lifetime}: detached here, or left
+     * running by an earlier session), the one state {@link #serve} goes by: while it does, the pack must outlive this
+     * session too, so the standalone host serves it (ADR 0051, #750).
      */
-    private final BooleanSupplier detached;
+    private final BooleanSupplier outlives;
     /** The command that starts the standalone host, before its host, port and zip arguments. */
     private List<String> hostCommand = List.of(ProcessHandle.current().info().command()
                     .orElse(Path.of(System.getProperty("java.home"), "bin", "java").toString()),
@@ -114,14 +121,14 @@ public final class ResourcePack implements AutoCloseable {
         this(root, outDir, host, port, packFormat, () -> false);
     }
 
-    /** @param detached whether this workspace's server is detached, so its pack must outlive the session */
-    public ResourcePack(Path root, Path outDir, String host, int port, int packFormat, BooleanSupplier detached) {
+    /** @param outlives whether this workspace's server outlives the session, so its pack must too */
+    public ResourcePack(Path root, Path outDir, String host, int port, int packFormat, BooleanSupplier outlives) {
         this.source = new PackSource(root);
         this.outDir = outDir;
         this.host = host;
         this.preferredPort = port;
         this.packFormat = packFormat;
-        this.detached = detached;
+        this.outlives = outlives;
     }
 
     public ResourcePack(Path root, Path outDir, String host, int packFormat) {
@@ -174,9 +181,13 @@ public final class ResourcePack implements AutoCloseable {
     /**
      * The URL of the build with {@code sha1} where it is served now: by the standalone host while it runs (it serves
      * the zip file itself), else by the in-process host, started here. Who should serve it is decided only by
-     * {@link #serve}.
+     * {@link #serve}. While the server outlives the session, an earlier session's standalone host is reused or stopped
+     * first ({@link #takeLeftoverHost}), so this session's host never waits for its port.
      */
     private String url(String sha1) throws IOException {
+        if (!hostAlive() && server == null && outlives.getAsBoolean()) {
+            takeLeftoverHost(sha1);
+        }
         int port;
         if (hostAlive()) {
             port = hostPort;
@@ -194,6 +205,65 @@ public final class ResourcePack implements AutoCloseable {
     }
 
     /**
+     * A server that outlives the session while an earlier session's standalone host still runs (#750): that host is
+     * reused when it serves the build with {@code sha1} (it serves the zip file itself) on the port this workspace's
+     * pack is served on, else stopped, so the host that replaces it ({@link #serve}) can take that port. Either way
+     * one host serves the pack past the session, and what {@code server.properties} offers is its URL.
+     */
+    private void takeLeftoverHost(String sha1) {
+        ProcessHandle left = PidFile.peek(hostPidFile()).orElse(null);
+        if (left == null) {
+            return;
+        }
+        int port = preferredPort > 0 ? preferredPort : rememberedPort();
+        if (port > 0 && serves(port, sha1) && left.isAlive()) {
+            hostProcess = left;
+            hostPort = port;
+            adopted = true;
+            return;
+        }
+        dropLeftoverHost();
+    }
+
+    /** True when {@code port} serves the build with {@code sha1} (a 200): this workspace's pack host. */
+    private boolean serves(int port, String sha1) {
+        try {
+            HttpURLConnection c = (HttpURLConnection) URI.create("http://" + host + ":" + port + "/pack-" + sha1
+                    + ".zip").toURL().openConnection(Proxy.NO_PROXY);
+            c.setConnectTimeout(2000);
+            c.setReadTimeout(2000);
+            try {
+                return c.getResponseCode() == 200;
+            } finally {
+                c.disconnect();
+            }
+        } catch (IOException | RuntimeException e) {
+            return false;
+        }
+    }
+
+    /**
+     * Stop the standalone host the pid file names, unless this session serves the pack with one; waits for its port,
+     * which this session serves the pack on next. Returns its pid, or -1 when there was none.
+     */
+    private long dropLeftoverHost() {
+        if (hostAlive()) {
+            return -1;
+        }
+        return PidFile.take(hostPidFile()).map(h -> {
+            h.destroy();
+            try {
+                h.onExit().get(5, TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            } catch (java.util.concurrent.ExecutionException | java.util.concurrent.TimeoutException e) {
+                // Then the pack moves to a free port and server.properties follows it.
+            }
+            return h.pid();
+        }).orElse(-1L);
+    }
+
+    /**
      * Who serves the workspace's pack after {@link #serve}: the build ({@code null} when there is none), whether the
      * standalone host serves it (so it outlives this session), and why that host did not come up when it should have,
      * as one line (null otherwise).
@@ -202,8 +272,9 @@ public final class ResourcePack implements AutoCloseable {
     }
 
     /**
-     * The one place that decides who serves the workspace's pack (ADR 0051), from one state: while the server is
-     * detached the standalone host serves it, started here when it is not running (also after it ended meanwhile);
+     * The one place that decides who serves the workspace's pack (ADR 0051), from one state: while the server outlives
+     * the session (detached, or a leftover, #750) the standalone host serves it, an earlier session's reused when it
+     * serves the build, else started here when it is not running (also after it ended meanwhile);
      * otherwise this session does, and a standalone host it started earlier is stopped. A host that does not come up
      * is an answer, not a failure: the pack is then served in-process ({@link Serving#trouble} says why), and the next
      * call tries again.
@@ -212,7 +283,7 @@ public final class ResourcePack implements AutoCloseable {
         if (closed) {
             throw ToolException.workspaceClosed("the pack was not served");
         }
-        boolean outlive = detached.getAsBoolean();
+        boolean outlive = outlives.getAsBoolean();
         if (!outlive && hostProcess != null) {
             stopOwnHost();
         }
@@ -375,6 +446,8 @@ public final class ResourcePack implements AutoCloseable {
      * the pack is then served in-process again.
      */
     private String startStandalone() throws IOException, InterruptedException {
+        // An earlier session's host this one did not reuse: the pid file is about to name the new one (#750).
+        dropLeftoverHost();
         if (server == null) {
             server = startHost();
         }
@@ -396,7 +469,8 @@ public final class ResourcePack implements AutoCloseable {
         }
         // Owned from the moment it exists, so an interrupt below (the session ending while the host starts) leaves
         // it where close and a later session's stopLeftoverHost find it, never as an orphan with no pid file (#297).
-        hostProcess = p;
+        hostProcess = p.toHandle();
+        adopted = false;
         hostPort = port;
         PidFile.write(hostPidFile(), p.toHandle());
         try {
@@ -427,6 +501,7 @@ public final class ResourcePack implements AutoCloseable {
     private void abandonHost(Process p) throws IOException, InterruptedException {
         p.destroyForcibly();
         hostProcess = null;
+        adopted = false;
         try {
             Files.deleteIfExists(hostPidFile());
         } catch (IOException ignored) {
@@ -483,16 +558,18 @@ public final class ResourcePack implements AutoCloseable {
     }
 
     /**
-     * Stop the standalone host this session started for its detached server, once that server was stopped after
-     * all. The next build serves in-process again, on the same port. Returns true when there was one.
+     * Stop the standalone host this session serves the pack with (started for its detached server, or an earlier
+     * session's it reused, #750), once the server no longer outlives the session. The next build serves in-process
+     * again, on the same port. Returns true when there was one.
      */
     public synchronized boolean stopOwnHost() {
         if (hostProcess == null) {
             return false;
         }
-        ProcessHandle h = hostProcess.toHandle();
+        ProcessHandle h = hostProcess;
         hostProcess.destroy();
         hostProcess = null;
+        adopted = false;
         try {
             h.onExit().get(5, java.util.concurrent.TimeUnit.SECONDS);
         } catch (InterruptedException e) {
@@ -521,23 +598,19 @@ public final class ResourcePack implements AutoCloseable {
         }
     }
 
-    /** Stop a pack host an earlier, detached session left running. Returns a note, or null when there was none. */
+    /**
+     * Stop a pack host an earlier, detached session left running, also one this session reused for the server that
+     * session left (#750). Returns a note, or null when there was none.
+     */
     public synchronized String stopLeftoverHost() {
-        if (hostProcess != null && hostProcess.isAlive()) {
-            return null;
+        long pid;
+        if (adopted && hostAlive()) {
+            pid = hostProcess.pid();
+            stopOwnHost();
+        } else {
+            pid = dropLeftoverHost();
         }
-        return PidFile.take(hostPidFile()).map(h -> {
-            h.destroy();
-            try {
-                // Wait for its port: this session serves the pack on the same one.
-                h.onExit().get(5, java.util.concurrent.TimeUnit.SECONDS);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            } catch (java.util.concurrent.ExecutionException | java.util.concurrent.TimeoutException e) {
-                // Then the pack moves to a free port and server.properties follows it.
-            }
-            return "stopped the pack host left running by an earlier session (pid " + h.pid() + ")";
-        }).orElse(null);
+        return pid < 0 ? null : "stopped the pack host left running by an earlier session (pid " + pid + ")";
     }
 
     /** Stop serving. {@code keepHost} leaves a standalone host running for a detached server. */
@@ -550,6 +623,7 @@ public final class ResourcePack implements AutoCloseable {
         if (!keepHost && hostProcess != null) {
             hostProcess.destroy();
             hostProcess = null;
+            adopted = false;
             try {
                 Files.deleteIfExists(hostPidFile());
             } catch (IOException ignored) {

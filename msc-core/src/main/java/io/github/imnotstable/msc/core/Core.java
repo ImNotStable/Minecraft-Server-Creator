@@ -61,7 +61,7 @@ import java.util.stream.Collectors;
  * <li>server ({@link ServerManager#seal}): from here on nothing starts or detaches it, which settles whether it
  * outlives the session;</li>
  * <li>pack host ({@link ResourcePack}): the in-process HTTP server, and the standalone host process unless the
- * server is detached;</li>
+ * server outlives the session ({@link ServerManager#lifetime}: detached, or left by an earlier session, #750);</li>
  * <li>server process ({@link ServerManager#close}): stopped unless detached; its log pump thread ends with it;</li>
  * <li>agent connection ({@link AgentHub}): the agent session and the listening socket, and CoreServer's threads.</li>
  * </ol>
@@ -99,7 +99,7 @@ import java.util.stream.Collectors;
  * interruptible steps and never across a call's own long work (PlayerTools keeps its bot under a separate guard for
  * that). Two nestings, both into ServerManager, which calls into neither part: AgentHub's lock may ask
  * {@link ServerManager#running}, so ServerManager reads the hub before it takes its own monitor; and ResourcePack's
- * monitor asks {@link ServerManager#detached}, the state that decides who serves the pack (ADR 0051).</li>
+ * monitor asks {@link ServerManager#lifetime}, the state that decides who serves the pack (ADR 0051, #750).</li>
  * </ol>
  */
 public final class Core implements AutoCloseable {
@@ -166,9 +166,10 @@ public final class Core implements AutoCloseable {
             hub.lastRun(server::lastRun);
             hub.serverStopping(server::reportsStopping);
             hub.noAgentReason(() -> server.platform().noWorldTools());
-            // Whether the server is detached is the one state that decides who serves the pack (ADR 0051).
-            ResourcePack pack = new ResourcePack(config.packDir(), config.packBuildDir(),
-                    config.packHost(), config.packPort(), config.packFormat(), server::detached);
+            // Whether the server outlives the session (detached here, or a leftover, #750) is the one state that
+            // decides who serves the pack (ADR 0051).
+            ResourcePack pack = new ResourcePack(config.packDir(), config.packBuildDir(), config.packHost(),
+                    config.packPort(), config.packFormat(), () -> server.lifetime() == ServerManager.Lifetime.OUTLIVES);
             PackPublisher publisher = new PackPublisher(pack, server, hub,
                     config.serverDir().resolve(ServerPropertiesFile.NAME));
             ToolRegistry tools = new ToolRegistry(log);
@@ -290,13 +291,15 @@ public final class Core implements AutoCloseable {
             // The order and the reasons are in the ownership model on Core.
             background.close();
             players.close();
-            boolean detached = server.seal();
-            if (detached) {
+            server.seal();
+            // Detached here, or left running by an earlier session and not taken over: either outlives this one (#750).
+            boolean outlives = server.lifetime() == ServerManager.Lifetime.OUTLIVES;
+            if (outlives) {
                 publisher.settle(true); // so the standalone host serves the pack past the session (ADR 0051)
             } else {
                 pack.stopOwnHost(); // waited for, so its port is free for this workspace's next pack (#737)
             }
-            pack.close(detached);
+            pack.close(outlives);
             server.close();
             hub.close();
         }

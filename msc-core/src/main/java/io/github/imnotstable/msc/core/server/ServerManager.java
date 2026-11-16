@@ -757,6 +757,33 @@ public final class ServerManager implements AutoCloseable {
         return detached && running() && !stopRequested();
     }
 
+    /** Whether the server on this workspace ends with this session ({@link #lifetime}). */
+    public enum Lifetime {
+        /** It does, or none runs: this session's own server, not detached. */
+        SESSION,
+        /**
+         * It outlives this session, and this session serves its pack: this session's detached server, or one an
+         * earlier session left running that no start, dev_cycle or stop has taken over yet (a leftover, #750).
+         */
+        OUTLIVES,
+        /** Another live session runs it (ADR 0037): that session serves its pack and keeps its offer. */
+        OTHER_SESSION
+    }
+
+    /**
+     * The one fact the pack's host and offer go by (ADR 0051, #750): whether the server running on this workspace,
+     * whoever started it, outlives this session. Not only a detach in this session: a leftover outlives it too.
+     */
+    public synchronized Lifetime lifetime() {
+        if (running()) {
+            return detached() ? Lifetime.OUTLIVES : Lifetime.SESSION;
+        }
+        if (otherSession().isPresent()) {
+            return Lifetime.OTHER_SESSION;
+        }
+        return leftovers.find().apply(pidFile()).isPresent() ? Lifetime.OUTLIVES : Lifetime.SESSION;
+    }
+
     /**
      * The first half of {@link #close()}: from now on nothing starts or detaches a server, so whether the server
      * stays up after the session (detached) is settled. Returns that answer; the pack host's close goes by it.

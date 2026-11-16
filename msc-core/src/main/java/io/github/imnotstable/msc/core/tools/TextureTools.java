@@ -163,10 +163,10 @@ public final class TextureTools {
 
     /**
      * The pack build. Checked first: the arguments, the file= target and server.properties. Then, in this order:
-     * build, then publish it as every pack change is (ADR 0051): serve (by the standalone host while the server is
-     * detached), offer it in server.properties (where it offers the pack, or the server is detached; so what the file
-     * offers is always what is served), send it to the players; then save the zip copy (last: it is the least
-     * important, and a failed apply then writes nothing into the workspace).
+     * build, then publish it as every pack change is (ADR 0051): serve (by the standalone host while the server
+     * outlives the session, #750), offer it in server.properties (where it offers the pack, or the server outlives the
+     * session; so what the file offers is always what is served), send it to the players; then save the zip copy (last:
+     * it is the least important, and a failed apply then writes nothing into the workspace).
      */
     private static String pack(Args args, AgentHub hub, ResourcePack pack, PackPublisher publisher, CoreConfig config,
                                Path properties) throws IOException, InterruptedException {
