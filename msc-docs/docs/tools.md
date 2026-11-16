@@ -227,6 +227,6 @@ One JSON line per call, appended to `MSC_TOOL_LOG` (default `<workspace>/.msc/to
 | `MSC_DOWNLOADS_URL` | Paper downloads service | `https://fill.papermc.io` |
 | `MSC_FABRIC_META_URL`, `MSC_FABRIC_MAVEN_URL` | Fabric's meta service (server launcher) and Maven repository (Fabric API) | `https://meta.fabricmc.net`, `https://maven.fabricmc.net` |
 | `MSC_PACK_HOST`, `MSC_PACK_FORMAT` | Resource pack server address and pack format number | `127.0.0.1`, 97 (26.3) |
-| `MSC_PACK_PORT` | Resource pack server port | the port this workspace used last (`.msc/pack-port`), else a free one |
+| `MSC_PACK_PORT` | Resource pack server port | the port this workspace used last (`.msc/pack-port`), else a free one below the system's ephemeral range (20000 to 32767 by default), which nothing else is handed by the system, so the port can be taken again (ADR 0053) |
 | `MSC_DOWNLOAD_STORE` | The machine's store of checksummed server jars (Paper, Purpur), shared by every workspace; `none` turns it off ([ADR 0038](adr/0038-cloud-session-caches.md)) | `~/.msc/downloads` |
 

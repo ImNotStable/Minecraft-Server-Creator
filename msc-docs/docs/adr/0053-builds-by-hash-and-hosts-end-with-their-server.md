@@ -48,6 +48,22 @@ Two holes were left after #750, each in a class of paths rather than one call.
    workspace's pack port; the session does not wait 5 s for it, and does not remember the free port in
    `.msc/pack-port`, which stays that workspace's.
 
+6. **The pack port is one the system never hands out, and a host is up only when it says so.** The pack's port
+   changes hands between processes: from the in-process host to the standalone one, and from a host that ended to
+   the next one, in this session or a later one. A free port was picked with a bind to port 0, so it came from the
+   ephemeral range, which the system also uses for every other bind to port 0 and for the local end of every
+   outgoing connection. Anything on the machine could take it in that gap. Two things then went wrong: the next host
+   could not bind it and the pack moved to another port, and the core counted the standalone host as up because a
+   connection to the port succeeded, which reached whatever had taken it. So the host claimed by the answer and the
+   offer served nothing. Now:
+   - A free pack port (the first one, and the one taken when the remembered port is not free) is picked at random
+     below the ephemeral range: 20000 to 32767 by default, or below the start of Linux's
+     `ip_local_port_range` when that is lower. Only a bind that names the port can take it there. If that range has
+     nothing free, it falls back to port 0.
+   - The standalone host prints `msc pack host serving on port <port>` once it serves, and only that line counts as
+     the host coming up. A listener that is not the host, or a host that exits or stays silent for 15 s, is a host
+     that did not come up (point 3 of ADR 0051).
+
 ## Consequences
 
 - `server_detach`'s promise holds on every path: the next session's `server_start`, `dev_cycle` (also
@@ -60,6 +76,12 @@ Two holes were left after #750, each in a class of paths rather than one call.
   host is reused as before, and the next one started serves the folder.
 - A prune and another session's start of a host race only within the host's start time: the publishing session
   writes the build's file before the host starts and again once it is recorded.
+- A workspace whose remembered port is in the ephemeral range, from an MSC before this decision, keeps it until it
+  is taken once; the free port picked then is outside that range.
+- Under loopback churn (thousands of short-lived connections and port-0 listeners on the machine, as from parallel
+  builds), `PackLifecycleOrderTest`'s leftover table and `WorkspaceOwnershipTest` failed 5 rows over 3 runs before
+  point 6; after it they passed 3 runs, and 2 more together with the rest of `PackLifecycleOrderTest`,
+  `KeepServingTest` and `PackHostTest`.
 - `PackLifecycleOrderTest` adds dev_cycle `restart=false` on a leftover with its host running, gone and never started,
   a leftover that exits on its own, and two live sessions on one workspace each running pack, dev_cycle (with and
   without restart), `server_detach` and their end in various orders. After every step and after both sessions end,
