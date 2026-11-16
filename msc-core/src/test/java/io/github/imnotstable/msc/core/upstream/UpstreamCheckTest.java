@@ -81,6 +81,13 @@ class UpstreamCheckTest {
     }
 
     @Test
+    void aPinnedPaperBuildIsCheckedAsItsMinecraftVersion() {
+        var pinned = UpstreamCheck.components(Map.of("paper", "26.3.build.252-stable"), "26.3");
+        assertThat(pinned).filteredOn(c -> c.name().equals("paper"))
+                .extracting(UpstreamCheck.Component::pinned).containsExactly("26.3");
+    }
+
+    @Test
     void listsEachPinBesideTheNewestStableUpstream() {
         assertThat(report(answers(), "26.3")).containsExactly(
                 "component         pinned               newest stable",
