@@ -8,9 +8,12 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
-/** Resolves block-state strings to {@link Look}s and caches them, textures included. */
+/**
+ * Resolves block-state strings to {@link Look}s and caches them, textures included, until the texture source's
+ * {@link TextureSource#stamp() stamp} changes.
+ */
 final class Looks {
-    private static final Set<String> INVISIBLE = Set.of("air", "cave_air", "void_air", "barrier", "light",
+    static final Set<String> INVISIBLE = Set.of("air", "cave_air", "void_air", "barrier", "light",
             "structure_void", "moving_piston");
     private static final int[] UPRIGHT = {BlockColors.SIDE, BlockColors.SIDE, BlockColors.BOTTOM, BlockColors.TOP,
             BlockColors.SIDE, BlockColors.SIDE};
@@ -36,13 +39,24 @@ final class Looks {
     private final TextureSource textures;
     private final Map<String, Optional<Look>> cache = new ConcurrentHashMap<>();
     private final Map<String, Optional<Tex>> texCache = new ConcurrentHashMap<>();
+    private long stamp;
 
     Looks(TextureSource textures) {
         this.textures = textures;
+        this.stamp = textures.stamp();
     }
 
     /** One entry per palette index; {@code null} for blocks that are not drawn (air and friends). */
     Look[] resolve(List<String> palette) {
+        long now = textures.stamp();
+        synchronized (this) {
+            if (now != stamp) {
+                // Textures were added or changed: forget every look and lookup, misses included.
+                cache.clear();
+                texCache.clear();
+                stamp = now;
+            }
+        }
         Look[] out = new Look[palette.size()];
         for (int i = 0; i < out.length; i++) {
             out[i] = cache.computeIfAbsent(palette.get(i), s -> Optional.ofNullable(build(s))).orElse(null);

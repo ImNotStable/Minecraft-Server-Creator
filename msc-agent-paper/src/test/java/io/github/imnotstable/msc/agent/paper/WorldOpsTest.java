@@ -3,6 +3,10 @@ package io.github.imnotstable.msc.agent.paper;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.github.imnotstable.msc.agent.common.EditHistory;
+import io.github.imnotstable.msc.agent.common.MainThread;
+import io.github.imnotstable.msc.agent.common.ReadJob;
+import io.github.imnotstable.msc.agent.common.WorldOps;
 import io.github.imnotstable.msc.protocol.message.ErrorCodes;
 import io.github.imnotstable.msc.protocol.op.Ops;
 import io.github.imnotstable.msc.protocol.transport.OpException;
@@ -10,8 +14,16 @@ import io.github.imnotstable.msc.protocol.world.BlockGrid;
 import io.github.imnotstable.msc.protocol.world.BlockPos;
 import io.github.imnotstable.msc.protocol.world.Region;
 import java.util.List;
+import net.kyori.adventure.text.Component;
+import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.World;
+import org.bukkit.block.Chest;
+import org.bukkit.block.Sign;
+import org.bukkit.block.sign.Side;
+import org.bukkit.entity.EntityType;
+import org.bukkit.entity.Zombie;
+import org.bukkit.inventory.ItemStack;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -22,7 +34,7 @@ import org.mockbukkit.mockbukkit.world.WorldMock;
 class WorldOpsTest {
     private ServerMock server;
     private World world;
-    private WorldOps ops;
+    private WorldOps<?> ops;
 
     @BeforeEach
     void setUp() {
@@ -31,7 +43,7 @@ class WorldOpsTest {
         w.setName("world");
         server.addWorld(w);
         world = w;
-        ops = new WorldOps(server, MainThread.inline(), new EditHistory(1_000_000));
+        ops = new WorldOps<>(new PaperWorlds(server, new DataCommands((line, out) -> false)), MainThread.inline(), new EditHistory<>(1_000_000));
     }
 
     @AfterEach
@@ -43,15 +55,39 @@ class WorldOpsTest {
         return Region.of("world", x1, y1, z1, x2, y2, z2);
     }
 
+    /** One block over the whole region, through {@code world.write}, the only block-writing op. */
+    private Ops.EditResult fill(Region region, String state) {
+        return write(region, state, false);
+    }
+
+    private Ops.EditResult write(Region region, String state, boolean physics) {
+        int[] cells = new int[Math.toIntExact(region.volume())];
+        return ops.write(new Ops.WriteParams(new BlockGrid(region, List.of(state), cells), physics));
+    }
+
     private Material at(int x, int y, int z) {
         return world.getBlockAt(x, y, z).getType();
     }
 
     @Test
-    void fillChangesEveryBlockAndCountsOnlyRealChanges() {
+    void findsAWorldByItsDimensionKeyToo() {
+        // The test player knows a plugin's world only by the key the server sends for it.
+        WorldMock arena = new WorldMock(Material.AIR, 0);
+        arena.setName("Arena");
+        server.addWorld(arena);
+        PaperWorlds worlds = new PaperWorlds(server, new DataCommands((line, out) -> false));
+
+        assertThat(worlds.byName(arena.getKey().asString())).isPresent();
+        assertThat(worlds.byName("world")).isPresent();
+        assertThat(worlds.byName("minecraft:nowhere")).isEmpty();
+        assertThat(worlds.byName("Not A Key")).isEmpty();
+    }
+
+    @Test
+    void writeChangesEveryBlockAndCountsOnlyRealChanges() {
         world.getBlockAt(1, 70, 1).setType(Material.STONE);
 
-        Ops.EditResult result = ops.fill(new Ops.FillParams(box(0, 70, 0, 2, 71, 2), "minecraft:stone", null));
+        Ops.EditResult result = fill(box(0, 70, 0, 2, 71, 2), "minecraft:stone");
 
         assertThat(result.changed()).isEqualTo(17);
         assertThat(at(0, 70, 0)).isEqualTo(Material.STONE);
@@ -62,7 +98,7 @@ class WorldOpsTest {
     @Test
     void undoRestoresTheEditAndCanItselfBeUndone() {
         world.getBlockAt(0, 70, 0).setType(Material.DIRT);
-        Ops.EditResult fill = ops.fill(new Ops.FillParams(box(0, 70, 0, 1, 70, 0), "minecraft:stone", null));
+        Ops.EditResult fill = fill(box(0, 70, 0, 1, 70, 0), "minecraft:stone");
 
         Ops.EditResult undo = ops.undo(new Ops.UndoParams(fill.editId()));
 
@@ -74,20 +110,6 @@ class WorldOpsTest {
         assertThat(at(0, 70, 0)).isEqualTo(Material.STONE);
         assertThatThrownBy(() -> ops.undo(new Ops.UndoParams(fill.editId())))
                 .isInstanceOfSatisfying(OpException.class, e -> assertThat(e.code()).isEqualTo(ErrorCodes.NOT_FOUND));
-    }
-
-    @Test
-    void fillWithOnlyReplaceLeavesOtherBlocks() {
-        world.getBlockAt(0, 70, 0).setType(Material.DIRT);
-        world.getBlockAt(1, 70, 0).setType(Material.STONE);
-
-        Ops.EditResult result = ops.fill(new Ops.FillParams(box(0, 70, 0, 2, 70, 0), "minecraft:gold_block",
-                List.of("minecraft:dirt")));
-
-        assertThat(result.changed()).isEqualTo(1);
-        assertThat(at(0, 70, 0)).isEqualTo(Material.GOLD_BLOCK);
-        assertThat(at(1, 70, 0)).isEqualTo(Material.STONE);
-        assertThat(at(2, 70, 0)).isEqualTo(Material.AIR);
     }
 
     @Test
@@ -106,13 +128,49 @@ class WorldOpsTest {
     }
 
     @Test
-    void setBlocksKeepsBlockStateProperties() {
-        ops.setBlocks(new Ops.SetBlocksParams("world", List.of(
-                new Ops.BlockChange(5, 70, 5, "minecraft:oak_stairs[facing=east]"),
-                new Ops.BlockChange(6, 70, 5, "minecraft:glass")), false));
+    void writeKeepsBlockStateProperties() {
+        fill(box(5, 70, 5, 5, 70, 5), "minecraft:oak_stairs[facing=east]");
+        fill(box(6, 70, 5, 6, 70, 5), "minecraft:glass");
 
         assertThat(world.getBlockAt(5, 70, 5).getBlockData().getAsString()).contains("facing=east");
         assertThat(at(6, 70, 5)).isEqualTo(Material.GLASS);
+    }
+
+    @Test
+    void undoPutsBackSignTextAndChestContents() {
+        world.getBlockAt(1, 70, 1).setType(Material.OAK_SIGN);
+        Sign sign = (Sign) world.getBlockAt(1, 70, 1).getState();
+        sign.getSide(Side.FRONT).line(0, Component.text("Shop"));
+        sign.update(true, false);
+        world.getBlockAt(2, 70, 1).setType(Material.CHEST);
+        Chest chest = (Chest) world.getBlockAt(2, 70, 1).getState();
+        chest.getSnapshotInventory().setItem(3, new ItemStack(Material.DIAMOND, 5));
+        chest.update(true, false);
+
+        Ops.EditResult fill = fill(box(0, 70, 0, 3, 70, 3), "minecraft:stone");
+        ops.undo(new Ops.UndoParams(fill.editId()));
+
+        assertThat(ops.read(new Ops.ReadParams(box(1, 70, 1, 1, 70, 1), false, true)).signs())
+                .containsExactly(new Ops.SignText(1, 70, 1, List.of("Shop", "", "", ""), null));
+        assertThat(((Chest) world.getBlockAt(2, 70, 1).getState()).getSnapshotInventory().getItem(3))
+                .isEqualTo(new ItemStack(Material.DIAMOND, 5));
+    }
+
+    @Test
+    void readReportsSignTextOnlyWhenAsked() {
+        world.getBlockAt(1, 70, 1).setType(Material.OAK_SIGN);
+        Sign sign = (Sign) world.getBlockAt(1, 70, 1).getState();
+        sign.getSide(Side.FRONT).line(0, Component.text("Shop"));
+        sign.getSide(Side.FRONT).line(2, Component.text("Open"));
+        sign.update(true, false);
+        world.getBlockAt(2, 70, 1).setType(Material.OAK_SIGN);
+
+        Ops.ReadResult with = ops.read(new Ops.ReadParams(box(0, 70, 0, 3, 71, 3), false, true));
+        Ops.ReadResult without = ops.read(new Ops.ReadParams(box(0, 70, 0, 3, 71, 3), false));
+
+        assertThat(with.signs()).containsExactly(
+                new Ops.SignText(1, 70, 1, List.of("Shop", "", "Open", ""), null));
+        assertThat(without.signs()).isEmpty();
     }
 
     @Test
@@ -132,6 +190,48 @@ class WorldOpsTest {
     }
 
     @Test
+    void entitiesReportNameTagsAndHealthAndFilterByType() {
+        Zombie zombie = (Zombie) world.spawnEntity(new Location(world, 2.5, 70, 2.5), EntityType.ZOMBIE);
+        zombie.customName(Component.text("Brute"));
+        zombie.addScoreboardTag("wave");
+        zombie.addScoreboardTag("boss");
+        zombie.setHealth(7);
+        world.spawnEntity(new Location(world, 1.5, 70, 1.5), EntityType.ZOMBIE);
+        world.spawnEntity(new Location(world, 3.5, 70, 3.5), EntityType.PIG);
+        world.spawnEntity(new Location(world, 50.5, 70, 50.5), EntityType.ZOMBIE);
+
+        Ops.EntitiesResult all = ops.entities(new Ops.EntitiesParams(box(0, 60, 0, 10, 80, 10), null, 0));
+        Ops.EntitiesResult zombies = ops.entities(new Ops.EntitiesParams(box(0, 60, 0, 10, 80, 10), "minecraft:zombie", 1));
+
+        assertThat(all.total()).isEqualTo(3);
+        assertThat(all.entities()).extracting(Ops.EntityInfo::type)
+                .containsExactly("minecraft:pig", "minecraft:zombie", "minecraft:zombie");
+        Ops.EntityInfo brute = all.entities().get(2);
+        assertThat(brute.name()).isEqualTo("Brute");
+        assertThat(brute.tags()).containsExactly("boss", "wave");
+        assertThat(brute.health()).isEqualTo(7.0);
+        assertThat(brute.maxHealth()).isEqualTo(20.0);
+        assertThat(brute.uuid()).isEqualTo(zombie.getUniqueId().toString());
+        assertThat(zombies.total()).isEqualTo(2);
+        assertThat(zombies.entities()).hasSize(1);
+        assertThat(zombies.entities().getFirst().x()).isEqualTo(1.5);
+    }
+
+    @Test
+    void anEntityBelongsToTheRegionHoldingItsPositionNotItsHitbox() {
+        // The zombie's hitbox (0.6 wide) spans x = 9.9 to 10.5, across the edge between the two halves.
+        world.spawnEntity(new Location(world, 10.2, 70, 2.5), EntityType.ZOMBIE);
+
+        Ops.EntitiesResult left = ops.entities(new Ops.EntitiesParams(box(0, 60, 0, 9, 80, 10), null, 0));
+        Ops.EntitiesResult right = ops.entities(new Ops.EntitiesParams(box(10, 60, 0, 19, 80, 10), null, 0));
+        List<Ops.EntitySummary> read = ops.read(new Ops.ReadParams(box(0, 69, 0, 9, 71, 9), true)).entities();
+
+        assertThat(left.total()).isZero();
+        assertThat(read).isEmpty();
+        assertThat(right.total()).isEqualTo(1);
+    }
+
+    @Test
     void readOutsideTheBuildHeightGivesVoidAir() {
         int top = world.getMaxHeight();
         BlockGrid grid = ops.read(new Ops.ReadParams(box(0, top - 1, 0, 0, top, 0), false)).grid();
@@ -140,8 +240,8 @@ class WorldOpsTest {
 
     @Test
     void readThenWriteCopiesAStructure() {
-        ops.fill(new Ops.FillParams(box(0, 70, 0, 2, 72, 2), "minecraft:bricks", null));
-        ops.setBlocks(new Ops.SetBlocksParams("world", List.of(new Ops.BlockChange(1, 72, 1, "minecraft:glowstone")), false));
+        fill(box(0, 70, 0, 2, 72, 2), "minecraft:bricks");
+        fill(box(1, 72, 1, 1, 72, 1), "minecraft:glowstone");
         BlockGrid copy = ops.read(new Ops.ReadParams(box(0, 70, 0, 2, 72, 2), false)).grid();
 
         Region target = box(10, 70, 0, 12, 72, 2);
@@ -167,14 +267,14 @@ class WorldOpsTest {
 
     @Test
     void reportsClearErrors() {
-        assertThatThrownBy(() -> ops.fill(new Ops.FillParams(Region.of("nether", 0, 0, 0, 1, 1, 1), "minecraft:stone", null)))
+        assertThatThrownBy(() -> fill(Region.of("nether", 0, 0, 0, 1, 1, 1), "minecraft:stone"))
                 .isInstanceOfSatisfying(OpException.class, e -> assertThat(e.code()).isEqualTo(ErrorCodes.NOT_FOUND));
-        assertThatThrownBy(() -> ops.fill(new Ops.FillParams(box(0, 0, 0, 200, 100, 200), "minecraft:stone", null)))
+        assertThatThrownBy(() -> fill(box(0, 0, 0, 200, 100, 200), "minecraft:stone"))
                 .isInstanceOfSatisfying(OpException.class, e -> assertThat(e.code()).isEqualTo(ErrorCodes.TOO_LARGE));
-        assertThatThrownBy(() -> ops.fill(new Ops.FillParams(box(0, 70, 0, 0, 70, 0), "minecraft:not_a_block", null)))
+        assertThatThrownBy(() -> fill(box(0, 70, 0, 0, 70, 0), "minecraft:not_a_block"))
                 .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("not_a_block");
         int top = world.getMaxHeight();
-        assertThatThrownBy(() -> ops.fill(new Ops.FillParams(box(0, top, 0, 0, top, 0), "minecraft:stone", null)))
+        assertThatThrownBy(() -> fill(box(0, top, 0, 0, top, 0), "minecraft:stone"))
                 .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("build height");
     }
 }

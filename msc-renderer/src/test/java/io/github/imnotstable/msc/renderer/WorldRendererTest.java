@@ -45,6 +45,20 @@ class WorldRendererTest {
     }
 
     @Test
+    void markersAreDrawnWhereTheEntityStandsAndListedInTheCaption() {
+        Scenes s = new Scenes(10, 64, -2, 13, 64, 1).fill(10, 64, -2, 13, 64, 1, "stone");
+        RenderResult result = renderer.render(s.grid(), View.parse("top"), PLAIN, java.util.List.of(
+                new Marker(12.5, 65, -0.5, "villager \"Shopkeeper\""),
+                new Marker(40, 65, 40, "text_display \"Welcome\"")));
+        BufferedImage image = Scenes.decode(result);
+
+        assertThat(image.getRGB(40, 24) & 0xffffff).as("centre of the block at x=12, z=-1").isEqualTo(0xff00ff);
+        assertThat(isGray(image.getRGB(8, 56))).isTrue();
+        assertThat(result.caption()).endsWith("Markers, numbered (magenta dot = other): 1 villager \"Shopkeeper\" at 12.5,65,-0.5; "
+                + "2 text_display \"Welcome\" at 40,65,40. Outside the image: 2.");
+    }
+
+    @Test
     void sideViewsMirrorEachOther() {
         // A wall along x (0..3) two high, red block at x=0 on the upper row.
         Scenes s = new Scenes(0, 64, 0, 3, 65, 0).fill(0, 64, 0, 3, 65, 0, "stone").set(0, 65, 0, "red_wool");
@@ -191,6 +205,31 @@ class WorldRendererTest {
 
         RenderResult away = renderer.render(s.grid(), View.parse("eye 2.5,66.5,6 yaw 0 pitch 0"), options);
         assertThat(away.caption()).contains("Visible: nothing");
+    }
+
+    @Test
+    void anEyeExactlyOnABlockFaceSeesThatFace() {
+        Scenes floor = new Scenes(0, 60, 0, 20, 70, 20).fill(0, 60, 0, 20, 62, 20, "dirt")
+                .fill(0, 63, 0, 20, 63, 20, "grass_block");
+        RenderResult down = renderer.render(floor.grid(), View.parse("eye 10.5,64,10.5 yaw 0 pitch 45"), PLAIN);
+        assertThat(down.caption()).contains("grass_block").doesNotContain("dirt");
+
+        Scenes wall = new Scenes(0, 60, 0, 20, 70, 20).fill(10, 60, 0, 10, 70, 20, "red_wool")
+                .fill(11, 60, 0, 20, 70, 20, "stone");
+        RenderResult east = renderer.render(wall.grid(), View.parse("eye 10,65.5,10.5 look 20,65.5,10.5"), PLAIN);
+        assertThat(east.caption()).contains("red_wool").doesNotContain("stone");
+    }
+
+    @Test
+    void anEyeOnTheRegionsOuterBoundaryLookingOutSeesNothing() {
+        Scenes floor = new Scenes(0, 60, 0, 20, 63, 20).fill(0, 60, 0, 20, 62, 20, "dirt")
+                .fill(0, 63, 0, 20, 63, 20, "grass_block");
+        assertThat(renderer.render(floor.grid(), View.parse("eye 10.5,64,10.5 yaw 0 pitch -45"), PLAIN).caption())
+                .as("on the top plane, looking up").contains("Visible: nothing");
+        assertThat(renderer.render(floor.grid(), View.parse("eye 0,61.5,10.5 yaw 90 pitch 0"), PLAIN).caption())
+                .as("on the west plane, looking west").contains("Visible: nothing");
+        String level = renderer.render(floor.grid(), View.parse("eye 10.5,64,10.5 yaw 0 pitch 0"), PLAIN).caption();
+        assertThat(level).as("on the top plane, looking level").contains("grass_block", "empty");
     }
 
     @Test

@@ -3,6 +3,7 @@ package io.github.imnotstable.msc.core;
 import io.github.imnotstable.msc.protocol.message.AgentInfo;
 import io.github.imnotstable.msc.protocol.message.ErrorCodes;
 import io.github.imnotstable.msc.protocol.op.Ops;
+import io.github.imnotstable.msc.protocol.op.PartialEdit;
 import io.github.imnotstable.msc.protocol.transport.AgentClient;
 import io.github.imnotstable.msc.protocol.transport.Connection;
 import io.github.imnotstable.msc.protocol.transport.OpException;
@@ -23,13 +24,25 @@ import java.util.Map;
 public final class FakeAgent {
     static final String AIR = "minecraft:air";
     static final String STONE = "minecraft:stone";
+    /** The Minecraft version SERVER_INFO reports. */
+    volatile String minecraft = "26.3";
+    /** When set, PACK_APPLY fails as an agent error would. */
+    volatile boolean failPackApply;
+    /** Told of each pack sent; FakeServerMain logs it, so a test can count the sends to a server process. */
+    public volatile java.util.function.Consumer<Ops.PackParams> onPack = p -> { };
+    /** Told of each write and undo before it runs, outside the agent's lock: a test holds one there (#697). */
+    volatile java.util.function.Consumer<Object> beforeChange = p -> { };
 
     final Map<BlockPos, String> blocks = new HashMap<>();
     final List<String> commands = new ArrayList<>();
     final List<Ops.PackParams> packs = new ArrayList<>();
     final List<Region> reads = new ArrayList<>();
+    final List<Ops.EntityInfo> entities = new ArrayList<>();
+    final List<Region> writes = new ArrayList<>();
     private final Map<String, Map<BlockPos, String>> undo = new HashMap<>();
     private int editCounter;
+    private int undosBeforeFailure = -1;
+    private int writesBeforeTimeout = -1;
 
     public synchronized String get(int x, int y, int z) {
         String s = blocks.get(new BlockPos(x, y, z));
@@ -47,6 +60,14 @@ public final class FakeAgent {
         return 1;
     }
 
+    /** Like a real agent, refuse unknown blocks before placing anything. Ids starting with no_such are unknown. */
+    private static String known(String state) {
+        if (state.startsWith("minecraft:no_such")) {
+            throw new IllegalArgumentException("unknown block " + state.substring(10));
+        }
+        return state;
+    }
+
     private Ops.EditResult finish(Map<BlockPos, String> before, long changed) {
         String id = "agent-" + (++editCounter);
         undo.put(id, before);
@@ -55,23 +76,37 @@ public final class FakeAgent {
 
     public OpRouter router() {
         return new OpRouter()
-                .on(Ops.SERVER_INFO, p -> new Ops.ServerInfo("paper", "fake", "26.3", List.of("world"), 0, 20.0))
+                .on(Ops.SERVER_INFO, p -> new Ops.ServerInfo("paper", "fake", minecraft, List.of("world"), 0, 20.0))
                 .on(Ops.SERVER_COMMAND, p -> {
                     synchronized (this) {
                         commands.add(p.command());
                     }
+                    if (p.command().startsWith("broadcast ")) {
+                        // Like /say on Paper: the text goes to the console log, the sender gets nothing back.
+                        System.out.println("[12:00:05 INFO]: [Server] " + p.command().substring(10));
+                        return new Ops.CommandResult(true, List.of());
+                    }
                     return new Ops.CommandResult(true, List.of("ran " + p.command()));
                 })
                 .on(Ops.WORLD_READ, this::read)
+                .on(Ops.WORLD_ENTITIES, this::entities)
                 .on(Ops.WORLD_HEIGHTMAP, this::heightmap)
-                .on(Ops.WORLD_FILL, this::fill)
-                .on(Ops.WORLD_WRITE, this::write)
-                .on(Ops.WORLD_SET_BLOCKS, this::setBlocks)
-                .on(Ops.WORLD_UNDO, this::undo)
+                .on(Ops.WORLD_WRITE, p -> {
+                    beforeChange.accept(p);
+                    return write(p);
+                })
+                .on(Ops.WORLD_UNDO, p -> {
+                    beforeChange.accept(p);
+                    return undo(p);
+                })
                 .on(Ops.PACK_APPLY, p -> {
+                    if (failPackApply) {
+                        throw new OpException(ErrorCodes.INTERNAL, "pack apply failed");
+                    }
                     synchronized (this) {
                         packs.add(p);
                     }
+                    onPack.accept(p);
                     return new Ops.PackResult(1);
                 });
     }
@@ -95,7 +130,9 @@ public final class FakeAgent {
         for (int y = r.min().y(); y <= r.max().y(); y++) {
             for (int z = r.min().z(); z <= r.max().z(); z++) {
                 for (int x = r.min().x(); x <= r.max().x(); x++) {
-                    String s = get(x, y, z);
+                    // Block entity data is kept on the state, as written, and read back only when asked for (ADR 0042).
+                    String s = p.blockData() ? get(x, y, z)
+                            : io.github.imnotstable.msc.core.world.BlockNames.withoutData(get(x, y, z));
                     Integer idx = index.get(s);
                     if (idx == null) {
                         idx = palette.size();
@@ -108,7 +145,21 @@ public final class FakeAgent {
         }
         List<Ops.EntitySummary> entities = p.includeEntities()
                 ? List.of(new Ops.EntitySummary("minecraft:cow", 1.5, 64, 1.5, null)) : List.of();
-        return new Ops.ReadResult(new BlockGrid(r, palette, out), entities);
+        BlockGrid grid = new BlockGrid(r, palette, out);
+        // Every sign the fake world holds reads "Welcome" on its front.
+        List<Ops.SignText> signs = p.includeSigns() ? Ops.SignText.positions(grid).stream()
+                .map(s -> new Ops.SignText(s.x(), s.y(), s.z(), List.of("Welcome"), null)).toList() : List.of();
+        return new Ops.ReadResult(grid, entities, signs);
+    }
+
+    private synchronized Ops.EntitiesResult entities(Ops.EntitiesParams p) {
+        Region r = p.region();
+        List<Ops.EntityInfo> found = entities.stream()
+                .filter(e -> p.type() == null || p.type().equals(e.type()))
+                .filter(e -> e.x() >= r.min().x() && e.x() < r.max().x() + 1 && e.y() >= r.min().y()
+                        && e.y() < r.max().y() + 1 && e.z() >= r.min().z() && e.z() < r.max().z() + 1)
+                .toList();
+        return new Ops.EntitiesResult(found.subList(0, Math.min(p.limit(), found.size())), found.size());
     }
 
     private synchronized Ops.HeightmapResult heightmap(Ops.HeightmapParams p) {
@@ -130,49 +181,59 @@ public final class FakeAgent {
         return new Ops.HeightmapResult(r.min().x(), r.min().z(), r.sizeX(), r.sizeZ(), heights);
     }
 
-    private synchronized Ops.EditResult fill(Ops.FillParams p) {
-        Region r = p.region().requireWithinLimit();
-        Map<BlockPos, String> before = new HashMap<>();
-        long changed = 0;
-        for (int y = r.min().y(); y <= r.max().y(); y++) {
-            for (int z = r.min().z(); z <= r.max().z(); z++) {
-                for (int x = r.min().x(); x <= r.max().x(); x++) {
-                    if (p.onlyReplace() == null || p.onlyReplace().isEmpty() || p.onlyReplace().contains(get(x, y, z))) {
-                        changed += put(before, x, y, z, p.state());
-                    }
-                }
-            }
-        }
-        return finish(before, changed);
-    }
-
     private synchronized Ops.EditResult write(Ops.WriteParams p) {
         Region r = p.grid().region().requireWithinLimit();
+        p.grid().palette().forEach(FakeAgent::known);
+        writes.add(r);
         Map<BlockPos, String> before = new HashMap<>();
         long changed = 0;
+        boolean timeOut = writesBeforeTimeout >= 0 && writesBeforeTimeout-- == 0;
         for (int y = r.min().y(); y <= r.max().y(); y++) {
+
             for (int z = r.min().z(); z <= r.max().z(); z++) {
                 for (int x = r.min().x(); x <= r.max().x(); x++) {
                     String s = p.grid().stateAt(x, y, z);
                     if (s != null) {
                         changed += put(before, x, y, z, s);
                     }
+                    if (timeOut && changed > 0) {
+                        // Like a real agent whose main-thread wait ran out mid-way: what changed stays, undoable.
+                        String id = finish(before, changed).editId();
+                        throw new OpException(ErrorCodes.TIMEOUT, PartialEdit.note("main thread did not finish within 120s", id));
+                    }
                 }
             }
         }
         return finish(before, changed);
     }
 
-    private synchronized Ops.EditResult setBlocks(Ops.SetBlocksParams p) {
-        Map<BlockPos, String> before = new HashMap<>();
-        long changed = 0;
-        for (Ops.BlockChange c : p.changes()) {
-            changed += put(before, c.x(), c.y(), c.z(), c.state());
-        }
-        return finish(before, changed);
+    /** Drop the oldest edit that changed blocks, as a real agent does when its undo budget runs out. */
+    synchronized void forgetOldestEdit() {
+        undo.entrySet().stream().filter(e -> !e.getValue().isEmpty())
+                .min(java.util.Comparator.comparingInt(e -> Integer.parseInt(e.getKey().substring(6))))
+                .ifPresent(e -> undo.remove(e.getKey()));
+    }
+
+    /** Make the write after {@code skip} more writes time out after its first changed block, as a slow server would. */
+    synchronized void timeOutWrite(int skip) {
+        writesBeforeTimeout = skip;
+    }
+
+    /** A new server process on the same world: the blocks stay, the undo history and its numbering start again. */
+    synchronized void restart() {
+        undo.clear();
+        editCounter = 0;
+    }
+
+    /** Make the undo after {@code skip} more undos fail, as a timeout would. */
+    synchronized void failUndo(int skip) {
+        undosBeforeFailure = skip;
     }
 
     private synchronized Ops.EditResult undo(Ops.UndoParams p) {
+        if (undosBeforeFailure >= 0 && undosBeforeFailure-- == 0) {
+            throw new OpException(ErrorCodes.INTERNAL, "timed out");
+        }
         Map<BlockPos, String> before = undo.remove(p.editId());
         if (before == null) {
             throw new OpException(ErrorCodes.NOT_FOUND, "no edit " + p.editId());

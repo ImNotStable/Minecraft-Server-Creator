@@ -1,0 +1,15 @@
+[12:00:00] [main/INFO]: Loading Minecraft 26.3 with Fabric Loader 0.17.2
+[12:00:02] [main/ERROR]: Failed to start the minecraft server
+java.lang.RuntimeException: Could not execute entrypoint stage 'main' due to errors, provided by 'mymod' at 'com.example.mymod.MyMod'!
+	at net.fabricmc.loader.impl.FabricLoaderImpl.lambda$invokeEntrypoints$2(FabricLoaderImpl.java:403) ~[fabric-loader-0.17.2.jar:?]
+	at net.fabricmc.loader.impl.util.ExceptionUtil.gatherExceptions(ExceptionUtil.java:33) ~[fabric-loader-0.17.2.jar:?]
+	at net.minecraft.server.Main.main(Main.java:111) ~[server-intermediary.jar:?]
+Caused by: java.lang.NoClassDefFoundError: com/google/gson2/Gson
+	at com.example.mymod.config.Config.load(Config.java:31) ~[mymod.jar:?]
+	at com.example.mymod.MyMod.onInitialize(MyMod.java:20) ~[mymod.jar:?]
+	at net.fabricmc.loader.impl.FabricLoaderImpl.invokeEntrypoints(FabricLoaderImpl.java:399) ~[fabric-loader-0.17.2.jar:?]
+	... 6 more
+Caused by: java.lang.ClassNotFoundException: com.google.gson2.Gson
+	at net.fabricmc.loader.impl.launch.knot.KnotClassDelegate.loadClass(KnotClassDelegate.java:226) ~[fabric-loader-0.17.2.jar:?]
+	at java.base/java.lang.ClassLoader.loadClass(ClassLoader.java:526) ~[?:?]
+	... 9 more

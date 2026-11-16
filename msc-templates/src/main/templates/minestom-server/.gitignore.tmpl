@@ -7,8 +7,9 @@ build/
 out/
 .kotlin/
 
-# Minecraft Server Creator cache (packs, renders, tool log).
-.msc/
+# Minecraft Server Creator cache (built packs, renders, tool log), except the resource pack sources in .msc/pack.
+.msc/*
+!.msc/pack/
 
 # Dev server working directory.
 run/

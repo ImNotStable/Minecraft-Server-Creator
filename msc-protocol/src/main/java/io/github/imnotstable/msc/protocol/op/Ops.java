@@ -1,5 +1,6 @@
 package io.github.imnotstable.msc.protocol.op;
 
+import io.github.imnotstable.msc.protocol.Limits;
 import io.github.imnotstable.msc.protocol.world.BlockGrid;
 import io.github.imnotstable.msc.protocol.world.BlockPos;
 import io.github.imnotstable.msc.protocol.world.Region;
@@ -46,7 +47,17 @@ public final class Ops {
         }
     }
 
+    /**
+     * @param output the feedback lines, at most {@link Limits#MAX_RESULT_TEXT_CHARS} characters in all (each line
+     *               counts one more). The line that crosses it is cut with {@link Limits#cut}; lines after it are
+     *               left out and {@link #cutLine} ends the output.
+     */
     public record CommandResult(boolean success, List<String> output) {
+        /** The last line of an output that left lines out. */
+        public static String cutLine(long linesLeftOut) {
+            return "[output cut at " + Limits.MAX_RESULT_TEXT_CHARS + " characters: " + linesLeftOut + " more line"
+                    + (linesLeftOut == 1 ? "" : "s") + " not shown]";
+        }
     }
 
     // ---- world: read ----------------------------------------------------------------------
@@ -55,16 +66,201 @@ public final class Ops {
     public static final OpSpec<ReadParams, ReadResult> WORLD_READ =
             new OpSpec<>("world.read", ReadParams.class, ReadResult.class);
 
-    public record ReadParams(Region region, boolean includeEntities) {
+    /**
+     * @param includeSigns     also report the text of signs in the region (see {@link SignText}); off by default
+     * @param includeBlockData also give each block with block entity data (chest items, sign text, a spawner's mob)
+     *                         its own palette entry: the state, then the data as SNBT, as {@code /setblock} takes it,
+     *                         such as {@code minecraft:chest[facing=north]{Items:[...]}}. Null means off and is left
+     *                         out of the frame, so older frames are unchanged; {@code false} is stored as null.
+     */
+    public record ReadParams(Region region, boolean includeEntities, boolean includeSigns, Boolean includeBlockData) {
         public ReadParams {
+            Objects.requireNonNull(region, "region");
+            includeBlockData = Boolean.TRUE.equals(includeBlockData) ? Boolean.TRUE : null;
+        }
+
+        public ReadParams(Region region, boolean includeEntities, boolean includeSigns) {
+            this(region, includeEntities, includeSigns, null);
+        }
+
+        public ReadParams(Region region, boolean includeEntities) {
+            this(region, includeEntities, false);
+        }
+
+        /** Whether block entity data was asked for. */
+        public boolean blockData() {
+            return Boolean.TRUE.equals(includeBlockData);
+        }
+    }
+
+    /** @param signs signs with text, only when asked for with {@code includeSigns}; never null */
+    public record ReadResult(BlockGrid grid, List<EntitySummary> entities, List<SignText> signs) {
+        public ReadResult {
+            entities = entities == null ? List.of() : entities;
+            signs = signs == null ? List.of() : List.copyOf(signs);
+        }
+
+        public ReadResult(BlockGrid grid, List<EntitySummary> entities) {
+            this(grid, entities, List.of());
+        }
+    }
+
+    /**
+     * The text on one sign. Only signs with some text are reported. Each line is cut to
+     * {@link Limits#MAX_SIGN_LINE_CHARS} with {@link Limits#cut}.
+     *
+     * @param front the four front lines as plain text, blank lines as {@code ""}
+     * @param back  the four back lines, or null when the back is blank
+     */
+    public record SignText(int x, int y, int z, List<String> front, List<String> back) {
+        /** Most signs one read returns. */
+        public static final int MAX_SIGNS = 1000;
+
+        public SignText {
+            front = lines(front);
+            back = back == null || isBlank(back) ? null : lines(back);
+        }
+
+        /** A sign's text, or null when both sides are blank, so agents can drop it. */
+        public static SignText of(int x, int y, int z, List<String> front, List<String> back) {
+            boolean frontBlank = front == null || isBlank(front);
+            boolean backBlank = back == null || isBlank(back);
+            return frontBlank && backBlank ? null : new SignText(x, y, z, front, back);
+        }
+
+        /** Whether a block state such as {@code minecraft:oak_wall_hanging_sign[facing=north]} is a sign. */
+        public static boolean isSign(String state) {
+            if (state == null) {
+                return false;
+            }
+            int end = state.indexOf('[');
+            return (end < 0 ? state : state.substring(0, end)).endsWith("_sign");
+        }
+
+        /**
+         * Positions of the sign blocks in a grid, so an agent looks up block entities only where a sign is,
+         * at most {@link #MAX_SIGNS}.
+         */
+        public static List<BlockPos> positions(BlockGrid grid) {
+            boolean[] sign = new boolean[grid.palette().size()];
+            boolean any = false;
+            for (int i = 0; i < sign.length; i++) {
+                sign[i] = isSign(grid.palette().get(i));
+                any |= sign[i];
+            }
+            List<BlockPos> out = new java.util.ArrayList<>();
+            if (!any) {
+                return out;
+            }
+            Region r = grid.region();
+            int[] blocks = grid.blocks();
+            for (int i = 0; i < blocks.length && out.size() < MAX_SIGNS; i++) {
+                if (blocks[i] >= 0 && sign[blocks[i]]) {
+                    int x = i % r.sizeX();
+                    int z = (i / r.sizeX()) % r.sizeZ();
+                    int y = i / (r.sizeX() * r.sizeZ());
+                    out.add(r.min().offset(x, y, z));
+                }
+            }
+            return out;
+        }
+
+        private static List<String> lines(List<String> lines) {
+            List<String> out = new java.util.ArrayList<>(4);
+            if (lines != null) {
+                for (int i = 0; i < Math.min(4, lines.size()); i++) {
+                    out.add(lines.get(i) == null ? "" : Limits.cut(lines.get(i), Limits.MAX_SIGN_LINE_CHARS));
+                }
+            }
+            while (out.size() < 4) {
+                out.add("");
+            }
+            return List.copyOf(out);
+        }
+
+        private static boolean isBlank(List<String> lines) {
+            return lines.stream().allMatch(l -> l == null || l.isBlank());
+        }
+    }
+
+    /** @param name cut to {@link Limits#MAX_TEXT_CHARS} with {@link Limits#cut}; null when it has none */
+    public record EntitySummary(String type, double x, double y, double z, String name) {
+        public EntitySummary {
+            name = Limits.cut(name, Limits.MAX_TEXT_CHARS);
+        }
+    }
+
+    /**
+     * List the entities in a region with what a game check needs: type, name, scoreboard tags, health and position.
+     * Unlike {@link #WORLD_READ} it reads no blocks, so the region may be far larger than
+     * {@code Limits.MAX_REGION_VOLUME}. Only loaded chunks are searched.
+     */
+    public static final OpSpec<EntitiesParams, EntitiesResult> WORLD_ENTITIES =
+            new OpSpec<>("world.entities", EntitiesParams.class, EntitiesResult.class);
+
+    /**
+     * @param type  only entities of this type, such as {@code minecraft:zombie}; null for all
+     * @param limit most entities to return; {@code total} still counts them all
+     */
+    public record EntitiesParams(Region region, String type, int limit) {
+        public EntitiesParams {
             Objects.requireNonNull(region, "region");
         }
     }
 
-    public record ReadResult(BlockGrid grid, List<EntitySummary> entities) {
+    public record EntitiesResult(List<EntityInfo> entities, int total) {
+        /** Most entities one answer carries. */
+        public static final int MAX_ENTITIES = 1000;
+
+        /**
+         * What every agent answers: {@code found} sorted by type, then x, z and y, cut to {@code limit} (at most
+         * {@link #MAX_ENTITIES}; 0 or less means that maximum) and to {@link Limits#MAX_RESULT_TEXT_CHARS} of names
+         * and tags, with {@code total} counting them all. Fewer entities than {@code total} marks the cut.
+         */
+        public static EntitiesResult of(List<EntityInfo> found, int limit) {
+            int max = limit <= 0 ? MAX_ENTITIES : Math.min(limit, MAX_ENTITIES);
+            List<EntityInfo> sorted = found.stream().sorted(java.util.Comparator.comparing(EntityInfo::type)
+                    .thenComparingDouble(EntityInfo::x).thenComparingDouble(EntityInfo::z)
+                    .thenComparingDouble(EntityInfo::y)).limit(max).toList();
+            long text = 0;
+            int fit = 0;
+            for (EntityInfo e : sorted) {
+                text += e.textChars();
+                if (text > Limits.MAX_RESULT_TEXT_CHARS) {
+                    break;
+                }
+                fit++;
+            }
+            return new EntitiesResult(sorted.subList(0, fit), found.size());
+        }
     }
 
-    public record EntitySummary(String type, double x, double y, double z, String name) {
+    /**
+     * One entity.
+     *
+     * @param name      player name, custom name or a text display's text, cut to {@link Limits#MAX_TEXT_CHARS} with
+     *                  {@link Limits#cut}; null when it has none
+     * @param tags      scoreboard tags, empty when none; each cut like {@code name}
+     * @param health    current health; null for entities that are not alive (items, displays, minecarts)
+     * @param maxHealth maximum health; null like {@code health}
+     */
+    public record EntityInfo(String type, String uuid, double x, double y, double z, String name,
+                             List<String> tags, Double health, Double maxHealth) {
+        public EntityInfo {
+            Objects.requireNonNull(type, "type");
+            name = Limits.cut(name, Limits.MAX_TEXT_CHARS);
+            tags = tags == null ? List.of()
+                    : List.copyOf(tags.stream().map(t -> Limits.cut(t, Limits.MAX_TEXT_CHARS)).toList());
+        }
+
+        /** Characters of name and tags, what {@link EntitiesResult#of} budgets. */
+        long textChars() {
+            long n = name == null ? 0 : name.length();
+            for (String t : tags) {
+                n += t.length();
+            }
+            return n;
+        }
     }
 
     /** Highest non-air block per column over an X-Z area. */
@@ -86,42 +282,18 @@ public final class Ops {
 
     // ---- world: write ---------------------------------------------------------------------
 
-    /** Fill a region with one block, optionally only where the current block matches {@code onlyReplace}. */
-    public static final OpSpec<FillParams, EditResult> WORLD_FILL =
-            new OpSpec<>("world.fill", FillParams.class, EditResult.class);
-
-    /** {@code onlyReplace} may be null or empty to replace everything. */
-    public record FillParams(Region region, String state, List<String> onlyReplace) {
-        public FillParams {
-            Objects.requireNonNull(region, "region");
-            Objects.requireNonNull(state, "state");
-        }
-    }
-
-    /** Write a palette grid; cells set to -1 are left as they are. Used for paste, schematics and text structures. */
+    /**
+     * Write a palette grid; cells set to -1 are left as they are. The one block-writing op: every build is a grid. A
+     * palette entry may end in block entity data as SNBT ({@code minecraft:chest{Items:[...]}}), merged into the placed
+     * block's data as {@code /data merge block} does; data on a block that keeps none is refused with
+     * {@code invalid_params} before anything changes.
+     */
     public static final OpSpec<WriteParams, EditResult> WORLD_WRITE =
             new OpSpec<>("world.write", WriteParams.class, EditResult.class);
 
     public record WriteParams(BlockGrid grid, boolean updatePhysics) {
         public WriteParams {
             Objects.requireNonNull(grid, "grid");
-        }
-    }
-
-    /** Set individual blocks. */
-    public static final OpSpec<SetBlocksParams, EditResult> WORLD_SET_BLOCKS =
-            new OpSpec<>("world.setBlocks", SetBlocksParams.class, EditResult.class);
-
-    public record SetBlocksParams(String world, List<BlockChange> changes, boolean updatePhysics) {
-        public SetBlocksParams {
-            Objects.requireNonNull(world, "world");
-            Objects.requireNonNull(changes, "changes");
-        }
-    }
-
-    public record BlockChange(int x, int y, int z, String state) {
-        public BlockChange {
-            Objects.requireNonNull(state, "state");
         }
     }
 
@@ -163,8 +335,8 @@ public final class Ops {
 
     /** All operations, for capability lists and dispatch tables. */
     public static final List<OpSpec<?, ?>> ALL = List.of(
-            SERVER_INFO, SERVER_COMMAND, WORLD_READ, WORLD_HEIGHTMAP,
-            WORLD_FILL, WORLD_WRITE, WORLD_SET_BLOCKS, WORLD_UNDO, PACK_APPLY);
+            SERVER_INFO, SERVER_COMMAND, WORLD_READ, WORLD_ENTITIES, WORLD_HEIGHTMAP,
+            WORLD_WRITE, WORLD_UNDO, PACK_APPLY);
 
     /** Operation names, in the same order as {@link #ALL}. */
     public static List<String> names() {

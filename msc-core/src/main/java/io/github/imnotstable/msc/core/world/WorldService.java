@@ -4,10 +4,12 @@ import io.github.imnotstable.msc.core.agent.AgentHub;
 import io.github.imnotstable.msc.core.tool.Budget;
 import io.github.imnotstable.msc.core.tool.ToolException;
 import io.github.imnotstable.msc.protocol.Limits;
+import io.github.imnotstable.msc.protocol.message.ErrorCodes;
+import io.github.imnotstable.msc.protocol.op.OpSpec;
 import io.github.imnotstable.msc.protocol.op.Ops;
 import io.github.imnotstable.msc.protocol.transport.CoreServer;
+import io.github.imnotstable.msc.protocol.transport.OpException;
 import io.github.imnotstable.msc.protocol.world.BlockGrid;
-import io.github.imnotstable.msc.protocol.world.BlockPos;
 import io.github.imnotstable.msc.protocol.world.Region;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -23,11 +25,34 @@ import java.util.TreeMap;
 public final class WorldService {
     /** Largest area one view may cover per layer; beyond this a text grid stops being readable. */
     public static final int MAX_VIEW_SIDE = 128;
-    /** Largest region {@code world_summary} and {@code build_copy} accept. */
+    /** Largest region {@code world_summary} and {@code build_batch} accept. */
     public static final long MAX_BULK_VOLUME = 8L * Limits.MAX_REGION_VOLUME;
+    /** The way back for blocks an edit left whose run has ended: its id is gone (#701). */
+    public static final String ROLL_BACK = "build_undo backup= rolls the world back";
+
+    /**
+     * The one answer for a build or an undo cut off by its server run ending (#708). The agent applies each part over
+     * several ticks, so the part in flight may be half applied, and what stays depends on what the server saved
+     * (Minestom saves only when it stops, so after a crash none of it may stay): no count would be true, and the
+     * edit's id ended with the run. {@code what}: "the build", "the undo of eN".
+     */
+    public static String cutOff(String what, Region box) {
+        return what + " was cut off by the server stopping: " + Coords.show(box) + " may be partly changed, by an "
+                + "amount that depends on what the server saved. world_summary there shows what stayed; then " + ROLL_BACK
+                + " if a backup exists, or a build_batch over it sets the blocks you want";
+    }
 
     private final AgentHub hub;
-    private final Map<String, List<String>> edits = new LinkedHashMap<>();
+    /** The edits still applied, oldest first: each one's agent parts and the positions it set. */
+    private final Map<String, Edit> edits = new LinkedHashMap<>();
+    /**
+     * Held by every call that changes the world under an edit id, from its first read of the world to its last change
+     * of {@link #edits}, so they run one at a time (ADR 0049). Never taken while this object's monitor is held.
+     */
+    private final java.util.concurrent.locks.ReentrantLock editing = new java.util.concurrent.locks.ReentrantLock(true);
+    private volatile java.util.function.Supplier<Object> serverRun = () -> null;
+    /** The agents' undo budget ({@code AgentDefaults.UNDO_BLOCKS}), for messages. */
+    private static final String UNDO_BLOCKS_TEXT = String.format(java.util.Locale.ROOT, "%,d", 8 * Limits.MAX_REGION_VOLUME);
     private int editCounter;
     private String worldSession;
     private String worldName;
@@ -53,27 +78,80 @@ public final class WorldService {
     // ---- views ------------------------------------------------------------------------------
 
     public BlockGrid read(Region region) throws InterruptedException {
+        return read(region, null, null, false);
+    }
+
+    /** As {@link #read(Region)}, with block entity data on the blocks that have some (ADR 0042). */
+    public BlockGrid readWithData(Region region) throws InterruptedException {
+        return read(region, null, null, true);
+    }
+
+    /**
+     * As {@link #read(Region)}, adding the region's entities to {@code entities} and its signs with text to
+     * {@code signs}, each when not null.
+     */
+    private BlockGrid read(Region region, List<Ops.EntitySummary> entities, List<Ops.SignText> signs, boolean data)
+            throws InterruptedException {
         if (region.volume() > Limits.MAX_REGION_VOLUME) {
             throw new ToolException("region has " + region.volume() + " blocks; the limit per call is "
                     + Limits.MAX_REGION_VOLUME + " (128x64x128). Use a smaller region.");
         }
-        return hub.call(Ops.WORLD_READ, new Ops.ReadParams(region, false)).grid();
+        Ops.ReadResult result = hub.call(Ops.WORLD_READ,
+                new Ops.ReadParams(region, entities != null, signs != null, data));
+        if (entities != null) {
+            entities.addAll(result.entities());
+        }
+        if (signs != null) {
+            signs.addAll(result.signs());
+        }
+        return data ? withCoreData(result.grid()) : result.grid();
+    }
+
+    /**
+     * The grid with its block entity data in the core's one spelling ({@link BlockNames#full}): each platform's agent
+     * writes SNBT its own way, and Paper's keeps the id and position.
+     */
+    static BlockGrid withCoreData(BlockGrid grid) {
+        List<String> palette = new ArrayList<>(grid.palette().size());
+        for (String state : grid.palette()) {
+            palette.add(BlockNames.data(state) == null ? state : BlockNames.full(state));
+        }
+        return new BlockGrid(grid.region(), palette, grid.blocks());
     }
 
     /** Read a region of up to {@code max} blocks as one grid, stitching protocol-sized reads together. */
     public BlockGrid readAll(Region region, long max, String tool) throws InterruptedException {
+        return readAll(region, max, tool, null, null, false);
+    }
+
+    /** As {@link #readAll(Region, long, String)}, with block entity data (ADR 0042). */
+    public BlockGrid readAllWithData(Region region, long max, String tool) throws InterruptedException {
+        return readAll(region, max, tool, null, null, true);
+    }
+
+    /**
+     * As {@link #readAll(Region, long, String)}, adding the region's entities to {@code entities} and its signs with
+     * text to {@code signs}, each unless null.
+     */
+    public BlockGrid readAll(Region region, long max, String tool, List<Ops.EntitySummary> entities,
+                             List<Ops.SignText> signs) throws InterruptedException {
+        return readAll(region, max, tool, entities, signs, false);
+    }
+
+    private BlockGrid readAll(Region region, long max, String tool, List<Ops.EntitySummary> entities,
+                              List<Ops.SignText> signs, boolean data) throws InterruptedException {
         if (region.volume() > max) {
             throw new ToolException("region has " + region.volume() + " blocks; " + tool + " takes at most " + max);
         }
         List<Region> parts = Coords.split(region);
         if (parts.size() == 1) {
-            return read(region);
+            return read(region, entities, signs, data);
         }
         int[] blocks = new int[(int) region.volume()];
         List<String> palette = new ArrayList<>();
         Map<String, Integer> index = new HashMap<>();
         for (Region part : parts) {
-            BlockGrid grid = read(part);
+            BlockGrid grid = read(part, entities, signs, data);
             int[] remap = new int[grid.palette().size()];
             for (int i = 0; i < remap.length; i++) {
                 remap[i] = index.computeIfAbsent(grid.palette().get(i), s -> {
@@ -94,12 +172,13 @@ public final class WorldService {
         return new BlockGrid(region, palette, blocks);
     }
 
-    public String slice(Region region, boolean states, int maxChars) throws InterruptedException {
+    /** @param data add a {@code data X,Y,Z {SNBT}} line per block with block entity data (ADR 0042) */
+    public String slice(Region region, boolean states, boolean data, int maxChars) throws InterruptedException {
         if (region.sizeX() > MAX_VIEW_SIDE || region.sizeZ() > MAX_VIEW_SIDE) {
             throw new ToolException("slice is at most " + MAX_VIEW_SIDE + " blocks wide; use world_summary or "
                     + "world_heightmap for larger areas");
         }
-        return TextGrid.render(read(region), states, maxChars);
+        return TextGrid.render(data ? readWithData(region) : read(region), states, maxChars);
     }
 
     public String heightmap(Region area, int maxChars) throws InterruptedException {
@@ -131,24 +210,68 @@ public final class WorldService {
         }
         boolean compact = max - min < 36;
         if (compact) {
-            out.append("each char = height - ").append(min).append(" (0-9 then a-z)\n");
-        }
-        for (int z = 0; z < h.sizeZ(); z++) {
-            for (int x = 0; x < h.sizeX(); x++) {
-                int v = heights[z * h.sizeX() + x];
-                if (compact) {
-                    out.append(Character.forDigit(v - min, 36));
-                } else {
-                    if (x > 0) {
-                        out.append(' ');
-                    }
-                    out.append(v);
+            out.append("each char = height ").append(min < 0 ? "+ " + -(long) min : "- " + min)
+                    .append(" (0-9 then a-z)\n");
+            for (int z = 0; z < h.sizeZ(); z++) {
+                for (int x = 0; x < h.sizeX(); x++) {
+                    out.append(Character.forDigit(heights[z * h.sizeX() + x] - min, 36));
                 }
+                out.append('\n');
             }
-            out.append('\n');
+        } else {
+            // Range too wide for one char per column: heights as numbers, runs as v*n, repeated rows as (xN).
+            out.append("each row: heights by column, v*n = n columns at v, (xN) = row repeated N times\n");
+            String previous = null;
+            int repeats = 0;
+            for (int z = 0; z < h.sizeZ(); z++) {
+                String row = numberRow(heights, z * h.sizeX(), h.sizeX());
+                if (row.equals(previous)) {
+                    repeats++;
+                    continue;
+                }
+                appendRow(out, previous, repeats);
+                previous = row;
+                repeats = 1;
+            }
+            appendRow(out, previous, repeats);
         }
         return Budget.truncate(out.toString().stripTrailing(), maxChars, "Ask for a smaller area.");
     }
+
+    private static String numberRow(int[] heights, int start, int length) {
+        StringBuilder row = new StringBuilder();
+        int x = 0;
+        while (x < length) {
+            int v = heights[start + x];
+            int run = 1;
+            while (x + run < length && heights[start + x + run] == v) {
+                run++;
+            }
+            if (!row.isEmpty()) {
+                row.append(' ');
+            }
+            row.append(v);
+            if (run > 1) {
+                row.append('*').append(run);
+            }
+            x += run;
+        }
+        return row.toString();
+    }
+
+    private static void appendRow(StringBuilder out, String row, int repeats) {
+        if (row == null) {
+            return;
+        }
+        out.append(row);
+        if (repeats > 1) {
+            out.append(" (x").append(repeats).append(')');
+        }
+        out.append('\n');
+    }
+
+    /** Block kinds with at most this many blocks in a summary are listed with their positions. */
+    static final int RARE = 3;
 
     public String summary(Region region, int maxChars) throws InterruptedException {
         if (region.volume() > MAX_BULK_VOLUME) {
@@ -156,6 +279,8 @@ public final class WorldService {
                     + MAX_BULK_VOLUME);
         }
         Map<String, Long> counts = new LinkedHashMap<>();
+        // Where each block kind is, up to RARE + 1 places: rare kinds are listed with their positions.
+        Map<String, List<String>> places = new HashMap<>();
         Map<String, Integer> entities = new TreeMap<>();
         long[] perLayer = new long[region.sizeY()];
         long air = 0;
@@ -172,6 +297,10 @@ public final class WorldService {
                 ids[i] = BlockNames.brief(BlockNames.id(grid.palette().get(i)));
             }
             long[] local = new long[ids.length];
+            List<List<String>> localPlaces = new ArrayList<>();
+            for (int p = 0; p < ids.length; p++) {
+                localPlaces.add(new ArrayList<>());
+            }
             int i = 0;
             for (int y = r.min().y(); y <= r.max().y(); y++) {
                 for (int z = r.min().z(); z <= r.max().z(); z++) {
@@ -181,7 +310,9 @@ public final class WorldService {
                             air++;
                             continue;
                         }
-                        local[b]++;
+                        if (local[b]++ <= RARE) {
+                            localPlaces.get(b).add(x + "," + y + "," + z);
+                        }
                         perLayer[y - region.min().y()]++;
                         lo[0] = Math.min(lo[0], x);
                         lo[1] = Math.min(lo[1], y);
@@ -195,6 +326,8 @@ public final class WorldService {
             for (int p = 0; p < ids.length; p++) {
                 if (local[p] > 0) {
                     counts.merge(ids[p], local[p], Long::sum);
+                    List<String> at = places.computeIfAbsent(ids[p], k -> new ArrayList<>());
+                    at.addAll(localPlaces.get(p).subList(0, Math.min(localPlaces.get(p).size(), RARE + 1 - at.size())));
                 }
             }
             if (result.entities() != null) {
@@ -216,7 +349,11 @@ public final class WorldService {
             out.append("blocks:");
             int shown = Math.min(15, sorted.size());
             for (int i = 0; i < shown; i++) {
-                out.append(i == 0 ? " " : ", ").append(sorted.get(i).getKey()).append(' ').append(sorted.get(i).getValue());
+                Map.Entry<String, Long> kind = sorted.get(i);
+                out.append(i == 0 ? " " : ", ").append(kind.getKey()).append(' ').append(kind.getValue());
+                if (kind.getValue() <= RARE) {
+                    out.append(" at ").append(String.join(" ", places.get(kind.getKey())));
+                }
             }
             if (sorted.size() > shown) {
                 out.append(" (+").append(sorted.size() - shown).append(" more kinds)");
@@ -246,84 +383,182 @@ public final class WorldService {
         return Budget.truncate(out.toString(), maxChars, "Ask for a smaller region.");
     }
 
+    /** Widest X-Z extent world_entities searches: an entity lookup walks every chunk section in the box. */
+    public static final int MAX_ENTITY_SIDE = 2048;
+
+    /**
+     * One line per entity: type, name, position, health and tags, so wave spawns, NPCs and holograms can be checked
+     * without a player. {@code type} narrows to one entity type; {@code ids} adds the UUID for commands.
+     */
+    public String entities(Region region, String type, int limit, boolean ids, int maxChars) throws InterruptedException {
+        if (region.sizeX() > MAX_ENTITY_SIDE || region.sizeZ() > MAX_ENTITY_SIDE) {
+            throw new ToolException("region is " + region.sizeX() + "x" + region.sizeZ() + " wide; world_entities takes at most "
+                    + MAX_ENTITY_SIDE + "x" + MAX_ENTITY_SIDE + ". Use a smaller region.");
+        }
+        String full = type == null || type.isBlank() ? null : BlockNames.full(type.strip().toLowerCase(java.util.Locale.ROOT));
+        // Minestom lists every entity of the instance and has no forceload command (ADR 0010).
+        boolean loadedChunksOnly = !"minestom".equals(hub.require().agent().platform());
+        Ops.EntitiesResult r = hub.call(Ops.WORLD_ENTITIES, new Ops.EntitiesParams(region, full, Math.max(1, limit)));
+        return Budget.truncate(formatEntities(r, full, ids, region, loadedChunksOnly), maxChars, "Pass type, a smaller region or a lower limit.");
+    }
+
+    /**
+     * The listing: a count line with totals per type, then one line per entity. {@code loadedChunksOnly} says the
+     * agent searches only loaded chunks, so an empty answer suggests forceloading them.
+     */
+    static String formatEntities(Ops.EntitiesResult r, String type, boolean ids, Region region, boolean loadedChunksOnly) {
+        if (r.total() == 0) {
+            String none = "no " + (type == null ? "entities" : BlockNames.brief(type) + " entities") + " in the region";
+            if (!loadedChunksOnly) {
+                return none;
+            }
+            // With no player online the region's chunks are usually unloaded, and their entities with them.
+            return none + ". Only loaded chunks are searched, and with no player nearby they are unloaded: "
+                    + "server_command \"forceload add " + region.min().x() + " " + region.min().z() + " "
+                    + region.max().x() + " " + region.max().z() + "\" loads them, then ask again";
+        }
+        Map<String, Integer> perType = new TreeMap<>();
+        for (Ops.EntityInfo e : r.entities()) {
+            perType.merge(BlockNames.brief(e.type()), 1, Integer::sum);
+        }
+        StringBuilder out = new StringBuilder().append(r.total()).append(r.total() == 1 ? " entity" : " entities");
+        if (r.entities().size() < r.total()) {
+            out.append(", first ").append(r.entities().size()).append(" shown");
+        }
+        if (type == null) {
+            out.append(':');
+            perType.forEach((t, n) -> out.append(' ').append(n).append(' ').append(t));
+        }
+        for (Ops.EntityInfo e : r.entities()) {
+            out.append('\n').append(BlockNames.brief(e.type()));
+            if (e.name() != null && !e.name().isBlank()) {
+                out.append(" \"").append(e.name().replace('\n', ' ')).append('"');
+            }
+            out.append(' ').append(num(e.x())).append(',').append(num(e.y())).append(',').append(num(e.z()));
+            if (e.health() != null) {
+                out.append(" hp ").append(num(e.health()));
+                if (e.maxHealth() != null) {
+                    out.append('/').append(num(e.maxHealth()));
+                }
+            }
+            if (!e.tags().isEmpty()) {
+                out.append(" tags ").append(String.join(",", e.tags()));
+            }
+            if (ids && e.uuid() != null) {
+                out.append(" id ").append(e.uuid());
+            }
+        }
+        return out.toString();
+    }
+
+    /** One decimal, without a trailing ".0". */
+    private static String num(double v) {
+        double rounded = Math.round(v * 10) / 10.0;
+        return rounded == Math.rint(rounded) ? Long.toString((long) rounded) : Double.toString(rounded);
+    }
+
     // ---- edits ------------------------------------------------------------------------------
 
-    private synchronized String remember(List<String> agentEdits) {
+    /** Forget every edit id: after a world rollback, they name blocks of a world that is gone. */
+    public synchronized void forgetEdits() {
+        edits.clear();
+    }
+
+    /**
+     * The server run edits are made in: an object that changes when the server stops or starts again, read without a
+     * lock (ServerManager's). Null when the core started no server, such as one attached through its address.
+     */
+    public void serverRun(java.util.function.Supplier<Object> run) {
+        this.serverRun = run;
+    }
+
+    /**
+     * The server run an edit is made in: the {@link #serverRun} process (null for a server the core did not start) and
+     * the agent connection to it. The agent keeps an edit's undo in that process and numbers edits from the start in
+     * each one, so every write, clean-up and undo of an edit goes to its run's connection, never to a later one, and
+     * the edit ends with its run (#699, #702).
+     */
+    public record Run(Object process, CoreServer.AgentSession agent) {
+    }
+
+    /** The run edits are made in now, waiting a little for an agent as every world tool does. */
+    public Run run() throws InterruptedException {
+        // The connection first: a process read after it is the connection's or a later one, which ends the run.
+        CoreServer.AgentSession agent = hub.require();
+        return new Run(serverRun.get(), agent);
+    }
+
+    /** True once the server process of {@code run} has stopped or been replaced, or its agent connection closed. */
+    public boolean ended(Run run) {
+        return run.process() != serverRun.get() || !run.agent().connection().isOpen();
+    }
+
+    /** Run one operation on {@code run}'s agent connection only (#702). */
+    public <P, R> R call(Run run, OpSpec<P, R> op, P params) throws InterruptedException {
+        return hub.call(run.agent(), op, params);
+    }
+
+    private record Edit(List<String> parts, Footprint where, Run run) {
+    }
+
+    /**
+     * Forget the edits of a server run that has ended (#699): the agent's undo history ended with that server, so
+     * they could undo nothing, and they would block undoing older edits they overlap. Under this monitor.
+     */
+    private void forgetEnded() {
+        edits.values().removeIf(e -> ended(e.run()));
+    }
+
+    /**
+     * Keep agent edit ids made in {@code run} under one new edit id for {@code build_undo}, with the positions the edit
+     * set, and return that id. Call it only while that run lasts: once it has ended, the next call forgets the id.
+     */
+    public synchronized String remember(List<String> agentEdits, Footprint where, Run run) {
+        forgetEnded();
         String id = "e" + (++editCounter);
-        edits.put(id, agentEdits);
+        edits.put(id, new Edit(new ArrayList<>(agentEdits), where, run));
         return id;
     }
 
-    private static String done(String id, long changed) {
-        return "edit " + id + ": " + changed + " blocks changed";
-    }
-
-    public String fill(Region region, String block, List<String> onlyReplace) throws InterruptedException {
-        if (region.volume() > MAX_BULK_VOLUME) {
-            throw new ToolException("region has " + region.volume() + " blocks; build_fill takes at most " + MAX_BULK_VOLUME);
-        }
-        List<String> replace = onlyReplace.isEmpty() ? null : onlyReplace.stream().map(BlockNames::full).toList();
-        List<String> ids = new ArrayList<>();
-        long changed = 0;
-        for (Region part : Coords.split(region)) {
-            Ops.EditResult r = hub.call(Ops.WORLD_FILL, new Ops.FillParams(part, BlockNames.full(block), replace));
-            ids.add(r.editId());
-            changed += r.changed();
-        }
-        return done(remember(ids), changed);
-    }
-
-    public String set(String world, List<Ops.BlockChange> changes, boolean physics) throws InterruptedException {
-        Ops.EditResult r = hub.call(Ops.WORLD_SET_BLOCKS, new Ops.SetBlocksParams(world, changes, physics));
-        return done(remember(List.of(r.editId())), r.changed());
-    }
-
-    public String write(BlockGrid grid, boolean physics) throws InterruptedException {
-        Ops.EditResult r = hub.call(Ops.WORLD_WRITE, new Ops.WriteParams(grid, physics));
-        Region g = grid.region();
-        return done(remember(List.of(r.editId())), r.changed()) + ", region " + Coords.show(g);
-    }
-
-    public String copy(Region source, BlockPos to, boolean copyAir) throws InterruptedException {
-        if (source.volume() > MAX_BULK_VOLUME) {
-            throw new ToolException("region has " + source.volume() + " blocks; build_copy takes at most " + MAX_BULK_VOLUME);
-        }
-        int dx = to.x() - source.min().x();
-        int dy = to.y() - source.min().y();
-        int dz = to.z() - source.min().z();
-        // Read everything before writing so overlapping source and target work.
-        List<BlockGrid> parts = new ArrayList<>();
-        for (Region part : Coords.split(source)) {
-            parts.add(hub.call(Ops.WORLD_READ, new Ops.ReadParams(part, false)).grid());
-        }
-        List<String> ids = new ArrayList<>();
-        long changed = 0;
-        for (BlockGrid grid : parts) {
-            Region r = grid.region();
-            int[] blocks = grid.blocks();
-            if (!copyAir) {
-                blocks = blocks.clone();
-                for (int i = 0; i < blocks.length; i++) {
-                    if (blocks[i] >= 0 && BlockNames.isAir(grid.palette().get(blocks[i]))) {
-                        blocks[i] = -1;
-                    }
-                }
-            }
-            Region target = new Region(r.world(), r.min().offset(dx, dy, dz), r.max().offset(dx, dy, dz));
-            Ops.EditResult e = hub.call(Ops.WORLD_WRITE,
-                    new Ops.WriteParams(new BlockGrid(target, grid.palette(), blocks), false));
-            ids.add(e.editId());
-            changed += e.changed();
-        }
-        Region all = new Region(source.world(), source.min().offset(dx, dy, dz), source.max().offset(dx, dy, dz));
-        return done(remember(ids), changed) + ", region " + Coords.show(all);
-    }
-
-    /** Undo one edit, or the most recent one when {@code id} is null. */
+    /**
+     * Undo one edit, or the most recent one when {@code id} is null, newest part first. Each agent part is dropped
+     * only once the agent has undone it, so after a failure the same id undoes the rest. A part the agent no
+     * longer keeps (its undo history is bounded) is skipped and reported. An edit is refused while a later edit,
+     * still applied, set any of its positions (ADR 0049): its undo would wipe that edit's blocks there, and that
+     * edit's own undo would then bring back blocks of the edit already undone.
+     */
     public String undo(String id) throws InterruptedException {
+        return oneAtATime(() -> undoNow(id));
+    }
+
+    /** Work that changes the world under an edit id: {@link #oneAtATime} runs it. */
+    @FunctionalInterface
+    public interface EditWork<T> {
+        T run() throws InterruptedException;
+    }
+
+    /**
+     * Run {@code work} while no other call writes or undoes an edit (ADR 0049): a build from its first read of the
+     * world to its {@link #remember}, an undo from its overlap check to its edit leaving the list. Interleaved, an
+     * undo's check would miss a build not remembered yet, and wipe its blocks or bring back blocks of an edit already
+     * undone, and a build would read the world as an earlier id had not yet left it (#704).
+     */
+    public <T> T oneAtATime(EditWork<T> work) throws InterruptedException {
+        editing.lockInterruptibly();
+        try {
+            return work.run();
+        } finally {
+            editing.unlock();
+        }
+    }
+
+    private String undoNow(String id) throws InterruptedException {
         List<String> agentEdits;
+        Run run;
+        Region box;
         String target = id;
         synchronized (this) {
+            forgetEnded();
             if (target == null) {
                 if (edits.isEmpty()) {
                     throw new ToolException("nothing to undo");
@@ -332,15 +567,70 @@ public final class WorldService {
                     target = key;
                 }
             }
-            agentEdits = edits.remove(target);
+            Edit edit = edits.get(target);
+            if (edit == null) {
+                throw new ToolException("unknown edit " + target + " (already undone, or made before the server last "
+                        + "stopped: " + ROLL_BACK + ")");
+            }
+            List<String> over = new ArrayList<>();
+            boolean later = false;
+            for (Map.Entry<String, Edit> e : edits.entrySet()) {
+                if (later && e.getValue().where().overlaps(edit.where())) {
+                    over.addFirst(e.getKey());
+                }
+                later |= e.getKey().equals(target);
+            }
+            if (!over.isEmpty()) {
+                throw new ToolException(target + " not undone: later edit" + (over.size() == 1 ? " " : "s ")
+                        + String.join(", ", over) + " set some of the same blocks, which undoing " + target
+                        + " would wipe. Undo " + (over.size() == 1 ? "it" : "them, newest first,")
+                        + " first (build_undo edit=" + over.getFirst() + "), then " + target + ".");
+            }
+            agentEdits = edit.parts();
+            run = edit.run();
+            box = edit.where().box();
         }
-        if (agentEdits == null) {
-            throw new ToolException("unknown edit " + target + " (already undone, or from an earlier session)");
-        }
+        // Only an undo changes an edit's parts, and undos run one at a time.
         long changed = 0;
-        for (int i = agentEdits.size() - 1; i >= 0; i--) {
-            changed += hub.call(Ops.WORLD_UNDO, new Ops.UndoParams(agentEdits.get(i))).changed();
+        int lost = 0;
+        int parts = agentEdits.size();
+        for (int i = parts - 1; i >= 0; i--) {
+            try {
+                changed += call(run, Ops.WORLD_UNDO, new Ops.UndoParams(agentEdits.get(i))).changed();
+            } catch (OpException e) {
+                if (!e.code().equals(ErrorCodes.NOT_FOUND)) {
+                    throw stopped(target, changed, run, box, e);
+                }
+                lost++;
+            } catch (RuntimeException e) {
+                throw stopped(target, changed, run, box, e);
+            }
+            agentEdits.remove(i);
         }
-        return "undid " + target + ": " + changed + " blocks restored";
+        synchronized (this) {
+            edits.remove(target);
+        }
+        if (lost == 0) {
+            return "undid " + target + ": " + changed + " blocks restored";
+        }
+        return "undid " + target + " partly: " + changed + " blocks restored, " + lost + " of " + parts
+                + " parts no longer kept by the server (it keeps the last " + UNDO_BLOCKS_TEXT + " changed blocks)";
+    }
+
+    /**
+     * An undo that failed after restoring {@code changed} blocks. While the edit's run lasts, the same id undoes the
+     * rest; once it has ended, the id is gone (#701) and the part in flight may be half undone (#708), so the answer
+     * is {@link #cutOff} for the edit's {@code box}.
+     */
+    private RuntimeException stopped(String target, long changed, Run run, Region box, RuntimeException e) {
+        if (ended(run)) {
+            return new ToolException(cutOff("the undo of " + target, box));
+        }
+        if (changed == 0) {
+            return e;
+        }
+        return new ToolException("undo of " + target + " stopped after " + changed + " blocks restored: "
+                + (e instanceof OpException op ? op.detail() : e.getMessage()) + "; build_undo edit=" + target
+                + " again undoes the rest");
     }
 }

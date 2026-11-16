@@ -67,6 +67,33 @@ class PackTest {
     }
 
     @Test
+    void textureModelsKeepSubFoldersAndNeverRepointAnItem() throws IOException {
+        PackSource pack = new PackSource(dir);
+        ResourceId red = ResourceId.parse("item/red/gem");
+        ResourceId blue = ResourceId.parse("item/blue/gem");
+        assertThat(pack.writeTextureModel(red, Models.Kind.ITEM)).isEqualTo("msc:red/gem");
+        assertThat(pack.writeTextureModel(blue, Models.Kind.ITEM)).isEqualTo("msc:blue/gem");
+        assertThat(pack.modelPath(red)).content().contains("\"layer0\":\"msc:item/red/gem\"");
+        assertThat(pack.itemPath(ResourceId.parse("blue/gem"))).content().contains("\"model\":\"msc:item/blue/gem\"");
+        assertThat(pack.writeTextureModel(ResourceId.parse("item/ruby"), Models.Kind.ITEM)).isEqualTo("msc:ruby");
+        assertThat(pack.writeTextureModel(ResourceId.parse("item/ruby"), Models.Kind.HANDHELD)).isEqualTo("msc:ruby");
+        assertThatThrownBy(() -> pack.writeTextureModel(ResourceId.parse("block/ruby"), Models.Kind.CUBE_ALL))
+                .hasMessage("item msc:ruby already shows model msc:item/ruby; give this one another name");
+        assertThat(pack.modelPath(ResourceId.parse("block/ruby"))).doesNotExist();
+    }
+
+    @Test
+    void textureModelNeverRepointsAModelOfAnotherFolder() throws IOException {
+        PackSource pack = new PackSource(dir);
+        ResourceId model = ResourceId.parse("item/ruby");
+        assertThat(pack.writeTextureModel(ResourceId.parse("block/ruby"), Models.Kind.ITEM)).isEqualTo("msc:ruby");
+        assertThat(pack.writeTextureModel(ResourceId.parse("block/ruby"), Models.Kind.HANDHELD)).isEqualTo("msc:ruby");
+        assertThatThrownBy(() -> pack.writeTextureModel(ResourceId.parse("item/ruby"), Models.Kind.ITEM))
+                .hasMessage("model msc:item/ruby already shows texture msc:block/ruby; give this one another name");
+        assertThat(pack.modelPath(model)).content().contains("\"layer0\":\"msc:block/ruby\"");
+    }
+
+    @Test
     void animationWritesMcmetaAndStillTextureRemovesIt() throws IOException {
         PackSource pack = new PackSource(dir);
         ResourceId id = ResourceId.parse("block/glow");

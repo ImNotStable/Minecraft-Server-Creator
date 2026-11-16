@@ -1,10 +1,23 @@
 package io.github.imnotstable.msc.core;
 
+import io.github.imnotstable.msc.core.server.DownloadStore;
+import io.github.imnotstable.msc.core.server.GradleUserHome;
+import io.github.imnotstable.msc.core.server.LoaderInstaller;
+import io.github.imnotstable.msc.core.server.MachineEula;
+import io.github.imnotstable.msc.core.tool.PathArg;
 import io.github.imnotstable.msc.protocol.Limits;
+import io.github.imnotstable.msc.protocol.transport.HandshakeProof;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.security.GeneralSecurityException;
+import java.util.ArrayList;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
+import java.util.Objects;
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
 
 /**
  * Everything the core reads from its environment. Tests build one by hand.
@@ -16,6 +29,9 @@ import java.util.UUID;
  * @param toolLog       JSON Lines file for tool calls, or null for none
  * @param javaCommand   java executable used to run the game server
  * @param serverCommand full command that starts the server, or null for {@code java -jar <paper jar> --nogui}
+ *                      ({@code ServerJava.processBuilder} adds the UTF-8 console flags when its program is
+ *                      {@code java}, else puts them in {@code JAVA_OPTS}; a script that ignores JAVA_OPTS must pass
+ *                      {@code ServerJava.ENCODING_FLAGS} to its Java itself, or non-ASCII output arrives garbled)
  * @param buildCommand  full command that builds a project, or null for its Gradle wrapper
  * @param downloadsUrl  base URL of the Paper downloads service
  * @param minecraft     Minecraft version used when a tool is not given one
@@ -27,12 +43,25 @@ import java.util.UUID;
  * @param fabricMavenUrl base URL of Fabric's Maven repository (Fabric API download)
  * @param installDir    where this core is installed, or null when unknown; its {@code agents/} folder holds the
  *                      agent jars shipped with the core, the last place {@code server_setup} looks
+ * @param packPort      port the resource pack server binds; 0 reuses the port this workspace used last
+ * @param machineEula   the owner's one-time, per-machine EULA acceptance ({@code ~/.msc/eula.json}); read by
+ *                      {@code server_setup} and {@code server_start}, written only on the owner's explicit opt-in
+ *                      (see {@link MachineEula}); {@link MachineEula#none} (tests) means there is none
+ * @param loaderUrls    where the NeoForge, Forge and Quilt installers and the Purpur jars are downloaded from
+ * @param downloadStore the machine's store of checksummed server jars ({@code ~/.msc/downloads}), shared by every
+ *                      workspace (ADR 0038); {@link DownloadStore#NONE} (tests) means there is none
+ * @param proxySecret   the machine's Velocity forwarding secret file ({@code ~/.msc/velocity.secret}), shared by a
+ *                      proxy workspace and its backend's (ADR 0045); null (tests) keeps it in {@link #dataDir()}
+ * @param gradleUserHome where Gradle keeps its caches ({@link GradleUserHome}): passed to every Gradle build the core
+ *                      starts, and where api_search finds the API jars those builds downloaded (#666)
  */
 public record CoreConfig(Path workspace, Path serverDir, int agentPort, String token, Path toolLog,
                          String javaCommand, List<String> serverCommand, List<String> buildCommand,
                          String downloadsUrl, String minecraft, List<Path> apiJars, String packHost,
                          int packFormat, Path agentJar, String fabricMetaUrl, String fabricMavenUrl,
-                         Path installDir) {
+                         Path installDir, int packPort, MachineEula machineEula,
+                         LoaderInstaller.Urls loaderUrls, DownloadStore downloadStore, Path proxySecret,
+                         Path gradleUserHome) {
     public static final String ENV_WORKSPACE = "MSC_WORKSPACE";
     public static final String ENV_SERVER_DIR = "MSC_SERVER_DIR";
     public static final String ENV_TOOL_LOG = "MSC_TOOL_LOG";
@@ -43,6 +72,7 @@ public record CoreConfig(Path workspace, Path serverDir, int agentPort, String t
     public static final String ENV_PACK_HOST = "MSC_PACK_HOST";
     public static final String ENV_PACK_FORMAT = "MSC_PACK_FORMAT";
     public static final String ENV_AGENT_JAR = "MSC_AGENT_JAR";
+    public static final String ENV_PACK_PORT = "MSC_PACK_PORT";
 
     public static final String ENV_FABRIC_META_URL = "MSC_FABRIC_META_URL";
     public static final String ENV_FABRIC_MAVEN_URL = "MSC_FABRIC_MAVEN_URL";
@@ -58,14 +88,18 @@ public record CoreConfig(Path workspace, Path serverDir, int agentPort, String t
         workspace = workspace.toAbsolutePath().normalize();
         serverDir = serverDir.toAbsolutePath().normalize();
         apiJars = List.copyOf(apiJars);
+        machineEula = Objects.requireNonNull(machineEula, "machineEula: MachineEula.none() for none");
+        downloadStore = Objects.requireNonNull(downloadStore, "downloadStore: DownloadStore.NONE for none");
+        gradleUserHome = gradleUserHome.toAbsolutePath().normalize();
     }
 
     /** Defaults for a workspace; used by tests and as the base for {@link #fromEnvironment}. */
     public static CoreConfig forWorkspace(Path workspace) {
         String java = Path.of(System.getProperty("java.home"), "bin", "java").toString();
-        return new CoreConfig(workspace, workspace.resolve("run"), 0, UUID.randomUUID().toString(), null, java,
+        return new CoreConfig(workspace, workspace.resolve("run"), 0, HandshakeProof.nonce(), null, java,
                 null, null, DEFAULT_DOWNLOADS_URL, DEFAULT_MINECRAFT, List.of(), "127.0.0.1", DEFAULT_PACK_FORMAT, null,
-                DEFAULT_FABRIC_META_URL, DEFAULT_FABRIC_MAVEN_URL, null);
+                DEFAULT_FABRIC_META_URL, DEFAULT_FABRIC_MAVEN_URL, null, 0, MachineEula.none(), LoaderInstaller.Urls.DEFAULT,
+                DownloadStore.NONE, null, GradleUserHome.ofThisProcess());
     }
 
     public static CoreConfig fromEnvironment(Map<String, String> env) {
@@ -84,7 +118,7 @@ public record CoreConfig(Path workspace, Path serverDir, int agentPort, String t
                 workspace,
                 env.containsKey(ENV_SERVER_DIR) ? Path.of(env.get(ENV_SERVER_DIR)) : base.serverDir(),
                 port,
-                env.getOrDefault(Limits.ENV_TOKEN, base.token()),
+                token(env, base.token()),
                 logFile != null ? Path.of(logFile) : base.dataDir().resolve("tool-calls.jsonl"),
                 env.getOrDefault(ENV_JAVA, base.javaCommand()),
                 null, null,
@@ -96,7 +130,44 @@ public record CoreConfig(Path workspace, Path serverDir, int agentPort, String t
                 env.containsKey(ENV_AGENT_JAR) ? Path.of(env.get(ENV_AGENT_JAR)) : null,
                 env.getOrDefault(ENV_FABRIC_META_URL, DEFAULT_FABRIC_META_URL),
                 env.getOrDefault(ENV_FABRIC_MAVEN_URL, DEFAULT_FABRIC_MAVEN_URL),
-                null);
+                null,
+                Integer.parseInt(env.getOrDefault(ENV_PACK_PORT, "0").trim()),
+                MachineEula.forHome(Path.of(System.getProperty("user.home"))),
+                base.loaderUrls(),
+                DownloadStore.fromEnvironment(env, Path.of(System.getProperty("user.home"))),
+                Path.of(System.getProperty("user.home"), ".msc", "velocity.secret"),
+                GradleUserHome.resolve(env, System.getProperty(GradleUserHome.PROPERTY),
+                        System.getProperty("user.home")));
+    }
+
+    /** {@code MSC_TOKEN} when set and not blank (an empty one would let any agent prove itself), else a random one. */
+    static String token(Map<String, String> env, String random) {
+        String token = env.get(Limits.ENV_TOKEN);
+        return token == null || token.isBlank() ? random : token;
+    }
+
+    /**
+     * The token the servers this workspace starts get, in place of {@link #token} (ADR 0050): HMAC-SHA256 of the
+     * workspace's real path under the token. The core takes an agent with either; one that proves another workspace's
+     * token, such as the agent of a server detached in the workspace a switch left, is refused, also on a fixed
+     * {@code MSC_CORE_ADDRESS} with a shared {@code MSC_TOKEN}. A server started outside MSC still attaches with
+     * {@link #token}.
+     */
+    public String serverToken() {
+        Path ws;
+        try {
+            ws = workspace.toRealPath();
+        } catch (IOException e) {
+            ws = workspace.toAbsolutePath().normalize();
+        }
+        try {
+            Mac mac = Mac.getInstance("HmacSHA256");
+            mac.init(new SecretKeySpec(token.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+            return HexFormat.of().formatHex(mac.doFinal(("msc-workspace-server\n" + ws)
+                    .getBytes(StandardCharsets.UTF_8)));
+        } catch (GeneralSecurityException e) {
+            throw new IllegalStateException("HmacSHA256 is part of every Java runtime", e);
+        }
     }
 
     /** {@code <workspace>/.msc}: caches, the resource pack source and logs. */
@@ -104,54 +175,142 @@ public record CoreConfig(Path workspace, Path serverDir, int agentPort, String t
         return workspace.resolve(".msc");
     }
 
+    /** {@code .msc/cache}: downloaded server jars, installers and loader files. */
+    public Path cacheDir() {
+        return dataDir().resolve("cache");
+    }
+
+    /** {@code .msc/pack}: the resource pack's sources. */
+    public Path packDir() {
+        return dataDir().resolve("pack");
+    }
+
+    /** {@code .msc/build}: the built pack zip; the pack host's port, pid and log files sit beside it. */
+    public Path packBuildDir() {
+        return dataDir().resolve("build");
+    }
+
+    /** {@code .msc/backups}: world backups taken before big edits and on request. */
+    public Path backupsDir() {
+        return dataDir().resolve("backups");
+    }
+
+    /**
+     * Everything MSC itself creates in a workspace, each where the code that creates it finds it: {@code .msc} (the
+     * caches, the pack's sources and build, backups, the logs), the server folder and the tool log. Absolute and
+     * normalized; some may be outside the workspace (an MSC_SERVER_DIR or MSC_TOOL_LOG elsewhere). A folder that holds
+     * only these is still empty for {@code project_scaffold} (#664).
+     */
+    public List<Path> ownPaths() {
+        List<Path> own = new ArrayList<>(List.of(dataDir(), cacheDir(), packDir(), packBuildDir(),
+                backupsDir(), serverDir, proxySecretFile()));
+        if (toolLog != null) {
+            own.add(toolLog);
+        }
+        return own.stream().map(p -> p.toAbsolutePath().normalize()).toList();
+    }
+
     public CoreConfig withServerCommand(List<String> command) {
         return new CoreConfig(workspace, serverDir, agentPort, token, toolLog, javaCommand, command, buildCommand,
-                downloadsUrl, minecraft, apiJars, packHost, packFormat, agentJar, fabricMetaUrl, fabricMavenUrl, installDir);
+                downloadsUrl, minecraft, apiJars, packHost, packFormat, agentJar, fabricMetaUrl, fabricMavenUrl, installDir, packPort, machineEula, loaderUrls, downloadStore, proxySecret, gradleUserHome);
     }
 
     public CoreConfig withBuildCommand(List<String> command) {
         return new CoreConfig(workspace, serverDir, agentPort, token, toolLog, javaCommand, serverCommand, command,
-                downloadsUrl, minecraft, apiJars, packHost, packFormat, agentJar, fabricMetaUrl, fabricMavenUrl, installDir);
+                downloadsUrl, minecraft, apiJars, packHost, packFormat, agentJar, fabricMetaUrl, fabricMavenUrl, installDir, packPort, machineEula, loaderUrls, downloadStore, proxySecret, gradleUserHome);
     }
 
     public CoreConfig withToolLog(Path file) {
         return new CoreConfig(workspace, serverDir, agentPort, token, file, javaCommand, serverCommand, buildCommand,
-                downloadsUrl, minecraft, apiJars, packHost, packFormat, agentJar, fabricMetaUrl, fabricMavenUrl, installDir);
+                downloadsUrl, minecraft, apiJars, packHost, packFormat, agentJar, fabricMetaUrl, fabricMavenUrl, installDir, packPort, machineEula, loaderUrls, downloadStore, proxySecret, gradleUserHome);
     }
 
     public CoreConfig withDownloadsUrl(String url) {
         return new CoreConfig(workspace, serverDir, agentPort, token, toolLog, javaCommand, serverCommand,
-                buildCommand, url, minecraft, apiJars, packHost, packFormat, agentJar, fabricMetaUrl, fabricMavenUrl, installDir);
+                buildCommand, url, minecraft, apiJars, packHost, packFormat, agentJar, fabricMetaUrl, fabricMavenUrl, installDir, packPort, machineEula, loaderUrls, downloadStore, proxySecret, gradleUserHome);
     }
 
     public CoreConfig withFabricUrls(String metaUrl, String mavenUrl) {
         return new CoreConfig(workspace, serverDir, agentPort, token, toolLog, javaCommand, serverCommand,
-                buildCommand, downloadsUrl, minecraft, apiJars, packHost, packFormat, agentJar, metaUrl, mavenUrl, installDir);
+                buildCommand, downloadsUrl, minecraft, apiJars, packHost, packFormat, agentJar, metaUrl, mavenUrl, installDir, packPort, machineEula, loaderUrls, downloadStore, proxySecret, gradleUserHome);
     }
 
     public CoreConfig withMinecraft(String version) {
         return new CoreConfig(workspace, serverDir, agentPort, token, toolLog, javaCommand, serverCommand,
-                buildCommand, downloadsUrl, version, apiJars, packHost, packFormat, agentJar, fabricMetaUrl, fabricMavenUrl, installDir);
-    }
-
-    public CoreConfig withAgentJar(Path jar) {
-        return new CoreConfig(workspace, serverDir, agentPort, token, toolLog, javaCommand, serverCommand,
-                buildCommand, downloadsUrl, minecraft, apiJars, packHost, packFormat, jar, fabricMetaUrl, fabricMavenUrl, installDir);
+                buildCommand, downloadsUrl, version, apiJars, packHost, packFormat, agentJar, fabricMetaUrl, fabricMavenUrl, installDir, packPort, machineEula, loaderUrls, downloadStore, proxySecret, gradleUserHome);
     }
 
     public CoreConfig withApiJars(List<Path> jars) {
         return new CoreConfig(workspace, serverDir, agentPort, token, toolLog, javaCommand, serverCommand,
-                buildCommand, downloadsUrl, minecraft, jars, packHost, packFormat, agentJar, fabricMetaUrl, fabricMavenUrl, installDir);
+                buildCommand, downloadsUrl, minecraft, jars, packHost, packFormat, agentJar, fabricMetaUrl, fabricMavenUrl, installDir, packPort, machineEula, loaderUrls, downloadStore, proxySecret, gradleUserHome);
     }
 
     public CoreConfig withInstallDir(Path dir) {
         return new CoreConfig(workspace, serverDir, agentPort, token, toolLog, javaCommand, serverCommand,
                 buildCommand, downloadsUrl, minecraft, apiJars, packHost, packFormat, agentJar, fabricMetaUrl,
-                fabricMavenUrl, dir);
+                fabricMavenUrl, dir, packPort, machineEula, loaderUrls, downloadStore, proxySecret, gradleUserHome);
     }
 
-    /** Resolve a path argument against the workspace. */
-    public Path resolve(String path) {
-        return workspace.resolve(path).normalize();
+    /**
+     * The same settings for another workspace. The server folder and tool log move along when they were the
+     * defaults inside the old workspace; a folder set explicitly (MSC_SERVER_DIR, MSC_TOOL_LOG) stays.
+     */
+    public CoreConfig withWorkspace(Path dir) {
+        Path ws = dir.toAbsolutePath().normalize();
+        Path server = serverDir.equals(workspace.resolve("run")) ? ws.resolve("run") : serverDir;
+        Path logFile = toolLog != null && toolLog.toAbsolutePath().normalize().startsWith(dataDir())
+                ? ws.resolve(".msc").resolve(dataDir().relativize(toolLog.toAbsolutePath().normalize()))
+                : toolLog;
+        return new CoreConfig(ws, server, agentPort, token, logFile, javaCommand, serverCommand, buildCommand,
+                downloadsUrl, minecraft, apiJars, packHost, packFormat, agentJar, fabricMetaUrl, fabricMavenUrl,
+                installDir, packPort, machineEula, loaderUrls, downloadStore, proxySecret, gradleUserHome);
+    }
+
+    public CoreConfig withMachineEula(MachineEula eula) {
+        return new CoreConfig(workspace, serverDir, agentPort, token, toolLog, javaCommand, serverCommand,
+                buildCommand, downloadsUrl, minecraft, apiJars, packHost, packFormat, agentJar, fabricMetaUrl,
+                fabricMavenUrl, installDir, packPort, eula, loaderUrls, downloadStore, proxySecret, gradleUserHome);
+    }
+
+    public CoreConfig withDownloadStore(DownloadStore store) {
+        return new CoreConfig(workspace, serverDir, agentPort, token, toolLog, javaCommand, serverCommand,
+                buildCommand, downloadsUrl, minecraft, apiJars, packHost, packFormat, agentJar, fabricMetaUrl,
+                fabricMavenUrl, installDir, packPort, machineEula, loaderUrls, store, proxySecret, gradleUserHome);
+    }
+
+    public CoreConfig withLoaderUrls(LoaderInstaller.Urls urls) {
+        return new CoreConfig(workspace, serverDir, agentPort, token, toolLog, javaCommand, serverCommand,
+                buildCommand, downloadsUrl, minecraft, apiJars, packHost, packFormat, agentJar, fabricMetaUrl,
+                fabricMavenUrl, installDir, packPort, machineEula, urls, downloadStore, proxySecret, gradleUserHome);
+    }
+
+    public CoreConfig withProxySecret(Path file) {
+        return new CoreConfig(workspace, serverDir, agentPort, token, toolLog, javaCommand, serverCommand,
+                buildCommand, downloadsUrl, minecraft, apiJars, packHost, packFormat, agentJar, fabricMetaUrl,
+                fabricMavenUrl, installDir, packPort, machineEula, loaderUrls, downloadStore, file, gradleUserHome);
+    }
+
+    /** The same settings with a fixed agent port, as {@code MSC_CORE_ADDRESS} gives one. */
+    public CoreConfig withAgentPort(int port) {
+        return new CoreConfig(workspace, serverDir, port, token, toolLog, javaCommand, serverCommand,
+                buildCommand, downloadsUrl, minecraft, apiJars, packHost, packFormat, agentJar, fabricMetaUrl,
+                fabricMavenUrl, installDir, packPort, machineEula, loaderUrls, downloadStore, proxySecret,
+                gradleUserHome);
+    }
+
+    public CoreConfig withGradleUserHome(Path dir) {
+        return new CoreConfig(workspace, serverDir, agentPort, token, toolLog, javaCommand, serverCommand,
+                buildCommand, downloadsUrl, minecraft, apiJars, packHost, packFormat, agentJar, fabricMetaUrl,
+                fabricMavenUrl, installDir, packPort, machineEula, loaderUrls, downloadStore, proxySecret, dir);
+    }
+
+    /** Where the Velocity forwarding secret is kept: {@link #proxySecret()}, else the workspace's {@code .msc}. */
+    public Path proxySecretFile() {
+        return proxySecret != null ? proxySecret : dataDir().resolve("velocity.secret");
+    }
+
+    /** The rule for a path argument: relative to the workspace and inside it (see {@link PathArg}). */
+    public PathArg inWorkspace() {
+        return PathArg.inside(workspace);
     }
 }

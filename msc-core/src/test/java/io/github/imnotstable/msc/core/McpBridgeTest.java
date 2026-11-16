@@ -36,7 +36,10 @@ class McpBridgeTest {
                         + "\"capabilities\":{},\"clientInfo\":{\"name\":\"test\",\"version\":\"1\"}}}");
                 JsonObject init = read(reader, 1).getAsJsonObject("result");
                 assertThat(init.getAsJsonObject("serverInfo").get("name").getAsString()).isEqualTo("msc-core");
-                assertThat(init.get("instructions").getAsString()).contains("dev_cycle");
+                assertThat(init.get("instructions").getAsString()).contains("dev_cycle").contains("acceptEula=true")
+                        .contains("never accept it for them")
+                        .contains("(Paper, Purpur, Folia, Fabric, Quilt, NeoForge, Forge, Minestom or Velocity)")
+                        .contains("Paper, Purpur, Folia, Fabric, Quilt, NeoForge and Forge need the user's agreement");
                 send(toServer, "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}");
 
                 send(toServer, "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\",\"params\":{}}");
@@ -44,16 +47,22 @@ class McpBridgeTest {
                 JsonArray tools = listed.getAsJsonObject("result").getAsJsonArray("tools");
                 List<String> names = new ArrayList<>();
                 tools.forEach(t -> names.add(t.getAsJsonObject().get("name").getAsString()));
-                assertThat(names).containsExactly("msc_status", "msc_stats", "project_scaffold", "server_setup",
-                        "server_start", "server_stop", "dev_cycle", "server_logs", "server_command", "api_search",
-                        "api_class", "world_slice", "world_heightmap", "world_render", "world_summary", "build_fill", "build_set",
-                        "build_structure", "build_copy", "build_undo", "structure_save", "structure_load",
-                        "texture_create", "texture_generate", "texture_recolor", "texture_animate", "model_create", "texture_view",
-                        "pack_check", "pack_build");
-                // The tool list is paid for in every conversation: keep it small.
-                assertThat(listed.toString().length()).isLessThan(14200);
-                JsonObject fill = tools.get(names.indexOf("build_fill")).getAsJsonObject().getAsJsonObject("inputSchema");
-                assertThat(fill.getAsJsonArray("required").toString()).isEqualTo("[\"region\",\"block\"]");
+                assertThat(names).containsExactly("msc_status", "project_scaffold", "server_setup",
+                        "server_start", "server_stop", "server_detach", "dev_cycle", "server_logs", "server_command", "server_wait", "api_search",
+                        "api_class", "world_slice", "world_heightmap", "world_render", "world_summary", "world_entities", "build_undo",
+                        "structure_save", "build_batch",
+                        "texture", "texture_view", "model_create", "pack", "player_test", "msc_workspace");
+                // The tool list is paid for in every conversation: keep it small. ADR 0019 folded five build tools
+                // into build_batch and msc_stats into msc_status (18.5k chars to 15.5k).
+                assertThat(listed.toString().length()).isLessThan(16000);
+                JsonObject batch = tools.get(names.indexOf("build_batch")).getAsJsonObject().getAsJsonObject("inputSchema");
+                assertThat(batch.getAsJsonArray("required").toString()).isEqualTo("[\"steps\"]");
+                // Every project template the jar ships (paper-server is only nested in others) is named in project_scaffold's schema, so none goes unseen.
+                String templates = tools.get(names.indexOf("project_scaffold")).getAsJsonObject()
+                        .getAsJsonObject("inputSchema").getAsJsonObject("properties").getAsJsonObject("template")
+                        .get("description").getAsString();
+                assertThat(templates).contains(io.github.imnotstable.msc.templates.Templates.ids().stream()
+                        .filter(id -> !id.equals(io.github.imnotstable.msc.templates.Templates.PAPER_SERVER)).toList());
 
                 send(toServer, "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"msc_status\",\"arguments\":{}}}");
                 JsonObject status = read(reader, 3).getAsJsonObject("result");
@@ -76,6 +85,38 @@ class McpBridgeTest {
                 byte[] png = java.util.Base64.getDecoder().decode(image.get("data").getAsString());
                 assertThat(javax.imageio.ImageIO.read(new java.io.ByteArrayInputStream(png))).isNotNull();
                 assertThat(rendered.get(1).getAsJsonObject().get("text").getAsString()).startsWith("Top view");
+            } finally {
+                server.close();
+            }
+        }
+    }
+
+    @Test
+    void badOrBatchedLinesDoNotStopTheServer(@TempDir Path workspace) throws Exception {
+        java.io.ByteArrayOutputStream noteBytes = new java.io.ByteArrayOutputStream();
+        try (CoreHarness h = new CoreHarness(workspace);
+             PipedOutputStream toServer = new PipedOutputStream();
+             PipedInputStream serverIn = new PipedInputStream(toServer, 1 << 16);
+             PipedOutputStream serverOut = new PipedOutputStream();
+             PipedInputStream fromServer = new PipedInputStream(serverOut, 1 << 20);
+             java.io.PrintStream notes = new java.io.PrintStream(noteBytes, true, StandardCharsets.UTF_8)) {
+            McpSyncServer server = McpBridge.start(h.core.registry(), serverIn, serverOut, notes);
+            BufferedReader reader = new BufferedReader(new InputStreamReader(fromServer, StandardCharsets.UTF_8));
+            try {
+                send(toServer, "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-03-26\","
+                        + "\"capabilities\":{},\"clientInfo\":{\"name\":\"test\",\"version\":\"1\"}}}");
+                read(reader, 1);
+                send(toServer, "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}");
+                send(toServer, "this is not json");
+                send(toServer, "{\"hello\":1}");
+                send(toServer, "[{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"ping\"},42]");
+                assertThat(read(reader, 2).has("result")).isTrue();
+                send(toServer, "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"ping\"}");
+                assertThat(read(reader, 3).has("result")).isTrue();
+                assertThat(noteBytes.toString(StandardCharsets.UTF_8).lines().toList()).containsExactly(
+                        "msc-core: ignored stdin input that is not a JSON-RPC message: this is not json",
+                        "msc-core: ignored stdin input that is not a JSON-RPC message: {\"hello\":1}",
+                        "msc-core: ignored stdin input that is not a JSON-RPC message: 42");
             } finally {
                 server.close();
             }

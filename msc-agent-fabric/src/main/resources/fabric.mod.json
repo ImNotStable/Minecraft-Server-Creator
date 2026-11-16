@@ -11,7 +11,7 @@
     "server": ["io.github.imnotstable.msc.agent.fabric.MscAgentMod"]
   },
   "depends": {
-    "fabricloader": ">=${loaderVersion}",
+    "fabricloader": ">=${loaderFloor}",
     "minecraft": "~${minecraftVersion}",
     "java": ">=25",
     "fabric-lifecycle-events-v1": "*",

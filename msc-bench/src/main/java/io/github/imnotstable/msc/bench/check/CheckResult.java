@@ -1,5 +1,7 @@
 package io.github.imnotstable.msc.bench.check;
 
+import io.github.imnotstable.msc.bench.Text;
+
 /**
  * Outcome of one check.
  *
@@ -9,13 +11,25 @@ package io.github.imnotstable.msc.bench.check;
  */
 public record CheckResult(String name, boolean passed, String detail) {
 
-    private static final int MAX_DETAIL = 300;
+    /**
+     * The most chars a detail keeps. A producer that quotes output sizes its quote so its whole detail fits, so this
+     * cut ({@link Text#cut}, head and tail kept) only catches a detail that did not (#535).
+     */
+    public static final int MAX_DETAIL = 300;
 
     public CheckResult {
         detail = detail == null ? "" : detail.strip();
-        if (detail.length() > MAX_DETAIL) {
-            detail = detail.substring(0, MAX_DETAIL) + "...";
-        }
+        detail = Text.cut(detail, MAX_DETAIL);
+    }
+
+    /**
+     * This result as a reader is shown it, {@code name: detail}, the same in {@code run}'s progress line, report.md's
+     * Failures and {@code check}'s output (#677): each on one line with every hidden character escaped
+     * ({@link Text#singleLine}), and each at most {@link #MAX_DETAIL} characters, so a stored detail is shown whole.
+     * {@code results.jsonl} keeps the detail as it is.
+     */
+    public String shown() {
+        return Text.singleLine(name == null ? "" : name, MAX_DETAIL) + ": " + Text.singleLine(detail, MAX_DETAIL);
     }
 
     public static CheckResult pass(String name, String detail) {

@@ -3,7 +3,7 @@
 The MCP server the AI talks to. It runs servers, condenses their output, answers API questions, and drives building, world views and textures through the agents.
 
 **Phase:** MVP  
-**Status:** MVP implemented (0.1): 30 MCP tools, tested against a fake agent and run end to end against Paper 26.3 with msc-agent-paper and against a Minestom server (2026-11-11). Lifecycle tools cover Paper, Fabric and Minestom (ADR 0011); a Fabric server start is not yet run.
+**Status:** MVP implemented (0.1): 30 MCP tools, tested against a fake agent and run end to end against Paper 26.3 with msc-agent-paper and against a Minestom server (2026-11-11). Lifecycle tools cover Paper, Purpur, Fabric, Quilt, NeoForge, Forge and Minestom (ADR 0011, ADR 0027). The Fabric agent loads on a real Fabric 26.3 server; `server_setup` for Purpur, Quilt, NeoForge and Forge is checked up to the EULA step, and the agents' operations on a running Fabric, Quilt, NeoForge or Forge world are not yet checked.
 
 ## Scope
 
@@ -18,13 +18,13 @@ The MCP server the AI talks to. It runs servers, condenses their output, answers
 
 ## Run
 
-`./gradlew :msc-core:installMsc` installs the distribution (core plus the Paper and Fabric agent jars in `agents/`) to `~/.msc/core` (`-Pmsc.installDir=...` to change) and prints the `claude mcp add` line; see the root README. The server speaks MCP on stdin/stdout and works in its current directory unless `MSC_WORKSPACE` is set. Other settings are environment variables; see the tool catalogue in `msc-docs/docs/tools.md`. Do not register `gradlew :msc-core:run` as an MCP server: Gradle's own output would corrupt the protocol stream.
+`./gradlew :msc-core:installMsc` installs the distribution (core plus the Paper, Fabric, NeoForge and Forge agent jars in `agents/`) into a new folder under `~/.msc/core` (`-Pmsc.installDir=...` to change), which the `msc` Claude Code plugin ([msc-plugin](../msc-plugin/README.md)) starts; see the root README. The server speaks MCP on stdin/stdout and works in its current directory unless `MSC_WORKSPACE` is set. Other settings are environment variables; see the tool catalogue in `msc-docs/docs/tools.md`. Do not register `gradlew :msc-core:run` as an MCP server: Gradle's own output would corrupt the protocol stream.
 
 ## Layout
 
 - `tool/`: tool registry, argument parsing, result budgets. `mcp/McpBridge` is the only class that uses the MCP SDK.
 - `agent/AgentHub`: the core's end of `msc-protocol`.
-- `server/`: server process, platforms (Paper, Fabric, Minestom), Paper and Fabric downloads, build runner, log condensing.
+- `server/`: server process, platforms (Paper, Purpur, Fabric, Quilt, NeoForge, Forge, Minestom), Paper and Fabric downloads, `LoaderInstaller` (Purpur download, NeoForge, Forge and Quilt installers), the machine-wide EULA acceptance (`MachineEula`, `eula` command), finding servers an earlier core left running (`PidFile`), build runner, log condensing.
 - `api/`: API index read from class files.
 - `world/`: text structure format, views, edits with undo, schematics.
 - `texture/`: palette-grid textures and the resource pack.

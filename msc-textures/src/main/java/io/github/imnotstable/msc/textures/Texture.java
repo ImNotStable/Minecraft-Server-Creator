@@ -27,6 +27,13 @@ public final class Texture {
         this.pixels = new int[width * height];
     }
 
+    /** No size limit: for reading existing pack files, which may be larger than what the tools create. */
+    private Texture(BufferedImage image) {
+        this.width = image.getWidth();
+        this.height = image.getHeight();
+        this.pixels = image.getRGB(0, 0, width, height, null, 0, width);
+    }
+
     public static Texture square(int size) {
         return new Texture(size, size);
     }
@@ -112,12 +119,21 @@ public final class Texture {
     }
 
     public static Texture readPng(byte[] png) {
+        return of(decode(png));
+    }
+
+    /** Like {@link #readPng} but without {@link #MAX_SIZE}: a pack may hold large GUI or HD textures. */
+    static Texture readAnyPng(byte[] png) {
+        return new Texture(decode(png));
+    }
+
+    private static BufferedImage decode(byte[] png) {
         try {
             BufferedImage image = ImageIO.read(new ByteArrayInputStream(png));
             if (image == null) {
                 throw new TextureException("not a PNG image");
             }
-            return of(image);
+            return image;
         } catch (IOException e) {
             throw new TextureException("not a readable PNG: " + e.getMessage());
         }

@@ -1,0 +1,5 @@
+[12:00:00] [main/INFO] [cp.mo.mo.Launcher/MODLAUNCHER]: ModLauncher running: args [--launchTarget, forgeserver]
+[12:00:02] [main/ERROR] [ne.mi.fm.lo.ModSorter/LOADING]: Missing or unsupported mandatory dependencies:
+	Mod ID: 'jei', Requested by: 'mymod', Expected range: '[19.0,)', Actual version: '[MISSING]'
+	Mod ID: 'minecraft', Requested by: 'mymod', Expected range: '[1.21,1.22)', Actual version: '26.3'
+[12:00:03] [main/FATAL] [ne.mi.fm.ModLoader/]: Failed to complete lifecycle event CONSTRUCT, 1 errors found

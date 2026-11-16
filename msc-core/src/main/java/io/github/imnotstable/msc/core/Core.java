@@ -1,79 +1,681 @@
 package io.github.imnotstable.msc.core;
 
 import io.github.imnotstable.msc.core.agent.AgentHub;
+import io.github.imnotstable.msc.core.building.Builder;
 import io.github.imnotstable.msc.core.metrics.ToolLog;
 import io.github.imnotstable.msc.core.server.FabricDownloader;
 import io.github.imnotstable.msc.core.server.PaperDownloader;
 import io.github.imnotstable.msc.core.server.ProjectBuilder;
 import io.github.imnotstable.msc.core.server.ServerManager;
 import io.github.imnotstable.msc.core.texture.ResourcePack;
+import io.github.imnotstable.msc.core.tool.Args;
+import io.github.imnotstable.msc.core.tool.PathArg;
+import io.github.imnotstable.msc.core.tool.Schema;
+import io.github.imnotstable.msc.core.tool.Tool;
+import io.github.imnotstable.msc.core.tool.ToolException;
 import io.github.imnotstable.msc.core.tool.ToolRegistry;
 import io.github.imnotstable.msc.core.tools.ApiTools;
+import io.github.imnotstable.msc.core.tools.BackgroundWork;
+import io.github.imnotstable.msc.core.tools.BuildTools;
 import io.github.imnotstable.msc.core.tools.LifecycleTools;
 import io.github.imnotstable.msc.core.tools.MetaTools;
+import io.github.imnotstable.msc.core.tools.PackPublisher;
+import io.github.imnotstable.msc.core.tools.PlayerTools;
 import io.github.imnotstable.msc.core.tools.TextureTools;
+import io.github.imnotstable.msc.core.tools.WayArgs;
 import io.github.imnotstable.msc.core.tools.WorldTools;
+import io.github.imnotstable.msc.core.tools.WorldBackups;
 import io.github.imnotstable.msc.core.world.WorldService;
+import io.github.imnotstable.msc.process.ServerPropertiesFile;
 import java.io.IOException;
+import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.Duration;
+import java.util.List;
+import java.util.Map;
+import java.util.Properties;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReadWriteLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.stream.Collectors;
 
-/** The core without a transport: services plus the tool registry. The MCP server and tests both sit on this. */
+/**
+ * The core without a transport: services plus the tool registry. The MCP server and tests both sit on this.
+ * Everything that belongs to one workspace lives in a {@link Bench}; {@code msc_workspace} swaps it while the tool
+ * list, which the MCP client fetched once, stays the same.
+ *
+ * <h2>Ownership model</h2>
+ * Read this before changing a switch, the session end or the tool call path; SessionEndTest and
+ * WorkspaceOwnershipTest check it per resource.
+ *
+ * <p>A {@link Bench} owns everything one workspace opens. {@link Bench#close} is the one place that closes it, once,
+ * in this order:
+ * <ol>
+ * <li>background builds ({@link BackgroundWork}: project_scaffold warmups, dev_cycle's tests): interrupted, so
+ * ProcessRunner kills their Gradle trees, and joined for a few seconds;</li>
+ * <li>test player ({@link PlayerTools}): the bot's connection to the dev server;</li>
+ * <li>server ({@link ServerManager#seal}): from here on nothing starts or detaches it, which settles whether it
+ * outlives the session;</li>
+ * <li>pack host ({@link ResourcePack}): the in-process HTTP server, and the standalone host process unless the
+ * server outlives the session ({@link ServerManager#lifetime}: detached, or left by an earlier session, #750);</li>
+ * <li>server process ({@link ServerManager#close}): stopped unless detached; its log pump thread ends with it;</li>
+ * <li>agent connection ({@link AgentHub}): the agent session and the listening socket, and CoreServer's threads.</li>
+ * </ol>
+ * A switch away from a workspace whose server is detached does not close it: the session keeps the whole Bench
+ * ({@link #kept}, #735), with only what listens or runs work stopped (agent and in-process pack listeners, background
+ * builds, the test player), and a switch back reopens that same Bench, edit history and all (#738, #739). A kept Bench
+ * ends through one path, {@link Bench#release}, which closes it as above: when its server exits, when a switch back
+ * finds that server gone, and at the session end (#737).
+ * Each part marks itself closed under its own monitor first, and every method that opens something (a process, a
+ * socket, a thread, a bot) checks that mark under the same monitor before opening it. So nothing opens after its
+ * close, even from a call that was already past every earlier check when the close began (#282); such a call gets
+ * {@link ToolException#workspaceClosed}. {@link Bench#open} closes what it opened when a later step fails.
+ *
+ * <p>Not owned by a workspace:
+ * <ul>
+ * <li>tool call threads: {@link #running}. {@link #close} waits up to {@link #lockWait} for them, interrupts the
+ * ones still running, and then waits up to {@link #cleanupWait} for those to end: a call that runs a process on its
+ * own thread (dev_cycle's jar build, server_setup's installer) kills its tree in ProcessRunner when interrupted, and
+ * the JVM exits right after the close (#296);</li>
+ * <li>temp folders (Scaffold, ServerSetup staging): the call that makes one deletes it in a finally;</li>
+ * <li>caches: on disk under .msc/cache, kept across sessions on purpose, or plain heap objects of the bench; nothing
+ * to close;</li>
+ * <li>the tool log: no open file, it appends per call; a switch moves it;</li>
+ * <li>the MCP transport and its executors: Main and McpBridge; the client closing stdin ends the session.</li>
+ * </ul>
+ *
+ * <p>Lock order, outer to inner; nothing takes an outer lock while it holds an inner one:
+ * <ol>
+ * <li>{@link #lock}: a tool call holds the read lock for its whole run; a switch and {@link #close} take the write
+ * lock, waiting at most {@link #lockWait}. A switch that does not get it fails; close interrupts the calls and goes
+ * on without it.</li>
+ * <li>{@link #benchGuard}: only to set {@link #closed} and hand over {@link #bench}; nothing is taken inside it.</li>
+ * <li>the Bench's monitor ({@link Bench#close}); a second closer (a close during a switch) waits for the first.</li>
+ * <li>one part's monitor at a time, in the close order above. A part holds its monitor only for bounded or
+ * interruptible steps and never across a call's own long work (PlayerTools keeps its bot under a separate guard for
+ * that). Two nestings, both into ServerManager, which calls into neither part: AgentHub's lock may ask
+ * {@link ServerManager#running}, so ServerManager reads the hub before it takes its own monitor; and ResourcePack's
+ * monitor asks {@link ServerManager#lifetime}, the state that decides who serves the pack (ADR 0051, #750).</li>
+ * </ol>
+ */
 public final class Core implements AutoCloseable {
-    public static final String VERSION = "0.1.0";
+    /** The build's project.version (a release's -Pversion), from the version.properties msc-core's build writes. */
+    public static final String VERSION = readVersion();
 
-    private final CoreConfig config;
-    private final AgentHub hub;
-    private final ServerManager server;
-    private final ResourcePack pack;
+    private static String readVersion() {
+        try (InputStream in = Core.class.getResourceAsStream("version.properties")) {
+            if (in == null) {
+                return "unknown";
+            }
+            Properties props = new Properties();
+            props.load(in);
+            return props.getProperty("version", "unknown");
+        } catch (IOException e) {
+            return "unknown";
+        }
+    }
+
+    /** The services of one workspace and the tools bound to them. */
+    private record Bench(CoreConfig config, AgentHub hub, ServerManager server, ResourcePack pack,
+                         PackPublisher publisher, PlayerTools players, ToolRegistry tools, BackgroundWork background,
+                         AtomicBoolean closed, Map<Path, Bench> kept) {
+        /**
+         * Opens a workspace: the one this session keeps there for its detached server ({@code kept}, #735) when that
+         * server still runs, else new parts. When a step fails, closes those already opened (the agent socket), and
+         * leaves a kept workspace kept.
+         */
+        static Bench open(CoreConfig config, ToolLog log, OpenCheck check, Map<Path, Bench> kept) throws IOException {
+            Bench parked = kept.get(realOrSelf(config.workspace()));
+            if (parked != null) {
+                Bench back = parked.unpark(check);
+                if (back != null) {
+                    return back;
+                }
+            }
+            BackgroundWork background = new BackgroundWork();
+            AgentHub hub = new AgentHub(config.agentPort(), config.token(), config.serverToken());
+            try {
+                Bench bench = wire(config, log, background, hub, kept);
+                check.check(config, hub);
+                return bench;
+            } catch (IOException | RuntimeException | Error e) {
+                background.close();
+                try {
+                    hub.close();
+                } catch (IOException suppressed) {
+                    e.addSuppressed(suppressed);
+                }
+                throw e;
+            }
+        }
+
+        private static Bench wire(CoreConfig config, ToolLog log, BackgroundWork background, AgentHub hub,
+                                  Map<Path, Bench> kept) {
+            AtomicBoolean closed = new AtomicBoolean();
+            ServerManager server = new ServerManager(config, hub);
+            if (config.agentPort() == 0) {
+                // No fixed address, so only a server this core starts can connect (MSC_CORE_ADDRESS attaches others).
+                // Only while it starts or its agent reconnects: not once it was asked to stop (#703).
+                hub.agentExpected(server::awaitsAgent);
+            }
+            hub.notRunning(server::notRunning);
+            hub.lastRun(server::lastRun);
+            hub.serverStopping(server::reportsStopping);
+            hub.noAgentReason(() -> server.platform().noWorldTools());
+            // Whether the server outlives the session (detached here, or a leftover, #750) is the one state that
+            // decides who serves the pack (ADR 0051).
+            ResourcePack pack = new ResourcePack(config.packDir(), config.packBuildDir(), config.packHost(),
+                    config.packPort(), config.packFormat(), server::lifetime);
+            PackPublisher publisher = new PackPublisher(pack, server, hub,
+                    config.serverDir().resolve(ServerPropertiesFile.NAME));
+            ToolRegistry tools = new ToolRegistry(log);
+            WorldService world = new WorldService(hub);
+            world.serverRun(server::serverRun);
+            ApiTools api = new ApiTools(config);
+            // Kept for its detached server, it is closed to the tools until a switch back (only after a failed switch
+            // is such a workspace the current one).
+            MetaTools.register(tools, config, hub, server, log, api,
+                    () -> closed.get() || kept.containsKey(realOrSelf(config.workspace())));
+            WorldBackups backups = LifecycleTools.register(tools, config, hub, server, pack, publisher,
+                    new ProjectBuilder(config),
+                    new PaperDownloader(config.downloadsUrl(), config.cacheDir(),
+                            config.downloadStore()),
+                    new FabricDownloader(config.fabricMetaUrl(), config.fabricMavenUrl(),
+                            config.cacheDir()), background, world);
+            api.register(tools);
+            WorldTools.register(tools, config, world, backups);
+            BuildTools.register(tools, config, world, new Builder(hub, world, backups::beforeBigEdit));
+            TextureTools.register(tools, hub, pack, publisher, config);
+            PlayerTools players = PlayerTools.register(tools, config, hub, world);
+            // On a proxy every world, build and player tool answers one line before it sends, saves or stops anything,
+            // whether or not it reaches the agent (ADR 0045, #591).
+            tools.gate(WORLD_TOOLS, () -> server.platform().noWorldTools());
+            Bench bench = new Bench(config, hub, server, pack, publisher, players, tools, background, closed, kept);
+            // Not on the exiting process's own thread: the close waits for the pack host to end.
+            server.onExit(() -> Thread.ofVirtual().name("msc-kept-release").start(bench::releaseIfExited));
+            return bench;
+        }
+
+        private Path key() {
+            return realOrSelf(config.workspace());
+        }
+
+        /** Neither closed nor kept: a kept workspace is current only after a failed switch, and opens with a switch. */
+        boolean inUse() {
+            return !closed.get() && kept.get(key()) != this;
+        }
+
+        /**
+         * A switch away: closes the workspace, or keeps it whole for a switch back (#735) when its server is detached.
+         * The server runs on with its pack host and agent connection, and every other part stays as it is (the edit
+         * history among them, #739); only what listens or runs work stops: the agent and in-process pack listeners,
+         * background builds, the test player. Its pack is published first (ADR 0051), so the standalone host serves
+         * it. A kept workspace ends only through {@link #release}: when its server exits, when a switch back finds it
+         * exited, or when the session ends (#737). Returns a line when its pack is not served now, else null.
+         */
+        synchronized String leave() throws IOException {
+            if (!server.detached()) {
+                close();
+                return null;
+            }
+            background.stop();
+            players.leave();
+            String unserved = publisher.settle(true);
+            pack.park();
+            hub.park();
+            kept.put(key(), this);
+            return unserved;
+        }
+
+        /**
+         * This kept workspace, listening again, or null when it is no longer kept or its server exited meanwhile
+         * (then released, pack host included, #737). When {@code check} fails it stays kept.
+         */
+        synchronized Bench unpark(OpenCheck check) throws IOException {
+            if (kept.get(key()) != this) {
+                return null;
+            }
+            if (!server.detached()) {
+                release();
+                return null;
+            }
+            hub.unpark(config.agentPort());
+            try {
+                check.check(config, hub);
+            } catch (IOException | RuntimeException | Error e) {
+                try {
+                    hub.park();
+                } catch (IOException suppressed) {
+                    e.addSuppressed(suppressed);
+                }
+                throw e;
+            }
+            kept.remove(key(), this);
+            // Served again as the state says (ADR 0051): also when its standalone host ended meanwhile.
+            publisher.settle(false);
+            return this;
+        }
+
+        /** Releases this workspace if it is kept and its server exited: its pack host goes at once (#737). */
+        synchronized void releaseIfExited() {
+            if (kept.get(key()) == this && !server.detached()) {
+                try {
+                    release();
+                } catch (IOException e) {
+                    // Released as far as it goes: the pack host stops first, and the hub's close only ends sockets.
+                }
+            }
+        }
+
+        /** The one way a kept workspace ends: closed, then no longer kept, so a switch back opens new parts. */
+        synchronized void release() throws IOException {
+            try {
+                close();
+            } finally {
+                kept.remove(key(), this);
+            }
+        }
+
+        /**
+         * Same as a session ending: a detached server and its pack host keep running, anything else stops. Builds
+         * first, so none outlives the core. Once only: a second caller waits for the first.
+         */
+        synchronized void close() throws IOException {
+            if (closed.getAndSet(true)) {
+                return;
+            }
+            // The order and the reasons are in the ownership model on Core.
+            background.close();
+            players.close();
+            server.seal();
+            // Detached here, or left running by an earlier session and not taken over: either outlives this one (#750).
+            boolean outlives = server.lifetime() == ServerManager.Lifetime.OUTLIVES;
+            if (outlives) {
+                publisher.settle(true); // so the standalone host serves the pack past the session (ADR 0051)
+            } else {
+                // Nothing outlives the session, so no standalone host does: this session's, nor one an earlier session
+                // left beside a server that is gone (#752). Waited for, so its port is free (#737).
+                pack.release();
+                publisher.prune();
+            }
+            pack.close(outlives);
+            server.close();
+            hub.close();
+        }
+    }
+
+    /** A last step of opening a bench; tests use it to make a switch fail after the parts were opened. */
+    @FunctionalInterface
+    interface OpenCheck {
+        void check(CoreConfig config, AgentHub hub) throws IOException;
+    }
+
+    /** The tools that need a world (to read, edit, save or roll back, or to join): refused on a proxy. */
+    static final List<String> WORLD_TOOLS = List.of("world_slice", "world_heightmap", "world_render", "world_summary",
+            "world_entities", "build_undo", "structure_save", "build_batch", "player_test");
+
     private final ToolLog log;
     private final ToolRegistry registry;
+    /** Tool calls hold the read lock, a workspace switch the write lock, so no call sees half a switch. */
+    private final ReadWriteLock lock = new ReentrantReadWriteLock();
+    /** The threads inside a forwarded call and the tool each runs, so a switch can name them and close stop them. */
+    private final Map<Thread, String> running = new ConcurrentHashMap<>();
+    /**
+     * How long a switch or close waits for running calls. Bounded: a long call (server_wait, dev_cycle) must not hold
+     * up the switch, every call queued behind it, or the exit when the session ends.
+     */
+    private volatile Duration lockWait = Duration.ofSeconds(5);
+    /**
+     * How long close waits, after interrupting the calls, for them to clean up. Plenty: an interrupted call only has
+     * to kill its process tree (ProcessRunner), which takes milliseconds; the bound is for a call that ignores the
+     * interrupt.
+     */
+    private volatile Duration cleanupWait = Duration.ofSeconds(5);
+    /** Guards the hand-over of {@link #bench} against {@link #close}, which may run without the write lock. */
+    private final Object benchGuard = new Object();
+    private volatile Bench bench;
+    /** The workspaces a switch left with a detached server, kept whole for a switch back, by real path (#735). */
+    private final Map<Path, Bench> kept = new ConcurrentHashMap<>();
+    /** Set once by {@link #close}; a switch still under way then closes what it opened instead of installing it. */
+    private volatile boolean closed;
+    private volatile OpenCheck openCheck = (config, hub) -> {
+    };
 
     public Core(CoreConfig config) throws IOException {
-        this.config = config;
-        this.hub = new AgentHub(config.agentPort(), config.token());
-        this.server = new ServerManager(config, hub);
-        if (config.agentPort() == 0) {
-            // No fixed address, so only a server this core starts can connect (MSC_CORE_ADDRESS attaches others).
-            hub.agentExpected(server::running);
-        }
-        this.pack = new ResourcePack(config.dataDir().resolve("pack"), config.dataDir().resolve("build"),
-                config.packHost(), config.packFormat());
         this.log = new ToolLog(config.toolLog());
+        this.bench = Bench.open(config, log, openCheck, kept);
         this.registry = new ToolRegistry(log);
-        WorldService world = new WorldService(hub);
-        ApiTools api = new ApiTools(config);
-        MetaTools.register(registry, config, hub, server, log, api);
-        LifecycleTools.register(registry, config, hub, server, new ProjectBuilder(config),
-                new PaperDownloader(config.downloadsUrl(), config.dataDir().resolve("cache")),
-                new FabricDownloader(config.fabricMetaUrl(), config.fabricMavenUrl(), config.dataDir().resolve("cache")));
-        api.register(registry);
-        WorldTools.register(registry, config, world);
-        TextureTools.register(registry, hub, pack);
+        for (Tool tool : bench.tools().tools()) {
+            registry.add(new Tool(tool.name(), tool.description(), tool.inputSchema(), forward(tool.name())));
+        }
+        registry.add("msc_workspace",
+                "Switch MSC to another project folder without a restart. Stops the old dev server unless detached. "
+                        + "No path: show the current one.",
+                Schema.of().opt("path", "string", "Folder, absolute or relative")
+                        .opt("create", "boolean", "Create it if missing"),
+                this::switchWorkspace);
+        // Worked out for the workspace the first result is about: a first call that switches away from the MSC repo
+        // gets no warning to switch (#633).
+        registry.noticeUnlessPending(() -> String.join("\n", SetupCheck.warnings(bench.config())));
+    }
+
+    /** A handler that runs the current bench's tool of that name. */
+    private Tool.Handler forward(String name) {
+        return new Tool.Handler() {
+            @Override
+            public String call(Args args) throws Exception {
+                return output(args).text();
+            }
+
+            @Override
+            public Tool.Output output(Args args) throws Exception {
+                lock.readLock().lock();
+                running.put(Thread.currentThread(), name);
+                try {
+                    if (closed) {
+                        throw new ToolException("the session has ended; " + name + " did not run");
+                    }
+                    return bench.tools().tools().stream().filter(t -> t.name().equals(name)).findFirst()
+                            .orElseThrow().handler().output(args);
+                } catch (InterruptedException e) {
+                    if (!closed) {
+                        throw e;
+                    }
+                    // Only close interrupts a call. The interrupt was for this call, which ends here with a reason.
+                    throw new ToolException(name + " was stopped: the session ended while it ran");
+                } finally {
+                    running.remove(Thread.currentThread());
+                    lock.readLock().unlock();
+                }
+            }
+        };
+    }
+
+    /** For tests: how long a switch or close waits for running calls. */
+    void lockWait(Duration wait) {
+        this.lockWait = wait;
+    }
+
+    /** For tests: how long close waits for the calls it interrupted to clean up. */
+    void cleanupWait(Duration wait) {
+        this.cleanupWait = wait;
+    }
+
+    /** The write lock within {@link #lockWait}, or null when calls still run (also when interrupted). */
+    private Lock writeLock() {
+        Lock write = lock.writeLock();
+        try {
+            return write.tryLock(lockWait.toMillis(), TimeUnit.MILLISECONDS) ? write : null;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return null;
+        }
+    }
+
+    /** For tests: the last step of every later bench open (a switch, and its reopen of the old folder). */
+    void openCheck(OpenCheck check) {
+        this.openCheck = check;
+    }
+
+    /** For tests: the current bench's own handler of a tool, which skips the session checks of {@link #forward}. */
+    Tool.Handler benchHandler(String name) {
+        return bench.tools().tools().stream().filter(t -> t.name().equals(name)).findFirst().orElseThrow().handler();
+    }
+
+    /** For tests: how many workspaces the session keeps for their detached servers. */
+    int keptWorkspaces() {
+        return kept.size();
+    }
+
+    /** For tests: the current bench's resource pack and test player. */
+    ResourcePack pack() {
+        return bench.pack();
+    }
+
+    PlayerTools players() {
+        return bench.players();
+    }
+
+    /** For tests: add a tool to the current bench, forwarded like the others (a switch drops it). */
+    void addBenchTool(Tool tool) {
+        bench.tools().add(tool);
+        registry.add(new Tool(tool.name(), tool.description(), tool.inputSchema(), forward(tool.name())));
+    }
+
+    /**
+     * Make {@code next} the bench, unless the session ended meanwhile: then close it, so nothing opened by a switch
+     * outlives the close that did not wait for the switch.
+     */
+    private void install(Bench next) throws IOException {
+        synchronized (benchGuard) {
+            if (!closed) {
+                bench = next;
+                return;
+            }
+        }
+        next.close();
+        releaseKept();
+        throw new ToolException("did not switch: the session ended during the switch");
+    }
+
+    private String runningCalls() {
+        return running.values().stream().sorted().collect(Collectors.joining(", "));
+    }
+
+    private String switchWorkspace(Args args) throws IOException {
+        CoreConfig current = bench.config();
+        WayArgs.check(args, java.util.Set.of(args.has("path") ? "switch" : "show"), WayArgs.WORKSPACE);
+        if (!args.has("path")) {
+            return "workspace: " + (!bench.inUse() ? MetaTools.closedWorkspace(current.workspace())
+                    : current.workspace());
+        }
+        Path target = PathArg.anywhere(current.workspace()).resolve("path", args.str("path").strip());
+        if (!Files.isDirectory(target)) {
+            if (Files.exists(target)) {
+                throw new ToolException(target + " is a file, not a folder");
+            }
+            if (!args.bool("create", false)) {
+                throw new ToolException("no folder " + target + ". Check the path, or pass create=true to make it.");
+            }
+            PathArg.createFolders(target, "folder");
+        }
+        target = target.toRealPath();
+        if (isOpen(target)) {
+            return "workspace is already " + target;
+        }
+        Lock write = writeLock();
+        if (write == null) {
+            String calls = runningCalls();
+            throw new ToolException("did not switch: " + (calls.isEmpty() ? "another call" : calls)
+                    + " is still running and a switch waits for it. Try again when it ends; still in "
+                    + current.workspace());
+        }
+        try {
+            if (closed) {
+                throw new ToolException("did not switch: the session has ended");
+            }
+            // Another switch may have run while this one waited for the lock.
+            if (isOpen(target)) {
+                return "workspace is already " + target;
+            }
+            Bench old = bench;
+            String closing = closing(old);
+            // Close (or keep) first: a fixed agent or pack port must be free before the new bench binds it. CoreServer
+            // lets it go before its close returns, and the bind waits PortPatience for it (#721).
+            String unserved = old.leave();
+            if (unserved != null) {
+                // One line with the closing one, which a detached server always has.
+                closing = closing == null ? unserved : closing + "; " + unserved;
+            }
+            Bench next;
+            try {
+                next = Bench.open(old.config().withWorkspace(target), log, openCheck, kept);
+            } catch (IOException | RuntimeException e) {
+                String failure = "could not open " + target + " (" + e.getMessage() + ")";
+                // The closed workspace itself (#727): reopening it would only try the same open once more.
+                boolean same = target.equals(realOrSelf(old.config().workspace()));
+                throw new ToolException(same ? noWorkspace(failure, target, closing) : reopen(old, failure, closing));
+            }
+            install(next);
+            log.moveTo(next.config().toolLog());
+            // A switch into the MSC repo says so in this result (#633).
+            registry.noticeUnlessPending(() -> SetupCheck.workspaceWarning(bench.config()));
+            StringBuilder out = new StringBuilder("workspace: ").append(target);
+            if (closing != null) {
+                out.append('\n').append(closing);
+            }
+            out.append("\nserver folder: ").append(next.config().serverDir())
+                    .append("; platform: ").append(next.server().platform().id());
+            if (next.server().detached()) {
+                out.append("; the server this session detached here runs on, still this session's");
+            }
+            return out.toString();
+        } finally {
+            write.unlock();
+        }
+    }
+
+    /** True when {@code target} is the workspace and it is open: a closed one (#721) is opened again by a switch. */
+    private boolean isOpen(Path target) {
+        Bench current = bench;
+        return target.equals(realOrSelf(current.config().workspace())) && current.inUse();
+    }
+
+    /**
+     * The line on what closing {@code old} does to its dev server and test player, or null when it touches neither.
+     * A switch says it whether it worked or not: the close comes first.
+     */
+    private static String closing(Bench old) {
+        Path ws = old.config().workspace();
+        String server = old.server().detached() ? "the detached server of " + ws + " keeps running"
+                : old.server().running() ? "stopped the dev server of " + ws : null;
+        String player = old.players().joined() ? "the test player left" : null;
+        if (server == null) {
+            return player;
+        }
+        return player == null ? server : server + "; " + player;
+    }
+
+    /**
+     * After a failed switch: reopens the old workspace, closed by then, and says what happened. When that fails too,
+     * the closed bench stays, and a switch to the same folder opens it again instead of answering "already".
+     */
+    private String reopen(Bench old, String failure, String closing) throws IOException {
+        Path ws = old.config().workspace();
+        String done = closing == null ? "" : "\n" + closing;
+        Bench back;
+        try {
+            back = Bench.open(old.config(), log, openCheck, kept);
+        } catch (IOException | RuntimeException e) {
+            return noWorkspace(failure + ", nor reopen " + ws + " (" + e.getMessage() + ")", ws, closing);
+        }
+        install(back);
+        return failure + "; still in " + ws + done;
+    }
+
+    /** The answer when no workspace is open after a switch: {@code ws}, closed, opens again with a switch to it. */
+    private static String noWorkspace(String failure, Path ws, String closing) {
+        return failure + ", so no workspace is open" + (closing == null ? "" : "\n" + closing)
+                + "\nmsc_workspace path=" + ws + " opens it again";
+    }
+
+    private static Path realOrSelf(Path p) {
+        try {
+            return p.toRealPath();
+        } catch (IOException e) {
+            return p;
+        }
     }
 
     public CoreConfig config() {
-        return config;
+        return bench.config();
     }
 
     public AgentHub hub() {
-        return hub;
+        return bench.hub();
     }
 
     public ServerManager server() {
-        return server;
+        return bench.server();
     }
 
     public ToolRegistry registry() {
         return registry;
     }
 
-    public ToolLog log() {
-        return log;
-    }
-
+    /**
+     * Ends the session. Waits at most {@link #lockWait} for running calls, then interrupts them and closes anyway:
+     * stopping the server also ends a server_wait or a dev_cycle start, and the bench stops the builds calls left
+     * running, so nothing outlives the session, even a call that ignores the interrupt. Then it waits up to
+     * {@link #cleanupWait} for the interrupted calls to end. The guarantee: when this returns, every interrupted call
+     * that honours the interrupt has ended, and ProcessRunner has sent a forced kill (SIGKILL, TerminateProcess) to
+     * each process of its tree, so none of them runs on after the JVM exits. The operating system may still list a
+     * killed process for a moment (an orphan stays a zombie until init reaps it); it does no more work. Only a call
+     * that ignores the interrupt for longer than {@link #cleanupWait} is not waited for. A switch under way closes
+     * the bench it opened instead of installing it; one still waiting for the lock does not switch.
+     */
     @Override
     public void close() throws IOException {
-        pack.close();
-        server.close();
-        hub.close();
+        // First, so no new call runs and no switch installs a bench while this waits.
+        synchronized (benchGuard) {
+            closed = true;
+        }
+        Lock write = writeLock();
+        if (write == null) {
+            running.keySet().forEach(Thread::interrupt);
+        }
+        Bench current = bench;
+        try {
+            // A switch closing this same bench is waited for; its server stop then counts for this close too.
+            try {
+                current.close();
+            } finally {
+                releaseKept();
+            }
+        } finally {
+            if (write != null) {
+                write.unlock();
+            } else {
+                awaitInterruptedCalls();
+            }
+        }
+    }
+
+    /**
+     * At the session end: the workspaces a switch kept for their detached servers (#735) close as the current one
+     * does. A server still running runs on with its pack host; an exited one's pack host stops (#737).
+     */
+    private void releaseKept() throws IOException {
+        IOException failed = null;
+        for (Bench b : List.copyOf(kept.values())) {
+            try {
+                b.release();
+            } catch (IOException e) {
+                failed = failed == null ? e : failed;
+            }
+        }
+        if (failed != null) {
+            throw failed;
+        }
+    }
+
+    /**
+     * Waits up to {@link #cleanupWait} for the calls close interrupted to end: each holds the read lock until it has
+     * cleaned up (ProcessRunner kills its process tree first), so getting the write lock means they all did. Call
+     * threads may be pooled, so this waits for the calls, not for their threads to die.
+     */
+    private void awaitInterruptedCalls() {
+        Lock write = lock.writeLock();
+        try {
+            if (write.tryLock(cleanupWait.toMillis(), TimeUnit.MILLISECONDS)) {
+                write.unlock();
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 }

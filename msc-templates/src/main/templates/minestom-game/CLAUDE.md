@@ -1,0 +1,80 @@
+# {{name}}
+
+Minestom minigame server for Minecraft {{minestomMcVersion}}, Java {{javaVersion}}, Gradle Kotlin DSL. Scaffolded by Minecraft Server Creator from the `minestom-game` template.
+
+## Commands
+
+- `./gradlew build`: compile, run all tests and build the server jar. Run it after every change; it must pass before you stop.
+- `./gradlew test --tests '*GameTest'`: one test class.
+- `./gradlew run`: start the dev server in `run/` on {{serverIp}}:{{serverPort}}. Type `game status` or `stop` on the console.
+- Server jar (runs on its own): `build/libs/{{projectId}}-{{version}}.jar`, start with `java -jar` from `run/`.
+
+## What the template already does
+
+The base every game needs, so you only write the game itself. All of it is set in `GameConfig.game()`:
+
+- Join: inventory cleared, the `kit` given, game mode set (`ADVENTURE` by default), teleported to the player's saved stage.
+- Death: Minestom drops nothing, so players keep their items; they respawn at the current stage's spawn.
+- World: time frozen at `time`, weather clear, `difficulty` set. There are no natural mob spawns in Minestom at all.
+- Stages: an ordered list, each with a `spawn` and an optional `goal` box. Stepping into the goal moves the player to the next stage. Progress is saved per player (by UUID) in `run/progress.properties` and survives restarts. Offline (the dev server) players get vanilla's offline UUID from their name, so progress also survives a reconnect.
+- `/game` admin command (console always; players named in `admins`): `status`, `stage <name|n> [player]`, `next [player]`, `reset [player]`, `kit [player]`.
+- A bad setting (a stage name with a space, a duplicate stage name, no stages, a kit amount of 0, a time past 23999) fails on start with a message naming it. The rules are below.
+
+## Layout
+
+- `{{name}}Server.java`: entry point. Only wiring here (world, game, events, commands).
+- `GameConfig.java`: the game's settings; `game()` is where you set kit, stages and admins. Add new settings here: a record component with a check in the constructor if it can be wrong, its value in `game()` and in the tests' `TestGames` (the compiler points at both).
+- `Game.java`: game state and rules (stages, joining, advancing). Put game logic here or in classes it calls.
+- `GameEvents.java`: hands Minestom events to `Game`. `GameCommand.java`: `/game`; `handle(...)` returns the reply, so tests call it directly.
+- `Stage`, `Box`, `Kit`: settings values. `Progress`: saved progress. `Console`: reads `stop` and commands from standard input, and runs commands on the tick thread.
+- `src/test/java/`: plain unit tests (`BoxTest`, `GameConfigTest`, `ProgressTest`, `SharedRulesTest`) and test-environment tests (`GameTest`, `GameThreadsTest`, `{{name}}ServerTest`). Tests play `TestGames`, a fixed two-stage game, not `GameConfig.game()`, so editing `game()` does not break them; `GameConfigTest.theGameIsValid` checks that your `game()` passes its checks.
+- `gradle/libs.versions.toml`: every dependency version. `libs/msc-agent-minestom.jar`: Minecraft Server Creator's agent; keep it, do not edit it.
+
+## Rules for names and values
+
+The game checks names and values on start. `SharedRulesTest` lists each rule as a table of inputs and whether the game takes them.
+
+- Stage names: one word of visible characters, so `/game stage <name>` can select it and chat can type it. No whitespace (not even a no-break space), no control or invisible formatting character, no `§`. A whole number is allowed: `/game stage 2` picks the stage named `2` first, then the second stage. Two names may not differ only in case (`arena` and `ARENA`), because `/game stage` ignores case (`Stage.sameName`).
+- `/game` arguments are split on runs of whitespace, so `game  stage  arena  Steve` works. Player names are matched exactly, ignoring case. Subcommands ignore case.
+- Values: `time` 0 to 23999; a kit amount 1 to 2304 (a full inventory); spawns finite, x and z within 30000000, y -2032 to 2031, yaw within 360, pitch within 90; goal corners whole numbers inside the same limits, in any order.
+- A bad value stops the game on start with one message naming it and the rule it broke; there is no fallback.
+- To change a rule for this game, change its check and its rows in `SharedRulesTest` together, then its line above. The game's shipped values, all in `GameConfig.game()`, must still pass the new rule: each rule below says which they are, and `./gradlew test` fails on any that do not (`GameConfigTest.theGameIsValid`). `TestGames` keeps its time and bread inside the limits by itself. The rules you can change:
+  - Time: `GameConfig.MAX_TIME`, rows in `TIMES`. Shipped: the time 6000 in `game()`; a limit below 6000 needs it set to a time it takes. A game that only allows daytime: set `MAX_TIME = 12000` in `GameConfig`, and in `SharedRulesTest.TIMES` replace `ok(23999L), no(24000L)` with `ok(12000L), no(12001L)`.
+  - Kit amounts: `Kit.MAX_AMOUNT`, rows in `AMOUNTS`. Shipped: the 8 bread of the kit in `game()`; a limit below 8 needs it lowered. At most one stack: set `MAX_AMOUNT = 64` in `Kit`, and in `AMOUNTS` replace `ok(2304), no(2305)` with `no(65)`.
+  - World limits: `Box.MAX_XZ`, `Box.MIN_Y` and `Box.MAX_Y`, rows in `SPAWNS` and `GOALS`. They may narrow the world to your arena, but keep x and z within 100 of 0 and y -64 to 64 inside them: the tests put their stages there. Shipped: the spawns and goal boxes of the stages in `game()`. A game within 1000 blocks at overworld heights: set `MAX_XZ = 1000`, `MIN_Y = -64` and `MAX_Y = 320` in `Box`, and in `SPAWNS` and `GOALS` write each 30000000 as 1000, 30000000.5 as 1000.5, 30000001 as 1001, 2031 as 320, 2031.5 as 320.5, 2032 as 321, -2032 as -64 and -2033 as -65 (-30000000 as -1000, and so on). Yaw within 360 and pitch within 90 are Minecraft's own limits and stay.
+  - Stage names: `Stage.isName` and `Stage.NAME_RULE`, the rule as messages say it; rows in `STAGE_NAMES`, and in `NAME_PAIRS` drop a pair with a name the new rule refuses. Shipped: the stage names in `game()`. Keep lower-case words valid: the tests name their stages `a`, `start`, `arena` and `end`. ASCII names only: add `&& c < 0x80` to the check in `isName`, set `NAME_RULE = "one word of ASCII letters, digits and symbols (no spaces)"`, in `STAGE_NAMES` replace `ok("été"), ok("竜")` with `no("été"), no("竜")`, and in `NAME_PAIRS` drop `no(List.of("I", "ı"))`.
+
+The game is set in Java (`GameConfig.game()`), so the compiler checks names and types, and there are no config keys; a message names the rule and the value (`stage name must be one word of visible characters (no spaces, no §), got 'boss room'`).
+Minestom's `Pos` wraps yaw into range and clamps pitch to 90 itself, so a spawn's view direction is never refused. `/game` has no tab completion: its argument is a plain string array. Players named in `admins` may use `/game`; the console always can.
+
+## Building the game
+
+- New stage types, waves, timers, scores: add the field to `Stage` (or `GameConfig`), the logic to `Game` (or a new class), and a test. A new field needs a value in every `new Stage(...)` (or `new GameConfig(...)`): the compiler lists them, in `game()` and the tests.
+- Every piece of state you will want to check or skip to while testing gets a `/game` subcommand in `GameCommand.handle`: `game wave 5`, `game boss`, `game score Steve`. Return replies; never broadcast, so console callers see them.
+- Log every state change on one line (`Game.moveTo` logs `Steve -> stage 2/3 arena (goal)`), so tests and tools can wait for it in the log.
+- Build the stages in the world first, then copy their coordinates into `GameConfig.game()`. The flat world's standing height is y -60.
+- If MSC tools are available: `server_command "game status"` shows the state and `server_command "game stage arena Steve"` skips ahead. Minestom has no `/tick`; drive timers from the scheduler and add a `/game` subcommand to skip them.
+
+## Minestom is not vanilla
+
+- Minestom is a library. Nothing happens unless code here makes it happen: no vanilla commands (`/tp`, `/give`, `/time`...; the agent adds a dev-only `/tp` for the test player while msc-core runs the server), no mob AI, no block physics, no item drops, no redstone. Write what the game needs.
+- The world is generated by `createWorld`; `main` keeps it in `run/world` with an `AnvilLoader` and saves it on `stop`, so builds survive `dev_cycle`. A crash loses changes since the last stop: call `world.saveChunksToStorage()` after big changes. Delete `run/world` to regenerate.
+- Events: `events.addListener(Event.class, e -> ...)` in `GameEvents`, or a child `EventNode` per feature.
+- Commands: subclass `Command`, add syntaxes with `ArgumentType`, register with `MinecraftServer.getCommandManager().register(...)`.
+- Blocks: `Block.STONE`, `Block.OAK_STAIRS.withProperty("facing", "north")`, `instance.setBlock(x, y, z, block)`. Chunks must be loaded first (`instance.loadChunk(cx, cz)`).
+- Text is Adventure `Component`s (`Component.text("Hi", NamedTextColor.GREEN)`). Never use `§` codes.
+- Threads: game state is touched only on the tick thread. Event listeners and player commands run there, and so do console commands: `Console` and msc's `server_command` hand each command to the scheduler, which runs it at the start of the next tick. So `Game` uses plain collections, and a step like "read the stage, then advance" never interleaves with a `/game` command. A concurrent collection would not give that: it protects one call, not the steps between calls.
+- Code on any other thread (a virtual thread, a `CompletableFuture` callback, an async event such as `AsyncPlayerConfigurationEvent`) hops back before it touches game state: `MinecraftServer.getSchedulerManager().execute(() -> ...)` or `world.scheduleNextTick(w -> ...)`. `Game.confineTo` makes a change from another thread throw; `main` turns it on for the tick threads and `GameTest` for the test thread. `Progress` is the one exception: it is written to disk on a virtual thread, so it is thread-safe.
+- Do not block the tick thread (no files, network or sleeps in listeners or commands): do slow work on a virtual thread, then hop back with its result.
+
+## Tests
+
+- Every change comes with a test. Pure logic: plain JUnit + AssertJ. Worlds, players, events, commands: Minestom's test environment.
+- Pattern (see `GameTest`): annotate the class with `@EnvTest` and take `Env env` as a test parameter. Build the world with `createWorld(env.process().instance())` and load the chunks you use; register `GameEvents` on `env.process().eventHandler()`; connect a named player with `env.createConnection(new GameProfile(UUID.randomUUID(), "Steve")).connect(world, pos)`; fire events with `env.process().eventHandler().call(...)`; `env.tick()` advances one tick.
+- Compare messages as plain text (`PlainTextComponentSerializer`), not by component equality.
+
+## Minecraft Server Creator
+
+- `MscAgent.start()` in `main` lets the AI's world tools (read, build, render, undo) work on the instance named `"world"`.
+- `server_command` runs commands this server registered (`game ...`); there are no vanilla commands unless you add them.
+- No Mojang server jar and no EULA step: Minestom implements the protocol itself. Players still need a Minecraft {{minestomMcVersion}} client.

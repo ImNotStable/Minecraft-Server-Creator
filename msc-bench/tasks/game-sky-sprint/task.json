@@ -1,0 +1,23 @@
+{
+  "category": "game",
+  "title": "Build Sky Sprint, a timed race with coins, on the minestom-game template",
+  "platform": "minestom",
+  "scaffold": {"template": "minestom-game", "name": "Sprint", "package": "bench.sprint"},
+  "timeoutSeconds": 2400,
+  "checks": [
+    {"type": "command", "name": "project builds with its own tests", "run": ["{gradlew}", "build", "--quiet"], "timeoutSeconds": 900},
+    {"type": "command", "name": "hidden rules tests", "addFiles": "hidden",
+      "run": ["{gradlew}", "test", "--tests", "bench.sprint.BenchSprintTest", "--quiet"], "timeoutSeconds": 900},
+    {"type": "player", "name": "a test player races the course",
+      "jar": "build/libs/sprint-{scaffoldVersion}.jar",
+      "script": ["look 0 0", "forward 60", "wait 10", "look 0 0", "forward 160", "wait 20"],
+      "console": ["game best Steve", "game top"],
+      "expect": [
+        "Coin! \\(3/3\\)",
+        "Finished in \\d+\\.\\ds with 3 coins",
+        "Steve best: \\d+\\.\\ds",
+        "1\\. Steve \\d+\\.\\ds"
+      ],
+      "timeoutSeconds": 240}
+  ]
+}

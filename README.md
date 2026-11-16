@@ -1,43 +1,51 @@
 # Minecraft Server Creator
 
-A toolset that helps an AI develop custom Minecraft servers on any platform. This is one git repo (a monorepo); each folder is a module. The MVP targets Paper on the latest stable Minecraft release.
+A toolset that helps an AI develop custom Minecraft servers on any platform. This is one git repo (a monorepo); each folder is a module. It targets the latest stable Minecraft release on Paper, Purpur, Folia, Fabric, Quilt, NeoForge, Forge and Minestom, and the Velocity proxy ([Platforms](docs/wiki/Platforms.md)).
 
 ## Quick start (Claude Code)
 
-1. Install the MCP server (needs nothing but this repo; Gradle fetches Java 25 if missing):
+1. Install msc-core (needs nothing but this repo; Gradle fetches Java 25 if missing):
 
    ```
    ./gradlew :msc-core:installMsc        # Windows: gradlew.bat :msc-core:installMsc
    ```
 
-   This puts msc-core and its Paper and Fabric agents in `~/.msc/core` and prints one line to register it.
-2. Run the printed line once. It looks like this (paths are yours):
+   Each run puts msc-core and its Paper, Fabric, NeoForge and Forge agents in a new folder under `~/.msc/core`.
+2. Add the `msc` plugin to Claude Code once (it needs `java` on PATH, any version from 17):
 
    ```
-   claude mcp add msc --scope user -- "C:\Users\you\.gradle\jdks\...\bin\java.exe" -cp "C:\Users\you\.msc\core\lib\*" io.github.imnotstable.msc.core.Main
+   /plugin marketplace add <this repo's folder>      (or: /plugin marketplace add ImNotStable/Minecraft-Server-Creator)
+   /plugin install msc@msc
    ```
 
-   It is also saved in `~/.msc/core/claude-mcp-add.txt`.
+   The plugin's launcher starts the newest install every time, so you never re-register MSC after an update. Coming from an older install? Remove the old registration first: `claude mcp remove msc -s user`.
 3. Make an empty folder, start `claude` in it and ask for a server, for example: "Make a Paper lobby plugin with a /spawn command and build a small spawn platform." The AI scaffolds the project there (`project_scaffold`), downloads Paper and installs the agent (`server_setup`), then builds, deploys and restarts in one call (`dev_cycle`).
 
-The dev server's Minecraft EULA (https://aka.ms/MinecraftEULA) must be accepted once per server: the AI asks you, then calls `server_setup` with `acceptEula=true`.
+Every dev server except Minestom and the Velocity proxy (Paper, Purpur, Folia, Fabric, Quilt, NeoForge, Forge) needs your agreement to the Minecraft EULA (https://aka.ms/MinecraftEULA). Nothing accepts it by default. To turn on automatic acceptance for your machine, install with `./gradlew :msc-core:installMsc -Pmsc.acceptEula=true`, or say yes once when the AI asks (it passes `acceptEula=true`). Either one confirms that you read and accept Mojang's EULA, as set out in [TERMS.md](TERMS.md), and from then on MSC writes `eula=true` for every such dev server on that machine ([ADR 0020](msc-docs/docs/adr/0020-machine-eula.md)).
 
 Step-by-step guide: [Wiki](https://github.com/ImNotStable/Minecraft-Server-Creator/wiki) (source in `docs/wiki/`).
 
-To update after pulling new code, close Claude Code (Windows locks the running jars) and run `installMsc` again. Tool reference: [msc-docs/docs/tools.md](msc-docs/docs/tools.md).
+To update after pulling new code, run `installMsc` again, then reconnect msc in `/mcp` (or restart Claude Code). Claude Code can stay open: each install is a new folder. Tool reference: [msc-docs/docs/tools.md](msc-docs/docs/tools.md).
 
-| Module | Phase |
+| Module | What it is |
 | --- | --- |
-| [msc-docs](msc-docs/README.md) | MVP |
-| [msc-protocol](msc-protocol/README.md) | MVP |
-| [msc-core](msc-core/README.md) | MVP |
-| [msc-agent-paper](msc-agent-paper/README.md) | MVP |
-| [msc-templates](msc-templates/README.md) | MVP |
-| [msc-bench](msc-bench/README.md) | MVP |
-| [msc-agent-fabric](msc-agent-fabric/README.md) | Post-MVP |
-| [msc-agent-minestom](msc-agent-minestom/README.md) | Post-MVP |
-| [msc-renderer](msc-renderer/README.md) | Post-MVP |
-| [msc-textures](msc-textures/README.md) | Post-MVP |
+| [msc-docs](msc-docs/README.md) | Plan, tool catalogue, protocol and decision records |
+| [msc-protocol](msc-protocol/README.md) | Messages and transport between the core and the agents |
+| [msc-core](msc-core/README.md) | The MCP server the AI talks to |
+| [msc-agent-common](msc-agent-common/README.md) | The platform-neutral half of every agent |
+| [msc-agent-paper](msc-agent-paper/README.md) | Agent for Paper and Purpur |
+| [msc-agent-fabric](msc-agent-fabric/README.md) | Agent for Fabric and Quilt |
+| [msc-agent-neoforge](msc-agent-neoforge/README.md) | Agent for NeoForge |
+| [msc-agent-forge](msc-agent-forge/README.md) | Agent for Forge |
+| [msc-agent-vanilla](msc-agent-vanilla/README.md) | Vanilla Minecraft sources the Fabric, NeoForge and Forge agents compile in (not a Gradle module) |
+| [msc-agent-minestom](msc-agent-minestom/README.md) | Agent for Minestom |
+| [msc-templates](msc-templates/README.md) | Starter projects per platform |
+| [msc-renderer](msc-renderer/README.md) | Headless renderer behind `world_render` |
+| [msc-textures](msc-textures/README.md) | Texture and resource pack generation |
+| [msc-bot](msc-bot/) | Headless test player behind `player_test` |
+| [msc-bench](msc-bench/README.md) | Benchmark tasks and runner |
+| [msc-process](msc-process/README.md) | Server process control shared by msc-core, msc-bench and msc-bot: the process tree kill, the RCON client, the `server.properties` reader and writer (`ServerPropertiesFile`), the server address read from it (`ServerAddress`), the HTTP stall rule (`HttpStall`), the UTF-8 console flags of a server's Java (`ServerJava`) and the atomic file writer (`AtomicFile`) |
+| [msc-plugin](msc-plugin/README.md) | The Claude Code plugin and its launcher |
 
 ## Build (developing this repo)
 

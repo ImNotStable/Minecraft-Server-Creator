@@ -1,0 +1,24 @@
+[12:00:00 INFO]: Starting minecraft server version 26.3
+[12:00:00 INFO]: [Purpur] Loading purpur.yml
+[12:00:00 INFO]: Loading properties
+[12:00:00 WARN]: ****************************
+[12:00:00 WARN]: YOU ARE RUNNING THIS SERVER AS AN ADMINISTRATIVE OR ROOT USER. THIS IS NOT ADVISED.
+[12:00:00 WARN]: YOU ARE OPENING YOURSELF UP TO POTENTIAL RISKS WHEN DOING THIS.
+[12:00:00 WARN]: FOR MORE INFORMATION, SEE https://madelinemiller.dev/blog/root-minecraft-server/
+[12:00:00 WARN]: ****************************
+[12:00:01 WARN]: **** SERVER IS RUNNING IN OFFLINE/INSECURE MODE!
+[12:00:01 WARN]: The server will make no attempt to authenticate usernames. Beware.
+[12:00:01 WARN]: While this makes the game possible to play without internet access, it also opens up the ability for hackers to connect with any username they choose.
+[12:00:01 WARN]: To change this, set "online-mode" to "true" in the server.properties file.
+[12:00:02 INFO]: [MyPlugin] Enabling MyPlugin v1.0
+[12:00:02 ERROR]: [oshi.driver.windows.registry.HkeyPerformanceDataUtil] Unable to locate English counter names
+com.sun.jna.platform.win32.Win32Exception: The parameter is incorrect.
+	at oshi.util.Memoizer$1.get(Memoizer.java:65) ~[oshi-core-6.9.0.jar:6.9.0]
+[12:00:02 WARN]: [oshi.util.platform.windows.PerfCounterQuery] Unable to locate English counter names in registry Perflib 009. Assuming English counters.
+[12:00:02 WARN]: Failed to get system info for Process Loads
+java.lang.NullPointerException: Cannot invoke "java.util.List.stream()" because "loads" is null
+	at net.minecraft.SystemReport.lambda$putProcessDetails$0(SystemReport.java:190) ~[paper-26.3.jar:26.3-249]
+[12:00:02 WARN]: Failed to get system info for Virtual Size
+[12:00:03 INFO]: Preparing level "world"
+[12:00:04 INFO]: Done preparing level "world" (1.2s)
+[12:00:04 INFO]: Done (3.204s)! For help, type "help"

@@ -1,0 +1,79 @@
+plugins {
+    `java-library`
+    alias(libs.plugins.moddev)
+}
+
+group = "{{packageName}}"
+version = "{{version}}"
+description = "{{description}}"
+
+java {
+    toolchain.languageVersion = JavaLanguageVersion.of(libs.versions.java.get().toInt())
+}
+
+repositories {
+    mavenCentral()
+}
+
+neoForge {
+    version = libs.versions.neoforge.get()
+
+    mods {
+        create("{{modId}}") {
+            sourceSet(sourceSets.main.get())
+        }
+    }
+
+    runs {
+        create("server") {
+            server()
+            // Dev server lives in run/ (server.properties and eula.txt are already there).
+            gameDirectory = project.file("run")
+            programArgument("--nogui")
+        }
+    }
+
+    // Tests run inside a loaded NeoForge server environment, so Minecraft and NeoForge classes work in them.
+    unitTest {
+        enable()
+        testedMod = mods.getByName("{{modId}}")
+    }
+}
+
+// The dev server reads console commands (try `stop`) from this terminal. ModDevGradle's run tasks leave standard
+// input empty, so without this the server's console sees end of input at once and ignores what you type.
+tasks.named<JavaExec>("runServer") {
+    standardInput = System.`in`
+}
+
+dependencies {
+    testImplementation(platform(libs.junit.bom))
+    testImplementation(libs.junit.jupiter)
+    testImplementation(libs.assertj)
+    testRuntimeOnly(libs.junit.platform.launcher)
+}
+
+tasks.withType<JavaCompile>().configureEach {
+    options.encoding = "UTF-8"
+    options.release = libs.versions.java.get().toInt()
+    options.compilerArgs.addAll(listOf("-parameters", "-Xlint:all,-processing,-serial"))
+}
+
+tasks.processResources {
+    val props = mapOf(
+        "version" to version,
+        "neoforgeVersion" to libs.versions.neoforge.get(),
+        "minecraftVersion" to libs.versions.minecraft.get(),
+    )
+    inputs.properties(props)
+    filesMatching("META-INF/neoforge.mods.toml") { expand(props) }
+}
+
+tasks.test {
+    useJUnitPlatform()
+    // Short output: only failures, with the full exception.
+    testLogging {
+        events("failed")
+        exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+    }
+}

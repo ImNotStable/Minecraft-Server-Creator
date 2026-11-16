@@ -10,7 +10,7 @@ The core runs outside the game server and must drive any platform (Paper now; Fa
 
 - **Transport:** one TCP connection on the loopback interface. The **core listens and the agent connects**, because the core starts servers and already knows where it listens. The core passes `MSC_CORE_ADDRESS` (`host:port`) and `MSC_TOKEN` to the server process as environment variables.
 - **Framing:** one UTF-8 JSON object per line, at most 16 MiB. Easy to log and read, no extra library.
-- **Handshake:** agent sends `hello` (protocol version, token, agent info with its operation list); the core answers `welcome` or `goodbye` with an error code. Tokens are compared in constant time.
+- **Handshake:** agent sends `hello` (protocol version, token, agent info with its operation list); the core answers `welcome` or `goodbye` with an error code. Tokens are compared in constant time. (Protocol 2 replaced the token in `hello` with a mutual proof: [ADR 0043](0043-agent-link-auth.md).)
 - **After the handshake** both sides are symmetric: requests with ids, responses, one-way events, ping/pong.
 - **JSON library:** Gson, which Paper, Fabric (through Minecraft) and Minestom all ship, so agents need not shade a JSON library.
 - **Thin agents:** agents read and write blocks, run commands and apply resource packs. Text slices, summaries, log condensing and token budgets are done in the core, so they are written once for every platform.

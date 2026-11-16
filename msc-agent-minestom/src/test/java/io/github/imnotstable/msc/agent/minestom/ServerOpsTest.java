@@ -3,9 +3,13 @@ package io.github.imnotstable.msc.agent.minestom;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.github.imnotstable.msc.agent.common.MainThread;
+import io.github.imnotstable.msc.agent.common.ServerOps;
 import io.github.imnotstable.msc.protocol.op.Ops;
+import java.time.Duration;
 import net.minestom.server.command.builder.Command;
 import net.minestom.server.command.builder.arguments.ArgumentType;
+import net.minestom.server.command.builder.condition.Conditions;
 import net.minestom.server.coordinate.Pos;
 import net.minestom.server.instance.Instance;
 import net.minestom.server.network.packet.server.common.ResourcePackPushPacket;
@@ -33,8 +37,9 @@ class ServerOpsTest {
     };
 
     private static ServerOps ops(Env env) {
-        return new ServerOps(env.process().command(), new Worlds(() -> env.process().instance().getInstances()),
-                () -> env.process().connection().getOnlinePlayers(), MainThread.inline(), FACTS);
+        return new ServerOps(new MinestomServer(env.process().command(),
+                new Worlds(() -> env.process().instance().getInstances(), Duration.ofSeconds(10)),
+                () -> env.process().connection().getOnlinePlayers(), FACTS), MainThread.inline());
     }
 
     @Test
@@ -64,6 +69,33 @@ class ServerOpsTest {
     }
 
     @Test
+    void consoleOnlyCommandsRun(Env env) {
+        Command stop = new Command("halt");
+        stop.setCondition(Conditions::consoleOnly);
+        stop.setDefaultExecutor((sender, context) -> sender.sendMessage("halting"));
+        env.process().command().register(stop);
+
+        Ops.CommandResult result = ops(env).command(new Ops.CommandParams("halt"));
+
+        assertThat(result.success()).isTrue();
+        assertThat(result.output()).containsExactly("halting");
+    }
+
+    @Test
+    void cancelledCommandsFailWithAReason(Env env) {
+        Command boom = new Command("boom");
+        boom.setDefaultExecutor((sender, context) -> {
+            throw new IllegalStateException("boom");
+        });
+        env.process().command().register(boom);
+
+        Ops.CommandResult result = ops(env).command(new Ops.CommandParams("boom"));
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.output()).singleElement().asString().startsWith("Command was cancelled");
+    }
+
+    @Test
     void unknownCommandsFailWithAReason(Env env) {
         ServerOps ops = ops(env);
 
@@ -76,7 +108,7 @@ class ServerOpsTest {
     }
 
     @Test
-    void packGoesToOnlinePlayersAndNewJoins(Env env) {
+    void packGoesToOnlinePlayers(Env env) {
         Instance world = env.createFlatInstance();
         ServerOps ops = ops(env);
         var connection = env.createConnection();

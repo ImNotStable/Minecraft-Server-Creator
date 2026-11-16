@@ -1,0 +1,372 @@
+package io.github.imnotstable.msc.templates;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import java.io.IOException;
+import java.net.URISyntaxException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.regex.Pattern;
+import java.util.stream.Stream;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
+
+/**
+ * Follows each template's CLAUDE.md on a scaffolded project the way the doc words it, and runs the project's tests:
+ * code a doc shows must compile against the template's pinned versions, and a documented change must not turn an
+ * unrelated test red (#401, #480). Each {@code java} block of a doc is a whole file and goes in as written; the
+ * template's {@code doc-names} test files, which use every name the docs list, go in too. For the game templates the
+ * "add a setting" and "add a stage" steps are edits; for paper-game also settings with three kinds of range, a range
+ * open on one side, an unranged decimal (#450), a {@code /game} subcommand that parses its own number and a score in
+ * {@code Progress} (#431, #432). Each game template's "To change a rule" examples, one per rule its doc calls
+ * changeable, are applied together in a build of their own (#481, #491): they touch different constants and rows, so
+ * one build per template proves them all; a harsher set at awkward values, with the shipped values the doc names
+ * moved inside them, gets one more build per template (#498). Only runs via
+ * {@code ./gradlew :msc-templates:verifyTemplates}. When a template's text changes, an edit below that no longer
+ * matches fails with the file and the text it looked for.
+ */
+@Tag("template-build")
+class TemplateRecipesTest {
+    private static final String MAIN = "src/main/java/com/example/verifyme/";
+    private static final String TEST = "src/test/java/com/example/verifyme/";
+    private static final String START_GOAL = "Box.of(-2, -61, 10, 2, -58, 12)";
+    private static final String ARENA_GOAL = "Box.of(-2, -61, 50, 2, -58, 52)";
+
+    private static TemplateBuildTest.Daemon daemon;
+
+    @BeforeAll
+    static void startDaemon() {
+        daemon = TemplateBuildTest.Daemon.forClass("recipes");
+    }
+
+    @AfterAll
+    static void stopDaemon() throws IOException, InterruptedException {
+        daemon.stop();
+    }
+
+    /** Replace the one occurrence of {@code old} in {@code file} with {@code replacement}. */
+    record Edit(String file, String old, String replacement) {
+    }
+
+    /** The CLAUDE.md steps of a game template as edits; none for the other templates, whose docs show whole files. */
+    static List<Edit> edits(String id) {
+        return switch (id) {
+            case Templates.PAPER_GAME -> paperGameEdits();
+            case Templates.FABRIC_GAME -> fabricGameEdits();
+            case Templates.MINESTOM_GAME -> minestomGameEdits();
+            default -> List.of();
+        };
+    }
+
+    private static List<Edit> paperGameEdits() {
+        return Stream.of(
+                // Settings: each key in KEYS, a record component read in from, its default in config.yml and in the
+                // defaults test, and a bad-value case. One plain whole number, and three with their own range (a Need
+                // and its row in ConfigNumbersTest): 1 to 10, 1 to 3 (which leaves out 5) and a decimal 0 to 1.
+                new Edit(MAIN + "GameConfig.java", "\"kit\", \"stages\");",
+                        "\"kit\", \"stages\", \"rounds\", \"teams\", \"lives\", \"drop-chance\", \"speed\", \"gravity\");"),
+                new Edit(MAIN + "GameConfig.java", "Kit kit, List<Stage> stages)",
+                        "Kit kit, List<Stage> stages, int rounds, int teams, int lives, double dropChance, double speed,"
+                                + " double gravity)"),
+                new Edit(MAIN + "GameConfig.java", "    static final Need<Double> PITCH = number(-90, 90);\n",
+                        "    static final Need<Double> PITCH = number(-90, 90);\n"
+                                + "    static final Need<Integer> TEAMS = wholeNumber(1, 10);\n"
+                                + "    static final Need<Integer> LIVES = wholeNumber(1, 3);\n"
+                                + "    static final Need<Double> DROP_CHANCE = number(0, 1);\n"
+                                + "    static final Need<Integer> WAVES = wholeNumber(1, 50);\n"
+                                + "    static final Need<Double> SPEED = number(0, Double.POSITIVE_INFINITY);\n"),
+                new Edit(MAIN + "GameConfig.java", "stages(list(c, \"stages\")));",
+                        "stages(list(c, \"stages\")),\n                wholeNumber(c, \"rounds\", 3),\n"
+                                + "                TEAMS.get(value(c, \"teams\"), \"teams\", 2),\n"
+                                + "                LIVES.get(value(c, \"lives\"), \"lives\", 3),\n"
+                                + "                DROP_CHANCE.get(value(c, \"drop-chance\"), \"drop-chance\", 0.5),\n"
+                                + "                SPEED.get(value(c, \"speed\"), \"speed\", 1.0),\n"
+                                + "                number(c, \"gravity\", 1.0));"),
+                new Edit("src/main/resources/config.yml", "keep-inventory: true\n",
+                        "keep-inventory: true\n# Rounds per game.\nrounds: 3\n# Teams, 1 to 10.\nteams: 2\n"
+                                + "# Lives, 1 to 3.\nlives: 3\n# Chance a mob drops loot, 0 to 1.\ndrop-chance: 0.5\n"
+                                + "# Run speed, 0 or more.\nspeed: 1.0\n# Gravity, any number.\ngravity: 1.0\n"),
+                new Edit(TEST + "GameConfigTest.java", "defaults.stages()));", "defaults.stages(), 3, 2, 3, 0.5, 1.0, 1.0));"),
+                new Edit(TEST + "GameConfigTest.java", "Bad.top(\"world\", \"5\"",
+                        "Bad.top(\"rounds\", \"many\", \"rounds: needs a whole number, got the text 'many'\"),\n"
+                                + "            Bad.top(\"teams\", \"11\","
+                                + " \"teams: needs a whole number from 1 to 10, got the whole number 11\"),\n"
+                                + "            Bad.top(\"lives\", \"'5'\","
+                                + " \"lives: needs a whole number from 1 to 3, got the text '5'\"),\n"
+                                + "            Bad.top(\"drop-chance\", \"1.5\","
+                                + " \"drop-chance: needs a number from 0 to 1, got the decimal 1.5\"),\n"
+                                + "            Bad.top(\"speed\", \"-1\","
+                                + " \"speed: needs a number from 0 (no upper limit), got the whole number -1\"),\n"
+                                + "            Bad.top(\"gravity\", \".inf\", \"gravity: needs a number, got infinity (.inf)\"),\n"
+                                + "            Bad.top(\"world\", \"5\""),
+                new Edit(TEST + "ConfigNumbersTest.java", "setting(\"time\", GameConfig.TIME, 0, GameConfig.MAX_TIME),\n",
+                        "setting(\"time\", GameConfig.TIME, 0, GameConfig.MAX_TIME),\n"
+                                + "            setting(\"teams\", GameConfig.TEAMS, 1, 10),\n"
+                                + "            setting(\"lives\", GameConfig.LIVES, 1, 3),\n"
+                                + "            setting(\"drop-chance\", GameConfig.DROP_CHANCE, 0, 1),\n"
+                                + "            setting(\"speed\", GameConfig.SPEED, 0, Double.POSITIVE_INFINITY),\n"
+                                + "            stageSetting(\"waves\", GameConfig.WAVES, 1, 50),\n"),
+                // A stage setting with a range: its key in STAGE_KEYS, a Stage component read in stages with its Need,
+                // and a bad-value case.
+                new Edit(MAIN + "GameConfig.java", "List.of(\"name\", \"spawn\", \"goal\");",
+                        "List.of(\"name\", \"spawn\", \"goal\", \"waves\");"),
+                new Edit(MAIN + "Stage.java", "@Nullable Box goal)", "@Nullable Box goal, int waves)"),
+                new Edit(MAIN + "GameConfig.java", "where + \".goal\")));",
+                        "where + \".goal\"), WAVES.get(s.get(\"waves\"), where + \".waves\", 1)));"),
+                new Edit(TEST + "GameConfigTest.java", "Bad.stage(\"spawn\", \"{name: a}\"",
+                        "Bad.stage(\"waves\", \"{name: a, spawn: [0, 0, 0], waves: '2'}\","
+                                + " \"stages[0] (a).waves: needs a whole number from 1 to 50,"
+                                + " got the text '2'; remove the quotes\"),\n"
+                                + "            Bad.stage(\"spawn\", \"{name: a}\""),
+                // Another stage, copied into config.yml.
+                new Edit("src/main/resources/config.yml", "    spawn: [0.5, -60, 40.5, 0, 0]\n",
+                        "    spawn: [0.5, -60, 40.5, 0, 0]\n    goal: [-2, -61, 50, 2, -58, 52]\n"
+                                + "  - name: boss\n    spawn: [0.5, -60, 80.5, 0, 0]\n"),
+                // A /game subcommand for a piece of state, reading its own number argument, with its test.
+                new Edit(MAIN + "GameCommand.java", "            default -> error(sender, USAGE);\n", """
+                        case "wave" -> {
+                            try {
+                                int wave = Integer.parseInt(args.length > 1 ? args[1] : "");
+                                ok(sender, "skipped to wave " + wave);
+                            } catch (NumberFormatException e) {
+                                error(sender, "usage: game wave <n>");
+                            }
+                        }
+                        default -> error(sender, USAGE);
+                        """.indent(12)),
+                new Edit(TEST + "VerifyMePluginTest.java", "    @Test\n    void badArgumentsGetAUsefulReply() {\n", """
+                        @Test
+                        void waveSkipsAhead() {
+                            assertThat(console("game wave 5")).containsExactly("skipped to wave 5");
+                            assertThat(console("game wave x")).containsExactly("usage: game wave <n>");
+                        }
+
+                        @Test
+                        void badArgumentsGetAUsefulReply() {
+                        """.indent(4)),
+                // A per-player score in Progress, as its Javadoc suggests, read back from progress.yml.
+                new Edit(MAIN + "Progress.java", "    private final Path file;\n",
+                        "    private final Map<UUID, Integer> scores = new ConcurrentHashMap<>();\n"
+                                + "    private final Path file;\n"),
+                new Edit(MAIN + "Progress.java", "            var section = yaml.getConfigurationSection(\"stage\");\n", """
+                        var scoreSection = yaml.getConfigurationSection("score");
+                        if (scoreSection != null) {
+                            for (String key : scoreSection.getKeys(false)) {
+                                scores.put(playerId(key), scoreSection.getInt(key));
+                            }
+                        }
+                        var section = yaml.getConfigurationSection("stage");
+                        """.indent(12)),
+                new Edit(MAIN + "Progress.java", "    public int size() {\n", """
+                        public int score(UUID player) {
+                            return scores.getOrDefault(player, 0);
+                        }
+
+                        public int size() {
+                        """.indent(4)),
+                new Edit(TEST + "ProgressTest.java",
+                        "    @Test\n    void flushWithoutChangesWritesNothing() throws IOException {\n", """
+                        @Test
+                        void readsScores() throws IOException {
+                            UUID steve = UUID.randomUUID();
+                            Path file = dir.resolve("progress.yml");
+                            Files.writeString(file, "score:\\n  " + steve + ": 7\\n");
+
+                            assertThat(new Progress(file).load().score(steve)).isEqualTo(7);
+                        }
+
+                        @Test
+                        void flushWithoutChangesWritesNothing() throws IOException {
+                        """.indent(4))).toList();
+    }
+
+    private static List<Edit> fabricGameEdits() {
+        return javaGameEdits("Spot",
+                new Edit(MAIN + "GameConfig.java", "List<Stage> stages) {", "List<Stage> stages, int rounds) {"),
+                new Edit(MAIN + "GameConfig.java", "new Spot(0.5, -60, 80.5))));",
+                        "new Spot(0.5, -60, 80.5))),\n                3);"),
+                new Edit(TEST + "TestGames.java", "Kit.of(), stages);", "Kit.of(), stages, 3);"));
+    }
+
+    private static List<Edit> minestomGameEdits() {
+        return javaGameEdits("Pos",
+                new Edit(TEST + "GameThreadsTest.java", START_GOAL + ");", START_GOAL + ", 1);"),
+                new Edit(TEST + "GameThreadsTest.java", ARENA_GOAL + ");", ARENA_GOAL + ", 1);"),
+                new Edit(MAIN + "GameConfig.java", "Set<String> admins) {", "Set<String> admins, int rounds) {"),
+                new Edit(MAIN + "GameConfig.java", "                Set.of());",
+                        "                Set.of(), 3);"),
+                new Edit(TEST + "TestGames.java", "stages, Set.of(\"Steve\"));",
+                        "stages, Set.of(\"Steve\"), 3);"));
+    }
+
+    /**
+     * The fabric-game and minestom-game steps: another stage in {@code game()}, then a {@code Stage} field with a
+     * value in every {@code new Stage(...)} the compiler lists, then the {@code GameConfig} field in {@code config}.
+     */
+    private static List<Edit> javaGameEdits(String pos, Edit... config) {
+        String arena = "new Stage(\"arena\", new " + pos + "(0.5, -60, 40.5)";
+        List<Edit> stage = List.of(
+                new Edit(MAIN + "GameConfig.java", arena + ")",
+                        arena + ", " + ARENA_GOAL + "),\n"
+                                + "                        new Stage(\"boss\", new " + pos + "(0.5, -60, 80.5))"),
+                new Edit(MAIN + "Stage.java", "Box goal) {", "Box goal, int waves) {"),
+                new Edit(MAIN + "Stage.java", "this(name, spawn, null);", "this(name, spawn, null, 1);"),
+                new Edit(MAIN + "GameConfig.java", START_GOAL + "),", START_GOAL + ", 1),"),
+                new Edit(MAIN + "GameConfig.java", ARENA_GOAL + "),", ARENA_GOAL + ", 1),"),
+                new Edit(TEST + "TestGames.java", START_GOAL + "),", START_GOAL + ", 1),"));
+        return Stream.of(stage, List.of(config)).flatMap(List::stream).toList();
+    }
+
+    /**
+     * A game template's "To change a rule for this game" examples as its CLAUDE.md words them, each a check and its rows
+     * in SharedRulesTest: a daytime-only game (and in paper-game the range in config.yml's comment), a kit of at most one
+     * stack, a game within 1000 blocks of 0 0 0 at y -64 to 320, and ASCII-only stage names. None for other templates.
+     */
+    static List<Edit> ruleChanges(String id) {
+        if (!List.of(Templates.PAPER_GAME, Templates.FABRIC_GAME, Templates.MINESTOM_GAME).contains(id)) {
+            return List.of();
+        }
+        String rules = TEST + "SharedRulesTest.java";
+        List<Edit> edits = new ArrayList<>(List.of(
+                new Edit(MAIN + "GameConfig.java", "MAX_TIME = 23999;", "MAX_TIME = 12000;"),
+                new Edit(rules, "ok(23999L), no(24000L)", "ok(12000L), no(12001L)"),
+                new Edit(MAIN + "Kit.java", "MAX_AMOUNT = 36 * 64;", "MAX_AMOUNT = 64;"),
+                new Edit(rules, "ok(2304), no(2305)", "no(65)"),
+                new Edit(MAIN + "Box.java", "MAX_XZ = 30_000_000;", "MAX_XZ = 1000;"),
+                new Edit(MAIN + "Box.java", "MIN_Y = -2032;", "MIN_Y = -64;"),
+                new Edit(MAIN + "Box.java", "MAX_Y = 2031;", "MAX_Y = 320;"),
+                new Edit(rules, "{30000000, 2031, -30000000, 360, 90}", "{1000, 320, -1000, 360, 90}"),
+                new Edit(rules, "{-30000000, -2032, 30000000, -360, -90}", "{-1000, -64, 1000, -360, -90}"),
+                new Edit(rules, "{30000000.5, 0, 0, 0, 0}", "{1000.5, 0, 0, 0, 0}"),
+                new Edit(rules, "{0, 0, -30000001, 0, 0}", "{0, 0, -1001, 0, 0}"),
+                new Edit(rules, "{0, 2031.5, 0, 0, 0}", "{0, 320.5, 0, 0, 0}"),
+                new Edit(rules, "{0, -2033, 0, 0, 0}", "{0, -65, 0, 0, 0}"),
+                new Edit(rules, "{30000000, 2031, 30000000, -30000000, -2032, -30000000}", "{1000, 320, 1000, -1000, -64, -1000}"),
+                new Edit(rules, "{30000001, 0, 0, 0, 0, 0}", "{1001, 0, 0, 0, 0, 0}"),
+                new Edit(rules, "{0, 0, 0, 0, 0, -30000001}", "{0, 0, 0, 0, 0, -1001}"),
+                new Edit(rules, "{0, 2032, 0, 0, 0, 0}", "{0, 321, 0, 0, 0, 0}"),
+                new Edit(rules, "{0, 0, 0, 0, -2033, 0}", "{0, 0, 0, 0, -65, 0}"),
+                new Edit(MAIN + "Stage.java", "c != '§');", "c != '§' && c < 0x80);"),
+                new Edit(MAIN + "Stage.java", "NAME_RULE = \"one word of visible characters (no spaces, no §)\";",
+                        "NAME_RULE = \"one word of ASCII letters, digits and symbols (no spaces)\";"),
+                new Edit(rules, "ok(\"été\"), ok(\"竜\")", "no(\"été\"), no(\"竜\")"),
+                new Edit(rules, ", no(List.of(\"I\", \"ı\"))", "")));
+        if (id.equals(Templates.PAPER_GAME)) {
+            edits.add(new Edit("src/main/resources/config.yml", "0 to 23999 (", "0 to 12000 ("));
+        }
+        return edits;
+    }
+
+    /**
+     * Harsher rule changes than the doc's examples, made the way its "To change a rule" bullet says, shipped values
+     * included (#498): a time limit below the shipped 6000, so the shipped time drops to 0 (in paper-game also the
+     * config.yml comment, the default in GameConfig.from and the defaults test); a kit limit of 1, so the shipped
+     * bread drops to 1; the world narrowed to exactly the bound the doc keeps for the tests' stages; and stage names
+     * with no upper case and no digits, every refused row turned and every pair with a refused name dropped.
+     */
+    static List<Edit> harshRuleChanges(String id) {
+        String rules = TEST + "SharedRulesTest.java";
+        List<Edit> edits = new ArrayList<>(List.of(
+                new Edit(MAIN + "GameConfig.java", "MAX_TIME = 23999;", "MAX_TIME = 500;"),
+                new Edit(rules, "List.of(no(-1L), ok(0L), ok(6000L), ok(23999L), no(24000L))",
+                        "List.of(no(-1L), ok(0L), ok(500L), no(501L))"),
+                new Edit(MAIN + "Kit.java", "MAX_AMOUNT = 36 * 64;", "MAX_AMOUNT = 1;"),
+                new Edit(rules, "List.of(no(-1), no(0), ok(1), ok(64), ok(2304), no(2305))",
+                        "List.of(no(-1), no(0), ok(1), no(2))"),
+                new Edit(MAIN + "Box.java", "MAX_XZ = 30_000_000;", "MAX_XZ = 100;"),
+                new Edit(MAIN + "Box.java", "MIN_Y = -2032;", "MIN_Y = -64;"),
+                new Edit(MAIN + "Box.java", "MAX_Y = 2031;", "MAX_Y = 64;"),
+                new Edit(rules, "{30000000, 2031, -30000000, 360, 90}", "{100, 64, -100, 360, 90}"),
+                new Edit(rules, "{-30000000, -2032, 30000000, -360, -90}", "{-100, -64, 100, -360, -90}"),
+                new Edit(rules, "{30000000.5, 0, 0, 0, 0}", "{100.5, 0, 0, 0, 0}"),
+                new Edit(rules, "{0, 0, -30000001, 0, 0}", "{0, 0, -101, 0, 0}"),
+                new Edit(rules, "{0, 2031.5, 0, 0, 0}", "{0, 64.5, 0, 0, 0}"),
+                new Edit(rules, "{0, -2033, 0, 0, 0}", "{0, -65, 0, 0, 0}"),
+                new Edit(rules, "{30000000, 2031, 30000000, -30000000, -2032, -30000000}", "{100, 64, 100, -100, -64, -100}"),
+                new Edit(rules, "{30000001, 0, 0, 0, 0, 0}", "{101, 0, 0, 0, 0, 0}"),
+                new Edit(rules, "{0, 0, 0, 0, 0, -30000001}", "{0, 0, 0, 0, 0, -101}"),
+                new Edit(rules, "{0, 2032, 0, 0, 0, 0}", "{0, 65, 0, 0, 0, 0}"),
+                new Edit(rules, "{0, 0, 0, 0, -2033, 0}", "{0, 0, 0, 0, -65, 0}"),
+                new Edit(MAIN + "Stage.java", "c != '§');",
+                        "c != '§' && !Character.isUpperCase(c) && !Character.isDigit(c));"),
+                new Edit(MAIN + "Stage.java", "NAME_RULE = \"one word of visible characters (no spaces, no §)\";",
+                        "NAME_RULE = \"one word of lower-case letters and symbols, no digits (no spaces, no §)\";"),
+                new Edit(rules, "ok(\"Boss_Room\"), ok(\"boss-room\"), ok(\"level.2\"), ok(\"2\"),",
+                        "no(\"Boss_Room\"), ok(\"boss-room\"), no(\"level.2\"), no(\"2\"),"),
+                new Edit(rules, "\n            no(List.of(\"Arena\", \"arena\")), no(List.of(\"I\", \"ı\")));", ""),
+                new Edit(rules, ", ok(List.of(\"arena\", \"arena2\")), no(List.of(\"arena\", \"ARENA\")),", ");")));
+        if (id.equals(Templates.PAPER_GAME)) {
+            edits.addAll(List.of(
+                    new Edit("src/main/resources/config.yml", "0 to 23999 (", "0 to 500 ("),
+                    new Edit("src/main/resources/config.yml", "time: 6000\n", "time: 0\n"),
+                    new Edit(MAIN + "GameConfig.java", "\"time\", 6000),", "\"time\", 0),"),
+                    new Edit(TEST + "GameConfigTest.java", "Difficulty.NORMAL, 6000,", "Difficulty.NORMAL, 0,"),
+                    new Edit("src/main/resources/config.yml", "  - bread:8\n", "  - bread:1\n")));
+        } else {
+            edits.addAll(List.of(
+                    new Edit(MAIN + "GameConfig.java", "                6000,\n", "                0,\n"),
+                    id.equals(Templates.FABRIC_GAME)
+                            ? new Edit(MAIN + "GameConfig.java", "Items.BREAD, 8)", "Items.BREAD, 1)")
+                            : new Edit(MAIN + "GameConfig.java", "Material.BREAD, 8)", "Material.BREAD, 1)")));
+        }
+        return edits;
+    }
+
+    @ParameterizedTest
+    @MethodSource("io.github.imnotstable.msc.templates.TemplateDocsTest#projects")
+    void documentedRecipesBuildAndPass(String id) throws IOException, InterruptedException, URISyntaxException {
+        ScaffoldResult r = TemplateBuildTest.scaffoldFresh(id, id + "-recipes");
+        // The docs' java blocks, each a whole file as written, over the shipped file of that name.
+        for (DocCode.Block b : DocCode.javaBlocks(r.root())) {
+            Path file = r.root().resolve(b.path());
+            Files.createDirectories(file.getParent());
+            Files.writeString(file, b.code());
+        }
+        // The names the docs list, in code that only has to compile.
+        Path docNames = TemplateDocNamesTest.docNames(id);
+        if (docNames != null) {
+            try (Stream<Path> files = Files.walk(docNames)) {
+                for (Path f : files.filter(Files::isRegularFile).toList()) {
+                    Path target = r.root().resolve(docNames.relativize(f).toString());
+                    Files.createDirectories(target.getParent());
+                    Files.copy(f, target);
+                }
+            }
+        }
+        apply(r.root(), edits(id));
+        daemon.run(r.root(), "test");
+    }
+
+    /** Each documented rule change, applied the way the doc says, leaves the game's own tests green (#491). */
+    @ParameterizedTest
+    @ValueSource(strings = {Templates.PAPER_GAME, Templates.FABRIC_GAME, Templates.MINESTOM_GAME})
+    void documentedRuleChangesBuildAndPass(String id) throws IOException, InterruptedException {
+        ScaffoldResult r = TemplateBuildTest.scaffoldFresh(id, id + "-rules");
+        apply(r.root(), ruleChanges(id));
+        daemon.run(r.root(), "test");
+    }
+
+    /** Rule changes at awkward values, shipped values moved inside them as the doc says, leave the tests green (#498). */
+    @ParameterizedTest
+    @ValueSource(strings = {Templates.PAPER_GAME, Templates.FABRIC_GAME, Templates.MINESTOM_GAME})
+    void harshRuleChangesBuildAndPass(String id) throws IOException, InterruptedException {
+        ScaffoldResult r = TemplateBuildTest.scaffoldFresh(id, id + "-harsh-rules");
+        apply(r.root(), harshRuleChanges(id));
+        daemon.run(r.root(), "test");
+    }
+
+    private static void apply(Path root, List<Edit> edits) throws IOException {
+        for (Edit e : edits) {
+            Path file = root.resolve(e.file());
+            String text = Files.readString(file);
+            assertThat(text.split(Pattern.quote(e.old()), -1)).as(e.file() + ": " + e.old()).hasSize(2);
+            Files.writeString(file, text.replace(e.old(), e.replacement()));
+        }
+    }
+}

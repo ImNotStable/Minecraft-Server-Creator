@@ -8,6 +8,9 @@ import java.util.List;
  * towards cool in shadow and warm in light, which reads better than plain darker and lighter copies.
  */
 public record Ramp(List<Integer> colors) {
+    private static final double LIGHTEST = 0.94;
+    private static final double MIN_ROOM = 0.05;
+
     public Ramp {
         colors = List.copyOf(colors);
         if (colors.isEmpty()) {
@@ -16,7 +19,8 @@ public record Ramp(List<Integer> colors) {
     }
 
     /**
-     * Build {@code count} shades around {@code base}, which lands in the middle.
+     * Build {@code count} shades around {@code base}, which lands in the middle, or at the light (dark) end
+     * when it is too light (dark) to have lighter (darker) shades.
      *
      * @param count 2 to 9 shades; 4 or 5 is typical
      */
@@ -24,22 +28,31 @@ public record Ramp(List<Integer> colors) {
         return from(base, count, 1.0);
     }
 
+    /** The contrast range {@link #from} takes. */
+    public static final double MIN_CONTRAST = 0.2;
+    public static final double MAX_CONTRAST = 1.5;
+
     /**
      * @param contrast 0.2 to 1.5; 1 suits items, about 0.6 suits block textures such as stone
      */
     public static Ramp from(int base, int count, double contrast) {
-        if (contrast < 0.2 || contrast > 1.5) {
-            throw new TextureException("ramp contrast must be 0.2 to 1.5, not " + contrast);
+        if (contrast < MIN_CONTRAST || contrast > MAX_CONTRAST) {
+            throw new TextureException("ramp contrast must be " + MIN_CONTRAST + " to " + MAX_CONTRAST + ", not " + contrast);
         }
         if (count < 2 || count > 9) {
             throw new TextureException("ramp size must be 2 to 9, not " + count);
         }
         double[] hsl = Colors.toHsl(base);
-        int mid = (count - 1) / 2;
+        double lightRoom = (LIGHTEST - hsl[2]) * Math.min(1, 0.75 * contrast);
+        double darkRoom = hsl[2] * 0.55 * contrast;
+        // A base too light (or too dark) to shade further moves to the end of the ramp, so it stays darkest first.
+        int mid = lightRoom < MIN_ROOM && darkRoom >= lightRoom ? count - 1
+                : darkRoom < MIN_ROOM && lightRoom > darkRoom ? 0
+                : (count - 1) / 2;
         List<Integer> out = new ArrayList<>(count);
         for (int i = 0; i < count; i++) {
-            double t = mid == 0 ? i : (double) (i - mid) / Math.max(mid, count - 1 - mid);
-            double light = t < 0 ? hsl[2] * (1 + 0.55 * contrast * t) : hsl[2] + (0.94 - hsl[2]) * Math.min(1, 0.75 * contrast) * t;
+            double t = (double) (i - mid) / Math.max(mid, count - 1 - mid);
+            double light = t < 0 ? hsl[2] - darkRoom * -t : hsl[2] + lightRoom * t;
             double hue = hsl[0] + shift(hsl[0], t);
             double sat = t < 0 ? Math.min(1, hsl[1] * (1 - 0.1 * t)) : hsl[1] * (1 - 0.45 * t * t);
             out.add(Colors.fromHsl(hue, sat, light, 0xFF));

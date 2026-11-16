@@ -1,0 +1,30 @@
+// Written by msc-core for dev_cycle: mscJar builds only what the dev server loads, nothing else of `assemble`.
+rootProject { p ->
+    p.afterEvaluate {
+        if (p.findProperty('msc.thin') == 'true' && p.plugins.hasPlugin('application')
+                && p.application.mainClass.isPresent()) {
+            // A server run from its project: its classes in a thin server.jar, dependencies beside it in libs/,
+            // so an edit rewrites a few kilobytes instead of a fat jar.
+            def out = p.layout.buildDirectory.dir('msc')
+            def runtime = p.configurations.named('runtimeClasspath')
+            def libs = p.tasks.register('mscLibs', Sync) {
+                from runtime
+                into out.map { it.dir('libs') }
+            }
+            p.tasks.register('mscJar', Jar) {
+                dependsOn libs
+                from p.sourceSets.main.output
+                destinationDirectory = out
+                archiveFileName = 'server.jar'
+                manifest.attributes('Main-Class': p.application.mainClass.get(),
+                        'Class-Path': runtime.get().files.collect { 'libs/' + it.name }.join(' '))
+            }
+        } else {
+            // Fat jar (Minestom), remapped mod (Fabric), plain plugin jar (Paper); else everything assemble makes.
+            def name = ['shadowJar', 'remapJar', 'jar', 'assemble'].find { p.tasks.names.contains(it) }
+            if (name != null) {
+                p.tasks.register('mscJar') { dependsOn name }
+            }
+        }
+    }
+}

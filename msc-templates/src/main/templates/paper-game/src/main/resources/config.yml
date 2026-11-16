@@ -1,0 +1,29 @@
+# Game settings. The plugin applies them to the game world on start and to every player who joins.
+# Coordinates fit the dev server's flat world, where you stand at y -60.
+# A wrong value or an unknown key stops the plugin with one error naming the key; a missing key takes its default.
+
+world: world
+# Game mode for players: adventure (no breaking or placing), survival or creative.
+game-mode: adventure
+# World difficulty: peaceful, easy, normal or hard. The dev server starts peaceful, so set it here.
+difficulty: normal
+# Time is frozen at this tick, 0 to 23999 (0 sunrise, 6000 noon, 13000 night, 18000 midnight). Weather stays clear.
+time: 6000
+# Natural mob spawning is off. Mobs your code, commands and spawner blocks spawn still appear.
+natural-spawns: false
+# Players keep their items and levels when they die.
+keep-inventory: true
+
+# Items every player gets on join (inventory cleared first) and on /game kit. Format: item or item:amount.
+kit:
+  - wooden_sword
+  - bread:8
+
+# Stages in play order. A player starts at the first one, respawns at their current one, and advances when
+# they step into its goal box (optional: block corners x1 y1 z1 x2 y2 z2, whole numbers). Progress is saved in progress.yml.
+stages:
+  - name: start
+    spawn: [0.5, -60, 0.5, 0, 0]   # x y z yaw pitch
+    goal: [-2, -61, 10, 2, -58, 12]
+  - name: arena
+    spawn: [0.5, -60, 40.5, 0, 0]

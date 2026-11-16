@@ -1,0 +1,65 @@
+plugins {
+    java
+    alias(libs.plugins.forgegradle)
+}
+
+group = "{{packageName}}"
+version = "{{version}}"
+description = "{{description}}"
+
+java {
+    toolchain.languageVersion = JavaLanguageVersion.of(libs.versions.java.get().toInt())
+}
+
+minecraft {
+    runs {
+        register("server") {
+            // Dev server lives in run/ (server.properties and eula.txt are already there).
+            workingDir = layout.projectDirectory.dir("run")
+            args("--nogui")
+        }
+    }
+}
+
+repositories {
+    minecraft.mavenizer(this)
+    maven(fg.forgeMaven)
+    maven(fg.minecraftLibsMaven)
+    mavenCentral()
+}
+
+dependencies {
+    implementation(minecraft.dependency(libs.forge))
+    // Checks @SubscribeEvent and listener signatures at compile time.
+    annotationProcessor(libs.eventbus.validator)
+
+    testImplementation(platform(libs.junit.bom))
+    testImplementation(libs.junit.jupiter)
+    testImplementation(libs.assertj)
+    testRuntimeOnly(libs.junit.platform.launcher)
+}
+
+tasks.withType<JavaCompile>().configureEach {
+    options.encoding = "UTF-8"
+    options.release = libs.versions.java.get().toInt()
+    options.compilerArgs.addAll(listOf("-parameters", "-Xlint:all,-processing,-serial"))
+}
+
+tasks.processResources {
+    val props = mapOf(
+        "version" to version,
+        "forgeMajor" to libs.versions.forge.get().substringAfter('-').substringBefore('.'),
+        "minecraftVersion" to libs.versions.minecraft.get(),
+    )
+    inputs.properties(props)
+    filesMatching("META-INF/mods.toml") { expand(props) }
+}
+
+tasks.test {
+    useJUnitPlatform()
+    // Short output: only failures, with the full exception.
+    testLogging {
+        events("failed")
+        exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+    }
+}

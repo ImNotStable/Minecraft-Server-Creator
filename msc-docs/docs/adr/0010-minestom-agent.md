@@ -2,6 +2,8 @@
 
 Status: accepted, 2026-11-11. Decided by Claude under Jeremiah's hand-over of build decisions.
 
+This ADR is kept as history: the shared agent code moved to msc-agent-common ([ADR 0024](0024-agent-common.md)), msc-core runs Minestom projects ([ADR 0011](0011-core-platforms.md)), the test count below is from 2026-11-11, and `world.fill` and `world.setBlocks` were removed ([ADR 0019](0019-smaller-tool-surface.md)), so decision 3's nine ops are eight now (#383).
+
 ## Context
 
 Minestom is a library, not a server jar: there is no plugin loader and no vanilla gameplay, and a Minestom server is the user's own `main` method. The core's tools must work against it the same way they work against Paper ([ADR 0006](0006-paper-agent.md)). The newest Minestom build, `2026.10.07-26.2`, speaks Minecraft 26.2, one release behind Paper 26.3.
@@ -12,7 +14,7 @@ Minestom is a library, not a server jar: there is no plugin loader and no vanill
 2. **It ships as one shaded jar inside the template.** `msc-agent-minestom` shades `msc-protocol` (Gson comes from Minestom). `msc-templates` copies the jar into the `minestom-server` template as `libs/msc-agent-minestom.jar`, and the scaffolded project depends on it with `implementation(files(...))`. Nothing has to be published to a Maven repository. A scaffolded project keeps the agent version it was created with; re-copy the jar to update.
 3. **Behaviour matches the Paper agent.** All nine `Ops` are implemented with the same limits, error codes, skip-unchanged edits, in-memory undo (about 8 full-size edits, undo returns a new id), physics off for fills, void air outside the build height, and the same events. The platform-free classes (`EditHistory`, `PackedPos`, `CoreAddress`, `SlicedJob`, `MainThread`) are copies of the Paper agent's; a shared agent-common module is worth it once the Fabric agent is a third copy.
 4. **World names are a tag.** Minestom instances only have UUIDs. `MscAgent.name(instance, "world")` stores the name in the `msc:world` tag; unnamed instances are addressed by UUID. `server.info` lists named worlds first.
-5. **World work runs on the global scheduler at tick start**, in 20 ms slices per tick like Paper. Those tasks run before instances tick, so they never race instance threads. Chunks a call touches are loaded (or generated) first, off the tick thread.
+5. **World work runs on the global scheduler at tick start**, in 20 ms slices per tick like Paper (one budget shared by all jobs in flight, see ADR 0024). Those tasks run before instances tick, so they never race instance threads. Chunks a call touches are loaded (or generated) first, off the tick thread.
 6. **Commands are the server's own.** `server.command` runs through Minestom's `CommandManager` with a capturing console sender. Minestom has no vanilla commands, so `/time` or `/gamemode` answer `success=false` with `Unknown command: time`. World tools do not depend on commands, so every tool still works; tools that send vanilla commands get that one-line answer.
 7. **TPS is measured by the agent** (Minestom has no counter): one sample per tick over the last minute, capped at 20.
 8. **Heightmaps are scanned**, starting at the top of each chunk's highest non-empty section, so the answer is exact and cheap for normal terrain. An empty column reports `minY - 1`.

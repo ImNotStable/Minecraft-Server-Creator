@@ -2,12 +2,15 @@ package io.github.imnotstable.msc.agent.paper;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.imnotstable.msc.agent.common.CoreAddress;
 import io.github.imnotstable.msc.protocol.message.Event;
 import io.github.imnotstable.msc.protocol.op.Events;
 import io.github.imnotstable.msc.protocol.op.Ops;
 import io.github.imnotstable.msc.protocol.transport.CoreServer;
 import io.github.imnotstable.msc.protocol.transport.RequestHandler;
 import io.github.imnotstable.msc.protocol.world.Region;
+import io.github.imnotstable.msc.protocol.world.BlockGrid;
+import java.util.List;
 import java.time.Duration;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
@@ -84,8 +87,9 @@ class AgentSmokeTest {
         assertThat(ready).isNotNull();
         assertThat(ready.name()).isEqualTo(Events.SERVER_READY);
 
-        Ops.EditResult fill = tickUntil(session.connection().call(Ops.WORLD_FILL,
-                new Ops.FillParams(Region.of("world", 0, 64, 0, 3, 64, 3), "minecraft:stone", null), TIMEOUT));
+        Ops.EditResult fill = tickUntil(session.connection().call(Ops.WORLD_WRITE,
+                new Ops.WriteParams(new BlockGrid(Region.of("world", 0, 64, 0, 3, 64, 3), List.of("minecraft:stone"),
+                        new int[16]), false), TIMEOUT));
         assertThat(fill.changed()).isEqualTo(16);
 
         Ops.ReadResult read = tickUntil(session.connection().call(Ops.WORLD_READ,

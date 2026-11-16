@@ -2,10 +2,15 @@ package io.github.imnotstable.msc.textures;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import javax.imageio.ImageIO;
 import org.junit.jupiter.api.Test;
 
 class PackLintTest {
@@ -45,6 +50,35 @@ class PackLintTest {
                 "ERROR assets/msc/models/block/odd.json: parent msc:block/base is not in the pack",
                 "ERROR assets/msc/models/item/ruby.json: texture layer0 = msc:item/rubyy is not in the pack",
                 "INFO assets/msc/textures/item/ruby.png: not used by any model in the pack");
+    }
+
+    @Test
+    void nonStringValuesAreFindingsNotCrashes() {
+        Map<String, byte[]> files = new HashMap<>();
+        files.put("pack.mcmeta", text(META));
+        files.put("assets/msc/models/item/a.json", text("{\"parent\":null}"));
+        files.put("assets/msc/models/item/b.json",
+                text("{\"parent\":\"minecraft:item/generated\",\"textures\":{\"layer0\":{\"a\":1}}}"));
+        files.put("assets/msc/items/c.json", text("{\"model\":{\"type\":[\"a\",\"b\"]}}"));
+        assertThat(lint(files)).containsExactly(
+                "ERROR assets/msc/items/c.json: type must be a string",
+                "ERROR assets/msc/models/item/a.json: parent must be a string",
+                "ERROR assets/msc/models/item/b.json: texture layer0 must be a string");
+    }
+
+    @Test
+    void readsTexturesWiderThanTheCreationLimit() {
+        BufferedImage wide = new BufferedImage(1024, 256, BufferedImage.TYPE_INT_ARGB);
+        wide.setRGB(0, 0, 0xFF808080);
+        ByteArrayOutputStream png = new ByteArrayOutputStream();
+        try {
+            ImageIO.write(wide, "png", png);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+        Map<String, byte[]> files = Map.of("pack.mcmeta", text(META),
+                "assets/minecraft/textures/gui/title/minecraft.png", png.toByteArray());
+        assertThat(PackLint.check(files).ok()).isTrue();
     }
 
     @Test

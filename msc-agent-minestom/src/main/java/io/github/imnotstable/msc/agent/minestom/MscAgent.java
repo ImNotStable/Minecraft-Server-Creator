@@ -1,17 +1,17 @@
 package io.github.imnotstable.msc.agent.minestom;
 
-import com.google.gson.JsonObject;
-import io.github.imnotstable.msc.protocol.Limits;
+import io.github.imnotstable.msc.agent.common.AgentDefaults;
+import io.github.imnotstable.msc.agent.common.AgentLink;
+import io.github.imnotstable.msc.agent.common.AgentLog;
+import io.github.imnotstable.msc.agent.common.AgentRoutes;
+import io.github.imnotstable.msc.agent.common.CoreAddress;
+import io.github.imnotstable.msc.agent.common.EditHistory;
+import io.github.imnotstable.msc.agent.common.MainThread;
+import io.github.imnotstable.msc.agent.common.ServerOps;
+import io.github.imnotstable.msc.agent.common.WorldOps;
 import io.github.imnotstable.msc.protocol.message.AgentInfo;
-import io.github.imnotstable.msc.protocol.message.ErrorCodes;
-import io.github.imnotstable.msc.protocol.op.Events;
 import io.github.imnotstable.msc.protocol.transport.AgentClient;
-import io.github.imnotstable.msc.protocol.transport.Connection;
-import io.github.imnotstable.msc.protocol.transport.OpException;
 import io.github.imnotstable.msc.protocol.transport.OpRouter;
-import java.io.IOException;
-import java.lang.System.Logger.Level;
-import java.time.Duration;
 import net.minestom.server.MinecraftServer;
 import net.minestom.server.entity.Player;
 import net.minestom.server.event.EventFilter;
@@ -20,7 +20,6 @@ import net.minestom.server.event.player.PlayerDisconnectEvent;
 import net.minestom.server.event.player.PlayerSpawnEvent;
 import net.minestom.server.event.trait.PlayerEvent;
 import net.minestom.server.instance.Instance;
-import net.minestom.server.timer.ExecutionType;
 import net.minestom.server.timer.TaskSchedule;
 
 /**
@@ -39,56 +38,55 @@ import net.minestom.server.timer.TaskSchedule;
  * <p>The agent connects to msc-core when the core started this server ({@code MSC_CORE_ADDRESS} and
  * {@code MSC_TOKEN} are set, or the {@code msc.core.address} and {@code msc.token} system
  * properties) and otherwise stays idle, so it is safe to leave in a production build. Connecting
- * happens on a virtual thread and never delays startup.
+ * happens on a virtual thread and never delays startup. While the core runs the server, the agent also adds a
+ * {@code /tp <player> <x> <y> <z>} command on the first tick when the server has none by then, so the AI's test player can move as on other
+ * platforms.
  */
 public final class MscAgent {
-    /** Time a sliced job may use per tick. 20 ms of a 50 ms tick keeps the server at 20 TPS. */
-    static final Duration TICK_BUDGET = Duration.ofMillis(20);
-    static final Duration OP_TIMEOUT = Duration.ofMinutes(2);
-    static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(10);
-    /** Blocks of undo history kept, about 8 full-size edits. */
-    static final long UNDO_BLOCKS = 8 * Limits.MAX_REGION_VOLUME;
-
-    private static final System.Logger LOG = System.getLogger("msc-agent");
-
     private final ServerOps serverOps;
-    private final OpRouter router;
-    private final AgentInfo info;
+    private final AgentLink link;
     private final EventNode<PlayerEvent> events = EventNode.type("msc-agent", EventFilter.PLAYER);
-    private volatile AgentClient.Session session;
     private volatile boolean loaded;
-    private volatile boolean readySent;
-    private volatile boolean stopping;
 
     private MscAgent() {
         TickRate ticks = new TickRate(20);
-        MainThread main = new SchedulerMainThread(MinecraftServer.getSchedulerManager(), TICK_BUDGET, OP_TIMEOUT);
-        ServerFacts facts = new MinestomServerFacts(ticks);
-        Worlds worlds = new Worlds(() -> MinecraftServer.getInstanceManager().getInstances());
-        serverOps = new ServerOps(MinecraftServer.getCommandManager(), worlds,
-                () -> MinecraftServer.getConnectionManager().getOnlinePlayers(), main, facts);
-        WorldOps worldOps = new WorldOps(worlds, main, new EditHistory(UNDO_BLOCKS), OP_TIMEOUT);
-        router = AgentRoutes.router(serverOps, worldOps);
-        info = new AgentInfo("minestom", facts.platformVersion(), facts.minecraftVersion(), router.operations());
+        MainThread main = new SchedulerMainThread(MinecraftServer.getSchedulerManager(), AgentDefaults.TICK_BUDGET,
+                AgentDefaults.OP_TIMEOUT);
+        Worlds worlds = new Worlds(() -> MinecraftServer.getInstanceManager().getInstances(), AgentDefaults.OP_TIMEOUT);
+        MinestomServer server = new MinestomServer(MinecraftServer.getCommandManager(), worlds,
+                () -> MinecraftServer.getConnectionManager().getOnlinePlayers(), new MinestomServerFacts(ticks));
+        serverOps = new ServerOps(server, main);
+        WorldOps<?> worldOps = new WorldOps<>(worlds, main, new EditHistory<>(AgentDefaults.UNDO_BLOCKS));
+        OpRouter router = AgentRoutes.router(serverOps, worldOps);
+        AgentInfo info = new AgentInfo(server.platform(), server.platformVersion(), server.minecraftVersion(),
+                router.operations());
+        link = new AgentLink(info, router, AgentLog.of(System.getLogger("msc-agent")));
 
         events.addListener(PlayerSpawnEvent.class, e -> {
             if (e.isFirstSpawn()) {
-                serverOps.onJoin(e.getPlayer());
-                send(Events.PLAYER_JOIN, player(e.getPlayer()));
+                Player player = e.getPlayer();
+                serverOps.currentPack().ifPresent(pack -> player.sendResourcePacks(MinestomServer.request(pack)));
+                link.playerJoined(player.getUsername(), player.getUuid());
             }
         });
-        events.addListener(PlayerDisconnectEvent.class, e -> send(Events.PLAYER_QUIT, player(e.getPlayer())));
+        events.addListener(PlayerDisconnectEvent.class, e -> link.playerQuit(e.getPlayer().getUsername(), e.getPlayer().getUuid()));
         MinecraftServer.getGlobalEventHandler().addChild(events);
+        // The test player moves with /tp, which Minestom does not have: give the dev server one once it runs,
+        // so a tp the server registers after start() wins instead of failing to register.
+        if (CoreAddress.resolve().isPresent()) {
+            DevTeleport.registerOnFirstTick(MinecraftServer.getSchedulerManager(), MinecraftServer.getCommandManager(),
+                    MinecraftServer.getConnectionManager()::getOnlinePlayerByUsername);
+        }
 
         // Ticks only run once the server has started, so the first one marks it ready.
-        MinecraftServer.getSchedulerManager().submitTask(() -> {
+        SchedulerMainThread.fromNextTick(MinecraftServer.getSchedulerManager(), () -> {
             ticks.tick(System.nanoTime());
             if (!loaded) {
                 loaded = true;
-                Thread.ofVirtual().name("msc-agent-ready").start(this::maybeSendReady);
+                Thread.ofVirtual().name("msc-agent-ready").start(link::serverLoaded);
             }
-            return stopping ? TaskSchedule.stop() : TaskSchedule.nextTick();
-        }, ExecutionType.TICK_START);
+            return link.stopping() ? TaskSchedule.stop() : TaskSchedule.nextTick();
+        });
         MinecraftServer.getSchedulerManager().buildShutdownTask(this::stop);
     }
 
@@ -98,7 +96,7 @@ public final class MscAgent {
      */
     public static MscAgent start() {
         MscAgent agent = new MscAgent();
-        Thread.ofVirtual().name("msc-agent-connect").start(agent::connect);
+        agent.link.start();
         return agent;
     }
 
@@ -112,94 +110,15 @@ public final class MscAgent {
 
     /** The open session, or {@code null} when not connected. */
     public AgentClient.Session session() {
-        return session;
+        return link.session();
     }
 
     /** Tells the core the server is stopping and disconnects. Runs on server shutdown by itself. */
     public void stop() {
-        if (stopping) {
+        if (link.stopping()) {
             return;
         }
-        stopping = true;
         MinecraftServer.getGlobalEventHandler().removeChild(events);
-        AgentClient.Session s = session;
-        if (s != null) {
-            send(Events.SERVER_STOPPING, new JsonObject());
-            s.connection().close(ErrorCodes.SHUTDOWN, "server stopping");
-            session = null;
-        }
-    }
-
-    private void connect() {
-        long backoff = 500;
-        for (int attempt = 1; attempt <= 8 && !stopping; attempt++) {
-            try {
-                CoreAddress address = CoreAddress.resolve().orElse(null);
-                if (address == null) {
-                    LOG.log(Level.INFO, Limits.ENV_CORE_ADDRESS + " is not set; msc agent is idle.");
-                    return;
-                }
-                AgentClient.Session s = AgentClient.connect(address.host(), address.port(), address.token(), info,
-                        router, new CloseListener(), CONNECT_TIMEOUT);
-                session = s;
-                LOG.log(Level.INFO, "Connected to msc-core, session " + s.sessionId());
-                maybeSendReady();
-                return;
-            } catch (OpException e) {
-                LOG.log(Level.ERROR, "msc-core refused the connection: " + e.getMessage());
-                return;
-            } catch (IllegalArgumentException e) {
-                LOG.log(Level.ERROR, "Bad msc-core address: " + e.getMessage());
-                return;
-            } catch (IOException | RuntimeException e) {
-                LOG.log(Level.WARNING, "Could not reach msc-core (attempt " + attempt + "): " + e.getMessage());
-            }
-            try {
-                Thread.sleep(backoff);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                return;
-            }
-            backoff = Math.min(backoff * 2, 5000);
-        }
-    }
-
-    private final class CloseListener implements Connection.Listener {
-        @Override
-        public void onClose(Throwable cause) {
-            session = null;
-            if (!stopping) {
-                LOG.log(Level.WARNING, "Lost connection to msc-core" + (cause == null ? "" : ": " + cause.getMessage())
-                        + "; reconnecting.");
-                readySent = false;
-                Thread.ofVirtual().name("msc-agent-reconnect").start(MscAgent.this::connect);
-            }
-        }
-    }
-
-    private synchronized void maybeSendReady() {
-        if (loaded && !readySent && session != null) {
-            readySent = true;
-            send(Events.SERVER_READY, new JsonObject());
-        }
-    }
-
-    private void send(String event, JsonObject data) {
-        AgentClient.Session s = session;
-        if (s == null) {
-            return;
-        }
-        try {
-            s.connection().sendEvent(event, data);
-        } catch (IOException e) {
-            LOG.log(Level.DEBUG, "Could not send " + event + ": " + e.getMessage());
-        }
-    }
-
-    private static JsonObject player(Player player) {
-        JsonObject data = new JsonObject();
-        data.addProperty("name", player.getUsername());
-        data.addProperty("uuid", player.getUuid().toString());
-        return data;
+        link.stop();
     }
 }

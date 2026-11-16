@@ -3,7 +3,7 @@
 Pixel-art textures without an image model: colour ramps, procedural block patterns, shaded item shapes, recolouring, animation, block and item models, a deterministic pack writer and pack-wide checks. `msc-core` exposes it as tools.
 
 **Phase:** Post-MVP  
-**Status:** Library done and tested (29 tests). Waiting for `msc-core` to expose it as tools.
+**Status:** Library done and tested. `msc-core` exposes it as the `texture`, `texture_view`, `model_create` and `pack` tools (ADR 0023).
 
 ## What it does
 
@@ -11,13 +11,13 @@ Pixel-art textures without an image model: colour ramps, procedural block patter
 | --- | --- |
 | `Ramp` | 2 to 9 shades of one colour, hue-shifted, with a contrast setting |
 | `Patterns` | Tileable, seeded block textures: `noise`, `ore`, `planks`, `bricks` (16, 32 or 64 px) |
-| `Shapes` | Shaded 16x16 item sprites: `gem`, `ingot`, `orb` |
+| `Shapes` | Shaded 16x16 item sprites: `gem`, `ingot`, `orb`, `sword`, `pickaxe`, `food` |
 | `Edits` | `recolor` onto a ramp, `outline`, `quantize` to a colour limit |
 | `Animation` | Frame strips and `.png.mcmeta`; `scroll` and `pulse` generators |
 | `Models` | Block and item models on vanilla parents, item definitions for `item_model` |
-| `PackSource` | Writes textures, animations, models and `pack.mcmeta`; zips deterministically |
+| `PackSource` | Writes textures, animations, models and `pack.mcmeta`; zips deterministically (`msc-core`'s pack builds with it) |
 | `PackLint` | Checks a pack folder or zip for broken references, sizes, palettes and metadata |
-| `PaletteText`, `Stats` | The text format shared with `texture_create`, and a one-line texture summary |
+| `PaletteText`, `Stats` | The text format shared with `msc-core`'s `texture` tool, and a one-line texture summary |
 
 ```java
 Ramp ruby = Ramp.from(Colors.parse("#d4263a"), 5);

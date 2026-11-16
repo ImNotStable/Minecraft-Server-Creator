@@ -2,20 +2,25 @@ package io.github.imnotstable.msc.agent.minestom;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.imnotstable.msc.agent.common.CoreAddress;
 import io.github.imnotstable.msc.protocol.message.Event;
 import io.github.imnotstable.msc.protocol.op.Events;
 import io.github.imnotstable.msc.protocol.op.Ops;
 import io.github.imnotstable.msc.protocol.transport.CoreServer;
 import io.github.imnotstable.msc.protocol.transport.RequestHandler;
 import io.github.imnotstable.msc.protocol.world.Region;
+import io.github.imnotstable.msc.protocol.world.BlockGrid;
+import java.util.List;
 import java.time.Duration;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import net.minestom.server.coordinate.Pos;
+import net.minestom.server.entity.Player;
 import net.minestom.server.instance.Instance;
 import net.minestom.server.instance.block.Block;
+import net.minestom.server.network.packet.server.common.ResourcePackPushPacket;
 import net.minestom.testing.Env;
 import net.minestom.testing.EnvTest;
 import org.junit.jupiter.api.AfterEach;
@@ -76,14 +81,16 @@ class AgentSmokeTest {
         assertThat(session.agent().platform()).isEqualTo("minestom");
         assertThat(session.agent().minecraftVersion()).isEqualTo("26.2");
         assertThat(session.agent().operations()).containsExactlyInAnyOrderElementsOf(Ops.names());
+        assertThat(events.poll(200, TimeUnit.MILLISECONDS)).as("ready before the first tick").isNull();
 
         env.tick();
         Event ready = events.poll(TIMEOUT.toSeconds(), TimeUnit.SECONDS);
         assertThat(ready).isNotNull();
         assertThat(ready.name()).isEqualTo(Events.SERVER_READY);
 
-        Ops.EditResult fill = tickUntil(env, session.connection().call(Ops.WORLD_FILL,
-                new Ops.FillParams(Region.of("world", 0, 64, 0, 3, 64, 3), "minecraft:stone", null), TIMEOUT));
+        Ops.EditResult fill = tickUntil(env, session.connection().call(Ops.WORLD_WRITE,
+                new Ops.WriteParams(new BlockGrid(Region.of("world", 0, 64, 0, 3, 64, 3), List.of("minecraft:stone"),
+                        new int[16]), false), TIMEOUT));
         assertThat(fill.changed()).isEqualTo(16);
 
         Ops.ReadResult read = tickUntil(env, session.connection().call(Ops.WORLD_READ,
@@ -102,5 +109,36 @@ class AgentSmokeTest {
         assertThat(join).isNotNull();
         assertThat(join.name()).isEqualTo(Events.PLAYER_JOIN);
         assertThat(join.data().get("name").getAsString()).isNotBlank();
+    }
+
+    @Test
+    void sendsTheCurrentPackToLaterJoinersAndReportsQuitAndStop(Env env) throws Exception {
+        Instance world = env.createFlatInstance();
+        agent = MscAgent.start();
+        CoreServer.AgentSession session = sessions.poll(TIMEOUT.toSeconds(), TimeUnit.SECONDS);
+        assertThat(session).isNotNull();
+        env.tick();
+        assertThat(events.poll(TIMEOUT.toSeconds(), TimeUnit.SECONDS).name()).isEqualTo(Events.SERVER_READY);
+
+        Ops.PackResult sent = tickUntil(env, session.connection().call(Ops.PACK_APPLY, new Ops.PackParams(
+                "http://127.0.0.1:8123/pack.zip", "0123456789abcdef0123456789abcdef01234567", true), TIMEOUT));
+        assertThat(sent.playersSent()).isZero();
+
+        var connection = env.createConnection();
+        var pushes = connection.trackIncoming(ResourcePackPushPacket.class);
+        Player player = connection.connect(world, new Pos(0, 42, 0));
+        pushes.assertSingle(p -> assertThat(p.url()).isEqualTo("http://127.0.0.1:8123/pack.zip"));
+        assertThat(events.poll(TIMEOUT.toSeconds(), TimeUnit.SECONDS).name()).isEqualTo(Events.PLAYER_JOIN);
+
+        player.remove();
+        Event quit = events.poll(TIMEOUT.toSeconds(), TimeUnit.SECONDS);
+        assertThat(quit).isNotNull();
+        assertThat(quit.name()).isEqualTo(Events.PLAYER_QUIT);
+        assertThat(quit.data().get("name").getAsString()).isEqualTo(player.getUsername());
+
+        agent.stop();
+        Event stopping = events.poll(TIMEOUT.toSeconds(), TimeUnit.SECONDS);
+        assertThat(stopping).isNotNull();
+        assertThat(stopping.name()).isEqualTo(Events.SERVER_STOPPING);
     }
 }

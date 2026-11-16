@@ -1,6 +1,6 @@
 # ADR 0009: Fabric agent and Fabric template
 
-Status: accepted, 2026-11-11. Decided by Claude under Jeremiah's hand-over of build decisions.
+Status: accepted, 2026-11-11. Decided by Claude under Jeremiah's hand-over of build decisions. Amended 2026-11-14 (see the end).
 
 ## Context
 
@@ -26,3 +26,12 @@ Status: accepted, 2026-11-11. Decided by Claude under Jeremiah's hand-over of bu
 - The core's lifecycle tools are still Paper-only: it downloads Paper and puts the agent in `plugins/`. Starting a Fabric server needs a core change: download the Fabric server launcher (`meta.fabricmc.net/v2/versions/loader/26.3/<loader>/<installer>/server/jar`) and copy `msc-agent-fabric.jar` into `mods/`. World and server tools work as soon as the agent connects.
 - Verified in the cloud container: 33 agent tests pass, the template scaffolds, builds and passes its tests, and the mod resolves and loads on a real Fabric 26.3 server (it stopped at the EULA, which was not accepted). Not yet verified on a running world: the Fabric implementations of block access, commands and packs.
 - Everyone building the repo needs a JDK 25 available to Gradle, which the build already required for compiling.
+
+## Amendment, 2026-11-14: statements later changes made untrue (#383)
+
+Found by reading every ADR against the code during the campaign. The original text above is kept as decided; what is true now:
+
+- Decision 2 is superseded: the copied classes moved to msc-agent-common ([ADR 0024](0024-agent-common.md)), which every agent shares.
+- Decisions 4 and 5: `AgentLevel` and `ServerAccess` became msc-agent-common's `AgentWorld` and `AgentServer` (ADR 0024), and the Minecraft side (`FabricLevel`, `FabricServerAccess`, `TickMainThread`, `BlockStates`, `LevelNames`) moved to the `msc-agent-vanilla` source folder as `VanillaLevel`, `VanillaLevels`, `VanillaServer`, `TickMainThread`, `BlockStates` and `LevelNames`, shared with NeoForge and Forge ([ADR 0027](0027-more-platforms.md)). `FabricLevel` and `FabricServerAccess` no longer exist; the Fabric module holds only `MscAgentMod`.
+- Decision 10: the jar also nests msc-agent-common. The `fabricloader` floor is 0.17.0 so the agent runs on Quilt (ADR 0027).
+- The first consequence no longer holds: the core sets up and starts Fabric servers ([ADR 0011](0011-core-platforms.md)).

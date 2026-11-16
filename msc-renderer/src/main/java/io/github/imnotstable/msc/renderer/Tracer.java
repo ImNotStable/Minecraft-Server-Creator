@@ -61,7 +61,7 @@ final class Tracer {
         b = 0;
         a = 0;
         firstHit = -1;
-        march(ox, oy, oz, dx, dy, dz, footprint, footprintPerT, false);
+        march(ox, oy, oz, dx, dy, dz, footprint, footprintPerT, false, Double.POSITIVE_INFINITY, null);
         double rest = 1 - a;
         int ri = (int) Math.round(r + rest * ((BACKGROUND >> 16) & 0xff));
         int gi = (int) Math.round(g + rest * ((BACKGROUND >> 8) & 0xff));
@@ -70,11 +70,20 @@ final class Tracer {
     }
 
     /**
-     * Walks the grid along a ray. In shadow mode it only answers "is something solid in the way"
-     * (returns true); otherwise it accumulates colour front to back until the ray is opaque.
+     * True when something solid (not glass or another see-through block) lies on the ray within {@code maxT}
+     * blocks of its start. {@code (dx, dy, dz)} must be a unit vector. The block in cell {@code ignore} (grid-local
+     * x, y, z; null for none) never blocks, so a ray can start inside a block and still be stopped by its neighbours.
+     */
+    boolean blocked(double ox, double oy, double oz, double dx, double dy, double dz, double maxT, int[] ignore) {
+        return march(ox, oy, oz, dx, dy, dz, 0, 0, true, maxT, ignore);
+    }
+
+    /**
+     * Walks the grid along a ray. In shadow mode it only answers "is something solid in the way before
+     * {@code maxT}" (returns true); otherwise it accumulates colour front to back until the ray is opaque.
      */
     private boolean march(double ox, double oy, double oz, double dx, double dy, double dz, double footprint,
-            double footprintPerT, boolean shadowMode) {
+            double footprintPerT, boolean shadowMode, double maxT, int[] ignore) {
         double tEnter = 0;
         double tLeave = Double.POSITIVE_INFINITY;
         int face = -1;
@@ -101,7 +110,8 @@ final class Tracer {
             }
             tLeave = Math.min(tLeave, t2);
         }
-        if (tEnter > tLeave) {
+        if (tEnter > tLeave || tLeave <= 0) {
+            // tLeave <= 0: the origin is on the grid's outer boundary (or a corner of it) and the ray moves out.
             return false;
         }
         double t = tEnter;
@@ -110,9 +120,24 @@ final class Tracer {
         double[] tNext = new double[3];
         double[] tDelta = new double[3];
         for (int axis = 0; axis < 3; axis++) {
-            double p = o[axis] + d[axis] * (t + 1e-9);
-            cell[axis] = Math.clamp((int) Math.floor(p), 0, size[axis] - 1);
-            if (Math.abs(d[axis]) < 1e-12) {
+            boolean moves = Math.abs(d[axis]) >= 1e-12;
+            int start;
+            if (t == 0) {
+                // The origin is in the grid: on a cell boundary it starts in the cell it moves into. Decided by the
+                // sign of d, not by nudging along it, which a small d cannot move off the boundary.
+                start = (int) Math.floor(o[axis]);
+                if (moves && d[axis] < 0 && o[axis] == start) {
+                    start--;
+                }
+            } else {
+                start = (int) Math.floor(o[axis] + d[axis] * (t + 1e-9));
+            }
+            cell[axis] = Math.clamp(start, 0, size[axis] - 1);
+            if (face < 0 && moves && o[axis] == Math.floor(o[axis])) {
+                // An origin exactly on a cell boundary enters the start cell through a face: it is not inside it.
+                face = axis * 2 + (d[axis] > 0 ? 0 : 1);
+            }
+            if (!moves) {
                 tNext[axis] = Double.POSITIVE_INFINITY;
                 tDelta[axis] = Double.POSITIVE_INFINITY;
             } else if (d[axis] > 0) {
@@ -126,19 +151,21 @@ final class Tracer {
             }
         }
         while (true) {
-            int index = blocks[(cell[1] * sz + cell[2]) * sx + cell[0]];
+            boolean ignored = ignore != null && cell[0] == ignore[0] && cell[1] == ignore[1] && cell[2] == ignore[2];
+            int index = ignored ? -1 : blocks[(cell[1] * sz + cell[2]) * sx + cell[0]];
             Look look = index < 0 ? null : looks[index];
             if (look != null && !(shadowMode && look.translucent)) {
                 if (look.full) {
-                    // A ray that starts inside a full block (face -1) looks out of it, not at it.
+                    // A ray that starts strictly inside a full block (face -1) looks out of it, not at it.
                     if (face >= 0) {
                         if (shadowMode) {
-                            return true;
+                            return t <= maxT;
                         }
                         hit(index, look, Box.FULL, face, t, cell, o, d, footprint + footprintPerT * t);
                     }
                 } else {
-                    double after = shadowMode ? 1e-4 : 1e-9;
+                    // A ray that starts on a box's surface (t = 0) hits it, as it does a full block.
+                    double after = shadowMode ? 1e-4 : -1e-12;
                     while (true) {
                         Box nearest = null;
                         double nearestT = Double.POSITIVE_INFINITY;
@@ -155,7 +182,7 @@ final class Tracer {
                             break;
                         }
                         if (shadowMode) {
-                            return true;
+                            return nearestT <= maxT;
                         }
                         hit(index, look, nearest, nearestFace, nearestT, cell, o, d, footprint + footprintPerT * nearestT);
                         if (a > 0.98) {
@@ -170,6 +197,9 @@ final class Tracer {
             }
             int axis = tNext[0] <= tNext[1] ? (tNext[0] <= tNext[2] ? 0 : 2) : (tNext[1] <= tNext[2] ? 1 : 2);
             t = tNext[axis];
+            if (t > maxT) {
+                return false;
+            }
             cell[axis] += step[axis];
             if (cell[axis] < 0 || cell[axis] >= size[axis]) {
                 return false;
@@ -179,7 +209,10 @@ final class Tracer {
         }
     }
 
-    /** Distance at which the ray enters a box of a cell, or -1 if it misses; sets {@link #hitFace}. */
+    /**
+     * Distance at which the ray enters a box of a cell (negative when it starts inside the box), or -1 if it misses;
+     * sets {@link #hitFace}.
+     */
     private double hitBox(Box box, int[] cell, double[] o, double[] d) {
         double[] lo = {cell[0] + box.x0(), cell[1] + box.y0(), cell[2] + box.z0()};
         double[] hi = {cell[0] + box.x1(), cell[1] + box.y1(), cell[2] + box.z1()};
@@ -206,7 +239,8 @@ final class Tracer {
             }
             far = Math.min(far, t2);
         }
-        if (near > far) {
+        if (near > far || far <= 0) {
+            // far <= 0: the box is behind the ray, or the ray starts on its surface and moves away from it.
             return -1;
         }
         hitFace = face;
@@ -260,7 +294,8 @@ final class Tracer {
         double[] n = NORMALS[face];
         if (shadows && n[0] * SUN[0] + n[1] * SUN[1] + n[2] * SUN[2] > 0) {
             // Shadow mode never touches the colour state, so the nested walk is safe here.
-            boolean dark = march(wx + n[0] * 1e-3, wy + n[1] * 1e-3, wz + n[2] * 1e-3, SUN[0], SUN[1], SUN[2], 0, 0, true);
+            boolean dark = march(wx + n[0] * 1e-3, wy + n[1] * 1e-3, wz + n[2] * 1e-3, SUN[0], SUN[1], SUN[2], 0, 0, true,
+                    Double.POSITIVE_INFINITY, null);
             if (dark) {
                 light *= SHADOW;
             }

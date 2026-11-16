@@ -1,0 +1,9 @@
+[12:00:03 INFO]: Done (3.112s)! For help, type "help"
+[12:05:41 ERROR]: Could not pass event ChunkLoadEvent to MyPlugin v1.0
+java.lang.OutOfMemoryError: Java heap space
+	at MyPlugin-1.0.jar//com.example.myplugin.ChunkCache.put(ChunkCache.java:30) ~[MyPlugin-1.0.jar:?]
+	at org.bukkit.plugin.java.JavaPluginLoader.lambda$createRegisteredListeners$1(JavaPluginLoader.java:306) ~[paper-api-26.3.jar:?]
+[12:05:42 ERROR]: Could not pass event ChunkLoadEvent to MyPlugin v1.0
+java.lang.OutOfMemoryError: Java heap space
+	at MyPlugin-1.0.jar//com.example.myplugin.ChunkCache.put(ChunkCache.java:30) ~[MyPlugin-1.0.jar:?]
+	at org.bukkit.plugin.java.JavaPluginLoader.lambda$createRegisteredListeners$1(JavaPluginLoader.java:306) ~[paper-api-26.3.jar:?]

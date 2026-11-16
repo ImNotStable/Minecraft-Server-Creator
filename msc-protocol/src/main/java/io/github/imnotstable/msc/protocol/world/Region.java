@@ -25,24 +25,42 @@ public record Region(String world, BlockPos min, BlockPos max) {
         return new Region(world, new BlockPos(x1, y1, z1), new BlockPos(x2, y2, z2));
     }
 
+    /** Blocks along X. Throws {@link ArithmeticException} if the span does not fit an int. */
     public int sizeX() {
-        return max.x() - min.x() + 1;
+        return Math.toIntExact(span(min.x(), max.x()));
     }
 
     public int sizeY() {
-        return max.y() - min.y() + 1;
+        return Math.toIntExact(span(min.y(), max.y()));
     }
 
     public int sizeZ() {
-        return max.z() - min.z() + 1;
+        return Math.toIntExact(span(min.z(), max.z()));
     }
 
+    /** Number of blocks, computed in long and capped at {@link Long#MAX_VALUE}, so it never wraps. */
     public long volume() {
-        return (long) sizeX() * sizeY() * sizeZ();
+        try {
+            return Math.multiplyExact(Math.multiplyExact(span(min.x(), max.x()), span(min.y(), max.y())), span(min.z(), max.z()));
+        } catch (ArithmeticException e) {
+            return Long.MAX_VALUE;
+        }
+    }
+
+    private static long span(int lo, int hi) {
+        return (long) hi - lo + 1;
     }
 
     public boolean contains(int x, int y, int z) {
         return x >= min.x() && x <= max.x() && y >= min.y() && y <= max.y() && z >= min.z() && z <= max.z();
+    }
+
+    /**
+     * Whether the point lies in one of this region's blocks: the rule every agent uses for entities, by position and
+     * not by hitbox, so a region split into pieces holds each entity in exactly one piece.
+     */
+    public boolean containsPoint(double x, double y, double z) {
+        return x >= min.x() && x < max.x() + 1 && y >= min.y() && y < max.y() + 1 && z >= min.z() && z < max.z() + 1;
     }
 
     /** Index into a Y-Z-X ordered block array for the world position (x, y, z). */

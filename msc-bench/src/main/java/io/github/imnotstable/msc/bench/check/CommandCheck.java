@@ -1,5 +1,8 @@
 package io.github.imnotstable.msc.bench.check;
 
+import io.github.imnotstable.msc.bench.Text;
+import io.github.imnotstable.msc.bench.run.ChildProcesses;
+import io.github.imnotstable.msc.process.ServerJava;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -9,11 +12,12 @@ import java.util.regex.Pattern;
 
 /**
  * Runs a command in the workspace and passes on the expected exit code (and output pattern, if
- * given). The {@code {gradlew}} placeholder resolves to the workspace's Gradle wrapper for the
- * current OS.
+ * given). The {@code {gradlew}} placeholder (filled, like every check key, by {@link Checks}) is the workspace's
+ * Gradle wrapper for the current OS. {@code addFiles} is a folder of the task copied into the workspace while the command
+ * runs, such as tests the agent never saw, and taken out again afterwards ({@link AddedFiles}).
  */
-record CommandCheck(String name, List<String> run, int timeoutSeconds, int expectExit, Pattern outputMatches)
-        implements Check {
+record CommandCheck(String name, List<String> run, int timeoutSeconds, int expectExit, Pattern outputMatches,
+        Path addFiles) implements Check {
 
     CommandCheck {
         run = List.copyOf(run);
@@ -22,25 +26,61 @@ record CommandCheck(String name, List<String> run, int timeoutSeconds, int expec
         }
     }
 
+    /**
+     * Runs the command; {@code addFiles} is in the workspace only while it runs (#603), and is taken out again (each
+     * file it replaced put back) however the command ends, so a later check of the same workspace meets the agent's
+     * files as this one did. A workspace that cannot be put back fails the check, naming why.
+     */
     @Override
     public CheckResult run(CheckContext context) {
-        List<String> command = Placeholders.fill(run, context.placeholders());
+        if (addFiles == null) {
+            return runCommand(context);
+        }
+        AddedFiles added;
+        try {
+            added = AddedFiles.copy(addFiles, context.workspace());
+        } catch (IOException e) {
+            return CheckResult.fail(name, "cannot add " + addFiles + ": " + e.getMessage());
+        }
+        CheckResult result;
+        try {
+            result = runCommand(context);
+        } catch (RuntimeException | Error e) {
+            try {
+                added.close();
+            } catch (IOException undo) {
+                e.addSuppressed(undo);
+            }
+            throw e;
+        }
+        try {
+            added.close();
+        } catch (IOException e) {
+            return CheckResult.fail(name, "cannot take addFiles out of the workspace again: " + e.getMessage());
+        }
+        return result;
+    }
+
+    private CheckResult runCommand(CheckContext context) {
+        List<String> command = run;
         Path log = null;
         try {
             log = Files.createTempFile("msc-bench-check", ".log");
-            Process process = new ProcessBuilder(command)
+            // A Java tool (or a Gradle build) writes its output as UTF-8, as it is read below (#478).
+            Process process = context.start(ServerJava.processBuilder(command)
                     .directory(context.workspace().toFile())
                     .redirectErrorStream(true)
-                    .redirectOutput(log.toFile())
-                    .start();
+                    .redirectOutput(log.toFile()));
             if (!process.waitFor(timeoutSeconds, TimeUnit.SECONDS)) {
-                process.descendants().forEach(ProcessHandle::destroyForcibly);
-                process.destroyForcibly();
+                ChildProcesses.killTree(process);
                 return CheckResult.fail(name, "timed out after " + timeoutSeconds + "s");
             }
-            String output = Files.readString(log);
+            // Lenient UTF-8 (Text.read): tools write in the console charset (Cp1252 on Windows), and a stray byte must
+            // not fail a command that passed.
+            String output = Text.read(log);
             if (process.exitValue() != expectExit) {
-                return CheckResult.fail(name, "exit " + process.exitValue() + ": " + tail(output));
+                String prefix = "exit " + process.exitValue() + ": ";
+                return CheckResult.fail(name, prefix + tail(output, CheckResult.MAX_DETAIL - prefix.length()));
             }
             if (outputMatches != null && !outputMatches.matcher(output).find()) {
                 return CheckResult.fail(name, "output has no match for /" + outputMatches.pattern() + "/");
@@ -62,8 +102,8 @@ record CommandCheck(String name, List<String> run, int timeoutSeconds, int expec
         }
     }
 
-    private static String tail(String output) {
-        String trimmed = output.strip();
-        return trimmed.length() <= 200 ? trimmed : trimmed.substring(trimmed.length() - 200);
+    /** The end of {@code output}, where a failing tool says why, in {@code max} chars so CheckResult keeps it whole. */
+    private static String tail(String output, int max) {
+        return Text.tailWithEllipsis(output.strip(), max);
     }
 }

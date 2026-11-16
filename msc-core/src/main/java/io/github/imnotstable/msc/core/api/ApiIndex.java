@@ -22,6 +22,42 @@ import java.util.stream.Stream;
  * what does it take" in a few lines, so the AI does not read Javadoc pages or decompile.
  */
 public final class ApiIndex {
+    /** How one agent family's API marks an event. */
+    @FunctionalInterface
+    public interface EventRule {
+        boolean test(ApiIndex index, ClassInfo c);
+
+        /** A subtype, direct or not, of one of {@code roots}. */
+        static EventRule subtypeOf(String... roots) {
+            List<String> all = List.of(roots);
+            return (index, c) -> all.stream().anyMatch(root -> index.isA(c, root));
+        }
+
+        /** A type of one of {@code kinds} under package {@code prefix} whose simple name ends in one of {@code suffixes}. */
+        static EventRule named(String prefix, Set<String> kinds, String... suffixes) {
+            List<String> all = List.of(suffixes);
+            return (index, c) -> c.name().startsWith(prefix) && kinds.contains(c.kind())
+                    && all.stream().anyMatch(c.simpleName()::endsWith);
+        }
+    }
+
+    /**
+     * The event rule of each agent family {@link #findJars} handles (a {@link
+     * io.github.imnotstable.msc.core.server.Platform#agent()} value), kept only here (#114, #606). Fabric API declares
+     * its events as fields of {@code ...Events} and {@code ...Callback} types. Velocity's events share no supertype,
+     * so they are the classes named {@code ...Event} in its event package; its {@code ResultedEvent} interface is not one.
+     */
+    public static final Map<String, EventRule> EVENT_RULES = Map.of(
+            "paper", EventRule.subtypeOf("org.bukkit.event.Event"),
+            "fabric", EventRule.named("net.fabricmc.fabric.api.", Set.of("class", "interface"), "Events", "Callback"),
+            "neoforge", EventRule.subtypeOf("net.neoforged.bus.api.Event"),
+            // Forge's EventBus 7 events implement one of three.
+            "forge", EventRule.subtypeOf("net.minecraftforge.eventbus.api.event.RecordEvent",
+                    "net.minecraftforge.eventbus.api.event.MutableEvent",
+                    "net.minecraftforge.eventbus.api.event.InheritableEvent"),
+            "minestom", EventRule.subtypeOf("net.minestom.server.event.Event"),
+            "velocity", EventRule.named("com.velocitypowered.api.event.", Set.of("class", "record"), "Event"));
+
     private final Map<String, ClassInfo> classes = new LinkedHashMap<>();
     private final List<Path> jars;
 
@@ -56,10 +92,12 @@ public final class ApiIndex {
 
     /**
      * Find the platform's API jars that Gradle already downloaded: Paper API and Adventure for {@code paper},
-     * the Minecraft server, Fabric API and loader for {@code fabric}, Minestom and Adventure for {@code minestom}.
+     * the Minecraft server, Fabric API and loader for {@code fabric}, Minestom and Adventure for {@code minestom}, the
+     * NeoForge or Forge API jars for {@code neoforge} and {@code forge}, Velocity API and Adventure for {@code velocity}.
      *
-     * @param gradleHome usually {@code ~/.gradle}
-     * @param platform   paper, fabric or minestom
+     * @param gradleHome the Gradle user home ({@link io.github.imnotstable.msc.core.server.GradleUserHome})
+     * @param platform   an agent family ({@link io.github.imnotstable.msc.core.server.Platform#agent()}): paper,
+     *                   fabric, neoforge, forge, minestom or velocity
      */
     public static List<Path> findJars(Path gradleHome, String platform) throws IOException {
         Path files = gradleHome.resolve("caches").resolve("modules-2").resolve("files-2.1");
@@ -79,14 +117,28 @@ public final class ApiIndex {
                 }
                 addNewest(out, files.resolve("net.fabricmc").resolve("fabric-loader"));
             }
+            case "neoforge" -> {
+                addNewest(out, files.resolve("net.neoforged").resolve("neoforge"));
+                addNewest(out, files.resolve("net.neoforged").resolve("bus"));
+            }
+            case "forge" -> {
+                addNewest(out, files.resolve("net.minecraftforge").resolve("forge"));
+                addNewest(out, files.resolve("net.minecraftforge").resolve("eventbus"));
+                addNewest(out, files.resolve("net.minecraftforge").resolve("fmlcore"));
+            }
+            case "velocity" -> {
+                addNewest(out, files.resolve("com.velocitypowered").resolve("velocity-api"));
+                addAdventure(out, files);
+            }
             case "minestom" -> {
                 addNewest(out, files.resolve("net.minestom").resolve("minestom"));
                 addAdventure(out, files);
             }
-            default -> {
+            case "paper" -> {
                 addNewest(out, files.resolve("io.papermc.paper").resolve("paper-api"));
                 addAdventure(out, files);
             }
+            default -> throw new IllegalArgumentException("no API jars known for agent family " + platform);
         }
         return out;
     }
@@ -155,20 +207,26 @@ public final class ApiIndex {
         return false;
     }
 
+    /** True for an event of any agent family's API ({@link #EVENT_RULES}), so {@code MSC_API_JARS} of any mix works. */
+    public boolean isEvent(ClassInfo c) {
+        return EVENT_RULES.values().stream().anyMatch(rule -> rule.test(this, c));
+    }
+
     private record Hit(int score, String text) {
     }
 
     /**
      * Search class and member names. Every word must match; classes rank above members.
      *
-     * @param kind null, or one of class, interface, enum, record, annotation, event
+     * @param kind     null, or one of class, interface, enum, record, annotation, event
+     * @param maxLimit the largest limit a caller may ask for; at it, the cut line no longer says to raise the limit
      */
-    public String search(String query, String kind, int limit) {
+    public String search(String query, String kind, int limit, int maxLimit) {
         String[] words = query.toLowerCase(Locale.ROOT).trim().split("[\\s.#(),]+");
         List<Hit> hits = new ArrayList<>();
         for (ClassInfo c : classes.values()) {
             if (kind != null) {
-                boolean match = kind.equals("event") ? isA(c, "org.bukkit.event.Event") : c.kind().equals(kind);
+                boolean match = kind.equals("event") ? isEvent(c) : c.kind().equals(kind);
                 if (!match) {
                     continue;
                 }
@@ -205,7 +263,9 @@ public final class ApiIndex {
             out.append(hits.get(i).text()).append('\n');
         }
         if (hits.size() > limit) {
-            out.append("[").append(hits.size() - limit).append(" more; add words or raise limit]");
+            out.append("[").append(hits.size() - limit).append(" more; add words")
+                    .append(limit < maxLimit ? " or raise limit (at most " + maxLimit + ")" : " to narrow the search")
+                    .append(']');
         }
         return out.toString().stripTrailing();
     }
@@ -232,8 +292,12 @@ public final class ApiIndex {
         return total;
     }
 
-    /** One class: its header, enum constants and members, optionally filtered and with inherited members. */
-    public String describe(String name, String filter, boolean inherited, int limit) {
+    /**
+     * One class: its header, enum constants and members, optionally filtered and with inherited members.
+     *
+     * @param maxLimit the largest limit a caller may ask for; at it, the cut line no longer says to raise the limit
+     */
+    public String describe(String name, String filter, boolean inherited, int limit, int maxLimit) {
         ClassInfo c = find(name);
         String f = filter == null ? null : filter.toLowerCase(Locale.ROOT);
         StringBuilder out = new StringBuilder();
@@ -257,28 +321,49 @@ public final class ApiIndex {
         List<String> lines = new ArrayList<>();
         Set<String> seen = new HashSet<>();
         collect(c, f, lines, seen, null);
-        if (inherited) {
-            Set<String> visited = new HashSet<>();
-            List<String> todo = new ArrayList<>(c.supertypes());
-            while (!todo.isEmpty()) {
-                String s = todo.remove(0);
-                ClassInfo parent = classes.get(s);
-                if (parent != null && visited.add(s)) {
-                    collect(parent, f, lines, seen, parent.simpleName());
-                    todo.addAll(parent.supertypes());
+        // Constants are reached through the class name (MinecraftServer.PROTOCOL_VERSION), so show the ones
+        // inherited from interfaces and superclasses even without inherited=true.
+        for (ClassInfo parent : ancestors(c)) {
+            for (ClassInfo.Member m : parent.members()) {
+                if (!m.method() && m.text().startsWith("static final ")
+                        && (f == null || m.name().toLowerCase(Locale.ROOT).contains(f)) && seen.add(m.text())) {
+                    lines.add(m.text() + (m.deprecated() ? " (deprecated)" : "") + "  <- " + parent.simpleName());
                 }
+            }
+        }
+        if (inherited) {
+            for (ClassInfo parent : ancestors(c)) {
+                collect(parent, f, lines, seen, parent.simpleName());
             }
         }
         for (int i = 0; i < Math.min(limit, lines.size()); i++) {
             out.append(lines.get(i)).append('\n');
         }
         if (lines.size() > limit) {
-            out.append('[').append(lines.size() - limit).append(" more members; use filter or raise limit]");
+            out.append('[').append(lines.size() - limit).append(" more members; use filter")
+                    .append(limit < maxLimit ? " or raise limit (at most " + maxLimit + ")" : " to narrow the list")
+                    .append(']');
         } else if (lines.isEmpty() && constants.isEmpty()) {
             out.append(f == null ? "[no public members]" : "[no members match \"" + filter + "\""
                     + (inherited ? "" : "; try inherited=true") + "]");
         }
         return out.toString().stripTrailing();
+    }
+
+    /** Every indexed supertype of {@code c}, nearest first, each once. */
+    private List<ClassInfo> ancestors(ClassInfo c) {
+        List<ClassInfo> out = new ArrayList<>();
+        Set<String> visited = new HashSet<>();
+        List<String> todo = new ArrayList<>(c.supertypes());
+        while (!todo.isEmpty()) {
+            String s = todo.remove(0);
+            ClassInfo parent = classes.get(s);
+            if (parent != null && visited.add(s)) {
+                out.add(parent);
+                todo.addAll(parent.supertypes());
+            }
+        }
+        return out;
     }
 
     private static void collect(ClassInfo c, String filter, List<String> lines, Set<String> seen, String from) {

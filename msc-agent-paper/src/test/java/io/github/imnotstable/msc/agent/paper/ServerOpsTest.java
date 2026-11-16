@@ -3,9 +3,12 @@ package io.github.imnotstable.msc.agent.paper;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.github.imnotstable.msc.agent.common.MainThread;
+import io.github.imnotstable.msc.agent.common.ServerOps;
 import io.github.imnotstable.msc.protocol.op.Ops;
 import net.kyori.adventure.text.Component;
 import org.bukkit.command.Command;
+import org.bukkit.command.CommandException;
 import org.bukkit.command.CommandSender;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -40,12 +43,12 @@ class ServerOpsTest {
         server = MockBukkit.mock();
         server.addSimpleWorld("world");
         // MockBukkit lacks Server#createCommandSender, so use a console sender that forwards what it receives.
-        ops = new ServerOps(server, MainThread.inline(), FACTS, feedback -> new ConsoleCommandSenderMock() {
+        ops = new ServerOps(new PaperServer(server, FACTS, feedback -> new ConsoleCommandSenderMock() {
             @Override
             public void sendMessage(Component message) {
                 feedback.accept(message);
             }
-        });
+        }), MainThread.inline());
     }
 
     @AfterEach
@@ -64,6 +67,22 @@ class ServerOpsTest {
         assertThat(info.worlds()).contains("world");
         assertThat(info.onlinePlayers()).isEqualTo(1);
         assertThat(info.tps()).isEqualTo(20.0);
+    }
+
+    @Test
+    void commandThatThrowsFailsWithItsCause() {
+        server.getCommandMap().register("test", new Command("broken") {
+            @Override
+            public boolean execute(CommandSender sender, String label, String[] args) {
+                // CraftServer wraps what a command throws, a syntax error included, like this.
+                throw new CommandException("Unhandled exception executing", new IllegalArgumentException("Can't find element 'x'"));
+            }
+        });
+
+        Ops.CommandResult result = ops.command(new Ops.CommandParams("broken"));
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.output()).containsExactly("Can't find element 'x'");
     }
 
     @Test
@@ -97,6 +116,7 @@ class ServerOpsTest {
                 "0123456789abcdef0123456789abcdef01234567", true));
 
         assertThat(result.playersSent()).isEqualTo(2);
+        assertThat(ops.currentPack()).hasValueSatisfying(pack -> assertThat(PaperServer.request(pack).replace()).isTrue());
         assertThatThrownBy(() -> ops.applyPack(new Ops.PackParams("http://x/p.zip", "nope", false)))
                 .isInstanceOf(IllegalArgumentException.class);
     }

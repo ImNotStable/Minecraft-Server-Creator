@@ -1,19 +1,26 @@
 package io.github.imnotstable.msc.bench.run;
 
+import io.github.imnotstable.msc.bench.Quoted;
 import io.github.imnotstable.msc.bench.check.Placeholders;
+import io.github.imnotstable.msc.bench.task.Scaffold;
 import io.github.imnotstable.msc.bench.task.TaskDef;
+import io.github.imnotstable.msc.process.ServerPropertiesFile;
+import io.github.imnotstable.msc.templates.TemplateVariables;
+import io.github.imnotstable.msc.templates.Templates;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Stream;
 
-/** Builds the starting folder for one attempt, identical for every mode except the mode's server plugins. */
+/**
+ * Builds the starting folder for one attempt, identical for every mode except the mode's server plugins: the task's
+ * scaffolded template (if any), then its fixtures, the Gradle wrapper, and the Paper server folder when it needs one.
+ */
 public final class Workspaces {
 
     private Workspaces() {
@@ -23,6 +30,9 @@ public final class Workspaces {
             TaskDef task, Path workspace, BenchConfig config, BenchConfig.Mode mode, Path paperJar, Map<String, String> values)
             throws IOException {
         Files.createDirectories(workspace);
+        if (task.scaffold() != null) {
+            scaffold(task.scaffold(), workspace, config.server().serverPort());
+        }
         for (Path fixture : task.fixtures()) {
             copyTree(fixture, workspace);
         }
@@ -55,12 +65,28 @@ public final class Workspaces {
         return workspace;
     }
 
+    /** Version every scaffolded bench project gets, so checks can name its jar. */
+    public static final String SCAFFOLD_VERSION = "1.0.0";
+
+    static void scaffold(Scaffold scaffold, Path workspace, int serverPort) throws IOException {
+        TemplateVariables vars = TemplateVariables.of(scaffold.name())
+                .withPackageName(scaffold.packageName())
+                .withVersion(SCAFFOLD_VERSION)
+                .withServerPort(serverPort);
+        try {
+            Templates.scaffold(scaffold.template(), workspace, vars);
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            throw new IOException("cannot scaffold " + Quoted.name(scaffold.template()) + ": "
+                    + Quoted.message(e.getMessage()), e);
+        }
+    }
+
     private static boolean isGradleBuild(Path workspace) {
         return Files.isRegularFile(workspace.resolve("settings.gradle.kts"))
                 || Files.isRegularFile(workspace.resolve("build.gradle.kts"));
     }
 
-    private static void prepareServer(
+    static void prepareServer(
             Path server, BenchConfig.Server config, BenchConfig.Mode mode, Path paperJar, Map<String, String> values)
             throws IOException {
         if (paperJar != null) {
@@ -75,7 +101,8 @@ public final class Workspaces {
         props.put("rcon.port", Integer.toString(config.rconPort()));
         props.put("rcon.password", config.rconPassword());
         props.put("broadcast-rcon-to-ops", "false");
-        setProperties(server.resolve("server.properties"), props);
+        // Escaped as the server reads it, so it logs in with the configured password even with a backslash (#392).
+        ServerPropertiesFile.set(server.resolve(ServerPropertiesFile.NAME), props);
         if (!mode.serverPlugins().isEmpty()) {
             Path plugins = server.resolve("plugins");
             Files.createDirectories(plugins);
@@ -98,25 +125,8 @@ public final class Workspaces {
         return jar.getFileName().toString().replaceFirst("-\\d[^-]*(-[A-Za-z0-9.]+)?\\.jar$", ".jar");
     }
 
-    /** Sets keys in a {@code .properties} file, keeping other lines and their order. */
-    static void setProperties(Path file, Map<String, String> values) throws IOException {
-        List<String> lines = Files.isRegularFile(file) ? new ArrayList<>(Files.readAllLines(file)) : new ArrayList<>();
-        Map<String, String> remaining = new LinkedHashMap<>(values);
-        for (int i = 0; i < lines.size(); i++) {
-            String line = lines.get(i);
-            int eq = line.indexOf('=');
-            if (eq > 0 && !line.startsWith("#")) {
-                String key = line.substring(0, eq).strip();
-                if (remaining.containsKey(key)) {
-                    lines.set(i, key + "=" + remaining.remove(key));
-                }
-            }
-        }
-        remaining.forEach((k, v) -> lines.add(k + "=" + v));
-        Files.write(file, lines);
-    }
-
-    static void copyTree(Path from, Path to) throws IOException {
+    /** Copies a folder's contents into another, replacing files that exist. */
+    public static void copyTree(Path from, Path to) throws IOException {
         try (Stream<Path> paths = Files.walk(from)) {
             paths.forEach(source -> {
                 Path target = to.resolve(from.relativize(source).toString());

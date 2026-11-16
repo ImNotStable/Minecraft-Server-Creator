@@ -37,6 +37,20 @@ class ColorsAndRampTest {
     }
 
     @Test
+    void rampIsDarkestFirstEvenForWhiteAndBlack() {
+        for (int base : new int[] {0xFFFFFFFF, 0xFFF5F5F5, 0xFF000000, 0xFF0A0A0A, 0xFFFFFFF0, 0xFF101040}) {
+            for (int count = 2; count <= 9; count++) {
+                Ramp ramp = Ramp.from(base, count);
+                assertThat(ramp.colors()).as("%s x%d", Colors.format(base), count).contains(base);
+                for (int i = 1; i < count; i++) {
+                    assertThat(Colors.luminance(ramp.get(i))).as("%s x%d: %s", Colors.format(base), count, ramp)
+                            .isGreaterThan(Colors.luminance(ramp.get(i - 1)));
+                }
+            }
+        }
+    }
+
+    @Test
     void rampRejectsSillySizes() {
         assertThatThrownBy(() -> Ramp.from(0xFF000000, 1)).isInstanceOf(TextureException.class);
         assertThatThrownBy(() -> Ramp.from(0xFF000000, 12)).isInstanceOf(TextureException.class);

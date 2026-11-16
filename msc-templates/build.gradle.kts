@@ -30,17 +30,29 @@ val templateVersions = mapOf(
     "fabricLoaderVersion" to catalogVersion("fabric-loader"),
     "fabricApiVersion" to catalogVersion("fabric-api"),
     "fabricLoomVersion" to catalogVersion("fabric-loom"),
+    "quiltLoaderVersion" to catalogVersion("quilt-loader"),
+    "quiltInstallerVersion" to catalogVersion("quilt-installer"),
+    "neoforgeVersion" to catalogVersion("neoforge"),
+    "moddevVersion" to catalogVersion("moddev"),
+    "forgeVersion" to catalogVersion("forge"),
+    "forgeGradleVersion" to catalogVersion("forgegradle"),
+    "forgeEventbusVersion" to catalogVersion("forge-eventbus"),
+    "velocityVersion" to catalogVersion("velocity"),
     "minestomVersion" to minestom,
     "minestomMcVersion" to minestom.substringAfterLast("-"),
     "slf4jVersion" to catalogVersion("slf4j"),
     "shadowVersion" to catalogVersion("shadow"),
 )
 
-// The Minestom agent jar (msc-protocol bundled), shipped in minestom-server as libs/msc-agent-minestom.jar.
+// The Minestom agent jar (msc-protocol bundled), shipped in minestom-server and minestom-game as libs/msc-agent-minestom.jar.
 val minestomAgent = configurations.dependencyScope("minestomAgent")
 val minestomAgentJar = configurations.resolvable("minestomAgentJar") { extendsFrom(minestomAgent.get()) }
 dependencies {
     minestomAgent(project(path = ":msc-agent-minestom", configuration = "shadowRuntimeElements")) { isTransitive = false }
+    // For TemplateNameCasesTest: Gson reads fabric.mod.json; Paper's API reads plugin.yml as Paper does (its
+    // SnakeYAML and PluginDescriptionFile checks).
+    testImplementation(libs.gson)
+    testImplementation(libs.paper.api)
 }
 
 abstract class PackTemplates : DefaultTask() {
@@ -67,7 +79,10 @@ abstract class PackTemplates : DefaultTask() {
     abstract val outputDir: DirectoryProperty
 
     companion object {
-        val PROJECT_TEMPLATES = setOf("paper-plugin", "fabric-mod")
+        val PROJECT_TEMPLATES = setOf("paper-plugin", "paper-game", "fabric-mod", "fabric-game", "neoforge-mod", "forge-mod")
+        val MINESTOM_TEMPLATES = setOf("minestom-server", "minestom-game")
+        /** A proxy plugin: its own wrapper, no Minecraft server files in run/ (the proxy writes its own config). */
+        val PROXY_TEMPLATES = setOf("velocity-plugin")
         val WRAPPER_FILES = listOf(
             "gradlew", "gradlew.bat", "gradle/wrapper/gradle-wrapper.jar", "gradle/wrapper/gradle-wrapper.properties")
     }
@@ -93,10 +108,13 @@ abstract class PackTemplates : DefaultTask() {
                 addTree(root.resolve("paper-server"), "run/")
                 WRAPPER_FILES.forEach { files[it] = wrapper.resolve(it) }
             }
-            if (id == "minestom-server") {
+            if (id in MINESTOM_TEMPLATES) {
                 // A Minestom server is its own project: own wrapper, agent jar on its classpath.
                 WRAPPER_FILES.forEach { files[it] = wrapper.resolve(it) }
                 files["libs/msc-agent-minestom.jar"] = minestomAgent.singleFile
+            }
+            if (id in PROXY_TEMPLATES) {
+                WRAPPER_FILES.forEach { files[it] = wrapper.resolve(it) }
             }
             val description = files.remove("template.properties")
             for ((path, file) in files) {
@@ -124,7 +142,7 @@ sourceSets.main {
 }
 
 // Scaffolds every project template into build/ and runs its own Gradle build (compile + tests).
-// Needs Java 25, repo.papermc.io, maven.fabricmc.net and Maven Central, so it is not part of `check`: run it on a dev machine.
+// Needs Java 25, repo.papermc.io, maven.fabricmc.net, maven.neoforged.net, maven.minecraftforge.net and Maven Central, so it is not part of `check`: run it on a dev machine.
 tasks.register<Test>("verifyTemplates") {
     description = "Scaffolds each template and builds it with its own Gradle wrapper."
     group = "verification"

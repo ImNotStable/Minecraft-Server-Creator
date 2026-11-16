@@ -1,0 +1,200 @@
+package io.github.imnotstable.msc.bench.run;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.TimeUnit;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.api.io.TempDir;
+
+/**
+ * #577, #587: the bench kills only what this run started for an attempt, proven by the marks in the process's
+ * environment. Real stand-in processes: what must survive and what must die.
+ */
+@Timeout(value = 2, unit = TimeUnit.MINUTES, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+class AttemptProcessesTest {
+
+    @TempDir
+    Path dir;
+
+    private final AttemptProcesses run = AttemptProcesses.newRun();
+    private final List<ProcessHandle> started = new ArrayList<>();
+    private Path attempts;
+    private Path attempt;
+    private Path workspace;
+
+    @BeforeEach
+    void layOut() throws IOException {
+        Assumptions.assumeTrue(AttemptProcesses.canProve(), "this system shows no process's environment");
+        attempts = dir.resolve("attempts");
+        attempt = Files.createDirectories(attempts.resolve("t/toolset-1"));
+        workspace = Files.createDirectories(attempt.resolve("workspace"));
+        Files.writeString(attempt.resolve("agent-stdout.json"), "{}\n");
+    }
+
+    @AfterEach
+    void stopWhatTheTestStarted() {
+        // Only the processes this test started, each by its pid.
+        started.forEach(p -> {
+            p.descendants().forEach(ProcessHandle::destroyForcibly);
+            p.destroyForcibly();
+        });
+    }
+
+    @Test
+    void killsOnlyWhatThisRunStartedForTheAttempt() throws Exception {
+        Path elsewhere = Files.createDirectories(dir.resolve("elsewhere"));
+        // Must survive: none of them was started by this run for toolset-1.
+        ProcessHandle shell = start(elsewhere, Map.of(), "sh", "-c", "cd \"$0\" && exec sleep 300",
+                workspace.toString()).toHandle();
+        ProcessHandle tail = start(elsewhere, Map.of(), "tail", "-f", attempt.resolve("agent-stdout.json").toString())
+                .toHandle();
+        ProcessHandle otherRun = start(elsewhere, AttemptProcesses.newRun().marks(attempt), "sleep", "300").toHandle();
+        ProcessHandle oldMarker = start(workspace, Map.of(), "sh", "-c", "sleep 300; true", "x",
+                "-Dmsc.bench.attempt=" + attempt).toHandle();
+        Path retryDir = Files.createDirectories(attempts.resolve("t/toolset-1-try2"));
+        ProcessHandle retry = start(elsewhere, run.marks(retryDir), "sleep", "300").toHandle();
+        // A Gradle daemon the attempt started, with no build running: waits on its input, no child of its own.
+        ProcessHandle daemon = start(elsewhere, run.marks(attempt), "sh", "-c", "read x",
+                AttemptProcesses.GRADLE_DAEMON).toHandle();
+        // Must die: started by this run for toolset-1, whatever folder they run in and however they left the tree.
+        ProcessHandle server = start(elsewhere, run.marks(attempt), "sleep", "300").toHandle();
+        ProcessHandle detached = ProcessHandle.of(firstLine(start(elsewhere, run.marks(attempt), "sh", "-c",
+                "{ command -v setsid >/dev/null && exec setsid sleep 300 || exec sleep 300; } "
+                        + "</dev/null >/dev/null 2>&1 & echo $!"))).orElseThrow();
+        started.add(detached);
+        Process wrapperProcess = start(elsewhere, run.marks(attempt), "sh", "-c", "env -i sleep 300 & echo $!; wait");
+        ProcessHandle unmarkedChild = ProcessHandle.of(firstLine(wrapperProcess)).orElseThrow();
+        ProcessHandle wrapper = wrapperProcess.toHandle();
+
+        assertThat(run.in(attempt)).extracting(ProcessHandle::pid)
+                .containsExactlyInAnyOrder(server.pid(), detached.pid(), wrapper.pid());
+        assertThat(run.kill(attempt)).isEqualTo(3);
+        for (ProcessHandle dead : List.of(server, detached, wrapper, unmarkedChild)) {
+            assertThat(dead.onExit().get(10, TimeUnit.SECONDS).isAlive()).isFalse();
+        }
+        for (ProcessHandle alive : List.of(shell, tail, otherRun, oldMarker, retry, daemon)) {
+            assertThat(alive.isAlive()).as(alive.info().commandLine().orElse("pid " + alive.pid())).isTrue();
+        }
+
+        assertThat(run.kill(attempts)).as("the whole run: toolset-1-try2, never the daemon").isEqualTo(1);
+        assertThat(retry.onExit().get(10, TimeUnit.SECONDS).isAlive()).isFalse();
+        assertThat(daemon.isAlive()).isTrue();
+    }
+
+    /**
+     * #595: where the system shows no environment (Windows, macOS; here a stand-in reader that shows none), a process
+     * is the run's only when its whole arguments carry this run's id and an attempt inside the folder.
+     */
+    @Test
+    void withoutEnvironmentsOnlyTheRunsWholeArgumentMarksProveAProcess() throws Exception {
+        AttemptProcesses blind = new AttemptProcesses(run.run(), pid -> Optional.empty(), ProcessArguments::snapshot);
+        Path elsewhere = Files.createDirectories(dir.resolve("elsewhere"));
+        String runMark = AttemptProcesses.RUN_ARGUMENT + run.run();
+        String attemptMark = AttemptProcesses.ATTEMPT_ARGUMENT + attempt;
+        Path retryDir = Files.createDirectories(attempts.resolve("t/toolset-1-try2"));
+        // Must survive.
+        ProcessHandle otherRun = marked(elsewhere, AttemptProcesses.newRun().argumentMarks(attempt));
+        ProcessHandle namesTheFolder = marked(elsewhere, List.of(attemptMark));
+        ProcessHandle tail = start(elsewhere, Map.of(), "tail", "-f", attempt.resolve("agent-stdout.json").toString())
+                .toHandle();
+        ProcessHandle oneArgument = marked(elsewhere, List.of(runMark + " " + attemptMark));
+        ProcessHandle longerArgument = marked(elsewhere, List.of("x" + runMark, attemptMark));
+        ProcessHandle inScript = start(elsewhere, Map.of(), "sh", "-c", "sleep 300; echo " + runMark + " "
+                + attemptMark).toHandle();
+        ProcessHandle noAttempt = marked(elsewhere, List.of(runMark));
+        ProcessHandle alsoOutside = marked(elsewhere, List.of(runMark, attemptMark,
+                AttemptProcesses.ATTEMPT_ARGUMENT + elsewhere));
+        ProcessHandle retry = marked(elsewhere, run.argumentMarks(retryDir));
+        // Must die: the core this run started for toolset-1, marked as the MCP config marks it.
+        ProcessHandle core = marked(elsewhere, run.argumentMarks(attempt));
+
+        assertThat(blind.in(attempt)).extracting(ProcessHandle::pid).containsExactly(core.pid());
+        assertThat(blind.kill(attempt)).isEqualTo(1);
+        assertThat(core.onExit().get(10, TimeUnit.SECONDS).isAlive()).isFalse();
+        for (ProcessHandle alive : List.of(otherRun, namesTheFolder, tail, oneArgument, longerArgument, inScript,
+                noAttempt, alsoOutside, retry)) {
+            assertThat(alive.isAlive()).as(alive.info().commandLine().orElse("pid " + alive.pid())).isTrue();
+        }
+        assertThat(blind.kill(attempts)).as("the whole run: toolset-1-try2").isEqualTo(1);
+        assertThat(retry.onExit().get(10, TimeUnit.SECONDS).isAlive()).isFalse();
+
+        // Where the environment is shown it decides alone: command-line marks without the environment's prove nothing.
+        ProcessHandle argumentsOnly = marked(elsewhere, run.argumentMarks(attempt));
+        assertThat(run.in(attempt)).extracting(ProcessHandle::pid).doesNotContain(argumentsOnly.pid());
+    }
+
+    /**
+     * #595 on Windows' terms: the command lines come from a {@code Win32_Process} query (here its JSON, for real
+     * stand-in processes), quoted as Windows quotes them, and the same whole-argument rule picks the run's core.
+     */
+    @Test
+    void windowsCommandLinesProveTheRunsCoreByTheSameRule() throws Exception {
+        Path spaced = Files.createDirectories(attempts.resolve("t/tool set 1"));
+        ProcessHandle core = start(dir, Map.of(), "sleep", "300").toHandle();
+        ProcessHandle otherRun = start(dir, Map.of(), "sleep", "300").toHandle();
+        ProcessHandle shell = start(dir, Map.of(), "sleep", "300").toHandle();
+        String java = "\\\"C:\\\\Program Files\\\\Java\\\\bin\\\\java.exe\\\"";
+        String json = "[{\"ProcessId\":" + core.pid() + ",\"CommandLine\":\"" + java + " -Dmsc.bench.run=" + run.run()
+                + " \\\"-Dmsc.bench.attempt=" + jsonText(spaced.toString()) + "\\\" -cp lib/* Main\"},"
+                + "{\"ProcessId\":" + otherRun.pid() + ",\"CommandLine\":\"" + java + " -Dmsc.bench.run=other"
+                + " \\\"-Dmsc.bench.attempt=" + jsonText(spaced.toString()) + "\\\" Main\"},"
+                + "{\"ProcessId\":" + shell.pid() + ",\"CommandLine\":\"cmd /c \\\"echo -Dmsc.bench.run=" + run.run()
+                + " -Dmsc.bench.attempt=" + jsonText(spaced.toString()) + "\\\"\"},"
+                + "{\"ProcessId\":4,\"CommandLine\":null}]";
+        Map<Long, List<String>> commandLines = ProcessArguments.parseWindows(json);
+        AttemptProcesses windows = new AttemptProcesses(run.run(), pid -> Optional.empty(),
+                () -> p -> Optional.ofNullable(commandLines.get(p.pid())));
+
+        assertThat(commandLines.get(core.pid())).containsExactly("-Dmsc.bench.run=" + run.run(),
+                "-Dmsc.bench.attempt=" + spaced, "-cp", "lib/*", "Main");
+        assertThat(windows.in(attempts)).extracting(ProcessHandle::pid).containsExactly(core.pid());
+        assertThat(windows.in(attempt)).as("tool set 1 is not inside toolset-1").isEmpty();
+    }
+
+    private static String jsonText(String text) {
+        return text.replace("\\", "\\\\").replace("\"", "\\\"");
+    }
+
+    /** A stand-in process that runs until killed with {@code marks} as whole arguments after its script. */
+    private ProcessHandle marked(Path cwd, List<String> marks) throws IOException {
+        List<String> command = new ArrayList<>(List.of("sh", "-c", "sleep 300; true", "x"));
+        command.addAll(marks);
+        return start(cwd, Map.of(), command.toArray(String[]::new)).toHandle();
+    }
+
+    @Test
+    void neverTheBenchItselfAndNothingWhoseEnvironmentIsHidden() {
+        assertThat(run.in(Path.of("/"))).extracting(ProcessHandle::pid).doesNotContain(ProcessHandle.current().pid());
+        assertThat(AttemptProcesses.environment(Long.MAX_VALUE)).isEmpty();
+    }
+
+    private Process start(Path cwd, Map<String, String> marks, String... command) throws IOException {
+        ProcessBuilder builder = new ProcessBuilder(command).directory(cwd.toFile())
+                .redirectError(ProcessBuilder.Redirect.DISCARD);
+        builder.environment().putAll(marks);
+        Process process = builder.start();
+        started.add(process.toHandle());
+        return process;
+    }
+
+    /** The pid {@code process} printed first. */
+    private static long firstLine(Process process) throws IOException {
+        BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(),
+                StandardCharsets.UTF_8));
+        return Long.parseLong(reader.readLine().strip());
+    }
+}

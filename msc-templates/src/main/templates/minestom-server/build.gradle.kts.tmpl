@@ -43,6 +43,8 @@ tasks.test {
     useJUnitPlatform()
     // Minestom's test environment (lets test players connect from the test thread).
     systemProperty("minestom.inside-test", "true")
+    // Players in tests load chunks around them like real ones; 2 instead of 8 keeps each join fast.
+    systemProperty("minestom.chunk-view-distance", "2")
     // Short output: only failures, with the full exception.
     testLogging {
         events("failed")
@@ -53,6 +55,8 @@ tasks.test {
 // The runnable server: build/libs/{{projectId}}-{{version}}.jar, with every dependency inside.
 tasks.shadowJar {
     archiveClassifier = ""
+    // Service files must all reach the merge step; the default EXCLUDE warns about each one on every build.
+    duplicatesStrategy = DuplicatesStrategy.INCLUDE
     mergeServiceFiles()
 }
 

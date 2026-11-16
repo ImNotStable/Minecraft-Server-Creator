@@ -1,8 +1,7 @@
 package io.github.imnotstable.msc.bench.check;
 
-import com.google.gson.JsonArray;
-import com.google.gson.JsonElement;
-import com.google.gson.JsonObject;
+import io.github.imnotstable.msc.bench.JsonNumbers;
+import io.github.imnotstable.msc.bench.UserJson;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
@@ -27,28 +26,26 @@ record BlocksCheck(String name, List<Expectation> expectations, int maxFailuresS
         expectations = List.copyOf(expectations);
     }
 
-    static BlocksCheck parse(String name, JsonObject json) {
+    /** The keys of a {@code blocks} entry and of a {@code regions} entry (#502). */
+    static final UserJson.Keys BLOCK = UserJson.Keys.of("pos", "block");
+    static final UserJson.Keys REGION = UserJson.Keys.of("from", "to", "block");
+
+    static BlocksCheck parse(String name, UserJson json) {
         List<Expectation> out = new ArrayList<>();
-        if (json.has("blocks")) {
-            for (JsonElement e : json.getAsJsonArray("blocks")) {
-                JsonObject o = e.getAsJsonObject();
-                int[] pos = pos(o.getAsJsonArray("pos"));
-                out.add(new Expectation(pos[0], pos[1], pos[2], Checks.require(o, "block")));
-            }
+        for (UserJson o : json.exactObjects("blocks", BLOCK)) {
+            int[] pos = pos(o, "pos");
+            out.add(new Expectation(pos[0], pos[1], pos[2], Checks.require(o, "block")));
         }
-        if (json.has("regions")) {
-            for (JsonElement e : json.getAsJsonArray("regions")) {
-                JsonObject o = e.getAsJsonObject();
-                int[] a = pos(o.getAsJsonArray("from"));
-                int[] b = pos(o.getAsJsonArray("to"));
-                String block = Checks.require(o, "block");
-                for (int y = Math.min(a[1], b[1]); y <= Math.max(a[1], b[1]); y++) {
-                    for (int z = Math.min(a[2], b[2]); z <= Math.max(a[2], b[2]); z++) {
-                        for (int x = Math.min(a[0], b[0]); x <= Math.max(a[0], b[0]); x++) {
-                            out.add(new Expectation(x, y, z, block));
-                            if (out.size() > MAX_POSITIONS) {
-                                throw new IllegalArgumentException("blocks check covers more than " + MAX_POSITIONS + " positions");
-                            }
+        for (UserJson o : json.exactObjects("regions", REGION)) {
+            int[] a = pos(o, "from");
+            int[] b = pos(o, "to");
+            String block = Checks.require(o, "block");
+            for (int y = Math.min(a[1], b[1]); y <= Math.max(a[1], b[1]); y++) {
+                for (int z = Math.min(a[2], b[2]); z <= Math.max(a[2], b[2]); z++) {
+                    for (int x = Math.min(a[0], b[0]); x <= Math.max(a[0], b[0]); x++) {
+                        out.add(new Expectation(x, y, z, block));
+                        if (out.size() > MAX_POSITIONS) {
+                            throw new IllegalArgumentException("blocks check covers more than " + MAX_POSITIONS + " positions");
                         }
                     }
                 }
@@ -60,11 +57,10 @@ record BlocksCheck(String name, List<Expectation> expectations, int maxFailuresS
         return new BlocksCheck(name, out, 3);
     }
 
-    private static int[] pos(JsonArray array) {
-        if (array == null || array.size() != 3) {
-            throw new IllegalArgumentException("a position is [x, y, z]");
-        }
-        return new int[] {array.get(0).getAsInt(), array.get(1).getAsInt(), array.get(2).getAsInt()};
+    /** The block position {@code holder.field}, {@code [x, y, z]} inside Minecraft's world limits. */
+    private static int[] pos(UserJson holder, String field) {
+        return holder.wholeNumbers(field, "a position is [x, y, z]",
+                JsonNumbers.BLOCK_XZ, JsonNumbers.BLOCK_Y, JsonNumbers.BLOCK_XZ);
     }
 
     @Override
