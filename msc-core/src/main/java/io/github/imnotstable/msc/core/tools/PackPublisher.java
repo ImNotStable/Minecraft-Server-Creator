@@ -15,15 +15,17 @@ import java.nio.file.Path;
 /**
  * Publishing the workspace's pack (ADR 0051): the one function every call that changes the build, or who must serve
  * it, ends with: {@code pack}, dev_cycle's rebuild, a start's send, {@code server_detach}, a switch away and back, and
- * the session end. It goes by the state alone (the build, and whether the server is detached), never by what ran
- * before, so the order of those calls does not matter. In this order:
+ * the session end. It goes by the state alone (the build, and whether the server outlives the session,
+ * {@link ServerManager#lifetime}), never by what ran before, so the order of those calls does not matter. In this order:
  * <ol>
- *   <li>serve: the standalone host serves the build while the server is detached, else this session does
- *       ({@link ResourcePack#serve}); a host that does not come up leaves it served by this session, and says why;</li>
+ *   <li>serve: the standalone host serves the build while the server outlives the session (detached here, or left
+ *       running by an earlier session, #750), else this session does ({@link ResourcePack#serve}); a host that does
+ *       not come up leaves it served by this session, and says why;</li>
  *   <li>offer: where the platform reads {@code server.properties}, the file offers the build while it outlives the
  *       session; once it offers this workspace's pack it keeps following the build (ADR 0017) while the server ends
- *       with the session, and a detached server's offer is withdrawn while no standalone host serves the build past
- *       it (#747); with no build left, such an offer is cleared;</li>
+ *       with the session, and the offer of a server that outlives the session is withdrawn while no standalone host
+ *       serves the build past it (#747, #750); with no build left, such an offer is cleared. Another live session's
+ *       server keeps its offer: that session serves its pack;</li>
  *   <li>send: the connected agent gets the build, unless it already has exactly this one ({@link Send}).</li>
  * </ol>
  */
@@ -131,13 +133,15 @@ public final class PackPublisher {
 
     /**
      * True when a publish now may write {@code server.properties}: the platform reads the pack there, the file exists,
-     * and the server is detached or the file offers this workspace's pack. Checked first by the calls that publish as
-     * steps, so the file is known to be writable.
+     * and the server outlives the session or the file offers this workspace's pack, unless another live session runs
+     * the server. Checked first by the calls that publish as steps, so the file is known to be writable.
      */
     boolean offers() {
         Platform platform = server.platform();
+        ServerManager.Lifetime life = server.lifetime();
         return platform.readsPackProperties() && Files.isRegularFile(properties)
-                && (server.detached() || pack.ours(PackProperties.url(platform, properties)));
+                && (life == ServerManager.Lifetime.OUTLIVES || life == ServerManager.Lifetime.SESSION
+                && pack.ours(PackProperties.url(platform, properties)));
     }
 
     /** {@code server.properties} as it is when a publish may change it ({@link #offers}), to put back; else null. */
@@ -157,14 +161,19 @@ public final class PackPublisher {
         boolean req = required != null ? required : applied != null ? applied.required()
                 : PackProperties.required(platform, properties);
         boolean ours = pack.ours(PackProperties.url(platform, properties));
+        // Whether the server outlives the session: detached here, or left running by an earlier session (#750).
+        ServerManager.Lifetime life = server.lifetime();
         Offer offer = Offer.NONE;
-        if (built != null && (serving.outlives() || ours && !server.detached())) {
+        if (life == ServerManager.Lifetime.OTHER_SESSION) {
+            // That session's server, pack host and offer: not this session's to change (ADR 0037).
+            offer = Offer.NONE;
+        } else if (built != null && (serving.outlives() || ours && life == ServerManager.Lifetime.SESSION)) {
             // Served past the session, or followed for the next MSC start of a server that ends with the session.
             if (ran(steps, OFFER, () -> PackProperties.write(platform, properties, built.url(), built.sha1(), req))) {
                 offer = Offer.OFFERED;
             }
         } else if (ours) {
-            // No build left, or a detached server, which outlives the session, would offer a URL that does not (#747).
+            // No build left, or a server that outlives the session would offer a URL that does not (#747, #750).
             if (ran(steps, OFFER, () -> PackProperties.clear(platform, properties))) {
                 offer = built == null ? Offer.CLEARED : Offer.WITHDRAWN;
             }
