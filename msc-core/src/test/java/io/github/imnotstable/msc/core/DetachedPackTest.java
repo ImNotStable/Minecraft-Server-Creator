@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.github.imnotstable.msc.core.fixture.FailingPackHostMain;
 import io.github.imnotstable.msc.core.fixture.FakeBuildMain;
 import io.github.imnotstable.msc.core.fixture.FakeServerMain;
+import io.github.imnotstable.msc.core.server.PidFile;
 import io.github.imnotstable.msc.core.server.Platform;
 import io.github.imnotstable.msc.core.texture.PackHost;
 import io.github.imnotstable.msc.core.texture.PackProperties;
@@ -151,5 +152,41 @@ class DetachedPackTest {
         String rebuilt = again.replaceAll("(?s).*\nurl: (\\S+).*", "$1");
         assertThat(PackProperties.url(Platform.PAPER, properties)).isEqualTo(rebuilt);
         servedThroughSwitchesAndTheSessionEnd(rebuilt);
+    }
+
+    /**
+     * #747: server.properties already offers the pack (an earlier detach's, kept by the next start), and the host does
+     * not come up on the next detach. The answer promises no restart outside MSC and no pack host, as nothing serves
+     * the pack past the session; the offer is withdrawn, and the next publish whose host comes up offers it again.
+     */
+    @Test
+    void aDetachWhoseHostFailsWithdrawsAnEarlierOfferAndPromisesNoPackHost() throws Exception {
+        Path properties = Files.createDirectories(workspace.resolve("run")).resolve("server.properties");
+        Files.writeString(properties, "motd=x\n");
+        h.ok("server_start", "timeoutSeconds", 30);
+        pixel("ff0000");
+        String url = h.ok("pack").replaceAll("(?s).*\nurl: (\\S+).*", "$1");
+        assertThat(h.ok("server_detach")).contains("\nserver.properties now offers the pack too");
+        h.ok("server_stop");
+        h.ok("server_start", "timeoutSeconds", 30);
+        assertThat(PackProperties.url(Platform.PAPER, properties)).as("the start follows the offer").isEqualTo(url);
+
+        h.core.pack().hostCommand(java(FailingPackHostMain.class));
+        String why = "could not start a standalone pack host (port " + URI.create(url).getPort()
+                + " is taken: Address already in use)";
+        assertThat(h.ok("server_detach")).isEqualTo("server detached: it keeps running after this session ends.\n"
+                + why + ", so the resource pack is served by this session only, until it ends; server.properties "
+                + "offers no pack until a standalone host serves it\nWorld tools and server_command work until this "
+                + "session ends; the next session's server_start, dev_cycle or server_stop stops the server (world "
+                + "saved).");
+        assertThat(PackProperties.url(Platform.PAPER, properties)).as("withdrawn").isNull();
+        assertThat(PidFile.peek(workspace.resolve(".msc/pack-host.pid")).filter(ProcessHandle::isAlive)).isEmpty();
+        assertThat(serves(url)).as("served by this session").isTrue();
+
+        h.core.pack().hostCommand(java(PackHost.class));
+        assertThat(h.ok("server_detach")).contains(", and so does the resource pack host.\n")
+                .contains("\nserver.properties now offers the pack too").endsWith(" and the pack host.");
+        assertThat(PackProperties.url(Platform.PAPER, properties)).as("offered again").isEqualTo(url);
+        servedThroughSwitchesAndTheSessionEnd(url);
     }
 }

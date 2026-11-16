@@ -186,28 +186,23 @@ final class ServerRun {
         }
         steps.ifFails(PackPublisher.SERVE, "the server is detached, but the pack is served by this session only, until "
                         + "it ends; server_detach again hands it to a standalone host")
-                .ifFails(PackPublisher.OFFER, "the server and the pack host run on, but a restart outside MSC offers no "
-                        + "pack; server_detach again offers it");
+                .ifFails(PackPublisher.OFFER, "the server runs on, but " + ServerPropertiesFile.NAME + " may not match "
+                        + "who serves the pack after this session; server_detach again sets it");
         if (!steps.run(DETACH, server::detach)) {
             throw new ToolException(server.notRunning());
         }
         PackPublisher.Published published = publisher.publish(steps, PackPublisher.Send.IF_NEW, null);
-        String properties = "";
-        if (published.offered()) {
-            properties = "\n" + ServerPropertiesFile.NAME + " now offers the pack too, so a restart outside MSC keeps it.";
-        } else if (published.outlives() && !platform.readsPackProperties()) {
-            properties = "\n" + platform.displayName() + " does not read the pack from " + ServerPropertiesFile.NAME
-                    + ", so a restart outside MSC does not offer it.";
+        // Every line on the pack host and the offer comes from what outlives the session (#747).
+        StringBuilder out = new StringBuilder(published.detached());
+        for (String line : new String[] {published.hosting(false), published.restart(platform)}) {
+            if (line != null) {
+                out.append('\n').append(line);
+            }
         }
-        String hosting = published.hosting(false);
-        return "server detached: it keeps running after this session ends"
-                + (published.built() == null ? " (no pack built yet; the pack tool starts a pack host that does too)"
-                : published.outlives() ? ", and so does the resource pack host" : "")
-                + "." + (hosting == null ? "" : "\n" + hosting) + properties + "\n"
-                + (platform.proxy() ? "server_command works" // a proxy has no world (#722)
-                : "World tools and server_command work") + " until this session ends; the next session's server_start, "
-                + "dev_cycle or server_stop stops the server" + (platform.proxy() ? "" : " (world saved)")
-                + " and the pack host.";
+        return out.append('\n').append(platform.proxy() ? "server_command works" // a proxy has no world (#722)
+                : "World tools and server_command work").append(" until this session ends; the next session's "
+                + "server_start, dev_cycle or server_stop stops the server").append(platform.proxy() ? "" : " (world saved)")
+                .append(published.alsoStops()).append('.').toString();
     }
 
     /**
