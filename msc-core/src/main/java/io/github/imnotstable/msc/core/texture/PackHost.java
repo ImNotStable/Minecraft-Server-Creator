@@ -44,7 +44,7 @@ public final class PackHost {
     private static final java.util.regex.Pattern PATH = java.util.regex.Pattern.compile("/pack-([0-9a-f]{40})\\.zip");
 
     /** The line the standalone host prints once it serves, followed by its port ({@link #main}). */
-    public static final String READY = "msc pack host serving on port ";
+    public static final String READY = "pack host serving on port ";
 
     /**
      * Starts a host on a free port outside the ports the system hands out by itself (ADR 0053): a port picked by a

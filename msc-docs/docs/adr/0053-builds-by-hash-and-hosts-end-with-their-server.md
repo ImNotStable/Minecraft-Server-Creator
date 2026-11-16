@@ -60,7 +60,7 @@ Two holes were left after #750, each in a class of paths rather than one call.
      below the ephemeral range: 20000 to 32767 by default, or below the start of Linux's
      `ip_local_port_range` when that is lower. Only a bind that names the port can take it there. If that range has
      nothing free, it falls back to port 0.
-   - The standalone host prints `msc pack host serving on port <port>` once it serves, and only that line counts as
+   - The standalone host prints `pack host serving on port <port>` once it serves, and only that line counts as
      the host coming up. A listener that is not the host, or a host that exits or stays silent for 15 s, is a host
      that did not come up (point 3 of ADR 0051).
 
