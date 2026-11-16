@@ -21,11 +21,28 @@ import java.time.Duration;
  * core gave it, and stops on "stop". Marker files in its working directory script its behaviour.
  */
 public final class FakeServerMain {
+    /** The server port it holds while it runs ({@code bind-port.txt}). */
+    private static final java.net.ServerSocket[] BOUND = new java.net.ServerSocket[1];
+
     private FakeServerMain() {
     }
 
     public static void main(String[] args) throws Exception {
         System.out.println("[12:00:00 INFO]: Starting minecraft server version 26.3");
+        // bind-port.txt: the server's port, bound as Paper binds it, for a port the core does not know (#755).
+        if (Files.exists(Path.of("bind-port.txt"))) {
+            int port = Integer.parseInt(Files.readString(Path.of("bind-port.txt")).strip());
+            System.out.println("[12:00:01 INFO]: Starting Minecraft server on 127.0.0.1:" + port);
+            try {
+                BOUND[0] = new java.net.ServerSocket(port, 50, java.net.InetAddress.getLoopbackAddress());
+            } catch (java.net.BindException e) {
+                System.out.println("[12:00:01 WARN]: **** FAILED TO BIND TO PORT!");
+                System.out.println("[12:00:01 WARN]: The exception was: java.net.BindException: Address already in use");
+                System.out.println("[12:00:01 WARN]: Perhaps a server is already running on that port?");
+                System.out.flush();
+                System.exit(1);
+            }
+        }
         if (Files.exists(Path.of("crash.flag"))) {
             System.out.println("[12:00:01 ERROR]: Failed to start the minecraft server");
             System.exit(1);

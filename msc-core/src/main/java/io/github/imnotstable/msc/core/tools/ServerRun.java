@@ -252,6 +252,8 @@ final class ServerRun {
             // Nothing outlives the session now, so neither does a standalone host: also one whose leftover server
             // exited on its own (#750, #752).
             packNotes[0] = pack.release().note();
+            // This session's pack host off a port the server needs, so the server can bind it (ADR 0054, #755).
+            pack.leaveReservedPort();
             boolean offered = pack.ours(PackProperties.url(server.platform(), serverProperties()));
             packNotes[1] = syncPackProperties();
             return packNotes[0] != null || offered ? "" : null;
@@ -320,7 +322,7 @@ final class ServerRun {
                     .append("after ").append(LogText.seconds(r.millis())).append('\n');
             // What died and the likely fix first (ADR 0040), then the condensed errors.
             CrashTriage.Result triage = CrashTriage.triage(lines, config.serverDir(), server.lastLaunch(),
-                    server.platform());
+                    server.platform(), this::packHolder);
             if (!triage.isEmpty()) {
                 out.append(triage.render(null)).append('\n');
             }
@@ -459,6 +461,26 @@ final class ServerRun {
         } catch (IOException | RuntimeException e) {
             return "\nresource pack not sent (" + Steps.reason(e) + "): run the pack tool";
         }
+    }
+
+    /**
+     * The fix when an MSC pack host holds the server's {@code port} (#755), told by the host's identity (ADR 0054);
+     * null when none does. This session's own host lets go of the port, and never takes it again in this session.
+     */
+    private String packHolder(int port) {
+        ResourcePack.Holder who = pack.holder(port);
+        if (who == null) {
+            return null;
+        }
+        return switch (who.kind()) {
+            case OWN -> "this session's resource pack host held port " + port + (pack.avoid(port)
+                    ? " and has moved to a free one: start the server again" : ": start the server again");
+            case STANDALONE -> "this workspace's standalone resource pack host (pid " + who.pid() + ") holds port "
+                    + port + ": server_stop stops it";
+            case OTHER -> "an MSC resource pack host of another workspace or session (pid " + who.pid()
+                    + ") holds port " + port + ": end that session or stop that process, else give this server"
+                    + " another port";
+        };
     }
 
     private String modeLine() {

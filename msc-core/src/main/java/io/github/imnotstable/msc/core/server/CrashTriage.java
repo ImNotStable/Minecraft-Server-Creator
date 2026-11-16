@@ -1,5 +1,6 @@
 package io.github.imnotstable.msc.core.server;
 
+import io.github.imnotstable.msc.process.ServerAddress;
 import io.github.imnotstable.msc.process.ServerPropertiesFile;
 import java.io.IOException;
 import java.io.InputStream;
@@ -16,6 +17,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.function.Function;
+import java.util.function.IntFunction;
 import java.util.function.Predicate;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -209,6 +211,16 @@ public final class CrashTriage {
      * written at or after {@code since}, for a server of {@code platform}.
      */
     public static Result triage(List<String> lines, Path serverDir, Instant since, Platform platform) {
+        return triage(lines, serverDir, since, platform, port -> null);
+    }
+
+    /**
+     * {@link #triage(List, Path, Instant, Platform)}, where {@code holder} names what holds the server's port when the
+     * server could not bind it: the fix for that holder when it is one of MSC's own pack hosts (#755), else null. It is
+     * asked once, with the port from the log's start line, else the one {@code server.properties} sets (25565 without).
+     */
+    public static Result triage(List<String> lines, Path serverDir, Instant since, Platform platform,
+                                IntFunction<String> holder) {
         String logSource = LOG;
         if (lines.isEmpty()) {
             lines = latestLog(serverDir);
@@ -222,6 +234,7 @@ public final class CrashTriage {
             }
         }
         List<Finding> found = new ArrayList<>();
+        String[] held = null;
         List<LogReader.Entry> fatal = new ArrayList<>();
         LogReader.Entry lastError = null;
         for (LogReader.Entry e : LogReader.entries(lines)) {
@@ -235,7 +248,10 @@ public final class CrashTriage {
             List<Finding> matched = match(String.join("\n", all), all, source);
             if (!matched.isEmpty()) {
                 for (Finding f : matched) {
-                    add(found, f.what().equals(PORT_IN_USE) ? portInUse(f, port, platform) : f);
+                    if (f.what().equals(PORT_IN_USE) && held == null) {
+                        held = new String[] {holder.apply(gamePort(port, serverDir))};
+                    }
+                    add(found, f.what().equals(PORT_IN_USE) ? portInUse(f, port, platform, held[0]) : f);
                 }
             } else if (FATAL.matcher(e.text()).matches() || e.level().equals("FATAL")) {
                 fatal.add(e);
@@ -275,12 +291,29 @@ public final class CrashTriage {
      * The server's own port is taken: the port from the log's start line when it has one, and where the port is set,
      * which on Minestom is the server's main class, as it has no server.properties.
      */
-    private static Finding portInUse(Finding f, String port, Platform platform) {
+    private static Finding portInUse(Finding f, String port, Platform platform, String held) {
         String setIn = platform == Platform.MINESTOM ? "the port in the main class's server.start(...)"
                 : "server-port in " + ServerPropertiesFile.NAME;
         return new Finding(port == null ? PORT_IN_USE : "server port " + port + " already in use", f.culprit(),
-                f.cause(), f.frames(), "another process holds the port: server_stop stops a leftover server, else "
-                        + "change " + setIn, f.source());
+                f.cause(), f.frames(), held != null ? held : "another process holds the port: server_stop stops a "
+                        + "leftover server, else change " + setIn, f.source());
+    }
+
+    /**
+     * The port the server could not bind: {@code logged}, from the log's start line, else the game port
+     * {@code server.properties} sets, 25565 when it sets none (or there is no file, as on Minestom).
+     */
+    private static int gamePort(String logged, Path serverDir) {
+        try {
+            if (logged != null) {
+                return Integer.parseInt(logged);
+            }
+            ServerAddress game = ServerAddress.game(
+                    ServerPropertiesFile.read(serverDir.resolve(ServerPropertiesFile.NAME)));
+            return game != null ? game.port() : ServerAddress.GAME_PORT;
+        } catch (IOException | NumberFormatException e) {
+            return ServerAddress.GAME_PORT;
+        }
     }
 
     /** Some findings as a few lines each. */

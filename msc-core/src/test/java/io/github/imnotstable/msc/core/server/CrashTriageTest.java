@@ -172,6 +172,30 @@ class CrashTriageTest {
         assertThat(triage("paper-port")).endsWith("else change server-port in server.properties");
     }
 
+    /**
+     * #755: when one of MSC's own pack hosts holds the server's port, the fix names it, not a leftover. It is asked
+     * with the port from the log, else the one server.properties sets, else 25565 (Minestom has no file).
+     */
+    @Test
+    void aPortHeldByAnMscPackHostNamesThatHost() throws IOException {
+        List<Integer> asked = new java.util.ArrayList<>();
+        java.util.function.IntFunction<String> holder = port -> {
+            asked.add(port);
+            return "this session's resource pack host held port " + port;
+        };
+        assertThat(CrashTriage.triage(lines("crash-logs/paper-port.txt"), dir, null, Platform.PAPER, holder)
+                .render(null)).startsWith("server port 25570 already in use [log 12:00:01]\n  fix: this session's "
+                + "resource pack host held port 25570");
+        assertThat(CrashTriage.triage(lines("crash-logs/minestom-uncaught.txt"), dir, null, Platform.MINESTOM, holder)
+                .render(null)).endsWith("fix: this session's resource pack host held port 25565");
+        Files.writeString(dir.resolve("server.properties"), "server-port=25990\n");
+        CrashTriage.triage(lines("crash-logs/minestom-uncaught.txt"), dir, null, Platform.MINESTOM, holder);
+        assertThat(asked).containsExactly(25570, 25565, 25990);
+        // No MSC host there: the fix is as before.
+        assertThat(CrashTriage.triage(lines("crash-logs/paper-port.txt"), dir, null, Platform.PAPER, port -> null)
+                .render(null)).contains("fix: another process holds the port");
+    }
+
     @Test
     void cleanStartupLogsHaveNothingToTriage() {
         for (String platform : List.of("paper", "purpur", "fabric", "quilt", "neoforge", "forge", "minestom")) {

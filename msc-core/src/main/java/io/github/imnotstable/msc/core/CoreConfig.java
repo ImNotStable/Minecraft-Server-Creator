@@ -298,6 +298,14 @@ public record CoreConfig(Path workspace, Path serverDir, int agentPort, String t
                 gradleUserHome);
     }
 
+    /** The same settings with a fixed pack port, as {@code MSC_PACK_PORT} gives one. */
+    public CoreConfig withPackPort(int port) {
+        return new CoreConfig(workspace, serverDir, agentPort, token, toolLog, javaCommand, serverCommand,
+                buildCommand, downloadsUrl, minecraft, apiJars, packHost, packFormat, agentJar, fabricMetaUrl,
+                fabricMavenUrl, installDir, port, machineEula, loaderUrls, downloadStore, proxySecret,
+                gradleUserHome);
+    }
+
     public CoreConfig withGradleUserHome(Path dir) {
         return new CoreConfig(workspace, serverDir, agentPort, token, toolLog, javaCommand, serverCommand,
                 buildCommand, downloadsUrl, minecraft, apiJars, packHost, packFormat, agentJar, fabricMetaUrl,
