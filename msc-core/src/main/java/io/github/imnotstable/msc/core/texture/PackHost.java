@@ -43,6 +43,52 @@ public final class PackHost {
     /** {@code /pack-<sha1>.zip}: the only paths a host answers with a pack. */
     private static final java.util.regex.Pattern PATH = java.util.regex.Pattern.compile("/pack-([0-9a-f]{40})\\.zip");
 
+    /** The line the standalone host prints once it serves, followed by its port ({@link #main}). */
+    public static final String READY = "msc pack host serving on port ";
+
+    /**
+     * Starts a host on a free port outside the ports the system hands out by itself (ADR 0053): a port picked by a
+     * bind to port 0, or as the local end of an outgoing connection, comes from the ephemeral range, where any process
+     * on the machine may take it again the moment this host lets it go. The pack's port is remembered and taken again
+     * across sessions and from the in-process host to the standalone one, so it is picked below that range, where only
+     * a bind that names it can take it. Falls back to port 0 when that range holds nothing free.
+     */
+    static Host startOnFreePort(String host, Supplier<Served> source) throws IOException {
+        int[] range = freePortRange(ephemeralStart());
+        if (range != null) {
+            java.util.Random random = java.util.concurrent.ThreadLocalRandom.current();
+            for (int i = 0; i < 64; i++) {
+                int port = range[0] + random.nextInt(range[1] - range[0]);
+                try {
+                    return start(host, port, source);
+                } catch (IOException e) {
+                    // Taken, or not ours to bind: try another.
+                }
+            }
+        }
+        return start(host, 0, source);
+    }
+
+    /**
+     * Where {@link #startOnFreePort} picks: up to 12,768 ports below the start of the ephemeral range (32768 on Linux by
+     * default, 49152 on Windows and macOS), never below 1024; null when that leaves fewer than 1,000.
+     */
+    static int[] freePortRange(int ephemeralStart) {
+        int upper = Math.min(ephemeralStart, 32768);
+        int lower = Math.max(1024, upper - 12768);
+        return upper - lower < 1000 ? null : new int[] {lower, upper};
+    }
+
+    /** The first port of the system's ephemeral range: Linux says it, the others start at 49152 or above. */
+    static int ephemeralStart() {
+        // Read as a stream: a /proc file reports no size, which Files.readString cuts the read short by.
+        try (java.io.BufferedReader r = Files.newBufferedReader(Path.of("/proc/sys/net/ipv4/ip_local_port_range"))) {
+            return Integer.parseInt(r.readLine().trim().split("\\s+")[0]);
+        } catch (IOException | RuntimeException e) {
+            return 32768;
+        }
+    }
+
     /** How long a host waits for a port that was just let go. */
     static final Duration PORT_PATIENCE = PortPatience.PATIENCE;
 
@@ -294,7 +340,11 @@ public final class PackHost {
         }
         try {
             // The core closed this port just before starting this process.
-            startWithin(args[0], Integer.parseInt(args[1]), folder(Path.of(args[2])), PORT_PATIENCE);
+            int port = Integer.parseInt(args[1]);
+            startWithin(args[0], port, folder(Path.of(args[2])), PORT_PATIENCE);
+            // Only now does the core count it as up: whatever else listens on the port is not this host (#753).
+            System.out.println(READY + port);
+            System.out.flush();
         } catch (IOException | RuntimeException e) {
             System.err.println(e.getMessage() != null ? e.getMessage() : e.toString());
             System.exit(1);

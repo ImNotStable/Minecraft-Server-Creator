@@ -184,6 +184,28 @@ class PackHostTest {
         }
     }
 
+    /**
+     * #753: a pack port is picked below the ephemeral range, which the system hands to binds to port 0 and to outgoing
+     * connections: there, any process could take it while it goes from one host to the next.
+     */
+    @Test
+    void aFreePackPortIsNeverOneTheSystemHandsOutByItself() throws Exception {
+        assertThat(PackHost.freePortRange(32768)).containsExactly(20000, 32768);
+        assertThat(PackHost.freePortRange(49152)).containsExactly(20000, 32768);
+        assertThat(PackHost.freePortRange(10000)).containsExactly(1024, 10000);
+        assertThat(PackHost.freePortRange(1500)).isNull();
+        int[] pick = PackHost.freePortRange(PackHost.ephemeralStart());
+        org.junit.jupiter.api.Assumptions.assumeTrue(pick != null, "this system hands out every port by itself");
+        for (int i = 0; i < 5; i++) {
+            PackHost.Host host = PackHost.startOnFreePort("127.0.0.1", () -> PackHost.Served.NONE);
+            try {
+                assertThat(host.port()).isBetween(pick[0], pick[1] - 1);
+            } finally {
+                host.stop();
+            }
+        }
+    }
+
     private static int status(HttpClient http, PackHost.Host host, String sha1) throws Exception {
         return http.send(HttpRequest.newBuilder(url(host, sha1)).build(), HttpResponse.BodyHandlers.discarding())
                 .statusCode();

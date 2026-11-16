@@ -13,7 +13,6 @@ import io.github.imnotstable.msc.textures.ResourceId;
 import io.github.imnotstable.msc.textures.Texture;
 import java.io.IOException;
 import java.net.HttpURLConnection;
-import java.net.InetSocketAddress;
 import java.net.Proxy;
 import java.net.URI;
 import java.nio.file.Files;
@@ -511,17 +510,20 @@ public final class ResourcePack implements AutoCloseable {
         // taken instead is not this workspace's to remember (#753).
         boolean theirs = lifetime.get() == Lifetime.OTHER_SESSION;
         PackHost.Host started;
-        try {
-            // The port may have been let go a moment ago, by the leftover host or this session's own.
-            started = PackHost.startWithin(host, want, () -> served, theirs ? Duration.ZERO : PackHost.PORT_PATIENCE);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new java.io.InterruptedIOException("interrupted while waiting for port " + want);
-        } catch (IOException e) {
-            if (want == 0) {
-                throw e;
+        if (want == 0) {
+            // A first pack: a port no other process is handed by the system, so it can be taken again (ADR 0053).
+            started = PackHost.startOnFreePort(host, () -> served);
+        } else {
+            try {
+                // The port may have been let go a moment ago, by the leftover host or this session's own.
+                started = PackHost.startWithin(host, want, () -> served,
+                        theirs ? Duration.ZERO : PackHost.PORT_PATIENCE);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new java.io.InterruptedIOException("interrupted while waiting for port " + want);
+            } catch (IOException e) {
+                started = PackHost.startOnFreePort(host, () -> served);
             }
-            started = PackHost.start(host, 0, () -> served);
         }
         int port = started.port();
         aside = theirs && port != want;
@@ -580,7 +582,6 @@ public final class ResourcePack implements AutoCloseable {
         try {
             // Its log is read as UTF-8 when it does not come up (#478).
             p = ServerJava.processBuilder(command)
-                    .redirectOutput(ProcessBuilder.Redirect.DISCARD)
                     .redirectError(hostLog().toFile())
                     .start();
         } catch (IOException e) {
@@ -593,20 +594,21 @@ public final class ResourcePack implements AutoCloseable {
         adopted = false;
         hostPort = port;
         PidFile.write(hostPidFile(), p.toHandle());
+        Boolean ready;
         try {
             p.getOutputStream().close();
-            long deadline = System.nanoTime() + 15_000_000_000L;
-            while (p.isAlive() && System.nanoTime() < deadline && !accepts(port)) {
-                Thread.sleep(100);
-            }
+            ready = ready(p, port);
         } catch (IOException | RuntimeException e) {
             abandonHost(p);
             return failed(e.getMessage() != null ? e.getMessage() : e.toString());
         }
-        if (p.isAlive() && accepts(port)) {
+        if (Boolean.TRUE.equals(ready) && p.isAlive()) {
             return null;
         }
-        boolean hung = p.isAlive();
+        boolean hung = ready == null;
+        if (!hung) {
+            p.waitFor(5, TimeUnit.SECONDS); // its output ended a moment before it exits
+        }
         abandonHost(p);
         String why = reason(readLog());
         return failed(!why.isEmpty() ? why : hung ? "it did not listen within 15 s"
@@ -668,12 +670,33 @@ public final class ResourcePack implements AutoCloseable {
         return lines.isEmpty() ? "" : lines.getFirst();
     }
 
-    private boolean accepts(int port) {
-        try (java.net.Socket s = new java.net.Socket()) {
-            s.connect(new InetSocketAddress(host, port), 500);
-            return true;
-        } catch (IOException e) {
+    /**
+     * Waits up to 15 s for the standalone host {@code p} to say it serves on {@code port} ({@link PackHost#READY}); false
+     * when it exits or stays silent first. Only its own word counts: a connection to the port could reach anything
+     * that took the port while it changed hands, which then looked like a host that came up and served nothing (#753).
+     * Its output is read to the end, so the host never blocks on it. Null when it stayed silent (still running); false
+     * when it ended its output, so exited, without saying it.
+     */
+    private static Boolean ready(Process p, int port) throws InterruptedException {
+        java.util.concurrent.CompletableFuture<Boolean> said = new java.util.concurrent.CompletableFuture<>();
+        Thread.ofVirtual().name("msc-pack-host-output").start(() -> {
+            try (java.io.BufferedReader out = p.inputReader(java.nio.charset.StandardCharsets.UTF_8)) {
+                for (String line = out.readLine(); line != null; line = out.readLine()) {
+                    if (line.strip().equals(PackHost.READY + port)) {
+                        said.complete(true);
+                    }
+                }
+            } catch (IOException e) {
+                // Gone: nothing more to read.
+            }
+            said.complete(false);
+        });
+        try {
+            return said.get(15, TimeUnit.SECONDS);
+        } catch (java.util.concurrent.ExecutionException e) {
             return false;
+        } catch (java.util.concurrent.TimeoutException e) {
+            return null;
         }
     }
 
