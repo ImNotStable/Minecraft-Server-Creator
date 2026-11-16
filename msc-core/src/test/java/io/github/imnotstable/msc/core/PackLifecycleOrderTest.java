@@ -7,9 +7,11 @@ import io.github.imnotstable.msc.core.fixture.FakeBuildMain;
 import io.github.imnotstable.msc.core.fixture.FakeServerMain;
 import io.github.imnotstable.msc.core.fixture.SleepMain;
 import io.github.imnotstable.msc.core.server.PidFile;
+import io.github.imnotstable.msc.core.server.ServerManagerAccess;
 import io.github.imnotstable.msc.core.server.Platform;
 import io.github.imnotstable.msc.core.texture.PackHost;
 import io.github.imnotstable.msc.core.texture.PackProperties;
+import io.github.imnotstable.msc.core.tool.ToolRegistry;
 import java.io.IOException;
 import java.net.HttpURLConnection;
 import java.net.Proxy;
@@ -18,6 +20,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.AfterEach;
@@ -47,11 +50,20 @@ import org.junit.jupiter.params.provider.MethodSource;
  * end. Such a leftover outlives this session as a server detached in it does, so its offer, wherever it is, always
  * names a URL that a host which outlives the session serves, or no URL; the earlier session's host is reused or
  * replaced, never left beside a second one.
+ * <p>
+ * #752: that table adds dev_cycle restart=false on the leftover ({@link Op#KEEP_CYCLE}), which stops its pack host with
+ * it, and a leftover that exits on its own ({@link Op#EXIT}), whose host the next publish or the session end stops.
+ * #753: a fourth table runs two live sessions on one workspace (ADR 0053), and checks after every step and after both
+ * end that no pack host runs without a server and that what a running server offers and was last sent is served.
  */
 class PackLifecycleOrderTest {
     private static final String PROPERTIES = "motd=x\n";
 
-    enum Op { DETACH, PACK, DEV_CYCLE, SWITCH, STOP, START, BREAK, MEND }
+    /**
+     * The calls. {@link #KEEP_CYCLE} is dev_cycle with restart=false (#752), {@link #EXIT} the leftover server exiting
+     * on its own while its pack host runs.
+     */
+    enum Op { DETACH, PACK, DEV_CYCLE, SWITCH, STOP, START, BREAK, MEND, KEEP_CYCLE, EXIT }
 
     /** What the earlier session left with its detached server (#750). */
     enum Left {
@@ -133,6 +145,20 @@ class PackLifecycleOrderTest {
             rows.add(Arguments.of(left, List.of(Op.BREAK, Op.SWITCH, Op.MEND, Op.SWITCH)));
             rows.add(Arguments.of(left, List.of(Op.BREAK, Op.START, Op.DETACH, Op.MEND, Op.PACK)));
         }
+        // #752: dev_cycle restart=false takes the leftover over as a start does, its pack host too, whether that host
+        // runs (the earlier session's, or one this session started), died, or never came up.
+        for (Left left : Left.values()) {
+            rows.add(Arguments.of(left, List.of(Op.KEEP_CYCLE)));
+            rows.add(Arguments.of(left, List.of(Op.PACK, Op.KEEP_CYCLE)));
+            rows.add(Arguments.of(left, List.of(Op.KEEP_CYCLE, Op.PACK)));
+            rows.add(Arguments.of(left, List.of(Op.SWITCH, Op.KEEP_CYCLE, Op.SWITCH)));
+            rows.add(Arguments.of(left, List.of(Op.KEEP_CYCLE, Op.DEV_CYCLE, Op.DETACH)));
+        }
+        // #752: the leftover's server exits on its own while its pack host runs: the next publish or the session end
+        // stops that host.
+        rows.add(Arguments.of(Left.HOST_UP, List.of(Op.EXIT)));
+        rows.add(Arguments.of(Left.HOST_UP, List.of(Op.EXIT, Op.PACK)));
+        rows.add(Arguments.of(Left.HOST_DIED, List.of(Op.PACK, Op.EXIT)));
         return rows.stream();
     }
 
@@ -192,6 +218,9 @@ class PackLifecycleOrderTest {
         for (Op op : order) {
             String when = op + " in " + order + " after " + left;
             List<String> answers = run(op);
+            if (op == Op.EXIT) {
+                continue; // nothing ran yet that sees the server gone; the next call or the session end does
+            }
             check(Platform.PAPER, when, false);
             for (String answer : answers) {
                 claims(Platform.PAPER, when, answer);
@@ -202,6 +231,8 @@ class PackLifecycleOrderTest {
         h.close();
         if (detached || leftover) {
             published();
+        } else {
+            hostUp = false; // no server outlives the session, so no pack host does (#752)
         }
         check(Platform.PAPER, "the session end after " + order + " after " + left, true);
     }
@@ -234,6 +265,142 @@ class PackLifecycleOrderTest {
             core.destroyForcibly();
             core.waitFor(10, TimeUnit.SECONDS);
         }
+    }
+
+    /**
+     * #753: two live sessions on one workspace (ADR 0037). Session A starts the server; each session then runs pack,
+     * dev_cycle with restart ({@code CYCLE}) and without ({@code KEEP}), server_detach and its end ({@code END}), in
+     * the order of the row. A call the other session's server refuses is refused.
+     */
+    static Stream<Arguments> twoSessions() {
+        return Stream.of(
+                "A:DETACH B:PACK A:END B:END",
+                "A:DETACH B:PACK B:END A:END",
+                "B:PACK A:DETACH A:END B:PACK B:END",
+                "A:DETACH B:PACK A:PACK A:END B:KEEP B:END",
+                "A:DETACH B:PACK A:END B:CYCLE B:PACK B:END",
+                "A:DETACH A:END B:PACK B:CYCLE B:DETACH B:END",
+                "B:PACK A:PACK B:CYCLE A:DETACH B:PACK A:CYCLE A:END B:END",
+                "A:PACK B:PACK A:END B:CYCLE B:END",
+                "A:DETACH B:PACK B:DETACH A:END B:DETACH B:KEEP B:END",
+                "A:DETACH A:PACK B:PACK A:END B:PACK B:CYCLE B:END",
+                "A:DETACH B:PACK A:END B:KEEP B:CYCLE B:DETACH B:PACK B:END",
+                "A:DETACH B:PACK B:KEEP A:PACK B:END A:END")
+                .map(row -> Arguments.of(List.of(row.split(" "))));
+    }
+
+    /**
+     * #753: whatever the other session builds, after every step and after both sessions end: no pack host runs without
+     * a server, and while a server runs, what server.properties offers and the URL its agent was last sent (what
+     * joining players get) are both served. A pack in the session that does not own the server never takes either
+     * away.
+     */
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("twoSessions")
+    void twoLiveSessionsLeaveEveryOfferedAndSentPackServed(List<String> order) throws Exception {
+        ws = Files.createDirectories(root.resolve("ws"));
+        Files.writeString(Files.createDirectories(ws.resolve("demo")).resolve("version.txt"), "1.0");
+        Files.writeString(Files.createDirectories(ws.resolve("run")).resolve("server.properties"), PROPERTIES);
+        // Session A's core, as another process: B sees A's server as another live session's until A ends.
+        Process coreA = new ProcessBuilder(java(SleepMain.class)).start();
+        CoreHarness a = null;
+        CoreHarness b = null;
+        try {
+            a = session();
+            ServerManagerAccess.self(a.core.server(), coreA.toHandle());
+            Platform.remember(a.core.config(), Platform.PAPER);
+            a.ok("server_start", "timeoutSeconds", 60);
+            draw(a);
+            // Sent to A's server, whose agent hands its URL to joining players from now on.
+            assertThat(a.ok("pack")).contains("applied: sent to");
+            assertThat(lastSent(PidFile.peek(ws.resolve(".msc/server.pid")).orElseThrow().pid())).isNotNull();
+            servedWhileItRuns("A's pack");
+            b = session();
+            boolean bRunning = false;
+            for (String step : order) {
+                boolean isA = step.startsWith("A:");
+                CoreHarness s = isA ? a : b;
+                String when = step + " in " + order;
+                switch (step.substring(2)) {
+                    case "PACK" -> {
+                        draw(s);
+                        s.ok("pack");
+                    }
+                    case "CYCLE", "KEEP" -> {
+                        draw(s);
+                        boolean restart = step.endsWith("CYCLE");
+                        ToolRegistry.Result r = s.call("dev_cycle", "project", "demo", "restart", restart);
+                        // B's is refused while A's server runs: it is A's (ADR 0037).
+                        assertThat(r.ok()).as("%s: %s", when, r.text()).isEqualTo(isA || a == null);
+                        bRunning |= !isA && restart && r.ok();
+                    }
+                    case "DETACH" -> {
+                        ToolRegistry.Result r = s.call("server_detach");
+                        assertThat(r.ok()).as("%s: %s", when, r.text()).isEqualTo(isA || bRunning);
+                    }
+                    case "END" -> {
+                        s.close();
+                        if (isA) {
+                            coreA.destroyForcibly();
+                            coreA.waitFor(10, TimeUnit.SECONDS);
+                            a = null;
+                        } else {
+                            b = null;
+                            bRunning = false;
+                        }
+                    }
+                    default -> throw new AssertionError(step);
+                }
+                servedWhileItRuns(when);
+            }
+            servedWhileItRuns("both sessions ended after " + order);
+            // Pruned down to the builds the last session had, offered and sent; each draw made a new one.
+            try (Stream<Path> files = Files.list(ws.resolve(".msc/build"))) {
+                assertThat(files.filter(f -> f.getFileName().toString().matches("pack-[0-9a-f]{40}\\.zip")).count())
+                        .as("build files left after %s", order).isBetween(1L, 3L);
+            }
+        } finally {
+            for (CoreHarness s : new CoreHarness[] {a, b}) {
+                if (s != null) {
+                    s.close();
+                }
+            }
+            coreA.destroyForcibly();
+            coreA.waitFor(10, TimeUnit.SECONDS);
+        }
+    }
+
+    private CoreHarness session() throws Exception {
+        return new CoreHarness(ws, c -> c.withServerCommand(java(FakeServerMain.class))
+                .withBuildCommand(java(FakeBuildMain.class)));
+    }
+
+    /** The two-session invariants of {@link #twoLiveSessionsLeaveEveryOfferedAndSentPackServed}. */
+    private void servedWhileItRuns(String when) throws IOException {
+        Optional<ProcessHandle> server = PidFile.peek(ws.resolve(".msc/server.pid")).filter(ProcessHandle::isAlive);
+        boolean host = PidFile.peek(ws.resolve(".msc/pack-host.pid")).filter(ProcessHandle::isAlive).isPresent();
+        assertThat(!host || server.isPresent()).as("%s: a pack host runs with no server", when).isTrue();
+        if (server.isEmpty()) {
+            return;
+        }
+        String offer = PackProperties.url(Platform.PAPER, ws.resolve("run/server.properties"));
+        assertThat(offer == null || serves(offer)).as("%s: the offered %s served", when, offer).isTrue();
+        String sent = lastSent(server.get().pid());
+        assertThat(sent == null || serves(sent)).as("%s: the sent %s served", when, sent).isTrue();
+    }
+
+    /** The URL the fake server {@code pid} was last sent, which its agent hands joining players, or null. */
+    private String lastSent(long pid) throws IOException {
+        Path file = ws.resolve("run/fake-pack-sent.txt");
+        String last = null;
+        if (Files.exists(file)) {
+            for (String line : Files.readAllLines(file)) {
+                if (line.startsWith(pid + " ")) {
+                    last = line.substring(line.indexOf(' ') + 1);
+                }
+            }
+        }
+        return last;
     }
 
     private static String identity(Process p) {
@@ -385,6 +552,28 @@ class PackLifecycleOrderTest {
                 failing = op == Op.BREAK;
                 return List.of();
             }
+            case KEEP_CYCLE -> {
+                draw();
+                String answer = h.ok("dev_cycle", "project", "demo", "restart", false);
+                if (leftover) {
+                    // It stops the leftover to deploy, and the pack host serving it with it (#752).
+                    assertThat(answer).as(answer).contains("stopped a server left running by an earlier session");
+                    leftover = false;
+                    hostUp = false;
+                } else if (running && built) {
+                    url = h.core.pack().lastBuilt().url();
+                    published();
+                }
+                return List.of(answer);
+            }
+            case EXIT -> {
+                ProcessHandle server = PidFile.peek(ws.resolve(".msc/server.pid")).orElseThrow();
+                server.destroyForcibly();
+                server.onExit().get(10, TimeUnit.SECONDS);
+                leftover = false;
+                // Its pack host runs on until the next publish or the session end, which stop it.
+                return List.of();
+            }
         }
         throw new AssertionError(op);
     }
@@ -447,8 +636,12 @@ class PackLifecycleOrderTest {
     }
 
     private void draw() {
+        draw(h);
+    }
+
+    private void draw(CoreHarness session) {
         color++;
-        h.ok("texture", "name", "item/dot", "palette", List.of(String.format("a=#%06x", color * 0x101)),
+        session.ok("texture", "name", "item/dot", "palette", List.of(String.format("a=#%06x", color * 0x101)),
                 "rows", List.of("a"));
     }
 

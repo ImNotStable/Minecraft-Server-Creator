@@ -334,9 +334,10 @@ final class DevCycle {
                 .ifFails(RECORD, "the jar is deployed; dev_cycle again records it" + stopped)
                 .ifFails(REMEMBER, "the jar is deployed; the workspace platform is still " + server.platform().id()
                         + stopped);
-        // Before deploying: a server an earlier core left running holds the old jar open.
+        // Before deploying: a server an earlier core left running holds the old jar open. Its pack host goes with it,
+        // with or without a restart (#752).
         long t = System.nanoTime();
-        String leftover = steps.note(STOP_LEFTOVER, server::stopLeftover);
+        String leftover = steps.note(STOP_LEFTOVER, () -> run.end(false, false).note());
         if (leftover != null) {
             out.append(leftover).append('\n');
             time.add("leftover stop", millisSince(t));
@@ -344,7 +345,7 @@ final class DevCycle {
         out.append("build ok in ").append(LogText.seconds(build.millis()));
         if (stopping) {
             t = System.nanoTime();
-            steps.run(STOP, () -> server.stop(Duration.ofSeconds(30)));
+            steps.run(STOP, () -> run.end(true, false).own());
             time.add("stop", millisSince(t));
         }
         // Before deploying: a leftover aside copy of a jar is a second copy of the mod on Quilt (#417).

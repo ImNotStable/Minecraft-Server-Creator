@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.imnotstable.msc.core.fixture.FailingPackHostMain;
 import io.github.imnotstable.msc.core.server.PidFile;
+import io.github.imnotstable.msc.core.server.ServerManager;
 import java.io.IOException;
 import java.lang.classfile.ClassFile;
 import java.lang.constant.ClassDesc;
@@ -34,7 +35,8 @@ class KeepServingTest {
         Path root = dir.resolve("pack");
         Files.createDirectories(root.resolve("assets/minecraft"));
         Files.writeString(root.resolve("assets/minecraft/a.txt"), "a");
-        ResourcePack pack = new ResourcePack(root, dir.resolve(".msc/pack"), "127.0.0.1", 0, 46, () -> true);
+        ResourcePack pack = new ResourcePack(root, dir.resolve(".msc/pack"), "127.0.0.1", 0, 46,
+                () -> ServerManager.Lifetime.OUTLIVES);
         pack.build("test");
         return pack;
     }
@@ -116,7 +118,7 @@ class KeepServingTest {
         pack.close(true);
         assertThat(host.isAlive()).isTrue();
         ResourcePack next = new ResourcePack(dir.resolve("pack"), dir.resolve(".msc/pack"), "127.0.0.1", 0, 46);
-        assertThat(next.stopLeftoverHost()).contains("pid " + host.pid());
+        assertThat(next.release().note()).contains("pid " + host.pid());
         host.onExit().get(30, TimeUnit.SECONDS);
         next.close();
     }

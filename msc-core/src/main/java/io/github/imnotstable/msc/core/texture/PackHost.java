@@ -22,7 +22,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
 
 /**
- * Serves the built pack at {@code /pack-<sha1>.zip}. Runs inside the core, or as its own process
+ * Serves built packs at {@code /pack-<sha1>.zip}. Runs inside the core, or as its own process
  * ({@link #main}) so the pack stays up for players after the core exits.
  */
 public final class PackHost {
@@ -30,6 +30,18 @@ public final class PackHost {
     public record Served(byte[] data, String sha1) {
         static final Served NONE = new Served(new byte[0], "");
     }
+
+    /**
+     * Finds the build a request asks for by its SHA-1, or null (a 404). The in-process host has one build; the
+     * standalone host has every build file in its folder ({@link #folder}).
+     */
+    @FunctionalInterface
+    public interface Lookup {
+        Served find(String sha1);
+    }
+
+    /** {@code /pack-<sha1>.zip}: the only paths a host answers with a pack. */
+    private static final java.util.regex.Pattern PATH = java.util.regex.Pattern.compile("/pack-([0-9a-f]{40})\\.zip");
 
     /** How long a host waits for a port that was just let go. */
     static final Duration PORT_PATIENCE = PortPatience.PATIENCE;
@@ -84,7 +96,15 @@ public final class PackHost {
 
     /** Start serving on {@code host:port} (0 picks a free port). */
     public static Host start(String host, int port, Supplier<Served> source) throws IOException {
-        return start(host, port, source, HttpStall.LIMIT);
+        return start(host, port, one(source), HttpStall.LIMIT);
+    }
+
+    /** The one build {@code source} gives now, found by its SHA-1. */
+    static Lookup one(Supplier<Served> source) {
+        return sha1 -> {
+            Served served = source.get();
+            return served.sha1().equals(sha1) ? served : null;
+        };
     }
 
     /**
@@ -96,6 +116,11 @@ public final class PackHost {
      * {@code stall} (#512).
      */
     static Host start(String host, int port, Supplier<Served> source, Duration stall) throws IOException {
+        return start(host, port, one(source), stall);
+    }
+
+    /** {@link #start(String, int, Supplier, Duration)} serving whatever build {@code source} finds. */
+    static Host start(String host, int port, Lookup source, Duration stall) throws IOException {
         HttpServer server = HttpServer.create(new InetSocketAddress(host, port), 0);
         // Virtual threads are daemon threads: serving never keeps a core alive; the standalone host's JVM stays up
         // on the server's own dispatcher thread. One per exchange, so a cut request's interrupt reaches no other.
@@ -110,9 +135,9 @@ public final class PackHost {
                 exchange.close();
                 return;
             }
-            Served served = source.get();
-            boolean match = !served.sha1().isEmpty()
-                    && exchange.getRequestURI().getPath().equals("/pack-" + served.sha1() + ".zip");
+            java.util.regex.Matcher path = PATH.matcher(exchange.getRequestURI().getPath());
+            Served served = path.matches() ? source.find(path.group(1)) : null;
+            boolean match = served != null;
             if (match && !turn(running)) {
                 exchange.close();
                 return;
@@ -220,45 +245,56 @@ public final class PackHost {
      */
     public static Host startWithin(String host, int port, Supplier<Served> source, Duration patience)
             throws IOException, InterruptedException {
-        return PortPatience.bind(port, patience, () -> start(host, port, source));
+        return startWithin(host, port, one(source), patience);
     }
 
-    /** Serves whatever {@code zip} holds now, so a later pack is picked up without a restart. */
-    static Supplier<Served> file(Path zip) {
-        return new Supplier<>() {
-            private long stamp = Long.MIN_VALUE;
-            private Served served = Served.NONE;
+    private static Host startWithin(String host, int port, Lookup source, Duration patience)
+            throws IOException, InterruptedException {
+        return PortPatience.bind(port, patience, () -> start(host, port, source, HttpStall.LIMIT));
+    }
+
+    /**
+     * Serves every build in {@code dir} by its name, {@code pack-<sha1>.zip} (ADR 0053): a build file is never
+     * rewritten, so a later pack is picked up without a restart and an earlier one stays served while its file is
+     * there, whoever built the later one. A file whose content does not match its name is not served. The last build
+     * read is kept, as players of one server all ask for the same one.
+     */
+    static Lookup folder(Path dir) {
+        return new Lookup() {
+            private Served last = Served.NONE;
 
             @Override
-            public synchronized Served get() {
-                try {
-                    long now = Files.getLastModifiedTime(zip).toMillis() ^ Files.size(zip);
-                    if (now != stamp) {
-                        byte[] data = Files.readAllBytes(zip);
-                        served = new Served(data, PackSource.sha1(data));
-                        stamp = now;
-                    }
-                } catch (IOException e) {
-                    served = Served.NONE;
-                    stamp = Long.MIN_VALUE;
+            public synchronized Served find(String sha1) {
+                if (last.sha1().equals(sha1)) {
+                    return last;
                 }
-                return served;
+                try {
+                    byte[] data = Files.readAllBytes(dir.resolve("pack-" + sha1 + ".zip"));
+                    if (!PackSource.sha1(data).equals(sha1)) {
+                        return null;
+                    }
+                    last = new Served(data, sha1);
+                    return last;
+                } catch (IOException e) {
+                    return null;
+                }
             }
         };
     }
 
     /**
-     * {@code PackHost <host> <port> <zip>}: the standalone host a detached session leaves running. A host that cannot
-     * serve prints why as its one line and exits, so the core can quote it (#744).
+     * {@code PackHost <host> <port> <dir>}: the standalone host a detached session leaves running, serving the build
+     * files in {@code dir} ({@link #folder}). A host that cannot serve prints why as its one line and exits, so the
+     * core can quote it (#744).
      */
     public static void main(String[] args) throws InterruptedException {
         if (args.length != 3) {
-            System.err.println("usage: PackHost <host> <port> <zip>");
+            System.err.println("usage: PackHost <host> <port> <dir>");
             System.exit(2);
         }
         try {
             // The core closed this port just before starting this process.
-            startWithin(args[0], Integer.parseInt(args[1]), file(Path.of(args[2])), PORT_PATIENCE);
+            startWithin(args[0], Integer.parseInt(args[1]), folder(Path.of(args[2])), PORT_PATIENCE);
         } catch (IOException | RuntimeException e) {
             System.err.println(e.getMessage() != null ? e.getMessage() : e.toString());
             System.exit(1);

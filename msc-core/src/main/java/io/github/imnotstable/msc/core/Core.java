@@ -169,7 +169,7 @@ public final class Core implements AutoCloseable {
             // Whether the server outlives the session (detached here, or a leftover, #750) is the one state that
             // decides who serves the pack (ADR 0051).
             ResourcePack pack = new ResourcePack(config.packDir(), config.packBuildDir(), config.packHost(),
-                    config.packPort(), config.packFormat(), () -> server.lifetime() == ServerManager.Lifetime.OUTLIVES);
+                    config.packPort(), config.packFormat(), server::lifetime);
             PackPublisher publisher = new PackPublisher(pack, server, hub,
                     config.serverDir().resolve(ServerPropertiesFile.NAME));
             ToolRegistry tools = new ToolRegistry(log);
@@ -297,7 +297,10 @@ public final class Core implements AutoCloseable {
             if (outlives) {
                 publisher.settle(true); // so the standalone host serves the pack past the session (ADR 0051)
             } else {
-                pack.stopOwnHost(); // waited for, so its port is free for this workspace's next pack (#737)
+                // Nothing outlives the session, so no standalone host does: this session's, nor one an earlier session
+                // left beside a server that is gone (#752). Waited for, so its port is free (#737).
+                pack.release();
+                publisher.prune();
             }
             pack.close(outlives);
             server.close();

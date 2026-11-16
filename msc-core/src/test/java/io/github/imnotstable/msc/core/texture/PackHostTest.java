@@ -124,8 +124,8 @@ class PackHostTest {
     @Test
     void parallelDownloadsOfTheStandaloneHostsFileAllComplete(@TempDir Path dir) throws Exception {
         PackHost.Served pack = served(2 * 1024 * 1024, 2);
-        Path zip = Files.write(dir.resolve("pack.zip"), pack.data());
-        PackHost.Host host = PackHost.start("127.0.0.1", 0, PackHost.file(zip), NEVER);
+        Files.write(dir.resolve("pack-" + pack.sha1() + ".zip"), pack.data());
+        PackHost.Host host = PackHost.start("127.0.0.1", 0, PackHost.folder(dir), NEVER);
         try (ExecutorService clients = Executors.newVirtualThreadPerTaskExecutor()) {
             List<Future<byte[]>> downloads = new ArrayList<>();
             for (int i = 0; i < PackHost.MAX_DOWNLOADS + 4; i++) {
@@ -155,6 +155,38 @@ class PackHostTest {
         } finally {
             host.stop();
         }
+    }
+
+    /**
+     * ADR 0053 (#753): the standalone host serves every build file in its folder by its name, so a later build (another
+     * session's) leaves an earlier one's URL served; a missing file, or one whose content is not its name, is a 404.
+     */
+    @Test
+    void theStandaloneHostServesEachBuildFileByItsHash(@TempDir Path dir) throws Exception {
+        PackHost.Served first = served(1000, 4);
+        PackHost.Served second = served(1000, 5);
+        PackHost.Served forged = served(1000, 6);
+        Files.write(dir.resolve("pack-" + first.sha1() + ".zip"), first.data());
+        Files.write(dir.resolve("pack-" + forged.sha1() + ".zip"), first.data());
+        PackHost.Host host = PackHost.start("127.0.0.1", 0, PackHost.folder(dir), NEVER);
+        try (HttpClient http = HttpClient.newHttpClient()) {
+            assertThat(status(http, host, second.sha1())).isEqualTo(404);
+            Files.write(dir.resolve("pack-" + second.sha1() + ".zip"), second.data());
+            HttpResponse<byte[]> later = http.send(HttpRequest.newBuilder(url(host, second.sha1())).build(),
+                    HttpResponse.BodyHandlers.ofByteArray());
+            assertThat(later.body()).isEqualTo(second.data());
+            HttpResponse<byte[]> earlier = http.send(HttpRequest.newBuilder(url(host, first.sha1())).build(),
+                    HttpResponse.BodyHandlers.ofByteArray());
+            assertThat(earlier.body()).isEqualTo(first.data());
+            assertThat(status(http, host, forged.sha1())).isEqualTo(404);
+        } finally {
+            host.stop();
+        }
+    }
+
+    private static int status(HttpClient http, PackHost.Host host, String sha1) throws Exception {
+        return http.send(HttpRequest.newBuilder(url(host, sha1)).build(), HttpResponse.BodyHandlers.discarding())
+                .statusCode();
     }
 
     @Test

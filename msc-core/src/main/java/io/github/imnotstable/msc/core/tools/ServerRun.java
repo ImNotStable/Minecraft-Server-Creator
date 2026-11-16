@@ -126,13 +126,40 @@ final class ServerRun {
     }
 
     /**
+     * What {@link #end} stopped: whether this session's own server ran, the note on a leftover server and on the pack
+     * host an earlier session left (each null when there was none), and whether this session's own standalone host
+     * stopped.
+     */
+    record Ended(boolean own, String leftover, ResourcePack.Released host) {
+        /** The leftover's note and the earlier session's pack host's, one per line, or null. */
+        String note() {
+            return LogText.join(leftover, host.note());
+        }
+    }
+
+    /**
+     * The one way a server that may outlive the session ends (#752): a server an earlier session left running, then,
+     * with {@code own}, this session's (detached or not), and then the standalone pack host that served it, as no
+     * server is left for that host ({@link ResourcePack#release}: the earlier session's, reused or not, and one this
+     * session started). Every call that stops or replaces the server comes through here: server_start, dev_cycle with
+     * or without restart, server_stop and build_undo's rollback. A leftover that resists its stop is a refusal, and
+     * its host keeps serving it. {@code whole}: server_stop's stop of a leftover, every way again (#408). The caller
+     * has refused another live session's server ({@link ServerManager#checkNoOtherSession}).
+     */
+    Ended end(boolean own, boolean whole) throws InterruptedException {
+        String leftover = server.stopLeftover(whole);
+        boolean stopped = own && server.stop(Duration.ofSeconds(30));
+        return new Ended(stopped, leftover, pack.release());
+    }
+
+    /**
      * Stops whichever server runs in the server folder, as steps of {@code steps}: one an earlier session left running
-     * ({@link #LEFTOVER_SERVER}, with the note server_start and dev_cycle report), then this session's ({@code stop}).
-     * The caller has refused another live session's server ({@link ServerManager#checkNoOtherSession}).
+     * ({@link #LEFTOVER_SERVER}, with the note server_start and dev_cycle report), then this session's ({@code stop}),
+     * each through {@link #end}.
      */
     Stopped stopAny(Steps steps, String stop) throws InterruptedException {
-        String leftover = steps.note(LEFTOVER_SERVER, server::stopLeftover);
-        boolean own = steps.run(stop, () -> server.stop(Duration.ofSeconds(30)));
+        String leftover = steps.note(LEFTOVER_SERVER, () -> end(false, false).note());
+        boolean own = steps.run(stop, () -> end(true, false).own());
         return new Stopped(own || leftover != null, leftover);
     }
 
@@ -149,21 +176,15 @@ final class ServerRun {
     String stop(Args args) throws InterruptedException {
         // Checked first: another live session's server and its pack host are that session's (ADR 0037).
         server.checkNoOtherSession();
-        String host = pack.stopLeftoverHost();
-        if (server.stop(Duration.ofSeconds(30))) {
+        // The whole stop again, also on a leftover that resisted before: the user asked for exactly this (#408).
+        Ended ended = end(true, true);
+        if (ended.own()) {
             // Detached earlier in this session: its pack host goes with it, as server_detach promises.
-            return pack.stopOwnHost() ? "server stopped, and the pack host it kept running" : "server stopped";
+            return LogText.join(ended.host().own() ? "server stopped, and the pack host it kept running"
+                    : "server stopped", ended.host().note());
         }
-        String leftover;
-        try {
-            // The whole stop again, also on a leftover that resisted before: the user asked for exactly this (#408).
-            leftover = server.stopLeftover(true);
-        } catch (ToolException e) {
-            throw host != null ? new ToolException(host + "\n" + e.getMessage()) : e;
-        }
-        // A standalone host this session started for that leftover goes with it, as the earlier session's does (#750).
-        pack.stopOwnHost();
-        return leftover != null ? leftover : host != null ? host : "server was not running";
+        String note = ended.note();
+        return note != null ? note : "server was not running";
     }
 
     /**
@@ -219,12 +240,13 @@ final class ServerRun {
         if (!steps.planned(START)) {
             plan(steps);
         }
-        String leftoverServer = steps.note(LEFTOVER_SERVER, server::stopLeftover);
+        // The leftover server and its pack host (#752).
+        String leftoverServer = steps.note(LEFTOVER_SERVER, () -> end(false, false).note());
         String[] packNotes = new String[2];
         steps.note(TAKE_OVER_PACK, () -> {
-            packNotes[0] = pack.stopLeftoverHost();
-            // Nothing outlives the session now, so neither does a standalone host this session ran (#750).
-            pack.stopOwnHost();
+            // Nothing outlives the session now, so neither does a standalone host: also one whose leftover server
+            // exited on its own (#750, #752).
+            packNotes[0] = pack.release().note();
             boolean offered = pack.ours(PackProperties.url(server.platform(), serverProperties()));
             packNotes[1] = syncPackProperties();
             return packNotes[0] != null || offered ? "" : null;
