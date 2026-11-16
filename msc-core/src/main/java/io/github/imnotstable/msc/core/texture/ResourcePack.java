@@ -3,6 +3,7 @@ package io.github.imnotstable.msc.core.texture;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import io.github.imnotstable.msc.core.server.PidFile;
+import io.github.imnotstable.msc.core.server.ServerManager.Lifetime;
 import io.github.imnotstable.msc.core.tool.ToolException;
 import io.github.imnotstable.msc.process.AtomicFile;
 import io.github.imnotstable.msc.process.ServerJava;
@@ -12,14 +13,17 @@ import io.github.imnotstable.msc.textures.ResourceId;
 import io.github.imnotstable.msc.textures.Texture;
 import java.io.IOException;
 import java.net.HttpURLConnection;
-import java.net.InetSocketAddress;
 import java.net.Proxy;
 import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
-import java.util.function.BooleanSupplier;
+import java.util.function.Supplier;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
@@ -69,9 +73,23 @@ public final class ResourcePack implements AutoCloseable {
     /** What the last send went to; in memory only, as a new connection (a restart, a late agent) always gets it. */
     private Sent sent;
 
-    /** Note that {@code connection} (the agent connection the send went to) was sent {@code built}. */
+    /**
+     * Note that {@code connection} (the agent connection the send went to) was sent {@code built}. The build is also
+     * recorded with the workspace ({@code .msc/pack-sent}): its URL is what that server's agent hands joining players
+     * for as long as the server runs, past this session too, so {@link #prune} keeps its file (ADR 0053).
+     */
     public synchronized void sent(Object connection, Built built, boolean required) {
         sent = new Sent(connection, built.url(), built.sha1(), required);
+        try {
+            AtomicFile.write(sentFile(), to -> Files.writeString(to, built.sha1() + "\n"));
+        } catch (IOException e) {
+            // Then a prune may drop that build's file: only a standalone host reads it, and it serves the newer ones.
+        }
+    }
+
+    /** {@code .msc/pack-sent}: the SHA-1 of the build the workspace's server was last sent. */
+    private Path sentFile() {
+        return outDir.resolveSibling("pack-sent");
     }
 
     /**
@@ -103,13 +121,19 @@ public final class ResourcePack implements AutoCloseable {
     /**
      * Whether this workspace's server outlives this session ({@code ServerManager.lifetime}: detached here, or left
      * running by an earlier session), the one state {@link #serve} goes by: while it does, the pack must outlive this
-     * session too, so the standalone host serves it (ADR 0051, #750).
+     * session too, so the standalone host serves it (ADR 0051, #750); while another live session runs it, its host
+     * and its builds are that session's (ADR 0053).
      */
-    private final BooleanSupplier outlives;
-    /** The command that starts the standalone host, before its host, port and zip arguments. */
+    private final Supplier<Lifetime> lifetime;
+    /** The command that starts the standalone host, before its host, port and folder arguments. */
     private List<String> hostCommand = List.of(ProcessHandle.current().info().command()
                     .orElse(Path.of(System.getProperty("java.home"), "bin", "java").toString()),
             "-cp", System.getProperty("java.class.path"), PackHost.class.getName());
+    /**
+     * Whether the in-process host is on a free port it took while another live session's host held this workspace's
+     * (#753): a standalone host started later goes back to the workspace's port.
+     */
+    private boolean aside;
     /** Set by {@link #close(boolean)} under this monitor; whatever starts a host checks it under the same one. */
     private boolean closed;
 
@@ -118,17 +142,21 @@ public final class ResourcePack implements AutoCloseable {
      *             URL, and with it what {@code server.properties} offers, stays the same from session to session
      */
     public ResourcePack(Path root, Path outDir, String host, int port, int packFormat) {
-        this(root, outDir, host, port, packFormat, () -> false);
+        this(root, outDir, host, port, packFormat, () -> Lifetime.SESSION);
     }
 
-    /** @param outlives whether this workspace's server outlives the session, so its pack must too */
-    public ResourcePack(Path root, Path outDir, String host, int port, int packFormat, BooleanSupplier outlives) {
+    /** @param lifetime whether this workspace's server outlives the session, so its pack must too */
+    public ResourcePack(Path root, Path outDir, String host, int port, int packFormat, Supplier<Lifetime> lifetime) {
         this.source = new PackSource(root);
         this.outDir = outDir;
         this.host = host;
         this.preferredPort = port;
         this.packFormat = packFormat;
-        this.outlives = outlives;
+        this.lifetime = lifetime;
+    }
+
+    private boolean outlives() {
+        return lifetime.get() == Lifetime.OUTLIVES;
     }
 
     public ResourcePack(Path root, Path outDir, String host, int packFormat) {
@@ -173,9 +201,71 @@ public final class ResourcePack implements AutoCloseable {
             files = zip.size();
         }
         String sha1 = PackSource.sha1(data);
+        store(sha1, data);
         served = new PackHost.Served(data, sha1);
         lastBuilt = new Built(zipFile(), sha1, url(sha1), files, data.length);
         return lastBuilt;
+    }
+
+    /**
+     * The build file {@code pack-<sha1>.zip} beside {@code pack.zip}: what a standalone host serves at that build's URL
+     * (ADR 0053). Named by its content, so it is written once and never changed; a build in another session writes
+     * its own file and leaves this one served.
+     */
+    private Path buildFile(String sha1) {
+        return outDir.resolve("pack-" + sha1 + ".zip");
+    }
+
+    /** Writes the build file of {@code data} unless it is there, whole (a standalone host may read it at once). */
+    private void store(String sha1, byte[] data) throws IOException {
+        if (!Files.isRegularFile(buildFile(sha1))) {
+            Files.createDirectories(outDir);
+            AtomicFile.write(buildFile(sha1), to -> Files.write(to, data));
+        }
+    }
+
+    /** {@link #store} of the build this session serves, as {@link #served} holds it. */
+    private void storeServed(Built built) throws IOException {
+        if (built != null && served.sha1().equals(built.sha1())) {
+            store(built.sha1(), served.data());
+        }
+    }
+
+    /** A build file's name, and a URL's end: {@code pack-<sha1>.zip}. */
+    private static final Pattern BUILD_FILE = Pattern.compile("pack-([0-9a-f]{40})\\.zip");
+
+    /**
+     * Deletes the build files no one may still ask for (ADR 0053): all but this session's build, the build
+     * {@code offered} names (what {@code server.properties} offers) and the one the workspace's server was last sent
+     * ({@code .msc/pack-sent}). Never while another live session runs the server: its builds are its own. Best effort.
+     */
+    public synchronized void prune(String offered) {
+        if (lifetime.get() == Lifetime.OTHER_SESSION) {
+            return;
+        }
+        Set<String> keep = new HashSet<>();
+        if (lastBuilt != null) {
+            keep.add(lastBuilt.sha1());
+        }
+        try {
+            keep.add(Files.readString(sentFile()).strip());
+        } catch (IOException e) {
+            // Nothing was sent from this workspace yet.
+        }
+        Matcher url = offered == null ? null : BUILD_FILE.matcher(offered);
+        if (url != null && url.find()) {
+            keep.add(url.group(1));
+        }
+        try (var files = Files.list(outDir)) {
+            for (Path file : files.toList()) {
+                Matcher name = BUILD_FILE.matcher(file.getFileName().toString());
+                if (name.matches() && !keep.contains(name.group(1))) {
+                    Files.deleteIfExists(file);
+                }
+            }
+        } catch (IOException e) {
+            // The next publish prunes again.
+        }
     }
 
     /**
@@ -185,7 +275,7 @@ public final class ResourcePack implements AutoCloseable {
      * first ({@link #takeLeftoverHost}), so this session's host never waits for its port.
      */
     private String url(String sha1) throws IOException {
-        if (!hostAlive() && server == null && outlives.getAsBoolean()) {
+        if (!hostAlive() && outlives()) {
             takeLeftoverHost(sha1);
         }
         int port;
@@ -206,9 +296,10 @@ public final class ResourcePack implements AutoCloseable {
 
     /**
      * A server that outlives the session while an earlier session's standalone host still runs (#750): that host is
-     * reused when it serves the build with {@code sha1} (it serves the zip file itself) on the port this workspace's
-     * pack is served on, else stopped, so the host that replaces it ({@link #serve}) can take that port. Either way
-     * one host serves the pack past the session, and what {@code server.properties} offers is its URL.
+     * reused when it serves the build with {@code sha1} (it serves the build files, ADR 0053) on the port this
+     * workspace's pack is served on, else stopped, so the host that replaces it ({@link #serve}) can take that port.
+     * Either way one host serves the pack past the session, and what {@code server.properties} offers is its URL. A
+     * reused host keeps serving the earlier builds, whose URLs the earlier session's agent may have handed out.
      */
     private void takeLeftoverHost(String sha1) {
         ProcessHandle left = PidFile.peek(hostPidFile()).orElse(null);
@@ -220,6 +311,11 @@ public final class ResourcePack implements AutoCloseable {
             hostProcess = left;
             hostPort = port;
             adopted = true;
+            if (server != null) {
+                // Served in-process while another live session ran the server: the reused host serves it now.
+                server.stop();
+                server = null;
+            }
             return;
         }
         dropLeftoverHost();
@@ -275,7 +371,8 @@ public final class ResourcePack implements AutoCloseable {
      * The one place that decides who serves the workspace's pack (ADR 0051), from one state: while the server outlives
      * the session (detached, or a leftover, #750) the standalone host serves it, an earlier session's reused when it
      * serves the build, else started here when it is not running (also after it ended meanwhile);
-     * otherwise this session does, and a standalone host it started earlier is stopped. A host that does not come up
+     * otherwise this session does, and no standalone host runs ({@link #release}, ADR 0053). The host serves the build
+     * from its file {@code pack-<sha1>.zip}, written again here when missing. A host that does not come up
      * is an answer, not a failure: the pack is then served in-process ({@link Serving#trouble} says why), and the next
      * call tries again.
      */
@@ -283,14 +380,25 @@ public final class ResourcePack implements AutoCloseable {
         if (closed) {
             throw ToolException.workspaceClosed("the pack was not served");
         }
-        boolean outlive = outlives.getAsBoolean();
-        if (!outlive && hostProcess != null) {
-            stopOwnHost();
+        boolean outlive = outlives();
+        if (!outlive) {
+            release();
         }
         Built built = current();
         String trouble = null;
-        if (built != null && outlive && !hostAlive()) {
-            trouble = startStandalone();
+        if (built != null && outlive) {
+            // Its file is what the standalone host serves; a prune elsewhere may have dropped it (ADR 0053).
+            storeServed(built);
+            if (!hostAlive()) {
+                // Also for a build made while another live session ran the server, which has ended since.
+                takeLeftoverHost(built.sha1());
+            }
+            if (!hostAlive()) {
+                trouble = startStandalone();
+                if (trouble == null) {
+                    storeServed(built); // again once the host is recorded, so no prune in between drops it
+                }
+            }
         }
         if (built != null) {
             String url = url(built.sha1());
@@ -348,9 +456,11 @@ public final class ResourcePack implements AutoCloseable {
             throw new ToolException("the pack is empty. Add one with the texture tool first.");
         }
         source.writePackMeta(packFormat, description);
+        // pack.zip is the workspace's current build; the build file beside it is what a standalone host serves.
         PackSource.Zipped zipped = source.zip(zipFile());
         byte[] data = Files.readAllBytes(zipped.zip());
         String sha1 = zipped.sha1();
+        store(sha1, data);
         served = new PackHost.Served(data, sha1);
         Built built = new Built(zipped.zip(), sha1, url(sha1), zipped.files(), data.length);
         lastBuilt = built;
@@ -387,8 +497,8 @@ public final class ResourcePack implements AutoCloseable {
             Files.deleteIfExists(zipFile());
             return;
         }
-        // As a build writes it (in place), but whole: a standalone host may be reading it.
         AtomicFile.write(zipFile(), to -> Files.write(to, snapshot.served().data()));
+        store(snapshot.served().sha1(), snapshot.served().data());
         served = snapshot.served();
         lastBuilt = snapshot.built();
     }
@@ -396,21 +506,28 @@ public final class ResourcePack implements AutoCloseable {
     /** Serve on the configured or remembered port, or on a free one when that is taken. */
     private PackHost.Host startHost() throws IOException {
         int want = preferredPort > 0 ? preferredPort : rememberedPort();
+        // While another live session runs the server, its pack host holds the port: no use waiting, and the free port
+        // taken instead is not this workspace's to remember (#753).
+        boolean theirs = lifetime.get() == Lifetime.OTHER_SESSION;
         PackHost.Host started;
-        try {
-            // The port may have been let go a moment ago, by the leftover host or this session's own.
-            started = PackHost.startWithin(host, want, () -> served, PackHost.PORT_PATIENCE);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new java.io.InterruptedIOException("interrupted while waiting for port " + want);
-        } catch (IOException e) {
-            if (want == 0) {
-                throw e;
+        if (want == 0) {
+            // A first pack: a port no other process is handed by the system, so it can be taken again (ADR 0053).
+            started = PackHost.startOnFreePort(host, () -> served);
+        } else {
+            try {
+                // The port may have been let go a moment ago, by the leftover host or this session's own.
+                started = PackHost.startWithin(host, want, () -> served,
+                        theirs ? Duration.ZERO : PackHost.PORT_PATIENCE);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new java.io.InterruptedIOException("interrupted while waiting for port " + want);
+            } catch (IOException e) {
+                started = PackHost.startOnFreePort(host, () -> served);
             }
-            started = PackHost.start(host, 0, () -> served);
         }
         int port = started.port();
-        if (port != want) {
+        aside = theirs && port != want;
+        if (port != want && !theirs) {
             Files.createDirectories(portFile().getParent());
             Files.writeString(portFile(), port + "\n");
         }
@@ -448,6 +565,11 @@ public final class ResourcePack implements AutoCloseable {
     private String startStandalone() throws IOException, InterruptedException {
         // An earlier session's host this one did not reuse: the pid file is about to name the new one (#750).
         dropLeftoverHost();
+        if (server != null && aside) {
+            // Served on a free port while another live session ran the server: the host takes the workspace's (#753).
+            server.stop();
+            server = null;
+        }
         if (server == null) {
             server = startHost();
         }
@@ -455,12 +577,11 @@ public final class ResourcePack implements AutoCloseable {
         server.stop();
         server = null;
         List<String> command = new java.util.ArrayList<>(hostCommand);
-        command.addAll(List.of(host, String.valueOf(port), zipFile().toString()));
+        command.addAll(List.of(host, String.valueOf(port), outDir.toString()));
         Process p;
         try {
             // Its log is read as UTF-8 when it does not come up (#478).
             p = ServerJava.processBuilder(command)
-                    .redirectOutput(ProcessBuilder.Redirect.DISCARD)
                     .redirectError(hostLog().toFile())
                     .start();
         } catch (IOException e) {
@@ -468,25 +589,26 @@ public final class ResourcePack implements AutoCloseable {
             return failed(e.getMessage() != null ? e.getMessage() : e.toString());
         }
         // Owned from the moment it exists, so an interrupt below (the session ending while the host starts) leaves
-        // it where close and a later session's stopLeftoverHost find it, never as an orphan with no pid file (#297).
+        // it where close and a later session's release find it, never as an orphan with no pid file (#297).
         hostProcess = p.toHandle();
         adopted = false;
         hostPort = port;
         PidFile.write(hostPidFile(), p.toHandle());
+        Boolean ready;
         try {
             p.getOutputStream().close();
-            long deadline = System.nanoTime() + 15_000_000_000L;
-            while (p.isAlive() && System.nanoTime() < deadline && !accepts(port)) {
-                Thread.sleep(100);
-            }
+            ready = ready(p, port);
         } catch (IOException | RuntimeException e) {
             abandonHost(p);
             return failed(e.getMessage() != null ? e.getMessage() : e.toString());
         }
-        if (p.isAlive() && accepts(port)) {
+        if (Boolean.TRUE.equals(ready) && p.isAlive()) {
             return null;
         }
-        boolean hung = p.isAlive();
+        boolean hung = ready == null;
+        if (!hung) {
+            p.waitFor(5, TimeUnit.SECONDS); // its output ended a moment before it exits
+        }
         abandonHost(p);
         String why = reason(readLog());
         return failed(!why.isEmpty() ? why : hung ? "it did not listen within 15 s"
@@ -548,12 +670,33 @@ public final class ResourcePack implements AutoCloseable {
         return lines.isEmpty() ? "" : lines.getFirst();
     }
 
-    private boolean accepts(int port) {
-        try (java.net.Socket s = new java.net.Socket()) {
-            s.connect(new InetSocketAddress(host, port), 500);
-            return true;
-        } catch (IOException e) {
+    /**
+     * Waits up to 15 s for the standalone host {@code p} to say it serves on {@code port} ({@link PackHost#READY}); false
+     * when it exits or stays silent first. Only its own word counts: a connection to the port could reach anything
+     * that took the port while it changed hands, which then looked like a host that came up and served nothing (#753).
+     * Its output is read to the end, so the host never blocks on it. Null when it stayed silent (still running); false
+     * when it ended its output, so exited, without saying it.
+     */
+    private static Boolean ready(Process p, int port) throws InterruptedException {
+        java.util.concurrent.CompletableFuture<Boolean> said = new java.util.concurrent.CompletableFuture<>();
+        Thread.ofVirtual().name("msc-pack-host-output").start(() -> {
+            try (java.io.BufferedReader out = p.inputReader(java.nio.charset.StandardCharsets.UTF_8)) {
+                for (String line = out.readLine(); line != null; line = out.readLine()) {
+                    if (line.strip().equals(PackHost.READY + port)) {
+                        said.complete(true);
+                    }
+                }
+            } catch (IOException e) {
+                // Gone: nothing more to read.
+            }
+            said.complete(false);
+        });
+        try {
+            return said.get(15, TimeUnit.SECONDS);
+        } catch (java.util.concurrent.ExecutionException e) {
             return false;
+        } catch (java.util.concurrent.TimeoutException e) {
+            return null;
         }
     }
 
@@ -599,18 +742,39 @@ public final class ResourcePack implements AutoCloseable {
     }
 
     /**
-     * Stop a pack host an earlier, detached session left running, also one this session reused for the server that
-     * session left (#750). Returns a note, or null when there was none.
+     * What {@link #release} stopped: the pid of a host an earlier session left running (reused by this one or not),
+     * or -1, and whether this session's own standalone host stopped.
      */
-    public synchronized String stopLeftoverHost() {
-        long pid;
-        if (adopted && hostAlive()) {
-            pid = hostProcess.pid();
-            stopOwnHost();
-        } else {
-            pid = dropLeftoverHost();
+    public record Released(long earlier, boolean own) {
+        /** The note on the earlier session's host, or null. */
+        public String note() {
+            return earlier < 0 ? null
+                    : "stopped the pack host left running by an earlier session (pid " + earlier + ")";
         }
-        return pid < 0 ? null : "stopped the pack host left running by an earlier session (pid " + pid + ")";
+    }
+
+    /**
+     * A standalone host runs only while the server outlives the session (ADR 0053, #752): once it does not, this stops
+     * the host this session serves with (started here or reused) and, unless another live session runs the server
+     * (whose host it is), the host {@code .msc/pack-host.pid} names, as no server is left for it: one an earlier
+     * session left with its leftover, which may have been stopped or exited on its own. Called after every stop of a
+     * server, by every publish and at the session end; while the server outlives the session it does nothing.
+     */
+    public synchronized Released release() {
+        Lifetime life = lifetime.get();
+        if (life == Lifetime.OUTLIVES) {
+            return new Released(-1, false);
+        }
+        long earlier = adopted && hostAlive() ? hostProcess.pid() : -1;
+        boolean own = !adopted && hostAlive();
+        stopOwnHost();
+        if (life == Lifetime.SESSION) {
+            long dropped = dropLeftoverHost();
+            if (earlier < 0) {
+                earlier = dropped;
+            }
+        }
+        return new Released(earlier, own);
     }
 
     /** Stop serving. {@code keepHost} leaves a standalone host running for a detached server. */

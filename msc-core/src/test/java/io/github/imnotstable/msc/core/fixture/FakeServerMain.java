@@ -76,7 +76,17 @@ public final class FakeServerMain {
         }
         FakeAgent agent = new FakeAgent();
         // Each pack sent, as a line a test counts (#667).
-        agent.onPack = p -> System.out.println("[12:00:05 INFO]: [fake] pack sent " + p.sha1());
+        // And its URL in fake-pack-sent.txt, read after the core that sent it is gone (#753): what joining players get.
+        agent.onPack = p -> {
+            System.out.println("[12:00:05 INFO]: [fake] pack sent " + p.sha1());
+            try {
+                Files.writeString(Path.of("fake-pack-sent.txt"), ProcessHandle.current().pid() + " " + p.url() + "\n",
+                        StandardCharsets.UTF_8, java.nio.file.StandardOpenOption.CREATE,
+                        java.nio.file.StandardOpenOption.APPEND);
+            } catch (java.io.IOException e) {
+                throw new java.io.UncheckedIOException(e);
+            }
+        };
         OpRouter router = agent.router();
         // no-agent.flag: the agent never connects, as when it failed to load.
         AgentClient.Session session = Files.exists(Path.of("no-agent.flag")) ? null

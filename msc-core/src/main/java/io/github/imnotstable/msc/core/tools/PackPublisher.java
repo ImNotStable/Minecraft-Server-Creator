@@ -189,7 +189,17 @@ public final class PackPublisher {
                 return r;
             });
         }
+        prune();
         return new Published(built, serving.outlives(), serving.trouble(), offer, sent);
+    }
+
+    /**
+     * Deletes the build files that nothing offers, sends or serves any more (ADR 0053): kept are this session's build,
+     * the one {@code server.properties} offers and the one the server was last sent. Another live session's server
+     * keeps every file. Best effort, after each publish and at the session end.
+     */
+    public void prune() {
+        pack.prune(PackProperties.url(server.platform(), properties));
     }
 
     /**
