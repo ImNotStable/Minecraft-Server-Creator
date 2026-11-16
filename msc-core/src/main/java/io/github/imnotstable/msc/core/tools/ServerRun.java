@@ -158,9 +158,14 @@ final class ServerRun {
      * each through {@link #end}.
      */
     Stopped stopAny(Steps steps, String stop) throws InterruptedException {
-        String leftover = steps.note(LEFTOVER_SERVER, () -> end(false, false).note());
+        Ended[] left = new Ended[1];
+        String leftover = steps.note(LEFTOVER_SERVER, () -> {
+            left[0] = end(false, false);
+            return left[0].note();
+        });
         boolean own = steps.run(stop, () -> end(true, false).own());
-        return new Stopped(own || leftover != null, leftover);
+        // A pack host alone (its server gone) is no server to start again.
+        return new Stopped(own || left[0] != null && left[0].leftover() != null, leftover);
     }
 
     /** Declares the steps of {@link #startAndReport}, with what a failure of each leaves. */
