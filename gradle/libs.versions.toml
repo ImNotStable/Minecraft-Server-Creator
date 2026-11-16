@@ -19,16 +19,16 @@ fabric-loom = "1.19.4"     # also pinned in settings.gradle.kts, which cannot re
 neoforge = "26.3.0.102"     # NeoForge for Minecraft 26.3
 neoform = "26.3-1"          # vanilla Minecraft 26.3 for ModDevGradle's vanilla mode (msc-agent-forge compiles against it)
 moddev = "2.0.148"          # NeoForge ModDevGradle; also pinned in settings.gradle.kts, which cannot read this catalog
-forge = "26.3-66.1.5"       # Minecraft Forge for 26.3 (the recommended build)
+forge = "26.3-66.1.8"       # Minecraft Forge for 26.3 (the recommended build)
 forge-eventbus = "7.0.6"    # the EventBus that Forge 26.3 ships
 forgegradle = "7.0.40"      # only written into the forge-mod template; the repo build compiles against Forge's jars
 quilt-loader = "0.30.2"     # newest stable Quilt Loader; runs the Fabric agent and Fabric mods
 quilt-installer = "0.15.1"
 minestom = "2026.10.07-26.2"  # Minestom lags Paper: newest build targets Minecraft 26.2
 velocity = "4.3.1"          # Velocity proxy (ADR 0045): server_setup installs it; the velocity-plugin template compiles against its API
-mcprotocollib = "26.3-3"  # GeyserMC Java Edition protocol client for the msc-bot test player (opencollab repo)
+mcprotocollib = "26.3-4"  # GeyserMC Java Edition protocol client for the msc-bot test player (opencollab repo)
 netty = "4.2.20.Final"  # floor for mcprotocollib, which pulls netty-all 4.2.1.Final (old, with advisories); like jackson
-mcprotocollib-previous = "26.2"  # the previous Minecraft version, for servers that lag Paper (Minestom); stays one behind
+mcprotocollib-previous = "26.3-4"  # the previous Minecraft version, for servers that lag Paper (Minestom); stays one behind
 slf4j = "2.0.20"  # matches Minestom's slf4j-api; scaffolded Minestom servers log through slf4j-simple
 
 [libraries]
