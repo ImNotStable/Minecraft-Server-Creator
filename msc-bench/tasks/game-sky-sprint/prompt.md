@@ -16,7 +16,7 @@ Coin pads: emerald blocks at x 0, y -61 (in place of the grass), z 15, 20 and 25
 
 ## Rules
 
-- Count time in server ticks (20 per second), never with the clock, so results do not depend on the machine.
+- Count time in server ticks (20 per second), never with the clock, so results do not depend on the machine. The checker only ticks the server it built from `createWorld` and `new Game(...)`, so count ticks from there (for example an `InstanceTickEvent` listener that `GameEvents.register` adds, or the instance's world age), not in a task that only `SprintServer.main` schedules.
 - A run starts when a player reaches stage `run` (through the lobby goal or `game stage run <player>`). A new run starts with 0 coins.
 - During a run, a player whose position is in a coin pad's column (x 0, y -60 to -58, that z) collects that coin, once per run, and is sent `Coin! (N/3)`, N being their coins this run.
 - Reaching `run`'s goal ends the run. The time is the run's ticks / 20 seconds, minus 1.0 second per coin, never below 0, shown with one decimal (like `3.0s`). Send the player `Finished in 3.0s with 2 coins`. The player then moves on to `done` as usual.
