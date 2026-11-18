@@ -26,3 +26,17 @@ GitHub reported 22 alerts on main (1 critical, 8 high, 12 moderate, 1 low); all 
 | `org.apache.logging.log4j:log4j-api` 2.26.0 | `paper-api` compile classpath, **provided** | GHSA-qv9r-c865-cp47 (moderate, MapMessage JSON) | Not reachable: the agent does not log MapMessages. Provided by Paper. |
 
 Gradle plugin classpaths (`buildEnvironment`: Shadow, run-paper, Loom, foojay, build-logic) were scanned too and have no known advisories.
+
+## 2026-11-16
+
+Re-scan of every resolvable configuration in all 16 projects (313 coordinates, including Loom's and
+ModDevGradle's own configurations). Everything from 2026-11-12 is unchanged except Jackson, which is now
+3.3.0 through the `jackson-bom` floor. MCP SDK 2.2.0 (released 2026-11-13) pulls Jackson 3.1.8 by itself, so
+once msc-core moves to it the floor only keeps us ahead of the SDK and is no longer a security fix.
+`msc-bot`'s Netty floor (4.2.20.Final) is clean. New since the last scan:
+
+| Library (version) | Where it comes from | Advisories | Decision |
+|---|---|---|---|
+| `org.jline:jline-reader` 3.20.0 | NeoForge 26.3 server, msc-agent-neoforge, **provided** | GHSA-5q95-hrpc-m3w3 (moderate, ReDoS via `HISTORY_IGNORE`) | Not reachable: the server's console library; the agent never touches the console or sets that variable, and does not ship JLine. |
+| `org.apache.commons:commons-compress` 1.18 | NeoForm's external tools (`neoFormRuntimeExternalTools`, msc-agent-neoforge and msc-agent-forge), **build tool** | GHSA-53x6-4x5p-rrvv, GHSA-7hfm-57qf-j43q, GHSA-crv7-7245-f45f, GHSA-mc84-pj99-q6hh, GHSA-xqfj-vm6h-2x34 (high, DoS on crafted archives); GHSA-4g9r-vxhx-9pgx (moderate) | Not reachable by users: runs only at build time on Minecraft's own jars, which Gradle checks by hash. Never shipped. Fixed when NeoForm updates its tools. |
+| `org.apache.commons:commons-lang3` 3.9 | Same NeoForm tools, **build tool** | GHSA-j288-q9x7-2f5v (moderate) | Same as above. |
