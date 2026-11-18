@@ -4,10 +4,12 @@
 name: CI
 
 on:
-  # Cloud-only, sparing Actions use (ADR 0025 addendum 2026-11-14): no runs on push, on ordinary PR events or nightly.
-  # Every PR is built locally before it is merged. A run starts only by hand or when a PR is labelled "full-ci".
+  # Runs on omen's self-hosted Gitea runners (free), so every push to main and every PR is built.
+  # Windows is dropped: omen has Linux runners only. A PR labelled "full-ci" also runs the e2e job.
+  push:
+    branches: [main]
   pull_request:
-    types: [labeled]
+    types: [opened, synchronize, reopened, labeled]
   workflow_dispatch:
 
 # A newer push to the same branch or PR cancels the older run (saves Actions minutes). Concurrency applies before
@@ -30,8 +32,7 @@ jobs:
       # One OS failing must not cancel the other: an OS-specific failure is the thing to see.
       fail-fast: false
       matrix:
-        # PRs: Ubuntu only, unless labelled full-ci. Everything else: Ubuntu and Windows.
-        os: ${{ fromJSON((github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'full-ci')) && '["ubuntu-latest"]' || '["ubuntu-latest","windows-latest"]') }}
+        os: [ubuntu-latest]
     defaults:
       run:
         # Git Bash on Windows, so ./gradlew and every run step read the same on both.
@@ -73,7 +74,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest]
     defaults:
       run:
         shell: bash
