@@ -22,6 +22,10 @@ A toolset that helps an AI develop custom Minecraft servers. One Gradle monorepo
 - A code graph of the repo lives in `D:\Projects\Minecraft Server Creator\graphify-out\` (main checkout only, git-excluded). Read `GRAPH_REPORT.md` there before broad searches.
 - Ask it: `graphify query "<question>"`, `graphify explain "AgentHub"`, `graphify affected "Region"`, `graphify path "A" "B"`. From a worktree add `--graph "D:\Projects\Minecraft Server Creator\graphify-out\graph.json"`.
 - Refresh after changes, from the main checkout: `graphify update .` (local AST, no API key).
+- Query the graph before grepping or reading source, and say so in subagent prompts that explore code. A hook
+  (`.claude/hooks/graphify-guard.sh`) reminds you on the PC.
+- Saving tokens (tools in use, model by task, what was left out, the standing task to keep looking):
+  `msc-docs/docs/agent-efficiency.md`.
 
 ## Ownership while threads work in parallel
 
