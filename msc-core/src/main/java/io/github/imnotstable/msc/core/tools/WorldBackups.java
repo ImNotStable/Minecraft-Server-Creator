@@ -146,6 +146,7 @@ public final class WorldBackups {
         boolean console = !agent && server.running();
         // Autosave the user (or an earlier failed save-on) turned off stays off: vanilla refuses a second save-off.
         boolean restore = agent || console;
+        long offMark = console ? server.log().mark() : 0;
         if (restore) {
             try {
                 command(agent, "save-off");
@@ -168,6 +169,8 @@ public final class WorldBackups {
                     throw new ToolException("the server did not confirm save-all flush within " + saveWait.toSeconds()
                             + "s; no backup taken");
                 }
+                // The console gives no reply, but vanilla logs its refusal before the save it confirmed above.
+                restore = server.awaitLine(offMark, l -> l.contains("already turned off"), Duration.ZERO) == null;
             }
             b = backups.save(config.serverDir(), label, keep);
         } finally {

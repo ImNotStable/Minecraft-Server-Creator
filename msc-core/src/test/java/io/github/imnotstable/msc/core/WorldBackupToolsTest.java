@@ -71,6 +71,19 @@ class WorldBackupToolsTest {
     }
 
     @Test
+    void withoutAnAgentAutosaveTheUserTurnedOffStaysOff() throws Exception {
+        world("v1");
+        Files.writeString(workspace.resolve("run/no-agent.flag"), "");
+        Files.writeString(workspace.resolve("run/autosave-off.flag"), "");
+        try (CoreHarness h = new CoreHarness(workspace, c -> c.withServerCommand(fakeServer()))) {
+            h.ok("server_start", "timeoutSeconds", 30);
+            assertThat(h.ok("build_undo", "backup", "save")).startsWith("backup ");
+            assertThat(h.ok("server_logs", "mode", "grep", "pattern", "console: save").lines()
+                    .map(l -> l.substring(l.indexOf("console: ") + 9))).containsExactly("save-off", "save-all flush");
+        }
+    }
+
+    @Test
     void aServerThatNeverConfirmsTheSaveGetsNoBackupAndAutosaveBack() throws Exception {
         world("v1");
         Files.writeString(workspace.resolve("run/no-agent.flag"), "");

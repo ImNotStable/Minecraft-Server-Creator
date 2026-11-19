@@ -122,11 +122,14 @@ final class ServerConsole {
     /** One command, or several (one per line) run in order, each output under its command, in one tool call. */
     String command(Args args) throws IOException, InterruptedException {
         List<String> commands = args.text("command").lines().map(String::strip).filter(c -> !c.isEmpty()).toList();
+        if (commands.isEmpty()) {
+            throw new ToolException("command is empty; give a command such as `time set day`");
+        }
         if (commands.size() > MAX_COMMANDS) {
             throw new ToolException("at most " + MAX_COMMANDS + " commands per call; got " + commands.size());
         }
         if (commands.size() <= 1) {
-            return one(commands.isEmpty() ? "" : commands.getFirst()).fit(Budget.DEFAULT_CHARS);
+            return one(commands.getFirst()).fit(Budget.DEFAULT_CHARS);
         }
         // One budget (#473): every command keeps its line, the outputs share what is left.
         Budget.Parts out = new Budget.Parts();
