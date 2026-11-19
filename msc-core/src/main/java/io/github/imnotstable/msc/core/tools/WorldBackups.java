@@ -151,7 +151,7 @@ public final class WorldBackups {
             try {
                 command(agent, "save-off");
             } catch (ToolException e) {
-                if (!e.getMessage().contains("already")) {
+                if (!e.getMessage().contains("already turned off")) {
                     throw e;
                 }
                 restore = false;
@@ -169,11 +169,13 @@ public final class WorldBackups {
                     throw new ToolException("the server did not confirm save-all flush within " + saveWait.toSeconds()
                             + "s; no backup taken");
                 }
-                // The console gives no reply, but vanilla logs its refusal before the save it confirmed above.
-                restore = server.awaitLine(offMark, l -> l.contains("already turned off"), Duration.ZERO) == null;
             }
             b = backups.save(config.serverDir(), label, keep);
         } finally {
+            // The console gives no reply, but vanilla logs its refusal to save-off, also when the flush failed.
+            if (console && restore) {
+                restore = server.awaitLine(offMark, l -> l.contains("already turned off"), Duration.ZERO) == null;
+            }
             if (restore) {
                 try {
                     command(agent, "save-on");
