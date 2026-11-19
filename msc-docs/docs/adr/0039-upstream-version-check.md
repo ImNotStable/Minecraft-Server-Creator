@@ -21,7 +21,7 @@ What each audience can do with the news differs:
 1. **`./gradlew checkUpstreamVersions`** (msc-core, `io.github.imnotstable.msc.core.upstream`) reads the catalog and
    the core's default Minecraft version and prints one line per component: name, pinned, newest stable upstream, and
    `NEWER`, `up to date` or `could not check (<reason>)`, then a one-line summary. Sources: Mojang's version manifest
-   (`latest.release`), Paper's Fill v3 API (the newest version newer than the pin whose latest build is `STABLE`),
+   (`latest.release`), Paper's and Velocity's Fill v3 API (the newest version newer than the pin whose latest build is `STABLE`),
    Fabric meta (loader with `stable: true`), Fabric's Maven (Fabric API for the pinned Minecraft), NeoForge's Maven,
    Forge's `promotions_slim.json` (the recommended build of the newest Minecraft that has one), Quilt meta and Maven
    Central (Minestom). Alphas, betas, pre-releases, release candidates and snapshots never count as newest.

@@ -26,6 +26,7 @@ import java.util.regex.Pattern;
 final class UpstreamCheck {
     static final String MOJANG = "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json";
     static final String PAPER = "https://fill.papermc.io/v3/projects/paper";
+    static final String VELOCITY = "https://fill.papermc.io/v3/projects/velocity";
     static final String FABRIC_LOADER = "https://meta.fabricmc.net/v2/versions/loader";
     static final String FABRIC_API = "https://maven.fabricmc.net/net/fabricmc/fabric-api/fabric-api/maven-metadata.xml";
     static final String NEOFORGE = "https://maven.neoforged.net/releases/net/neoforged/neoforge/maven-metadata.xml";
@@ -91,7 +92,7 @@ final class UpstreamCheck {
         if (!coreMinecraft.equals(minecraft)) {
             list.add(new Component("msc-core default", coreMinecraft, UpstreamCheck::minecraft));
         }
-        list.add(new Component("paper", paper, f -> paper(f, paper)));
+        list.add(new Component("paper", paper, f -> fill(f, PAPER, paper)));
         list.add(new Component("fabric-loader", pin(catalog, "fabric-loader"), UpstreamCheck::fabricLoader));
         list.add(new Component("fabric-api", pin(catalog, "fabric-api"),
                 f -> newestOf(mavenVersions(f.get(FABRIC_API)), v -> v.endsWith("+" + minecraft))));
@@ -101,6 +102,8 @@ final class UpstreamCheck {
         list.add(new Component("quilt-loader", pin(catalog, "quilt-loader"), UpstreamCheck::quiltLoader));
         list.add(new Component("minestom", pin(catalog, "minestom"),
                 f -> newestOf(mavenVersions(f.get(MINESTOM)), v -> true)));
+        String velocity = pin(catalog, "velocity");
+        list.add(new Component("velocity", velocity, f -> fill(f, VELOCITY, velocity)));
         return list;
     }
 
@@ -174,12 +177,13 @@ final class UpstreamCheck {
     }
 
     /**
-     * The newest Paper version with a stable build: Paper lists a version (and its release candidates) before its
-     * builds are stable, so each newer version than the pin is asked for its latest build's channel.
+     * The newest version of a Fill project (Paper, Velocity) with a stable build: Fill lists a version (and its
+     * release candidates) before its builds are stable, so each newer version than the pin is asked for its latest
+     * build's channel.
      */
-    static String paper(Fetcher f, String pinned) throws IOException, InterruptedException {
+    static String fill(Fetcher f, String project, String pinned) throws IOException, InterruptedException {
         List<String> all = new ArrayList<>();
-        for (Map.Entry<String, JsonElement> group : json(f.get(PAPER)).getAsJsonObject()
+        for (Map.Entry<String, JsonElement> group : json(f.get(project)).getAsJsonObject()
                 .getAsJsonObject("versions").entrySet()) {
             group.getValue().getAsJsonArray().forEach(v -> all.add(v.getAsString()));
         }
@@ -187,7 +191,7 @@ final class UpstreamCheck {
                 .filter(v -> VersionOrder.compare(v, pinned) > 0)
                 .sorted(VersionOrder.NEWEST_LAST.reversed()).limit(PAPER_CANDIDATES).toList();
         for (String v : newer) {
-            JsonObject latest = json(f.get(PAPER + "/versions/" + v + "/builds/latest")).getAsJsonObject();
+            JsonObject latest = json(f.get(project + "/versions/" + v + "/builds/latest")).getAsJsonObject();
             if (latest.has("channel") && "STABLE".equalsIgnoreCase(latest.get("channel").getAsString())) {
                 return v;
             }
