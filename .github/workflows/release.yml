@@ -1,4 +1,4 @@
-# Publishes a GitHub Release with the usable artifacts. Two ways to start it (ADR 0012):
+# Publishes a Gitea release (on omen) with the usable artifacts, and can mirror the tag to GitHub. Two ways to start it (ADR 0012):
 # - push a version tag (v1.2.3), or
 # - run it by hand on main with a version (1.2.3); the release then creates the tag v1.2.3 on that commit.
 name: Release
@@ -23,6 +23,8 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0  # the release notes list commits since the previous tag
 
       - uses: actions/setup-java@v6
         with:
@@ -73,22 +75,40 @@ jobs:
           (cd dist && sha256sum * > SHA256SUMS.txt)
           ls -l dist
 
+      # Gitea has no `gh release`; its API does the same. A run by hand makes Gitea create the tag on the built commit.
       - name: Publish release
         env:
-          GH_TOKEN: ${{ github.token }}
+          TOKEN: ${{ github.token }}
+          API: ${{ github.api_url }}/repos/${{ github.repository }}
           VERSION: ${{ steps.version.outputs.version }}
           TAG: ${{ steps.version.outputs.tag }}
         run: |
-          flags=()
-          if [[ "$VERSION" == *-* ]]; then flags+=(--prerelease); fi
-          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
-            # Creates the tag on the commit that was just built and tested; fails if it exists.
-            flags+=(--target "$GITHUB_SHA")
-          else
-            flags+=(--verify-tag)
-          fi
-          # Hand-written highlights, when present, go above GitHub's generated PR list.
+          set -euo pipefail
+          # Hand-written highlights first when present, then the commits since the previous tag.
           notes="msc-docs/releases/$TAG.md"
-          if [[ -f "$notes" ]]; then flags+=(--notes-file "$notes"); fi
-          gh release create "$TAG" dist/* --generate-notes \
-            --title "Minecraft Server Creator $VERSION" "${flags[@]}"
+          body=""
+          if [[ -f "$notes" ]]; then body="$(cat "$notes")"$'\n\n'; fi
+          if prev=$(git describe --tags --abbrev=0 "$GITHUB_SHA^" 2>/dev/null); then
+            body+="## Changes since $prev"$'\n'"$(git log --no-merges --format='- %s' "$prev..$GITHUB_SHA")"
+          fi
+          prerelease=false; [[ "$VERSION" == *-* ]] && prerelease=true
+          jq -n --arg tag "$TAG" --arg sha "$GITHUB_SHA" --arg name "Minecraft Server Creator $VERSION" \
+            --arg body "$body" --argjson pre "$prerelease" \
+            '{tag_name: $tag, target_commitish: $sha, name: $name, body: $body, prerelease: $pre}' > release.json
+          id=$(curl -fsS -X POST -H "Authorization: token $TOKEN" -H "Content-Type: application/json" \
+            --data @release.json "$API/releases" | jq -r .id)
+          for f in dist/*; do
+            curl -fsS -o /dev/null -X POST -H "Authorization: token $TOKEN" \
+              -F "attachment=@$f" "$API/releases/$id/assets?name=$(basename "$f")"
+          done
+          echo "Published $TAG (release $id)"
+
+      # Optional: set the GH_MIRROR_TOKEN secret (a GitHub token with contents write) to also push the tag to GitHub.
+      - name: Mirror tag to GitHub
+        env:
+          GH_MIRROR_TOKEN: ${{ secrets.GH_MIRROR_TOKEN }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          if [[ -z "$GH_MIRROR_TOKEN" ]]; then echo "No GH_MIRROR_TOKEN secret; skipping the GitHub mirror"; exit 0; fi
+          git push "https://x-access-token:$GH_MIRROR_TOKEN@github.com/ImNotStable/Minecraft-Server-Creator.git" \
+            "$GITHUB_SHA:refs/tags/$TAG"
