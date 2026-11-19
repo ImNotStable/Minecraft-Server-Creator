@@ -94,7 +94,9 @@ public final class ProxyForwarding {
         if (!after.equals(before)) {
             Files.createDirectories(file.getParent());
             AtomicFile.write(file, to -> Files.writeString(to, after, StandardCharsets.UTF_8));
-            ownerOnly(file);
+        }
+        if (Files.isRegularFile(file)) {
+            ownerOnly(file); // also a file an earlier version left readable
         }
     }
 

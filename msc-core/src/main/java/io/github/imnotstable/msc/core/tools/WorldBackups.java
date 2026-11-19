@@ -162,6 +162,8 @@ public final class WorldBackups {
                 // The console gives no reply, so its log line does: vanilla answers save-off at once, either way.
                 LogBuffer.Match off = server.awaitLine(offMark,
                         l -> l.contains("Automatic saving is now disabled") || l.contains("already turned off"), OFF_WAIT);
+                // shortcut: no answer within 5 s counts as turned off, so save-on follows; read the answer later if a
+                // busy server ever loses a user's autosave choice this way.
                 restore = off == null || !off.line().contains("already turned off");
             }
         }
