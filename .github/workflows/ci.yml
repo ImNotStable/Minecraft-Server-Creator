@@ -1,11 +1,11 @@
-# Builds and tests every module. Runs only by hand (Ubuntu + Windows + e2e) or on a PR labelled "full-ci"
+# Builds and tests every module on Gitea: Ubuntu on omen. Windows runs on Flux from ci-windows.yml.
 # (ADR 0025 and its 2026-11-14 addendum: Actions used sparingly, every PR is built locally before merge).
 # See ADR 0012 and ADR 0022.
 name: CI
 
 on:
   # Runs on omen's self-hosted Gitea runners (free), so every push to main and every PR is built.
-  # Windows is dropped: omen has Linux runners only. A PR labelled "full-ci" also runs the e2e job.
+  # A PR labelled "full-ci" also runs the e2e job (and ci-windows.yml on Flux).
   push:
     branches: [main]
   pull_request:
@@ -32,6 +32,7 @@ jobs:
       # One OS failing must not cancel the other: an OS-specific failure is the thing to see.
       fail-fast: false
       matrix:
+        # Gitea can't expand a matrix from an expression (the job queues forever), so Windows is ci-windows.yml.
         os: [ubuntu-latest]
     defaults:
       run:
@@ -74,6 +75,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # Gitea can't expand a matrix from an expression (the job queues forever), so Windows is ci-windows.yml.
         os: [ubuntu-latest]
     defaults:
       run:
