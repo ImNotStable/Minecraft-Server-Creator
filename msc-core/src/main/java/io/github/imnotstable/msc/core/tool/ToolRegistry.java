@@ -178,7 +178,12 @@ public final class ToolRegistry {
             }
         }
         Supplier<String> queued = notice.getAndSet(null);
-        String pending = queued == null ? null : queued.get();
+        String pending = null;
+        try {
+            pending = queued == null ? null : queued.get();
+        } catch (RuntimeException e) {
+            // The call already ran: a notice that cannot be worked out (a folder gone mid-walk) is dropped, not its result.
+        }
         pending = pending == null ? null : unsaid(pending, text);
         // The one place every result passes: the cap applies to the final text, the notice included.
         text = fit(pending, text, cap(tool, new Args(args)));
