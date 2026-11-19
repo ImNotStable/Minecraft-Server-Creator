@@ -4,6 +4,7 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import io.github.imnotstable.msc.core.server.PidFile;
 import io.github.imnotstable.msc.core.server.ServerManager.Lifetime;
+import io.github.imnotstable.msc.core.server.WorkspacePorts;
 import io.github.imnotstable.msc.core.tool.ToolException;
 import io.github.imnotstable.msc.process.AtomicFile;
 import io.github.imnotstable.msc.process.ServerJava;
@@ -20,6 +21,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
@@ -136,6 +138,10 @@ public final class ResourcePack implements AutoCloseable {
     private boolean aside;
     /** Set by {@link #close(boolean)} under this monitor; whatever starts a host checks it under the same one. */
     private boolean closed;
+    /** The ports the workspace uses for anything but the pack, read at each use (ADR 0054). */
+    private Supplier<WorkspacePorts> ports = () -> WorkspacePorts.DEFAULTS;
+    /** Ports this session found its pack host holding when the server needed them (#755): never taken again here. */
+    private final Set<Integer> avoided = new HashSet<>();
 
     /**
      * @param port port to serve on; 0 reuses the port this workspace used last ({@code .msc/pack-port}), so the pack
@@ -161,6 +167,19 @@ public final class ResourcePack implements AutoCloseable {
 
     public ResourcePack(Path root, Path outDir, String host, int packFormat) {
         this(root, outDir, host, 0, packFormat);
+    }
+
+    /**
+     * The ports the workspace uses for anything but the pack (ADR 0054), read each time a pack port is picked, taken
+     * again or kept: the pack never takes one of them.
+     */
+    public synchronized void ports(Supplier<WorkspacePorts> ports) {
+        this.ports = ports;
+    }
+
+    /** True when {@code port} is one the pack must not take: the workspace uses it, or this session gave it up. */
+    private boolean reserved(int port) {
+        return avoided.contains(port) || ports.get().reserved(port);
     }
 
     /** Replace the command that starts the standalone host (up to its arguments); tests use a stand-in. */
@@ -282,6 +301,11 @@ public final class ResourcePack implements AutoCloseable {
         if (hostAlive()) {
             port = hostPort;
         } else {
+            if (server != null && reserved(server.port())) {
+                // Taken before the workspace used the port otherwise (server.properties changed): move off it (#755).
+                server.stop();
+                server = null;
+            }
             if (server == null) {
                 server = startHost();
             }
@@ -290,25 +314,89 @@ public final class ResourcePack implements AutoCloseable {
         return "http://" + host + ":" + port + "/pack-" + sha1 + ".zip";
     }
 
+    /**
+     * Before a server start: the in-process host lets go of its port when the workspace now uses it otherwise, so the
+     * server can bind it (#755). The next publish serves the pack on a free port, which the workspace remembers
+     * instead. Returns true when the host let go of it.
+     */
+    public synchronized boolean leaveReservedPort() {
+        if (server == null || !reserved(server.port())) {
+            return false;
+        }
+        server.stop();
+        server = null;
+        lastBuilt = null; // its URL named the stopped host's port; current() serves the zip again
+        return true;
+    }
+
+    /**
+     * After a start that found its port held by this session's own in-process host (a port the core could not know,
+     * such as one set in a Minestom main class): that host lets go of {@code port} and never takes it again in this
+     * session; the next publish serves the pack on a free port. Returns true when the host let go of it.
+     */
+    public synchronized boolean avoid(int port) {
+        avoided.add(port);
+        return leaveReservedPort();
+    }
+
+    /**
+     * Who the MSC pack host that answers on a port is, as seen from this workspace (ADR 0054): {@code OWN} for this
+     * workspace's in-process host, {@code STANDALONE} for the standalone host {@code .msc/pack-host.pid} names,
+     * {@code OTHER} for any other (another workspace's or session's), with the pid of the process it runs in.
+     */
+    public record Holder(Kind kind, long pid) {
+        /** Whose host it is. */
+        public enum Kind { OWN, STANDALONE, OTHER }
+    }
+
+    /**
+     * The {@link Holder} of {@code port}, or null when no MSC pack host answers there. Told by the host's identity
+     * (its pid and token), never by what the port serves.
+     */
+    public Holder holder(int port) {
+        PackHost.Identity who = PackHost.identify(host, port);
+        if (who == null) {
+            return null;
+        }
+        String own;
+        HostId recorded;
+        synchronized (this) {
+            own = server != null ? server.token() : null;
+            recorded = leftoverId();
+        }
+        if (who.token().equals(own) && who.pid() == ProcessHandle.current().pid()) {
+            return new Holder(Holder.Kind.OWN, who.pid());
+        }
+        if (recorded != null && recorded.process().pid() == who.pid() && recorded.token().equals(who.token())) {
+            return new Holder(Holder.Kind.STANDALONE, who.pid());
+        }
+        return new Holder(Holder.Kind.OTHER, who.pid());
+    }
+
     private boolean hostAlive() {
         return hostProcess != null && hostProcess.isAlive();
     }
 
     /**
      * A server that outlives the session while an earlier session's standalone host still runs (#750): that host is
-     * reused when it serves the build with {@code sha1} (it serves the build files, ADR 0053) on the port this
-     * workspace's pack is served on, else stopped, so the host that replaces it ({@link #serve}) can take that port.
-     * Either way one host serves the pack past the session, and what {@code server.properties} offers is its URL. A
-     * reused host keeps serving the earlier builds, whose URLs the earlier session's agent may have handed out.
+     * reused when it is the host recorded with the pid file, on the port recorded there, and serves the build with
+     * {@code sha1} (it serves the build files, ADR 0053); else it is stopped, so the host that replaces it
+     * ({@link #serve}) can take this workspace's port. The host is told by its identity alone (ADR 0054): the host on
+     * the recorded port must answer the recorded pid and token, so neither another process that took the port nor this
+     * session's own in-process host, which may answer on a fixed {@code MSC_PACK_PORT}, is taken for it (#756), and the
+     * URL names the port that host serves on. Either way one host serves the pack past the session, and what
+     * {@code server.properties} offers is its URL. A reused host keeps serving the earlier builds, whose URLs the
+     * earlier session's agent may have handed out.
      */
     private void takeLeftoverHost(String sha1) {
-        ProcessHandle left = PidFile.peek(hostPidFile()).orElse(null);
+        HostId left = leftoverId();
         if (left == null) {
+            dropLeftoverHost(); // none, or one with no identity (an MSC before ADR 0054): replaced
             return;
         }
-        int port = preferredPort > 0 ? preferredPort : rememberedPort();
-        if (port > 0 && serves(port, sha1) && left.isAlive()) {
-            hostProcess = left;
+        int port = left.port();
+        if (!reserved(port) && isHost(left) && serves(port, sha1) && left.process().isAlive()) {
+            hostProcess = left.process();
             hostPort = port;
             adopted = true;
             if (server != null) {
@@ -321,7 +409,13 @@ public final class ResourcePack implements AutoCloseable {
         dropLeftoverHost();
     }
 
-    /** True when {@code port} serves the build with {@code sha1} (a 200): this workspace's pack host. */
+    /** True when the host on {@code left}'s port says it is {@code left}: the same pid and token. */
+    private boolean isHost(HostId left) {
+        PackHost.Identity who = PackHost.identify(host, left.port());
+        return who != null && who.pid() == left.process().pid() && who.token().equals(left.token());
+    }
+
+    /** True when {@code port} serves the build with {@code sha1} (a 200), once the host there is known. */
     private boolean serves(int port, String sha1) {
         try {
             HttpURLConnection c = (HttpURLConnection) URI.create("http://" + host + ":" + port + "/pack-" + sha1
@@ -346,7 +440,9 @@ public final class ResourcePack implements AutoCloseable {
         if (hostAlive()) {
             return -1;
         }
-        return PidFile.take(hostPidFile()).map(h -> {
+        Optional<ProcessHandle> left = PidFile.take(hostPidFile());
+        forgetHostId();
+        return left.map(h -> {
             h.destroy();
             try {
                 h.onExit().get(5, TimeUnit.SECONDS);
@@ -503,8 +599,18 @@ public final class ResourcePack implements AutoCloseable {
         lastBuilt = snapshot.built();
     }
 
-    /** Serve on the configured or remembered port, or on a free one when that is taken. */
+    /**
+     * Serve on the configured or remembered port, or on a free one when that is taken. Never on a port the workspace
+     * uses otherwise (ADR 0054): a remembered one is dropped, and a configured one is refused, naming its use (#755).
+     */
     private PackHost.Host startHost() throws IOException {
+        if (preferredPort > 0 && reserved(preferredPort)) {
+            String use = ports.get().use(preferredPort);
+            throw new ToolException("MSC_PACK_PORT=" + preferredPort + " is "
+                    + (use != null ? use : "a port this workspace's server needed") + ", so the resource pack is not"
+                    + " served there: a pack host on it would keep that port from what needs it. Set MSC_PACK_PORT"
+                    + " to another port, or unset it to serve the pack on a free one");
+        }
         int want = preferredPort > 0 ? preferredPort : rememberedPort();
         // While another live session runs the server, its pack host holds the port: no use waiting, and the free port
         // taken instead is not this workspace's to remember (#753).
@@ -512,7 +618,7 @@ public final class ResourcePack implements AutoCloseable {
         PackHost.Host started;
         if (want == 0) {
             // A first pack: a port no other process is handed by the system, so it can be taken again (ADR 0053).
-            started = PackHost.startOnFreePort(host, () -> served);
+            started = PackHost.startOnFreePort(host, () -> served, this::reserved, null);
         } else {
             try {
                 // The port may have been let go a moment ago, by the leftover host or this session's own.
@@ -522,7 +628,7 @@ public final class ResourcePack implements AutoCloseable {
                 Thread.currentThread().interrupt();
                 throw new java.io.InterruptedIOException("interrupted while waiting for port " + want);
             } catch (IOException e) {
-                started = PackHost.startOnFreePort(host, () -> served);
+                started = PackHost.startOnFreePort(host, () -> served, this::reserved, null);
             }
         }
         int port = started.port();
@@ -539,13 +645,29 @@ public final class ResourcePack implements AutoCloseable {
         return outDir.resolveSibling("pack-port");
     }
 
+    /**
+     * The port in {@code .msc/pack-port}, or 0. A port the workspace now uses otherwise (ADR 0054) is dropped: the
+     * file is deleted and a free port picked, which the file then remembers (#755).
+     */
     private int rememberedPort() {
+        int port;
         try {
-            int port = Integer.parseInt(Files.readString(portFile()).strip());
-            return port > 0 && port < 65536 ? port : 0;
+            port = Integer.parseInt(Files.readString(portFile()).strip());
         } catch (IOException | NumberFormatException e) {
             return 0;
         }
+        if (port <= 0 || port >= 65536) {
+            return 0;
+        }
+        if (reserved(port)) {
+            try {
+                Files.deleteIfExists(portFile());
+            } catch (IOException e) {
+                // A free port is picked anyway, and written over it.
+            }
+            return 0;
+        }
+        return port;
     }
 
     private Path zipFile() {
@@ -555,6 +677,64 @@ public final class ResourcePack implements AutoCloseable {
     /** {@code .msc/pack-host.pid}: the standalone pack host a detached session left running. */
     private Path hostPidFile() {
         return outDir.resolveSibling("pack-host.pid");
+    }
+
+    /**
+     * {@code .msc/pack-host.id}: {@code <pid> <port> <token>}, the standalone host's identity beside its pid file
+     * (ADR 0054): the port it was started on and the token it answers on {@link PackHost#IDENTITY_PATH}. Written
+     * before the pid file, so a host the pid file names has one; a file of its own, so an MSC from before it still
+     * reads the pid file as it did.
+     */
+    private Path hostIdFile() {
+        return outDir.resolveSibling("pack-host.id");
+    }
+
+    /** What {@code .msc/pack-host.id} records of the live host {@code .msc/pack-host.pid} names. */
+    private record HostId(ProcessHandle process, int port, String token) {
+    }
+
+    /** The live host the pid file names, with the identity recorded for that pid; null when either is missing. */
+    private HostId leftoverId() {
+        ProcessHandle left = PidFile.peek(hostPidFile()).orElse(null);
+        if (left == null) {
+            return null;
+        }
+        try {
+            String[] words = Files.readString(hostIdFile()).strip().split(" ");
+            if (words.length != 3 || Long.parseLong(words[0]) != left.pid()) {
+                return null;
+            }
+            int port = Integer.parseInt(words[1]);
+            return port > 0 && port < 65536 ? new HostId(left, port, words[2]) : null;
+        } catch (IOException | NumberFormatException e) {
+            return null;
+        }
+    }
+
+    private void writeHostId(long pid, int port, String token) {
+        try {
+            AtomicFile.write(hostIdFile(), to -> Files.writeString(to, pid + " " + port + " " + token + "\n"));
+        } catch (IOException e) {
+            // Without it the next session replaces the host instead of reusing it; nothing else breaks.
+        }
+    }
+
+    /** Deletes the pid file and the identity beside it. */
+    private void forgetHost() {
+        try {
+            Files.deleteIfExists(hostPidFile());
+        } catch (IOException ignored) {
+            // A stale file is checked against the process start time anyway.
+        }
+        forgetHostId();
+    }
+
+    private void forgetHostId() {
+        try {
+            Files.deleteIfExists(hostIdFile());
+        } catch (IOException ignored) {
+            // Keyed by a pid the pid file must name with its start time, so a stale one is never matched.
+        }
     }
 
     /**
@@ -576,8 +756,9 @@ public final class ResourcePack implements AutoCloseable {
         int port = server.port();
         server.stop();
         server = null;
+        String token = PackHost.newToken();
         List<String> command = new java.util.ArrayList<>(hostCommand);
-        command.addAll(List.of(host, String.valueOf(port), outDir.toString()));
+        command.addAll(List.of(host, String.valueOf(port), outDir.toString(), token));
         Process p;
         try {
             // Its log is read as UTF-8 when it does not come up (#478).
@@ -593,6 +774,7 @@ public final class ResourcePack implements AutoCloseable {
         hostProcess = p.toHandle();
         adopted = false;
         hostPort = port;
+        writeHostId(p.pid(), port, token);
         PidFile.write(hostPidFile(), p.toHandle());
         Boolean ready;
         try {
@@ -624,11 +806,7 @@ public final class ResourcePack implements AutoCloseable {
         p.destroyForcibly();
         hostProcess = null;
         adopted = false;
-        try {
-            Files.deleteIfExists(hostPidFile());
-        } catch (IOException ignored) {
-            // A stale file is checked against the process start time anyway.
-        }
+        forgetHost();
         p.waitFor(5, TimeUnit.SECONDS);
         server = startHost();
     }
@@ -720,11 +898,7 @@ public final class ResourcePack implements AutoCloseable {
         } catch (java.util.concurrent.ExecutionException | java.util.concurrent.TimeoutException e) {
             // Its port frees a moment later; a build then falls back to a free port.
         }
-        try {
-            Files.deleteIfExists(hostPidFile());
-        } catch (IOException ignored) {
-            // A stale file is checked against the process start time anyway.
-        }
+        forgetHost();
         return true;
     }
 
@@ -788,11 +962,7 @@ public final class ResourcePack implements AutoCloseable {
             hostProcess.destroy();
             hostProcess = null;
             adopted = false;
-            try {
-                Files.deleteIfExists(hostPidFile());
-            } catch (IOException ignored) {
-                // A stale file is checked against the process start time anyway.
-            }
+            forgetHost();
         }
     }
 

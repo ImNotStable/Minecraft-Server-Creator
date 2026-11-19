@@ -7,6 +7,7 @@ import io.github.imnotstable.msc.core.server.FabricDownloader;
 import io.github.imnotstable.msc.core.server.PaperDownloader;
 import io.github.imnotstable.msc.core.server.ProjectBuilder;
 import io.github.imnotstable.msc.core.server.ServerManager;
+import io.github.imnotstable.msc.core.server.WorkspacePorts;
 import io.github.imnotstable.msc.core.texture.ResourcePack;
 import io.github.imnotstable.msc.core.tool.Args;
 import io.github.imnotstable.msc.core.tool.PathArg;
@@ -170,6 +171,8 @@ public final class Core implements AutoCloseable {
             // decides who serves the pack (ADR 0051).
             ResourcePack pack = new ResourcePack(config.packDir(), config.packBuildDir(), config.packHost(),
                     config.packPort(), config.packFormat(), server::lifetime);
+            // Never a pack port the server, the dev proxy, Geyser or the agent link needs (ADR 0054, #755).
+            pack.ports(() -> WorkspacePorts.of(config.serverDir(), Map.of(hub.port(), "MSC's agent link port")));
             PackPublisher publisher = new PackPublisher(pack, server, hub,
                     config.serverDir().resolve(ServerPropertiesFile.NAME));
             ToolRegistry tools = new ToolRegistry(log);

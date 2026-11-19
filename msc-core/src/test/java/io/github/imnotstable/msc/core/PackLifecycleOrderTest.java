@@ -57,6 +57,11 @@ import org.junit.jupiter.params.provider.MethodSource;
  * it, and a leftover that exits on its own ({@link Op#EXIT}), whose host the next publish or the session end stops.
  * #753: a fourth table runs two live sessions on one workspace (ADR 0053), and checks after every step and after both
  * end that no pack host runs without a server and that what a running server offers and was last sent is served.
+ * <p>
+ * #756, ADR 0054: the two-session and leftover tables run again on a fixed pack port ({@code MSC_PACK_PORT}), the
+ * two-session one also with orders where the second session packs before the first starts the server, so its own
+ * in-process host holds the fixed port while the first session's standalone host serves on another. The offer must then
+ * be served by the host the pid file names, told by its identity, after every step and after both sessions end.
  */
 // Its cases share nothing (each has its own temp dir, core and processes), so they run side by side: the table is
 // over 250 cases of about a second each, mostly waiting on the processes it starts.
@@ -218,6 +223,35 @@ class PackLifecycleOrderTest {
     @ParameterizedTest(name = "{0} {1}")
     @MethodSource("leftovers")
     void aLeftoverOutlivesTheSessionAsADetachedServerDoes(Left left, List<Op> order) throws Exception {
+        leftover(left, order);
+    }
+
+    /** #756: from a leftover each session served on the same fixed pack port, each op alone and some pairs. */
+    static Stream<Arguments> leftoversOnAFixedPort() {
+        List<Op> ops = List.of(Op.PACK, Op.DEV_CYCLE, Op.START, Op.STOP, Op.DETACH, Op.SWITCH, Op.KEEP_CYCLE);
+        List<Arguments> rows = new ArrayList<>();
+        for (Left left : Left.values()) {
+            rows.add(Arguments.of(left, List.of()));
+            for (Op op : ops) {
+                rows.add(Arguments.of(left, List.of(op)));
+            }
+            rows.add(Arguments.of(left, List.of(Op.PACK, Op.SWITCH)));
+            rows.add(Arguments.of(left, List.of(Op.SWITCH, Op.PACK)));
+            rows.add(Arguments.of(left, List.of(Op.START, Op.DETACH, Op.PACK)));
+        }
+        rows.add(Arguments.of(Left.HOST_UP, List.of(Op.BREAK, Op.PACK, Op.MEND, Op.PACK)));
+        rows.add(Arguments.of(Left.HOST_UP, List.of(Op.EXIT, Op.PACK)));
+        return rows.stream();
+    }
+
+    @ParameterizedTest(name = "{0} {1}")
+    @MethodSource("leftoversOnAFixedPort")
+    void aLeftoverOnAFixedPackPortOutlivesTheSessionToo(Left left, List<Op> order) throws Exception {
+        packPort = freePackPort();
+        leftover(left, order);
+    }
+
+    private void leftover(Left left, List<Op> order) throws Exception {
         leftBy(left);
         restart = true;
         for (Op op : order) {
@@ -240,6 +274,9 @@ class PackLifecycleOrderTest {
             hostUp = false; // no server outlives the session, so no pack host does (#752)
         }
         check(Platform.PAPER, "the session end after " + order + " after " + left, true);
+        if (detached || leftover) {
+            servedByTheHostThatOutlivesThem("the session end after " + order + " after " + left);
+        }
     }
 
     /**
@@ -303,6 +340,33 @@ class PackLifecycleOrderTest {
     @ParameterizedTest(name = "{0}")
     @MethodSource("twoSessions")
     void twoLiveSessionsLeaveEveryOfferedAndSentPackServed(List<String> order) throws Exception {
+        twoLive(order);
+    }
+
+    /**
+     * #756: the rows of {@link #twoSessions} and orders where B packs before A starts the server ({@code A:START}), all
+     * with one fixed pack port in both sessions. The first of the new rows is the issue's order.
+     */
+    static Stream<Arguments> twoSessionsOnAFixedPort() {
+        return Stream.concat(twoSessions(), Stream.of(
+                        "B:PACK A:START A:DETACH A:END B:PACK B:END",
+                        "B:PACK A:START A:DETACH A:END B:END",
+                        "B:PACK A:START A:DETACH B:PACK A:END B:PACK B:END",
+                        "B:PACK A:START A:DETACH A:END B:CYCLE B:PACK B:END",
+                        "B:PACK A:START A:PACK A:DETACH A:END B:KEEP B:END",
+                        "B:PACK A:START A:DETACH A:END B:PACK B:DETACH B:END",
+                        "B:PACK A:START A:END B:PACK B:END")
+                .map(row -> Arguments.of(List.of(row.split(" ")))));
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("twoSessionsOnAFixedPort")
+    void twoLiveSessionsOnAFixedPackPortLeaveEveryOfferedPackServedByItsHost(List<String> order) throws Exception {
+        packPort = freePackPort();
+        twoLive(order);
+    }
+
+    private void twoLive(List<String> order) throws Exception {
         ws = Files.createDirectories(root.resolve("ws"));
         Files.writeString(Files.createDirectories(ws.resolve("demo")).resolve("version.txt"), "1.0");
         Files.writeString(Files.createDirectories(ws.resolve("run")).resolve("server.properties"), PROPERTIES);
@@ -310,16 +374,20 @@ class PackLifecycleOrderTest {
         Process coreA = new ProcessBuilder(java(SleepMain.class)).start();
         CoreHarness a = null;
         CoreHarness b = null;
+        // Rows with A:START begin before any server runs; the others with A's server started and sent a pack.
+        boolean started = !order.contains("A:START");
         try {
             a = session();
             ServerManagerAccess.self(a.core.server(), coreA.toHandle());
             Platform.remember(a.core.config(), Platform.PAPER);
-            a.ok("server_start", "timeoutSeconds", 60);
-            draw(a);
-            // Sent to A's server, whose agent hands its URL to joining players from now on.
-            assertThat(a.ok("pack")).contains("applied: sent to");
-            assertThat(lastSent(PidFile.peek(ws.resolve(".msc/server.pid")).orElseThrow().pid())).isNotNull();
-            servedWhileItRuns("A's pack");
+            if (started) {
+                a.ok("server_start", "timeoutSeconds", 60);
+                draw(a);
+                // Sent to A's server, whose agent hands its URL to joining players from now on.
+                assertThat(a.ok("pack")).contains("applied: sent to");
+                assertThat(lastSent(PidFile.peek(ws.resolve(".msc/server.pid")).orElseThrow().pid())).isNotNull();
+                servedWhileItRuns("A's pack");
+            }
             b = session();
             boolean bRunning = false;
             for (String step : order) {
@@ -327,6 +395,7 @@ class PackLifecycleOrderTest {
                 CoreHarness s = isA ? a : b;
                 String when = step + " in " + order;
                 switch (step.substring(2)) {
+                    case "START" -> s.ok("server_start", "timeoutSeconds", 60);
                     case "PACK" -> {
                         draw(s);
                         s.ok("pack");
@@ -359,6 +428,7 @@ class PackLifecycleOrderTest {
                 servedWhileItRuns(when);
             }
             servedWhileItRuns("both sessions ended after " + order);
+            servedByTheHostThatOutlivesThem("both sessions ended after " + order);
             // Pruned down to the builds the last session had, offered and sent; each draw made a new one.
             try (Stream<Path> files = Files.list(ws.resolve(".msc/build"))) {
                 assertThat(files.filter(f -> f.getFileName().toString().matches("pack-[0-9a-f]{40}\\.zip")).count())
@@ -377,7 +447,66 @@ class PackLifecycleOrderTest {
 
     private CoreHarness session() throws Exception {
         return new CoreHarness(ws, c -> c.withServerCommand(java(FakeServerMain.class))
-                .withBuildCommand(java(FakeBuildMain.class)));
+                .withBuildCommand(java(FakeBuildMain.class)).withPackPort(packPort));
+    }
+
+    /** {@code MSC_PACK_PORT} in every session of the test, or 0 for none (the remembered or a free port). */
+    private int packPort;
+
+    /** A port free now in the range a pack port is picked from, and none MSC uses otherwise. */
+    private static int freePackPort() throws IOException {
+        for (int i = 0; i < 100; i++) {
+            int port = 20000 + java.util.concurrent.ThreadLocalRandom.current().nextInt(12000);
+            if (List.of(25565, 25575, 25577).contains(port)) {
+                continue;
+            }
+            try (java.net.ServerSocket s = new java.net.ServerSocket(port, 50,
+                    java.net.InetAddress.getLoopbackAddress())) {
+                return s.getLocalPort();
+            } catch (IOException e) {
+                // Taken: another.
+            }
+        }
+        throw new IOException("no free port for the pack");
+    }
+
+    /**
+     * #756: past every session, what server.properties offers is served by the standalone host the pid file names,
+     * told by the identity it answers (ADR 0054), not merely by something on the offered port.
+     */
+    private void servedByTheHostThatOutlivesThem(String when) {
+        Optional<ProcessHandle> server = PidFile.peek(ws.resolve(".msc/server.pid")).filter(ProcessHandle::isAlive);
+        String offer = PackProperties.url(Platform.PAPER, ws.resolve("run/server.properties"));
+        if (server.isEmpty() || offer == null) {
+            return;
+        }
+        Optional<ProcessHandle> host = PidFile.peek(ws.resolve(".msc/pack-host.pid")).filter(ProcessHandle::isAlive);
+        assertThat(host).as("%s: a host serves the offered %s (%s)", when, offer, hostState()).isPresent();
+        int port = Integer.parseInt(offer.replaceAll("http://[^:]+:(\\d+)/.*", "$1"));
+        assertThat(hostPid(port)).as("%s: the pid of the host on the offered %s (%s)", when, offer, hostState())
+                .isEqualTo(host.get().pid());
+    }
+
+    /** The pid the MSC pack host on {@code port} says it runs in, or -1 when none answers. */
+    private static long hostPid(int port) {
+        try {
+            HttpURLConnection c = (HttpURLConnection) URI.create("http://127.0.0.1:" + port + "/msc-pack-host").toURL()
+                    .openConnection(Proxy.NO_PROXY);
+            c.setConnectTimeout(2000);
+            c.setReadTimeout(2000);
+            try {
+                if (c.getResponseCode() != 200) {
+                    return -1;
+                }
+                String text = new String(c.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+                java.util.regex.Matcher m = java.util.regex.Pattern.compile("pid=(\\d+)").matcher(text);
+                return m.find() ? Long.parseLong(m.group(1)) : -1;
+            } finally {
+                c.disconnect();
+            }
+        } catch (IOException e) {
+            return -1;
+        }
     }
 
     /** The two-session invariants of {@link #twoLiveSessionsLeaveEveryOfferedAndSentPackServed}. */
@@ -391,6 +520,14 @@ class PackLifecycleOrderTest {
         String offer = PackProperties.url(Platform.PAPER, ws.resolve("run/server.properties"));
         assertThat(offer == null || serves(offer))
                 .as("%s: the offered %s served (%s)", when, offer, hostState()).isTrue();
+        Optional<ProcessHandle> standalone = PidFile.peek(ws.resolve(".msc/pack-host.pid"))
+                .filter(ProcessHandle::isAlive);
+        if (offer != null && standalone.isPresent()) {
+            // #756: while a standalone host runs, it is what serves the offer, never a session's in-process host.
+            int port = Integer.parseInt(offer.replaceAll("http://[^:]+:(\\d+)/.*", "$1"));
+            assertThat(hostPid(port)).as("%s: the pid of the host on the offered %s (%s)", when, offer, hostState())
+                    .isEqualTo(standalone.get().pid());
+        }
         String sent = lastSent(server.get().pid());
         assertThat(sent == null || serves(sent)).as("%s: the sent %s served", when, sent).isTrue();
     }
@@ -433,7 +570,7 @@ class PackLifecycleOrderTest {
             host.onExit().get(10, TimeUnit.SECONDS);
         }
         h = new CoreHarness(ws, c -> c.withServerCommand(java(FakeServerMain.class))
-                .withBuildCommand(java(FakeBuildMain.class)));
+                .withBuildCommand(java(FakeBuildMain.class)).withPackPort(packPort));
         running = false;
         leftover = true;
         built = true;
@@ -453,7 +590,7 @@ class PackLifecycleOrderTest {
         Files.createDirectories(ws.resolve("run"));
         Files.writeString(ws.resolve("run/server.properties"), PROPERTIES);
         h = new CoreHarness(ws, c -> c.withServerCommand(java(FakeServerMain.class))
-                .withBuildCommand(java(FakeBuildMain.class)));
+                .withBuildCommand(java(FakeBuildMain.class)).withPackPort(packPort));
         Platform.remember(h.core.config(), platform);
         h.ok("server_start", "timeoutSeconds", 60);
     }
