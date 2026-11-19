@@ -47,7 +47,7 @@ class UpstreamVersionsTest {
                 new PrintStream(bytes, true, StandardCharsets.UTF_8));
         assertThat(bytes.toString(StandardCharsets.UTF_8).lines())
                 .contains("neoforge          26.3.0.102           26.3.0.103           NEWER")
-                .last().asString().startsWith("5 newer, 0 could not check");
+                .last().asString().startsWith("6 newer, 0 could not check");
     }
 
     @Test
@@ -55,6 +55,6 @@ class UpstreamVersionsTest {
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
         UpstreamVersions.run(UpstreamCheckTest.CATALOG, UpstreamCheckTest.fetcher(Map.of()),
                 new PrintStream(bytes, true, StandardCharsets.UTF_8));
-        assertThat(bytes.toString(StandardCharsets.UTF_8).lines()).last().isEqualTo("0 newer, 8 could not check");
+        assertThat(bytes.toString(StandardCharsets.UTF_8).lines()).last().isEqualTo("0 newer, 9 could not check");
     }
 }
