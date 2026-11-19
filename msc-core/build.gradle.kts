@@ -177,6 +177,13 @@ sourceSets.main { resources.srcDir(versionResource.map { layout.buildDirectory.d
 tasks.test {
     useJUnitPlatform { excludeTags("e2e") }
     systemProperty("msc.expectedVersion", project.version.toString())
+    // The slowest suite in the build (minutes; PackLifecycleOrderTest alone is over three): classes split over
+    // JVMs, half the cores (the CI runner's container has 6), at most 4 so a developer's machine stays usable.
+    maxParallelForks = (Runtime.getRuntime().availableProcessors() / 2).coerceIn(1, 4)
+    // Only classes marked @Execution(CONCURRENT) run their cases in parallel; the rest stay one at a time.
+    systemProperty("junit.jupiter.execution.parallel.enabled", "true")
+    systemProperty("junit.jupiter.execution.parallel.config.strategy", "fixed")
+    systemProperty("junit.jupiter.execution.parallel.config.fixed.parallelism", "4")
 }
 
 // repoChecks: the tests whose inputs are the whole repository (#370). They read sets every module's files are in, so

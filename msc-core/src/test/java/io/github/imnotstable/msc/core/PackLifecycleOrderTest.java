@@ -25,6 +25,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.Execution;
+import org.junit.jupiter.api.parallel.ExecutionMode;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
@@ -56,6 +58,9 @@ import org.junit.jupiter.params.provider.MethodSource;
  * #753: a fourth table runs two live sessions on one workspace (ADR 0053), and checks after every step and after both
  * end that no pack host runs without a server and that what a running server offers and was last sent is served.
  */
+// Its cases share nothing (each has its own temp dir, core and processes), so they run side by side: the table is
+// over 250 cases of about a second each, mostly waiting on the processes it starts.
+@Execution(ExecutionMode.CONCURRENT)
 class PackLifecycleOrderTest {
     private static final String PROPERTIES = "motd=x\n";
 
