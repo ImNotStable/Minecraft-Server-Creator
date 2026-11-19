@@ -71,6 +71,36 @@ class WorldBackupToolsTest {
     }
 
     @Test
+    void withoutAnAgentAutosaveTheUserTurnedOffStaysOff() throws Exception {
+        world("v1");
+        Files.writeString(workspace.resolve("run/no-agent.flag"), "");
+        Files.writeString(workspace.resolve("run/autosave-off.flag"), "");
+        try (CoreHarness h = new CoreHarness(workspace, c -> c.withServerCommand(fakeServer()))) {
+            h.ok("server_start", "timeoutSeconds", 30);
+            assertThat(h.ok("build_undo", "backup", "save")).startsWith("backup ");
+            assertThat(h.ok("server_logs", "mode", "grep", "pattern", "console: save").lines()
+                    .map(l -> l.substring(l.indexOf("console: ") + 9))).containsExactly("save-off", "save-all flush");
+        }
+    }
+
+    @Test
+    void aFailedSaveKeepsAutosaveTheUserTurnedOffOff() throws Exception {
+        world("v1");
+        Files.writeString(workspace.resolve("run/no-agent.flag"), "");
+        Files.writeString(workspace.resolve("run/no-save.flag"), "");
+        Files.writeString(workspace.resolve("run/autosave-off.flag"), "");
+        Duration old = WorldBackupsAccess.saveWait(Duration.ofSeconds(1));
+        try (CoreHarness h = new CoreHarness(workspace, c -> c.withServerCommand(fakeServer()))) {
+            h.ok("server_start", "timeoutSeconds", 30);
+            assertThat(h.error("build_undo", "backup", "save")).contains("did not confirm save-all flush");
+            assertThat(h.ok("server_logs", "mode", "grep", "pattern", "console: save").lines()
+                    .map(l -> l.substring(l.indexOf("console: ") + 9))).containsExactly("save-off", "save-all flush");
+        } finally {
+            WorldBackupsAccess.saveWait(old);
+        }
+    }
+
+    @Test
     void aServerThatNeverConfirmsTheSaveGetsNoBackupAndAutosaveBack() throws Exception {
         world("v1");
         Files.writeString(workspace.resolve("run/no-agent.flag"), "");
@@ -131,6 +161,17 @@ class WorldBackupToolsTest {
             }
             assertThat(h.ok("build_undo", "backup", "list")).isEqualTo("no backups yet");
             assertThat(h.ok("build_undo", "backup", "save z")).matches("backup \\d{8}-\\d{6}-z \\(world; 0\\.0 MB\\)");
+        }
+    }
+
+    @Test
+    void autosaveTheUserTurnedOffStaysOffAndDoesNotBlockBackups() throws Exception {
+        world("v1");
+        try (CoreHarness h = new CoreHarness(workspace).withAgent()) {
+            h.agent.autosaveOff = true;
+            assertThat(h.ok("build_undo", "backup", "save")).startsWith("backup ");
+            assertThat(h.agent.commands).containsExactly("save-off", "save-all flush");
+            assertThat(h.agent.autosaveOff).isTrue();
         }
     }
 

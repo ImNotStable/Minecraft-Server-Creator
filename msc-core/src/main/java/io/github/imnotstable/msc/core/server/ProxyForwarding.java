@@ -5,6 +5,8 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.PosixFileAttributeView;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.HexFormat;
@@ -39,6 +41,7 @@ public final class ProxyForwarding {
         if (Files.isRegularFile(file)) {
             String kept = Files.readString(file, StandardCharsets.UTF_8).strip();
             if (SECRET.matcher(kept).matches()) {
+                ownerOnly(file);
                 return kept;
             }
         }
@@ -47,7 +50,15 @@ public final class ProxyForwarding {
         String made = HexFormat.of().formatHex(bytes);
         Files.createDirectories(file.toAbsolutePath().getParent());
         AtomicFile.write(file, to -> Files.writeString(to, made + "\n"));
+        ownerOnly(file);
         return made;
+    }
+
+    /** The secret lets anyone who reads it join a backend as any player, so only its owner may read it (POSIX). */
+    static void ownerOnly(Path file) throws IOException {
+        if (Files.getFileStore(file).supportsFileAttributeView(PosixFileAttributeView.class)) {
+            Files.setPosixFilePermissions(file, PosixFilePermissions.fromString("rw-------"));
+        }
     }
 
     /**
@@ -66,6 +77,7 @@ public final class ProxyForwarding {
                     .append(", sent to the backend at ").append(BACKEND_ADDRESS).append(" by modern forwarding\n");
         }
         AtomicFile.write(dir.resolve(SECRET_FILE), to -> Files.writeString(to, secret, StandardCharsets.UTF_8));
+        ownerOnly(dir.resolve(SECRET_FILE));
         out.append("backend: a paper, purpur or folia server set up with proxy=velocity, running on ")
                 .append(BACKEND_ADDRESS).append('\n');
         return out.toString();
@@ -82,6 +94,9 @@ public final class ProxyForwarding {
         if (!after.equals(before)) {
             Files.createDirectories(file.getParent());
             AtomicFile.write(file, to -> Files.writeString(to, after, StandardCharsets.UTF_8));
+        }
+        if (Files.isRegularFile(file)) {
+            ownerOnly(file); // also a file an earlier version left readable
         }
     }
 

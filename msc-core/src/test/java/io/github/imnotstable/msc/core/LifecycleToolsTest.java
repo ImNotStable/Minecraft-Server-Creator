@@ -62,6 +62,7 @@ class LifecycleToolsTest {
         assertThat(h.ok("server_command", "command", "/say hi")).isEqualTo("ran say hi");
         assertThat(h.ok("server_command", "command", "say a\n\n/say b\n")).isEqualTo("> say a\nran say a\n> /say b\nran say b");
         assertThat(h.error("server_command", "command", "say x\n".repeat(65))).contains("at most 64 commands");
+        assertThat(h.error("server_command", "command", " \n\n")).contains("command is empty");
         // #473: the commands' outputs share the cap, so every command keeps its line and a share of its output.
         StringBuilder many = new StringBuilder();
         for (int i = 0; i < 20; i++) {

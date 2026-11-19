@@ -16,6 +16,17 @@ class ToolRegistryTest {
         assertThat(registry.call("ping", new JsonObject()).text()).isEqualTo("pong");
     }
 
+    /** A notice that throws while it is worked out costs only the notice, never the result of a call that ran. */
+    @Test
+    void aFailingNoticeKeepsTheResult() {
+        ToolRegistry registry = new ToolRegistry(new ToolLog(null));
+        registry.add("ping", "Ping.", Schema.of(), args -> "pong");
+        registry.noticeUnlessPending(() -> {
+            throw new java.io.UncheckedIOException(new java.io.IOException("gone"));
+        });
+        assertThat(registry.call("ping", new JsonObject()).text()).isEqualTo("pong");
+    }
+
     /** #458: one cap rule for every result, applied by the registry, so a tool that forgets its own cut still obeys it. */
     @Test
     void everyResultObeysTheCapRule() {

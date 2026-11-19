@@ -4,6 +4,7 @@ import io.github.imnotstable.msc.core.CoreConfig;
 import io.github.imnotstable.msc.core.agent.AgentHub;
 import io.github.imnotstable.msc.core.backup.Backups;
 import io.github.imnotstable.msc.core.backup.WorldFolders;
+import io.github.imnotstable.msc.core.server.LogBuffer;
 import io.github.imnotstable.msc.core.server.Platform;
 import io.github.imnotstable.msc.core.server.ServerManager;
 import io.github.imnotstable.msc.core.tool.Budget;
@@ -42,6 +43,7 @@ public final class WorldBackups {
     private final Backups backups;
     /** How long a server with no agent may take to answer save-all flush; tests shorten it. */
     static volatile Duration saveWait = Duration.ofSeconds(60);
+    private static final Duration OFF_WAIT = Duration.ofSeconds(5);
 
     WorldBackups(CoreConfig config, AgentHub hub, ServerManager server, ServerRun run, WorldService world, Clock clock) {
         this.config = config;
@@ -144,8 +146,26 @@ public final class WorldBackups {
         }
         boolean agent = hub.current() != null;
         boolean console = !agent && server.running();
-        if (agent || console) {
-            command(agent, "save-off");
+        // Autosave the user (or an earlier failed save-on) turned off stays off: vanilla refuses a second save-off.
+        boolean restore = agent || console;
+        long offMark = console ? server.log().mark() : 0;
+        if (restore) {
+            try {
+                command(agent, "save-off");
+            } catch (ToolException e) {
+                if (!e.getMessage().contains("already turned off")) {
+                    throw e;
+                }
+                restore = false;
+            }
+            if (console) {
+                // The console gives no reply, so its log line does: vanilla answers save-off at once, either way.
+                LogBuffer.Match off = server.awaitLine(offMark,
+                        l -> l.contains("Automatic saving is now disabled") || l.contains("already turned off"), OFF_WAIT);
+                // shortcut: no answer within 5 s counts as turned off, so save-on follows; read the answer later if a
+                // busy server ever loses a user's autosave choice this way.
+                restore = off == null || !off.line().contains("already turned off");
+            }
         }
         Backups.Backup b;
         String noSaveOn = null;
@@ -162,7 +182,7 @@ public final class WorldBackups {
             }
             b = backups.save(config.serverDir(), label, keep);
         } finally {
-            if (agent || console) {
+            if (restore) {
                 try {
                     command(agent, "save-on");
                 } catch (IOException | RuntimeException e) {

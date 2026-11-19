@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -40,6 +41,10 @@ class ProxyForwardingTest {
         assertThat(ProxyForwarding.secret(file)).isEqualTo(made);
         Files.writeString(file, "not a secret\n");
         assertThat(ProxyForwarding.secret(file)).matches("[0-9a-f]{32}").isNotEqualTo(made);
+        if (Files.getFileStore(file).supportsFileAttributeView(java.nio.file.attribute.PosixFileAttributeView.class)) {
+            assertThat(java.nio.file.attribute.PosixFilePermissions.toString(Files.getPosixFilePermissions(file)))
+                    .isEqualTo("rw-------");
+        }
     }
 
     @Test
@@ -99,6 +104,22 @@ class ProxyForwardingTest {
         assertThat(ProxyForwarding.enabled(dir)).isFalse();
         Files.writeString(file, "proxies:\r\n  velocity:\r\n    enabled: true # on\r\n");
         assertThat(ProxyForwarding.enabled(dir)).isTrue();
+    }
+
+    /** Every file holding the secret is owner-only (POSIX), also one an earlier version left readable. */
+    @Test
+    void everyFileWithTheSecretIsOwnerOnly() throws Exception {
+        org.junit.jupiter.api.Assumptions.assumeTrue(Files.getFileStore(dir)
+                .supportsFileAttributeView(java.nio.file.attribute.PosixFileAttributeView.class));
+        ProxyForwarding.proxy(dir.resolve("proxy"), SECRET);
+        ProxyForwarding.backend(dir, SECRET);
+        Path global = dir.resolve(ProxyForwarding.PAPER_GLOBAL);
+        Files.setPosixFilePermissions(global, java.nio.file.attribute.PosixFilePermissions.fromString("rw-r--r--"));
+        ProxyForwarding.backend(dir, SECRET);
+        for (Path f : List.of(dir.resolve("proxy/forwarding.secret"), global)) {
+            assertThat(java.nio.file.attribute.PosixFilePermissions.toString(Files.getPosixFilePermissions(f)))
+                    .as(f.toString()).isEqualTo("rw-------");
+        }
     }
 
     @Test
