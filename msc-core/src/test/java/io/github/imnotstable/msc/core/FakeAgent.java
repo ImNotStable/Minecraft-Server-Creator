@@ -28,6 +28,8 @@ public final class FakeAgent {
     volatile String minecraft = "26.3";
     /** When set, PACK_APPLY fails as an agent error would. */
     volatile boolean failPackApply;
+    /** Autosave state, as vanilla keeps it: a second save-off is refused. */
+    public volatile boolean autosaveOff;
     /** Told of each pack sent; FakeServerMain logs it, so a test can count the sends to a server process. */
     public volatile java.util.function.Consumer<Ops.PackParams> onPack = p -> { };
     /** Told of each write and undo before it runs, outside the agent's lock: a test holds one there (#697). */
@@ -80,6 +82,13 @@ public final class FakeAgent {
                 .on(Ops.SERVER_COMMAND, p -> {
                     synchronized (this) {
                         commands.add(p.command());
+                    }
+                    if (p.command().equals("save-off") || p.command().equals("save-on")) {
+                        boolean off = p.command().equals("save-off");
+                        if (off && autosaveOff) {
+                            return new Ops.CommandResult(false, List.of("Saving is already turned off"));
+                        }
+                        autosaveOff = off;
                     }
                     if (p.command().startsWith("broadcast ")) {
                         // Like /say on Paper: the text goes to the console log, the sender gets nothing back.

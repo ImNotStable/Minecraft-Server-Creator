@@ -135,6 +135,17 @@ class WorldBackupToolsTest {
     }
 
     @Test
+    void autosaveTheUserTurnedOffStaysOffAndDoesNotBlockBackups() throws Exception {
+        world("v1");
+        try (CoreHarness h = new CoreHarness(workspace).withAgent()) {
+            h.agent.autosaveOff = true;
+            assertThat(h.ok("build_undo", "backup", "save")).startsWith("backup ");
+            assertThat(h.agent.commands).containsExactly("save-off", "save-all flush");
+            assertThat(h.agent.autosaveOff).isTrue();
+        }
+    }
+
+    @Test
     void saveFlushesWithAutosaveOffAndBigBuildsTakeOneFirst() throws Exception {
         world("v1");
         try (CoreHarness h = new CoreHarness(workspace).withAgent()) {

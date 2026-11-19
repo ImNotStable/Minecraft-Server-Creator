@@ -144,8 +144,17 @@ public final class WorldBackups {
         }
         boolean agent = hub.current() != null;
         boolean console = !agent && server.running();
-        if (agent || console) {
-            command(agent, "save-off");
+        // Autosave the user (or an earlier failed save-on) turned off stays off: vanilla refuses a second save-off.
+        boolean restore = agent || console;
+        if (restore) {
+            try {
+                command(agent, "save-off");
+            } catch (ToolException e) {
+                if (!e.getMessage().contains("already")) {
+                    throw e;
+                }
+                restore = false;
+            }
         }
         Backups.Backup b;
         String noSaveOn = null;
@@ -162,7 +171,7 @@ public final class WorldBackups {
             }
             b = backups.save(config.serverDir(), label, keep);
         } finally {
-            if (agent || console) {
+            if (restore) {
                 try {
                     command(agent, "save-on");
                 } catch (IOException | RuntimeException e) {

@@ -40,6 +40,10 @@ class ProxyForwardingTest {
         assertThat(ProxyForwarding.secret(file)).isEqualTo(made);
         Files.writeString(file, "not a secret\n");
         assertThat(ProxyForwarding.secret(file)).matches("[0-9a-f]{32}").isNotEqualTo(made);
+        if (Files.getFileStore(file).supportsFileAttributeView(java.nio.file.attribute.PosixFileAttributeView.class)) {
+            assertThat(java.nio.file.attribute.PosixFilePermissions.toString(Files.getPosixFilePermissions(file)))
+                    .isEqualTo("rw-------");
+        }
     }
 
     @Test
