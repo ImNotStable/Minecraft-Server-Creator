@@ -96,7 +96,7 @@ Not done, for later:
 - BungeeCord (Jenkins builds without checksums) and Waterfall (end of life): `bungeeguard`/`ip_forward` setup and a
   BungeeCord template.
 - Velocity versions other than the pinned one, and more than one backend in `velocity.toml` (edit it by hand; setup
-  keeps an existing file). The upstream version check (ADR 0039) does not yet list Velocity.
+  keeps an existing file). The upstream version check (ADR 0039) lists Velocity since 2026-11-19.
 - `verifyTemplates` builds `velocity-plugin` and its doc names against the real Velocity 4.3.1 API. The rest is
   verified only against fakes: no live Folia or Velocity run was possible in the cloud session (it needs the PC). In
   particular unverified: Folia firing `ServerLoadEvent`, `dispatchCommand` with a custom sender on Folia's global

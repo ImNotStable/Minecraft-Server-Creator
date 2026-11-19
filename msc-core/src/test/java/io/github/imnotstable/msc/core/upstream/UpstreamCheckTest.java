@@ -21,6 +21,7 @@ class UpstreamCheckTest {
             forge = "26.3-66.1.5"
             quilt-loader = "0.30.2"
             minestom = "2026.10.07-26.2"
+            velocity = "4.3.1"
 
             [libraries]
             paper-api = { module = "io.papermc.paper:paper-api", version.ref = "paper" }
@@ -47,6 +48,10 @@ class UpstreamCheckTest {
         a.put(UpstreamCheck.QUILT_LOADER, """
                 [{"version": "0.31.0-beta.6"}, {"version": "0.30.2"}, {"version": "0.30.1"}]""");
         a.put(UpstreamCheck.MINESTOM, maven("2026.10.07-26.2", "2025.07.10b-1.21.7"));
+        a.put(UpstreamCheck.VELOCITY, """
+                {"versions": {"4.4.0": ["4.4.0-SNAPSHOT"], "4.3.0": ["4.3.2", "4.3.1"]}}""");
+        a.put(UpstreamCheck.VELOCITY + "/versions/4.3.2/builds/latest", """
+                {"id": 40, "channel": "STABLE"}""");
         return a;
     }
 
@@ -77,7 +82,7 @@ class UpstreamCheckTest {
     void readsOnlyTheVersionsTable() {
         assertThat(UpstreamCheck.catalogVersions(CATALOG))
                 .containsEntry("paper", "26.3.build.+").containsEntry("minestom", "2026.10.07-26.2")
-                .doesNotContainKey("paper-api").hasSize(8);
+                .doesNotContainKey("paper-api").hasSize(9);
     }
 
     @Test
@@ -99,7 +104,8 @@ class UpstreamCheckTest {
                 "forge             26.3-66.1.5          26.3-66.1.8          NEWER",
                 "quilt-loader      0.30.2               0.30.2               up to date",
                 "minestom          2026.10.07-26.2      2026.10.07-26.2      up to date",
-                "5 newer, 0 could not check; pins live in gradle/libs.versions.toml and CoreConfig.DEFAULT_MINECRAFT");
+                "velocity          4.3.1                4.3.2                NEWER",
+                "6 newer, 0 could not check; pins live in gradle/libs.versions.toml and CoreConfig.DEFAULT_MINECRAFT");
     }
 
     @Test
@@ -120,9 +126,9 @@ class UpstreamCheckTest {
     @Test
     void offlineEveryLineSaysCouldNotCheck() {
         List<String> lines = report(Map.of(), "26.3");
-        assertThat(lines).hasSize(10);
-        assertThat(lines.subList(1, 9)).allMatch(l -> l.endsWith("could not check (HTTP 404 from test)"));
-        assertThat(lines.getLast()).isEqualTo("0 newer, 8 could not check");
+        assertThat(lines).hasSize(11);
+        assertThat(lines.subList(1, 10)).allMatch(l -> l.endsWith("could not check (HTTP 404 from test)"));
+        assertThat(lines.getLast()).isEqualTo("0 newer, 9 could not check");
     }
 
     @Test
