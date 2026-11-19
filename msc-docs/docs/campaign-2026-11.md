@@ -113,7 +113,7 @@ A piece is done when two fresh audits in a row confirmed nothing new.
 
 | Piece | Issues filed | Closed | Status |
 |---|---|---|---|
-| core-tools | 46 | 46 | not done: round 28 still found #534 (fixed, not audited again) |
+| core-tools | 46 + 9 found after the campaign | 46 + 9 fixed (Gitea PR #9) | done 2026-11-19: ten lean rounds on the code changed since the campaign (one auditor each, findings verified by hand, ADR 0056), rounds 9 and 10 clean |
 | core-server | 42 | 42 | not done: round 28 clean, round 29 found #533 (fixed, not audited again) |
 | core-world | 16 | 16 | done |
 | textures | 14 | 13 | done; #539 (a timing limit in one test) was filed afterwards and is open |
