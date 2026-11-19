@@ -168,8 +168,10 @@ public final class FakeServerMain {
                 }
             }
             // Like vanilla's save-off with autosave already off (autosave-off.flag).
-            if (line.equals("save-off") && Files.exists(Path.of("autosave-off.flag"))) {
-                System.out.println("[12:00:05 INFO]: Saving is already turned off");
+            if (line.equals("save-off")) {
+                System.out.println(Files.exists(Path.of("autosave-off.flag"))
+                        ? "[12:00:05 INFO]: Saving is already turned off"
+                        : "[12:00:05 INFO]: Automatic saving is now disabled");
             }
             // Like vanilla's save-all; no-save.flag: a server that never confirms it.
             if (line.equals("save-all flush") && !Files.exists(Path.of("no-save.flag"))) {
