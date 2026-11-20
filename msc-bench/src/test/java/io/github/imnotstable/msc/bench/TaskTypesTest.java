@@ -166,7 +166,7 @@ class TaskTypesTest {
                     + "Unknown character property name {a\\u2028b\\u202ec} at index 8"));
         }
         for (String key : PATH_KEYS) {
-            rows.add(Arguments.of(key, "a\0b", "\"a\\u0000b\" is not a path: Nul character not allowed"));
+            rows.add(Arguments.of(key, "a\0b", "\"a\\u0000b\" is not a path: " + NoPath.reason("a\0b")));
         }
         rows.add(Arguments.of("checks[6].port", "70000",
                 "\"70000\" is not a port from 1 to 65535 or a placeholder such as {serverPort}"));

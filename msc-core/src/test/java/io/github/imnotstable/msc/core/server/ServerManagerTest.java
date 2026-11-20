@@ -107,7 +107,7 @@ class ServerManagerTest {
                     "enable-rcon=true\nrcon.password=pw\nrcon.port=" + closed.port() + "\n" + line + "\n");
             assertThat(m.stopLeftover()).contains("pid " + leftover.pid(), "killed");
         }
-        assertThat(leftover.isAlive()).isFalse();
+        assertThat(leftover.waitFor(10, TimeUnit.SECONDS)).as("exit seen through the test's own handle").isTrue();
         assertThat(m.pidFile()).doesNotExist();
         assertThat(m.stopLeftover()).isNull();
     }

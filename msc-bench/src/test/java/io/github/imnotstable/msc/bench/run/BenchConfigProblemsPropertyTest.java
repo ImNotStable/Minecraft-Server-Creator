@@ -9,6 +9,7 @@ import com.google.gson.JsonNull;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.google.gson.JsonPrimitive;
+import io.github.imnotstable.msc.bench.NoPath;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -271,7 +272,8 @@ class BenchConfigProblemsPropertyTest {
             }),
             new Plant("paperCacheSeed", c -> {
                 c.object("modes", "m").addProperty("paperCacheSeed", "../x ");
-                c.expected.add("modes.m.paperCacheSeed: \"../x \" is not a folder inside the workspace");
+                c.expected.add(NoPath.refusal("modes.m.paperCacheSeed", "../x ",
+                        "modes.m.paperCacheSeed: \"../x \" is not a folder inside the workspace"));
             }),
             new Plant("timeoutSeconds", c -> {
                 c.object("agent").addProperty("timeoutSeconds", "6\r\n0");

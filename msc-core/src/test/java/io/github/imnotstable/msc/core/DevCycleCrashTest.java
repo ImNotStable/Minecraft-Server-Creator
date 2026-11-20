@@ -66,7 +66,7 @@ class DevCycleCrashTest {
         Files.writeString(folder.resolve("older.jar.msc-removing"), "0.9");
         Files.createDirectories(ws.resolve(".msc"));
         Files.writeString(ws.resolve(".msc/deployed.properties"), String.format(OTHER, addons) + "\n"
-                + project.toAbsolutePath().normalize() + "=" + addons + "/oldname.jar\n");
+                + DevCycleRecoveryTest.recordLine(project, addons + "/oldname.jar") + "\n");
         return ws;
     }
 
