@@ -61,6 +61,7 @@ follows the model tier, so match the tier to the task, not to habit. As it appli
 | Live agent dashboard (second reel; e.g. Claude Code Agent Monitor) | A local web page fed by hooks on every tool call | The desktop app already shows each session and workflow live; another hook on every call costs time for nothing new |
 | rtk, snip, chop, claude-compress | Rewrite each Bash command to compress its output | Bash only (sessions here run PowerShell too, and Read and Grep are not covered), lossy, and a third-party binary rewriting every command. msc tools already cap output. Revisit if Gradle output turns out to dominate a session's tokens |
 | sqz, julius (API proxies) | Route all API traffic through a local proxy that trims it | Every prompt and secret would pass through third-party code |
+| Cloudflare Code Mode (reel, 2026-11-20) | MCP server lists only `search` and `execute`; the model writes a script against a typed API that runs in a sandbox | msc's 35 tools are about 4,100 tokens and already deferred; batches already exist (`build_batch`, `dev_cycle`). A JS sandbox in the Java server is a new trust boundary for little gain. [ADR 0058](adr/0058-no-code-mode-mcp-server.md) |
 | graphify's own project install (`graphify install --project`) | Same hooks plus a skill and a CLAUDE.md section | Its hooks look for `graphify-out/` in the working folder, which worktrees don't have, so they never fired here; the skill mostly covers LLM extraction, which needs an API key this PC doesn't use |
 
 ## Adding a tool
