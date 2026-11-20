@@ -1,6 +1,8 @@
 plugins {
     java
     alias(libs.plugins.run.paper)
+    // Paper's server with Minecraft internals (NMS) and CraftBukkit to compile against, Mojang-named.
+    alias(libs.plugins.paperweight)
 }
 
 group = "{{packageName}}"
@@ -11,13 +13,18 @@ java {
     toolchain.languageVersion = JavaLanguageVersion.of(libs.versions.java.get().toInt())
 }
 
+paperweight {
+    // The server is for compiling only: MockBukkit tests run against paper-api, and NMS code runs on the dev server.
+    addServerDependencyTo = configurations.named(JavaPlugin.COMPILE_ONLY_CONFIGURATION_NAME).map { setOf(it) }
+}
+
 repositories {
     mavenCentral()
     maven("https://repo.papermc.io/repository/maven-public/")
 }
 
 dependencies {
-    compileOnly(libs.paper.api)
+    paperweight.paperDevBundle(libs.versions.paper.get())
 
     testImplementation(libs.paper.api)
     testImplementation(libs.mockbukkit)

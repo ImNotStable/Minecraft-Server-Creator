@@ -132,6 +132,11 @@ final class UpstreamCheck {
             list.add(new Component("fabric-loom", catalog.get("fabric-loom"),
                     f -> newestOf(mavenVersions(f.get(FABRIC_LOOM)), VersionOrder::isStable)));
         }
+        if (catalog.containsKey("paperweight")) {
+            // PaperMC publishes paperweight-userdev only as betas: the newest of any kind.
+            list.add(new Component("paperweight", catalog.get("paperweight"), f -> newestOf(
+                    mavenVersions(f.get(pluginPortal("io.papermc.paperweight.userdev"))), v -> true)));
+        }
         GRADLE_PLUGINS.forEach(p -> {
             String key = p.getKey();
             String id = p.getValue();

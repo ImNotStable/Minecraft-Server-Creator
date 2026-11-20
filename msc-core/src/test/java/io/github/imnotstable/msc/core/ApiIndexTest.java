@@ -154,6 +154,26 @@ class ApiIndexTest {
         }
     }
 
+    /** ADR 0059: on Paper, the server paperweight-userdev patched is indexed too, so NMS classes can be looked up. */
+    @Test
+    void paperAlsoIndexesTheNewestPaperweightServer(@TempDir Path gradleHome) throws Exception {
+        Path work = gradleHome.resolve("caches/paperweight-userdev/v2/work");
+        Path old = work.resolve("applyDevBundlePatches_old/output.jar");
+        Path server = work.resolve("applyDevBundlePatches_new/output.jar");
+        for (Path jar : List.of(old, server)) {
+            Files.createDirectories(jar.getParent());
+            try (OutputStream out = Files.newOutputStream(jar); JarOutputStream zip = new JarOutputStream(out)) {
+                synthetic(zip, "net.minecraft.server.level.ServerPlayer", "java.lang.Object", null);
+            }
+        }
+        Files.createDirectories(work.resolve("applyPaperclipPatch_x"));
+        old.toFile().setLastModified(1_000);
+
+        assertThat(ApiIndex.findJars(gradleHome, "paper")).containsExactly(server);
+        assertThat(ApiIndex.load(ApiIndex.findJars(gradleHome, "paper")).find("ServerPlayer").name())
+                .isEqualTo("net.minecraft.server.level.ServerPlayer");
+    }
+
     private static void syntheticInterface(JarOutputStream zip, String name) throws Exception {
         byte[] bytes = ClassFile.of().build(ClassDesc.of(name), cb -> cb
                 .withFlags(ClassFile.ACC_PUBLIC | ClassFile.ACC_INTERFACE | ClassFile.ACC_ABSTRACT)
