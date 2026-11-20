@@ -8,7 +8,7 @@ import java.util.regex.Pattern;
  * Orders the version strings the upstreams publish ({@code 26.3}, {@code 26.3.0.102}, {@code 26.3-66.1.5},
  * {@code 0.166.0+26.3}, {@code 2026.10.07-26.2}) and tells a stable one from a preview.
  */
-final class VersionOrder {
+public final class VersionOrder {
     /** Compares part by part: the leading number of each part, then the rest as text; a missing part sorts first. */
     static final Comparator<String> NEWEST_LAST = VersionOrder::compare;
 
@@ -26,7 +26,7 @@ final class VersionOrder {
                 || v.contains("snapshot") || WEEKLY.matcher(v).find());
     }
 
-    static int compare(String a, String b) {
+    public static int compare(String a, String b) {
         String[] x = PARTS.split(a);
         String[] y = PARTS.split(b);
         for (int i = 0; i < Math.max(x.length, y.length); i++) {

@@ -153,4 +153,18 @@ class UpstreamCheckTest {
         assertThat(UpstreamCheck.check(List.of(slow), fetcher(Map.of()), 1))
                 .singleElement().extracting(UpstreamCheck.Result::failure).isEqualTo("timed out");
     }
+
+    @Test
+    void checksGradleAndTheTemplatesGradlePluginsWhenPinned() {
+        Map<String, String> a = new HashMap<>();
+        a.put(UpstreamCheck.GRADLE, "{\"version\": \"9.9.2\", \"current\": true}");
+        a.put(UpstreamCheck.FABRIC_LOOM, maven("1.19.4", "1.20.0-alpha.31"));
+        a.put(UpstreamCheck.pluginPortal("com.gradleup.shadow"), maven("9.6.1", "9.7.0-beta.1"));
+        var components = UpstreamCheck.components(Map.of("gradle", "9.9.1", "fabric-loom", "1.19.4",
+                "shadow", "9.6.1"), "26.3").stream().filter(c -> !c.pinned().equals("?")
+                && List.of("gradle", "fabric-loom", "shadow").contains(c.name())).toList();
+        assertThat(UpstreamCheck.check(components, fetcher(a), 5)).extracting(r -> r.component().name() + " "
+                + r.newest() + " " + r.newer()).containsExactly("gradle 9.9.2 true", "fabric-loom 1.19.4 false",
+                "shadow 9.6.1 false");
+    }
 }

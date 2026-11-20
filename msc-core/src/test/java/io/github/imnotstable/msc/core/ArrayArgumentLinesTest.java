@@ -24,7 +24,7 @@ import org.junit.jupiter.api.io.TempDir;
 class ArrayArgumentLinesTest {
     /** Every array argument of every tool, each with a test below. */
     private static final Set<String> COVERED = Set.of("player_test actions", "texture palette", "texture rows",
-            "model_create textures");
+            "model_create textures", "plugins install");
 
     @TempDir
     Path workspace;
@@ -64,6 +64,13 @@ class ArrayArgumentLinesTest {
         assertThat(h.error("player_test", "actions", "say hi\twait 20")).isEqualTo("error: argument actions has a"
                 + " control character (U+0009); only line breaks may be in it, one item per line");
         assertThat(h.error("player_test", "actions", "\n\n")).isEqualTo("error: actions is empty");
+    }
+
+    @Test
+    void pluginsInstallTakesOneIdPerLine() {
+        // Ids are checked before any download, so the second line's bad source is what the call names.
+        assertThat(h.error("plugins", "install", "spigot:1\ncurseforge:x"))
+                .contains("\"curseforge:x\": the source must be modrinth, hangar or spigot");
     }
 
     @Test

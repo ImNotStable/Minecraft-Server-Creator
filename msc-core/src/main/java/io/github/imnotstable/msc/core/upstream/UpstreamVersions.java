@@ -23,7 +23,13 @@ public final class UpstreamVersions {
 
     /** {@code args[0]}: the version catalog, {@code gradle/libs.versions.toml}. */
     public static void main(String[] args) throws IOException {
-        run(Files.readString(Path.of(args[0])), new Http(Duration.ofSeconds(15)), System.out);
+        Path catalog = Path.of(args[0]);
+        // The Gradle wrapper's version is checked with the catalog's pins (ADR 0057).
+        Path wrapper = catalog.resolveSibling("wrapper/gradle-wrapper.properties");
+        String gradle = Files.exists(wrapper) ? Files.readString(wrapper).replaceAll("(?s).*gradle-([0-9.]+)-(bin|all)\\.zip.*", "$1")
+                : null;
+        run(Files.readString(catalog) + (gradle == null ? "" : "\n[versions]\ngradle = \"" + gradle + "\"\n"),
+                new Http(Duration.ofSeconds(15)), System.out);
     }
 
     static void run(String catalog, UpstreamCheck.Fetcher fetcher, PrintStream out) {
