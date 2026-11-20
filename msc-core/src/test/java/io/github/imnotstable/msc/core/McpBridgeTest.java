@@ -48,13 +48,14 @@ class McpBridgeTest {
                 List<String> names = new ArrayList<>();
                 tools.forEach(t -> names.add(t.getAsJsonObject().get("name").getAsString()));
                 assertThat(names).containsExactly("msc_status", "project_scaffold", "server_setup",
-                        "server_start", "server_stop", "server_detach", "dev_cycle", "server_logs", "server_command", "server_wait", "api_search",
+                        "plugins", "server_start", "server_stop", "server_detach", "dev_cycle", "server_logs", "server_command", "server_wait", "api_search",
                         "api_class", "world_slice", "world_heightmap", "world_render", "world_summary", "world_entities", "build_undo",
                         "structure_save", "build_batch",
                         "texture", "texture_view", "model_create", "pack", "player_test", "msc_workspace");
                 // The tool list is paid for in every conversation: keep it small. ADR 0019 folded five build tools
-                // into build_batch and msc_stats into msc_status (18.5k chars to 15.5k).
-                assertThat(listed.toString().length()).isLessThan(16000);
+                // into build_batch and msc_stats into msc_status (18.5k chars to 15.5k). ADR 0057 raised it by 400
+                // for the plugins tool, a capability no existing tool could carry.
+                assertThat(listed.toString().length()).isLessThan(16400);
                 JsonObject batch = tools.get(names.indexOf("build_batch")).getAsJsonObject().getAsJsonObject("inputSchema");
                 assertThat(batch.getAsJsonArray("required").toString()).isEqualTo("[\"steps\"]");
                 // Every project template the jar ships (paper-server is only nested in others) is named in project_scaffold's schema, so none goes unseen.

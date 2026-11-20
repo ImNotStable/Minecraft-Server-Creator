@@ -48,6 +48,7 @@ class BadInputBehaviourTest {
             new Row("msc_workspace", "create", true),
             new Row("project_scaffold", "name", "Demo", "dir", "p"),
             new Row("server_setup", "platform", "paper"),
+            new Row("plugins"),
             new Row("server_start", "timeoutSeconds", 5),
             new Row("server_detach"),
             new Row("server_stop"),

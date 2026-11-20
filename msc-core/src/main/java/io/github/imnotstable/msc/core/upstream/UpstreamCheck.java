@@ -34,6 +34,26 @@ final class UpstreamCheck {
     static final String QUILT_LOADER = "https://meta.quiltmc.org/v3/versions/loader";
     static final String MINESTOM = "https://repo1.maven.org/maven2/net/minestom/minestom/maven-metadata.xml";
     /** Newer Paper versions asked for a stable build at most; Paper never has more than a few in flight. */
+    static final String GRADLE = "https://services.gradle.org/versions/current";
+    static final String FABRIC_LOOM = "https://maven.fabricmc.net/net/fabricmc/fabric-loom/maven-metadata.xml";
+    /** Catalog key to Gradle plugin id, for the plugins the templates apply that the Plugin Portal publishes. */
+    static final List<Map.Entry<String, String>> GRADLE_PLUGINS = List.of(
+            Map.entry("moddev", "net.neoforged.moddev"), Map.entry("forgegradle", "net.minecraftforge.gradle"),
+            Map.entry("run-paper", "xyz.jpenilla.run-paper"), Map.entry("shadow", "com.gradleup.shadow"),
+            Map.entry("foojay", "org.gradle.toolchains.foojay-resolver-convention"));
+
+    /** The Plugin Portal's maven-metadata.xml of a plugin's marker artifact. */
+    static String pluginPortal(String id) {
+        return "https://plugins.gradle.org/m2/" + id.replace('.', '/') + "/" + id + ".gradle.plugin/maven-metadata.xml";
+    }
+
+    /** The current Gradle release. */
+    static String gradle(Fetcher f) throws IOException, InterruptedException {
+        JsonElement e = json(f.get(GRADLE));
+        return e.isJsonObject() && e.getAsJsonObject().has("version") ? e.getAsJsonObject().get("version").getAsString()
+                : null;
+    }
+
     private static final int PAPER_CANDIDATES = 3;
 
     private static final Pattern CATALOG_LINE = Pattern.compile("^\\s*([A-Za-z0-9_-]+)\\s*=\\s*\"([^\"]*)\"");
@@ -104,6 +124,22 @@ final class UpstreamCheck {
                 f -> newestOf(mavenVersions(f.get(MINESTOM)), v -> true)));
         String velocity = pin(catalog, "velocity");
         list.add(new Component("velocity", velocity, f -> fill(f, VELOCITY, velocity)));
+        // The build tooling the templates write (ADR 0057): Gradle itself and each Gradle plugin, when pinned.
+        if (catalog.containsKey("gradle")) {
+            list.add(new Component("gradle", catalog.get("gradle"), UpstreamCheck::gradle));
+        }
+        if (catalog.containsKey("fabric-loom")) {
+            list.add(new Component("fabric-loom", catalog.get("fabric-loom"),
+                    f -> newestOf(mavenVersions(f.get(FABRIC_LOOM)), VersionOrder::isStable)));
+        }
+        GRADLE_PLUGINS.forEach(p -> {
+            String key = p.getKey();
+            String id = p.getValue();
+            if (catalog.containsKey(key)) {
+                list.add(new Component(key, catalog.get(key),
+                        f -> newestOf(mavenVersions(f.get(pluginPortal(id))), VersionOrder::isStable)));
+            }
+        });
         return list;
     }
 

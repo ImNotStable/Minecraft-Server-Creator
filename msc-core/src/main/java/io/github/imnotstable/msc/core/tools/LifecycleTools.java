@@ -2,6 +2,7 @@ package io.github.imnotstable.msc.core.tools;
 
 import io.github.imnotstable.msc.core.CoreConfig;
 import io.github.imnotstable.msc.core.agent.AgentHub;
+import io.github.imnotstable.msc.core.server.AddonSources;
 import io.github.imnotstable.msc.core.server.FabricDownloader;
 import io.github.imnotstable.msc.core.server.PaperDownloader;
 import io.github.imnotstable.msc.core.server.ProjectBuilder;
@@ -64,6 +65,14 @@ public final class LifecycleTools {
                         .opt("bedrock", "boolean", "Geyser+Floodgate for Bedrock players; false removes")
                         .opt("acceptEula", "boolean", EulaPrompts.EULA_ARG),
                 setup::run);
+        PluginTools plugins = new PluginTools(config, server,
+                new AddonSources(AddonSources.Urls.DEFAULT, config.downloadStore()));
+        registry.add("plugins",
+                "Plugins or mods. search: ids on Modrinth, Hangar, SpigotMC. install: by id, with required "
+                        + "dependencies. Neither: list. Each call checks the folder.",
+                Schema.of().opt("search", "string", "Words")
+                        .opt("install", "strings", "modrinth:<slug>, hangar:<slug>, spigot:<number>"),
+                plugins::run);
         registry.add("server_start", "Start the dev server and wait until it is ready. Returns startup errors only.",
                 Schema.of().range("timeoutSeconds", 1, ServerRun.MAX_START_SECONDS, "Default 180").opt("acceptEula", "boolean", EulaPrompts.EULA_ARG),
                 run::start);
