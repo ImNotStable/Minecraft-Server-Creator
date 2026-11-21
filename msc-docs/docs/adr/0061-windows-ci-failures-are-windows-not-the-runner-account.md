@@ -42,6 +42,9 @@ account or the encoding:
 6. One thing is the account after all: LocalSystem's `TEMP` is `C:\Windows\TEMP`, whose real name is
    `C:\Windows\Temp`, so a message that quotes one path as given and another as resolved differs in case. The
    Windows job sets `TEMP` and `TMP` to the job's own temp folder instead of changing the runner's account.
+7. The runner's account may make symbolic links, so tests skipped on a normal account run there. Windows drops a
+   `..` with the name before it before following any link, so `link/../runs` is the link's parent there; the
+   cases that test the Linux reading are skipped on Windows.
 
 ## Consequences
 
