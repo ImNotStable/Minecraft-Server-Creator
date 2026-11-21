@@ -102,6 +102,8 @@ class RunIsolationTest {
         } catch (IOException | UnsupportedOperationException e) {
             assumeTrue(false, "no symbolic links here");
         }
+        // Windows drops a .. with the name before it, link or not, before it follows any link.
+        assumeTrue(!System.getProperty("os.name").startsWith("Windows"), "a .. after a link is the link's parent here");
         Path out = link.resolve("../runs");
 
         Path resolved = RunIsolation.resolve(out);
@@ -128,6 +130,9 @@ class RunIsolationTest {
         } catch (IOException | UnsupportedOperationException e) {
             assumeTrue(false, "no symbolic links here");
         }
+        // Windows drops a .. with the name before it, link or not, before it follows any link.
+        assumeTrue(!System.getProperty("os.name").startsWith("Windows") || !tail.contains("link/.."),
+                "a .. after a link is the link's parent here");
         Path out = other.resolve(tail);
 
         assertThat(RunIsolation.resolve(out)).isEqualTo(dir.toRealPath().resolve(expected));

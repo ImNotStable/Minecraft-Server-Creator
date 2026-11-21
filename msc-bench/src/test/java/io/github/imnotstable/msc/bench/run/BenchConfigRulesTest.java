@@ -10,6 +10,7 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.google.gson.JsonPrimitive;
+import io.github.imnotstable.msc.bench.NoPath;
 import io.github.imnotstable.msc.bench.Quoted;
 import io.github.imnotstable.msc.bench.UserJson;
 import io.github.imnotstable.msc.buildlogic.RepoFiles;
@@ -278,7 +279,7 @@ class BenchConfigRulesTest {
         assertThatThrownBy(() -> BenchConfig.load(config, home()))
                 .isInstanceOf(IOException.class)
                 .hasMessage("Bad bench config " + config + ": " + key + ": \"a\\u0000b\" is not a path: "
-                        + "Nul character not allowed");
+                        + NoPath.reason("a\0b"));
     }
 
     /** Each object of bench.json, by its path in {@link #VALID} ({@code ""} is the file itself), with its keys. */
@@ -482,7 +483,8 @@ class BenchConfigRulesTest {
                 Arguments.of("{\"paths\":{\"a\\nb\":\"x\"}}",
                         "paths: the name \"a\\nb\" is no placeholder name; use letters, digits, '.', '_' or '-'"),
                 Arguments.of("{\"modes\":{\"m\":{\"paperCacheSeed\":\"../x \"}}}",
-                        "modes.m.paperCacheSeed: \"../x \" is not a folder inside the workspace"),
+                        NoPath.refusal("modes.m.paperCacheSeed", "../x ",
+                                "modes.m.paperCacheSeed: \"../x \" is not a folder inside the workspace")),
                 Arguments.of("{\"modes\":{\"a\\nb\":{}}}", "modes.\"a\\nb\": the name is no mode name (it names "
                         + "attempt folders and --modes lists); use letters, digits, '.', '_' or '-'"),
                 Arguments.of("{\"agent\":{\"x\\u2028y \":1}}",
@@ -490,8 +492,8 @@ class BenchConfigRulesTest {
                 Arguments.of("{\"server\":{\"downloadsUrl\":\"\\u202ehttps://x\"}}",
                         "server.downloadsUrl: \"\\u202ehttps://x\" is no http or https URL"),
                 Arguments.of("{\"modes\":{\"m\":{\"serverPlugins\":[\"{a\\nb}\"]}}}",
-                        "modes.m.serverPlugins: \"{a\\nb}\" in \"{a\\nb}\" is no placeholder; name a key of paths, "
-                                + "such as {agentJar}"));
+                        NoPath.refusal("modes.m.serverPlugins[0]", "{a\nb}", "modes.m.serverPlugins: \"{a\\nb}\" in "
+                                + "\"{a\\nb}\" is no placeholder; name a key of paths, such as {agentJar}")));
     }
 
     @ParameterizedTest(name = "{1}")

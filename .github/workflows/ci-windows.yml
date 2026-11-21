@@ -19,7 +19,12 @@ jobs:
     name: Build, test and e2e (windows-latest)
     if: github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'full-ci')
     runs-on: windows-latest
-    timeout-minutes: 70
+    timeout-minutes: 120  # msc-bench alone takes about 30 minutes on the runner (ADR 0061)
+    # The service account's own TEMP is C:\Windows\TEMP, which Windows also names C:\Windows\Temp, so a path quoted
+    # both ways differs in tests. The job's own temp folder has one spelling, and is emptied with the job (ADR 0061).
+    env:
+      TEMP: ${{ runner.temp }}
+      TMP: ${{ runner.temp }}
     defaults:
       run:
         # Git Bash, so ./gradlew reads the same as on Ubuntu.

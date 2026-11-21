@@ -3,10 +3,12 @@ package io.github.imnotstable.msc.bench;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
 
+import io.github.imnotstable.msc.bench.run.AttemptProcesses;
 import io.github.imnotstable.msc.bench.run.BenchConfig;
 import io.github.imnotstable.msc.bench.run.BenchRunner;
 import io.github.imnotstable.msc.bench.run.Disk;
 import io.github.imnotstable.msc.bench.run.FullDisk;
+import io.github.imnotstable.msc.bench.run.ProcessArgumentsAccess;
 import io.github.imnotstable.msc.bench.run.ResultsFile;
 import io.github.imnotstable.msc.bench.run.RunRecord;
 import io.github.imnotstable.msc.bench.task.TaskDef;
@@ -28,10 +30,13 @@ import java.time.Duration;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -687,8 +692,11 @@ class BenchRunnerTest {
     }
 
     private static long fakeAgents() {
+        Function<ProcessHandle, Optional<List<String>>> arguments = ProcessArgumentsAccess.snapshot();
         return ProcessHandle.current().descendants().filter(ProcessHandle::isAlive)
-                .filter(p -> p.info().commandLine().orElse("").contains("-Dmsc.fakeAgent=" + HANG_MARKER)).count();
+                // The command line as Linux and macOS show it, or the arguments Windows only gives through a query.
+                .filter(p -> (p.info().commandLine().orElse("") + " " + String.join(" ", arguments.apply(p)
+                        .orElse(List.of()))).contains("-Dmsc.fakeAgent=" + HANG_MARKER)).count();
     }
 
     private BenchRunner hangingRunner() throws IOException {
@@ -709,7 +717,7 @@ class BenchRunnerTest {
         Thread thread = hangingRun(runner, result);
 
         runner.abort(); // what the shutdown hook does on Ctrl-C
-        thread.join(Duration.ofSeconds(30));
+        thread.join(Duration.ofSeconds(120)); // a slow machine (the Windows runner) takes over 30 s
 
         assertThat(thread.isAlive()).isFalse();
         assertThat(fakeAgents()).as("no agent or agent child outlives the run").isZero();
@@ -725,7 +733,7 @@ class BenchRunnerTest {
         Thread thread = hangingRun(runner, result);
 
         thread.interrupt();
-        thread.join(Duration.ofSeconds(30));
+        thread.join(Duration.ofSeconds(120)); // a slow machine (the Windows runner) takes over 30 s
 
         assertThat(thread.isAlive()).isFalse();
         assertThat(fakeAgents()).as("the child is killed with the agent, not only the agent").isZero();
@@ -811,6 +819,7 @@ class BenchRunnerTest {
      */
     @Test
     void aServerTheAgentLeftOnTheGamePortIsGoneBeforeTheNextAttempt() throws IOException {
+        Assumptions.assumeTrue(AttemptProcesses.canProve(), "this system shows no process's environment");
         Path tasks = minestomTaskLeavingAServer();
         int serverPort = gamePort.port();
         gamePort.close(); // the agents' servers bind it
@@ -852,6 +861,7 @@ class BenchRunnerTest {
     /** #577: whatever an attempt left running in its folder is stopped when it ends, even for a task without ports. */
     @Test
     void whatAnAttemptLeftRunningInItsFolderEndsWithIt() throws IOException {
+        Assumptions.assumeTrue(AttemptProcesses.canProve(), "this system shows no process's environment");
         Path task = Files.createDirectories(dir.resolve("tasks/texture"));
         Files.writeString(task.resolve("task.json"), """
                 {"category":"texture","title":"a texture","checks":[{"type":"file","path":"left-server.port"}]}

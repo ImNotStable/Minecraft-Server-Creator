@@ -80,7 +80,8 @@ class RunTextOnScreenTest {
         Outcome run = exec("run", "--tasks", "cat", "--tasks-dir", "@tasks", "--config", "@bench.json", "--out",
                 "@runs");
         assertThat(run.exit()).as(run.out() + run.err()).isEqualTo(Main.FAILED);
-        assertThat(firstHidden(run.out())).as(run.out()).isNull();
+        // Windows ends each printed line with \r\n; only a \r inside a line is hidden detail.
+        assertThat(firstHidden(run.out().replace(System.lineSeparator(), "\n"))).as(run.out()).isNull();
         assertThat(run.out().lines()).anySatisfy(line -> assertThat(line)
                 .startsWith("[baseline] cat #1 FAIL").endsWith(" (" + shown + ")"));
 
