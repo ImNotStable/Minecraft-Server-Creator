@@ -25,3 +25,4 @@ The plan measures quality, speed and tokens with and without the toolset, and se
 - Minestom tasks run anywhere; Paper tasks run where the owner accepted the EULA; toolset runs need core and the agent jar built.
 - Token counts include the model's whole context, so they capture both smaller tool results and fewer turns.
 - Targets were set from the first full run (2026-11-12) and recorded in the plan's Goal and success metrics.
+- The full run of 2026-11-21 (main `c848018`, 9 tasks × 3) meets the overall targets: toolset 27/27 against 26/27, and on the 8 Paper tasks −61% time, −40% tokens, −59% cost, every tool under 300 tokens per call. It misses the per-task token rule on `texture-resource-pack` (+29%), `code-config-motd` (+11%) and `game-sky-sprint` (+42%, no msc tool call). Results are in the plan's Goal and success metrics.
