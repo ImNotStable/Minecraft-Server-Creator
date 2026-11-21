@@ -93,7 +93,7 @@ public final class ApiIndex {
     /**
      * Find the platform's API jars that Gradle already downloaded: Paper API, Adventure and the paperweight-patched
      * server (NMS) for {@code paper},
-     * the Minecraft server, Fabric API and loader for {@code fabric}, Minestom and Adventure for {@code minestom}, the
+     * the Minecraft server, Fabric API and loader for {@code fabric}, Minestom, its test environment and Adventure for {@code minestom}, the
      * NeoForge or Forge API jars for {@code neoforge} and {@code forge}, Velocity API and Adventure for {@code velocity}.
      *
      * @param gradleHome the Gradle user home ({@link io.github.imnotstable.msc.core.server.GradleUserHome})
@@ -133,6 +133,8 @@ public final class ApiIndex {
             }
             case "minestom" -> {
                 addNewest(out, files.resolve("net.minestom").resolve("minestom"));
+                // The test environment (Env, EnvTest) the template's tests use.
+                addNewest(out, files.resolve("net.minestom").resolve("testing"));
                 addAdventure(out, files);
             }
             case "paper" -> {

@@ -16,6 +16,7 @@ import io.github.imnotstable.msc.bench.check.Placeholders;
 import io.github.imnotstable.msc.bench.task.TaskDef;
 import io.github.imnotstable.msc.process.rcon.RconClient;
 import io.github.imnotstable.msc.templates.Templates;
+import io.github.imnotstable.msc.textures.PackSource;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.nio.file.FileAlreadyExistsException;
@@ -514,6 +515,10 @@ public final class BenchRunner {
         values.put("serverPort", Integer.toString(config.server().serverPort()));
         values.put("corePort", Integer.toString(config.corePort()));
         values.put("minecraftVersion", config.minecraftVersion());
+        // Known only for the version msc-core targets; otherwise left unfilled, and a check needing it says so.
+        if (config.minecraftVersion().equals(PackSource.MINECRAFT)) {
+            values.put("resourcePackFormat", Integer.toString(PackSource.FORMAT));
+        }
         values.put("minestomMinecraftVersion", Templates.versions().getOrDefault("minestomMcVersion", ""));
         values.put("scaffoldVersion", Workspaces.SCAFFOLD_VERSION);
         values.put("coreToken", newToken());

@@ -52,7 +52,7 @@ public final class TextureTools {
                                 CoreConfig config) {
         PackSource source = pack.source();
         registry.add("texture",
-                "Add a pixel-art texture to the project's resource pack: draw it as text "
+                "Add a texture to the workspace's resource pack, no server needed: draw it as text "
                         + "(palette, rows), generate it (kind, color) or recolor a pack texture (copy, color). "
                         + "animate animates it; with only name and animate, the texture already there.",
                 Schema.of().req("name", "string", "Texture name such as item/ruby or myplugin:block/ruby_ore, or a .png path for a file outside the pack")
@@ -102,8 +102,9 @@ public final class TextureTools {
                     return "wrote model " + model + (item == null ? "" : "; item_model " + item) + "\nnext: pack";
                 }));
         registry.add("pack",
-                "Zip the project's resource pack, serve it over HTTP, send it to the server's players and list "
-                        + "its problems. check=true: only list problems.",
+                "Zip the workspace's resource pack (pack.mcmeta for Minecraft " + config.minecraft() + ", format "
+                        + pack.packFormat() + "), list problems, send it to a running server. "
+                        + "check=true: only list problems.",
                 Schema.of().opt("check", "boolean", "Only check, do not build")
                         .range("limit", 0, Integer.MAX_VALUE, "Problems to list. Default 30 with check, 5 on a build")
                         .opt("description", "string", "Pack description, up to two lines")

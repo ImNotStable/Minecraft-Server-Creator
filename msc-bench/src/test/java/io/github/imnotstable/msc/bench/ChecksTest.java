@@ -18,6 +18,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -248,6 +249,35 @@ class ChecksTest {
 
         assertThat(run(base.formatted("diamond")).passed()).isTrue();
         assertThat(run(base.formatted("emerald")).detail()).contains("missing assets/minecraft/textures/item/emerald.png");
+    }
+
+    @Test
+    void zipCheckWantsAPackMadeForTheRunsFormat() throws IOException {
+        String check = "{\"type\":\"zip\",\"path\":\"pack.zip\",\"packFormat\":\"%s\"}";
+        // The 2026-11-21 bench's baseline packs said 46 and passed a check that only looked for the key.
+        Map<String, String> metas = new LinkedHashMap<>();
+        metas.put("{\"pack\":{\"pack_format\":97}}", null);
+        metas.put("{\"pack\":{\"pack_format\":46}}", "pack_format is 46, the game needs 97");
+        metas.put("{\"pack\":{\"pack_format\":46,\"min_format\":97,\"max_format\":9999}}", null);
+        metas.put("{\"pack\":{\"min_format\":[90,0],\"max_format\":[97,1]}}", null);
+        metas.put("{\"pack\":{\"min_format\":98,\"max_format\":99}}", "formats 98 to 99 leave out format 97");
+        metas.put("{\"pack\":{\"min_format\":97}}", "min_format needs a max_format");
+        metas.put("[1]", "no \"pack\" object");
+        for (Map.Entry<String, String> meta : metas.entrySet()) {
+            try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(workspace.resolve("pack.zip")))) {
+                zip.putNextEntry(new ZipEntry("pack.mcmeta"));
+                zip.write(meta.getKey().getBytes(StandardCharsets.UTF_8));
+            }
+            CheckResult result = run(check.formatted("97"));
+            if (meta.getValue() == null) {
+                assertThat(result.passed()).as(meta.getKey()).isTrue();
+            } else {
+                assertThat(result.detail()).as(meta.getKey()).contains(meta.getValue());
+            }
+        }
+        // Unfilled: the run's Minecraft version is not the one msc-core targets.
+        assertThat(run(check.formatted("{resourcePackFormat}")).detail())
+                .contains("no resource pack format is known for this run's Minecraft version");
     }
 
     @Test

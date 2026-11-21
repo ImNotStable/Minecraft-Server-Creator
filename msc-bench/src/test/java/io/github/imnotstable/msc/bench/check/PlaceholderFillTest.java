@@ -119,11 +119,14 @@ class PlaceholderFillTest {
                 // Used only once a test player joins, which needs a Minecraft server: read, not run.
                 new Row("player", "port", "{\"type\":\"player\",\"jar\":\"a.jar\",\"port\":\"{serverPort}\",\"expect\":[\"x\"]}"),
                 new Row("player", "player", "{\"type\":\"player\",\"jar\":\"a.jar\",\"player\":\"P{V}\",\"expect\":[\"x\"]}"),
+                // The zip holds no pack.mcmeta for it to judge: read, not run.
+                new Row("zip", "packFormat", "{\"type\":\"zip\",\"path\":\"pack-1.0.0.zip\",\"packFormat\":\"{V}\"}"),
                 new Row("player", "script", "{\"type\":\"player\",\"jar\":\"a.jar\",\"script\":[\"say {V}\"],"
                         + "\"expect\":[\"x\"]}"));
     }
 
-    private static final Set<String> READ_ONLY = Set.of("player.port", "player.player", "player.script");
+    private static final Set<String> READ_ONLY = Set.of("player.port", "player.player", "player.script",
+            "zip.packFormat");
 
     @BeforeAll
     static void layOutTheFilledWorkspace() throws IOException {

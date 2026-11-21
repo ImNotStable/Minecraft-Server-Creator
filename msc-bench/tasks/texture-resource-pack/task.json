@@ -5,8 +5,8 @@
   "checks": [
     {"type": "zip", "name": "resource pack", "path": "ruby-pack.zip",
      "entries": ["pack.mcmeta"],
+     "packFormat": "{resourcePackFormat}",
      "textEntries": [
-       {"entry": "pack.mcmeta", "contains": "\"(pack_format|min_format)\"\\s*:"},
        {"entry": "pack.mcmeta", "contains": "\"description\"\\s*:"}
      ],
      "pngEntries": [

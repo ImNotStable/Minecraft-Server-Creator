@@ -26,6 +26,11 @@ import java.util.zip.ZipOutputStream;
 public final class PackSource {
     private static final long FIXED_TIME = 946684800000L;
 
+    /** The Minecraft release {@link #FORMAT} belongs to. msc-core's default version and the bench check both use it. */
+    public static final String MINECRAFT = "26.3";
+    /** {@link #MINECRAFT}'s resource pack format: pack_version.resource_major 97 (minor 1) of its version.json. */
+    public static final int FORMAT = 97;
+
     /** A zipped pack. */
     public record Zipped(Path zip, String sha1, int files, long bytes) {
     }
