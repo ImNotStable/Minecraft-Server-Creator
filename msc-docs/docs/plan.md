@@ -23,6 +23,17 @@ Targets, set from the first full run (2026-11-12: 8 Paper tasks × 3 repeats per
 
 The big win is seeing the world: `build-mirror-copy` drops from 549 s and 1.3M tokens to 76 s and 130k. The gaps to close are where a tool replaced a cheap plain-file step (`texture-ruby-item`, `build-hut`) and finding blocks (`world-find-block`).
 
+Latest full run (2026-11-21, main `c848018`, all 9 tasks × 3 repeats per mode, claude-sonnet-4-6; evidence on branch `claude/bench-r9-evidence`, `full-1121/20261121-023026`):
+
+| Area | Baseline → toolset | Target met? |
+| --- | --- | --- |
+| Quality | 26/27 → 27/27; the toolset passes every task, `game-sky-sprint` included (the baseline missed one stair facing in `build-mirror-copy`) | Yes |
+| Speed | 8 Paper tasks: median 106 s → 41 s (−61%); no task slower (Sky Sprint −7%) | Yes |
+| Tokens and cost | 8 Paper tasks: median 249k → 150k (−40%), cost $8.85 → $3.62 (−59%). All 9: 261k → 170k, $16.73 → $11.77 (−30%), Sky Sprint being two thirds of the cost | Overall yes. Per task no: `texture-resource-pack` +29%, `code-config-motd` +11%, `game-sky-sprint` +42% tokens |
+| Tool results | Largest `world_slice`, 162 tokens per call | Yes |
+
+Sky Sprint made no msc tool call in any toolset attempt, so its token gap is run-to-run spread plus the toolset's preamble, not tool cost; the toolset has no game-logic tool yet. Since the previous full run (2026-11-12, 8 Paper tasks: toolset 43 s, 192k tokens, $5.06) the runner moved attempts out of the repository, so `CLAUDE.md` no longer reaches the agent (#309), and the texture tasks got their own preamble (#72).
+
 ## Architecture
 
 The AI talks only to `msc-core` over MCP. The core talks to a thin agent inside each running server over `msc-protocol` (local socket). A new platform means one new agent, not a new toolset.
