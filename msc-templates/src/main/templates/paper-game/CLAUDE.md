@@ -61,6 +61,7 @@ Every message names the key path in `config.yml` (`stages[1].name: needs a stage
 - Never block the main thread (no I/O, sleeps or network in event handlers or commands). `Progress` shows the pattern: a change only updates memory and marks it dirty; `flush()` builds the file text and writes it on an async task.
 - World, entity and inventory access only on the main thread.
 - Gamerules are `org.bukkit.GameRules` constants (`GameRules.KEEP_INVENTORY`, `GameRules.ADVANCE_TIME`, `GameRules.SPAWN_MOBS`); the old camelCase names are gone in 26.x.
+- Minecraft internals (NMS) are on the compile classpath through paperweight-userdev, Mojang-named (`net.minecraft.*`, `org.bukkit.craftbukkit.*`): reach them with `((CraftPlayer) player).getHandle()`, `((CraftWorld) world).getHandle()`, `((CraftEntity) entity).getHandle()`. Use the Paper API first; NMS for what it lacks (packets, custom entity AI goals, registries, world generation). Keep NMS calls in their own classes: MockBukkit has no server internals, so a test that reaches them fails with `NoClassDefFoundError`; check that code on the dev server (`dev_cycle`, `player_test`). NMS changes between Minecraft versions, so it ties the plugin to this one. Look classes up with the MSC tools `api_search` and `api_class` after the first build.
 - Prefer small final classes and records, except the main plugin class: MockBukkit must subclass it, so never make it final. Pass dependencies through constructors; avoid static state so MockBukkit tests stay isolated.
 
 ## Tests

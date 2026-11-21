@@ -91,7 +91,8 @@ public final class ApiIndex {
     }
 
     /**
-     * Find the platform's API jars that Gradle already downloaded: Paper API and Adventure for {@code paper},
+     * Find the platform's API jars that Gradle already downloaded: Paper API, Adventure and the paperweight-patched
+     * server (NMS) for {@code paper},
      * the Minecraft server, Fabric API and loader for {@code fabric}, Minestom and Adventure for {@code minestom}, the
      * NeoForge or Forge API jars for {@code neoforge} and {@code forge}, Velocity API and Adventure for {@code velocity}.
      *
@@ -137,10 +138,25 @@ public final class ApiIndex {
             case "paper" -> {
                 addNewest(out, files.resolve("io.papermc.paper").resolve("paper-api"));
                 addAdventure(out, files);
+                // The patched Paper server paperweight-userdev set up: Minecraft internals and CraftBukkit (ADR 0059).
+                addNewestOutput(out, gradleHome.resolve("caches").resolve("paperweight-userdev").resolve("v2")
+                        .resolve("work"), "applyDevBundlePatches_");
             }
             default -> throw new IllegalArgumentException("no API jars known for agent family " + platform);
         }
         return out;
+    }
+
+    /** The newest {@code <prefix>*}/output.jar in {@code work}, if any. */
+    private static void addNewestOutput(List<Path> out, Path work, String prefix) throws IOException {
+        if (!Files.isDirectory(work)) {
+            return;
+        }
+        try (Stream<Path> dirs = Files.list(work)) {
+            dirs.filter(d -> d.getFileName().toString().startsWith(prefix)).map(d -> d.resolve("output.jar"))
+                    .filter(Files::isRegularFile).max(Comparator.comparingLong(p -> p.toFile().lastModified()))
+                    .ifPresent(out::add);
+        }
     }
 
     private static void addAdventure(List<Path> out, Path files) throws IOException {
