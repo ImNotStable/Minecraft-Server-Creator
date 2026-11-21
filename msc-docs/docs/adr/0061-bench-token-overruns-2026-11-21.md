@@ -55,6 +55,21 @@ Not done:
    `run --tasks texture-resource-pack --modes baseline,toolset --repeat 2` and
    `run --tasks game-sky-sprint --modes toolset --repeat 2`.
 
+Validation (2026-11-21), run on Flux at ebd02b8:
+
+- Regrade of 20261121-023026 with the new pack check, against the saved ZIPs: baseline 0/3 (pack_format 46),
+  toolset 3/3.
+- Pack rerun 20261121-080854 (×2): baseline 0/2 (formats 71 and 46), toolset 2/2. Toolset median 30 s vs 99 s,
+  98k vs 89k tokens, total $0.17 vs $0.42. Toolset median tokens fell from 180k (11-21 run) to 98k. Tool order was
+  ToolSearch > texture > pack, with one run adding a single `msc_workspace` call; the status, `api_search` and `ls`
+  detours are gone.
+- Sky Sprint toolset rerun 20261121-081438 (×2): 2/2 pass with all 3 checks. Median 3.31M tokens vs 4.37M in the
+  11-21 run (−24%), and +7% against the 11-21 baseline's 3.08M (inside the 10% rule, n=2). Each run made 9
+  `api_search` calls, no jar or javap digging, and no shell call before the first `gradlew`. Most tokens now go to
+  reading about 16 project files up front; a possible next step.
+- MOTD: not rerun (dropped, see 4).
+- The reruns cost $5.75.
+
 ## Consequences
 
 - Old results.jsonl texture passes are not comparable with new ones; the baseline's pass rate on the task drops.
