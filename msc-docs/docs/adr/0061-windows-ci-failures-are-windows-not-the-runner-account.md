@@ -39,6 +39,9 @@ account or the encoding:
    there.
 5. Windows refuses a full listen backlog, so a test holding a port it never accepts on keeps room for every probe;
    a symbolic-link scenario is skipped where Windows will not make links (no Developer Mode or privilege).
+6. One thing is the account after all: LocalSystem's `TEMP` is `C:\Windows\TEMP`, whose real name is
+   `C:\Windows\Temp`, so a message that quotes one path as given and another as resolved differs in case. The
+   Windows job sets `TEMP` and `TMP` to the job's own temp folder instead of changing the runner's account.
 
 ## Consequences
 
