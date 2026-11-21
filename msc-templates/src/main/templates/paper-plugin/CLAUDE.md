@@ -12,7 +12,7 @@ Paper plugin for Minecraft {{mcVersion}}, Java {{javaVersion}}, Gradle Kotlin DS
 ## Layout
 
 - `src/main/java/{{packagePath}}/{{mainClass}}.java`: entry point. Only wiring here (config, listeners, commands); put logic in its own classes.
-- `src/main/resources/plugin.yml`: plugin metadata. `config.yml`: defaults, copied to `run/plugins/{{name}}/` on first start.
+- `build.gradle.kts`, block `bukkitPluginYaml { }`: plugin metadata (name, main class, api-version, authors, permissions, dependencies with `depend.add("LuckPerms")`); resource-factory writes `plugin.yml` from it at build time and fails the build on a bad value. Do not add a `plugin.yml` file. `src/main/resources/config.yml`: defaults, copied to `run/plugins/{{name}}/` on first start.
 - `src/test/java/`: plain unit tests (`GreeterTest`) and MockBukkit tests (`{{mainClass}}Test`).
 - `gradle/libs.versions.toml`: every dependency version. Add versions there, never inline in `build.gradle.kts`.
 - `run/`: dev server. `server.properties` and `eula.txt` are committed; the world, logs and jars are not.
@@ -20,7 +20,7 @@ Paper plugin for Minecraft {{mcVersion}}, Java {{javaVersion}}, Gradle Kotlin DS
 ## Paper conventions
 
 - Text is Adventure `Component`s, written as MiniMessage (`<green>Hi <player>`). Never use `ChatColor` or `§` codes. Insert player input with `Placeholder.unparsed`.
-- Commands use Paper's Brigadier API: register in `onEnable` via `getLifecycleManager().registerEventHandler(LifecycleEvents.COMMANDS, ...)`. Use `BasicCommand` for simple commands, `Commands.literal(...)` trees for arguments. Do not add commands to `plugin.yml`.
+- Commands use Paper's Brigadier API: register in `onEnable` via `getLifecycleManager().registerEventHandler(LifecycleEvents.COMMANDS, ...)`. Use `BasicCommand` for simple commands, `Commands.literal(...)` trees for arguments. Do not add commands to `bukkitPluginYaml`.
 - Never block the main thread (no I/O, sleeps or network in event handlers or commands). Use `getServer().getScheduler().runTaskAsynchronously(...)`, then hop back with `runTask(...)` before touching the world.
 - World, entity and inventory access only on the main thread.
 - Read settings from `getConfig()`; add every new key with a default to `config.yml`.

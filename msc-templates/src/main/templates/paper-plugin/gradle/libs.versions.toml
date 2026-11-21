@@ -8,6 +8,7 @@ junit = "{{junitVersion}}"
 assertj = "{{assertjVersion}}"
 run-paper = "{{runPaperVersion}}"
 paperweight = "{{paperweightVersion}}"
+resource-factory = "{{resourceFactoryVersion}}"
 
 [libraries]
 paper-api = { module = "io.papermc.paper:paper-api", version.ref = "paper" }
@@ -20,3 +21,4 @@ assertj = { module = "org.assertj:assertj-core", version.ref = "assertj" }
 [plugins]
 run-paper = { id = "xyz.jpenilla.run-paper", version.ref = "run-paper" }
 paperweight = { id = "io.papermc.paperweight.userdev", version.ref = "paperweight" }
+resource-factory = { id = "xyz.jpenilla.resource-factory-bukkit-convention", version.ref = "resource-factory" }
