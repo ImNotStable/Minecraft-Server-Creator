@@ -193,11 +193,12 @@ class PlatformTest {
         jar(files.resolve("io.papermc.paper/paper-api/26.3/abd/paper-api-26.3-sources.jar"));
         Path adventure = jar(files.resolve("net.kyori/adventure-api/5.0/abc/adventure-api-5.0.jar"));
         Path minestom = jar(files.resolve("net.minestom/minestom/2026/abc/minestom-2026.jar"));
+        Path testing = jar(files.resolve("net.minestom/testing/2026/abc/testing-2026.jar"));
         Path events = jar(files.resolve("net.fabricmc.fabric-api/fabric-lifecycle-events-v1/2.0/abc/fabric-lifecycle-events-v1-2.0.jar"));
         Path loader = jar(files.resolve("net.fabricmc/fabric-loader/0.20.1/abc/fabric-loader-0.20.1.jar"));
         Path minecraft = jar(dir.resolve("caches/fabric-loom/minecraftMaven/net/minecraft/minecraft-server-deobf/26.3/minecraft-server-deobf-26.3.jar"));
         assertThat(ApiIndex.findJars(dir, "paper")).containsExactly(paper, adventure);
-        assertThat(ApiIndex.findJars(dir, "minestom")).containsExactly(minestom, adventure);
+        assertThat(ApiIndex.findJars(dir, "minestom")).containsExactly(minestom, testing, adventure);
         assertThat(ApiIndex.findJars(dir, "fabric")).containsExactly(minecraft, events, loader);
         assertThat(ApiIndex.findJars(dir.resolve("empty"), "fabric")).isEmpty();
     }

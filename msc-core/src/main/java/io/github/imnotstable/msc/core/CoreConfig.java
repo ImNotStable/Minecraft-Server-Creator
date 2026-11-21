@@ -7,6 +7,7 @@ import io.github.imnotstable.msc.core.server.MachineEula;
 import io.github.imnotstable.msc.core.tool.PathArg;
 import io.github.imnotstable.msc.protocol.Limits;
 import io.github.imnotstable.msc.protocol.transport.HandshakeProof;
+import io.github.imnotstable.msc.textures.PackSource;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
@@ -80,9 +81,9 @@ public record CoreConfig(Path workspace, Path serverDir, int agentPort, String t
     public static final String DEFAULT_FABRIC_META_URL = "https://meta.fabricmc.net";
     public static final String DEFAULT_FABRIC_MAVEN_URL = "https://maven.fabricmc.net";
     public static final String DEFAULT_DOWNLOADS_URL = "https://fill.papermc.io";
-    public static final String DEFAULT_MINECRAFT = "26.3";
-    /** Lowest resource pack format the pack claims: 97 is 26.3 (pack_version.resource_major 97, minor 1). */
-    public static final int DEFAULT_PACK_FORMAT = 97;
+    public static final String DEFAULT_MINECRAFT = PackSource.MINECRAFT;
+    /** Lowest resource pack format the pack claims: {@link PackSource#FORMAT}, the one of {@link #DEFAULT_MINECRAFT}. */
+    public static final int DEFAULT_PACK_FORMAT = PackSource.FORMAT;
 
     public CoreConfig {
         workspace = workspace.toAbsolutePath().normalize();

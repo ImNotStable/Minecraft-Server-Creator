@@ -210,7 +210,7 @@ final class UpstreamCheck {
                     r.newest() == null ? "-" : r.newest(), state));
         }
         lines.add(newer + " newer, " + unchecked + " could not check"
-                + (newer > 0 ? "; pins live in gradle/libs.versions.toml and CoreConfig.DEFAULT_MINECRAFT" : ""));
+                + (newer > 0 ? "; pins live in gradle/libs.versions.toml and msc-textures PackSource.MINECRAFT and FORMAT" : ""));
         return lines;
     }
 

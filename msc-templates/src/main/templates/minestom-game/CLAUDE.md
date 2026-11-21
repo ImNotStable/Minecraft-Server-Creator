@@ -76,5 +76,6 @@ Minestom's `Pos` wraps yaw into range and clamps pitch to 90 itself, so a spawn'
 ## Minecraft Server Creator
 
 - `MscAgent.start()` in `main` lets the AI's world tools (read, build, render, undo) work on the instance named `"world"`.
+- Look up Minestom classes, methods and the test environment (`net.minestom.testing`) with the MSC tools `api_search` and `api_class` (after the first build) instead of unzipping or `javap`-ing jars from the Gradle cache.
 - `server_command` runs commands this server registered (`game ...`); there are no vanilla commands unless you add them.
 - No Mojang server jar and no EULA step: Minestom implements the protocol itself. Players still need a Minecraft {{minestomMcVersion}} client.

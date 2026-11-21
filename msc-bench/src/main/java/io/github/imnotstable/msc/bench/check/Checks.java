@@ -28,7 +28,8 @@ public final class Checks {
         types.put("command", UserJson.Keys.of("type", "name", "run", "timeoutSeconds", "expectExit", "outputMatches",
                 "addFiles"));
         types.put("png", UserJson.Keys.of(with(PngRules.KEYS, "type", "name", "path")));
-        types.put("zip", UserJson.Keys.of("type", "name", "path", "entries", "pngEntries", "textEntries"));
+        types.put("zip", UserJson.Keys.of("type", "name", "path", "entries", "pngEntries", "textEntries",
+                "packFormat"));
         types.put("rcon", UserJson.Keys.of("type", "name", "command", "expect"));
         types.put("blocks", UserJson.Keys.of("type", "name", "blocks", "regions"));
         types.put("player", UserJson.Keys.of("type", "name", "jar", "command", "port", "player", "script", "console",
@@ -119,7 +120,8 @@ public final class Checks {
                     requirePath(json, "path"),
                     json.exactStrings("entries"),
                     zipPngs(json),
-                    zipTexts(json));
+                    zipTexts(json),
+                    string(json, "packFormat", null));
             case "rcon" -> new RconCheck(
                     orDefault(name, "rcon " + string(json, "command", "")),
                     require(json, "command"),

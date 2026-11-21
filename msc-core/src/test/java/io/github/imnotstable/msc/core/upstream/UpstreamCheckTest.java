@@ -105,7 +105,7 @@ class UpstreamCheckTest {
                 "quilt-loader      0.30.2               0.30.2               up to date",
                 "minestom          2026.10.07-26.2      2026.10.07-26.2      up to date",
                 "velocity          4.3.1                4.3.2                NEWER",
-                "6 newer, 0 could not check; pins live in gradle/libs.versions.toml and CoreConfig.DEFAULT_MINECRAFT");
+                "6 newer, 0 could not check; pins live in gradle/libs.versions.toml and msc-textures PackSource.MINECRAFT and FORMAT");
     }
 
     @Test

@@ -39,7 +39,7 @@ final class BenchConfigRules {
     /** Placeholders the runner fills itself; a {@code paths} entry with one of these names would be overwritten. */
     static final Set<String> BUILT_IN_PLACEHOLDERS = Set.of("java", "workspace", "attemptDir", "toolLog", "rconPort",
             "rconPassword", "serverPort", "corePort", "minecraftVersion", "minestomMinecraftVersion", "scaffoldVersion",
-            "coreToken", "gradlew", "mcpConfig", "prompt");
+            "resourcePackFormat", "coreToken", "gradlew", "mcpConfig", "prompt");
 
     /** Names usable as a mode (folder names, {@code --modes} lists) or Minecraft version (URLs, folder names). */
     private static final Pattern NAME = Pattern.compile("[A-Za-z0-9._-]+");
