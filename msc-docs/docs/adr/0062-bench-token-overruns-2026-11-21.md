@@ -1,4 +1,4 @@
-# ADR 0061: Toolset token overruns in the 2026-11-21 bench run
+# ADR 0062: Toolset token overruns in the 2026-11-21 bench run
 
 Status: accepted, 2026-11-21, decided by Claude on Jeremiah's request.
 
