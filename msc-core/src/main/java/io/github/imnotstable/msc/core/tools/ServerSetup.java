@@ -15,6 +15,7 @@ import io.github.imnotstable.msc.core.server.ServerProperties;
 import io.github.imnotstable.msc.core.server.WorkspaceProjects;
 import io.github.imnotstable.msc.core.tool.Args;
 import io.github.imnotstable.msc.core.tool.ToolException;
+import io.github.imnotstable.msc.process.AtomicFile;
 import io.github.imnotstable.msc.process.ServerPropertiesFile;
 import io.github.imnotstable.msc.templates.ScaffoldResult;
 import io.github.imnotstable.msc.templates.TemplateVariables;
@@ -142,6 +143,8 @@ final class ServerSetup {
                 case FOLIA -> fill(Platform.FOLIA, version, dir, installed).append(FOLIA_NOTE).append('\n');
                 default -> paper(version, dir, installed);
             }
+            // The Minecraft version plugin installs match (ADR 0057).
+            AtomicFile.write(dir.resolve(PluginTools.VERSION_FILE), to -> Files.writeString(to, version + "\n"));
             if (geyser == BedrockRule.Action.INSTALL) {
                 for (GeyserDownloader.Project p : GeyserDownloader.Project.values()) {
                     bedrockJars.add(note(this.geyser.download(p, BedrockRule.plugins(dir).resolve(p.jarName())),

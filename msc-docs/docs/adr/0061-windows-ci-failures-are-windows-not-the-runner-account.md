@@ -1,4 +1,4 @@
-# ADR 0059: Windows CI failures are Windows behaviour, not the runner's account
+# ADR 0061: Windows CI failures are Windows behaviour, not the runner's account
 
 Status: accepted, 2026-11-20, decided by Claude for the owner (who approved making the Windows runner pass).
 

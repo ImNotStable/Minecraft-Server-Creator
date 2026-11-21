@@ -12,7 +12,7 @@ Paper plugin for Minecraft {{mcVersion}}, Java {{javaVersion}}, Gradle Kotlin DS
 ## Layout
 
 - `src/main/java/{{packagePath}}/{{mainClass}}.java`: entry point. Only wiring here (config, listeners, commands); put logic in its own classes.
-- `src/main/resources/plugin.yml`: plugin metadata. `config.yml`: defaults, copied to `run/plugins/{{name}}/` on first start.
+- `build.gradle.kts`, block `bukkitPluginYaml { }`: plugin metadata (name, main class, api-version, authors, permissions, dependencies with `depend.add("LuckPerms")`); resource-factory writes `plugin.yml` from it at build time and fails the build on a bad value. Do not add a `plugin.yml` file. `src/main/resources/config.yml`: defaults, copied to `run/plugins/{{name}}/` on first start.
 - `src/test/java/`: plain unit tests (`GreeterTest`) and MockBukkit tests (`{{mainClass}}Test`).
 - `gradle/libs.versions.toml`: every dependency version. Add versions there, never inline in `build.gradle.kts`.
 - `run/`: dev server. `server.properties` and `eula.txt` are committed; the world, logs and jars are not.
@@ -20,10 +20,11 @@ Paper plugin for Minecraft {{mcVersion}}, Java {{javaVersion}}, Gradle Kotlin DS
 ## Paper conventions
 
 - Text is Adventure `Component`s, written as MiniMessage (`<green>Hi <player>`). Never use `ChatColor` or `§` codes. Insert player input with `Placeholder.unparsed`.
-- Commands use Paper's Brigadier API: register in `onEnable` via `getLifecycleManager().registerEventHandler(LifecycleEvents.COMMANDS, ...)`. Use `BasicCommand` for simple commands, `Commands.literal(...)` trees for arguments. Do not add commands to `plugin.yml`.
+- Commands use Paper's Brigadier API: register in `onEnable` via `getLifecycleManager().registerEventHandler(LifecycleEvents.COMMANDS, ...)`. Use `BasicCommand` for simple commands, `Commands.literal(...)` trees for arguments. Do not add commands to `bukkitPluginYaml`.
 - Never block the main thread (no I/O, sleeps or network in event handlers or commands). Use `getServer().getScheduler().runTaskAsynchronously(...)`, then hop back with `runTask(...)` before touching the world.
 - World, entity and inventory access only on the main thread.
 - Read settings from `getConfig()`; add every new key with a default to `config.yml`.
+- Minecraft internals (NMS) are on the compile classpath through paperweight-userdev, Mojang-named (`net.minecraft.*`, `org.bukkit.craftbukkit.*`): reach them with `((CraftPlayer) player).getHandle()`, `((CraftWorld) world).getHandle()`, `((CraftEntity) entity).getHandle()`. Use the Paper API first; NMS for what it lacks (packets, custom entity AI goals, registries, world generation). Keep NMS calls in their own classes: MockBukkit has no server internals, so a test that reaches them fails with `NoClassDefFoundError`; check that code on the dev server (`dev_cycle`, `player_test`). NMS changes between Minecraft versions, so it ties the plugin to this one. Look classes up with the MSC tools `api_search` and `api_class` after the first build.
 - Prefer small final classes and records, except the main plugin class: MockBukkit must subclass it, so never make it final. Pass dependencies through constructors; avoid static state so MockBukkit tests stay isolated.
 
 ## Recipes
@@ -57,6 +58,28 @@ public final class CountdownCommand {
                     return Command.SINGLE_SUCCESS;
                 }))
                 .build();
+    }
+}
+```
+
+Minecraft internals kept in one class, `src/main/java/{{packagePath}}/Nms.java` (call it from a command or listener; no MockBukkit test may reach it):
+
+```java
+package {{packageName}};
+
+import net.minecraft.server.level.ServerPlayer;
+import org.bukkit.craftbukkit.entity.CraftPlayer;
+import org.bukkit.entity.Player;
+
+/** The NMS calls of this plugin. MockBukkit has no server internals, so only the dev server runs this. */
+public final class Nms {
+    private Nms() {
+    }
+
+    /** The player's latency in milliseconds as the server measured it, read from its connection. */
+    public static int latency(Player player) {
+        ServerPlayer handle = ((CraftPlayer) player).getHandle();
+        return handle.connection.latency();
     }
 }
 ```

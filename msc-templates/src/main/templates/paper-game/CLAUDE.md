@@ -28,6 +28,7 @@ The base every game needs, so you only write the game itself. All of it is set i
 - `GameListener.java`: hands Bukkit events to `Game`. `GameCommand.java`: `/game`.
 - `Stage`, `Spot`, `Box`, `Kit`: config values. `Progress`: saved progress. `WorldRules`: world-wide rules.
 - `src/test/java/`: plain unit tests (`BoxTest`, `ProgressTest`, `ConfigReadersTest`) and MockBukkit tests (`GameConfigTest`, `ConfigNumbersTest`, `SharedRulesTest`, `{{mainClass}}Test`). `ConfigNumbersTest` tries every bad shape at every ranged number in the config; `ConfigReadersTest` checks the number readers at their edge bounds. `{{mainClass}}Test` plays its own two-stage game (`CONFIG`), not your `config.yml`, so editing `config.yml` does not break it.
+- `build.gradle.kts`, block `bukkitPluginYaml { }`: plugin metadata, including the `{{projectId}}.admin` permission; resource-factory writes `plugin.yml` from it at build time. Do not add a `plugin.yml` file.
 - `gradle/libs.versions.toml`: every dependency version. `run/`: dev server config.
 
 ## Building the game
@@ -57,10 +58,11 @@ Every message names the key path in `config.yml` (`stages[1].name: needs a stage
 ## Paper conventions
 
 - Text is Adventure `Component`s, written as MiniMessage (`<green>Hi <player>`) or `Component.text(..., NamedTextColor.X)`. Never use `ChatColor` or `§` codes. Insert player input with `Placeholder.unparsed`.
-- Commands use Paper's Brigadier API, registered in `onEnable` via `getLifecycleManager().registerEventHandler(LifecycleEvents.COMMANDS, ...)`. Do not add commands to `plugin.yml`.
+- Commands use Paper's Brigadier API, registered in `onEnable` via `getLifecycleManager().registerEventHandler(LifecycleEvents.COMMANDS, ...)`. Do not add commands to `bukkitPluginYaml`.
 - Never block the main thread (no I/O, sleeps or network in event handlers or commands). `Progress` shows the pattern: a change only updates memory and marks it dirty; `flush()` builds the file text and writes it on an async task.
 - World, entity and inventory access only on the main thread.
 - Gamerules are `org.bukkit.GameRules` constants (`GameRules.KEEP_INVENTORY`, `GameRules.ADVANCE_TIME`, `GameRules.SPAWN_MOBS`); the old camelCase names are gone in 26.x.
+- Minecraft internals (NMS) are on the compile classpath through paperweight-userdev, Mojang-named (`net.minecraft.*`, `org.bukkit.craftbukkit.*`): reach them with `((CraftPlayer) player).getHandle()`, `((CraftWorld) world).getHandle()`, `((CraftEntity) entity).getHandle()`. Use the Paper API first; NMS for what it lacks (packets, custom entity AI goals, registries, world generation). Keep NMS calls in their own classes: MockBukkit has no server internals, so a test that reaches them fails with `NoClassDefFoundError`; check that code on the dev server (`dev_cycle`, `player_test`). NMS changes between Minecraft versions, so it ties the plugin to this one. Look classes up with the MSC tools `api_search` and `api_class` after the first build.
 - Prefer small final classes and records, except the main plugin class: MockBukkit must subclass it, so never make it final. Pass dependencies through constructors; avoid static state so MockBukkit tests stay isolated.
 
 ## Tests

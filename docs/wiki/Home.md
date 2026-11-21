@@ -22,7 +22,7 @@ It works with **Paper**, **Purpur**, **Fabric**, **Quilt**, **NeoForge**, **Forg
 
 ## More pages
 
-- [Tools reference](Tools-reference): all 26 tools, one line each.
+- [Tools reference](Tools-reference): all 27 tools, one line each.
 - [Building and viewing the world](Building-and-viewing-the-world)
 - [Textures](Textures)
 - [Benchmark](Benchmark)

@@ -279,7 +279,8 @@ val checkToolDocs = tasks.register<JavaExec>("checkToolDocs") {
 
 tasks.named("check") { dependsOn(checkToolDocs) }
 
-// checkUpstreamVersions: one line per pinned component (Minecraft, Paper, Fabric, NeoForge, Forge, Quilt, Minestom),
+// checkUpstreamVersions: one line per pinned component (Minecraft, Paper, Fabric, NeoForge, Forge, Quilt, Minestom,
+// Velocity, Gradle and the Gradle plugins the templates use),
 // the version pinned and the newest stable upstream (ADR 0039). Run by hand, never part of `build`; offline it says
 // "could not check" and still succeeds.
 tasks.register<JavaExec>("checkUpstreamVersions") {

@@ -2,6 +2,7 @@ package io.github.imnotstable.msc.core.tools;
 
 import io.github.imnotstable.msc.core.CoreConfig;
 import io.github.imnotstable.msc.core.agent.AgentHub;
+import io.github.imnotstable.msc.core.server.AddonCheck;
 import io.github.imnotstable.msc.core.server.CrashTriage;
 import io.github.imnotstable.msc.core.server.LogCondenser;
 import io.github.imnotstable.msc.core.server.MachineEula;
@@ -285,6 +286,10 @@ final class ServerRun {
         }
         if (packNote != null) {
             out.append(packNote).append('\n');
+        }
+        // ADR 0057: what in plugins/ or mods/ will not load, said before the server's own log does it at length.
+        for (String p : AddonCheck.problems(config.serverDir(), server.platform(), false)) {
+            out.append("addon problem: ").append(p).append('\n');
         }
         if (r.ready()) {
             out.append("server ready in ").append(LogText.seconds(r.millis()));

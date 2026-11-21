@@ -1,6 +1,10 @@
 plugins {
     java
     alias(libs.plugins.run.paper)
+    // Paper's server with Minecraft internals (NMS) and CraftBukkit to compile against, Mojang-named.
+    alias(libs.plugins.paperweight)
+    // Writes plugin.yml from the bukkitPluginYaml block below and checks it at build time.
+    alias(libs.plugins.resource.factory)
 }
 
 group = "{{packageName}}"
@@ -11,13 +15,18 @@ java {
     toolchain.languageVersion = JavaLanguageVersion.of(libs.versions.java.get().toInt())
 }
 
+paperweight {
+    // The server is for compiling only: MockBukkit tests run against paper-api, and NMS code runs on the dev server.
+    addServerDependencyTo = configurations.named(JavaPlugin.COMPILE_ONLY_CONFIGURATION_NAME).map { setOf(it) }
+}
+
 repositories {
     mavenCentral()
     maven("https://repo.papermc.io/repository/maven-public/")
 }
 
 dependencies {
-    compileOnly(libs.paper.api)
+    paperweight.paperDevBundle(libs.versions.paper.get())
 
     testImplementation(libs.paper.api)
     testImplementation(libs.mockbukkit)
@@ -33,10 +42,12 @@ tasks.withType<JavaCompile>().configureEach {
     options.compilerArgs.addAll(listOf("-parameters", "-Xlint:all,-processing,-serial"))
 }
 
-tasks.processResources {
-    val props = mapOf("version" to version)
-    inputs.properties(props)
-    filesMatching("plugin.yml") { expand(props) }
+// plugin.yml, generated at build time (version and description come from the project above).
+bukkitPluginYaml {
+    name = "{{name}}"
+    main = "{{packageName}}.{{mainClass}}"
+    apiVersion = libs.versions.minecraft
+    "{{author}}".takeIf { it.isNotBlank() }?.let { authors.add(it) }
 }
 
 tasks.test {
