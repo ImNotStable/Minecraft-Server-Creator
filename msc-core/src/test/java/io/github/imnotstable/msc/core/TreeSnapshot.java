@@ -22,7 +22,9 @@ final class TreeSnapshot {
         try (Stream<Path> tree = Files.walk(root)) {
             for (Path p : tree.toList()) {
                 String rel = root.relativize(p).toString().replace('\\', '/');
-                out.put(rel, Files.isDirectory(p) ? "dir" : HexFormat.of().formatHex(Files.readAllBytes(p)));
+                // Windows locks are mandatory: a lock file another process holds can't be read, only sized.
+                out.put(rel, Files.isDirectory(p) ? "dir" : rel.endsWith(".lock") ? "lock of " + Files.size(p)
+                        : HexFormat.of().formatHex(Files.readAllBytes(p)));
             }
         }
         return out;

@@ -36,4 +36,10 @@ tasks.withType<Test>().configureEach {
         events("failed")
         exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
     }
+    // Windows: a child another concurrent test starts can inherit a handle to a file in this test's temp folder and
+    // hold it until that test ends, so a folder that cannot go yet is logged, not failed (ADR 0061). Linux stays strict.
+    if (System.getProperty("os.name").startsWith("Windows")) {
+        systemProperty("junit.jupiter.tempdir.deletion.strategy.default",
+            "org.junit.jupiter.api.io.TempDirDeletionStrategy\$IgnoreFailures")
+    }
 }

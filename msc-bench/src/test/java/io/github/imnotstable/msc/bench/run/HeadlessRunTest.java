@@ -38,7 +38,8 @@ class HeadlessRunTest {
 
     @Test
     void refusesACorePortAnotherProgramHolds() throws IOException {
-        try (ServerSocket taken = new ServerSocket(0, 1, InetAddress.getLoopbackAddress())) {
+        // Room for every probe: nothing accepts, and Windows refuses a connection a full backlog has no room for.
+        try (ServerSocket taken = new ServerSocket(0, 50, InetAddress.getLoopbackAddress())) {
             int[] kills = new int[1];
             assertThatThrownBy(() -> CoreProcesses.requireFreePort(taken.getLocalPort(), () -> {
                 kills[0]++;

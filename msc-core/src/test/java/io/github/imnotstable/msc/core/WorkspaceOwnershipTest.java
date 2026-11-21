@@ -300,6 +300,7 @@ class WorkspaceOwnershipTest {
                 assertThat(h.core.hub()).isSameAs(hub);
             }
             assertThat(h.ok("server_command", "command", "say hi")).isEqualTo("ran say hi");
+            h.ok("server_stop"); // a detached server outlives the session, and on Windows its folder can't be deleted
         }
 
         /** #739: the switch back lost the kept server's edit history: nothing to undo, and ids started at e1 again. */
@@ -312,6 +313,7 @@ class WorkspaceOwnershipTest {
             h.ok("msc_workspace", "path", workspace.toString());
             assertThat(h.ok("build_undo")).startsWith("undid e1");
             assertThat(h.ok("build_batch", "steps", "set 0,70,0 stone")).startsWith("edit e2: ");
+            h.ok("server_stop"); // a detached server outlives the session, and on Windows its folder can't be deleted
         }
 
         /** #282: the start was reached after the bench closed; nothing would ever stop that server. */

@@ -142,7 +142,7 @@ class CommandLineTest {
                 + "\"blocks\":[{\"pos\":[0,0,0],\"block\":\"minecraft:air\"}]}]}",
                 "checks[0].type: \"blocks\" checks the Paper server, and a minestom task runs none"});
         BAD_CONFIGS.put("path-nul", new String[] {"{\"gradleWrapperFrom\":\"a\\u0000b\"}",
-                "gradleWrapperFrom: \"a\\u0000b\" is not a path: Nul character not allowed"});
+                "gradleWrapperFrom: \"a\\u0000b\" is not a path: " + NoPath.reason("a\0b")});
         // #508: a bad regex is refused in one line naming its key, not in PatternSyntaxException's three lines.
         BAD_TASKS.put("bad-regex", new String[] {"{\"category\":\"code\",\"title\":\"t\",\"checks\":[{\"type\":"
                 + "\"file\",\"path\":\"a.txt\",\"contains\":\"(abc\"}]}",

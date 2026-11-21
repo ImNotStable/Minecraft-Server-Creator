@@ -438,6 +438,9 @@ public final class UserJson {
     }
 
     private static String checkPath(String path, String key, boolean secret) {
+        if (path.isBlank()) {
+            return path; // the blank rule names it; Windows would refuse " " here as a path with a trailing space
+        }
         try {
             Path.of(path);
             return path;

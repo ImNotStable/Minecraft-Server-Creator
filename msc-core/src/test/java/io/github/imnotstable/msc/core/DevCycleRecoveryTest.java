@@ -63,6 +63,15 @@ class DevCycleRecoveryTest {
         return ws.resolve(".msc/deployed.properties");
     }
 
+    /** The deploy record's line for {@code project}, escaped as a properties file needs ({@code C:\} on Windows). */
+    static String recordLine(Path project, String jar) throws IOException {
+        Properties line = new Properties();
+        line.setProperty(project.toAbsolutePath().normalize().toString(), jar);
+        java.io.StringWriter out = new java.io.StringWriter();
+        line.store(out, null);
+        return out.toString().lines().filter(l -> !l.startsWith("#")).findFirst().orElseThrow();
+    }
+
     private String recorded() throws IOException {
         Properties p = new Properties();
         try (InputStream in = Files.newInputStream(record())) {
@@ -141,7 +150,7 @@ class DevCycleRecoveryTest {
         String other = "D" + bs + ":" + bs + "projects" + bs + "ui" + bs + "Other=plugins/other.jar";
         String third = "/elsewhere/Third=plugins/third.jar";
         Files.createDirectories(record().getParent());
-        Files.writeString(record(), project.toAbsolutePath().normalize() + "=plugins/oldname.jar\n" + other + "\n"
+        Files.writeString(record(), recordLine(project, "plugins/oldname.jar") + "\n" + other + "\n"
                 + third + "\n");
         Files.writeString(plugins.resolve("oldname.jar"), "1.0");
         Files.writeString(plugins.resolve("other.jar"), "other");
