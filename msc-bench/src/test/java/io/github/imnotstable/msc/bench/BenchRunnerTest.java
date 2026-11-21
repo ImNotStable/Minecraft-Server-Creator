@@ -694,7 +694,9 @@ class BenchRunnerTest {
     private static long fakeAgents() {
         Function<ProcessHandle, Optional<List<String>>> arguments = ProcessArgumentsAccess.snapshot();
         return ProcessHandle.current().descendants().filter(ProcessHandle::isAlive)
-                .filter(p -> arguments.apply(p).orElse(List.of()).contains("-Dmsc.fakeAgent=" + HANG_MARKER)).count();
+                // The command line as Linux and macOS show it, or the arguments Windows only gives through a query.
+                .filter(p -> (p.info().commandLine().orElse("") + " " + String.join(" ", arguments.apply(p)
+                        .orElse(List.of()))).contains("-Dmsc.fakeAgent=" + HANG_MARKER)).count();
     }
 
     private BenchRunner hangingRunner() throws IOException {
