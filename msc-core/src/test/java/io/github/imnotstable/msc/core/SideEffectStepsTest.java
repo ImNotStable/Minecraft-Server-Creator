@@ -611,7 +611,12 @@ class SideEffectStepsTest {
             Path plugins = ws.resolve("run/plugins");
             Files.delete(plugins.resolve("demo.jar"));
             Files.writeString(plugins.resolve("arena.jar"), "1.0");
-            Files.createSymbolicLink(plugins.resolve("same"), Path.of("."));
+            try {
+                Files.createSymbolicLink(plugins.resolve("same"), Path.of("."));
+            } catch (java.nio.file.FileSystemException e) {
+                // Windows makes links only with Developer Mode or the privilege to.
+                org.junit.jupiter.api.Assumptions.abort("this system makes no symbolic link: " + e.getReason());
+            }
             java.util.Properties record = new java.util.Properties();
             record.setProperty(ws.resolve("demo").toAbsolutePath().normalize().toString(), "plugins/same/arena.jar");
             Files.createDirectories(ws.resolve(".msc"));

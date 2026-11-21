@@ -29,9 +29,21 @@ account or the encoding:
    expected path reason comes from this system's `Path.of`, lock files are sized rather than read, records are
    written escaped, detached servers are stopped, and fake agents are found by `ProcessArguments`. Tests of
    environment-based ownership assume `AttemptProcesses.canProve()`, as the others already did.
+3. (2026-11-21, after the first full run on the runner) Fake agents are found by their command line or, where
+   Windows shows none, by `ProcessArguments`; matching only whole arguments missed them on Linux.
+4. On Windows only, `msc.java-conventions` sets JUnit's temp-dir deletion strategy to `IgnoreFailures`. Tests run
+   concurrently, and a child one test starts can inherit a handle to a file in another test's temp folder (Windows
+   process creation hands inheritable handles to every child started at that moment) and hold it until its own
+   test ends. That is a property of the test JVM, not a leak in the code under test, and it failed a different set
+   of tests on every run. Linux keeps strict deletion, so a test that really leaves a process behind still fails
+   there.
+5. Windows refuses a full listen backlog, so a test holding a port it never accepts on keeps room for every probe;
+   a symbolic-link scenario is skipped where Windows will not make links (no Developer Mode or privilege).
 
 ## Consequences
 
 - Windows CI can gate merges once it passes on `main` (ADR 0056 point 1).
 - A new test that compares an exception's text, reads a file another process locks, or counts processes by
   command line must allow for Windows.
+- Temp folders a Windows test run could not delete stay behind under the runner's temp folder; they are logged.
+  A leaked process is caught by the Linux job, not the Windows one.
