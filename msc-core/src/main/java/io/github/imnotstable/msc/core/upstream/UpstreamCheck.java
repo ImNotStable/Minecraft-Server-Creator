@@ -39,7 +39,8 @@ final class UpstreamCheck {
     /** Catalog key to Gradle plugin id, for the plugins the templates apply that the Plugin Portal publishes. */
     static final List<Map.Entry<String, String>> GRADLE_PLUGINS = List.of(
             Map.entry("moddev", "net.neoforged.moddev"), Map.entry("forgegradle", "net.minecraftforge.gradle"),
-            Map.entry("run-paper", "xyz.jpenilla.run-paper"), Map.entry("shadow", "com.gradleup.shadow"),
+            Map.entry("run-paper", "xyz.jpenilla.run-paper"),
+            Map.entry("resource-factory", "xyz.jpenilla.resource-factory"), Map.entry("shadow", "com.gradleup.shadow"),
             Map.entry("foojay", "org.gradle.toolchains.foojay-resolver-convention"));
 
     /** The Plugin Portal's maven-metadata.xml of a plugin's marker artifact. */

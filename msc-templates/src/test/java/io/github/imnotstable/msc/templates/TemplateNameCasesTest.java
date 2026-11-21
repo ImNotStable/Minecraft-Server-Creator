@@ -23,7 +23,6 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import javax.lang.model.SourceVersion;
-import org.bukkit.plugin.PluginDescriptionFile;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -228,11 +227,13 @@ class TemplateNameCasesTest {
     }
 
     private static String paperMain(Map<String, byte[]> files, TemplateVariables vars) throws Exception {
-        PluginDescriptionFile plugin = new PluginDescriptionFile(new StringReader(text(files, "src/main/resources/plugin.yml")));
-        // Read as Paper reads it: a bare Yes or On would come back as true.
-        assertThat(plugin.getName()).isEqualTo(vars.name());
-        assertThat(plugin.getName().toLowerCase(java.util.Locale.ROOT)).isNotIn(PAPER_RESTRICTED).isNotEqualTo("mscagent");
-        return plugin.getMain();
+        // resource-factory writes plugin.yml from these Kotlin strings (ADR 0060): they must stay plain strings.
+        Matcher name = Pattern.compile("\n    name = \"([^\"\\\\$]*)\"\n").matcher(text(files, "build.gradle.kts"));
+        Matcher main = Pattern.compile("\n    main = \"([^\"\\\\$]*)\"\n").matcher(text(files, "build.gradle.kts"));
+        assertThat(name.find() && main.find()).as("name and main in bukkitPluginYaml").isTrue();
+        assertThat(name.group(1)).isEqualTo(vars.name());
+        assertThat(name.group(1).toLowerCase(java.util.Locale.ROOT)).isNotIn(PAPER_RESTRICTED).isNotEqualTo("mscagent");
+        return main.group(1);
     }
 
     private static String gradleMain(Map<String, byte[]> files) {

@@ -26,6 +26,7 @@ val templateVersions = mapOf(
     "assertjVersion" to catalogVersion("assertj"),
     "runPaperVersion" to catalogVersion("run-paper"),
     "paperweightVersion" to catalogVersion("paperweight"),
+    "resourceFactoryVersion" to catalogVersion("resource-factory"),
     "mockbukkitVersion" to catalogVersion("mockbukkit"),
     "foojayVersion" to catalogVersion("foojay"),
     "fabricLoaderVersion" to catalogVersion("fabric-loader"),

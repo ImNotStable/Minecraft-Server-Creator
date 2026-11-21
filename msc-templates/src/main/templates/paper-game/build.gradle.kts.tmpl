@@ -1,8 +1,12 @@
+import xyz.jpenilla.resourcefactory.bukkit.Permission
+
 plugins {
     java
     alias(libs.plugins.run.paper)
     // Paper's server with Minecraft internals (NMS) and CraftBukkit to compile against, Mojang-named.
     alias(libs.plugins.paperweight)
+    // Writes plugin.yml from the bukkitPluginYaml block below and checks it at build time.
+    alias(libs.plugins.resource.factory)
 }
 
 group = "{{packageName}}"
@@ -40,10 +44,16 @@ tasks.withType<JavaCompile>().configureEach {
     options.compilerArgs.addAll(listOf("-parameters", "-Xlint:all,-processing,-serial"))
 }
 
-tasks.processResources {
-    val props = mapOf("version" to version)
-    inputs.properties(props)
-    filesMatching("plugin.yml") { expand(props) }
+// plugin.yml, generated at build time (version and description come from the project above).
+bukkitPluginYaml {
+    name = "{{name}}"
+    main = "{{packageName}}.{{mainClass}}"
+    apiVersion = libs.versions.minecraft
+    "{{author}}".takeIf { it.isNotBlank() }?.let { authors.add(it) }
+    permissions.register("{{projectId}}.admin") {
+        description = "Use /game (status, stage jumps, kit, reset)."
+        default = Permission.Default.OP
+    }
 }
 
 tasks.test {
