@@ -45,6 +45,10 @@ account or the encoding:
 7. The runner's account may make symbolic links, so tests skipped on a normal account run there. Windows drops a
    `..` with the name before it before following any link, so `link/../runs` is the link's parent there; the
    cases that test the Linux reading are skipped on Windows.
+8. The runner is slow where processes start: msc-bench's tests take about 30 minutes there against 7 on the
+   owner's account (msc-core about 1.3 times), most likely antivirus scanning under `D:\gitea-runner`. The Windows
+   job's limit goes from 70 to 120 minutes and an interrupted run gets 120 s to end. The owner may exclude
+   `D:\gitea-runner` from Defender; Claude does not change security settings.
 
 ## Consequences
 

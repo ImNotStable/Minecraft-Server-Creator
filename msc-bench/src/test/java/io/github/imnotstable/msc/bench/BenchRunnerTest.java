@@ -717,7 +717,7 @@ class BenchRunnerTest {
         Thread thread = hangingRun(runner, result);
 
         runner.abort(); // what the shutdown hook does on Ctrl-C
-        thread.join(Duration.ofSeconds(30));
+        thread.join(Duration.ofSeconds(120)); // a slow machine (the Windows runner) takes over 30 s
 
         assertThat(thread.isAlive()).isFalse();
         assertThat(fakeAgents()).as("no agent or agent child outlives the run").isZero();
@@ -733,7 +733,7 @@ class BenchRunnerTest {
         Thread thread = hangingRun(runner, result);
 
         thread.interrupt();
-        thread.join(Duration.ofSeconds(30));
+        thread.join(Duration.ofSeconds(120)); // a slow machine (the Windows runner) takes over 30 s
 
         assertThat(thread.isAlive()).isFalse();
         assertThat(fakeAgents()).as("the child is killed with the agent, not only the agent").isZero();
