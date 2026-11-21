@@ -25,7 +25,8 @@ jobs:
   build:
     name: Build and test (${{ matrix.os }})
     # On a labelled event, run only when the label is full-ci.
-    if: github.event.action != 'labeled' || github.event.label.name == 'full-ci'
+    # Never on GitHub, which only mirrors main (ADR 0063).
+    if: github.server_url != 'https://github.com' && (github.event.action != 'labeled' || github.event.label.name == 'full-ci')
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     strategy:
@@ -68,7 +69,8 @@ jobs:
     # Not on ordinary PRs: main, nightly, by hand, or a PR labelled full-ci. Like build, a labelled event runs it only
     # when the label is full-ci, so adding another label to a full-ci PR does not start it again.
     if: >-
-      (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'full-ci'))
+      github.server_url != 'https://github.com'
+      && (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'full-ci'))
       && (github.event.action != 'labeled' || github.event.label.name == 'full-ci')
     runs-on: ${{ matrix.os }}
     timeout-minutes: 40

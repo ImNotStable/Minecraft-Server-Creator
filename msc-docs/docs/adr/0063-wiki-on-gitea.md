@@ -1,26 +1,35 @@
-# ADR 0063: The wiki publishes to Gitea
+# ADR 0063: Gitea is the working home; GitHub carries main, releases, packages and the wiki
 
-Status: accepted, 2026-11-21, decided by Claude for the owner (who reported the Gitea wiki was not set up).
+Status: accepted, 2026-11-21, decided by Claude for the owner, who asked that both be used: GitHub only for main,
+releases and packages, the two wikis matching, and most Actions on Gitea.
 
 ## Context
 
-`docs/wiki/` holds the user wiki and `wiki.yml` copies it to the wiki on every push to `main` that touches it.
-The workflow was written for GitHub: it cloned `github.com/<repo>.wiki.git` with `secrets.GITHUB_TOKEN`. Since the
-repo moved to Gitea that clone failed, the step warned "wiki not created yet" and exited green, so the Gitea wiki
-stayed empty. The pages also link to files on the GitHub repo, which is private.
+The repo moved to Gitea on omen, where branches, PRs and CI live (ADR 0056). GitHub Actions has been blocked by
+billing since 2026-11-12. `wiki.yml` was still written for GitHub: it cloned `github.com/<repo>.wiki.git`, which
+failed on Gitea, warned "wiki not created yet" and exited green, so the Gitea wiki stayed empty. GitHub got
+nothing but a tag push from `release.yml`, and only with a `GH_MIRROR_TOKEN` secret that was never set.
 
 ## Decision
 
-- The workflow clones `${{ github.server_url }}/<repo>.wiki.git` with `github.token`, so it publishes to whichever
-  server runs it (Gitea now, GitHub unchanged).
-- Off GitHub, it rewrites `github.com/ImNotStable/Minecraft-Server-Creator` links to this server, and
-  `/blob/<ref>/` to Gitea's `/src/branch/<ref>/`. The source keeps GitHub links so the GitHub wiki still works.
-- The Gitea wiki was created once with a Home page through the API (Gitea, like GitHub, cannot push to a wiki
-  that has no page yet).
-- `docs/wiki/` stays the only source. The plan, ADRs and `tools.md` are not copied in: they already render in the
-  repo's file view, and the wiki links there.
+- **Gitea is the source of truth.** Work happens there; GitHub is written only by Gitea workflows, with the
+  `GH_MIRROR_TOKEN` Gitea secret (a fine-grained GitHub token for this repo: Contents and Workflows read/write).
+- **main:** `mirror.yml` pushes each new `main` commit to GitHub's `main`. It never force-pushes (CLAUDE.md), so a
+  diverged GitHub `main` makes it fail red instead of losing commits.
+- **Releases:** `release.yml` publishes the Gitea release, then pushes the tag to GitHub and creates the same
+  release there (same notes, same assets) through the GitHub API.
+- **Packages:** nothing publishes packages yet. When something does, it publishes to GitHub Packages from a Gitea
+  workflow with the same token (plus `write:packages`).
+- **Wiki:** `docs/wiki/` is the only source. `wiki.yml` pushes it to the Gitea wiki (with `github.token`) and to
+  the GitHub wiki (with `GH_MIRROR_TOKEN`). On Gitea, links to files on the private GitHub repo are rewritten to
+  this server (`/blob/<ref>/` becomes `/src/branch/<ref>/`); the GitHub copy keeps them. The Gitea wiki was created
+  once with a Home page through the API, since neither server accepts a push to a wiki that has no page.
+- **Actions:** every job has `if: github.server_url != 'https://github.com'`, so the mirrored workflows are skipped
+  on GitHub (no billed minutes, no red runs) and all CI, release and wiki work runs on Gitea.
 
 ## Consequences
 
-- Editing in the Wiki tab is overwritten by the next sync; edit `docs/wiki/` instead.
-- If the job token loses write access to the wiki, the push step fails red rather than silently.
+- Edits in either Wiki tab are overwritten by the next sync; edit `docs/wiki/` instead.
+- Without the secret, the mirror, GitHub release and GitHub wiki steps warn and stay green; the Gitea side works.
+- Dependabot still runs on GitHub and opens its PRs there. They cannot be merged on GitHub without diverging
+  `main`; port them to Gitea by hand, or replace Dependabot with Renovate on the Gitea runner later.
