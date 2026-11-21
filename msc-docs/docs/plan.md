@@ -32,7 +32,7 @@ Latest full run (2026-11-21, main `c848018`, all 9 tasks × 3 repeats per mode, 
 | Tokens and cost | 8 Paper tasks: median 249k → 150k (−40%), cost $8.85 → $3.62 (−59%). All 9: 261k → 170k, $16.73 → $11.77 (−30%), Sky Sprint being two thirds of the cost | Overall yes. Per task no: `texture-resource-pack` +29%, `code-config-motd` +11%, `game-sky-sprint` +42% tokens |
 | Tool results | Largest `world_slice`, 162 tokens per call | Yes |
 
-Under the stricter pack check (ADR 0061), the baseline's packs declared format 46, so `texture-resource-pack` regrades to baseline 0/3 and toolset 3/3 (baseline 23/27 overall).
+Under the stricter pack check (ADR 0062), the baseline's packs declared format 46, so `texture-resource-pack` regrades to baseline 0/3 and toolset 3/3 (baseline 23/27 overall).
 
 Sky Sprint made no msc tool call in any toolset attempt, so its token gap is run-to-run spread plus the toolset's preamble, not tool cost; the toolset has no game-logic tool yet. Since the previous full run (2026-11-12, 8 Paper tasks: toolset 43 s, 192k tokens, $5.06) the runner moved attempts out of the repository, so `CLAUDE.md` no longer reaches the agent (#309), and the texture tasks got their own preamble (#72).
 
