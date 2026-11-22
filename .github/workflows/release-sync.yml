@@ -28,16 +28,23 @@ jobs:
           curl -fsS -H "Authorization: token $TOKEN" "$API/releases?limit=50&draft=false" > releases.json
           for i in $(seq 0 $(( $(jq length releases.json) - 1 ))); do
             r=$(jq ".[$i]" releases.json); tag=$(jq -r .tag_name <<<"$r")
-            if curl -fsS -o /dev/null "${auth[@]}" "$gh_api/releases/tags/$tag" 2>/dev/null; then echo "$tag: already on GitHub"; continue; fi
-            git ls-remote --exit-code --tags "$gh_repo" "refs/tags/$tag" >/dev/null || git push "$gh_repo" "refs/tags/$tag"
-            echo "$tag: creating on GitHub"
-            id=$(jq '{tag_name, name, body, prerelease}' <<<"$r" | curl -fsS -X POST "${auth[@]}" --data @- "$gh_api/releases" | jq -r .id)
+            if gh=$(curl -fsS "${auth[@]}" "$gh_api/releases/tags/$tag" 2>/dev/null); then
+              id=$(jq -r .id <<<"$gh"); echo "$tag: on GitHub (release $id), checking files"
+            else
+              git ls-remote --exit-code --tags "$gh_repo" "refs/tags/$tag" >/dev/null || git push "$gh_repo" "refs/tags/$tag"
+              echo "$tag: creating on GitHub"
+              id=$(jq '{tag_name, name, body, prerelease}' <<<"$r" | curl -fsS -X POST "${auth[@]}" --data @- "$gh_api/releases" | jq -r .id)
+              gh='{"assets":[]}'
+            fi
             rm -rf assets && mkdir assets
             jq -r '.assets[] | "\(.name)\t\(.browser_download_url)"' <<<"$r" | while IFS=$'\t' read -r name url; do
-              echo "  $name"
-              curl -fsSL -H "Authorization: token $TOKEN" -o "assets/$name" "$url"
+              jq -e --arg n "$name" 'any(.assets[]; .name == $n)' <<<"$gh" >/dev/null && continue
+              echo "  uploading $name"
+              # The web download route may refuse the job token as a header; basic auth is the fallback.
+              curl -fsSL -H "Authorization: token $TOKEN" -o "assets/$name" "$url" \
+                || curl -fsSL -u "x-access-token:$TOKEN" -o "assets/$name" "$url"
               curl -fsS -o /dev/null -X POST "${auth[@]}" -H "Content-Type: application/octet-stream" --data-binary "@assets/$name" \
                 "https://uploads.github.com/repos/ImNotStable/Minecraft-Server-Creator/releases/$id/assets?name=$name"
             done
-            echo "$tag: copied to GitHub (release $id)"
+            echo "$tag: in step with GitHub"
           done
