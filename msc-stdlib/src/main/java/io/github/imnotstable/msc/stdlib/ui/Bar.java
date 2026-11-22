@@ -1,4 +1,4 @@
-package io.github.imnotstable.msc.stdlib.paper;
+package io.github.imnotstable.msc.stdlib.ui;
 
 import io.github.imnotstable.msc.stdlib.sched.Scheduler;
 import io.github.imnotstable.msc.stdlib.text.Text;
@@ -16,9 +16,10 @@ import java.util.List;
  * <pre>{@code
  * Bar bar = Bar.create("<red>Dragon <hp>/<max>", BossBar.Color.RED).placeholders("hp", 200, "max", 200).show(players);
  * bar.progress(hp / 200.0).placeholders("hp", hp, "max", 200);
- * Bar.timer(players, "<yellow>Next round in <time>", Duration.ofSeconds(30), BossBar.Color.YELLOW, () -> startRound());
- * Bar.create("<green>Saved!", BossBar.Color.GREEN).show(player).hideAfter(Duration.ofSeconds(3));
+ * Bar.timer(scheduler, players, "<yellow>Next round in <time>", Duration.ofSeconds(30), BossBar.Color.YELLOW, () -> startRound());
+ * Bar.create("<green>Saved!", BossBar.Color.GREEN).show(player).hideAfter(scheduler, Duration.ofSeconds(3));
  * }</pre>
+ * {@code scheduler} is the platform's: {@code Stdlib.scheduler()} on Paper and Minestom.
  */
 public final class Bar {
     private final BossBar bar;
@@ -40,14 +41,14 @@ public final class Bar {
      * A bar that counts down {@code length}, its text's {@code <time>} showing what is left ({@code 0:25}), then hides
      * and runs {@code done}. Cancel with {@link #hide}.
      */
-    public static Bar timer(Iterable<? extends Audience> to, String miniMessage, Duration length, BossBar.Color color,
-                            Runnable done) {
+    public static Bar timer(Scheduler scheduler, Iterable<? extends Audience> to, String miniMessage, Duration length,
+                            BossBar.Color color, Runnable done) {
         Bar b = create(miniMessage, color);
         to.forEach(b::show);
         long total = Math.max(1, length.toMillis() / 50);
         long[] left = {total};
         b.placeholders("time", Format.clock(length));
-        b.task = Stdlib.scheduler().repeat(0, 1, () -> {
+        b.task = scheduler.repeat(0, 1, () -> {
             left[0]--;
             if (left[0] % 20 == 0) {
                 b.placeholders("time", Format.clock(Duration.ofMillis(left[0] * 50)));
@@ -88,8 +89,8 @@ public final class Bar {
     }
 
     /** Hides from everyone after {@code d}. */
-    public Bar hideAfter(Duration d) {
-        Stdlib.scheduler().later(Math.max(1, d.toMillis() / 50), this::hide);
+    public Bar hideAfter(Scheduler scheduler, Duration d) {
+        scheduler.later(Math.max(1, d.toMillis() / 50), this::hide);
         return this;
     }
 

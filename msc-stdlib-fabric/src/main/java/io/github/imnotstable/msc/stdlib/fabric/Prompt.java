@@ -1,0 +1,76 @@
+package io.github.imnotstable.msc.stdlib.fabric;
+
+import io.github.imnotstable.msc.stdlib.sched.Scheduler;
+import net.fabricmc.fabric.api.message.v1.ServerMessageEvents;
+import net.minecraft.ChatFormatting;
+import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerPlayer;
+
+import java.time.Duration;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Consumer;
+
+/**
+ * Asks a player to type an answer in chat (not shown to others); {@code cancel} or the timeout gives up.
+ *
+ * <pre>{@code
+ * Prompt.ask(player, "Name your home:", Duration.ofSeconds(30), name -> homes.create(player, name), () -> {});
+ * }</pre>
+ */
+public final class Prompt {
+    private record Pending(Consumer<String> answer, Runnable cancelled, Scheduler.Task timeout) {}
+
+    private static final Map<UUID, Pending> PENDING = new ConcurrentHashMap<>();
+    private static boolean listening;
+
+    private Prompt() {}
+
+    public static void ask(ServerPlayer player, String question, Duration timeout, Consumer<String> answer,
+                           Runnable cancelled) {
+        listen();
+        player.sendSystemMessage(Component.literal(question).withStyle(ChatFormatting.YELLOW));
+        player.sendSystemMessage(Component.literal("Type your answer in chat, or cancel.").withStyle(ChatFormatting.GRAY));
+        UUID id = player.getUUID();
+        Scheduler.Task task = Stdlib.scheduler().later(Math.max(1, timeout.toMillis() / 50), () -> {
+            Pending p = PENDING.remove(id);
+            if (p != null) {
+                p.cancelled().run();
+            }
+        });
+        Pending old = PENDING.put(id, new Pending(answer, cancelled, task));
+        if (old != null) {
+            old.timeout().cancel();
+        }
+    }
+
+    public static boolean waiting(ServerPlayer player) {
+        return PENDING.containsKey(player.getUUID());
+    }
+
+    static boolean answer(UUID player, String text) {
+        Pending p = PENDING.remove(player);
+        if (p == null) {
+            return false;
+        }
+        p.timeout().cancel();
+        Stdlib.scheduler().sync().execute(() -> {
+            if (text.trim().equalsIgnoreCase("cancel")) {
+                p.cancelled().run();
+            } else {
+                p.answer().accept(text.trim());
+            }
+        });
+        return true;
+    }
+
+    private static synchronized void listen() {
+        if (listening) {
+            return;
+        }
+        listening = true;
+        ServerMessageEvents.ALLOW_CHAT_MESSAGE.register((message, sender, params) ->
+                !answer(sender.getUUID(), message.signedContent()));
+    }
+}

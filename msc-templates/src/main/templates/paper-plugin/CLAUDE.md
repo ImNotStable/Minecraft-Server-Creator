@@ -239,7 +239,7 @@ A shop menu with a theme, a cooldown, feedback and particles, `src/main/java/{{p
 package {{packageName}};
 
 import io.github.imnotstable.msc.stdlib.geom.Shapes;
-import io.github.imnotstable.msc.stdlib.paper.Feedback;
+import io.github.imnotstable.msc.stdlib.ui.Feedback;
 import io.github.imnotstable.msc.stdlib.paper.Gui;
 import io.github.imnotstable.msc.stdlib.paper.ItemBuilder;
 import io.github.imnotstable.msc.stdlib.paper.ParticleEffect;

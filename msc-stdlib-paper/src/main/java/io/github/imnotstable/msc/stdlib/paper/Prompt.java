@@ -1,5 +1,6 @@
 package io.github.imnotstable.msc.stdlib.paper;
 
+import io.github.imnotstable.msc.stdlib.ui.Feedback;
 import io.github.imnotstable.msc.stdlib.text.Text;
 import io.papermc.paper.event.player.AsyncChatEvent;
 import org.bukkit.entity.Player;

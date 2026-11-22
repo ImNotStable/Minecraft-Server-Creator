@@ -24,6 +24,9 @@ public final class Stdlib {
         node = EventNode.all("msc-stdlib");
         server.eventHandler().addChild(node);
         Gui.listen(node);
+        CustomItems.reset();
+        Regions.reset();
+        Prompt.reset();
     }
 
     /** The node the library's listeners hang on; add yours to your own nodes. */

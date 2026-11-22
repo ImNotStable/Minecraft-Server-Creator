@@ -125,4 +125,39 @@ final class StdlibNames {
     static void sequence(io.github.imnotstable.msc.stdlib.sched.Scheduler scheduler) {
         io.github.imnotstable.msc.stdlib.sched.Sequence.of(scheduler).run(() -> { }).start();
     }
+
+    static void toolkit(net.minecraft.server.level.ServerPlayer player) {
+        io.github.imnotstable.msc.stdlib.fabric.Feedback.success(player, "a");
+        io.github.imnotstable.msc.stdlib.fabric.Feedback.fail(player, "a");
+        io.github.imnotstable.msc.stdlib.fabric.Feedback.info(player, "a");
+        io.github.imnotstable.msc.stdlib.fabric.Feedback.actionBar(player, "a");
+        io.github.imnotstable.msc.stdlib.fabric.Feedback.title(player, net.minecraft.network.chat.Component.literal("a"),
+                net.minecraft.network.chat.Component.literal("b"));
+        io.github.imnotstable.msc.stdlib.fabric.Sounds.SUCCESS.play(player);
+        io.github.imnotstable.msc.stdlib.fabric.Bar.create(net.minecraft.network.chat.Component.literal("a"),
+                net.minecraft.world.BossEvent.BossBarColor.RED).show(player);
+        io.github.imnotstable.msc.stdlib.fabric.Bar.timer(java.util.List.of(player),
+                t -> net.minecraft.network.chat.Component.literal(t), java.time.Duration.ofSeconds(5),
+                net.minecraft.world.BossEvent.BossBarColor.RED, () -> { });
+        io.github.imnotstable.msc.stdlib.fabric.Hologram.spawn(player.level(),
+                io.github.imnotstable.msc.stdlib.geom.Vec3.ZERO, net.minecraft.network.chat.Component.literal("a")).remove();
+        String id = "dash";
+        java.util.function.Supplier<net.minecraft.world.item.ItemStack> factory =
+                () -> new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.FEATHER);
+        io.github.imnotstable.msc.stdlib.fabric.CustomItems.register(id, factory).onUse(p -> { }).onHit((p, e) -> { })
+                .cooldown(java.time.Duration.ofSeconds(1));
+        String name = "spawn";
+        io.github.imnotstable.msc.stdlib.geom.Region region = io.github.imnotstable.msc.stdlib.geom.Region.sphere(
+                io.github.imnotstable.msc.stdlib.geom.Vec3.ZERO, 5);
+        io.github.imnotstable.msc.stdlib.fabric.Regions.define(name, net.minecraft.world.level.Level.OVERWORLD, region)
+                .noBuild().noPvp().onEnter(p -> { });
+        io.github.imnotstable.msc.stdlib.fabric.Prompt.ask(player, "?", java.time.Duration.ofSeconds(5), a -> { }, () -> { });
+        io.github.imnotstable.msc.stdlib.fabric.Teleports.warmup(player, player.level(),
+                io.github.imnotstable.msc.stdlib.geom.Vec3.ZERO, 3, true, ok -> { });
+        io.github.imnotstable.msc.stdlib.fabric.Players.give(player);
+        io.github.imnotstable.msc.stdlib.fabric.Players.heal(player);
+        io.github.imnotstable.msc.stdlib.fabric.Players.reset(player, net.minecraft.world.level.GameType.SURVIVAL);
+        io.github.imnotstable.msc.stdlib.fabric.Lang.of(io.github.imnotstable.msc.stdlib.text.Messages.of("en",
+                java.util.Map.of())).send(player, "k");
+    }
 }
