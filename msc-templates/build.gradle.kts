@@ -30,7 +30,7 @@ val templateVersions = mapOf(
     "paperweightVersion" to catalogVersion("paperweight"),
     "resourceFactoryVersion" to catalogVersion("resource-factory"),
     "mockbukkitVersion" to catalogVersion("mockbukkit"),
-    "paperMockbukkitVersion" to catalogVersion("paper-mockbukkit"),
+    "paperMockbukkitVersion" to catalogVersion("mockbukkit-paper"),
     "foojayVersion" to catalogVersion("foojay"),
     "fabricLoaderVersion" to catalogVersion("fabric-loader"),
     "fabricApiVersion" to catalogVersion("fabric-api"),

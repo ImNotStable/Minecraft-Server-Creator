@@ -5,7 +5,7 @@ minecraft = "{{mcVersion}}"
 paper = "{{paperVersion}}"
 mockbukkit = "{{mockbukkitVersion}}"
 # Tests only: the newest paper-api MockBukkit runs. Raise it with mockbukkit; the plugin compiles against paper.
-paper-mockbukkit = "{{paperMockbukkitVersion}}"
+mockbukkit-paper = "{{paperMockbukkitVersion}}"
 junit = "{{junitVersion}}"
 assertj = "{{assertjVersion}}"
 run-paper = "{{runPaperVersion}}"
@@ -19,7 +19,7 @@ sqlite-jdbc = "{{sqliteJdbcVersion}}"
 msc-stdlib-paper = { module = "io.github.imnotstable.msc:msc-stdlib-paper", version.ref = "msc-stdlib" }
 # Tests only: the SQLite driver the Paper server ships, so tests can open a Database.
 sqlite-jdbc = { module = "org.xerial:sqlite-jdbc", version.ref = "sqlite-jdbc" }
-paper-api = { module = "io.papermc.paper:paper-api", version.ref = "paper-mockbukkit" }
+paper-api = { module = "io.papermc.paper:paper-api", version.ref = "mockbukkit-paper" }
 mockbukkit = { module = "org.mockbukkit.mockbukkit:mockbukkit-v{{mcVersion}}", version.ref = "mockbukkit" }
 junit-bom = { module = "org.junit:junit-bom", version.ref = "junit" }
 junit-jupiter = { module = "org.junit.jupiter:junit-jupiter" }

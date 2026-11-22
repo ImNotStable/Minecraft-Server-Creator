@@ -38,7 +38,7 @@
       "groupName": "minecraft platforms"
     },
     {
-      "description": "paper-mockbukkit (same module as paper) is the paper-api MockBukkit tests run on; it moves by hand with MockBukkit, so this value moves with it (ADR 0052). paper itself follows Renovate.",
+      "description": "mockbukkit-paper (same module as paper) is the paper-api MockBukkit tests run on; it moves by hand with MockBukkit, so this value moves with it (ADR 0052). paper itself follows Renovate.",
       "matchPackageNames": [
         "io.papermc.paper:paper-api"
       ],

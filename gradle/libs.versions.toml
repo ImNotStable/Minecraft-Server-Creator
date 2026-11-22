@@ -3,7 +3,7 @@
 
 [versions]
 paper = "26.3.build.257-stable"  # an exact build, raised by Renovate; code and the Paper templates compile against it
-paper-mockbukkit = "26.3.build.252-stable"  # tests only: the newest paper-api MockBukkit 4.123.0 runs (build 253 changed TimeSkipEvent and added registry keys it lacks); raise with MockBukkit (ADR 0052)
+mockbukkit-paper = "26.3.build.252-stable"  # tests only: the newest paper-api MockBukkit 4.123.0 runs (build 253 changed TimeSkipEvent and added registry keys it lacks); raise with MockBukkit (ADR 0052)
 gson = "2.15.0"
 mcp = "2.2.0"
 jackson = "3.3.0"  # floor for the MCP SDK's Jackson 3 (2.1.0 pulls 3.1.4, which has open advisories)
@@ -45,7 +45,7 @@ mariadb-client = "3.5.11"  # tests only: msc-stdlib live checks against MariaDB 
 
 [libraries]
 paper-api = { module = "io.papermc.paper:paper-api", version.ref = "paper" }
-paper-api-mockbukkit = { module = "io.papermc.paper:paper-api", version.ref = "paper-mockbukkit" }
+paper-api-mockbukkit = { module = "io.papermc.paper:paper-api", version.ref = "mockbukkit-paper" }
 gson = { module = "com.google.code.gson:gson", version.ref = "gson" }
 mcp-sdk = { module = "io.modelcontextprotocol.sdk:mcp", version.ref = "mcp" }
 jackson-bom = { module = "tools.jackson:jackson-bom", version.ref = "jackson" }

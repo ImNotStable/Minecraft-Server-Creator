@@ -53,12 +53,12 @@ Decision, replacing rules 1 and 2 above:
 
 1. `paper` is an exact build that Renovate raises (`26.3.build.257-stable` now). The agent, msc-stdlib-paper and the
    Paper templates (`paperDevBundle`, so NMS too) compile against it, and the dev server runs the newest build.
-2. A second catalog version, `paper-mockbukkit` (`26.3.build.252-stable`, the newest build MockBukkit runs), is the
+2. A second catalog version, `mockbukkit-paper` (`26.3.build.252-stable`, the newest build MockBukkit runs), is the
    paper-api that MockBukkit tests compile and run against (`libs.paper.api.mockbukkit` in msc-agent-paper and
    msc-stdlib-paper; the `paper-api` library of the `paper-plugin` and `paper-game` templates, which only their tests
    use). `renovate.json` holds only that value (`matchCurrentValue`); it moves by hand together with MockBukkit, after
    `:msc-agent-paper:test` and `:msc-templates:verifyTemplates` pass with `--refresh-dependencies`.
-3. Code that calls paper-api added after `paper-mockbukkit` compiles but cannot be tested under MockBukkit; that was
+3. Code that calls paper-api added after `mockbukkit-paper` compiles but cannot be tested under MockBukkit; that was
    already so, since MockBukkit only implements the API of its own build.
 
 Rejected: a newer MockBukkit (none), and an in-repo shim (the registry patch alone leaves `World#setTime` broken).
