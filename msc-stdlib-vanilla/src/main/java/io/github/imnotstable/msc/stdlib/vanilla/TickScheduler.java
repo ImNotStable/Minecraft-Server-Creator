@@ -1,4 +1,4 @@
-package io.github.imnotstable.msc.stdlib.fabric;
+package io.github.imnotstable.msc.stdlib.vanilla;
 
 import io.github.imnotstable.msc.stdlib.sched.Scheduler;
 
@@ -9,8 +9,8 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-/** {@link Scheduler} on the server tick ({@link Stdlib#init} drives {@link #tick}). */
-public final class FabricScheduler implements Scheduler {
+/** {@link Scheduler} on the server tick: the loader's {@code Stdlib.init} calls {@link #tick} at the end of each. */
+public final class TickScheduler implements Scheduler {
     private static final ExecutorService ASYNC = Executors.newVirtualThreadPerTaskExecutor();
     private final ConcurrentLinkedQueue<Entry> added = new ConcurrentLinkedQueue<>();
     private final List<Entry> tasks = new ArrayList<>();

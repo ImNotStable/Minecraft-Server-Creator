@@ -1,4 +1,4 @@
-package io.github.imnotstable.msc.stdlib.fabric;
+package io.github.imnotstable.msc.stdlib.vanilla;
 
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.protocol.game.ClientboundSoundPacket;

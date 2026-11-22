@@ -13,6 +13,10 @@ java {
 
 repositories {
     mavenCentral()
+    // msc-stdlib, shipped with the project.
+    maven(uri("libs/repo")) {
+        content { includeGroup("io.github.imnotstable.msc") }
+    }
 }
 
 neoForge {
@@ -47,6 +51,23 @@ tasks.named<JavaExec>("runServer") {
 }
 
 dependencies {
+    // MSC's standard library, nested in the mod jar (jar-in-jar: NeoForge loads one copy, the newest, when several mods
+    // carry it). jarJar is not transitive, so its own libraries are listed too; Minecraft ships Gson and slf4j.
+    implementation(libs.msc.stdlib.neoforge) {
+        exclude(group = "org.slf4j")
+    }
+    jarJar(libs.msc.stdlib.neoforge) {
+        isTransitive = false
+    }
+    jarJar(libs.msc.stdlib) {
+        isTransitive = false
+    }
+    jarJar(libs.hikaricp) {
+        isTransitive = false
+    }
+    // SQLite for msc-stdlib's Database on the server (about 13 MB): uncomment to nest it in the mod.
+    // jarJar(libs.sqlite.jdbc)
+    testRuntimeOnly(libs.sqlite.jdbc)
     testImplementation(platform(libs.junit.bom))
     testImplementation(libs.junit.jupiter)
     testImplementation(libs.assertj)
@@ -71,6 +92,7 @@ tasks.processResources {
 
 tasks.test {
     useJUnitPlatform()
+    jvmArgs("--enable-native-access=ALL-UNNAMED") // sqlite-jdbc loads its native library
     // Short output: only failures, with the full exception.
     testLogging {
         events("failed")

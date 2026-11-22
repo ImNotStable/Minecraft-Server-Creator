@@ -1,5 +1,6 @@
 package {{packageName}};
 
+import io.github.imnotstable.msc.stdlib.forge.Stdlib;
 import net.minecraftforge.event.RegisterCommandsEvent;
 import net.minecraftforge.event.entity.player.PlayerEvent;
 import net.minecraftforge.fml.common.Mod;
@@ -13,6 +14,7 @@ public final class {{mainClass}} {
     public static final Logger LOG = LoggerFactory.getLogger(MOD_ID);
 
     public {{mainClass}}() {
+        Stdlib.init(); // msc-stdlib: its scheduler, player data, custom items, regions and prompts
         Greeter greeter = new Greeter(Greeter.DEFAULT_JOIN, Greeter.DEFAULT_HELLO);
 
         RegisterCommandsEvent.BUS.addListener(e -> HelloCommand.register(e.getDispatcher(), greeter));

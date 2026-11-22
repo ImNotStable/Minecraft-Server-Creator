@@ -26,10 +26,51 @@ repositories {
     maven(fg.forgeMaven)
     maven(fg.minecraftLibsMaven)
     mavenCentral()
+    // msc-stdlib, shipped with the project.
+    maven(uri("libs/repo")) {
+        content { includeGroup("io.github.imnotstable.msc") }
+    }
+}
+
+// Jar-in-jar by hand (ForgeGradle 7 has none): the nested jars go into META-INF/jarjar/ with the metadata.json Forge
+// reads, so Forge loads one copy, the newest, when several mods carry msc-stdlib.
+val nested = configurations.dependencyScope("nested")
+val nestedJars = configurations.resolvable("nestedJars") {
+    extendsFrom(nested.get())
+    isTransitive = false
+}
+val jarJarMetadata = tasks.register("jarJarMetadata") {
+    val artifacts = nestedJars.flatMap { it.incoming.artifacts.resolvedArtifacts }
+    val out = layout.buildDirectory.file("jarjar/metadata.json")
+    inputs.files(nestedJars)
+    outputs.file(out)
+    doLast {
+        val entries = artifacts.get().map { a ->
+            val id = a.id.componentIdentifier as org.gradle.api.artifacts.component.ModuleComponentIdentifier
+            "{\"identifier\":{\"group\":\"${id.group}\",\"artifact\":\"${id.module}\"}," +
+                "\"version\":{\"range\":\"[${id.version},)\",\"artifactVersion\":\"${id.version}\"}," +
+                "\"path\":\"META-INF/jarjar/${a.file.name}\",\"isObfuscated\":false}"
+        }
+        out.get().asFile.writeText("{\"jars\":[" + entries.joinToString(",") + "]}\n")
+    }
+}
+tasks.jar {
+    from(nestedJars) { into("META-INF/jarjar") }
+    from(jarJarMetadata) { into("META-INF/jarjar") }
 }
 
 dependencies {
     implementation(minecraft.dependency(libs.forge))
+    // MSC's standard library, nested in the mod jar (see "jar-in-jar" below); Minecraft ships Gson and slf4j.
+    implementation(libs.msc.stdlib.forge) {
+        exclude(group = "org.slf4j")
+    }
+    nested(libs.msc.stdlib.forge)
+    nested(libs.msc.stdlib)
+    nested(libs.hikaricp)
+    // SQLite for msc-stdlib's Database on the server (about 13 MB): uncomment to nest it in the mod.
+    // nested(libs.sqlite.jdbc)
+    testRuntimeOnly(libs.sqlite.jdbc)
     // Checks @SubscribeEvent and listener signatures at compile time.
     annotationProcessor(libs.eventbus.validator)
 
@@ -57,6 +98,7 @@ tasks.processResources {
 
 tasks.test {
     useJUnitPlatform()
+    jvmArgs("--enable-native-access=ALL-UNNAMED") // sqlite-jdbc loads its native library
     // Short output: only failures, with the full exception.
     testLogging {
         events("failed")

@@ -103,7 +103,8 @@ abstract class PackTemplates : DefaultTask() {
         /** Templates that ship msc-stdlib, and the platform adapter each gets beside the core. */
         val STDLIB_TEMPLATES = mapOf("paper-plugin" to "paper", "paper-game" to "paper",
             "minestom-server" to "minestom", "minestom-game" to "minestom",
-            "fabric-mod" to "fabric", "fabric-game" to "fabric", "velocity-plugin" to "velocity")
+            "fabric-mod" to "fabric", "fabric-game" to "fabric", "velocity-plugin" to "velocity",
+            "neoforge-mod" to "neoforge", "forge-mod" to "forge")
         val WRAPPER_FILES = listOf(
             "gradlew", "gradlew.bat", "gradle/wrapper/gradle-wrapper.jar", "gradle/wrapper/gradle-wrapper.properties")
     }
@@ -187,7 +188,7 @@ val packTemplates = tasks.register<PackTemplates>("packTemplates") {
     versions = templateVersions
     minestomAgent.from(minestomAgentJar)
     // Each module's build/repo holds io/github/imnotstable/msc/<module>/<version>/.
-    for (module in listOf(":msc-stdlib", ":msc-stdlib-paper", ":msc-stdlib-minestom", ":msc-stdlib-fabric", ":msc-stdlib-velocity")) {
+    for (module in listOf(":msc-stdlib", ":msc-stdlib-paper", ":msc-stdlib-minestom", ":msc-stdlib-fabric", ":msc-stdlib-velocity", ":msc-stdlib-neoforge", ":msc-stdlib-forge")) {
         stdlibRepo.from(files(project(module).layout.buildDirectory.dir("repo")).builtBy("$module:stdlibRepo"))
     }
     outputDir = layout.buildDirectory.dir("generated/templates")

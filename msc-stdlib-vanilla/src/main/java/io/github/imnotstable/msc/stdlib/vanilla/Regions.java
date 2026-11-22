@@ -1,15 +1,11 @@
-package io.github.imnotstable.msc.stdlib.fabric;
+package io.github.imnotstable.msc.stdlib.vanilla;
 
 import io.github.imnotstable.msc.stdlib.geom.Region;
-import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
-import net.fabricmc.fabric.api.event.player.AttackEntityCallback;
-import net.fabricmc.fabric.api.event.player.PlayerBlockBreakEvents;
-import net.fabricmc.fabric.api.event.player.UseBlockCallback;
+import io.github.imnotstable.msc.stdlib.geom.Vec3;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceKey;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.InteractionResult;
-import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.level.Level;
 
 import java.util.HashSet;
@@ -20,10 +16,11 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
+import java.util.function.Predicate;
 
 /**
  * Named areas of a dimension with rules and enter/leave actions: spawn protection, arenas, safe zones. Positions are
- * checked every 5 ticks.
+ * checked every 5 ticks; {@code Stdlib.init()} routes block breaks, placements and attacks here.
  *
  * <pre>{@code
  * Regions.define("spawn", Level.OVERWORLD, Cuboid.of(new Vec3(-30, -64, -30), new Vec3(30, 320, 30)))
@@ -33,7 +30,7 @@ import java.util.function.Consumer;
 public final class Regions {
     private static final Map<String, Area> AREAS = new ConcurrentHashMap<>();
     private static final Map<UUID, Set<String>> INSIDE = new ConcurrentHashMap<>();
-    private static boolean listening;
+    private static int ticks;
 
     private Regions() {}
 
@@ -72,7 +69,7 @@ public final class Regions {
             return this;
         }
 
-        public boolean contains(ResourceKey<Level> dim, io.github.imnotstable.msc.stdlib.geom.Vec3 p) {
+        public boolean contains(ResourceKey<Level> dim, Vec3 p) {
             return dim.equals(dimension) && region.contains(p);
         }
 
@@ -82,7 +79,6 @@ public final class Regions {
     }
 
     public static Area define(String name, ResourceKey<Level> dimension, Region region) {
-        listen();
         Area a = new Area(name, dimension, region);
         AREAS.put(name, a);
         return a;
@@ -92,13 +88,21 @@ public final class Regions {
         AREAS.remove(name);
     }
 
-    static boolean denied(ResourceKey<Level> dim, io.github.imnotstable.msc.stdlib.geom.Vec3 p,
-                          java.util.function.Predicate<Area> rule) {
+    static boolean denied(ResourceKey<Level> dim, Vec3 p, Predicate<Area> rule) {
         return AREAS.values().stream().anyMatch(a -> rule.test(a) && a.contains(dim, p));
     }
 
-    /** Runs enter and leave actions for {@code player} at {@code at} in {@code dim}. */
-    static void update(ServerPlayer player, ResourceKey<Level> dim, io.github.imnotstable.msc.stdlib.geom.Vec3 at) {
+    /** False where a {@link Area#noBuild} area covers {@code pos}. */
+    public static boolean canBuild(ResourceKey<Level> dim, BlockPos pos) {
+        return !denied(dim, Locations.vec(pos), a -> a.noBuild);
+    }
+
+    /** False where a {@link Area#noPvp} area covers {@code victim}. */
+    public static boolean canAttack(ServerPlayer victim) {
+        return !denied(victim.level().dimension(), Locations.vec(victim.position()), a -> a.noPvp);
+    }
+
+    static void update(ServerPlayer player, ResourceKey<Level> dim, Vec3 at) {
         Set<String> now = new HashSet<>();
         AREAS.values().stream().filter(a -> a.contains(dim, at)).forEach(a -> now.add(a.name));
         Set<String> before = INSIDE.getOrDefault(player.getUUID(), Set.of());
@@ -108,29 +112,17 @@ public final class Regions {
         INSIDE.put(player.getUUID(), now);
     }
 
-    private static synchronized void listen() {
-        if (listening) {
+    /** Called every server tick by {@code Stdlib}: checks positions every 5. */
+    static void tick(MinecraftServer server) {
+        if (AREAS.isEmpty() || ++ticks % 5 != 0) {
             return;
         }
-        listening = true;
-        int[] tick = {0};
-        ServerTickEvents.END_SERVER_TICK.register(server -> {
-            if (++tick[0] % 5 == 0) {
-                for (ServerPlayer p : server.getPlayerList().getPlayers()) {
-                    update(p, p.level().dimension(), Locations.vec(p.position()));
-                }
-            }
-        });
-        PlayerBlockBreakEvents.BEFORE.register((level, player, pos, state, be) ->
-                !denied(level.dimension(), Locations.vec(pos), a -> a.noBuild));
-        UseBlockCallback.EVENT.register((player, level, hand, hit) -> {
-            BlockPos place = hit.getBlockPos().relative(hit.getDirection());
-            return player.getItemInHand(hand).getItem() instanceof BlockItem
-                    && denied(level.dimension(), Locations.vec(place), a -> a.noBuild)
-                    ? InteractionResult.FAIL : InteractionResult.PASS;
-        });
-        AttackEntityCallback.EVENT.register((player, level, hand, entity, hit) ->
-                entity instanceof ServerPlayer victim && denied(level.dimension(), Locations.vec(victim.position()),
-                        a -> a.noPvp) ? InteractionResult.FAIL : InteractionResult.PASS);
+        for (ServerPlayer p : server.getPlayerList().getPlayers()) {
+            update(p, p.level().dimension(), Locations.vec(p.position()));
+        }
+    }
+
+    static void left(UUID player) {
+        INSIDE.remove(player);
     }
 }

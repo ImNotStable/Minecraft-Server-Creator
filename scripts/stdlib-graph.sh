@@ -7,12 +7,19 @@ root="$(cd "$(dirname "$0")/.." && pwd)"
 out="$root/msc-templates/src/main/stdlib-graphs"
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
-for platform in paper minestom fabric velocity; do
+platforms="paper minestom fabric velocity neoforge forge"
+# The sources jars are what the templates ship (the mod loaders' include the shared msc-stdlib-vanilla code).
+tasks=":msc-stdlib:stdlibRepo"
+for platform in $platforms; do tasks="$tasks :msc-stdlib-$platform:stdlibRepo"; done
+(cd "$root" && ./gradlew -q $tasks)
+for platform in $platforms; do
   dir="$work/$platform"
   mkdir -p "$dir/src"
   # The same layout the templates ship: libs/stdlib/src/<module>/<package path>.
-  cp -r "$root/msc-stdlib/src/main/java" "$dir/src/msc-stdlib"
-  cp -r "$root/msc-stdlib-$platform/src/main/java" "$dir/src/msc-stdlib-$platform"
+  for module in msc-stdlib "msc-stdlib-$platform"; do
+    mkdir -p "$dir/src/$module"
+    unzip -q -o "$(ls "$root/$module"/build/repo/io/github/imnotstable/msc/"$module"/*/*-sources.jar)" '*.java' -d "$dir/src/$module"
+  done
   (cd "$dir" && graphify update . > /dev/null)
   mkdir -p "$out/$platform"
   cp "$dir/graphify-out/graph.json" "$out/$platform/graph.json"

@@ -7,8 +7,17 @@ forgegradle = "{{forgeGradleVersion}}"
 eventbus = "{{forgeEventbusVersion}}"
 junit = "{{junitVersion}}"
 assertj = "{{assertjVersion}}"
+msc-stdlib = "{{mscStdlibVersion}}"
+hikaricp = "{{hikaricpVersion}}"
+sqlite-jdbc = "{{sqliteJdbcVersion}}"
 
 [libraries]
+# MSC's standard library (menus, items, particles, databases, player data...), shipped in libs/repo/.
+msc-stdlib-forge = { module = "io.github.imnotstable.msc:msc-stdlib-forge", version.ref = "msc-stdlib" }
+msc-stdlib = { module = "io.github.imnotstable.msc:msc-stdlib", version.ref = "msc-stdlib" }
+hikaricp = { module = "com.zaxxer:HikariCP", version.ref = "hikaricp" }
+# The SQLite driver: on the test classpath; nest it in the mod (see build.gradle.kts) to use SQLite on the server.
+sqlite-jdbc = { module = "org.xerial:sqlite-jdbc", version.ref = "sqlite-jdbc" }
 forge = { module = "net.minecraftforge:forge", version.ref = "forge" }
 eventbus-validator = { module = "net.minecraftforge:eventbus-validator", version.ref = "eventbus" }
 junit-bom = { module = "org.junit:junit-bom", version.ref = "junit" }

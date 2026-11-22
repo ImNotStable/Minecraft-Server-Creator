@@ -1,4 +1,4 @@
-package io.github.imnotstable.msc.stdlib.fabric;
+package io.github.imnotstable.msc.stdlib.vanilla;
 
 import io.github.imnotstable.msc.stdlib.sched.Scheduler;
 import io.github.imnotstable.msc.stdlib.util.Format;

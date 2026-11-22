@@ -1,4 +1,4 @@
-package io.github.imnotstable.msc.stdlib.fabric;
+package io.github.imnotstable.msc.stdlib.vanilla;
 
 import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.Component;
