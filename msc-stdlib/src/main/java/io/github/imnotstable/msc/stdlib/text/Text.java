@@ -1,4 +1,4 @@
-package io.github.imnotstable.msc.stdlib.paper;
+package io.github.imnotstable.msc.stdlib.text;
 
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.ComponentLike;
@@ -13,7 +13,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * MiniMessage with placeholders in one call.
+ * MiniMessage with placeholders in one call, for platforms with Adventure (Paper, Minestom, Velocity; it is not
+ * bundled here: each adapter brings it or the server ships it).
  *
  * <pre>{@code
  * player.sendMessage(Text.mm("<green>Welcome <name>, you have <coins> coins", "name", player.getName(), "coins", 5));

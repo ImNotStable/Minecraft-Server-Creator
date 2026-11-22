@@ -16,7 +16,7 @@ import io.github.imnotstable.msc.stdlib.paper.ParticleEffect;
 import io.github.imnotstable.msc.stdlib.paper.PlayerData;
 import io.github.imnotstable.msc.stdlib.paper.Sidebar;
 import io.github.imnotstable.msc.stdlib.paper.Stdlib;
-import io.github.imnotstable.msc.stdlib.paper.Text;
+import io.github.imnotstable.msc.stdlib.text.Text;
 import io.github.imnotstable.msc.stdlib.time.Cooldowns;
 import io.github.imnotstable.msc.stdlib.time.Durations;
 import io.github.imnotstable.msc.stdlib.util.WeightedRandom;

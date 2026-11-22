@@ -14,12 +14,18 @@ java {
 
 repositories {
     mavenCentral()
+    // msc-stdlib, shipped with the project.
+    maven(uri("libs/repo")) {
+        content { includeGroup("io.github.imnotstable.msc") }
+    }
 }
 
 dependencies {
     implementation(libs.minestom)
     // Minecraft Server Creator's agent: idle unless msc-core started this server. Bundles msc-protocol.
     implementation(files("libs/msc-agent-minestom.jar"))
+    implementation(libs.msc.stdlib.minestom)
+    runtimeOnly(libs.sqlite.jdbc)
     runtimeOnly(libs.slf4j.simple)
 
     testImplementation(libs.minestom.testing)
@@ -43,6 +49,7 @@ tasks.test {
     useJUnitPlatform()
     // Minestom's test environment (lets test players connect from the test thread).
     systemProperty("minestom.inside-test", "true")
+    jvmArgs("--enable-native-access=ALL-UNNAMED") // sqlite-jdbc loads its native library
     // Players in tests load chunks around them like real ones; 2 instead of 8 keeps each join fast.
     systemProperty("minestom.chunk-view-distance", "2")
     // Short output: only failures, with the full exception.
