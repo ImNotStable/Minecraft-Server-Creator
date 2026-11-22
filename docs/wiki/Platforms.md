@@ -116,3 +116,13 @@ All world, building and texture tools work the same on every platform but Folia 
 | `minestom-server` | Minestom |
 | `minestom-game` | Minestom (minigame base) |
 | `velocity-plugin` | Velocity (proxy) |
+
+## The standard library
+
+Paper projects (`paper-plugin`, `paper-game`) come with MSC's standard library, `msc-stdlib`, so the AI does not rewrite the usual parts of a plugin each time. It is in the project's `libs/repo/` folder, listed in `gradle/libs.versions.toml`, and packed into the plugin jar, so the plugin needs nothing else on the server.
+
+- Databases: SQLite by default, or MySQL, MariaDB or PostgreSQL, picked in the plugin's `config.yml`. Tables, migrations and per-player data work the same on all four.
+- Menus with clickable items and pages, an item builder, coloured text, particle shapes and animations, a sidebar scoreboard.
+- Cooldowns, durations like `1h30m`, a scheduler, weighted random picks for loot.
+
+Other platforms get the same library in later releases. Design: ADR 0066.

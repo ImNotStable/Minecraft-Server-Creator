@@ -27,6 +27,19 @@ Paper plugin for Minecraft {{mcVersion}}, Java {{javaVersion}}, Gradle Kotlin DS
 - Minecraft internals (NMS) are on the compile classpath through paperweight-userdev, Mojang-named (`net.minecraft.*`, `org.bukkit.craftbukkit.*`): reach them with `((CraftPlayer) player).getHandle()`, `((CraftWorld) world).getHandle()`, `((CraftEntity) entity).getHandle()`. Use the Paper API first; NMS for what it lacks (packets, custom entity AI goals, registries, world generation). Keep NMS calls in their own classes: MockBukkit has no server internals, so a test that reaches them fails with `NoClassDefFoundError`; check that code on the dev server (`dev_cycle`, `player_test`). NMS changes between Minecraft versions, so it ties the plugin to this one. Look classes up with the MSC tools `api_search` and `api_class` after the first build.
 - Prefer small final classes and records, except the main plugin class: MockBukkit must subclass it, so never make it final. Pass dependencies through constructors; avoid static state so MockBukkit tests stay isolated.
 
+## Standard library (msc-stdlib)
+
+The project depends on MSC's standard library (`libs.msc.stdlib.paper`, shipped in `libs/repo/`, bundled into the plugin jar). Use it before writing your own, and call `Stdlib.init(this)` first in `onEnable` (the template does). Packages under `io.github.imnotstable.msc.stdlib`; its sources are in `libs/repo/` next to each jar.
+
+- Menus: `Gui.chest(rows, title)` with `set(slot, item, click -> ...)`, `fill`, `border`, `editable`, `onClose`; `Gui.paged(rows, title, list, icon, (entry, click) -> ...)` pages a list. Items cannot be taken out except from `editable` slots.
+- Items: `ItemBuilder.of(Material)` with `name`, `lore`, `enchant`, `glow`, `unbreakable`, `model`, `data(key, type, value)`, `meta(...)`; `ItemBuilder.read` gets the data back; `ItemBuilder.head(player)`, `ItemBuilder.filler()`.
+- Text: `Text.mm("<green>Hi <name>", "name", value)` (values are inserted as plain text, `Component`s as they are), `Text.plain`, `Text.legacy`.
+- Particles: `ParticleEffect.of(Particle.FLAME)` or `ParticleEffect.dust(color, size)`, then `spawn`, `draw(origin, points)` or `play(scheduler, origin, period, frames, frame -> points)`. Shapes in `Shapes`: `line`, `circle`, `arc`, `disc`, `sphere`, `helix`, `cuboidEdges`, `star`, `randomInSphere`, turned with `rotateY` and `translate`; `Locations.facing` turns them to where a player looks.
+- Databases: `Database.open(PaperDatabase.config(getConfig().getConfigurationSection("database"), getDataFolder().toPath()))` picks SQLite (default, a file in the plugin folder), MySQL, MariaDB or PostgreSQL from `config.yml`. `update`, `insert` (returns the id), `query`, `queryOne`, `batch`, `transaction`, and `async(db -> ...)` to stay off the main thread. Schemas: `Table.named(...).key(...).column(...).sql(db.type())` writes SQL every backend accepts; `db.migrate("{{projectId}}", List.of(Migration.of(1, "...", sql)))` applies each version once. `Store.sql(db, table, Codec.json(Account.class))` keeps records by key without writing SQL; `Store.memory()` for tests. Close the database in `onDisable`.
+- Player data: `PlayerData.create(store, defaults)` loads each player's record at login, keeps it while they play, saves it on quit; `get`, `update`, `saveAll` (call in `onDisable`).
+- Time: `Cooldowns` (`tryUse(key, duration)`, `remaining`), `Durations.parse("1h30m")`, `Durations.format`, `Stdlib.scheduler()` (`later`, `repeat`, `countdown`, `supplyAsync` that comes back on the main thread). Scoreboard: `Sidebar` (`lines`, `line`, `show`, `hide`). Loot and chances: `WeightedRandom`.
+- MockBukkit does not implement scoreboard number formats, so a test that makes a `Sidebar` is skipped there; test what fills its lines instead. SQLite works in tests (the driver is on the test classpath).
+
 ## Recipes
 
 Built and tested against this project's pinned versions; copy them as they are.
@@ -102,12 +115,16 @@ public final class BlockGuard implements Listener {
 }
 ```
 
-The entry point with both wired in, the listener only while the setting `protect-blocks` is on (add `protect-blocks: false` to `config.yml`):
+The entry point with both wired in, the listener only while the setting `protect-blocks` is on (add `protect-blocks: false` to `config.yml`), and the shop below with its database:
 
 ```java
 package {{packageName}};
 
+import io.github.imnotstable.msc.stdlib.db.Database;
+import io.github.imnotstable.msc.stdlib.paper.PaperDatabase;
+import io.github.imnotstable.msc.stdlib.paper.Stdlib;
 import io.papermc.paper.plugin.lifecycle.event.types.LifecycleEvents;
+import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 
 /**
@@ -115,12 +132,20 @@ import org.bukkit.plugin.java.JavaPlugin;
  * Not final: MockBukkit subclasses the main class when loading it in tests.
  */
 public class {{mainClass}} extends JavaPlugin {
+    private Database database;
+    private Wallet wallet;
+
     @Override
     public void onEnable() {
+        Stdlib.init(this);
         saveDefaultConfig();
         Greeter greeter = new Greeter(
                 getConfig().getString("join-message", Greeter.DEFAULT_JOIN),
                 getConfig().getString("hello-message", Greeter.DEFAULT_HELLO));
+        database = Database.open(PaperDatabase.config(getConfig().getConfigurationSection("database"),
+                getDataFolder().toPath()));
+        wallet = new Wallet(database);
+        ShopMenu shop = new ShopMenu(wallet);
 
         getServer().getPluginManager().registerEvents(new JoinListener(greeter), this);
         if (getConfig().getBoolean("protect-blocks", false)) {
@@ -129,7 +154,186 @@ public class {{mainClass}} extends JavaPlugin {
         getLifecycleManager().registerEventHandler(LifecycleEvents.COMMANDS, event -> {
             event.registrar().register("hello", "Says hello to you.", new HelloCommand(greeter));
             event.registrar().register(CountdownCommand.node(), "Counts down.");
+            event.registrar().register("shop", "Opens the shop.", (source, args) -> {
+                if (source.getExecutor() instanceof Player player) {
+                    shop.open(player);
+                }
+            });
         });
+    }
+
+    @Override
+    public void onDisable() {
+        if (wallet != null) {
+            wallet.saveAll();
+        }
+        if (database != null) {
+            database.close();
+        }
+    }
+
+    public Wallet wallet() {
+        return wallet;
+    }
+}
+```
+
+Coins per player, kept in the database, and a log of purchases in a table of its own, `src/main/java/{{packagePath}}/Wallet.java`:
+
+```java
+package {{packageName}};
+
+import io.github.imnotstable.msc.stdlib.db.Codec;
+import io.github.imnotstable.msc.stdlib.db.ColumnType;
+import io.github.imnotstable.msc.stdlib.db.Database;
+import io.github.imnotstable.msc.stdlib.db.Migration;
+import io.github.imnotstable.msc.stdlib.db.Store;
+import io.github.imnotstable.msc.stdlib.db.Table;
+import io.github.imnotstable.msc.stdlib.paper.PlayerData;
+import java.time.Instant;
+import java.util.List;
+import org.bukkit.entity.Player;
+
+/** Each player's coins (100 to start) and every purchase. */
+public final class Wallet {
+    public static final int DIAMOND_PRICE = 50;
+
+    public record Account(int coins) {
+    }
+
+    private final Database database;
+    private final PlayerData<Account> accounts;
+
+    public Wallet(Database database) {
+        this.database = database;
+        database.migrate("{{projectId}}", List.of(Migration.of(1, "purchase log",
+                Table.named("purchases").id("id").column("player", ColumnType.UUID)
+                        .column("item", ColumnType.STRING).column("at", ColumnType.INSTANT).sql(database.type()))));
+        Store<Account> store = Store.sql(database, "accounts", Codec.json(Account.class));
+        this.accounts = PlayerData.create(store, () -> new Account(100));
+    }
+
+    public int coins(Player player) {
+        return accounts.get(player).coins();
+    }
+
+    /** Takes {@code price} coins and logs the purchase; false, and nothing taken, when the player has too few. */
+    public boolean buy(Player player, String item, int price) {
+        if (coins(player) < price) {
+            return false;
+        }
+        accounts.update(player, a -> new Account(a.coins() - price));
+        database.async(db -> db.insert("INSERT INTO purchases (player, item, at) VALUES (?, ?, ?)",
+                player.getUniqueId(), item, Instant.now()));
+        return true;
+    }
+
+    /** Blocks on the database: call it through {@code database.async} or from a command run off the main thread. */
+    public int purchases(Player player) {
+        return database.queryOne("SELECT COUNT(*) AS n FROM purchases WHERE player = ?", r -> r.integer("n"),
+                player.getUniqueId()).orElse(0);
+    }
+
+    public void saveAll() {
+        accounts.saveAll();
+    }
+}
+```
+
+A shop menu with a cooldown and particles, `src/main/java/{{packagePath}}/ShopMenu.java`:
+
+```java
+package {{packageName}};
+
+import io.github.imnotstable.msc.stdlib.geom.Shapes;
+import io.github.imnotstable.msc.stdlib.paper.Gui;
+import io.github.imnotstable.msc.stdlib.paper.ItemBuilder;
+import io.github.imnotstable.msc.stdlib.paper.ParticleEffect;
+import io.github.imnotstable.msc.stdlib.paper.Text;
+import io.github.imnotstable.msc.stdlib.time.Cooldowns;
+import io.github.imnotstable.msc.stdlib.time.Durations;
+import java.time.Duration;
+import java.util.UUID;
+import org.bukkit.Material;
+import org.bukkit.Particle;
+import org.bukkit.entity.Player;
+import org.bukkit.inventory.ItemStack;
+
+/** {@code /shop}: one diamond for coins, at most once every 10 seconds. */
+public final class ShopMenu {
+    private final Wallet wallet;
+    private final Cooldowns<UUID> cooldowns = new Cooldowns<>();
+
+    public ShopMenu(Wallet wallet) {
+        this.wallet = wallet;
+    }
+
+    public Gui open(Player player) {
+        return Gui.chest(3, Text.mm("<gold>Shop"))
+                .set(13, ItemBuilder.of(Material.DIAMOND).name("<aqua>Diamond")
+                        .lore("<gray>Price: <price> coins", "price", Wallet.DIAMOND_PRICE).build(),
+                        click -> buy(click.player()))
+                .fill(ItemBuilder.filler())
+                .open(player);
+    }
+
+    void buy(Player player) {
+        UUID id = player.getUniqueId();
+        if (!cooldowns.ready(id)) {
+            player.sendMessage(Text.mm("<red>Wait <time>", "time", Durations.format(cooldowns.remaining(id))));
+            return;
+        }
+        if (!wallet.buy(player, "diamond", Wallet.DIAMOND_PRICE)) {
+            player.sendMessage(Text.mm("<red>You need <price> coins", "price", Wallet.DIAMOND_PRICE));
+            return;
+        }
+        cooldowns.set(id, Duration.ofSeconds(10));
+        player.getInventory().addItem(ItemStack.of(Material.DIAMOND));
+        ParticleEffect.of(Particle.HAPPY_VILLAGER).draw(player.getLocation(), Shapes.circle(1, 16));
+    }
+}
+```
+
+Its test, `src/test/java/{{packagePath}}/ShopMenuTest.java`:
+
+```java
+package {{packageName}};
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import org.bukkit.Material;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.mockbukkit.mockbukkit.MockBukkit;
+import org.mockbukkit.mockbukkit.ServerMock;
+import org.mockbukkit.mockbukkit.entity.PlayerMock;
+
+class ShopMenuTest {
+    private ServerMock server;
+    private {{mainClass}} plugin;
+
+    @BeforeEach
+    void setUp() {
+        server = MockBukkit.mock();
+        plugin = MockBukkit.load({{mainClass}}.class);
+    }
+
+    @AfterEach
+    void tearDown() {
+        MockBukkit.unmock();
+    }
+
+    @Test
+    void buyingTakesCoinsOnceUntilTheCooldownEnds() {
+        PlayerMock alex = server.addPlayer("Alex");
+        ShopMenu shop = new ShopMenu(plugin.wallet());
+
+        shop.buy(alex);
+        shop.buy(alex);
+
+        assertThat(plugin.wallet().coins(alex)).isEqualTo(50);
+        assertThat(alex.getInventory().contains(Material.DIAMOND)).isTrue();
     }
 }
 ```

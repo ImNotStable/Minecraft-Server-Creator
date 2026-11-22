@@ -44,6 +44,8 @@ val templateVersions = mapOf(
     "minestomMcVersion" to minestom.substringAfterLast("-"),
     "slf4jVersion" to catalogVersion("slf4j"),
     "shadowVersion" to catalogVersion("shadow"),
+    "mscStdlibVersion" to catalogVersion("msc-stdlib"),
+    "sqliteJdbcVersion" to catalogVersion("sqlite-jdbc"),
 )
 
 // The Minestom agent jar (msc-protocol bundled), shipped in minestom-server and minestom-game as libs/msc-agent-minestom.jar.
@@ -74,6 +76,11 @@ abstract class PackTemplates : DefaultTask() {
     @get:PathSensitive(PathSensitivity.NONE)
     abstract val minestomAgent: ConfigurableFileCollection
 
+    /** msc-stdlib as a Maven repository (ADR 0066), shipped in the Paper templates as libs/repo/. */
+    @get:InputFiles
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val stdlibRepo: ConfigurableFileCollection
+
     @get:Input
     abstract val versions: MapProperty<String, String>
 
@@ -85,6 +92,7 @@ abstract class PackTemplates : DefaultTask() {
         val MINESTOM_TEMPLATES = setOf("minestom-server", "minestom-game")
         /** A proxy plugin: its own wrapper, no Minecraft server files in run/ (the proxy writes its own config). */
         val PROXY_TEMPLATES = setOf("velocity-plugin")
+        val STDLIB_PAPER_TEMPLATES = setOf("paper-plugin", "paper-game")
         val WRAPPER_FILES = listOf(
             "gradlew", "gradlew.bat", "gradle/wrapper/gradle-wrapper.jar", "gradle/wrapper/gradle-wrapper.properties")
     }
@@ -115,6 +123,9 @@ abstract class PackTemplates : DefaultTask() {
                 WRAPPER_FILES.forEach { files[it] = wrapper.resolve(it) }
                 files["libs/msc-agent-minestom.jar"] = minestomAgent.singleFile
             }
+            if (id in STDLIB_PAPER_TEMPLATES) {
+                stdlibRepo.files.forEach { repo -> addTree(repo, "libs/repo/") }
+            }
             if (id in PROXY_TEMPLATES) {
                 WRAPPER_FILES.forEach { files[it] = wrapper.resolve(it) }
             }
@@ -136,6 +147,10 @@ val packTemplates = tasks.register<PackTemplates>("packTemplates") {
     wrapperRoot = rootProject.layout.projectDirectory
     versions = templateVersions
     minestomAgent.from(minestomAgentJar)
+    // Each module's build/repo holds io/github/imnotstable/msc/<module>/<version>/.
+    for (module in listOf(":msc-stdlib", ":msc-stdlib-paper")) {
+        stdlibRepo.from(files(project(module).layout.buildDirectory.dir("repo")).builtBy("$module:stdlibRepo"))
+    }
     outputDir = layout.buildDirectory.dir("generated/templates")
 }
 

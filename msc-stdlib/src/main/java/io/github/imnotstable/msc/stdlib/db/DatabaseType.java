@@ -1,0 +1,95 @@
+package io.github.imnotstable.msc.stdlib.db;
+
+import java.util.List;
+import java.util.stream.Collectors;
+
+/**
+ * A database backend and the SQL that differs between them. Keys are portable through {@link Table} and
+ * {@link Store}; write plain SQL yourself only with types and syntax all four accept, or branch on the type.
+ */
+public enum DatabaseType {
+    /** One file, no server. The default; Paper ships the driver. */
+    SQLITE("org.sqlite.JDBC"),
+    /** MySQL 8+. Paper ships the driver ({@code com.mysql:mysql-connector-j}). */
+    MYSQL("com.mysql.cj.jdbc.Driver"),
+    /** MariaDB 10.5+. Needs {@code org.mariadb.jdbc:mariadb-java-client} on the server. */
+    MARIADB("org.mariadb.jdbc.Driver"),
+    /** PostgreSQL 12+. Needs {@code org.postgresql:postgresql} on the server. */
+    POSTGRESQL("org.postgresql.Driver");
+
+    private final String driver;
+
+    DatabaseType(String driver) {
+        this.driver = driver;
+    }
+
+    /** The JDBC driver class, loaded before the pool opens so a missing driver fails with its name. */
+    public String driver() {
+        return driver;
+    }
+
+    /** The JDBC URL for a config (its own {@link DatabaseConfig#url()} wins when set). */
+    public String url(DatabaseConfig c) {
+        if (!c.url().isBlank()) {
+            return c.url();
+        }
+        return switch (this) {
+            case SQLITE -> "jdbc:sqlite:" + c.file();
+            case MYSQL -> "jdbc:mysql://" + c.host() + ":" + c.port() + "/" + c.database();
+            case MARIADB -> "jdbc:mariadb://" + c.host() + ":" + c.port() + "/" + c.database();
+            case POSTGRESQL -> "jdbc:postgresql://" + c.host() + ":" + c.port() + "/" + c.database();
+        };
+    }
+
+    /** The usual port of the server, 0 for SQLite. */
+    public int defaultPort() {
+        return switch (this) {
+            case SQLITE -> 0;
+            case MYSQL, MARIADB -> 3306;
+            case POSTGRESQL -> 5432;
+        };
+    }
+
+    /** The column type this backend uses for {@code t}. */
+    public String sqlType(ColumnType t, int length) {
+        boolean my = this == MYSQL || this == MARIADB;
+        return switch (t) {
+            case STRING -> "VARCHAR(" + length + ")";
+            case TEXT -> my ? "LONGTEXT" : "TEXT";
+            case INT -> "INTEGER";
+            case LONG, INSTANT -> "BIGINT";
+            case DOUBLE -> this == POSTGRESQL ? "DOUBLE PRECISION" : this == SQLITE ? "REAL" : "DOUBLE";
+            case BOOLEAN -> this == SQLITE ? "INTEGER" : "BOOLEAN";
+            case UUID -> "CHAR(36)";
+            case BYTES -> this == POSTGRESQL ? "BYTEA" : my ? "LONGBLOB" : "BLOB";
+        };
+    }
+
+    /** The definition of an auto-increment {@code BIGINT} primary key column. */
+    public String autoIncrementKey(String column) {
+        return switch (this) {
+            case SQLITE -> column + " INTEGER PRIMARY KEY AUTOINCREMENT";
+            case MYSQL, MARIADB -> column + " BIGINT AUTO_INCREMENT PRIMARY KEY";
+            case POSTGRESQL -> column + " BIGSERIAL PRIMARY KEY";
+        };
+    }
+
+    /**
+     * An insert that replaces the row when its key already exists. Parameters are {@code columns} in order.
+     *
+     * @param key the primary key or unique columns, which must be among {@code columns}
+     */
+    public String upsert(String table, List<String> columns, List<String> key) {
+        String insert = "INSERT INTO " + table + " (" + String.join(", ", columns) + ") VALUES ("
+                + columns.stream().map(c -> "?").collect(Collectors.joining(", ")) + ")";
+        List<String> rest = columns.stream().filter(c -> !key.contains(c)).toList();
+        return switch (this) {
+            case SQLITE, POSTGRESQL -> insert + " ON CONFLICT (" + String.join(", ", key) + ") "
+                    + (rest.isEmpty() ? "DO NOTHING" : "DO UPDATE SET "
+                    + rest.stream().map(c -> c + " = excluded." + c).collect(Collectors.joining(", ")));
+            // shortcut: VALUES() is deprecated (still accepted) on MySQL 8.0.20+; MariaDB has no row alias, so it serves both.
+            case MYSQL, MARIADB -> insert + " ON DUPLICATE KEY UPDATE " + (rest.isEmpty() ? key.getFirst() + " = " + key.getFirst()
+                    : rest.stream().map(c -> c + " = VALUES(" + c + ")").collect(Collectors.joining(", ")));
+        };
+    }
+}
