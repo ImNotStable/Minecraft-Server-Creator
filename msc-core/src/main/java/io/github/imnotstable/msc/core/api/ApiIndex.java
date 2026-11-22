@@ -5,8 +5,11 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.Deque;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -67,6 +70,7 @@ public final class ApiIndex {
 
     public static ApiIndex load(List<Path> jars) throws IOException {
         ApiIndex index = new ApiIndex(List.copyOf(jars));
+        Map<String, ClassInfo> hidden = new HashMap<>();
         for (Path jar : jars) {
             try (JarFile file = new JarFile(jar.toFile())) {
                 var entries = file.entries();
@@ -77,9 +81,9 @@ public final class ApiIndex {
                         continue;
                     }
                     try (InputStream in = file.getInputStream(entry)) {
-                        ClassInfo info = ClassFileReader.read(in);
-                        if (info != null) {
-                            index.classes.putIfAbsent(info.name(), info);
+                        ClassFileReader.Parsed parsed = ClassFileReader.readAny(in);
+                        if (parsed != null) {
+                            (parsed.exported() ? index.classes : hidden).putIfAbsent(parsed.info().name(), parsed.info());
                         }
                     } catch (IOException | RuntimeException e) {
                         // One unreadable class must not cost the whole index.
@@ -87,7 +91,27 @@ public final class ApiIndex {
                 }
             }
         }
+        index.classes.replaceAll((name, c) -> withHiddenParents(c, hidden));
         return index;
+    }
+
+    /**
+     * {@code c} with the members of its package-private supertypes, which Java reaches through {@code c}: Minestom's
+     * {@code Block.GOLD_BLOCK} is declared in package-private {@code Blocks}, so it was found nowhere (Sky Sprint bench).
+     */
+    private static ClassInfo withHiddenParents(ClassInfo c, Map<String, ClassInfo> hidden) {
+        List<ClassInfo.Member> members = new ArrayList<>(c.members());
+        Set<String> seen = new HashSet<>();
+        Deque<String> todo = new ArrayDeque<>(c.supertypes());
+        while (!todo.isEmpty()) {
+            ClassInfo parent = hidden.get(todo.pop());
+            if (parent != null && seen.add(parent.name())) {
+                members.addAll(parent.members().stream().filter(m -> !m.name().equals(parent.simpleName())).toList());
+                todo.addAll(parent.supertypes());
+            }
+        }
+        return seen.isEmpty() ? c : new ClassInfo(c.name(), c.simpleName(), c.kind(), c.supertypes(), c.deprecated(),
+                c.constants(), List.copyOf(members));
     }
 
     /**
