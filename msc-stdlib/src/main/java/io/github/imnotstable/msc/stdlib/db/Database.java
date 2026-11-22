@@ -55,7 +55,7 @@ public final class Database implements AutoCloseable {
             throw new IllegalStateException("No JDBC driver " + config.type().driver() + " for " + config.type()
                     + ": add it to the server or the plugin", e);
         }
-        if (config.type() == DatabaseType.SQLITE && config.url().isBlank()) {
+        if ((config.type() == DatabaseType.SQLITE || config.type() == DatabaseType.H2) && config.url().isBlank()) {
             Path parent = config.file().toAbsolutePath().getParent();
             try {
                 Files.createDirectories(parent);
@@ -160,6 +160,56 @@ public final class Database implements AutoCloseable {
     public <T> CompletableFuture<T> async(java.util.function.Function<Database, T> work) {
         return CompletableFuture.supplyAsync(() -> work.apply(this), executor);
     }
+
+    /** {@link #update} off the calling thread. */
+    public CompletableFuture<Integer> updateAsync(String sql, Object... params) {
+        return async(db -> db.update(sql, params));
+    }
+
+    /** {@link #query} off the calling thread. */
+    public <T> CompletableFuture<List<T>> queryAsync(String sql, RowMapper<T> mapper, Object... params) {
+        return async(db -> db.query(sql, mapper, params));
+    }
+
+    /** Runs each {@code ;}-separated statement of {@code script} in one transaction (no {@code ;} inside strings). */
+    public void script(String script) {
+        transaction(c -> {
+            for (String sql : script.split(";")) {
+                if (!sql.isBlank()) {
+                    update(c, sql.strip());
+                }
+            }
+            return null;
+        });
+    }
+
+    /** Whether {@code table} exists, in any letter case. */
+    public boolean tableExists(String table) {
+        return withConnection(c -> Schema.findTable(c, table) != null);
+    }
+
+    /** The columns of {@code table}, lower case; empty when there is no such table. */
+    public java.util.Set<String> columns(String table) {
+        return withConnection(c -> Schema.columns(c, table));
+    }
+
+    /** True when a connection answers within 2 seconds. */
+    public boolean isHealthy() {
+        try (Connection c = pool.getConnection()) {
+            return c.isValid(2);
+        } catch (SQLException e) {
+            return false;
+        }
+    }
+
+    /** Connections in use and idle, and threads waiting for one. */
+    public PoolStats stats() {
+        var bean = pool.getHikariPoolMXBean();
+        return bean == null ? new PoolStats(0, 0, 0)
+                : new PoolStats(bean.getActiveConnections(), bean.getIdleConnections(), bean.getThreadsAwaitingConnection());
+    }
+
+    public record PoolStats(int active, int idle, int waiting) {}
 
     /** Applies the migrations of {@code namespace} not applied yet, in version order. See {@link Migration}. */
     public List<Migration> migrate(String namespace, List<Migration> migrations) {

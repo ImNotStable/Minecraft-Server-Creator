@@ -11,7 +11,7 @@ import java.util.Set;
 
 /**
  * Measurable signs of a plain build, so an agent judges its work by numbers and not only by its own look at a render
- * (ADR 0067): few block types, few shaped blocks, flat walls of one block, flat roofs, no lights.
+ * (ADR 0068): few block types, few shaped blocks, flat walls of one block, flat roofs, no lights.
  */
 public final class BuildReview {
     /** Name parts of blocks that add shape or detail: trim, roofs, sills, furniture, plants, lights. */

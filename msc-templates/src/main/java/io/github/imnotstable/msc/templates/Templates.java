@@ -242,6 +242,9 @@ public final class Templates {
     }
 
     private static boolean isBinary(String path) {
+        if (path.startsWith("libs/")) {
+            return true; // shipped libraries (msc-stdlib's repo, sources and graph) are copied as they are
+        }
         int dot = path.lastIndexOf('.');
         return dot >= 0 && BINARY_EXTENSIONS.contains(path.substring(dot + 1));
     }

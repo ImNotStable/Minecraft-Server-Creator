@@ -118,7 +118,7 @@ public final class MscLauncher {
     /**
      * The flat install from before ADR 0021, in the home folder itself. It counts from its core jar's time, never
      * from when a launcher first saw it: that stamp ranked an 11-day-old core above the install that replaced it
-     * (ADR 0067). Only a time installMsc wrote (it records its source) is kept.
+     * (ADR 0068). Only a time installMsc wrote (it records its source) is kept.
      */
     static Optional<Install> flat(Path home) {
         return coreJar(home).map(jar -> {

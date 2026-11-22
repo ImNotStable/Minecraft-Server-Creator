@@ -1,4 +1,4 @@
-# ADR 0067: A quality bar any agent reads, and numbers to check builds against
+# ADR 0068: A quality bar any agent reads, and numbers to check builds against
 
 Status: accepted, 2026-11-22. Decided by Claude. Jeremiah tested MSC with Google's Antigravity (Gemini 4 Argon,
 medium) on "The Shattered Meridian", a 37 KB server design, and found the result plain: boxy builds on a flat

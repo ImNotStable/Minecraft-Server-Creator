@@ -60,8 +60,7 @@ with no access to this repository, and msc-stdlib is not on Maven Central.
   with `include` (msc-stdlib and HikariCP listed too, as `include` is not transitive); the SQLite driver is on the test
   classpath and one commented line away from the mod jar, since it is 13 MB.
 - Then NeoForge, Forge and Velocity.
-- MongoDB: a document store needs its own driver (several MB) and API; `Store` is an interface, so a Mongo backend
-  can be added without changing callers. H2: Paper does not ship it and SQLite covers the file case.
+- (Phase 1 left out MongoDB and H2; the depth pass added both.)
 - Commands and config wrappers on Paper: Paper's Brigadier API and `getConfig()` already do the job, and the guide
   already teaches them.
 - Holograms, boss bars, NPCs: a line each with the Paper API (`TextDisplay`, `BossBar`); add when generated code

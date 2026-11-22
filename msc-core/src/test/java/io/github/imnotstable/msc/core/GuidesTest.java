@@ -13,7 +13,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-/** msc_status guide= serves each guide, and every tool a guide or the MCP instructions name exists (ADR 0067). */
+/** msc_status guide= serves each guide, and every tool a guide or the MCP instructions name exists (ADR 0068). */
 class GuidesTest {
     /** Words shaped like tool names: a known prefix, an underscore, more letters. */
     private static final Pattern TOOLISH = Pattern.compile(

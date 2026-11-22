@@ -53,7 +53,7 @@ public final class PaletteText {
             }
         }
         if (!odd.isEmpty()) {
-            // Every odd row at once, so one retry fixes them all (an agent fixed one row per call, ADR 0067).
+            // Every odd row at once, so one retry fixes them all (an agent fixed one row per call, ADR 0068).
             int first = Integer.parseInt(odd.getFirst()) - 1;
             throw new TextureException("row " + odd.getFirst() + " has " + rows.get(first).length() + " pixels, expected "
                     + width + (odd.size() == 1 ? "" : " (rows " + String.join(", ", odd) + " all differ)"));

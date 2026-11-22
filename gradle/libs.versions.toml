@@ -32,10 +32,15 @@ mcprotocollib = "26.3-4"  # GeyserMC Java Edition protocol client for the msc-bo
 netty = "4.2.21.Final"  # floor for mcprotocollib, which pulls netty-all 4.2.1.Final (old, with advisories); like jackson
 mcprotocollib-previous = "26.2"  # the previous Minecraft version, for servers that lag Paper (Minestom); stays one behind
 slf4j = "2.0.20"  # matches Minestom's slf4j-api; scaffolded Minestom servers log through slf4j-simple
-msc-stdlib = "1.1.0"  # the standard library shipped in scaffolded projects (ADR 0066); raise on any API change
+msc-stdlib = "2.0.0"  # the standard library shipped in scaffolded projects (ADR 0066); raise on any API change
 hikaricp = "7.1.0"  # msc-stdlib connection pool, bundled into scaffolded plugin jars
 sqlite-jdbc = "3.49.1.0"  # tests only: the SQLite driver Paper 26.3 ships
 adventure = "5.2.0"  # msc-stdlib compiles its MiniMessage helper against it; Paper and Velocity ship Adventure, Minestom projects get MiniMessage through msc-stdlib-minestom
+h2 = "2.5.252"  # msc-stdlib: embedded and in-memory SQL database (DatabaseType.H2); scaffolded projects add it when they pick H2
+mongodb = "5.15.0"  # msc-stdlib Mongo stores and repositories: compile-only, projects that use Mongo add the driver
+jedis = "8.0.2"  # msc-stdlib Redis stores, caches and messaging: compile-only, projects that use Redis add it
+postgresql = "42.7.14"  # tests only: msc-stdlib live checks against PostgreSQL
+mariadb-client = "3.5.11"  # tests only: msc-stdlib live checks against MariaDB and MySQL
 
 [libraries]
 paper-api = { module = "io.papermc.paper:paper-api", version.ref = "paper" }
@@ -65,6 +70,11 @@ sqlite-jdbc = { module = "org.xerial:sqlite-jdbc", version.ref = "sqlite-jdbc" }
 adventure-minimessage = { module = "net.kyori:adventure-text-minimessage", version.ref = "adventure" }
 adventure-serializer-plain = { module = "net.kyori:adventure-text-serializer-plain", version.ref = "adventure" }
 adventure-serializer-legacy = { module = "net.kyori:adventure-text-serializer-legacy", version.ref = "adventure" }
+h2 = { module = "com.h2database:h2", version.ref = "h2" }
+mongodb-driver-sync = { module = "org.mongodb:mongodb-driver-sync", version.ref = "mongodb" }
+jedis = { module = "redis.clients:jedis", version.ref = "jedis" }
+postgresql = { module = "org.postgresql:postgresql", version.ref = "postgresql" }
+mariadb-client = { module = "org.mariadb.jdbc:mariadb-java-client", version.ref = "mariadb-client" }
 
 [plugins]
 shadow = { id = "com.gradleup.shadow", version.ref = "shadow" }

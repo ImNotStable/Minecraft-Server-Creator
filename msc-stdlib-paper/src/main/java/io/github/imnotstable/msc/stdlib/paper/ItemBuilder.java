@@ -49,7 +49,12 @@ public final class ItemBuilder {
 
     /** An unnamed grey pane, for GUI backgrounds. */
     public static ItemStack filler() {
-        return of(Material.GRAY_STAINED_GLASS_PANE).name(Component.empty()).hideTooltip().build();
+        return pane(Material.GRAY_STAINED_GLASS_PANE);
+    }
+
+    /** A glass pane (or any item) with no name and no tooltip, for menu borders: {@code pane(Material.BLACK_STAINED_GLASS_PANE)}. */
+    public static ItemStack pane(Material material) {
+        return of(material).name(Component.empty()).hideTooltip().build();
     }
 
     public ItemBuilder amount(int amount) {

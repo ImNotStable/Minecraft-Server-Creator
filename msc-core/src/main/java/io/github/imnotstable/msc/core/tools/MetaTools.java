@@ -24,7 +24,7 @@ import java.util.function.BooleanSupplier;
 
 /** Health and usage tools. */
 public final class MetaTools {
-    /** The guides msc_status guide= serves (ADR 0067): read on demand, so they cost nothing until needed. */
+    /** The guides msc_status guide= serves (ADR 0068): read on demand, so they cost nothing until needed. */
     static final List<String> GUIDES = List.of("build", "textures", "ux");
 
     private MetaTools() {
