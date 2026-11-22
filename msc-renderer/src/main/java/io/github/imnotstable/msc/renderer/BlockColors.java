@@ -20,7 +20,7 @@ import java.util.Set;
  * (VanillaColorsTest); word lines are a fallback for plugin and mod blocks. Colours are ARGB ints. Blocks
  * nobody listed get a stable colour derived from their name.
  */
-final class BlockColors {
+public final class BlockColors {
     static final int TOP = 0;
     static final int SIDE = 1;
     static final int BOTTOM = 2;
@@ -84,6 +84,11 @@ final class BlockColors {
         boolean known() {
             return source != Source.HASH;
         }
+    }
+
+    /** The RGB colour of a block's side, as world_render draws it; for checks that judge colour (BuildReview). */
+    public static int side(String name) {
+        return find(name, SIDE).argb() & 0xffffff;
     }
 
     static Found find(String name, int faceKind) {

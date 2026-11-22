@@ -115,13 +115,18 @@ public final class SetupCheck {
         if (own < 0 || parent == null) {
             return null;
         }
+        // A flat install from before ADR 0021 holds the versioned installs in its own folder (ADR 0071).
+        boolean flat = LegacyInstall.isLegacy(installDir)
+                && !String.valueOf(installDir.getFileName()).startsWith("msc-core-");
         List<Path> candidates = new ArrayList<>();
         candidates.add(parent);
-        try (Stream<Path> children = Files.list(parent)) {
-            children.filter(Files::isDirectory).filter(d -> !d.getFileName().toString().startsWith("."))
-                    .sorted().forEach(candidates::add);
-        } catch (IOException e) {
-            return null;
+        for (Path folder : flat ? List.of(parent, installDir) : List.of(parent)) {
+            try (Stream<Path> children = Files.list(folder)) {
+                children.filter(Files::isDirectory).filter(d -> !d.getFileName().toString().startsWith("."))
+                        .sorted().forEach(candidates::add);
+            } catch (IOException e) {
+                return null;
+            }
         }
         Path newest = null;
         long newestTime = own;
@@ -132,8 +137,13 @@ public final class SetupCheck {
                 newestTime = t;
             }
         }
-        return newest == null ? null : "warning: a newer msc-core was installed " + seconds(newestTime) + " in "
-                + newest + ". Reconnect msc in /mcp to use it.";
+        if (newest == null) {
+            return null;
+        }
+        String found = "warning: a newer msc-core was installed " + seconds(newestTime) + " in " + newest + ". ";
+        return flat ? found + "This is the old flat install a `claude mcp add` line starts, which a reconnect keeps "
+                + "running: claude mcp remove msc -s user, then use the msc plugin, which starts the newest install."
+                : found + "Reconnect msc in /mcp to use it.";
     }
 
     /** {@code installed} from an install's properties, or -1. */

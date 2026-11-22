@@ -7,6 +7,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeSet;
 
 /**
  * Pixel art as text, the same format {@code msc-core}'s {@code texture} and {@code texture_view}
@@ -59,15 +60,25 @@ public final class PaletteText {
                     + width + (odd.size() == 1 ? "" : " (rows " + String.join(", ", odd) + " all differ)"));
         }
         Texture t = new Texture(width, rows.size());
+        // Every unknown symbol and its rows at once, so one retry fixes them all (ADR 0071).
+        Map<Character, Set<Integer>> unknown = new LinkedHashMap<>();
         for (int y = 0; y < rows.size(); y++) {
             String row = rows.get(y);
             for (int x = 0; x < width; x++) {
                 Integer argb = colors.get(row.charAt(x));
                 if (argb == null) {
-                    throw new TextureException("symbol '" + row.charAt(x) + "' in row " + (y + 1) + " is not in the palette");
+                    unknown.computeIfAbsent(row.charAt(x), c -> new TreeSet<>()).add(y + 1);
+                } else {
+                    t.set(x, y, argb);
                 }
-                t.set(x, y, argb);
             }
+        }
+        if (!unknown.isEmpty()) {
+            List<String> parts = new ArrayList<>();
+            unknown.forEach((c, ys) -> parts.add("symbol '" + c + "' in row" + (ys.size() == 1 ? " " : "s ")
+                    + String.join(", ", ys.stream().map(String::valueOf).toList())));
+            throw new TextureException(String.join("; ", parts) + (parts.size() == 1 ? " is" : " are")
+                    + " not in the palette");
         }
         return t;
     }
