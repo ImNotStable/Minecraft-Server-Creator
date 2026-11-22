@@ -28,7 +28,7 @@ public final class McpBridge {
     private static final Gson ARGS = new com.google.gson.GsonBuilder().serializeSpecialFloatingPointValues().create();
     private static final String INSTRUCTIONS = "Tools for developing a Minecraft server ("
             + Platform.names(p -> true, "or") + "). "
-            + "Start: project_scaffold (template <platform>-game for a minigame base), then read the project's CLAUDE.md. "
+            + "Start: project_scaffold (a bare project: build, empty entry point), then read the project's CLAUDE.md. "
             + Platform.names(Platform::needsEula, "and") + " need the user's agreement to the Minecraft EULA (https://aka.ms/MinecraftEULA): if "
             + "server_setup says this machine lacks it, ask them, then server_setup acceptEula=true; never accept it for them. After each code change call "
             + "dev_cycle (build, test, deploy, restart, errors only). Look names up with api_search before guessing. "

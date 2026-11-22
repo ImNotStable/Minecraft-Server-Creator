@@ -1,8 +1,8 @@
 {
   "category": "game",
-  "title": "Build Sky Sprint, a timed race with coins, on the minestom-game template",
+  "title": "Build Sky Sprint, a timed race with coins, on a bare Minestom server",
   "platform": "minestom",
-  "scaffold": {"template": "minestom-game", "name": "Sprint", "package": "bench.sprint"},
+  "scaffold": {"template": "minestom-server", "name": "Sprint", "package": "bench.sprint"},
   "timeoutSeconds": 2400,
   "checks": [
     {"type": "command", "name": "project builds with its own tests", "run": ["{gradlew}", "build", "--quiet"], "timeoutSeconds": 900},

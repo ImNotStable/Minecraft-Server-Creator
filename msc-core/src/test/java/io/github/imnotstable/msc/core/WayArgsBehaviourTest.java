@@ -168,7 +168,7 @@ class WayArgsBehaviourTest {
         String refusal = "error: acceptEula is for a server with a Minecraft EULA; minestom and velocity have none, "
                 + "leave it out";
         Path home = dir.resolve("home");
-        for (String template : List.of("minestom-server", "minestom-game", "velocity-plugin")) {
+        for (String template : List.of("minestom-server", "velocity-plugin")) {
             Path ws = Files.createDirectories(dir.resolve(template));
             try (CoreHarness h = new CoreHarness(ws, c -> c.withServerCommand(java(FakeServerMain.class))
                     .withMachineEula(MachineEula.forHome(home)))) {

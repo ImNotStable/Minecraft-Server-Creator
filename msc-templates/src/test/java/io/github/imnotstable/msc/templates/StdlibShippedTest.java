@@ -24,16 +24,15 @@ import org.junit.jupiter.params.provider.ValueSource;
  */
 class StdlibShippedTest {
     private static final Map<String, String> PLATFORM = Map.of(
-            Templates.PAPER_PLUGIN, "paper", Templates.PAPER_GAME, "paper",
-            Templates.MINESTOM_SERVER, "minestom", Templates.MINESTOM_GAME, "minestom",
-            Templates.FABRIC_MOD, "fabric", Templates.FABRIC_GAME, "fabric", Templates.VELOCITY_PLUGIN, "velocity", Templates.NEOFORGE_MOD, "neoforge",
+            Templates.PAPER_PLUGIN, "paper", Templates.MINESTOM_SERVER, "minestom",
+            Templates.FABRIC_MOD, "fabric", Templates.VELOCITY_PLUGIN, "velocity", Templates.NEOFORGE_MOD, "neoforge",
             Templates.FORGE_MOD, "forge");
 
     @TempDir
     Path dir;
 
     @ParameterizedTest
-    @ValueSource(strings = {"paper-plugin", "paper-game", "minestom-server", "minestom-game", "fabric-mod", "fabric-game", "velocity-plugin", "neoforge-mod", "forge-mod"})
+    @ValueSource(strings = {"paper-plugin", "minestom-server", "fabric-mod", "velocity-plugin", "neoforge-mod", "forge-mod"})
     void aProjectGetsTheLibraryItsIndexSourcesAndAFreshGraph(String id) throws Exception {
         Path root = Templates.scaffold(id, dir.resolve(id), TemplateVariables.of("Verify Me")).root();
         String adapter = "msc-stdlib-" + PLATFORM.get(id);

@@ -52,7 +52,7 @@ val templateVersions = mapOf(
     "hikaricpVersion" to catalogVersion("hikaricp"),
 )
 
-// The Minestom agent jar (msc-protocol bundled), shipped in minestom-server and minestom-game as libs/msc-agent-minestom.jar.
+// The Minestom agent jar (msc-protocol bundled), shipped in minestom-server as libs/msc-agent-minestom.jar.
 val minestomAgent = configurations.dependencyScope("minestomAgent")
 val minestomAgentJar = configurations.resolvable("minestomAgentJar") { extendsFrom(minestomAgent.get()) }
 dependencies {
@@ -97,14 +97,13 @@ abstract class PackTemplates : DefaultTask() {
     abstract val outputDir: DirectoryProperty
 
     companion object {
-        val PROJECT_TEMPLATES = setOf("paper-plugin", "paper-game", "fabric-mod", "fabric-game", "neoforge-mod", "forge-mod")
-        val MINESTOM_TEMPLATES = setOf("minestom-server", "minestom-game")
+        val PROJECT_TEMPLATES = setOf("paper-plugin", "fabric-mod", "neoforge-mod", "forge-mod")
+        val MINESTOM_TEMPLATES = setOf("minestom-server")
         /** A proxy plugin: its own wrapper, no Minecraft server files in run/ (the proxy writes its own config). */
         val PROXY_TEMPLATES = setOf("velocity-plugin")
         /** Templates that ship msc-stdlib, and the platform adapter each gets beside the core. */
-        val STDLIB_TEMPLATES = mapOf("paper-plugin" to "paper", "paper-game" to "paper",
-            "minestom-server" to "minestom", "minestom-game" to "minestom",
-            "fabric-mod" to "fabric", "fabric-game" to "fabric", "velocity-plugin" to "velocity",
+        val STDLIB_TEMPLATES = mapOf("paper-plugin" to "paper", "minestom-server" to "minestom",
+            "fabric-mod" to "fabric", "velocity-plugin" to "velocity",
             "neoforge-mod" to "neoforge", "forge-mod" to "forge")
         val WRAPPER_FILES = listOf(
             "gradlew", "gradlew.bat", "gradle/wrapper/gradle-wrapper.jar", "gradle/wrapper/gradle-wrapper.properties")

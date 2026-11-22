@@ -103,7 +103,7 @@ fun templateClasspath(template: String): FileCollection {
     }
     return files(configurations.resolvable("${template}TemplateJars") { extendsFrom(scope.get()) })
 }
-val templateClasspaths = listOf("minestom-game", "minestom-server").associateWith(::templateClasspath)
+val templateClasspaths = listOf("minestom-server").associateWith(::templateClasspath)
 tasks.test {
     val classpaths = templateClasspaths
     classpaths.forEach { (template, jars) ->

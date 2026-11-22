@@ -523,9 +523,9 @@ class LifecycleToolsTest {
         assertThat(workspace.resolve("fresh")).isNotEmptyDirectory();
         assertThat(h.error("project_scaffold", "name", "MyPlugin", "dir", "fresh")).startsWith("error: ");
         assertThat(h.error("project_scaffold", "name", "X", "template", "nope")).contains("unknown template nope");
-        assertThat(h.ok("project_scaffold", "name", "Arena", "dir", "game", "template", "paper-game"))
-                .startsWith("created paper-game project in ").contains("packageName: com.example.arena");
-        assertThat(workspace.resolve("game/src/main/java/com/example/arena/GameCommand.java")).isRegularFile();
+        assertThat(h.ok("project_scaffold", "name", "Arena", "dir", "game", "template", "fabric-mod"))
+                .startsWith("created fabric-mod project in ").contains("packageName: com.example.arena");
+        assertThat(workspace.resolve("game/src/main/java/com/example/arena/ArenaPlugin.java")).isRegularFile();
         assertThat(h.error("project_scaffold")).isEqualTo("error: missing argument: name");
     }
 
@@ -613,7 +613,8 @@ class LifecycleToolsTest {
         Files.writeString(both.resolve("version.txt"), "1.0");
         assertThat(h.error("dev_cycle", "project", "both", "restart", false))
                 .startsWith("error: both is a Paper project, but this workspace runs Velocity, which never loads it;");
-        Files.writeString(both.resolve("src/main/resources/velocity-plugin.json"), "{\"id\":\"both\"}");
+        Files.writeString(Files.createDirectories(both.resolve("src/main/resources")).resolve("velocity-plugin.json"),
+                "{\"id\":\"both\"}");
         assertThat(h.ok("dev_cycle", "project", "both", "restart", false)).contains("as plugins/");
         assertThat(workspace.resolve(".msc/platform")).hasContent("velocity");
     }
@@ -669,7 +670,7 @@ class LifecycleToolsTest {
     @Test
     void scaffoldCountsAWorkspaceServerThatRunsTheTemplate() throws Exception {
         for (String[] c : new String[][] {{"quilt", "quilt-server-launch.jar", "fabric-mod"},
-                {"purpur", "purpur.jar", "paper-plugin"}, {"folia", "folia.jar", "paper-game"}}) {
+                {"purpur", "purpur.jar", "paper-plugin"}, {"folia", "folia.jar", "paper-plugin"}}) {
             Path ws = Files.createDirectories(workspace.resolve("ws-" + c[0]));
             Files.createDirectories(ws.resolve(".msc"));
             Files.writeString(ws.resolve(".msc/platform"), c[0] + "\n");
@@ -725,9 +726,7 @@ class LifecycleToolsTest {
         assertThat(ws.resolve("build.gradle.kts")).exists();
         assertThat(ws.resolve("run/server.properties")).isRegularFile();
         assertThat(ws.resolve("run/eula.txt")).content().contains("eula=false");
-        try (var src = Files.walk(ws.resolve("src"))) {
-            assertThat(src.filter(p -> p.toString().endsWith("Test.java"))).hasSize(2);
-        }
+        assertThat(ws.resolve("src/main/java/com/example/myplugin/MyPlugin.java")).isRegularFile();
         assertThat(ws.resolve(".msc")).isDirectory();
         assertThat(ws.resolve(".mcp.json")).hasContent("{}");
         try (var left = Files.list(ws.resolve(".msc"))) {

@@ -92,7 +92,7 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v6
 
-      # Minestom has no EULA, so this is the one real server CI may start. e2eTest scaffolds minestom-game, then
+      # Minestom has no EULA, so this is the one real server CI may start. e2eTest scaffolds minestom-server, then
       # drives it through the installed core over MCP stdio: dev_cycle, build_batch, world tools, player_test.
       - name: Minestom server end to end
         run: ./gradlew :msc-core:e2eTest --console=plain

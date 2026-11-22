@@ -48,7 +48,7 @@ class TaskPortsAndPlaceholdersTest {
             default -> FILE;
         };
         TaskDef task = task("{\"category\":\"c\",\"title\":\"t\",\"platform\":\"" + platform + "\","
-                + (scaffold ? "\"scaffold\":{\"template\":\"minestom-game\",\"name\":\"G\",\"package\":\"a.b\"}," : "")
+                + (scaffold ? "\"scaffold\":{\"template\":\"minestom-server\",\"name\":\"G\",\"package\":\"a.b\"}," : "")
                 + (reset ? "\"resetBeforeChecks\":{\"delete\":[\"x\"]}," : "")
                 + "\"checks\":[" + checkJson + "]}");
 
@@ -60,7 +60,7 @@ class TaskPortsAndPlaceholdersTest {
     @CsvSource(delimiter = '|', value = {
         "task.json category    | \"category\":\"c-{scaffoldVersion}\",\"title\":\"t\"",
         "task.json title       | \"category\":\"c\",\"title\":\"for {minecraftVersion}\"",
-        "task.json scaffold.name | \"category\":\"c\",\"title\":\"t\",\"scaffold\":{\"template\":\"minestom-game\",\"name\":\"G{scaffoldVersion}\",\"package\":\"a.b\"}",
+        "task.json scaffold.name | \"category\":\"c\",\"title\":\"t\",\"scaffold\":{\"template\":\"minestom-server\",\"name\":\"G{scaffoldVersion}\",\"package\":\"a.b\"}",
         "task.json fixtures[0] | \"category\":\"c\",\"title\":\"t\",\"fixtures\":[\"shared-{minecraftVersion}\"]",
         "task.json resetBeforeChecks.delete[0] | \"category\":\"c\",\"title\":\"t\",\"resetBeforeChecks\":{\"delete\":[\"build/libs/g-{scaffoldVersion}.jar\"]}",
     })

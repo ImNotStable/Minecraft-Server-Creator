@@ -55,7 +55,7 @@ class FollowTheHintsTest {
     /** The template each platform's flow scaffolds. */
     private static String template(String platform) {
         return switch (platform) {
-            case "minestom" -> "minestom-game";
+            case "minestom" -> "minestom-server";
             case "velocity" -> "velocity-plugin";
             default -> "paper-plugin";
         };
@@ -310,7 +310,7 @@ class FollowTheHintsTest {
         return switch (platform) {
             case "minestom" -> "velocity-plugin";
             case "velocity" -> "paper-plugin";
-            default -> "minestom-game";
+            default -> "minestom-server";
         };
     }
 
@@ -367,8 +367,8 @@ class FollowTheHintsTest {
     @Test
     void everyAlternativeOfTheNextStepBuilds() throws Exception {
         try (CoreHarness h = harness("minestom")) {
-            h.ok("project_scaffold", "name", "Lobby", "template", "minestom-game", "dir", "lobby");
-            h.ok("project_scaffold", "name", "Maze", "template", "minestom-game", "dir", "games/maze");
+            h.ok("project_scaffold", "name", "Lobby", "template", "minestom-server", "dir", "lobby");
+            h.ok("project_scaffold", "name", "Maze", "template", "minestom-server", "dir", "games/maze");
             h.ok("project_scaffold", "name", "Proxy", "template", "velocity-plugin", "dir", "proxy");
             String setup = h.ok("server_setup", "platform", "minestom");
             assertThat(setup).endsWith("next: dev_cycle project=lobby or dev_cycle project=games/maze");
@@ -452,11 +452,11 @@ class FollowTheHintsTest {
             h.ok("msc_status");
             Files.createDirectories(ws.resolve(".msc/backups/b1"));
             Files.writeString(ws.resolve("notes.txt"), "mine");
-            assertThat(h.error("project_scaffold", "name", "Arena", "template", "minestom-game"))
+            assertThat(h.error("project_scaffold", "name", "Arena", "template", "minestom-server"))
                     .isEqualTo("error: " + ws + " already holds files that are not MSC's (notes.txt): give "
                             + "dir=<new folder> to create the project beside them");
             Files.delete(ws.resolve("notes.txt"));
-            assertThat(h.ok("project_scaffold", "name", "Arena", "template", "minestom-game"))
+            assertThat(h.ok("project_scaffold", "name", "Arena", "template", "minestom-server"))
                     .endsWith("\nnext: edit the code, then dev_cycle");
             assertThat(ws.resolve("servers/dev/.msc-loader")).isRegularFile();
             assertThat(ws.resolve("calls.jsonl")).isRegularFile();

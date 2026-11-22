@@ -26,14 +26,9 @@ import java.util.stream.Stream;
  * }</pre>
  */
 public final class Templates {
-    /** A Paper plugin project with tests, conventions and a dev server in {@code run/}. */
+    /** A bare Paper plugin project (paperweight-userdev, resource-factory, run-paper) with a dev server in {@code run/}. */
     public static final String PAPER_PLUGIN = "paper-plugin";
-    /**
-     * A Paper minigame project: {@link #PAPER_PLUGIN} plus a game base (kit, adventure mode, keep inventory,
-     * stage respawns, no natural spawns, fixed time, saved progress) and a {@code /game} admin command.
-     */
-    public static final String PAPER_GAME = "paper-game";
-    /** A Fabric server mod project (Loom) with tests, conventions and a dev server in {@code run/}. */
+    /** A bare Fabric server mod project (Loom) with a dev server in {@code run/}. */
     public static final String FABRIC_MOD = "fabric-mod";
     /** A NeoForge server mod (ModDevGradle). See ADR 0027. */
     public static final String NEOFORGE_MOD = "neoforge-mod";
@@ -41,19 +36,9 @@ public final class Templates {
     public static final String FORGE_MOD = "forge-mod";
     /** Only the dev server config ({@code server.properties}, {@code eula.txt}), for a server directory. */
     public static final String PAPER_SERVER = "paper-server";
-    /** A Minestom server project with the msc agent built in, tests and conventions. No EULA step. */
+    /** A bare Minestom server project with the msc agent built in. No EULA step. */
     public static final String MINESTOM_SERVER = "minestom-server";
-    /**
-     * A Minestom minigame server: {@link #MINESTOM_SERVER} plus a game base (kit, adventure mode, stage respawns,
-     * frozen time, saved progress) and a {@code /game} admin command. No EULA step.
-     */
-    public static final String MINESTOM_GAME = "minestom-game";
-    /**
-     * A Fabric minigame mod: {@link #FABRIC_MOD} plus a game base (kit, adventure mode, keep inventory, stage
-     * respawns, no natural spawns, fixed time, saved progress) and a {@code /game} admin command.
-     */
-    public static final String FABRIC_GAME = "fabric-game";
-    /** A Velocity proxy plugin with tests and conventions; no Minecraft server files, no EULA step. ADR 0045. */
+    /** A bare Velocity proxy plugin; no Minecraft server files, no EULA step. ADR 0045. */
     public static final String VELOCITY_PLUGIN = "velocity-plugin";
 
     private static final String ROOT = "msc/templates/";

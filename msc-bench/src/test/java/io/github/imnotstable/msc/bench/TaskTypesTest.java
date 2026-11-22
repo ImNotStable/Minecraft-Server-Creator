@@ -38,7 +38,7 @@ class TaskTypesTest {
     /** One task with every non-number key of a task.json and of each check type, each at a valid value. */
     private static final String VALID = """
             {"category":"code","title":"t","platform":"paper","fixtures":[],
-             "scaffold":{"template":"minestom-game","name":"N","package":"p"},
+             "scaffold":{"template":"minestom-server","name":"N","package":"p"},
              "server":{"startBefore":true,"setup":["say hi"]},
              "resetBeforeChecks":{"delete":["server/plugins/P/config.yml"]},
              "checks":[

@@ -5,8 +5,8 @@
 Velocity {{velocityVersion}} proxy plugin (Java {{javaVersion}}).
 
 ```
-./gradlew build         # compile and test
+./gradlew build         # compile
 ./gradlew runVelocity   # dev proxy in run/ with the plugin loaded
 ```
 
-Conventions for working on this project are in `CLAUDE.md`.
+Build and dev server notes are in `CLAUDE.md`.

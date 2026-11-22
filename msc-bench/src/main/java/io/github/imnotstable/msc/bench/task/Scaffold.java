@@ -6,7 +6,7 @@ import java.util.Objects;
  * A project template from msc-templates written into the workspace before the fixtures, the same way msc-core's
  * {@code scaffold} tool would, so both modes start from the identical project.
  *
- * @param template    template id, such as {@code minestom-game}
+ * @param template    template id, such as {@code minestom-server}
  * @param name        project name, such as {@code Sprint} (gives class names and the jar name)
  * @param packageName Java package of the project's classes
  */

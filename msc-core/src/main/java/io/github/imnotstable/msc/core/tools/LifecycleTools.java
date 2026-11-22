@@ -49,11 +49,10 @@ public final class LifecycleTools {
         ServerConsole console = new ServerConsole(hub, server, marks);
         WorldBackups backups = new WorldBackups(config, hub, server, run, world, java.time.Clock.systemDefaultZone());
         registry.add("project_scaffold",
-                "Create a new project from a template (Gradle KTS, tests wired in). Target directory must be empty.",
+                "Create a bare project from a template (Gradle KTS build, dev server task, empty entry point). Target directory must be empty.",
                 Schema.of().req("name", "string", "Project name, for example MyPlugin")
                         .opt("dir", "string", "Folder in the workspace. Default: the workspace")
-                        .opt("template", "string", "paper-plugin (default), fabric-mod (also Quilt), neoforge-mod, forge-mod, minestom-server, velocity-plugin, or a minigame base (kit, stages, /game"
-                                + "): paper-game, fabric-game, minestom-game")
+                        .opt("template", "string", "paper-plugin (default), fabric-mod (also Quilt), neoforge-mod, forge-mod, minestom-server or velocity-plugin")
                         .opt("package", "string", "Java package. Default com.example.<name>")
                         .opt("acceptEula", "boolean", EulaPrompts.SCAFFOLD_EULA_ARG),
                 scaffold::run);

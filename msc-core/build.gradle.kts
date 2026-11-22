@@ -237,7 +237,7 @@ repoInputs.on(repoChecks).set("decisions", rootProject.fileTree(rootDir) {
 repoInputs.on(repoChecks).set("toolDoc", rootProject.file("msc-docs/docs/tools.md"))
 
 tasks.register<Test>("e2eTest") {
-    description = "Scaffolds minestom-game and drives a real Minestom server end to end through the installed core."
+    description = "Scaffolds minestom-server and drives a real Minestom server end to end through the installed core."
     group = "verification"
     testClassesDirs = sourceSets.test.get().output.classesDirs
     classpath = sourceSets.test.get().runtimeClasspath

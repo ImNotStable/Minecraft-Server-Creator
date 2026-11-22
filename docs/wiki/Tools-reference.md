@@ -15,7 +15,7 @@ Coordinates are text: a position is `x,y,z`, a region is `x1,y1,z1 x2,y2,z2`, an
 
 | Tool | What it does |
 | --- | --- |
-| `project_scaffold` | Creates a new project from a template (`paper-plugin` with Minecraft internals (NMS) available, `fabric-mod`, `neoforge-mod`, `forge-mod`, `minestom-server`, and `paper-game`, `fabric-game`, `minestom-game` for minigames). |
+| `project_scaffold` | Creates a bare project from a template (`paper-plugin` with Minecraft internals (NMS) available, `fabric-mod`, `neoforge-mod`, `forge-mod`, `minestom-server`, `velocity-plugin`): Gradle build, dev server task, empty entry point. |
 | `server_setup` | Downloads the server and installs the agent and dev settings. `mode=game` switches to survival and normal difficulty for testing games; `mode=build` back to creative and peaceful. |
 | `plugins` | Finds plugins and mods on Modrinth, Hangar and SpigotMC (`search=`), installs them by id with their required dependencies for this server's platform and Minecraft version (`install=modrinth:luckperms`), checksum-checked, or lists the installed ones. Every call checks the folder and says which jar will not load and why: built for another platform, a required dependency missing, or one plugin in two jars. It never suggests what to install. |
 | `server_start` | Starts the server and reports only startup warnings and errors. |

@@ -1,12 +1,23 @@
 # Sky Sprint
 
-Turn the project in the workspace (package `bench.sprint`, main class `SprintServer`) into "Sky Sprint", a short timed race.
+Turn the project in the workspace (package `bench.sprint`, main class `SprintServer`) into "Sky Sprint", a short timed race. The project is a bare Minestom server: its `main` only starts a flat world. Write the game yourself.
 
-Keep the template's classes and these public methods and constructors, because the checker's tests call them: `SprintServer.createWorld(InstanceManager)`, `GameConfig.game()`, `GameConfig.stages()`, `Stage.name()`, `Stage.spawn()`, `new Game(GameConfig, Instance, Progress, Runnable)`, `Game.applyWorldRules()`, `Game.stage(Player)`, `GameEvents.register(EventNode<Event>, Game)`, `new GameCommand(Game, Function<String, Player>)` and `GameCommand.handle(Player, String[])` with its `Reply(ok, text)`. Add anything else you like. The checker builds the world and game the way the template's `GameTest` does, without `main`, so everything below must work that way too.
+The checker's tests call these, so write them with exactly these signatures (all in `bench.sprint`):
+
+- `static Instance SprintServer.createWorld(InstanceManager)`: makes the flat world, with the course blocks below in it.
+- `record Stage(String name, Pos spawn, ...)`: one stage; add any other components you need (such as its goal).
+- `GameConfig.game()` returns a `GameConfig`; `GameConfig.stages()` returns its `List<Stage>` in order.
+- `new Progress(Path)`: saved per-player data, kept in that file.
+- `new Game(GameConfig, Instance, Progress, Runnable)` (the checker passes a Runnable that does nothing), `Game.applyWorldRules()`, `Game.world()` (the `Instance`) and `Game.stage(Player)` (the player's current `Stage`). A player starts at the first stage. A player whose position enters a stage's goal moves on to the next stage and is teleported to its spawn.
+- `static void GameEvents.register(EventNode<Event>, Game)`: adds every listener the game needs.
+- `new GameCommand(Game, Function<String, Player>)` (the function finds an online player by name, or returns null) and `List<GameCommand.Reply> GameCommand.handle(Player, String[])`, where `record Reply(boolean ok, String text)`. `handle` gets the words after `game`; the player is null for the console. Register it as the `/game` command in `main`.
+- `main` must read console commands from standard input, one per line: `stop` stops the server, anything else runs as a command (the checker types `game ...` lines there).
+
+The checker builds the world and game the way these signatures suggest, without `main`, so everything below must work that way too.
 
 ## Course
 
-Replace the template's stages with these three, in this order:
+Three stages, in this order:
 
 1. `lobby`: spawn 0.5, -60, 0.5. Goal: blocks x 0, y -60 to -58, z 4 to 5. Gold blocks under it at x 0, y -61, z 4 and 5.
 2. `run`: spawn 0.5, -60, 10.5. Goal: blocks x -1 to 1, y -60 to -58, z 30 to 31.
@@ -26,6 +37,8 @@ Coin pads: emerald blocks at x 0, y -61 (in place of the grass), z 15, 20 and 25
 ## Admin commands
 
 Add these `/game` subcommands, with exactly these replies (the player is named Steve here):
+
+- `game stage <stage> <player>`: moves the player to that stage and its spawn.
 
 - `game best Steve`: `Steve best: 3.0s`, or `Steve has no time yet`.
 - `game top`: up to three lines, best first, like `1. Steve 3.0s`, or `no times yet`.

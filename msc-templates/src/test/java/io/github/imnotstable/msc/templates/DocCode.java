@@ -17,9 +17,6 @@ import java.util.stream.Stream;
  * which {@link TemplateDocNamesTest} finds in code that the template builds compile.
  */
 final class DocCode {
-    /** Test files that only name what the docs name, copied into the recipe scaffold of their template. */
-    static final String DOC_NAMES = "/doc-names/";
-
     private static final Pattern FENCE = Pattern.compile("^```(\\w*)\\n(.*?)^```$", Pattern.MULTILINE | Pattern.DOTALL);
     private static final Pattern SPAN = Pattern.compile("`([^`\\n]+)`");
     private static final Pattern PACKAGE = Pattern.compile("^package ([\\w.]+);", Pattern.MULTILINE);

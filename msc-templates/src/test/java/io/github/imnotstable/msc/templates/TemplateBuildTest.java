@@ -17,7 +17,7 @@ import org.junit.jupiter.api.Test;
 
 /**
  * Scaffolds each project template and runs its own {@code gradlew build}, which compiles it
- * against Paper, Fabric, NeoForge, Forge or Minestom and runs its tests. Only runs via
+ * against Paper, Fabric, NeoForge, Forge or Minestom. Only runs via
  * {@code ./gradlew :msc-templates:verifyTemplates}. The same run lists the project's tasks, and every
  * {@code ./gradlew <task>} its CLAUDE.md and README.md name must be among them. The builds of one test class share
  * the Gradle user home and one daemon.
@@ -37,47 +37,32 @@ class TemplateBuildTest {
     }
 
     @Test
-    void paperPluginBuildsAndPassesItsTests() throws IOException, InterruptedException {
+    void paperPluginBuilds() throws IOException, InterruptedException {
         buildsAndPassesItsTests(Templates.PAPER_PLUGIN);
     }
 
     @Test
-    void paperGameBuildsAndPassesItsTests() throws IOException, InterruptedException {
-        buildsAndPassesItsTests(Templates.PAPER_GAME);
-    }
-
-    @Test
-    void fabricModBuildsAndPassesItsTests() throws IOException, InterruptedException {
+    void fabricModBuilds() throws IOException, InterruptedException {
         buildsAndPassesItsTests(Templates.FABRIC_MOD);
     }
 
     @Test
-    void neoforgeModBuildsAndPassesItsTests() throws IOException, InterruptedException {
+    void neoforgeModBuilds() throws IOException, InterruptedException {
         buildsAndPassesItsTests(Templates.NEOFORGE_MOD);
     }
 
     @Test
-    void forgeModBuildsAndPassesItsTests() throws IOException, InterruptedException {
+    void forgeModBuilds() throws IOException, InterruptedException {
         buildsAndPassesItsTests(Templates.FORGE_MOD);
     }
 
     @Test
-    void minestomServerBuildsAndPassesItsTests() throws IOException, InterruptedException {
+    void minestomServerBuilds() throws IOException, InterruptedException {
         buildsAndPassesItsTests(Templates.MINESTOM_SERVER);
     }
 
     @Test
-    void minestomGameBuildsAndPassesItsTests() throws IOException, InterruptedException {
-        buildsAndPassesItsTests(Templates.MINESTOM_GAME);
-    }
-
-    @Test
-    void fabricGameBuildsAndPassesItsTests() throws IOException, InterruptedException {
-        buildsAndPassesItsTests(Templates.FABRIC_GAME);
-    }
-
-    @Test
-    void velocityPluginBuildsAndPassesItsTests() throws IOException, InterruptedException {
+    void velocityPluginBuilds() throws IOException, InterruptedException {
         buildsAndPassesItsTests(Templates.VELOCITY_PLUGIN);
     }
 
