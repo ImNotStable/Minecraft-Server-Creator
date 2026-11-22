@@ -58,6 +58,24 @@ final class Noise {
         return Math.clamp(sum / norm, 0, 1);
     }
 
+    /** Smooth 3D value noise in -1..1, for surfaces that bulge in every direction (rough shapes, ADR 0077). */
+    static double value3(long seed, double x, double y, double z) {
+        int x0 = (int) Math.floor(x);
+        int y0 = (int) Math.floor(y);
+        int z0 = (int) Math.floor(z);
+        double u = fade(x - x0);
+        double v = fade(y - y0);
+        double w = fade(z - z0);
+        double[] c = new double[8];
+        for (int i = 0; i < 8; i++) {
+            long h = hash(seed ^ BlockPattern.mix(y0 + (i >> 1 & 1)), x0 + (i & 1), z0 + (i >> 2 & 1));
+            c[i] = unit(h) * 2 - 1;
+        }
+        double a = lerp(v, lerp(u, c[0], c[1]), lerp(u, c[2], c[3]));
+        double b = lerp(v, lerp(u, c[4], c[5]), lerp(u, c[6], c[7]));
+        return lerp(w, a, b);
+    }
+
     /** A well-spread hash of a lattice point, for jitter and picks. */
     static long hash(long seed, long x, long z) {
         return BlockPattern.mix(seed ^ BlockPattern.mix(x * 0x9E3779B97F4A7C15L ^ BlockPattern.mix(z)));

@@ -16,8 +16,9 @@ LAND FIRST
 
 THE LOOP (every build)
 1. Plan in 3 lines: purpose and story (who lived here, what happened), silhouette (3+ masses of different heights), palette.
-2. Block out the masses: walls 1-2 thick, real floor heights (4-5 per storey), doors 2-3 tall, roofs.
-3. Detail pass (below). This is most of the work; a block-out is not a build.
+2. Block out the masses: walls 1-2 thick, real floor heights (4-5 per storey), doors 2-3 tall, roofs (roof step).
+3. Detail pass (below). This is most of the work; a block-out is not a build. Straight walls and rows are fine:
+   good builds have plenty. What makes them look hand-made is the single blocks layered on that structure.
 4. world_render the build from 2 views (iso and one side) and run world_summary review=true on the same region.
 5. Name the 3 weakest things concretely ("north wall is a flat 12x8 plane of one block"), fix them in one build_batch, re-render. Repeat until review passes and the render reads well. Never call a build done on its first render, and never praise a render the review flags.
 
@@ -34,13 +35,25 @@ PALETTE
   verdant/elven: moss_block, mossy_cobblestone, birch and cherry wood, azalea leaves, vines, flowering_azalea
   astral: end_stone_bricks, purpur, amethyst_block, quartz, crying_obsidian, end_rod, glass panes
 
-DETAIL PASS (use most of these on every build)
-- Depth: no wall is one flat plane. Pillars or a timber frame 1 block out, windows set 1 block in, a plinth at the base, a stair/slab cornice at the top.
-- Shaped blocks: stairs and slabs for roofs, sills, eaves and trim; walls and fences for railings and buttresses; trapdoors as shutters and panels; panes and bars in windows.
-- Roofs: pitched with stairs, overhang 1, gable ends with a different material, dormers or a chimney to break long ridges.
-- Props: lanterns on chains, barrels, crates, banners, signs, flower pots, hay, carts, market stalls; furnished interiors (beds, tables from slabs and fences, shelves of bookshelves).
-- Nature: leaves and vines on walls, moss and coarse_dirt mixed into paths, trees and bushes around builds, water features.
-- Age and story: cracked and mossy variants, a broken wall edge (seed= mixes with air), rubble at the base, a collapsed roof corner.
+DETAIL PASS (use most of these on every build; the steps work on what is already built, so block out first)
+- Joining is automatic: fences, panes, bars and walls connect, stair corners turn, doors, beds and tall plants get their
+  other half. A stair, trapdoor, torch, lantern, chest or ladder written without facing= turns to the wall beside it, so
+  "set X,Y,Z oak_stairs" or a legend "s=oak_stairs" is enough for a single detail block. Give a property to keep yours.
+- Roofs: roof (gable, hip, shed) over the wall box: stairs face up the slope with corners joined, overhang=1-2, slabs for a
+  low pitch, gable= closes the ends, a taller box caps it flat. Break long ridges: a second, lower roof, a dormer, a chimney.
+- Depth: no wall is one flat plane. trim at=base (plinth), at=band level=Y (belt course), at=top (cornice) and at=corners
+  (pillars or quoins of logs or polished stone); windows set 1 in, pillars or a timber frame 1 out.
+- Windows and doors: trim at=sills, lintels, shutters (trapdoors), frames; panes or bars in the hole.
+- Gradient: a>b>c on the walls, darker and heavier at the base (cobblestone>stone_bricks>andesite), seams ragged, no
+  shade skipped; grade=x or z for a run along a wall.
+- Props: decorate on=edge (barrels, shelves, crates along walls), on=corner (beds, chests), on=ceiling with tip=
+  (chain then lantern), on=floor (carpets in patches with clump=), on=top (props on ledges); furnished interiors, tables
+  from slabs and fences, beds, shelves; lanterns on chains, banners, signs, flower pots, hay, carts, market stalls.
+- Nature: decorate on=wall (vines, glow lichen) from the wall tops down, on=ground (grass, flowers, leaf bushes) around
+  the base with clump=, on=ceiling (hanging roots, weeping vines) under bridges and arches; trees and water nearby.
+- Age and story: weather (moss low and on ledges, cracks on edges, verdigris on copper, swap= for other blocks), break=
+  for a ruin's broken tops with chip= slabs and stairs; rubble at the base, a collapsed roof corner.
+- Organic shapes: sphere/dome rough=N for boulders, leaf canopies and hedges, never a perfect ball.
 - Light: lanterns, torches or glowing blocks at doors, paths and windows; no dark interiors.
 
 SCALE AND COMPOSITION
