@@ -106,6 +106,12 @@ public final class Canvas {
         };
     }
 
+    /** The world alone in {@code region}, as it was before this build (ADR 0077). */
+    public Lookup before(Region region) throws InterruptedException {
+        BlockGrid world = world(region);
+        return (x, y, z) -> world.region().contains(x, y, z) ? world.stateAt(x, y, z) : "minecraft:air";
+    }
+
     /** A block by position. */
     @FunctionalInterface
     public interface Lookup {
@@ -174,6 +180,31 @@ public final class Canvas {
             String pair = p.replace(" ", "");
             if (!pair.isEmpty()) {
                 out.add(pair);
+            }
+        }
+        return out;
+    }
+
+    /** The positions this build sets with a state {@code wanted} accepts, as x, y, z (ADR 0077). */
+    List<int[]> where(java.util.function.Predicate<String> wanted) {
+        boolean[] pick = new boolean[palette.size()];
+        boolean any = false;
+        for (int i = 0; i < pick.length; i++) {
+            pick[i] = wanted.test(palette.get(i));
+            any |= pick[i];
+        }
+        List<int[]> out = new ArrayList<>();
+        if (!any) {
+            return out;
+        }
+        int i = 0;
+        for (int y = bounds.min().y(); y <= bounds.max().y(); y++) {
+            for (int z = bounds.min().z(); z <= bounds.max().z(); z++) {
+                for (int x = bounds.min().x(); x <= bounds.max().x(); x++, i++) {
+                    if (cells[i] >= 0 && pick[cells[i]]) {
+                        out.add(new int[] {x, y, z});
+                    }
+                }
             }
         }
         return out;

@@ -67,7 +67,7 @@ class WorldToolsTest {
 
     @Test
     void renderLabelsSignsWithTheirText() {
-        h.ok("build_batch", "steps", "set 2,64,2 oak_sign");
+        h.ok("build_batch", "steps", "set 2,64,2 oak_sign[rotation=0]");
 
         assertThat(h.ok("world_render", "region", "0,62,0 5,67,5", "view", "top", "size", 64))
                 .contains("sign \"Welcome\" at 2.5,64.5,2.5");
@@ -90,7 +90,7 @@ class WorldToolsTest {
     void fillThenSliceShowsLayersWithLegend() {
         assertThat(h.ok("build_batch", "steps", "fill 0,64,0 3,64,2 oak_planks"))
                 .isEqualTo("edit e1: 12 blocks changed, region world 0,64,0 3,64,2");
-        h.ok("build_batch", "steps", "set 1,65,1 glass\nset 2,65,1 oak_stairs[facing=north]");
+        h.ok("build_batch", "steps", "set 1,65,1 glass\nset 2,65,1 oak_stairs[facing=north,half=bottom]");
         String slice = h.ok("world_slice", "region", "0,63,0 3,66,2");
         assertThat(slice).isEqualTo("""
                 region world 0,63,0 3,66,2 size 4x4x3 rows=z cols=x
@@ -103,7 +103,7 @@ class WorldToolsTest {
                 ....
                 y=66 all .""");
         assertThat(h.ok("world_slice", "region", "2,65,1 2,65,1", "states", true))
-                .contains("#=oak_stairs[facing=north]");
+                .contains("#=oak_stairs[facing=north,half=bottom]");
     }
 
     @Test
@@ -153,7 +153,7 @@ class WorldToolsTest {
     @Test
     void sliceWritesRepeatedRowsAndLayerRunsOnceAndPastesBack() {
         h.ok("build_batch", "steps", "fill 0,64,0 6,67,6 stone_bricks walls\nfill 0,68,0 6,68,6 oak_planks\n"
-                + "set 3,64,0 oak_door[half=lower]\nset 0,66,3 glass");
+                + "set 3,64,0 oak_door[facing=north,half=lower,hinge=left,open=false]\nset 0,66,3 glass");
         String slice = h.ok("world_slice", "region", "0,64,0 6,70,6");
         assertThat(slice).isEqualTo("""
                 region world 0,64,0 6,70,6 size 7x7x7 rows=z cols=x
@@ -176,7 +176,11 @@ class WorldToolsTest {
                 y=68 all a
                 y=69..70 all .""");
         String body = slice.substring(slice.indexOf("legend:"));
-        h.ok("build_batch", "steps", "structure 20,64,20\n" + body + "\nend");
+        // A slice without states leaves the door's placement unsaid: build_batch asks for it (ADR 0077).
+        assertThat(h.error("build_batch", "steps", "structure 20,64,20\n" + body + "\nend"))
+                .contains("oak_door needs facing=").contains("states=true");
+        String sayDoor = body.replace("b=oak_door@3,64,0", "b=oak_door[facing=north,half=lower,hinge=left,open=false]");
+        h.ok("build_batch", "steps", "structure 20,64,20\n" + sayDoor + "\nend");
         String copy = h.ok("world_slice", "region", "20,64,20 26,70,26");
         assertThat(copy.substring(copy.indexOf("legend:")))
                 .isEqualTo(body.replace("@3,64,0", "@23,64,20").replace("@0,66,3", "@20,66,23"));
@@ -374,12 +378,12 @@ class WorldToolsTest {
 
     @Test
     void schematicRoundTrip() throws Exception {
-        h.ok("build_batch", "steps", "structure 0,64,0\nlegend: #=stone_bricks s=oak_stairs[facing=east]\ny=0\n#s\n.#\nend");
+        h.ok("build_batch", "steps", "structure 0,64,0\nlegend: #=stone_bricks s=oak_stairs[facing=east,half=bottom]\ny=0\n#s\n.#\nend");
         assertThat(h.ok("structure_save", "region", "0,64,0 1,64,1", "file", "out/tiny.schem")).startsWith("saved 2x1x2 to ");
         assertThat(Files.size(workspace.resolve("out/tiny.schem"))).isPositive();
         h.ok("build_batch", "steps", "structure 8,80,8 file=out/tiny.schem");
         assertThat(h.agent.get(8, 80, 8)).isEqualTo("minecraft:stone_bricks");
-        assertThat(h.agent.get(9, 80, 8)).isEqualTo("minecraft:oak_stairs[facing=east]");
+        assertThat(h.agent.get(9, 80, 8)).isEqualTo("minecraft:oak_stairs[facing=east,half=bottom]");
         assertThat(h.agent.get(9, 80, 9)).isEqualTo("minecraft:stone_bricks");
         assertThat(h.error("build_batch", "steps", "structure 0,0,0 file=missing.schem")).contains("no file");
     }

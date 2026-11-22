@@ -35,15 +35,14 @@ public final class BuildScript {
     /** What every step verb takes, for the tool descriptions. */
     public static final String HELP = """
             One step per line; later steps win. B = a block or a mix like grass_block:78,moss_block:10; B{SNBT} adds \
-            block entity data. Every step \
-            takes replace=a,b (change only those; air = empty), seed=N, repeat=N step=DX,DY,DZ, clump=N (mix in \
-            patches N across).
+            block entity data; a>b>c a gradient (grade=y|x|z|-y). Every step takes replace=a,b (air = empty), seed=N, \
+            repeat=N step=DX,DY,DZ, clump=N (patches). Unsaid facing, half, axis, type, open, hinge... is refused.
             fill X,Y,Z X,Y,Z B [hollow|outline|walls]
             set X,Y,Z B
             cylinder X,Y,Z r=R h=H B [hollow] [thick=T] [inner=R]   (X,Y,Z = bottom centre)
             ring X,Y,Z r=R B [h=H] [thick=T]
             disc X,Y,Z r=R B [inner=R]
-            sphere|dome X,Y,Z r=R B [hollow] [thick=T]   (dome: X,Y,Z = floor centre)
+            sphere|dome X,Y,Z r=R B [hollow] [thick=T] [rough=N]   (dome: X,Y,Z = floor centre)
             line X,Y,Z X,Y,Z B [w=W]
             helix X,Y,Z r=R h=H B [turns=T] [w=W] [start=DEG]   (bottom centre; turns<0 anticlockwise; \
             start=0 north)
@@ -53,6 +52,10 @@ public final class BuildScript {
             over edge= blocks, 0 fills the box; below ground= digs, water= fills)
             path X,Y,Z X,Y,Z ... B [w=3 wander=N depth=N bed=B]   (curved way on the ground; depth= digs a stream)
             scatter X,Y,Z X,Y,Z B|file=PATH,PATH [spacing=8 chance=100 on=B sink=N]   (on the ground, one per cell)
+            roof X,Y,Z X,Y,Z B [style=gable|hip|shed axis=x|z high=DIR pitch=1|2 overhang=1 gable=B ridge=B]
+            trim X,Y,Z X,Y,Z B at=top|base|band|corners|sills|lintels|shutters|frames [out=1 level=Y]
+            decorate X,Y,Z X,Y,Z B [on=top|ground|floor|edge|corner|wall|ceiling chance=25 spacing=N length=A-B tip=B]
+            weather X,Y,Z X,Y,Z [amount=30 swap=a>b break=N chip=B]   (these four: msc_status guide=build)
             structure X,Y,Z [X,Y,Z ...] [rotate=90] [face=X,Z] [anchor=center] [air=false] [file=PATH]
               then the text and "end", unless file= (.schem or text). Text: "legend: #=stone g=glass", then per \
             layer "y=N" and rows (z) of symbols (x); "." air, "_" unchanged; "y=N same as y=M", "y=N all #". rotate \
@@ -63,6 +66,8 @@ public final class BuildScript {
     private static final Pattern OPTION = Pattern.compile("[a-z]+=.*");
     private static final Pattern BAND = Pattern.compile("\\d+=.+");
     private static final Set<String> FLAGS = Set.of("solid", "hollow", "outline", "walls");
+    /** Steps that set facing, half and the like on their own blocks from where each lands. */
+    private static final Set<String> SHAPING = Set.of("roof", "trim", "decorate", "weather");
 
     /** Where structures come from: files in the workspace and the world itself. */
     public interface StructureFiles {
@@ -89,6 +94,7 @@ public final class BuildScript {
     public List<Step> parse(String text) throws java.io.IOException, InterruptedException {
         List<Step> steps = new ArrayList<>();
         String[] lines = text.split("\\R");
+        List<String> unsaid = new ArrayList<>(); // every line's unsaid block data, refused together (ADR 0077)
         for (int i = 0; i < lines.length; i++) {
             String line = lines[i].strip();
             if (line.isEmpty() || line.startsWith("#") || line.startsWith("//")) {
@@ -107,14 +113,21 @@ public final class BuildScript {
                     if (j == lines.length) {
                         throw new ToolException("structure has no closing \"end\" line");
                     }
-                    steps.add(stamp(parts, TextGrid.parse(body.toString(), world, new BlockPos(0, 0, 0))));
                     i = j;
+                    steps.add(stamp(parts, TextGrid.parse(body.toString(), world, new BlockPos(0, 0, 0))));
                 } else {
                     steps.add(step(parts));
                 }
             } catch (ToolException e) {
+                if (e.getMessage().startsWith(BlockRules.UNSAID)) {
+                    unsaid.add("line " + lineNo + ": " + e.getMessage().substring(BlockRules.UNSAID.length()));
+                    continue;
+                }
                 throw new ToolException("line " + lineNo + " (" + abbreviate(line) + "): " + e.getMessage());
             }
+        }
+        if (!unsaid.isEmpty()) {
+            throw new ToolException("nothing placed; " + BlockRules.UNSAID + String.join("; ", unsaid) + BlockRules.EXAMPLE);
         }
         if (steps.isEmpty()) {
             throw new ToolException("no steps; write one step per line, for example: fill 0,64,0 4,64,4 stone");
@@ -180,10 +193,15 @@ public final class BuildScript {
 
     /** Build a step from its parts. */
     public Step step(Parts p) throws java.io.IOException, InterruptedException {
+        return step(p, null);
+    }
+
+    /** {@code span}: the box a gradient spreads over, once the step without it has told its bounds. */
+    private Step step(Parts p, Region span) throws java.io.IOException, InterruptedException {
         if (p.options().containsKey("repeat") && !p.verb().equals("structure") && !p.verb().equals("copy")) {
             return repeated(p);
         }
-        Options o = new Options(p);
+        Options o = new Options(p, span);
         Step step = switch (p.verb()) {
             case "fill" -> {
                 o.points(2);
@@ -198,6 +216,7 @@ public final class BuildScript {
                 if (BlockPattern.isMix(state)) {
                     throw new ToolException("set takes one block, not a mix");
                 }
+                BlockRules.require(List.of(state));
                 yield new Step.Set(world, p.points(), List.of(state), o.replace());
             }
             case "cylinder", "ring", "disc" -> {
@@ -218,6 +237,11 @@ public final class BuildScript {
                 boolean hollow = p.flags().contains("hollow");
                 o.flags(Set.of("hollow"));
                 int thick = hollow ? o.integer("thick", 1, 1, r + 1) : o.forbid("thick", "add hollow");
+                int rough = o.integer("rough", 0, 0, Math.max(1, r));
+                if (rough > 0) {
+                    yield new Step.Rough(world, p.points().get(0), r, hollow ? thick : 0, p.verb().equals("dome"), rough,
+                            o.seed(), o.block(), o.replace());
+                }
                 yield new Step.Sphere(world, p.points().get(0), r, hollow ? thick : 0, p.verb().equals("dome"),
                         o.block(), o.replace());
             }
@@ -323,6 +347,71 @@ public final class BuildScript {
                         on == null ? List.of() : BlockPattern.splitTopLevel(on).stream().map(String::trim)
                                 .filter(s -> !s.isEmpty()).toList(), o.integer("sink", 0, 0, 64), o.seed(), o.replace());
             }
+            case "roof" -> {
+                o.points(2);
+                o.flags(Set.of());
+                Region box = new Region(world, p.points().get(0), p.points().get(1));
+                String style = o.string("style");
+                String axisText = o.string("axis");
+                int axis = axisText == null ? (box.sizeX() >= box.sizeZ() ? 0 : 2) : switch (axisText) {
+                    case "x" -> 0;
+                    case "z" -> 2;
+                    default -> throw new ToolException("axis is x or z (the way the ridge runs), got " + axisText);
+                };
+                String highText = o.string("high");
+                int high = highText == null ? 2 : Joins.dir(highText);
+                if (high < 0) {
+                    throw new ToolException("high is north, east, south or west (the side a shed roof rises to), got "
+                            + highText);
+                }
+                BlockPattern block = o.block();
+                yield new Step.Roof(box, block, style == null ? "gable" : style, axis, high, o.integer("pitch", 1, 1, 3),
+                        o.integer("overhang", 1, 0, 8), o.pattern("gable", null), o.pattern("ridge", Detail.ridgeFor(block)),
+                        o.replace());
+            }
+            case "trim" -> {
+                o.points(2);
+                o.flags(Set.of());
+                String at = o.string("at");
+                if (at == null) {
+                    throw new ToolException("trim needs at=" + String.join("|", Step.Trim.AT));
+                }
+                int level = at.equals("band") ? o.integer("level", null, -2048, 4096) : o.forbid("level", "at=band");
+                yield new Step.Trim(new Region(world, p.points().get(0), p.points().get(1)), o.block(), at, level,
+                        o.integer("out", 1, 1, 4), o.replace());
+            }
+            case "decorate" -> {
+                o.points(2);
+                o.flags(Set.of());
+                String on = o.string("on");
+                on = on == null ? "top" : on;
+                int spacing = o.integer("spacing", 1, 1, 256);
+                int[] length = o.range("length", on.equals("wall") ? new int[] {1, 4} : new int[] {1, 1}, 1, 64);
+                yield new Step.Decorate(new Region(world, p.points().get(0), p.points().get(1)), o.block(),
+                        o.pattern("tip", null), on, o.integer("chance", spacing > 1 ? 100 : 25, 1, 100), spacing,
+                        length[0], length[1], o.clump(), o.seed(), o.replace());
+            }
+            case "weather" -> {
+                o.points(2);
+                o.flags(Set.of());
+                if (p.block() != null) {
+                    throw new ToolException("weather takes no block; it ages what is there (swap=from>to adds pairs)");
+                }
+                Map<String, String> swaps = new HashMap<>();
+                String swap = o.string("swap");
+                if (swap != null) {
+                    for (String pair : BlockPattern.splitTopLevel(swap)) {
+                        String[] ab = pair.split(">");
+                        if (ab.length != 2 || ab[0].isBlank() || ab[1].isBlank()) {
+                            throw new ToolException("swap takes from>to pairs, such as swap=bricks>mud_bricks; got " + pair);
+                        }
+                        swaps.put(BlockNames.brief(BlockNames.id(BlockNames.full(ab[0].trim()))), ab[1].trim());
+                    }
+                }
+                yield new Step.Weather(new Region(world, p.points().get(0), p.points().get(1)),
+                        o.integer("amount", 30, 0, 100), swaps, o.integer("break", 0, 0, 100), o.pattern("chip", null),
+                        o.seed(), o.replace());
+            }
             case "structure" -> {
                 String file = p.options().get("file");
                 if (file == null) {
@@ -332,10 +421,14 @@ public final class BuildScript {
             }
             case "copy" -> copy(p);
             default -> throw new ToolException("unknown step \"" + p.verb()
-                    + "\"; use fill, set, cylinder, ring, disc, sphere, dome, line, helix, bands, terrain, path, scatter, structure or copy");
+                    + "\"; use fill, set, cylinder, ring, disc, sphere, dome, line, helix, bands, terrain, path, scatter, roof, trim, "
+                    + "decorate, weather, structure or copy");
         };
         if (!p.verb().equals("structure") && !p.verb().equals("copy")) {
             o.done();
+        }
+        if (o.unspanned && span == null) {
+            return step(p, step.bounds());
         }
         return step;
     }
@@ -435,6 +528,7 @@ public final class BuildScript {
         boolean air = airText == null || Boolean.parseBoolean(airText);
         List<String> replace = o.replace();
         o.done();
+        BlockRules.require(structure.palette());
         Region0 size = new Region0(structure.region().sizeX(), structure.region().sizeZ());
         Map<Integer, BlockGrid> turned = new HashMap<>();
         List<Step.Stamp.Placement> placements = new ArrayList<>();
@@ -462,10 +556,50 @@ public final class BuildScript {
     /** Option access that remembers what was read, so unknown options are reported. */
     private static final class Options {
         private final Parts p;
+        private final Region span;
         private final Set<String> used = new java.util.HashSet<>(Set.of("replace", "seed"));
+        /** A gradient was read before the step's box was known. */
+        boolean unspanned;
 
         Options(Parts p) {
+            this(p, null);
+        }
+
+        Options(Parts p, Region span) {
             this.p = p;
+            this.span = span;
+        }
+
+        /** A gradient spread over the step's box, along grade= (y by default). */
+        BlockPattern spanned(BlockPattern b) {
+            if (!b.needsSpan()) {
+                return b;
+            }
+            String grade = string("grade");
+            if (span == null) {
+                unspanned = true;
+                return b;
+            }
+            return b.spanning(span, grade == null ? "y" : grade.trim());
+        }
+
+        /** {@code key=N} or {@code key=A-B}, as {min, max}. */
+        int[] range(String key, int[] fallback, int min, int max) {
+            String v = string(key);
+            if (v == null) {
+                return fallback;
+            }
+            String[] ab = v.trim().split("-", 2);
+            try {
+                int a = Integer.parseInt(ab[0].trim());
+                int b = ab.length == 2 ? Integer.parseInt(ab[1].trim()) : a;
+                if (a < min || b > max || a > b) {
+                    throw new ToolException(key + " must be N or A-B within " + min + " to " + max + ", got " + v);
+                }
+                return new int[] {a, b};
+            } catch (NumberFormatException e) {
+                throw new ToolException(key + " must be N or A-B, got " + v);
+            }
         }
 
         void used(String key) {
@@ -558,13 +692,24 @@ public final class BuildScript {
         }
 
         BlockPattern block() {
-            return BlockPattern.parse(requireBlock(), seed()).withClump(clump());
+            return chosen(spanned(BlockPattern.parse(requireBlock(), seed()).withClump(clump())));
+        }
+
+        /**
+         * Blocks the agent writes straight into the build say how they are placed (ADR 0077); the detail steps turn
+         * their own blocks to fit, so those are left to them.
+         */
+        BlockPattern chosen(BlockPattern b) {
+            if (!SHAPING.contains(p.verb())) {
+                BlockRules.require(b.allStates());
+            }
+            return b;
         }
 
         /** A block option such as {@code top=grass_block}, with the step's seed and clump; {@code fallback} when absent. */
         BlockPattern pattern(String key, BlockPattern fallback) {
             String v = string(key);
-            return v == null ? fallback : BlockPattern.parse(v, seed()).withClump(clump());
+            return v == null ? fallback : chosen(spanned(BlockPattern.parse(v, seed()).withClump(clump())));
         }
 
         int clump() {

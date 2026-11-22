@@ -88,10 +88,22 @@ public final class Builder {
 
     /** Draw the steps, reading the world where a step needs it. */
     private Canvas draw(Region bounds, List<Step> steps, String tool) throws InterruptedException {
-        Canvas canvas = new Canvas(bounds, r -> world.readAll(r, MAX_VOLUME, tool));
+        return drawJoined(bounds, steps, r -> world.readAll(r, MAX_VOLUME, tool));
+    }
+
+    /**
+     * Draw the steps on a canvas one block wider than they reach, then join what they placed (ADR 0077): a door's top
+     * or a bed's head may land just outside the steps' own bounds.
+     */
+    static Canvas drawJoined(Region bounds, List<Step> steps, Canvas.WorldReader reader) throws InterruptedException {
+        Region grown = Region.of(bounds.world(), bounds.min().x() - 1, bounds.min().y(), bounds.min().z() - 1,
+                bounds.max().x() + 1, bounds.max().y() + 1, bounds.max().z() + 1);
+        Canvas canvas = new Canvas(grown, reader);
         for (Step s : steps) {
             s.draw(canvas);
         }
+        Joins.apply(canvas);
+        BlockRules.requireWater(canvas);
         return canvas;
     }
 

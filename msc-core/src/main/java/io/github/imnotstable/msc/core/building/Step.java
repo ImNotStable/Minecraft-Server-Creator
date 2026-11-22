@@ -685,4 +685,160 @@ public sealed interface Step {
             }
         }
     }
+
+    /**
+     * A ball or dome whose surface is pushed in and out by up to {@code rough} blocks of smooth noise (ADR 0077): a
+     * boulder, a leaf canopy, a cave mouth, a hedge; never a perfect sphere.
+     */
+    record Rough(String world, BlockPos center, int radius, int thickness, boolean dome, int rough, long seed,
+                 BlockPattern block, List<String> replace) implements Step {
+        @Override
+        public Region bounds() {
+            int r = radius + rough;
+            return Region.of(world, center.x() - r, dome ? center.y() : center.y() - r, center.z() - r,
+                    center.x() + r, center.y() + r, center.z() + r);
+        }
+
+        boolean inside(int dx, int dy, int dz) {
+            double scale = Math.max(2.5, radius / 1.6);
+            double edge = radius + 0.5 + rough * Noise.value3(seed, (center.x() + dx) / scale, (center.y() + dy) / scale,
+                    (center.z() + dz) / scale);
+            return dx * dx + dy * dy + dz * dz <= edge * edge;
+        }
+
+        @Override
+        public void draw(Canvas c) throws InterruptedException {
+            Region b = bounds();
+            Canvas.Mask mask = c.mask(b, replace);
+            int r = radius + rough;
+            for (int dy = dome ? 0 : -r; dy <= r; dy++) {
+                for (int dz = -r; dz <= r; dz++) {
+                    for (int dx = -r; dx <= r; dx++) {
+                        if (!inside(dx, dy, dz)) {
+                            continue;
+                        }
+                        if (thickness > 0 && inside(dx + thickness, dy, dz) && inside(dx - thickness, dy, dz)
+                                && inside(dx, dy, dz + thickness) && inside(dx, dy, dz - thickness)
+                                && inside(dx, dy + thickness, dz) && (dome && dy - thickness < 0 || inside(dx, dy - thickness, dz))) {
+                            continue;
+                        }
+                        int x = center.x() + dx;
+                        int y = center.y() + dy;
+                        int z = center.z() + dz;
+                        if (mask.allows(x, y, z)) {
+                            c.set(x, y, z, block.at(x, y, z));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * A pitched roof over the walls in {@code box} (ADR 0077): its rows start at the box's bottom y, the eave, and
+     * reach {@code overhang} past the walls; stairs face up the slope and their corners join, slabs alternate halves
+     * for a low pitch, full blocks step. {@code gable} closes the ends in the walls' planes; {@code ridge} tops an odd
+     * span; a box taller than one layer caps the roof flat at its top y.
+     */
+    record Roof(Region box, BlockPattern block, String style, int axis, int high, int pitch, int overhang,
+                BlockPattern gable, BlockPattern ridge, List<String> replace) implements Step {
+        public static final List<String> STYLES = List.of("gable", "hip", "shed");
+
+        public Roof {
+            if (!STYLES.contains(style)) {
+                throw new ToolException("unknown roof style " + style + "; use one of " + STYLES);
+            }
+        }
+
+        @Override
+        public Region bounds() {
+            int top = box.min().y() + Detail.roofHeight(this);
+            if (box.max().y() > box.min().y()) {
+                top = Math.min(top, box.max().y());
+            }
+            return Region.of(box.world(), box.min().x() - overhang, box.min().y(), box.min().z() - overhang,
+                    box.max().x() + overhang, top, box.max().z() + overhang);
+        }
+
+        @Override
+        public void draw(Canvas c) throws InterruptedException {
+            Detail.roof(c, this);
+        }
+    }
+
+    /**
+     * Detail along the walls already in {@code box} (ADR 0077), outside faces only (those facing away from the box's
+     * middle): {@code top} a cornice, {@code base} a plinth, {@code band} a belt course at {@code level}, {@code out}
+     * blocks deep; {@code corners} replaces outer corner columns; at window and door holes {@code sills},
+     * {@code lintels}, {@code shutters} and {@code frames}. Stairs, slabs and trapdoors are turned to fit.
+     */
+    record Trim(Region box, BlockPattern block, String at, int level, int out, List<String> replace) implements Step {
+        public static final List<String> AT = List.of("top", "base", "band", "corners", "sills", "lintels", "shutters",
+                "frames");
+
+        public Trim {
+            if (!AT.contains(at)) {
+                throw new ToolException("unknown trim at=" + at + "; use one of " + AT);
+            }
+        }
+
+        @Override
+        public Region bounds() {
+            return Region.of(box.world(), box.min().x() - out, box.min().y() - 1, box.min().z() - out,
+                    box.max().x() + out, box.max().y() + 1, box.max().z() + out);
+        }
+
+        @Override
+        public void draw(Canvas c) throws InterruptedException {
+            Detail.trim(c, this);
+        }
+    }
+
+    /**
+     * Things set where they belong on what is already in {@code box} (ADR 0077): {@code on} top (any upward face),
+     * ground (an upward face open to the sky), floor (under a roof), edge (a floor beside a wall), corner, wall
+     * (hanging down a wall face from its top) or ceiling (hanging down); {@code chance} percent of the spots, in patches with clump, or one per {@code spacing}
+     * cell; each {@code minLength} to {@code maxLength} blocks long (up from floors, down from walls and ceilings),
+     * ending in {@code tip}.
+     */
+    record Decorate(Region box, BlockPattern block, BlockPattern tip, String on, int chance, int spacing,
+                    int minLength, int maxLength, int clump, long seed, List<String> replace) implements Step {
+        public static final List<String> ON = List.of("top", "ground", "floor", "edge", "corner", "wall", "ceiling");
+
+        public Decorate {
+            if (!ON.contains(on)) {
+                throw new ToolException("unknown decorate on=" + on + "; use one of " + ON);
+            }
+        }
+
+        @Override
+        public Region bounds() {
+            boolean down = on.equals("wall") || on.equals("ceiling");
+            return Region.of(box.world(), box.min().x(), box.min().y() - (down ? maxLength : 0), box.min().z(),
+                    box.max().x(), box.max().y() + (down ? 0 : maxLength), box.max().z());
+        }
+
+        @Override
+        public void draw(Canvas c) throws InterruptedException {
+            Detail.decorate(c, this);
+        }
+    }
+
+    /**
+     * Age on what is already in {@code box} (ADR 0077), where weather would put it: moss low down and on ledges, cracks
+     * on corners and edges, verdigris on exposed copper, {@code swaps} (from id to id) by exposure, all in patches;
+     * {@code breakage} percent knocks blocks off exposed tops and edges, leaving {@code chip} (or air).
+     */
+    record Weather(Region box, int amount, Map<String, String> swaps, int breakage, BlockPattern chip, long seed,
+                   List<String> replace) implements Step {
+        @Override
+        public Region bounds() {
+            return box;
+        }
+
+        @Override
+        public void draw(Canvas c) throws InterruptedException {
+            Detail.weather(c, this);
+        }
+    }
 }
