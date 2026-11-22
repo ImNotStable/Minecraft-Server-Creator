@@ -89,6 +89,20 @@ class ApiIndexTest {
     }
 
     @Test
+    void aMissOnAllWordsListsTheClosestMatchesAndTheClassToOpen() {
+        // The Sky Sprint bench missed on "PlayerMoveEvent constructor" and "Collector collect poll" (ADR 0065).
+        assertThat(index.search("gadget constructor", null, 5, 100))
+                .isEqualTo("Gadget#Gadget(String label)");
+        assertThat(index.search("gadget create poll", null, 1, 100)).isEqualTo("""
+                no match for all of "gadget create poll"; closest, most words first:
+                Gadget#static Gadget create(String label, Gadget.Mode mode)
+                [10 more; add words or raise limit (at most 100)]
+                Try api_class name=io.github.imnotstable.msc.core.fixture.Gadget.""");
+        assertThat(index.search("widget nothing", "enum", 5, 100))
+                .isEqualTo("no matches for \"widget nothing\"\nTry api_class name=io.github.imnotstable.msc.core.fixture.Widget.");
+    }
+
+    @Test
     void eventKindFindsTheEventsOfEveryPlatform() throws Exception {
         Path events = dir.resolve("events.jar");
         try (OutputStream out = Files.newOutputStream(events); JarOutputStream zip = new JarOutputStream(out)) {
@@ -172,6 +186,30 @@ class ApiIndexTest {
         assertThat(ApiIndex.findJars(gradleHome, "paper")).containsExactly(server);
         assertThat(ApiIndex.load(ApiIndex.findJars(gradleHome, "paper")).find("ServerPlayer").name())
                 .isEqualTo("net.minecraft.server.level.ServerPlayer");
+    }
+
+    @Test
+    void showsMembersOfAPackagePrivateSupertypeOnItsPublicSubtype(@TempDir Path tmp) throws Exception {
+        // Minestom declares Block.GOLD_BLOCK in package-private Blocks, which Block extends.
+        Path blocksJar = tmp.resolve("blocks.jar");
+        int iface = ClassFile.ACC_INTERFACE | ClassFile.ACC_ABSTRACT;
+        try (OutputStream out = Files.newOutputStream(blocksJar); JarOutputStream zip = new JarOutputStream(out)) {
+            byte[] blocks = ClassFile.of().build(ClassDesc.of("p.Blocks"), cb -> cb.withFlags(iface)
+                    .withSuperclass(ClassDesc.of("java.lang.Object"))
+                    .withField("GOLD_BLOCK", ClassDesc.of("p.Block"),
+                            ClassFile.ACC_PUBLIC | ClassFile.ACC_STATIC | ClassFile.ACC_FINAL));
+            byte[] block = ClassFile.of().build(ClassDesc.of("p.Block"), cb -> cb.withFlags(ClassFile.ACC_PUBLIC | iface)
+                    .withSuperclass(ClassDesc.of("java.lang.Object")).withInterfaceSymbols(ClassDesc.of("p.Blocks")));
+            for (var e : Map.of("p/Blocks.class", blocks, "p/Block.class", block).entrySet()) {
+                zip.putNextEntry(new JarEntry(e.getKey()));
+                zip.write(e.getValue());
+                zip.closeEntry();
+            }
+        }
+        ApiIndex blocksIndex = ApiIndex.load(List.of(blocksJar));
+        assertThat(blocksIndex.size()).isEqualTo(1);
+        assertThat(blocksIndex.describe("Block", "gold", false, 40, 300)).endsWith("static final Block GOLD_BLOCK");
+        assertThat(blocksIndex.search("GOLD_BLOCK", null, 5, 100)).isEqualTo("Block#static final Block GOLD_BLOCK");
     }
 
     private static void syntheticInterface(JarOutputStream zip, String name) throws Exception {

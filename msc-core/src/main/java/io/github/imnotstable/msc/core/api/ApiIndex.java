@@ -5,8 +5,11 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.Deque;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -67,6 +70,7 @@ public final class ApiIndex {
 
     public static ApiIndex load(List<Path> jars) throws IOException {
         ApiIndex index = new ApiIndex(List.copyOf(jars));
+        Map<String, ClassInfo> hidden = new HashMap<>();
         for (Path jar : jars) {
             try (JarFile file = new JarFile(jar.toFile())) {
                 var entries = file.entries();
@@ -77,9 +81,9 @@ public final class ApiIndex {
                         continue;
                     }
                     try (InputStream in = file.getInputStream(entry)) {
-                        ClassInfo info = ClassFileReader.read(in);
-                        if (info != null) {
-                            index.classes.putIfAbsent(info.name(), info);
+                        ClassFileReader.Parsed parsed = ClassFileReader.readAny(in);
+                        if (parsed != null) {
+                            (parsed.exported() ? index.classes : hidden).putIfAbsent(parsed.info().name(), parsed.info());
                         }
                     } catch (IOException | RuntimeException e) {
                         // One unreadable class must not cost the whole index.
@@ -87,7 +91,27 @@ public final class ApiIndex {
                 }
             }
         }
+        index.classes.replaceAll((name, c) -> withHiddenParents(c, hidden));
         return index;
+    }
+
+    /**
+     * {@code c} with the members of its package-private supertypes, which Java reaches through {@code c}: Minestom's
+     * {@code Block.GOLD_BLOCK} is declared in package-private {@code Blocks}, so it was found nowhere (Sky Sprint bench).
+     */
+    private static ClassInfo withHiddenParents(ClassInfo c, Map<String, ClassInfo> hidden) {
+        List<ClassInfo.Member> members = new ArrayList<>(c.members());
+        Set<String> seen = new HashSet<>();
+        Deque<String> todo = new ArrayDeque<>(c.supertypes());
+        while (!todo.isEmpty()) {
+            ClassInfo parent = hidden.get(todo.pop());
+            if (parent != null && seen.add(parent.name())) {
+                members.addAll(parent.members().stream().filter(m -> !m.name().equals(parent.simpleName())).toList());
+                todo.addAll(parent.supertypes());
+            }
+        }
+        return seen.isEmpty() ? c : new ClassInfo(c.name(), c.simpleName(), c.kind(), c.supertypes(), c.deprecated(),
+                c.constants(), List.copyOf(members));
     }
 
     /**
@@ -240,7 +264,47 @@ public final class ApiIndex {
      * @param maxLimit the largest limit a caller may ask for; at it, the cut line no longer says to raise the limit
      */
     public String search(String query, String kind, int limit, int maxLimit) {
-        String[] words = query.toLowerCase(Locale.ROOT).trim().split("[\\s.#(),]+");
+        List<String> all = List.of(query.toLowerCase(Locale.ROOT).trim().split("[\\s.#(),]+"));
+        // "constructor" names no member: constructors carry the class's own name, so the word means "only those".
+        boolean constructors = all.stream().anyMatch(CONSTRUCTOR_WORDS::contains);
+        String[] words = all.stream().filter(w -> !w.isEmpty() && !CONSTRUCTOR_WORDS.contains(w)).toArray(String[]::new);
+        List<Hit> hits = hits(words, kind, constructors, true);
+        String partial = null;
+        if (hits.isEmpty() && words.length > 1) {
+            // A miss on all words (the Sky Sprint bench searched "Collector collect poll") lists what matches the most of them.
+            hits = hits(words, kind, constructors, false);
+            if (!hits.isEmpty()) {
+                partial = "no match for all of \"" + query + "\"; closest, most words first:\n";
+            }
+        }
+        if (hits.isEmpty()) {
+            return "no matches for \"" + query + "\"" + classHint(all);
+        }
+        hits.sort(Comparator.comparingInt(Hit::score).reversed().thenComparing(Hit::text));
+        StringBuilder out = new StringBuilder(partial == null ? "" : partial);
+        for (int i = 0; i < Math.min(limit, hits.size()); i++) {
+            out.append(hits.get(i).text()).append('\n');
+        }
+        if (hits.size() > limit) {
+            out.append("[").append(hits.size() - limit).append(" more; add words")
+                    .append(limit < maxLimit ? " or raise limit (at most " + maxLimit + ")" : " to narrow the search")
+                    .append(']');
+        }
+        String text = out.toString().stripTrailing();
+        return partial == null ? text : text + classHint(all);
+    }
+
+    private static final Set<String> CONSTRUCTOR_WORDS = Set.of("constructor", "constructors", "ctor");
+
+    /** The api_class call for a query word that names a class exactly, as the surest next step after a miss. */
+    private String classHint(List<String> words) {
+        return words.stream()
+                .flatMap(w -> classes.values().stream().filter(c -> c.simpleName().equalsIgnoreCase(w)))
+                .map(c -> "\nTry api_class name=" + c.name() + ".").findFirst().orElse("");
+    }
+
+    /** {@code every}: every word must match; else at least one, each matched word ranking above any closeness. */
+    private List<Hit> hits(String[] words, String kind, boolean constructors, boolean every) {
         List<Hit> hits = new ArrayList<>();
         for (ClassInfo c : classes.values()) {
             if (kind != null) {
@@ -251,61 +315,47 @@ public final class ApiIndex {
             }
             String simple = c.simpleName().toLowerCase(Locale.ROOT);
             String full = c.name().toLowerCase(Locale.ROOT);
-            int classScore = score(words, simple, full);
+            int classScore = constructors ? 0 : score(words, simple, full, every);
             if (classScore > 0) {
                 hits.add(new Hit(classScore + 1000 - Math.min(simple.length(), 200) - (c.deprecated() ? 300 : 0),
                         c.kind() + " " + c.name() + (c.deprecated() ? " (deprecated)" : "")));
             }
             Set<String> seen = new HashSet<>();
             for (ClassInfo.Member m : c.members()) {
-                int s = score(words, m.name().toLowerCase(Locale.ROOT), simple + " " + m.name().toLowerCase(Locale.ROOT));
+                if (constructors && !m.name().equals(c.simpleName())) {
+                    continue;
+                }
+                int s = words.length == 0 ? 1 : score(words, m.name().toLowerCase(Locale.ROOT),
+                        simple + " " + m.name().toLowerCase(Locale.ROOT), every);
                 if (s > 0 && seen.add(m.text())) {
                     hits.add(new Hit(s - Math.min(m.name().length(), 200) - (m.deprecated() || c.deprecated() ? 300 : 0),
                             c.simpleName() + "#" + m.text() + (m.deprecated() ? " (deprecated)" : "")));
                 }
             }
-            for (String constant : c.constants()) {
+            for (String constant : constructors ? List.<String>of() : c.constants()) {
                 String lower = constant.toLowerCase(Locale.ROOT);
-                int s = score(words, lower, simple + " " + lower);
+                int s = score(words, lower, simple + " " + lower, every);
                 if (s > 0) {
                     hits.add(new Hit(s - Math.min(lower.length(), 200), c.simpleName() + "." + constant));
                 }
             }
         }
-        if (hits.isEmpty()) {
-            return "no matches for \"" + query + "\"";
-        }
-        hits.sort(Comparator.comparingInt(Hit::score).reversed().thenComparing(Hit::text));
-        StringBuilder out = new StringBuilder();
-        for (int i = 0; i < Math.min(limit, hits.size()); i++) {
-            out.append(hits.get(i).text()).append('\n');
-        }
-        if (hits.size() > limit) {
-            out.append("[").append(hits.size() - limit).append(" more; add words")
-                    .append(limit < maxLimit ? " or raise limit (at most " + maxLimit + ")" : " to narrow the search")
-                    .append(']');
-        }
-        return out.toString().stripTrailing();
+        return hits;
     }
 
-    /** 0 when a word is missing; higher for exact and prefix matches on the primary name. */
-    private static int score(String[] words, String primary, String context) {
+    /**
+     * 0 when no word matches, or ({@code every}) when one is missing; higher for exact and prefix matches on the
+     * primary name. Without {@code every} each matched word adds 1000, so more words always rank higher.
+     */
+    private static int score(String[] words, String primary, String context, boolean every) {
         int total = 0;
         for (String w : words) {
-            if (w.isEmpty()) {
-                continue;
-            }
-            if (primary.equals(w)) {
-                total += 400;
-            } else if (primary.startsWith(w)) {
-                total += 250;
-            } else if (primary.contains(w)) {
-                total += 150;
-            } else if (context.contains(w)) {
-                total += 50;
-            } else {
+            int s = primary.equals(w) ? 400 : primary.startsWith(w) ? 250 : primary.contains(w) ? 150
+                    : context.contains(w) ? 50 : 0;
+            if (s == 0 && every) {
                 return 0;
             }
+            total += s == 0 || every ? s : s + 1000;
         }
         return total;
     }

@@ -72,7 +72,7 @@ public final class ApiTools {
         registry.add("api_search",
                 "Search the workspace platform's API by class, method, field or constant name; "
                         + "one line per match with full signature.",
-                Schema.of().req("query", "string", "Words that must all match, for example \"player teleport\"")
+                Schema.of().req("query", "string", "Words, e.g. \"player teleport\"")
                         .opt("kind", "string", "class, interface, enum, record, annotation or event")
                         .range("limit", 1, MAX_SEARCH, "Default 15")
                         .maxChars(),

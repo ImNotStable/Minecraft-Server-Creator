@@ -29,6 +29,16 @@ final class ClassFileReader {
 
     /** Parse a class, or return null when it is not public API (not public, synthetic, anonymous). */
     static ClassInfo read(InputStream stream) throws IOException {
+        Parsed p = readAny(stream);
+        return p == null || !p.exported() ? null : p.info();
+    }
+
+    /** A parsed class; {@code exported} false for a package-private one, whose public members a public subtype shows. */
+    record Parsed(ClassInfo info, boolean exported) {
+    }
+
+    /** Parse a class, public or not, or return null when it is synthetic, anonymous or module/package info. */
+    static Parsed readAny(InputStream stream) throws IOException {
         return new ClassFileReader().parse(new DataInputStream(stream));
     }
 
@@ -40,7 +50,7 @@ final class ClassFileReader {
         return index == 0 ? null : utf((Integer) pool[index]);
     }
 
-    private ClassInfo parse(DataInputStream in) throws IOException {
+    private Parsed parse(DataInputStream in) throws IOException {
         if (in.readInt() != 0xCAFEBABE) {
             throw new IOException("not a class file");
         }
@@ -150,13 +160,14 @@ final class ClassFileReader {
             members.add(new ClassInfo.Member(constructor ? ownName : name, text.toString(), a.deprecated, true));
         }
         Attributes classAttributes = attributes(in);
-        if ((access & PUBLIC) == 0 || (access & SYNTHETIC) != 0 || thisName.equals("module-info")
+        if ((access & SYNTHETIC) != 0 || thisName.equals("module-info")
                 || thisName.endsWith("package-info") || ownName.matches("\\d+.*")) {
             return null;
         }
         String kind = (access & ANNOTATION) != 0 ? "annotation" : isInterface ? "interface"
                 : (access & ENUM) != 0 ? "enum" : "java/lang/Record".equals(superName) ? "record" : "class";
-        return new ClassInfo(dotted(thisName), simple, kind, supertypes, classAttributes.deprecated, constants, members);
+        return new Parsed(new ClassInfo(dotted(thisName), simple, kind, supertypes, classAttributes.deprecated, constants, members),
+                (access & PUBLIC) != 0);
     }
 
     private static String dotted(String internalName) {
