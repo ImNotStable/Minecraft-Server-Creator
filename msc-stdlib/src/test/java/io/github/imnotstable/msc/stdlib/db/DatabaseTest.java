@@ -83,8 +83,8 @@ class DatabaseTest {
 
     @Test
     void aMissingDriverIsNamed() {
-        assertThatThrownBy(() -> Database.open(DatabaseConfig.server(DatabaseType.POSTGRESQL, "h", 0, "d", "u", "p")))
-                .hasMessageContaining("org.postgresql.Driver");
+        assertThatThrownBy(() -> Database.open(DatabaseConfig.server(DatabaseType.MYSQL, "h", 0, "d", "u", "p")))
+                .hasMessageContaining("com.mysql.cj.jdbc.Driver");
     }
 
     @Test

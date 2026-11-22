@@ -146,8 +146,8 @@ class TemplateNameCasesTest {
         for (Map.Entry<String, byte[]> f : files.entrySet()) {
             String rel = f.getKey();
             assertThat(rel).as("path").doesNotContain("{{").doesNotContain("}}");
-            if (rel.endsWith(".jar")) {
-                continue;
+            if (rel.endsWith(".jar") || rel.startsWith("libs/")) {
+                continue; // shipped libraries are copied as they are, never rendered (msc-stdlib, ADR 0066)
             }
             String text = new String(f.getValue(), StandardCharsets.UTF_8);
             assertThat(text).as(rel).doesNotContain("{{");
