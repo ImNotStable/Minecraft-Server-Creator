@@ -47,6 +47,7 @@ public final class LifecycleTools {
         });
         DevCycle cycle = new DevCycle(config, server, builder, run, warmup, background);
         ServerConsole console = new ServerConsole(hub, server, marks);
+        WorldBackups backups = new WorldBackups(config, hub, server, run, world, java.time.Clock.systemDefaultZone());
         registry.add("project_scaffold",
                 "Create a new project from a template (Gradle KTS, tests wired in). Target directory must be empty.",
                 Schema.of().req("name", "string", "Project name, for example MyPlugin")
@@ -100,10 +101,14 @@ public final class LifecycleTools {
                 console::logs);
         registry.add("server_command", "Run console commands on the server and return their output.",
                 Schema.of().req("command", "string", "Command without the leading slash; several: one per line"),
-                console::command);
+                args -> {
+                    String first = backups.beforeCommands(args.text("command"));
+                    String out = console.command(args);
+                    return first.isEmpty() ? out : out + "\n" + first;
+                });
         registry.add("server_wait", "Wait until a log or chat line matches a regex, instead of polling.",
                 Schema.of().req("until", "string", "Regex, case-insensitive")
                         .range("timeoutSeconds", 1, ServerConsole.MAX_WAIT_SECONDS, "Default 60"), console::await);
-        return new WorldBackups(config, hub, server, run, world, java.time.Clock.systemDefaultZone());
+        return backups;
     }
 }

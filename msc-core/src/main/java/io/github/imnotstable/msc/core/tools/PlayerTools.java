@@ -32,6 +32,7 @@ public final class PlayerTools implements AutoCloseable {
     private final CoreConfig config;
     private final AgentHub hub;
     private final WorldService worlds;
+    private final WorldBackups backups;
     /**
      * Guards {@link #player} and {@link #closed}, never held across network I/O: {@link #close()} takes only this, so
      * it does not wait for a running player_test (which holds this object's monitor for its whole run).
@@ -40,14 +41,16 @@ public final class PlayerTools implements AutoCloseable {
     private Bot player;
     private boolean closed;
 
-    private PlayerTools(CoreConfig config, AgentHub hub, WorldService worlds) {
+    private PlayerTools(CoreConfig config, AgentHub hub, WorldService worlds, WorldBackups backups) {
         this.config = config;
         this.hub = hub;
         this.worlds = worlds;
+        this.backups = backups;
     }
 
-    public static PlayerTools register(ToolRegistry registry, CoreConfig config, AgentHub hub, WorldService worlds) {
-        PlayerTools t = new PlayerTools(config, hub, worlds);
+    public static PlayerTools register(ToolRegistry registry, CoreConfig config, AgentHub hub, WorldService worlds,
+                                       WorldBackups backups) {
+        PlayerTools t = new PlayerTools(config, hub, worlds, backups);
         registry.add("player_test",
                 "Play-test: a headless player joins the dev server, runs actions, reports results, damage, deaths, "
                         + "chat, titles. Stays joined. Vanilla-like moves; a missed jump may suit people. "
@@ -96,10 +99,14 @@ public final class PlayerTools implements AutoCloseable {
         } catch (IllegalArgumentException e) {
             throw new ToolException(e.getMessage());
         }
+        // A player that uses, attacks or runs commands may change the world: a backup first, as for build_batch.
+        String backup = actions.stream().map(String::strip).anyMatch(a -> a.matches("(use|attack|interact)\\b.*"))
+                ? backups.beforeEdit() : backups.beforeCommands(String.join("\n",
+                        actions.stream().map(String::strip).filter(a -> a.startsWith("/")).toList()));
         Ops.ServerInfo info = hub.call(Ops.SERVER_INFO, new Ops.Empty());
         // The overworld; the test player asks worldOf which world the server put it in, else goes by the dimension.
         String world = info.worlds().isEmpty() ? "world" : info.worlds().getFirst();
-        StringBuilder out = new StringBuilder();
+        StringBuilder out = new StringBuilder(backup.isEmpty() ? "" : backup + "\n");
         Bot bot = current();
         if (bot != null && (!bot.connected() || !bot.name().equals(name))) {
             drop(bot);

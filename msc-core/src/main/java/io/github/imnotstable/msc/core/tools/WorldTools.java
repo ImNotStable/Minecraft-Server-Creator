@@ -154,11 +154,13 @@ public final class WorldTools {
         registry.add("build_undo", "Undo a build_batch edit.",
                 Schema.of().opt("edit", "string", "Edit id such as e3. Default: the most recent edit")
                         .opt("backup", "string", "World backups: list, save [label], or one to restore "
-                                + "(restarts the server). " + WorldBackups.AUTO_BLOCKS / 1000 + "k+ block builds save one"),
+                                + "(restarts the server). Edits save one first"),
                 args -> {
                     String backup = args.str("backup", null);
                     if (backup == null) {
-                        return world.undo(args.str("edit", null));
+                        String first = backups.beforeEdit();
+                        String out = world.undo(args.str("edit", null));
+                        return first.isEmpty() ? out : out + "\n" + first;
                     }
                     if (args.str("edit", null) != null) {
                         throw new ToolException("give edit or backup, not both");

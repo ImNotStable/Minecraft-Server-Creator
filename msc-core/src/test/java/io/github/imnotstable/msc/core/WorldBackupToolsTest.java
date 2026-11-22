@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.imnotstable.msc.core.fixture.FakeServerMain;
 import io.github.imnotstable.msc.core.fixture.SleepMain;
+import io.github.imnotstable.msc.core.backup.Backups;
 import io.github.imnotstable.msc.core.server.FakeLeftover;
 import io.github.imnotstable.msc.core.server.PidFile;
 import io.github.imnotstable.msc.core.server.PidFileAccess;
@@ -23,7 +24,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 
-/** build_undo backup=: whole-world backups, the one a big build takes first, and rollback (ADR 0041). */
+/** build_undo backup=: whole-world backups, the one an edit takes first, and rollback (ADR 0041, 0069). */
 @Timeout(value = 2, unit = TimeUnit.MINUTES, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
 class WorldBackupToolsTest {
     @TempDir
@@ -176,7 +177,7 @@ class WorldBackupToolsTest {
     }
 
     @Test
-    void saveFlushesWithAutosaveOffAndBigBuildsTakeOneFirst() throws Exception {
+    void saveFlushesWithAutosaveOff() throws Exception {
         world("v1");
         try (CoreHarness h = new CoreHarness(workspace).withAgent()) {
             assertThat(h.ok("build_undo", "backup", "list")).isEqualTo("no backups yet");
@@ -186,20 +187,62 @@ class WorldBackupToolsTest {
             assertThat(h.error("build_undo", "edit", "e1", "backup", "list")).contains("give edit or backup, not both");
             // An attached server this session did not start cannot be stopped here, so its folders stay as they are.
             assertThat(h.error("build_undo", "backup", "before-towers")).contains("not started by this session");
+        }
+    }
 
-            // Below the threshold: no backup. A big one is due only when the newest is older than five minutes.
-            assertThat(h.ok("build_batch", "steps", "fill 0,64,0 9,64,9 stone")).doesNotContain("backup");
-            assertThat(h.ok("build_batch", "steps", "fill 0,0,0 99,9,99 stone")).doesNotContain("backup");
-            Path backups = workspace.resolve(".msc/backups");
-            try (var kept = Files.list(backups)) {
-                for (Path p : kept.toList()) {
-                    Files.move(p, backups.resolve("20200101-000000-old"));
+    private static final String TAKEN = "backup \\d{8}-\\d{6}-auto(-\\d)? taken first \\(build_undo backup=NAME restores it\\)";
+
+    /**
+     * ADR 0069: every tool call that edits the world takes a backup first, at most one per five minutes; calls that
+     * only read take none.
+     */
+    @Test
+    void editsTakeABackupFirstThrottledAndReadsTakeNone() throws Exception {
+        world("v1");
+        try (CoreHarness h = new CoreHarness(workspace).withAgent()) {
+            assertThat(h.ok("server_command", "command", "list\n/say hi")).doesNotContain("backup");
+            assertThat(h.ok("build_batch", "steps", "set 0,64,0 stone", "dryRun", true)).doesNotContain("backup");
+            h.ok("world_slice", "region", "0,64,0 1,64,1");
+            assertThat(h.agent.commands).containsExactly("list", "say hi");
+            assertThat(h.ok("build_undo", "backup", "list")).isEqualTo("no backups yet");
+
+            // The first edit: flushed and copied before its first block.
+            assertThat(h.ok("build_batch", "steps", "set 0,64,0 stone")).containsPattern("\n" + TAKEN + "$");
+            assertThat(h.agent.commands).containsSubsequence("save-off", "save-all flush", "save-on");
+            // Within five minutes the undo history covers the edits: none of these copies the world again.
+            assertThat(h.ok("server_command", "command", "fill 0 64 0 1 64 1 dirt")).doesNotContain("backup");
+            assertThat(h.ok("build_undo")).startsWith("undid e1").doesNotContain("backup");
+            assertThat(h.ok("build_undo", "backup", "list").lines()).hasSize(1);
+
+            Duration old = WorldBackupsAccess.autoEvery(Duration.ZERO);
+            try {
+                assertThat(h.ok("server_command", "command", "setblock 0 64 0 air")).containsPattern("\n" + TAKEN + "$");
+                assertThat(h.ok("build_batch", "steps", "set 0,64,0 stone")).containsPattern("\n" + TAKEN + "$");
+                assertThat(h.ok("build_undo")).containsPattern("\n" + TAKEN + "$");
+                String firstOfSession = h.ok("build_undo", "backup", "list").lines().toList().getLast();
+                for (int i = 0; i < 4; i++) {
+                    h.ok("build_batch", "steps", "set 0,64,0 stone");
                 }
+                // Bounded: the newest five, and the world before the session's first edit always stays.
+                List<String> kept = h.ok("build_undo", "backup", "list").lines().toList();
+                assertThat(kept).hasSize(Backups.KEEP).contains(firstOfSession);
+            } finally {
+                WorldBackupsAccess.autoEvery(old);
             }
-            assertThat(h.ok("build_batch", "steps", "fill 0,0,0 99,9,99 dirt"))
-                    .containsPattern("\nbackup \\d{8}-\\d{6}-auto taken first \\(build_undo backup=NAME restores it\\)$");
-            assertThat(h.ok("build_undo", "backup", "list").lines()).hasSize(2);
-            assertThat(h.ok("build_undo")).startsWith("undid e3");
+        }
+    }
+
+    @Test
+    void aRollbackReturnsTheWorldToBeforeTheEdit() throws Exception {
+        Path level = world("before");
+        try (CoreHarness h = new CoreHarness(workspace, c -> c.withServerCommand(fakeServer()))) {
+            h.ok("server_start", "timeoutSeconds", 30);
+            String out = h.ok("server_command", "command", "fill 0 64 0 9 64 9 stone");
+            assertThat(out).containsPattern("\n" + TAKEN + "$");
+            String name = out.substring(out.lastIndexOf("backup ") + 7).split(" ")[0];
+            Files.writeString(level, "after");
+            assertThat(h.ok("build_undo", "backup", name)).startsWith("rolled back to " + name);
+            assertThat(level).hasContent("before");
         }
     }
 

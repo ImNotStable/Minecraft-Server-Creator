@@ -191,9 +191,9 @@ public final class Core implements AutoCloseable {
                             config.cacheDir()), background, world);
             api.register(tools);
             WorldTools.register(tools, config, world, backups);
-            BuildTools.register(tools, config, world, new Builder(hub, world, backups::beforeBigEdit));
+            BuildTools.register(tools, config, world, new Builder(hub, world, blocks -> backups.beforeEdit()));
             TextureTools.register(tools, hub, pack, publisher, config);
-            PlayerTools players = PlayerTools.register(tools, config, hub, world);
+            PlayerTools players = PlayerTools.register(tools, config, hub, world, backups);
             // On a proxy every world, build and player tool answers one line before it sends, saves or stops anything,
             // whether or not it reaches the agent (ADR 0045, #591).
             tools.gate(WORLD_TOOLS, () -> server.platform().noWorldTools());

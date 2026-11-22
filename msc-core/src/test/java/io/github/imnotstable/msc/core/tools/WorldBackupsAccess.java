@@ -13,4 +13,11 @@ public final class WorldBackupsAccess {
         WorldBackups.saveWait = wait;
         return old;
     }
+
+    /** How young a backup makes an edit skip its own; returns the old age. */
+    public static Duration autoEvery(Duration every) {
+        Duration old = WorldBackups.autoEvery;
+        WorldBackups.autoEvery = every;
+        return old;
+    }
 }
