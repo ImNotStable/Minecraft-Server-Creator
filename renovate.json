@@ -38,10 +38,11 @@
       "groupName": "minecraft platforms"
     },
     {
-      "description": "Paper is pinned to the newest build MockBukkit runs; it moves by hand with MockBukkit after :msc-agent-paper:test passes (ADR 0052).",
+      "description": "paper-mockbukkit (same module as paper) is the paper-api MockBukkit tests run on; it moves by hand with MockBukkit, so this value moves with it (ADR 0052). paper itself follows Renovate.",
       "matchPackageNames": [
         "io.papermc.paper:paper-api"
       ],
+      "matchCurrentValue": "26.3.build.252-stable",
       "enabled": false
     },
     {

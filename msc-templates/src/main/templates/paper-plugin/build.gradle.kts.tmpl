@@ -16,7 +16,7 @@ java {
 }
 
 paperweight {
-    // The server is for compiling only: MockBukkit tests run against paper-api, and NMS code runs on the dev server.
+    // The server is for compiling only: MockBukkit tests run against paper-api at paper-mockbukkit, and NMS code runs on the dev server.
     addServerDependencyTo = configurations.named(JavaPlugin.COMPILE_ONLY_CONFIGURATION_NAME).map { setOf(it) }
 }
 

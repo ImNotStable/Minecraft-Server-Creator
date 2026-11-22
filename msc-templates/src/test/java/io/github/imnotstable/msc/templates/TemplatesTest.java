@@ -43,6 +43,8 @@ class TemplatesTest {
         assertThat(Templates.info(Templates.PAPER_PLUGIN)).containsEntry("platform", "paper").containsKey("description");
         assertThat(Templates.versions()).containsEntry("javaVersion", "25").containsKeys("paperVersion", "mcVersion", "mockbukkitVersion");
         assertThat(Templates.versions().get("paperVersion")).startsWith(Templates.versions().get("mcVersion") + ".build");
+        // MockBukkit tests run on their own paper-api build of the same Minecraft version (ADR 0052).
+        assertThat(Templates.versions().get("paperMockbukkitVersion")).startsWith(Templates.versions().get("mcVersion") + ".build");
     }
 
     /** ADR 0045: a proxy plugin with its own wrapper and no Minecraft server files (no server.properties, no EULA). */
