@@ -12,7 +12,13 @@ import java.util.Set;
 final class Shapes {
     static final Box[] FULL = {Box.FULL};
     private static final Box[] FLAT = {Box.px(0, 0, 0, 16, 1, 16)};
-    private static final Box[] PLANT = {Box.px(3, 0, 3, 13, 13, 13)};
+    /** Two thin crossed panels, as the game draws plants: a solid box read as a coloured cube in renders (ADR 0077). */
+    private static final Box[] PLANT = {Box.px(1, 0, 7, 15, 13, 9), Box.px(7, 0, 1, 9, 13, 15)};
+    /** Flowers, saplings and mushrooms: a smaller cross. */
+    private static final Box[] SMALL_PLANT = {Box.px(4, 0, 7.5, 12, 10, 8.5), Box.px(7.5, 0, 4, 8.5, 10, 12)};
+    private static final Set<String> SMALL = Set.of("dandelion", "poppy", "blue_orchid", "allium", "azure_bluet",
+            "oxeye_daisy", "cornflower", "lily_of_the_valley", "wither_rose", "torchflower", "open_eyeblossom",
+            "closed_eyeblossom", "brown_mushroom", "red_mushroom", "nether_sprouts", "dead_bush");
     private static final Box[] POST = {Box.px(7, 0, 7, 9, 10, 9)};
 
     private static final Set<String> FLAT_BLOCKS = Set.of("rail", "powered_rail", "detector_rail", "activator_rail",
@@ -118,7 +124,8 @@ final class Shapes {
         }
         if (PLANTS.contains(n) || n.endsWith("_sapling") || n.endsWith("_tulip") || n.endsWith("_fungus")
                 || n.equals("crimson_roots") || n.equals("warped_roots") || n.endsWith("_coral") || n.endsWith("_coral_fan") || n.endsWith("_propagule")) {
-            return PLANT;
+            return SMALL.contains(n) || n.endsWith("_tulip") || n.endsWith("_sapling") || n.endsWith("_fungus") ? SMALL_PLANT
+                    : PLANT;
         }
         return FULL;
     }

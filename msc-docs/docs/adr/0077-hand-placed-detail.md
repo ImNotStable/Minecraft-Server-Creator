@@ -93,8 +93,8 @@ Against that list MSC's `build_batch` had shapes and fills, and three gaps that 
   per kind, not per block; the return is that no stair faces north by accident.
 - Existing world blocks next to a new build are not rejoined (a new fence beside an old one connects only on its own
   side); `physics=true` still asks the game to do that, with sand and water.
-- Not done: the renderer draws plants as cubes, so a flower bed reads as coloured blocks in a render; worth its own
-  change in `msc-renderer`.
+- The renderer drew plants as solid cubes, so a flower bed read as coloured blocks and an agent judging a render saw
+  clutter; it now draws them as two thin crossed panels (flowers, saplings and mushrooms smaller), as the game does.
 - The tool list grows by about 430 characters (the four steps are one line each in `build_batch`'s help, with their
   options explained in `msc_status guide=build`); its budget in `McpBridgeTest` rises from 17,800 to 18,250.
 - The thresholds (60%, 50%, 1 per 16) are rules of thumb like ADR 0068's; the next agent runs are the measure.
