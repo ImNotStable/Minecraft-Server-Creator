@@ -31,5 +31,4 @@ nothing but a tag push from `release.yml`, and only with a `GH_MIRROR_TOKEN` sec
 
 - Edits in either Wiki tab are overwritten by the next sync; edit `docs/wiki/` instead.
 - Without the secret, the mirror, GitHub release and GitHub wiki steps warn and stay green; the Gitea side works.
-- Dependabot still runs on GitHub and opens its PRs there. They cannot be merged on GitHub without diverging
-  `main`; port them to Gitea by hand, or replace Dependabot with Renovate on the Gitea runner later.
+- Dependabot is replaced by Renovate on Gitea (ADR 0064).
