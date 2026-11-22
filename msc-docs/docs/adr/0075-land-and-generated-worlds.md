@@ -50,8 +50,7 @@ The causes are in MSC, not only in the model:
 3. **`clump=N` on any step with a block**: the mix in patches about N across with wavy edges (a warped cell grid, one
    roll per cell, so the weights hold) instead of block by block.
 4. **`review=true` judges land too** (`LandReview`): on a region of 1024+ columns, mostly ground, the share of ground at
-   one level (over 80% is flat land) and of edges between different ground blocks that run straight for 6+ blocks
-   (over 25%); on any region, blocks not joined face to face to the region's bottom or sides (water joins), with the
+   one level (over 80% is flat land); on any region, blocks not joined face to face to the region's bottom or sides (water joins), with the
    three largest clumps' positions. Soil (grass, dirt, sand, gravel...) no longer counts in a build's numbers, and a
    region that is 60%+ land by blocks is judged as land only, so a hillside is never told to pitch its roof.
 5. **Guidance**: the build guide's "LAND FIRST" section (a test floor is not a landscape; generated worlds for open
@@ -61,8 +60,9 @@ The causes are in MSC, not only in the model:
 ## Consequences
 
 - Measured on two 128 x 128 scenes drawn with the steps: the Meridian way (flat floor, bands, straight lines, a
-  terracotta splat) gets "flat land 90%" and "straight ground edges 35%"; the same area with `terrain`, a winding
-  `path` and scattered trees gets 35% and 3%, and passes.
+  terracotta splat) gets "flat land 90%"; the same area with `terrain`, a winding `path` and scattered
+  trees gets 35% and passes. A straight-edge measure was dropped before merge: Jeremiah wants straight lines (roads,
+  walls, rails) never penalised (ADR 0077).
 - The tool list every conversation pays for grows by about 1,150 characters (16,600 to 17,750; the budget in
   `McpBridgeTest` is now 17,800): one tool and three steps, with help text cut to one line each. Land had no tool.
 - Nothing here sets a style: the terrains are the game's own, the steps take any block, and the guide names tools, not

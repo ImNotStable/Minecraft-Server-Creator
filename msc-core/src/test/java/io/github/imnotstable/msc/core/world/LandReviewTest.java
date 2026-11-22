@@ -27,12 +27,12 @@ class LandReviewTest {
     }
 
     @Test
-    void paintedFlatGroundWithStraightPathsIsFlagged() {
+    void paintedFlatGroundIsFlaggedButStraightPathsAreNot() {
         BlockGrid g = painted((x, z) -> z == 20 || x == 10 ? Character.valueOf('d')
                 : x > 25 && z > 25 ? Character.valueOf('s') : null);
         String review = BuildReview.review(g);
         assertThat(review).contains("mostly land", "ground at one level 100%", "flat land: 100% of the ground is at y 0",
-                "straight ground edges:");
+                "ground at one level 100%").doesNotContain("straight");
     }
 
     @Test
@@ -46,7 +46,7 @@ class LandReviewTest {
             s.draw(c);
         }
         String review = BuildReview.review(c.grid(Region.of("world", 0, 0, 0, 63, 24, 63)));
-        assertThat(review).contains("mostly land", "ground at one level").doesNotContain("flat land:", "straight ground edges:",
+        assertThat(review).contains("mostly land", "ground at one level").doesNotContain("flat land:",
                 "floating");
     }
 

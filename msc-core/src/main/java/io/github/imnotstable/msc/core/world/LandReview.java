@@ -9,8 +9,8 @@ import java.util.Set;
 
 /**
  * Signs of hand-painted land (ADR 0075), measured for {@code world_summary review=true} beside the build numbers:
- * ground at one level (land painted onto the flat dev floor), straight edges in the ground (paths drawn as lines,
- * patches as boxes, terraces as outlines), and blocks that nothing holds up (leaves, rails, a tower off its base).
+ * ground at one level (land painted onto the flat dev floor) and blocks that nothing holds up (leaves, rails, a
+ * tower off its base). Straight lines are not judged: roads, walls and rails need them (ADR 0077).
  */
 public final class LandReview {
     /** Soil and loose ground: never part of a build's own numbers. */
@@ -26,9 +26,6 @@ public final class LandReview {
     /** Columns a region needs before its ground is judged: a build's own plot is not land. */
     static final int MIN_COLUMNS = 1024;
     static final int MAX_FLAT = 80;
-    /** An edge in the ground counts as straight when it runs on for this many blocks along one axis. */
-    static final int STRAIGHT_RUN = 6;
-    static final int MAX_STRAIGHT = 25;
 
     private LandReview() {
     }
@@ -81,17 +78,12 @@ public final class LandReview {
         if (columns >= MIN_COLUMNS && groundColumns * 2 >= columns) {
             int[] level = flatLevel(topY, top);
             int flatPct = pct(level[1], groundColumns);
-            int straightPct = straight(top, sx, sz);
-            parts.add(String.format(Locale.ROOT, "ground at one level %d%% (y %d, aim under %d%%), straight ground "
-                    + "edges %d%% (aim under %d%%)", flatPct, level[0], MAX_FLAT, straightPct, MAX_STRAIGHT));
+            parts.add(String.format(Locale.ROOT, "ground at one level %d%% (y %d, aim under %d%%)", flatPct, level[0],
+                    MAX_FLAT));
             if (flatPct > MAX_FLAT) {
                 fixes.add("flat land: " + flatPct + "% of the ground is at y " + level[0] + "; shape it with "
                         + "build_batch terrain (hills, ridges, valleys, water) or build in a world_create world, "
                         + "and let builds step with the slope");
-            }
-            if (straightPct > MAX_STRAIGHT) {
-                fixes.add("straight ground edges: paths, patches and terraces run in straight lines; draw ways with "
-                        + "path (curves, ragged sides), patches with clump=, slopes with terrain");
             }
         }
         int[] floating = floating(grid, names, fluid);
@@ -133,40 +125,6 @@ public final class LandReview {
             }
         }
         return new int[] {best, count};
-    }
-
-    /**
-     * The share of edges between ground columns of different blocks that lie in a straight run of at least
-     * {@link #STRAIGHT_RUN} along one axis.
-     */
-    static int straight(String[] top, int sx, int sz) {
-        int edges = 0;
-        int straight = 0;
-        // Edges between x and x+1, run along z; then edges between z and z+1, run along x.
-        for (int pass = 0; pass < 2; pass++) {
-            int lines = pass == 0 ? sx - 1 : sz - 1;
-            int along = pass == 0 ? sz : sx;
-            for (int l = 0; l < lines; l++) {
-                int run = 0;
-                for (int a = 0; a <= along; a++) {
-                    boolean edge = false;
-                    if (a < along) {
-                        int i = pass == 0 ? a * sx + l : l * sx + a;
-                        int j = pass == 0 ? i + 1 : i + sx;
-                        // Only a change of block: a smooth slope's height steps run straight along an axis too.
-                        edge = top[i] != null && top[j] != null && !top[i].equals(top[j]);
-                    }
-                    if (edge) {
-                        run++;
-                        edges++;
-                    } else {
-                        straight += run >= STRAIGHT_RUN ? run : 0;
-                        run = 0;
-                    }
-                }
-            }
-        }
-        return edges < 50 ? 0 : pct(straight, edges);
     }
 
     /**

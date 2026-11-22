@@ -8,11 +8,11 @@ LAND FIRST
 - The flat dev world is a test floor, not a landscape. Never paint a region onto it: no blobs of one block on flat ground, no 1-block rings or outlines as "hills".
 - An open world, a region or a dimension: make it a generated world with world_create (normal, amplified, large_biomes, floating_islands, caves, nether, end; one biome everywhere or several sharing the land; flat or void for a blank slate), restart, and build into its real terrain with world=msc:<name>. Several regions can be several worlds, or several biomes in one.
 - Land by hand: build_batch terrain (styles hills, ridges, mesa, dunes; water= for lakes, bed= for shores, cliff= for rock on steep sides). The box's height is the land's: hills rise 10-40 blocks, mountains more. Big areas: tile boxes with edge=0 and one seed.
-- Ways: path through 3+ points with wander= (curves, ragged sides, on the ground); a stream is path depth=2 with water and bed=. Straight lines are for built things (walls, rails, bridges), not trails.
+- Ways: path through 3+ points with wander= (curves, ragged sides, on the ground); a stream is path depth=2 with water and bed=.
 - Ground cover: give ground mixes clump= (patches with wavy edges); a plain mix reads as static.
 - Nature: structure_save a few trees, rocks and bushes and scatter them (file=a,b,c spacing= chance=) so each stands on the ground; scatter flowers and grass the same way. Nothing floats: leaves join a trunk, rails and props rest on something.
 - Fit builds to the land: foundations reach down to the ground on slopes, a plaza is cut into the hill with retaining walls, and the ground at a build is worn (paths to doors, coarse dirt, gravel), not a clean edge.
-- Review land as well as builds: world_summary review=true on a land region reports ground at one level, straight ground edges and floating blocks.
+- Review land as well as builds: world_summary review=true on a land region reports ground at one level and floating blocks.
 
 THE LOOP (every build)
 1. Plan in 3 lines: purpose and story (who lived here, what happened), silhouette (3+ masses of different heights), palette.
