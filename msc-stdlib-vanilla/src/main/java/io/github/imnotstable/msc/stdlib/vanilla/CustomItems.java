@@ -1,12 +1,8 @@
-package io.github.imnotstable.msc.stdlib.fabric;
+package io.github.imnotstable.msc.stdlib.vanilla;
 
 import io.github.imnotstable.msc.stdlib.time.Cooldowns;
 import io.github.imnotstable.msc.stdlib.util.Format;
-import net.fabricmc.fabric.api.event.player.AttackEntityCallback;
-import net.fabricmc.fabric.api.event.player.UseItemCallback;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.InteractionHand;
-import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.item.ItemStack;
 
@@ -21,7 +17,7 @@ import java.util.function.Supplier;
 
 /**
  * Items with their own behaviour, recognised by an id in their custom data: wands, keys, kit selectors. Register in
- * {@code onInitializeServer}.
+ * your mod's initializer; {@code Stdlib.init()} routes right-clicks and attacks here.
  *
  * <pre>{@code
  * CustomItems.register("dash", () -> ItemBuilder.of(Items.FEATHER).name(Component.literal("Dash")).build())
@@ -33,7 +29,6 @@ import java.util.function.Supplier;
 public final class CustomItems {
     private static final String KEY = "msc_custom_item";
     private static final Map<String, Definition> ITEMS = new ConcurrentHashMap<>();
-    private static boolean listening;
 
     private CustomItems() {}
 
@@ -67,7 +62,6 @@ public final class CustomItems {
     }
 
     public static Definition register(String id, Supplier<ItemStack> factory) {
-        listen();
         Definition d = new Definition(factory);
         ITEMS.put(id, d);
         return d;
@@ -93,42 +87,21 @@ public final class CustomItems {
         return id(item).map(ITEMS::get);
     }
 
-    private static boolean ready(Definition d, ServerPlayer p) {
-        if (d.cooldown == null || d.cooldowns.tryUse(p.getUUID(), d.cooldown)) {
-            return true;
-        }
-        Feedback.actionBar(p, "Wait " + Format.duration(d.cooldowns.remaining(p.getUUID())));
-        return false;
-    }
-
-    /** Runs a use as a right-click would (tests, or your own triggers); true when the item is a custom one with onUse. */
+    /** A right-click with {@code item}: runs its onUse; true when the click should be cancelled (it is ours). */
     public static boolean use(ServerPlayer player, ItemStack item) {
         Optional<Definition> d = of(item).filter(x -> x.onUse != null);
         d.ifPresent(x -> {
-            if (ready(x, player)) {
+            if (x.cooldown == null || x.cooldowns.tryUse(player.getUUID(), x.cooldown)) {
                 x.onUse.accept(player);
+            } else {
+                Feedback.actionBar(player, "Wait " + Format.duration(x.cooldowns.remaining(player.getUUID())));
             }
         });
         return d.isPresent();
     }
 
-    private static synchronized void listen() {
-        if (listening) {
-            return;
-        }
-        listening = true;
-        UseItemCallback.EVENT.register((player, level, hand) -> {
-            if (hand == InteractionHand.MAIN_HAND && player instanceof ServerPlayer sp
-                    && use(sp, player.getItemInHand(hand))) {
-                return InteractionResult.FAIL;
-            }
-            return InteractionResult.PASS;
-        });
-        AttackEntityCallback.EVENT.register((player, level, hand, entity, hit) -> {
-            if (player instanceof ServerPlayer sp) {
-                of(player.getMainHandItem()).filter(d -> d.onHit != null).ifPresent(d -> d.onHit.accept(sp, entity));
-            }
-            return InteractionResult.PASS;
-        });
+    /** {@code player} attacks {@code target}: runs onHit of the main-hand item. */
+    public static void hit(ServerPlayer player, Entity target) {
+        of(player.getMainHandItem()).filter(d -> d.onHit != null).ifPresent(d -> d.onHit.accept(player, target));
     }
 }

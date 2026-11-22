@@ -6,8 +6,17 @@ neoforge = "{{neoforgeVersion}}"
 moddev = "{{moddevVersion}}"
 junit = "{{junitVersion}}"
 assertj = "{{assertjVersion}}"
+msc-stdlib = "{{mscStdlibVersion}}"
+hikaricp = "{{hikaricpVersion}}"
+sqlite-jdbc = "{{sqliteJdbcVersion}}"
 
 [libraries]
+# MSC's standard library (menus, items, particles, databases, player data...), shipped in libs/repo/.
+msc-stdlib-neoforge = { module = "io.github.imnotstable.msc:msc-stdlib-neoforge", version.ref = "msc-stdlib" }
+msc-stdlib = { module = "io.github.imnotstable.msc:msc-stdlib", version.ref = "msc-stdlib" }
+hikaricp = { module = "com.zaxxer:HikariCP", version.ref = "hikaricp" }
+# The SQLite driver: on the test classpath; nest it in the mod (see build.gradle.kts) to use SQLite on the server.
+sqlite-jdbc = { module = "org.xerial:sqlite-jdbc", version.ref = "sqlite-jdbc" }
 junit-bom = { module = "org.junit:junit-bom", version.ref = "junit" }
 junit-jupiter = { module = "org.junit.jupiter:junit-jupiter" }
 junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher" }

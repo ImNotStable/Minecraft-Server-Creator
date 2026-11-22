@@ -1,4 +1,4 @@
-package io.github.imnotstable.msc.stdlib.fabric;
+package io.github.imnotstable.msc.stdlib.vanilla;
 
 import io.github.imnotstable.msc.stdlib.text.Messages;
 import net.minecraft.network.chat.Component;

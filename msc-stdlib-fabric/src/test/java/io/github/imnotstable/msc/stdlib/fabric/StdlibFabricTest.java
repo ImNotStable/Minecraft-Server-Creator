@@ -69,7 +69,7 @@ class StdlibFabricTest {
 
     @Test
     void theSchedulerRunsOnTicks() {
-        FabricScheduler s = new FabricScheduler();
+        TickScheduler s = new TickScheduler();
         List<String> ran = new ArrayList<>();
         s.later(2, () -> ran.add("later"));
         var repeat = s.repeat(0, 3, () -> ran.add("repeat"));

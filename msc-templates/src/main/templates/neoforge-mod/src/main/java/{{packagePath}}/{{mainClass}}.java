@@ -1,5 +1,6 @@
 package {{packageName}};
 
+import io.github.imnotstable.msc.stdlib.neoforge.Stdlib;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.neoforge.common.NeoForge;
@@ -15,6 +16,7 @@ public final class {{mainClass}} {
     public static final Logger LOG = LoggerFactory.getLogger(MOD_ID);
 
     public {{mainClass}}() {
+        Stdlib.init(); // msc-stdlib: its scheduler, player data, custom items, regions and prompts
         Greeter greeter = new Greeter(Greeter.DEFAULT_JOIN, Greeter.DEFAULT_HELLO);
 
         NeoForge.EVENT_BUS.addListener(RegisterCommandsEvent.class, e -> HelloCommand.register(e.getDispatcher(), greeter));

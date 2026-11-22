@@ -24,7 +24,7 @@ publishing {
 // build/repo/<group path>/<artifact>/<version>/<artifact>-<version>[-sources].{jar,pom}
 // API.md: one line per public member, for agents to grep (ADR 0066).
 val apiIndex = tasks.register<io.github.imnotstable.msc.buildlogic.StdlibApiIndex>("stdlibApiIndex") {
-    sources.from(project.extensions.getByType<JavaPluginExtension>().sourceSets.getByName("main").java.srcDirs)
+    sources.from(project.extensions.getByType<JavaPluginExtension>().sourceSets.getByName("main").java.sourceDirectories)
     title = "${project.name} ${project.version}: io.github.imnotstable.msc.stdlib"
     output = layout.buildDirectory.file("api/${project.name}-API.md")
 }
@@ -46,4 +46,17 @@ tasks.register<Sync>("stdlibRepo") {
 // sqlite-jdbc loads its native library; say so instead of printing a warning on every run.
 tasks.withType<Test>().configureEach {
     jvmArgs("--enable-native-access=ALL-UNNAMED")
+}
+
+// NeoForge and Forge load nested jars as Java modules: each needs a stable module name, and the loader adapters
+// (which use Minecraft classes) must load with the game (FMLModType GAMELIBRARY). Other platforms ignore both.
+tasks.named<Jar>("jar") {
+    val moduleName = "io.github.imnotstable.msc." + project.name.removePrefix("msc-").replace('-', '.')
+    val gameLibrary = project.name == "msc-stdlib-neoforge" || project.name == "msc-stdlib-forge"
+    manifest {
+        attributes("Automatic-Module-Name" to moduleName)
+        if (gameLibrary) {
+            attributes("FMLModType" to "GAMELIBRARY")
+        }
+    }
 }

@@ -29,6 +29,22 @@ NeoForge server mod for Minecraft {{mcVersion}}, Java {{javaVersion}}, Gradle Ko
 - Config goes through `ModConfigSpec`: take `ModContainer container` in the constructor and call `container.registerConfig(ModConfig.Type.LOCAL, spec)`. `LOCAL` is the type for a server-side mod's settings (`config/{{modId}}-local.toml`, not synced); NeoForge 26.x has no `COMMON` or `SERVER` type, and `SYNCED` is sent to clients, which do not have this mod. Read a value (`value.getAsBoolean()`) in listeners and commands, not in the constructor: only `STARTUP` configs are loaded that early.
 - Prefer small final classes and records. Pass dependencies through constructors; avoid static state.
 
+## Standard library (msc-stdlib)
+
+The project depends on MSC's standard library (`libs.msc.stdlib.neoforge`, shipped in `libs/repo/` with its sources, nested in the mod jar with jar-in-jar). Use it before writing your own. `Stdlib.init()` runs first in your mod's constructor (the template does it); `Stdlib.server()` is the running server.
+
+Find what you need without reading sources: `grep -n "Gui" libs/stdlib/API.md` (one line per public method, with what it does), `graphify query "menu with a confirm button" --graph libs/stdlib/graphify-out/graph.json`, then read only the lines you need in `libs/stdlib/src/`. Packages are under `io.github.imnotstable.msc.stdlib`.
+
+- Menus (server-side, vanilla clients see a chest): `Gui.chest(rows, title)` with `set(slot, item, click -> ...)`, `fill`, `border`, `editable`, `onClose`, `open(player)`; `Gui.paged(rows, title, list, icon, (entry, click) -> ...)`. Items cannot be taken out except from `editable` slots.
+- Items: `ItemBuilder.of(Items.DIAMOND)` with `name`, `lore`, `glow`, `unbreakable`, `model`, `data(key, value)`, `with(component, value)`; `ItemBuilder.read(item, key)`, `ItemBuilder.filler()`, `ItemBuilder.text("Hi", ChatFormatting.GREEN)`.
+- Particles: `ParticleEffect.of(ParticleTypes.FLAME)` or `ParticleEffect.dust(0xFF0000, size)`, then `spawn(level, point)`, `draw(level, origin, points)` or `play(scheduler, level, origin, period, frames, frame -> points)`. Shapes in `Shapes` (`circle`, `sphere`, `helix`, `star`, `cuboidEdges`, ...); `Locations.vec(player.position())` and `Locations.facing(player, points)`.
+- Databases: `Database.open(DatabaseConfig.sqlite(path))` `jarJar(libs.sqlite.jdbc)` is uncommented in `build.gradle.kts` (tests already have the driver); for MySQL, MariaDB or PostgreSQL add their driver the same way and use `DatabaseConfig.server(...)`. `update`, `insert`, `query`, `queryOne`, `transaction`, `async(db -> ...)`; `Table.named(...)` schemas, `db.migrate(...)` with `Migration.of(...)`, `Store.sql(db, table, Codec.json(Account.class))` records by key, `Store.memory()` in tests.
+- Player data: `PlayerData.create(store, defaults)` (in the constructor) loads each player's record when they join, saves it when they leave and when the server stops; `get`, `update`, `saveAll`.
+- Players see: `Feedback` (`success`, `fail`, `info`, `actionBar`, `title`), `Sounds` presets (`Sounds.SUCCESS.play(player)`), `Bar` boss bars (`Bar.create`, `Bar.timer`), `Hologram` text displays. Gameplay: `CustomItems.register(id, factory)` (`onUse`, `onHit`, `cooldown`), `Regions.define(name, Level.OVERWORLD, region)` (`noBuild`, `noPvp`, `onEnter`), `Prompt.ask`, `Teleports.warmup`, `Players` (`give`, `heal`, `reset`), `Lang` (placeholders filled, no tags on Fabric).
+- Shared with every platform (see `libs/stdlib/API.md`): `Repository` records with no SQL, `Store` (`jsonFiles`, `cached`, `writeBehind`), `Cache`, `Economy`, `Config`, `Messenger`, `Redis`/`Mongo` (add their driver first), `Format`, `RateLimiter`, `Leaderboard`, `EventBus`, `Sequence`, `Cuboid`/`Region`, `Randoms`.
+- Time: `Cooldowns` (`tryUse`, `remaining`), `Durations.parse("1h30m")`, `Durations.format`, `Stdlib.scheduler()` (`later`, `repeat`, `countdown`, `supplyAsync`). Loot: `WeightedRandom`.
+- Tests that make items need Minecraft's item components: after `Bootstrap.bootStrap()`, run `BuiltInRegistries.DATA_COMPONENT_INITIALIZERS.build(VanillaRegistries.createWorldLookup()).forEach(DataComponentInitializers.PendingComponents::apply)` once.
+
 ## Recipes
 
 Built and tested against this project's pinned versions; copy them as they are.

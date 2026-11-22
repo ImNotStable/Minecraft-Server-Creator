@@ -1,5 +1,5 @@
 plugins {
-    id("msc.stdlib-conventions")
+    id("msc.stdlib-vanilla")
     // Version comes from settings.gradle.kts, where Loom's repository plugin is applied.
     id("net.fabricmc.fabric-loom")
 }
