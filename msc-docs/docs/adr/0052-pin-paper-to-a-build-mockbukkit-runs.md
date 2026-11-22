@@ -22,3 +22,10 @@ tests broke the same way.
 ## Consequences
 
 Builds no longer change under us when Paper publishes. Paper fixes after build 252 wait for a MockBukkit release.
+
+## Addendum 2026-11-22: Renovate leaves Paper alone
+
+Renovate (ADR 0064) proposed Paper 26.3.build.257 with MockBukkit 4.123.0; `:msc-agent-paper:test` failed 28 of 33
+tests on build 257 ("Could not initialize class org.bukkit.Registry") and passed on build 252. `renovate.json` now
+disables `io.papermc.paper:paper-api`, so Paper is raised by hand under rule 2; MockBukkit still updates on its own
+and must pass on the pinned build.

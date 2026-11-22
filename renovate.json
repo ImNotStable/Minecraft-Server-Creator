@@ -38,6 +38,13 @@
       "groupName": "minecraft platforms"
     },
     {
+      "description": "Paper is pinned to the newest build MockBukkit runs; it moves by hand with MockBukkit after :msc-agent-paper:test passes (ADR 0052).",
+      "matchPackageNames": [
+        "io.papermc.paper:paper-api"
+      ],
+      "enabled": false
+    },
+    {
       "description": "Fabric API versions end in the Minecraft line (0.166.0+26.3); it is bumped by hand with the Minecraft version (ADR 0012).",
       "matchPackageNames": [
         "net.fabricmc.fabric-api:fabric-api"
