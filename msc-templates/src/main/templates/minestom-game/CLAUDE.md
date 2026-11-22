@@ -11,7 +11,7 @@ Minestom minigame server for Minecraft {{minestomMcVersion}}, Java {{javaVersion
 
 ## Where to start
 
-A new game changes `GameConfig.game()`, `Game`, `GameEvents` and `GameCommand`, with tests like `GameTest`. The other classes (`Stage`, `Box`, `Kit`, `Progress`, `Console`) and tests (`SharedRulesTest`, `GameThreadsTest`, `BoxTest`, `ProgressTest`) only need reading when you change what they do. With MSC tools, `api_search query="<words>" project=.` lists the matching methods with `path:line` and the tests that use them.
+A new game changes `GameConfig.game()`, `Game`, `GameEvents` and `GameCommand`, with tests like `GameTest`. The other classes (`Stage`, `Box`, `Kit`, `Progress`, `Console`) and tests (`SharedRulesTest`, `GameThreadsTest`, `BoxTest`, `ProgressTest`) only need reading when you change what they do.
 
 ## What the template already does
 
