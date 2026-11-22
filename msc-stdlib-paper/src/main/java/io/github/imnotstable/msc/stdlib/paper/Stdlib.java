@@ -16,6 +16,9 @@ public final class Stdlib {
         plugin = owner;
         scheduler = new PaperScheduler(owner);
         owner.getServer().getPluginManager().registerEvents(new Gui.Listener(), owner);
+        Prompt.reset();
+        CustomItems.reset();
+        Regions.reset();
     }
 
     public static Plugin plugin() {

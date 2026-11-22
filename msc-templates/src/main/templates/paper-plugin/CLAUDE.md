@@ -29,16 +29,16 @@ Paper plugin for Minecraft {{mcVersion}}, Java {{javaVersion}}, Gradle Kotlin DS
 
 ## Standard library (msc-stdlib)
 
-The project depends on MSC's standard library (`libs.msc.stdlib.paper`, shipped in `libs/repo/`, bundled into the plugin jar). Use it before writing your own, and call `Stdlib.init(this)` first in `onEnable` (the template does). Packages under `io.github.imnotstable.msc.stdlib`; its sources are in `libs/repo/` next to each jar.
+The project depends on MSC's standard library (`libs.msc.stdlib.paper`, in `libs/repo/`, bundled into the plugin jar); `Stdlib.init(this)` runs first in `onEnable`. Use it before writing your own: it is tested, and short to call.
 
-- Menus: `Gui.chest(rows, title)` with `set(slot, item, click -> ...)`, `fill`, `border`, `editable`, `onClose`; `Gui.paged(rows, title, list, icon, (entry, click) -> ...)` pages a list. Items cannot be taken out except from `editable` slots.
-- Items: `ItemBuilder.of(Material)` with `name`, `lore`, `enchant`, `glow`, `unbreakable`, `model`, `data(key, type, value)`, `meta(...)`; `ItemBuilder.read` gets the data back; `ItemBuilder.head(player)`, `ItemBuilder.filler()`.
-- Text: `Text.mm("<green>Hi <name>", "name", value)` (values are inserted as plain text, `Component`s as they are), `Text.plain`, `Text.legacy`.
-- Particles: `ParticleEffect.of(Particle.FLAME)` or `ParticleEffect.dust(color, size)`, then `spawn`, `draw(origin, points)` or `play(scheduler, origin, period, frames, frame -> points)`. Shapes in `Shapes`: `line`, `circle`, `arc`, `disc`, `sphere`, `helix`, `cuboidEdges`, `star`, `randomInSphere`, turned with `rotateY` and `translate`; `Locations.facing` turns them to where a player looks.
-- Databases: `Database.open(PaperDatabase.config(getConfig().getConfigurationSection("database"), getDataFolder().toPath()))` picks SQLite (default, a file in the plugin folder), MySQL, MariaDB or PostgreSQL from `config.yml`. `update`, `insert` (returns the id), `query`, `queryOne`, `batch`, `transaction`, and `async(db -> ...)` to stay off the main thread. Schemas: `Table.named(...).key(...).column(...).sql(db.type())` writes SQL every backend accepts; `db.migrate("{{projectId}}", List.of(Migration.of(1, "...", sql)))` applies each version once. `Store.sql(db, table, Codec.json(Account.class))` keeps records by key without writing SQL; `Store.memory()` for tests. Close the database in `onDisable`.
-- Player data: `PlayerData.create(store, defaults)` loads each player's record at login, keeps it while they play, saves it on quit; `get`, `update`, `saveAll` (call in `onDisable`).
-- Time: `Cooldowns` (`tryUse(key, duration)`, `remaining`), `Durations.parse("1h30m")`, `Durations.format`, `Stdlib.scheduler()` (`later`, `repeat`, `countdown`, `supplyAsync` that comes back on the main thread). Scoreboard: `Sidebar` (`lines`, `line`, `show`, `hide`). Loot and chances: `WeightedRandom`.
-- MockBukkit does not implement scoreboard number formats, so a test that makes a `Sidebar` is skipped there; test what fills its lines instead. SQLite works in tests (the driver is on the test classpath).
+Find what you need without reading sources: `grep -n "Gui" libs/stdlib/API.md` (one line per public method, with what it does), `graphify query "menu with a confirm button" --graph libs/stdlib/graphify-out/graph.json`, then read only the lines you need in `libs/stdlib/src/`. Packages are under `io.github.imnotstable.msc.stdlib`.
+
+- Players see: `Feedback` (`success`, `fail`, `info`, `actionBar`, `title`), `Sounds` presets (`Sounds.SUCCESS.play(player)`), `Bar` boss bars (`Bar.create`, `Bar.timer`, `progress`, `hideAfter`), `Hologram` floating text, `Sidebar` and per-player `Boards` (refreshed lines), `Nametags` prefixes.
+- Menus: `Gui.chest(rows, title)` with `set`, `layout` + `bind`, `theme(Gui.Theme.DARK)`, `update`, `refreshEvery`, `animate`, `editable`, `onClose`; `Gui.paged(...)`, `Gui.confirm(...)`. Click sound on by default. Items: `ItemBuilder` (`name`, `lore`, `glow`, `model`, `data`, `head`, `pane`).
+- Gameplay: `CustomItems.register(id, factory)` with `onUse`/`onHit`/`cooldown`; `Regions.define(name, world, region)` with `noBuild`/`noPvp`/`onEnter`; `Cmd.create(name)` commands with `sub`, `usage`, `tab`, `cooldown`; `Prompt.ask` for chat answers; `Teleports.warmup`; `Players` (`give`, `heal`, `reset`); `PlayerData` per-player records; `Lang` translated messages.
+- Data: `Database.open(PaperDatabase.config(getConfig().getConfigurationSection("database"), getDataFolder().toPath()))` (SQLite default; MySQL, MariaDB, PostgreSQL, H2). `Repository.of(db, table, Record.class)` stores records with no SQL (`save`, `find`, `findBy`, `query().where(...)`, `top`, `increment`; new record fields become columns). `Store` (SQL, `jsonFiles`, `memory`, `cached`, `writeBehind`), `Cache`, `Economy`, `Config` (typed JSON settings), `Messenger` and `Redis`/`Mongo` (add their driver to `libs.versions.toml` first). Close the database in `onDisable`; call blocking calls through `db.async(...)` or `repo.async(...)`.
+- Utilities: `Format` (`number`, `compact`, `money`, `bar`, `clock`, `duration`, `ordinal`), `Durations`, `Cooldowns`, `RateLimiter`, `Leaderboard`, `WeightedRandom`, `Randoms`, `EventBus`, `Sequence` (timed steps), `Stdlib.scheduler()`; geometry `Shapes` (20 shapes), `Cuboid`/`Region`, `ParticleEffect` (`draw`, `play`).
+- MockBukkit does not implement scoreboard number formats or text displays, so tests that make a `Sidebar`, `Boards` or `Hologram` are skipped there; test what fills them. SQLite and H2 work in tests.
 
 ## Recipes
 
@@ -164,9 +164,6 @@ public class {{mainClass}} extends JavaPlugin {
 
     @Override
     public void onDisable() {
-        if (wallet != null) {
-            wallet.saveAll();
-        }
         if (database != null) {
             database.close();
         }
@@ -178,80 +175,77 @@ public class {{mainClass}} extends JavaPlugin {
 }
 ```
 
-Coins per player, kept in the database, and a log of purchases in a table of its own, `src/main/java/{{packagePath}}/Wallet.java`:
+Coins per player, kept in the database (safe when several servers share it), and a log of purchases as records, `src/main/java/{{packagePath}}/Wallet.java`:
 
 ```java
 package {{packageName}};
 
-import io.github.imnotstable.msc.stdlib.db.Codec;
-import io.github.imnotstable.msc.stdlib.db.ColumnType;
 import io.github.imnotstable.msc.stdlib.db.Database;
-import io.github.imnotstable.msc.stdlib.db.Migration;
-import io.github.imnotstable.msc.stdlib.db.Store;
-import io.github.imnotstable.msc.stdlib.db.Table;
-import io.github.imnotstable.msc.stdlib.paper.PlayerData;
+import io.github.imnotstable.msc.stdlib.db.Id;
+import io.github.imnotstable.msc.stdlib.db.Indexed;
+import io.github.imnotstable.msc.stdlib.db.Repository;
+import io.github.imnotstable.msc.stdlib.economy.Economy;
 import java.time.Instant;
-import java.util.List;
+import java.util.UUID;
 import org.bukkit.entity.Player;
 
 /** Each player's coins (100 to start) and every purchase. */
 public final class Wallet {
     public static final int DIAMOND_PRICE = 50;
+    private static final long START = 100;
 
-    public record Account(int coins) {
+    public record Purchase(@Id UUID id, @Indexed UUID player, String item, long price, Instant at) {
     }
 
-    private final Database database;
-    private final PlayerData<Account> accounts;
+    private final Economy coins;
+    private final Repository<Purchase> purchases;
 
     public Wallet(Database database) {
-        this.database = database;
-        database.migrate("{{projectId}}", List.of(Migration.of(1, "purchase log",
-                Table.named("purchases").id("id").column("player", ColumnType.UUID)
-                        .column("item", ColumnType.STRING).column("at", ColumnType.INSTANT).sql(database.type()))));
-        Store<Account> store = Store.sql(database, "accounts", Codec.json(Account.class));
-        this.accounts = PlayerData.create(store, () -> new Account(100));
+        this.coins = Economy.sql(database, "coins", "⛃", 1);
+        this.purchases = Repository.of(database, "purchases", Purchase.class);
     }
 
-    public int coins(Player player) {
-        return accounts.get(player).coins();
+    public long coins(Player player) {
+        UUID id = player.getUniqueId();
+        if (!coins.accounts().exists(id)) {
+            coins.deposit(id, START);
+        }
+        return coins.balance(id);
     }
 
     /** Takes {@code price} coins and logs the purchase; false, and nothing taken, when the player has too few. */
-    public boolean buy(Player player, String item, int price) {
-        if (coins(player) < price) {
+    public boolean buy(Player player, String item, long price) {
+        coins(player);
+        if (!coins.withdraw(player.getUniqueId(), price)) {
             return false;
         }
-        accounts.update(player, a -> new Account(a.coins() - price));
-        database.async(db -> db.insert("INSERT INTO purchases (player, item, at) VALUES (?, ?, ?)",
-                player.getUniqueId(), item, Instant.now()));
+        purchases.save(new Purchase(UUID.randomUUID(), player.getUniqueId(), item, price, Instant.now()));
         return true;
     }
 
-    /** Blocks on the database: call it through {@code database.async} or from a command run off the main thread. */
-    public int purchases(Player player) {
-        return database.queryOne("SELECT COUNT(*) AS n FROM purchases WHERE player = ?", r -> r.integer("n"),
-                player.getUniqueId()).orElse(0);
+    public long purchases(Player player) {
+        return purchases.query().where("player", "=", player.getUniqueId()).count();
     }
 
-    public void saveAll() {
-        accounts.saveAll();
+    public String format(long amount) {
+        return coins.format(amount);
     }
 }
 ```
 
-A shop menu with a cooldown and particles, `src/main/java/{{packagePath}}/ShopMenu.java`:
+A shop menu with a theme, a cooldown, feedback and particles, `src/main/java/{{packagePath}}/ShopMenu.java`:
 
 ```java
 package {{packageName}};
 
 import io.github.imnotstable.msc.stdlib.geom.Shapes;
+import io.github.imnotstable.msc.stdlib.paper.Feedback;
 import io.github.imnotstable.msc.stdlib.paper.Gui;
 import io.github.imnotstable.msc.stdlib.paper.ItemBuilder;
 import io.github.imnotstable.msc.stdlib.paper.ParticleEffect;
 import io.github.imnotstable.msc.stdlib.text.Text;
 import io.github.imnotstable.msc.stdlib.time.Cooldowns;
-import io.github.imnotstable.msc.stdlib.time.Durations;
+import io.github.imnotstable.msc.stdlib.util.Format;
 import java.time.Duration;
 import java.util.UUID;
 import org.bukkit.Material;
@@ -271,24 +265,26 @@ public final class ShopMenu {
     public Gui open(Player player) {
         return Gui.chest(3, Text.mm("<gold>Shop"))
                 .set(13, ItemBuilder.of(Material.DIAMOND).name("<aqua>Diamond")
-                        .lore("<gray>Price: <price> coins", "price", Wallet.DIAMOND_PRICE).build(),
+                        .lore("<gray>Price: <price>", "price", wallet.format(Wallet.DIAMOND_PRICE))
+                        .lore("<gray>You have: <coins>", "coins", wallet.format(wallet.coins(player))).build(),
                         click -> buy(click.player()))
-                .fill(ItemBuilder.filler())
+                .theme(Gui.Theme.GOLD)
                 .open(player);
     }
 
     void buy(Player player) {
         UUID id = player.getUniqueId();
         if (!cooldowns.ready(id)) {
-            player.sendMessage(Text.mm("<red>Wait <time>", "time", Durations.format(cooldowns.remaining(id))));
+            Feedback.fail(player, "Wait <time>", "time", Format.duration(cooldowns.remaining(id)));
             return;
         }
         if (!wallet.buy(player, "diamond", Wallet.DIAMOND_PRICE)) {
-            player.sendMessage(Text.mm("<red>You need <price> coins", "price", Wallet.DIAMOND_PRICE));
+            Feedback.fail(player, "You need <price>", "price", wallet.format(Wallet.DIAMOND_PRICE));
             return;
         }
         cooldowns.set(id, Duration.ofSeconds(10));
         player.getInventory().addItem(ItemStack.of(Material.DIAMOND));
+        Feedback.success(player, "Bought a diamond");
         ParticleEffect.of(Particle.HAPPY_VILLAGER).draw(player.getLocation(), Shapes.circle(1, 16));
     }
 }
@@ -333,6 +329,7 @@ class ShopMenuTest {
         shop.buy(alex);
 
         assertThat(plugin.wallet().coins(alex)).isEqualTo(50);
+        assertThat(plugin.wallet().purchases(alex)).isEqualTo(1);
         assertThat(alex.getInventory().contains(Material.DIAMOND)).isTrue();
     }
 }

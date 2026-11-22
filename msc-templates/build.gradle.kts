@@ -1,3 +1,5 @@
+import java.util.zip.ZipFile
+
 plugins {
     id("msc.java-conventions")
 }
@@ -82,6 +84,11 @@ abstract class PackTemplates : DefaultTask() {
     @get:PathSensitive(PathSensitivity.RELATIVE)
     abstract val stdlibRepo: ConfigurableFileCollection
 
+    /** The committed graphify graphs of msc-stdlib per platform (scripts/stdlib-graph.sh), shipped as libs/stdlib/graphify-out/. */
+    @get:InputDirectory
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val stdlibGraphs: DirectoryProperty
+
     @get:Input
     abstract val versions: MapProperty<String, String>
 
@@ -128,9 +135,34 @@ abstract class PackTemplates : DefaultTask() {
                 files["libs/msc-agent-minestom.jar"] = minestomAgent.singleFile
             }
             STDLIB_TEMPLATES[id]?.let { platform ->
-                // Each entry is <module>/build/repo.
-                stdlibRepo.files.filter { it.parentFile.parentFile.name in setOf("msc-stdlib", "msc-stdlib-$platform") }
-                    .forEach { repo -> addTree(repo, "libs/repo/") }
+                // Each entry is <module>/build/repo; it holds the module's jar, sources jar, pom and API index.
+                val modules = listOf("msc-stdlib", "msc-stdlib-$platform")
+                val repos = modules.map { m -> stdlibRepo.files.single { it.parentFile.parentFile.name == m } }
+                repos.forEach { repo ->
+                    repo.walkTopDown().filter { it.isFile && !it.name.endsWith("-API.md") }.forEach {
+                        files["libs/repo/" + it.relativeTo(repo).invariantSeparatorsPath] = it
+                    }
+                }
+                // For agents (ADR 0066): one API index, the sources to read by line, and the graph to query.
+                val stage = temporaryDir.resolve(platform).apply { deleteRecursively(); mkdirs() }
+                val api = stage.resolve("API.md")
+                api.writeText(repos.joinToString("\n") { repo ->
+                    repo.walkTopDown().single { it.name.endsWith("-API.md") }.readText()
+                })
+                files["libs/stdlib/API.md"] = api
+                modules.zip(repos).forEach { (module, repo) ->
+                    val sourcesJar = repo.walkTopDown().single { it.name.endsWith("-sources.jar") }
+                    ZipFile(sourcesJar).use { zip ->
+                        zip.entries().asSequence().filter { !it.isDirectory && it.name.endsWith(".java") }.forEach { e ->
+                            val f = stage.resolve("src/$module/${e.name}").apply { parentFile.mkdirs() }
+                            zip.getInputStream(e).use { input -> f.outputStream().use { input.copyTo(it) } }
+                            files["libs/stdlib/src/$module/${e.name}"] = f
+                        }
+                    }
+                }
+                stdlibGraphs.get().asFile.resolve(platform).listFiles()!!.forEach {
+                    files["libs/stdlib/graphify-out/${it.name}"] = it
+                }
             }
             if (id in PROXY_TEMPLATES) {
                 WRAPPER_FILES.forEach { files[it] = wrapper.resolve(it) }
@@ -150,6 +182,7 @@ abstract class PackTemplates : DefaultTask() {
 
 val packTemplates = tasks.register<PackTemplates>("packTemplates") {
     templatesDir = layout.projectDirectory.dir("src/main/templates")
+    stdlibGraphs = layout.projectDirectory.dir("src/main/stdlib-graphs")
     wrapperRoot = rootProject.layout.projectDirectory
     versions = templateVersions
     minestomAgent.from(minestomAgentJar)

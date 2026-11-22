@@ -126,12 +126,15 @@ class CountdownCommandTest {
 
 The project depends on MSC's standard library (`libs.msc.stdlib.minestom`, shipped in `libs/repo/` with its sources, packed into the server jar). Use it before writing your own. `Stdlib.init(MinecraftServer.process())` runs in `main` (the template does it); in tests call `Stdlib.init(env.process())` first.
 
+Find what you need without reading sources: `grep -n "Gui" libs/stdlib/API.md` (one line per public method, with what it does), `graphify query "menu with a confirm button" --graph libs/stdlib/graphify-out/graph.json`, then read only the lines you need in `libs/stdlib/src/`. Packages are under `io.github.imnotstable.msc.stdlib`.
+
 - Menus: `Gui.chest(rows, title)` with `set(slot, item, click -> ...)`, `fill`, `border`, `editable`, `onClose`, `open(player)`; `Gui.paged(rows, title, list, icon, (entry, click) -> ...)`. Items cannot be taken out except from `editable` slots.
 - Items: `ItemBuilder.of(Material)` with `name`, `lore`, `glow`, `hideTooltip`, `model`, `tag(tag, value)`, `raw()` for other data components; `ItemBuilder.read(item, tag)`, `ItemBuilder.filler()`.
 - Text: `Text.mm("<green>Hi <name>", "name", value)` (values go in as plain text, `Component`s as they are), `Text.plain`.
 - Particles: `ParticleEffect.of(Particle.FLAME)` or `ParticleEffect.dust(color, size)`, then `spawn(instance, point)`, `draw(instance, origin, points)` or `play(scheduler, instance, origin, period, frames, frame -> points)`. Shapes in `Shapes` (`circle`, `sphere`, `helix`, `star`, `cuboidEdges`, ...); `Locations.facing` turns them to where a player looks. Scoreboards: Minestom's own `Sidebar`.
 - Databases: `Database.open(DatabaseConfig.sqlite(Path.of("data.db")))` (the SQLite driver is a dependency; add the MySQL, MariaDB or PostgreSQL driver to `libs.versions.toml` for `DatabaseConfig.server(...)`). `update`, `insert`, `query`, `queryOne`, `transaction`, `async(db -> ...)`; `Table.named(...)` schemas, `db.migrate(...)` with `Migration.of(...)`, `Store.sql(db, table, Codec.json(Account.class))` records by key, `Store.memory()` in tests.
 - Player data: `PlayerData.create(store, defaults)` loads each player's record while they configure, saves it when they leave; `get`, `update`, `saveAll` (call before stopping).
+- Shared with every platform (see `libs/stdlib/API.md`): `Repository` records with no SQL, `Store` (`jsonFiles`, `cached`, `writeBehind`), `Cache`, `Economy`, `Config`, `Messenger`, `Redis`/`Mongo` (add their driver first), `Format`, `RateLimiter`, `Leaderboard`, `EventBus`, `Sequence`, `Cuboid`/`Region`, `Randoms`.
 - Time: `Cooldowns` (`tryUse`, `remaining`), `Durations.parse("1h30m")`, `Durations.format`, `Stdlib.scheduler()` (`later`, `repeat`, `countdown`). Loot: `WeightedRandom`.
 
 ## Tests

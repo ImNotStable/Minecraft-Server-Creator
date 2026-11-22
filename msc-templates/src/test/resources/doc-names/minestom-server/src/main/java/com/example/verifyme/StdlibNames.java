@@ -89,4 +89,37 @@ final class StdlibNames {
         Stdlib.scheduler().countdown(3, s -> { }, () -> { });
         new WeightedRandom<String>().add(plain, 1).pick(new Random());
     }
+
+    record Entry(@io.github.imnotstable.msc.stdlib.db.Id String id, int score) {
+    }
+
+    static void shared(io.github.imnotstable.msc.stdlib.db.Database db) {
+        io.github.imnotstable.msc.stdlib.db.Repository<Entry> repo =
+                io.github.imnotstable.msc.stdlib.db.Repository.of(db, "entries", Entry.class);
+        repo.top("score", 3);
+        io.github.imnotstable.msc.stdlib.db.Store<String> s = io.github.imnotstable.msc.stdlib.db.Store.writeBehind(
+                io.github.imnotstable.msc.stdlib.db.Store.cached(
+                        io.github.imnotstable.msc.stdlib.db.Store.jsonFiles(java.nio.file.Path.of("d"),
+                                io.github.imnotstable.msc.stdlib.db.Codec.string()),
+                        io.github.imnotstable.msc.stdlib.cache.Cache.<String, String>builder().maxSize(5).build()),
+                java.time.Duration.ofSeconds(5));
+        s.keys();
+        io.github.imnotstable.msc.stdlib.economy.Economy.sql(db, "coins", "$", 100);
+        io.github.imnotstable.msc.stdlib.config.Config.save(java.nio.file.Path.of("c.json"), new Entry("a", 1));
+        io.github.imnotstable.msc.stdlib.messaging.Messenger.local().close();
+        Class<?> backends = io.github.imnotstable.msc.stdlib.redis.Redis.class;
+        backends = io.github.imnotstable.msc.stdlib.mongo.Mongo.class;
+        io.github.imnotstable.msc.stdlib.util.Format.number(backends.getName().length());
+        new io.github.imnotstable.msc.stdlib.time.RateLimiter<String>(1, java.time.Duration.ofSeconds(1)).tryAcquire("a");
+        new io.github.imnotstable.msc.stdlib.util.Leaderboard<String>().add("a", 1);
+        new io.github.imnotstable.msc.stdlib.event.EventBus().post("x");
+        io.github.imnotstable.msc.stdlib.geom.Region region = io.github.imnotstable.msc.stdlib.geom.Cuboid.of(
+                io.github.imnotstable.msc.stdlib.geom.Vec3.ZERO, io.github.imnotstable.msc.stdlib.geom.Vec3.ZERO);
+        region.center();
+        io.github.imnotstable.msc.stdlib.util.Randoms.chance(0.5);
+    }
+
+    static void sequence(io.github.imnotstable.msc.stdlib.sched.Scheduler scheduler) {
+        io.github.imnotstable.msc.stdlib.sched.Sequence.of(scheduler).run(() -> { }).start();
+    }
 }

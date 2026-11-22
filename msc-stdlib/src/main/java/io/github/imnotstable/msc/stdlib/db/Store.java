@@ -70,6 +70,54 @@ public interface Store<V> {
         };
     }
 
+    /**
+     * One JSON file per key in {@code dir} ({@code <key>.json}, unsafe characters replaced): data people can read and
+     * edit, no database needed. Keys keep only letters, digits, {@code - _ .}.
+     */
+    static <V> Store<V> jsonFiles(java.nio.file.Path dir, Codec<V> codec) {
+        return new FileStore<>(dir, codec);
+    }
+
+    /** {@code store} with reads served from {@code cache}; writes go to both (write-through). */
+    static <V> Store<V> cached(Store<V> store, io.github.imnotstable.msc.stdlib.cache.Cache<String, V> cache) {
+        return new Store<>() {
+            @Override
+            public Optional<V> get(String key) {
+                return Optional.ofNullable(cache.get(key, k -> store.get(k).orElse(null)));
+            }
+
+            @Override
+            public void put(String key, V value) {
+                store.put(key, value);
+                cache.put(key, value);
+            }
+
+            @Override
+            public boolean remove(String key) {
+                cache.invalidate(key);
+                return store.remove(key);
+            }
+
+            @Override
+            public List<String> keys() {
+                return store.keys();
+            }
+
+            @Override
+            public Map<String, V> all() {
+                return store.all();
+            }
+        };
+    }
+
+    /**
+     * {@code store} with writes held in memory and flushed every {@code every} (and on {@link WriteBehind#flush} or
+     * {@link WriteBehind#close}): many updates to hot data become one write. Reads see unflushed writes.
+     */
+    static <V> WriteBehind<V> writeBehind(Store<V> store, java.time.Duration every) {
+        return new WriteBehind<>(store, every);
+    }
+
     /** A store in memory, for tests and data that need not survive a restart. */
     static <V> Store<V> memory() {
         Map<String, V> map = new ConcurrentHashMap<>();

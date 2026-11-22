@@ -12,3 +12,8 @@ dependencies {
     testImplementation(libs.mockbukkit)
     testRuntimeOnly(libs.sqlite.jdbc)
 }
+
+// Paper's JOML (Hologram scaling) is compiled for an old class file version and has type annotations javac warns about.
+tasks.compileJava {
+    options.compilerArgs.add("-Xlint:-classfile")
+}

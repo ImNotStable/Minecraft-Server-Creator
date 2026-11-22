@@ -39,6 +39,16 @@ public record DatabaseConfig(DatabaseType type, Path file, String host, int port
         return new DatabaseConfig(DatabaseType.SQLITE, file, null, 0, null, null, null, null, 1, null);
     }
 
+    /** An H2 database in {@code file} (H2 adds {@code .mv.db}). */
+    public static DatabaseConfig h2(Path file) {
+        return new DatabaseConfig(DatabaseType.H2, file, null, 0, null, null, null, null, 4, null);
+    }
+
+    /** An H2 database in memory, kept until the pool closes: for tests and throwaway data. */
+    public static DatabaseConfig h2Memory(String name) {
+        return h2(Path.of(name)).withUrl("jdbc:h2:mem:" + name + ";DB_CLOSE_DELAY=-1");
+    }
+
     /** A MySQL, MariaDB or PostgreSQL server, pool of 10. */
     public static DatabaseConfig server(DatabaseType type, String host, int port, String database, String user,
                                         String password) {
