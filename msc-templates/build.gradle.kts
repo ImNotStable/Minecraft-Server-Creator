@@ -46,6 +46,7 @@ val templateVersions = mapOf(
     "shadowVersion" to catalogVersion("shadow"),
     "mscStdlibVersion" to catalogVersion("msc-stdlib"),
     "sqliteJdbcVersion" to catalogVersion("sqlite-jdbc"),
+    "hikaricpVersion" to catalogVersion("hikaricp"),
 )
 
 // The Minestom agent jar (msc-protocol bundled), shipped in minestom-server and minestom-game as libs/msc-agent-minestom.jar.
@@ -94,7 +95,8 @@ abstract class PackTemplates : DefaultTask() {
         val PROXY_TEMPLATES = setOf("velocity-plugin")
         /** Templates that ship msc-stdlib, and the platform adapter each gets beside the core. */
         val STDLIB_TEMPLATES = mapOf("paper-plugin" to "paper", "paper-game" to "paper",
-            "minestom-server" to "minestom", "minestom-game" to "minestom")
+            "minestom-server" to "minestom", "minestom-game" to "minestom",
+            "fabric-mod" to "fabric", "fabric-game" to "fabric")
         val WRAPPER_FILES = listOf(
             "gradlew", "gradlew.bat", "gradle/wrapper/gradle-wrapper.jar", "gradle/wrapper/gradle-wrapper.properties")
     }
@@ -152,7 +154,7 @@ val packTemplates = tasks.register<PackTemplates>("packTemplates") {
     versions = templateVersions
     minestomAgent.from(minestomAgentJar)
     // Each module's build/repo holds io/github/imnotstable/msc/<module>/<version>/.
-    for (module in listOf(":msc-stdlib", ":msc-stdlib-paper", ":msc-stdlib-minestom")) {
+    for (module in listOf(":msc-stdlib", ":msc-stdlib-paper", ":msc-stdlib-minestom", ":msc-stdlib-fabric")) {
         stdlibRepo.from(files(project(module).layout.buildDirectory.dir("repo")).builtBy("$module:stdlibRepo"))
     }
     outputDir = layout.buildDirectory.dir("generated/templates")
