@@ -32,11 +32,15 @@ val apiIndex = tasks.register<io.github.imnotstable.msc.buildlogic.StdlibApiInde
 tasks.register<Sync>("stdlibRepo") {
     val repoDir = "${project.group.toString().replace('.', '/')}/${project.name}/${project.version}"
     val pom = "${project.name}-${project.version}.pom"
-    from(tasks.named("jar"))
-    from(tasks.named("sourcesJar"))
-    from(apiIndex)
-    from(tasks.named("generatePomFileForMavenPublication")) { rename { pom } }
-    into(layout.buildDirectory.dir("repo/$repoDir"))
+    // Synced at the repo root, so an older version's folder is removed when the version changes.
+    into(layout.buildDirectory.dir("repo"))
+    from(tasks.named("jar")) { into(repoDir) }
+    from(tasks.named("sourcesJar")) { into(repoDir) }
+    from(apiIndex) { into(repoDir) }
+    from(tasks.named("generatePomFileForMavenPublication")) {
+        into(repoDir)
+        rename { pom }
+    }
 }
 
 // sqlite-jdbc loads its native library; say so instead of printing a warning on every run.

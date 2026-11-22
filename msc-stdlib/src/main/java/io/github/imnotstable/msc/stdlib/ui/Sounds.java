@@ -1,4 +1,4 @@
-package io.github.imnotstable.msc.stdlib.paper;
+package io.github.imnotstable.msc.stdlib.ui;
 
 import net.kyori.adventure.audience.Audience;
 import net.kyori.adventure.key.Key;
@@ -42,7 +42,7 @@ public enum Sounds {
         return sound;
     }
 
-    /** Plays at the listener (a player, or {@code Bukkit.getServer()} for everyone). */
+    /** Plays at the listener (a player, an instance or world, or the whole server). */
     public void play(Audience to) {
         to.playSound(sound, Sound.Emitter.self());
     }

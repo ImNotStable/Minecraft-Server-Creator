@@ -11,13 +11,15 @@ loom {
 }
 
 // Fabric API modules the adapter calls; the mod using it has Fabric API (the templates depend on all of it).
-val fabricApiModules = listOf("fabric-api-base", "fabric-lifecycle-events-v1", "fabric-networking-api-v1")
+val fabricApiModules = listOf("fabric-api-base", "fabric-lifecycle-events-v1", "fabric-networking-api-v1",
+    "fabric-events-interaction-v0", "fabric-message-api-v1")
 
 dependencies {
     minecraft(libs.minecraft)
     compileOnly(libs.fabric.loader)
     for (module in fabricApiModules) {
         compileOnly(fabricApi.module(module, libs.versions.fabric.api.get()))
+        testImplementation(fabricApi.module(module, libs.versions.fabric.api.get()))
     }
     api(project(":msc-stdlib"))
 

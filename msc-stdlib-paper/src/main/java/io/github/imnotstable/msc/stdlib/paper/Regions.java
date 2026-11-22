@@ -1,5 +1,6 @@
 package io.github.imnotstable.msc.stdlib.paper;
 
+import io.github.imnotstable.msc.stdlib.ui.Feedback;
 import io.github.imnotstable.msc.stdlib.geom.Region;
 import org.bukkit.Location;
 import org.bukkit.entity.Player;

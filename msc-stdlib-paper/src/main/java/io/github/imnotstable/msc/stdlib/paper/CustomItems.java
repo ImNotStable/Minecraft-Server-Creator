@@ -1,5 +1,6 @@
 package io.github.imnotstable.msc.stdlib.paper;
 
+import io.github.imnotstable.msc.stdlib.ui.Feedback;
 import org.bukkit.NamespacedKey;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;

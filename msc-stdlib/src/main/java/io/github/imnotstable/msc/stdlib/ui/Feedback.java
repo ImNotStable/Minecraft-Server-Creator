@@ -1,4 +1,4 @@
-package io.github.imnotstable.msc.stdlib.paper;
+package io.github.imnotstable.msc.stdlib.ui;
 
 import io.github.imnotstable.msc.stdlib.text.Text;
 import net.kyori.adventure.audience.Audience;
@@ -9,7 +9,7 @@ import java.time.Duration;
 
 /**
  * Telling players what happened, in one call each: chat, action bar, title, with a matching sound. Text is MiniMessage
- * with placeholders as in {@link Text#mm}. Works for one player, a world, or {@code Bukkit.getServer()} (everyone).
+ * with placeholders as in {@link Text#mm}. Works for anything that is an Adventure {@code Audience}: a player, a world or instance, the server.
  *
  * <pre>{@code
  * Feedback.success(player, "Bought <item> for <price>", "item", "a sword", "price", Format.money(50, "$"));

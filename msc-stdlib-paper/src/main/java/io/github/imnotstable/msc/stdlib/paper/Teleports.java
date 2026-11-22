@@ -1,5 +1,7 @@
 package io.github.imnotstable.msc.stdlib.paper;
 
+import io.github.imnotstable.msc.stdlib.ui.Sounds;
+import io.github.imnotstable.msc.stdlib.ui.Feedback;
 import io.github.imnotstable.msc.stdlib.sched.Scheduler;
 import org.bukkit.Location;
 import org.bukkit.entity.Player;

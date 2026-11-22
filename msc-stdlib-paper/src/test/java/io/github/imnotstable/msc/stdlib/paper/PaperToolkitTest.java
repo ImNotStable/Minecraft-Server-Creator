@@ -1,5 +1,7 @@
 package io.github.imnotstable.msc.stdlib.paper;
 
+import io.github.imnotstable.msc.stdlib.ui.Bar;
+import io.github.imnotstable.msc.stdlib.ui.Feedback;
 import io.github.imnotstable.msc.stdlib.geom.Cuboid;
 import io.github.imnotstable.msc.stdlib.geom.Vec3;
 import io.github.imnotstable.msc.stdlib.text.Messages;
@@ -84,14 +86,14 @@ class PaperToolkitTest {
     void barsShowCountDownAndHide() {
         PlayerMock p = server.addPlayer();
         boolean[] done = {false};
-        Bar timer = Bar.timer(List.of(p), "<yellow><time>", Duration.ofSeconds(2), BossBar.Color.YELLOW, () -> done[0] = true);
+        Bar timer = Bar.timer(Stdlib.scheduler(), List.of(p), "<yellow><time>", Duration.ofSeconds(2), BossBar.Color.YELLOW, () -> done[0] = true);
         assertThat(bars(p)).contains(timer.bossBar());
         server.getScheduler().performTicks(20);
         assertThat(timer.bossBar().progress()).isBetween(0.45f, 0.55f);
         server.getScheduler().performTicks(25);
         assertThat(done[0]).isTrue();
         assertThat(bars(p)).doesNotContain(timer.bossBar());
-        Bar shown = Bar.create("<green>Saved", BossBar.Color.GREEN).show(p).hideAfter(Duration.ofSeconds(1));
+        Bar shown = Bar.create("<green>Saved", BossBar.Color.GREEN).show(p).hideAfter(Stdlib.scheduler(), Duration.ofSeconds(1));
         server.getScheduler().performTicks(21);
         assertThat(bars(p)).doesNotContain(shown.bossBar());
     }

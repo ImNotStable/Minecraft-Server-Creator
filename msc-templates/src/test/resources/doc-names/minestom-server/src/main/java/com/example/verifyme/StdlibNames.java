@@ -122,4 +122,38 @@ final class StdlibNames {
     static void sequence(io.github.imnotstable.msc.stdlib.sched.Scheduler scheduler) {
         io.github.imnotstable.msc.stdlib.sched.Sequence.of(scheduler).run(() -> { }).start();
     }
+
+    static void toolkit(net.minestom.server.entity.Player player, net.minestom.server.instance.Instance instance) {
+        io.github.imnotstable.msc.stdlib.ui.Feedback.success(player, "a");
+        io.github.imnotstable.msc.stdlib.ui.Feedback.fail(player, "a");
+        io.github.imnotstable.msc.stdlib.ui.Feedback.info(player, "a");
+        io.github.imnotstable.msc.stdlib.ui.Feedback.actionBar(player, "a");
+        io.github.imnotstable.msc.stdlib.ui.Feedback.title(player, "a", "b");
+        io.github.imnotstable.msc.stdlib.ui.Sounds.SUCCESS.play(player);
+        io.github.imnotstable.msc.stdlib.ui.Bar.create("a", net.kyori.adventure.bossbar.BossBar.Color.RED).show(player);
+        io.github.imnotstable.msc.stdlib.ui.Bar.timer(io.github.imnotstable.msc.stdlib.minestom.Stdlib.scheduler(),
+                java.util.List.of(player), "<time>", java.time.Duration.ofSeconds(5),
+                net.kyori.adventure.bossbar.BossBar.Color.RED, () -> { });
+        io.github.imnotstable.msc.stdlib.minestom.Hologram.spawn(instance, player.getPosition(), "a").remove();
+        io.github.imnotstable.msc.stdlib.minestom.Boards.show(player, "t", p -> java.util.List.of("a"), 20);
+        String id = "dash";
+        java.util.function.Supplier<net.minestom.server.item.ItemStack> factory =
+                () -> net.minestom.server.item.ItemStack.of(net.minestom.server.item.Material.FEATHER);
+        io.github.imnotstable.msc.stdlib.minestom.CustomItems.register(id, factory).onUse(e -> { }).onHit(e -> { })
+                .cooldown(java.time.Duration.ofSeconds(1));
+        String name = "spawn";
+        io.github.imnotstable.msc.stdlib.geom.Region region = io.github.imnotstable.msc.stdlib.geom.Region.sphere(
+                io.github.imnotstable.msc.stdlib.geom.Vec3.ZERO, 5);
+        io.github.imnotstable.msc.stdlib.minestom.Regions.define(name, instance, region).noBuild().noDamage()
+                .onEnter(p -> { });
+        net.minestom.server.entity.Player victim = player;
+        io.github.imnotstable.msc.stdlib.minestom.Regions.pvpAllowed(victim);
+        io.github.imnotstable.msc.stdlib.minestom.Prompt.ask(player, "?", java.time.Duration.ofSeconds(5), a -> { }, () -> { });
+        io.github.imnotstable.msc.stdlib.minestom.Teleports.warmup(player, null, player.getPosition(), 3, true, ok -> { });
+        io.github.imnotstable.msc.stdlib.minestom.Players.give(player);
+        io.github.imnotstable.msc.stdlib.minestom.Players.heal(player);
+        io.github.imnotstable.msc.stdlib.minestom.Players.reset(player, net.minestom.server.entity.GameMode.SURVIVAL);
+        io.github.imnotstable.msc.stdlib.minestom.Lang.of(io.github.imnotstable.msc.stdlib.text.Messages.of("en",
+                java.util.Map.of())).send(player, "k");
+    }
 }
