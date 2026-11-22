@@ -89,6 +89,20 @@ class ApiIndexTest {
     }
 
     @Test
+    void aMissOnAllWordsListsTheClosestMatchesAndTheClassToOpen() {
+        // The Sky Sprint bench missed on "PlayerMoveEvent constructor" and "Collector collect poll" (ADR 0063).
+        assertThat(index.search("gadget constructor", null, 5, 100))
+                .isEqualTo("Gadget#Gadget(String label)");
+        assertThat(index.search("gadget create poll", null, 1, 100)).isEqualTo("""
+                no match for all of "gadget create poll"; closest, most words first:
+                Gadget#static Gadget create(String label, Gadget.Mode mode)
+                [10 more; add words or raise limit (at most 100)]
+                Try api_class name=io.github.imnotstable.msc.core.fixture.Gadget.""");
+        assertThat(index.search("widget nothing", "enum", 5, 100))
+                .isEqualTo("no matches for \"widget nothing\"\nTry api_class name=io.github.imnotstable.msc.core.fixture.Widget.");
+    }
+
+    @Test
     void eventKindFindsTheEventsOfEveryPlatform() throws Exception {
         Path events = dir.resolve("events.jar");
         try (OutputStream out = Files.newOutputStream(events); JarOutputStream zip = new JarOutputStream(out)) {
