@@ -119,7 +119,7 @@ All world, building and texture tools work the same on every platform but Folia 
 
 ## The standard library
 
-Paper, Minestom and Fabric projects (`paper-plugin`, `paper-game`, `minestom-server`, `minestom-game`, `fabric-mod`, `fabric-game`) come with MSC's standard library, `msc-stdlib`, so the AI does not rewrite the usual parts of a plugin each time. It is in the project's `libs/repo/` folder, listed in `gradle/libs.versions.toml`, and packed into the plugin, server or mod jar, so it needs nothing else on the server.
+Paper, Minestom, Fabric and Velocity projects (`paper-plugin`, `paper-game`, `minestom-server`, `minestom-game`, `fabric-mod`, `fabric-game`, `velocity-plugin`) come with MSC's standard library, `msc-stdlib`, so the AI does not rewrite the usual parts of a plugin each time. It is in the project's `libs/repo/` folder, listed in `gradle/libs.versions.toml`, and packed into the plugin, server or mod jar, so it needs nothing else on the server.
 
 - Data: SQLite by default, or MySQL, MariaDB, PostgreSQL or H2, plus MongoDB and Redis. Records are saved without writing SQL, with caches, an economy, typed settings files and messages between servers.
 - Players see: menus with themes, layouts, confirm screens and live updates; titles, action bars, boss bars, sounds, holograms, sidebars and name tags.
@@ -128,4 +128,4 @@ Paper, Minestom and Fabric projects (`paper-plugin`, `paper-game`, `minestom-ser
 
 Each project also gets an index of the library (one line per method), its sources and a graphify graph of it, so the AI looks up only what it needs.
 
-NeoForge, Forge and Velocity get it in later releases. Design: ADR 0066.
+NeoForge and Forge get it in a later release. Design: ADR 0066.

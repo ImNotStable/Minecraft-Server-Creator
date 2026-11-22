@@ -32,7 +32,7 @@ mcprotocollib = "26.3-4"  # GeyserMC Java Edition protocol client for the msc-bo
 netty = "4.2.21.Final"  # floor for mcprotocollib, which pulls netty-all 4.2.1.Final (old, with advisories); like jackson
 mcprotocollib-previous = "26.2"  # the previous Minecraft version, for servers that lag Paper (Minestom); stays one behind
 slf4j = "2.0.20"  # matches Minestom's slf4j-api; scaffolded Minestom servers log through slf4j-simple
-msc-stdlib = "2.1.0"  # the standard library shipped in scaffolded projects (ADR 0066); raise on any API change
+msc-stdlib = "2.2.0"  # the standard library shipped in scaffolded projects (ADR 0066); raise on any API change
 hikaricp = "7.1.0"  # msc-stdlib connection pool, bundled into scaffolded plugin jars
 sqlite-jdbc = "3.49.1.0"  # tests only: the SQLite driver Paper 26.3 ships
 adventure = "5.2.0"  # msc-stdlib compiles its MiniMessage helper against it; Paper and Velocity ship Adventure, Minestom projects get MiniMessage through msc-stdlib-minestom
@@ -65,6 +65,7 @@ mcprotocollib = { module = "org.geysermc.mcprotocollib:protocol", version.ref = 
 netty-bom = { module = "io.netty:netty-bom", version.ref = "netty" }
 mcprotocollib-previous = { module = "org.geysermc.mcprotocollib:protocol", version.ref = "mcprotocollib-previous" }
 mockbukkit = { module = "org.mockbukkit.mockbukkit:mockbukkit-v26.3", version.ref = "mockbukkit" }
+velocity-api = { module = "com.velocitypowered:velocity-api", version.ref = "velocity" }
 hikaricp = { module = "com.zaxxer:HikariCP", version.ref = "hikaricp" }
 sqlite-jdbc = { module = "org.xerial:sqlite-jdbc", version.ref = "sqlite-jdbc" }
 adventure-minimessage = { module = "net.kyori:adventure-text-minimessage", version.ref = "adventure" }
