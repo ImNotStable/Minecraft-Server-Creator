@@ -7,18 +7,38 @@ import io.github.imnotstable.msc.core.agent.AgentHub;
 import io.github.imnotstable.msc.core.metrics.ToolLog;
 import io.github.imnotstable.msc.core.server.ServerManager;
 import io.github.imnotstable.msc.core.tool.Schema;
+import io.github.imnotstable.msc.core.tool.ToolException;
 import io.github.imnotstable.msc.core.tool.ToolRegistry;
 import io.github.imnotstable.msc.protocol.transport.CoreServer;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.UncheckedIOException;
 import java.net.URISyntaxException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.temporal.ChronoUnit;
+import java.util.List;
+import java.util.Objects;
 import java.util.function.BooleanSupplier;
 
 /** Health and usage tools. */
 public final class MetaTools {
+    /** The guides msc_status guide= serves (ADR 0067): read on demand, so they cost nothing until needed. */
+    static final List<String> GUIDES = List.of("build", "textures", "ux");
+
     private MetaTools() {
+    }
+
+    static String guide(String topic) {
+        if (!GUIDES.contains(topic)) {
+            throw new ToolException("guide is one of " + String.join(", ", GUIDES) + ", not \"" + topic + "\"");
+        }
+        try (InputStream in = MetaTools.class.getResourceAsStream("/io/github/imnotstable/msc/core/guides/" + topic + ".md")) {
+            return new String(Objects.requireNonNull(in, topic).readAllBytes(), StandardCharsets.UTF_8).strip();
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
     }
 
     /**
@@ -32,8 +52,13 @@ public final class MetaTools {
     public static void register(ToolRegistry registry, CoreConfig config, AgentHub hub, ServerManager server,
                                 ToolLog log, ApiTools api, BooleanSupplier closed) {
         registry.add("msc_status", "Where things stand: workspace, platform, server, agent, API index. stats=true: this "
-                        + "session's calls, errors, time and result tokens per tool instead.",
-                Schema.of().opt("stats", "boolean", "Show call stats"), args -> {
+                        + "session's calls, errors, time and result tokens per tool instead. guide=build, textures or ux: how "
+                        + "to do that work well.",
+                Schema.of().opt("stats", "boolean", "Show call stats")
+                        .opt("guide", "string", String.join(", ", GUIDES)), args -> {
+                    if (args.has("guide")) {
+                        return guide(args.str("guide"));
+                    }
                     if (args.bool("stats", false)) {
                         return log.summary();
                     }

@@ -1,0 +1,63 @@
+package io.github.imnotstable.msc.core.world;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import io.github.imnotstable.msc.protocol.world.BlockGrid;
+import io.github.imnotstable.msc.protocol.world.BlockPos;
+import org.junit.jupiter.api.Test;
+
+class BuildReviewTest {
+    /** An 11x11 floor of grass with a box of {@code wall} on it, 9 wide, 8 tall, hollow, flat-roofed. */
+    private static BlockGrid box(String wall) {
+        StringBuilder text = new StringBuilder("legend: g=grass_block #=" + wall + "\ny=0\n");
+        text.append("ggggggggggg\n".repeat(11));
+        for (int y = 1; y <= 8; y++) {
+            text.append("y=").append(y).append("\n...........\n");
+            for (int z = 1; z <= 9; z++) {
+                boolean solid = y == 8 || z == 1 || z == 9;
+                text.append('.').append(solid ? "#########" : "#.......#").append(".\n");
+            }
+            text.append("...........\n");
+        }
+        return TextGrid.parse(text.toString(), "world", new BlockPos(0, 64, 0));
+    }
+
+    @Test
+    void aPlainBoxGetsEveryFixAndTheGroundIsLeftOut() {
+        String review = BuildReview.review(box("bricks"));
+        assertThat(review).startsWith("review (ground up to y 64 left out): 305 blocks, 1 types: bricks 100%\n")
+                .contains("detail blocks 0% (aim 12%+)", "lights 0")
+                .contains("1) flat walls", "few shaped blocks", "only 1 block types", "flat roofs")
+                .doesNotContain("grass");
+    }
+
+    @Test
+    void aMixedDetailedBuildPassesTheNumbers() {
+        // Neighbours are always different kinds, stairs among them: no flat patch, plenty of detail, a shaped roof.
+        StringBuilder text = new StringBuilder(
+                "legend: a=stone_bricks b=cracked_stone_bricks c=mossy_stone_bricks d=andesite e=stone_brick_stairs "
+                        + "f=lantern g=oak_planks\n");
+        String kinds = "abcdefg";
+        for (int y = 0; y < 7; y++) {
+            // A ring of air around the 5x5 build, so no layer looks like ground.
+            text.append("y=").append(y).append("\n.......\n");
+            for (int z = 0; z < 5; z++) {
+                StringBuilder row = new StringBuilder(".");
+                for (int x = 0; x < 5; x++) {
+                    row.append(y == 6 ? 'e' : kinds.charAt((x + 2 * z + 3 * y) % kinds.length()));
+                }
+                text.append(row).append(".\n");
+            }
+            text.append(".......\n");
+        }
+        String review = BuildReview.review(TextGrid.parse(text.toString(), "world", new BlockPos(0, 0, 0)));
+        assertThat(review).contains("7 types", "flat wall faces 0%", "shaped roof 100%")
+                .endsWith("no number below the bar; now judge the render: silhouette, story, scale");
+    }
+
+    @Test
+    void anEmptyRegionSaysSo() {
+        BlockGrid air = TextGrid.parse("legend: #=stone\ny=0\n...\n...", "world", new BlockPos(0, 0, 0));
+        assertThat(BuildReview.review(air)).isEqualTo("review: nothing built above the ground");
+    }
+}

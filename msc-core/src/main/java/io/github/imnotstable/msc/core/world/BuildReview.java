@@ -1,0 +1,206 @@
+package io.github.imnotstable.msc.core.world;
+
+import io.github.imnotstable.msc.protocol.world.BlockGrid;
+import io.github.imnotstable.msc.protocol.world.Region;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
+
+/**
+ * Measurable signs of a plain build, so an agent judges its work by numbers and not only by its own look at a render
+ * (ADR 0067): few block types, few shaped blocks, flat walls of one block, flat roofs, no lights.
+ */
+public final class BuildReview {
+    /** Name parts of blocks that add shape or detail: trim, roofs, sills, furniture, plants, lights. */
+    private static final List<String> DETAIL = List.of("stairs", "slab", "wall", "fence", "pane", "bars", "trapdoor",
+            "door", "button", "lantern", "chain", "carpet", "banner", "pot", "candle", "torch", "sign", "rod", "leaves",
+            "vine", "barrel", "campfire", "chest", "anvil", "lectern", "bell", "skull", "head", "flower", "short_grass",
+            "tall_grass", "fern", "lichen", "scaffolding", "ladder", "lever", "pressure_plate", "dripleaf");
+    private static final List<String> LIGHTS = List.of("lantern", "torch", "glowstone", "sea_lantern", "shroomlight",
+            "froglight", "redstone_lamp", "campfire", "end_rod", "candle", "jack_o_lantern", "beacon", "glow_lichen");
+    private static final Set<String> FLUIDS = Set.of("water", "lava", "bubble_column");
+    private static final int[][] SIDES = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
+
+    static final int MIN_TYPES = 6;
+    static final int MAX_TOP_SHARE = 50;
+    static final int MIN_DETAIL = 12;
+    static final int MAX_FLAT = 45;
+    static final int MIN_ROOF = 15;
+
+    private BuildReview() {
+    }
+
+    public static String review(BlockGrid grid) {
+        Region r = grid.region();
+        String[] names = new String[grid.palette().size()];
+        for (int i = 0; i < names.length; i++) {
+            String id = BlockNames.brief(BlockNames.id(grid.palette().get(i)));
+            names[i] = BlockNames.isAir(grid.palette().get(i)) || FLUIDS.contains(id) ? null : id;
+        }
+        int ground = groundTop(grid, names);
+        Map<String, Integer> counts = new HashMap<>();
+        int total = 0;
+        int detail = 0;
+        int lights = 0;
+        int faces = 0;
+        int flat = 0;
+        for (int y = ground + 1; y <= r.max().y(); y++) {
+            for (int z = r.min().z(); z <= r.max().z(); z++) {
+                for (int x = r.min().x(); x <= r.max().x(); x++) {
+                    String b = name(grid, names, x, y, z);
+                    if (b == null) {
+                        continue;
+                    }
+                    total++;
+                    counts.merge(b, 1, Integer::sum);
+                    detail += matches(b, DETAIL) ? 1 : 0;
+                    lights += matches(b, LIGHTS) ? 1 : 0;
+                    // Each side open to air is a wall face; it is flat when its 3x3 patch is the same block, all open the same way.
+                    for (int[] s : SIDES) {
+                        if (name(grid, names, x + s[0], y, z + s[1]) != null || !grid.region().contains(x + s[0], y, z + s[1])) {
+                            continue;
+                        }
+                        faces++;
+                        flat += flatPatch(grid, names, b, x, y, z, s[0], s[1], ground) ? 1 : 0;
+                    }
+                }
+            }
+        }
+        if (total == 0) {
+            return "review: nothing built above the ground" + (ground >= r.min().y() ? " (y " + ground + " and below)" : "");
+        }
+        int[] roof = roof(grid, names, ground);
+        List<Map.Entry<String, Integer>> top = new ArrayList<>(counts.entrySet());
+        top.sort(Map.Entry.<String, Integer>comparingByValue().reversed().thenComparing(Map.Entry.comparingByKey()));
+        int topShare = pct(top.get(0).getValue(), total);
+        int detailPct = pct(detail, total);
+        int flatPct = faces == 0 ? 0 : pct(flat, faces);
+        int roofPct = roof[1] == 0 ? 100 : pct(roof[0], roof[1]);
+        int height = roof[2];
+
+        StringBuilder out = new StringBuilder("review");
+        if (ground >= r.min().y()) {
+            out.append(" (ground up to y ").append(ground).append(" left out)");
+        }
+        out.append(": ").append(total).append(" blocks, ").append(counts.size()).append(" types: ");
+        for (int i = 0; i < Math.min(4, top.size()); i++) {
+            out.append(i == 0 ? "" : ", ").append(top.get(i).getKey()).append(' ').append(pct(top.get(i).getValue(), total)).append('%');
+        }
+        out.append(String.format(Locale.ROOT, "\ndetail blocks %d%% (aim %d%%+), flat wall faces %d%% (aim under %d%%), "
+                + "shaped roof %d%%, lights %d\n", detailPct, MIN_DETAIL, flatPct, MAX_FLAT, roofPct, lights));
+        List<String> fixes = new ArrayList<>();
+        if (flatPct > MAX_FLAT && faces >= 20) {
+            fixes.add("flat walls: give each wall depth (pillars or a frame 1 out, windows 1 in), a base and a trim "
+                    + "line of stairs or slabs, and mix in variants of the main block");
+        }
+        if (detailPct < MIN_DETAIL) {
+            fixes.add("few shaped blocks: stairs and slabs for roofs, sills and trim; walls and fences for railings; "
+                    + "trapdoors for shutters; lanterns, barrels and plants as props");
+        }
+        if (counts.size() < MIN_TYPES) {
+            fixes.add("only " + counts.size() + " block types: add 2-3 variants of the main block (cracked, mossy, "
+                    + "polished) and one accent");
+        } else if (topShare > MAX_TOP_SHARE) {
+            fixes.add(top.get(0).getKey() + " is " + topShare + "% of the build: mix variants into it (a block mix "
+                    + "such as stone_bricks:70,cracked_stone_bricks:20,mossy_stone_bricks:10)");
+        }
+        if (roofPct < MIN_ROOF && height >= 6) {
+            fixes.add("flat roofs: pitch them with stairs, overhang 1, and break long ridges with dormers or a tower");
+        }
+        if (lights == 0 && total >= 200) {
+            fixes.add("no lights: lanterns, torches or glowing blocks at doors, paths and windows");
+        }
+        if (fixes.isEmpty()) {
+            return out.append("no number below the bar; now judge the render: silhouette, story, scale").toString();
+        }
+        out.append("fix first:");
+        for (int i = 0; i < fixes.size(); i++) {
+            out.append(i == 0 ? " " : "; ").append(i + 1).append(") ").append(fixes.get(i));
+        }
+        return out.toString();
+    }
+
+    /**
+     * The top of the ground to leave out: bottom layers while each is at least 90% filled (a superflat floor, a
+     * foundation slab), or one below the region when the bottom layer is not.
+     */
+    static int groundTop(BlockGrid grid, String[] names) {
+        Region r = grid.region();
+        int area = r.sizeX() * r.sizeZ();
+        int y = r.min().y();
+        for (; y < r.max().y(); y++) {
+            int filled = 0;
+            for (int z = r.min().z(); z <= r.max().z(); z++) {
+                for (int x = r.min().x(); x <= r.max().x(); x++) {
+                    filled += name(grid, names, x, y, z) != null ? 1 : 0;
+                }
+            }
+            if (filled * 10 < area * 9) {
+                break;
+            }
+        }
+        return y - 1;
+    }
+
+    /** Shaped tops, all tops and the build's height: what a roof looks like from above. */
+    private static int[] roof(BlockGrid grid, String[] names, int ground) {
+        Region r = grid.region();
+        int shaped = 0;
+        int tops = 0;
+        int height = 0;
+        for (int z = r.min().z(); z <= r.max().z(); z++) {
+            for (int x = r.min().x(); x <= r.max().x(); x++) {
+                for (int y = r.max().y(); y > ground; y--) {
+                    String b = name(grid, names, x, y, z);
+                    if (b != null) {
+                        tops++;
+                        shaped += b.contains("stairs") || b.contains("slab") ? 1 : 0;
+                        height = Math.max(height, y - ground);
+                        break;
+                    }
+                }
+            }
+        }
+        return new int[] {shaped, tops, height};
+    }
+
+    private static boolean flatPatch(BlockGrid grid, String[] names, String b, int x, int y, int z, int dx, int dz,
+            int ground) {
+        for (int v = -1; v <= 1; v++) {
+            for (int u = -1; u <= 1; u++) {
+                int px = x + (dx == 0 ? u : 0);
+                int pz = z + (dz == 0 ? u : 0);
+                int py = y + v;
+                if (py <= ground || !b.equals(name(grid, names, px, py, pz))
+                        || name(grid, names, px + dx, py, pz + dz) != null) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    private static String name(BlockGrid grid, String[] names, int x, int y, int z) {
+        if (!grid.region().contains(x, y, z)) {
+            return null;
+        }
+        int i = grid.blocks()[grid.region().index(x, y, z)];
+        return i < 0 ? null : names[i];
+    }
+
+    private static boolean matches(String name, List<String> parts) {
+        for (String p : parts) {
+            if (name.contains(p)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static int pct(long part, long whole) {
+        return (int) Math.round(100.0 * part / whole);
+    }
+}

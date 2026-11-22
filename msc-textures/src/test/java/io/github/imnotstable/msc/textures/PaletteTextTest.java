@@ -51,6 +51,9 @@ class PaletteTextTest {
     void reportsBadInputInOneLine() {
         assertThatThrownBy(() -> PaletteText.parse(List.of("a=#000"), List.of("aa", "a")))
                 .hasMessage("row 2 has 1 pixels, expected 2");
+        // The width most rows share wins, even over row 1's, and every odd row is named at once.
+        assertThatThrownBy(() -> PaletteText.parse(List.of("a=#000"), List.of("aaa", "aa", "aa", "aaa", "aa")))
+                .hasMessage("row 1 has 3 pixels, expected 2 (rows 1, 4 all differ)");
         assertThatThrownBy(() -> PaletteText.parse(List.of("a=#000"), List.of("ab")))
                 .hasMessageContaining("symbol 'b'");
         assertThatThrownBy(() -> PaletteText.parse(List.of("a=#000"), List.of("", "")))

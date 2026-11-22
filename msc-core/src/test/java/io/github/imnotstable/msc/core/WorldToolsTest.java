@@ -286,7 +286,7 @@ class WorldToolsTest {
         assertThat(h.error("world_summary", "region", region, "diff", "snap/none.schem")).contains("structure_save");
         assertThat(h.error("world_summary", "region", region, "path", "0,64,2")).contains("two positions");
         assertThat(h.error("world_summary", "region", region, "path", "0,64,2 9,64,2", "diff", "a.schem"))
-                .contains("not both");
+                .contains("give one of path, diff or review");
     }
 
     /** #632: the note gives the region's own size and what was compared, also for a snapshot smaller than it. */

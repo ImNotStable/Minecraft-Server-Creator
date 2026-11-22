@@ -134,6 +134,8 @@ class TextureToolsTest {
                 "palette", List.of("r=#d4263a d=#701", "g=#00ff0080"), "rows", ruby());
         assertThat(result).isEqualTo("""
                 wrote msc:item/ruby 16x16; item_model msc:ruby
+                warning: only 3 colors: shade each material with 3-4 tones (dark outline, shadow, base, highlight), \
+                as vanilla textures do
                 next: pack""");
         Path assets = workspace.resolve(".msc/pack/assets/msc");
         BufferedImage image = ImageIO.read(assets.resolve("textures/item/ruby.png").toFile());
@@ -210,10 +212,32 @@ class TextureToolsTest {
     }
 
     @Test
+    void flatDrawingsAndStockShapesAreFlagged() {
+        // Two tones over a 16x16 square: too few to read as shaded.
+        List<String> rows = new java.util.ArrayList<>();
+        for (int y = 0; y < 16; y++) {
+            rows.add(y % 2 == 0 ? "ab".repeat(8) : "ba".repeat(8));
+        }
+        assertThat(h.ok("texture", "name", "item/flat", "palette", List.of("a=#204060", "b=#305070"), "rows", rows))
+                .contains("warning: only 2 colors: shade each material with 3-4 tones");
+        // Five tones, one of them over half the pixels.
+        List<String> big = new java.util.ArrayList<>();
+        for (int y = 0; y < 16; y++) {
+            big.add(y < 9 ? "a".repeat(16) : "bcde".repeat(4));
+        }
+        assertThat(h.ok("texture", "name", "item/big", "palette",
+                List.of("a=#204060", "b=#305070", "c=#406080", "d=#507090", "e=#6080a0"), "rows", big))
+                .contains("warning: #204060 fills 56%: break it up");
+        assertThat(h.ok("texture", "name", "item/stock", "kind", "gem", "color", "#d4263a"))
+                .contains("warning: a stock gem shape in your colors");
+    }
+
+    @Test
     void generateWritesAShadedTextureThatTheOtherToolsRead() throws Exception {
         String gem = h.ok("texture", "name", "item/ruby", "kind", "gem", "color", "#d4263a");
         assertThat(gem).startsWith("wrote msc:item/ruby: 16x16, ").contains("main hue 0 (red)")
-                .contains("; item_model msc:ruby\n16x16\npalette: .=transparent").endsWith("pack");
+                .contains("; item_model msc:ruby\nwarning: a stock gem shape").contains("\n16x16\npalette: .=transparent")
+                .endsWith("pack");
         assertThat(h.ok("texture_view", "name", "item/ruby")).startsWith("16x16\npalette:");
         String ore = h.ok("texture", "name", "block/ruby_ore", "kind", "ore", "color", "#7f7f7f",
                 "accent", "#d4263a", "size", 32, "seed", 7, "contrast", 0.5);

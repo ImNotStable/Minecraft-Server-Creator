@@ -97,7 +97,7 @@ public final class MscLauncher {
     /** The install folder with the latest install time, if any. */
     public static Optional<Install> newest(Path home, long now) {
         List<Install> found = new ArrayList<>();
-        install(home, now).ifPresent(found::add);
+        flat(home).ifPresent(found::add);
         if (Files.isDirectory(home)) {
             try (Stream<Path> children = Files.list(home)) {
                 // installMsc renames a folder to .delete-* before deleting it.
@@ -112,26 +112,47 @@ public final class MscLauncher {
 
     /** The install in this folder, if it holds one. */
     static Optional<Install> install(Path dir, long now) {
+        return coreJar(dir).map(jar -> new Install(dir, version(jar), installed(dir, now)));
+    }
+
+    /**
+     * The flat install from before ADR 0021, in the home folder itself. It counts from its core jar's time, never
+     * from when a launcher first saw it: that stamp ranked an 11-day-old core above the install that replaced it
+     * (ADR 0067). Only a time installMsc wrote (it records its source) is kept.
+     */
+    static Optional<Install> flat(Path home) {
+        return coreJar(home).map(jar -> {
+            Properties p = load(home.resolve(INSTALL_PROPERTIES));
+            String value = p.getProperty("source") == null ? null : p.getProperty("installed");
+            long installed;
+            try {
+                installed = value != null ? Long.parseLong(value.trim()) : Files.getLastModifiedTime(jar).toMillis();
+            } catch (NumberFormatException | IOException e) {
+                installed = 0;
+            }
+            return new Install(home, version(jar), installed);
+        });
+    }
+
+    /** The core jar in this folder's {@code lib}, if there is one. */
+    private static Optional<Path> coreJar(Path dir) {
         Path lib = dir.resolve("lib");
         if (!Files.isDirectory(lib)) {
             return Optional.empty();
         }
-        String version = null;
         try (Stream<Path> jars = Files.list(lib)) {
-            for (Path jar : jars.toList()) {
-                Matcher m = CORE_JAR.matcher(jar.getFileName().toString());
-                if (m.matches()) {
-                    version = m.group(1);
-                    break;
-                }
-            }
+            return jars.filter(j -> CORE_JAR.matcher(j.getFileName().toString()).matches()).findFirst();
         } catch (IOException e) {
             return Optional.empty();
         }
-        if (version == null) {
-            return Optional.empty();
+    }
+
+    private static String version(Path jar) {
+        Matcher m = CORE_JAR.matcher(jar.getFileName().toString());
+        if (!m.matches()) {
+            throw new IllegalStateException(jar.toString());
         }
-        return Optional.of(new Install(dir, version, installed(dir, now)));
+        return m.group(1);
     }
 
     /**
