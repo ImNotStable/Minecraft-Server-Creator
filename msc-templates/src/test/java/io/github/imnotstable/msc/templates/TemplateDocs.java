@@ -18,7 +18,7 @@ import java.util.regex.Pattern;
  * {@link TemplateBuildTest}, which asks the project's own Gradle for its task list.
  */
 final class TemplateDocs {
-    static final List<String> DOCS = List.of("CLAUDE.md", "README.md");
+    static final List<String> DOCS = List.of("CLAUDE.md", "README.md", "RULES.md");
 
     private static final Pattern GRADLEW = Pattern.compile("\\./gradlew ([A-Za-z][\\w:]*)(?: --tests '\\*(\\w+)')?");
     /** A promise that typing {@code stop} in the terminal stops the run: "`stop` on the console", "type stop". */

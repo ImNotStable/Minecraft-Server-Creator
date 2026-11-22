@@ -7,7 +7,11 @@ Minestom minigame server for Minecraft {{minestomMcVersion}}, Java {{javaVersion
 - `./gradlew build`: compile, run all tests and build the server jar. Run it after every change; it must pass before you stop.
 - `./gradlew test --tests '*GameTest'`: one test class.
 - `./gradlew run`: start the dev server in `run/` on {{serverIp}}:{{serverPort}}. Type `game status` or `stop` on the console.
-- Server jar (runs on its own): `build/libs/{{projectId}}-{{version}}.jar`, start with `java -jar` from `run/`.
+- Server jar (runs on its own): `build/libs/{{projectId}}-{{version}}.jar`, start with `java -jar` from `run/`. Only `./gradlew build` makes it; MSC's `dev_cycle` deploys a thinner jar to the dev server.
+
+## Where to start
+
+A new game changes `GameConfig.game()`, `Game`, `GameEvents` and `GameCommand`, with tests like `GameTest`. The other classes (`Stage`, `Box`, `Kit`, `Progress`, `Console`) and tests (`SharedRulesTest`, `GameThreadsTest`, `BoxTest`, `ProgressTest`) only need reading when you change what they do. With MSC tools, `api_search query="<words>" project=.` lists the matching methods with `path:line` and the tests that use them.
 
 ## What the template already does
 
@@ -32,20 +36,7 @@ The base every game needs, so you only write the game itself. All of it is set i
 
 ## Rules for names and values
 
-The game checks names and values on start. `SharedRulesTest` lists each rule as a table of inputs and whether the game takes them.
-
-- Stage names: one word of visible characters, so `/game stage <name>` can select it and chat can type it. No whitespace (not even a no-break space), no control or invisible formatting character, no `§`. A whole number is allowed: `/game stage 2` picks the stage named `2` first, then the second stage. Two names may not differ only in case (`arena` and `ARENA`), because `/game stage` ignores case (`Stage.sameName`).
-- `/game` arguments are split on runs of whitespace, so `game  stage  arena  Steve` works. Player names are matched exactly, ignoring case. Subcommands ignore case.
-- Values: `time` 0 to 23999; a kit amount 1 to 2304 (a full inventory); spawns finite, x and z within 30000000, y -2032 to 2031, yaw within 360, pitch within 90; goal corners whole numbers inside the same limits, in any order.
-- A bad value stops the game on start with one message naming it and the rule it broke; there is no fallback.
-- To change a rule for this game, change its check and its rows in `SharedRulesTest` together, then its line above. The game's shipped values, all in `GameConfig.game()`, must still pass the new rule: each rule below says which they are, and `./gradlew test` fails on any that do not (`GameConfigTest.theGameIsValid`). `TestGames` keeps its time and bread inside the limits by itself. The rules you can change:
-  - Time: `GameConfig.MAX_TIME`, rows in `TIMES`. Shipped: the time 6000 in `game()`; a limit below 6000 needs it set to a time it takes. A game that only allows daytime: set `MAX_TIME = 12000` in `GameConfig`, and in `SharedRulesTest.TIMES` replace `ok(23999L), no(24000L)` with `ok(12000L), no(12001L)`.
-  - Kit amounts: `Kit.MAX_AMOUNT`, rows in `AMOUNTS`. Shipped: the 8 bread of the kit in `game()`; a limit below 8 needs it lowered. At most one stack: set `MAX_AMOUNT = 64` in `Kit`, and in `AMOUNTS` replace `ok(2304), no(2305)` with `no(65)`.
-  - World limits: `Box.MAX_XZ`, `Box.MIN_Y` and `Box.MAX_Y`, rows in `SPAWNS` and `GOALS`. They may narrow the world to your arena, but keep x and z within 100 of 0 and y -64 to 64 inside them: the tests put their stages there. Shipped: the spawns and goal boxes of the stages in `game()`. A game within 1000 blocks at overworld heights: set `MAX_XZ = 1000`, `MIN_Y = -64` and `MAX_Y = 320` in `Box`, and in `SPAWNS` and `GOALS` write each 30000000 as 1000, 30000000.5 as 1000.5, 30000001 as 1001, 2031 as 320, 2031.5 as 320.5, 2032 as 321, -2032 as -64 and -2033 as -65 (-30000000 as -1000, and so on). Yaw within 360 and pitch within 90 are Minecraft's own limits and stay.
-  - Stage names: `Stage.isName` and `Stage.NAME_RULE`, the rule as messages say it; rows in `STAGE_NAMES`, and in `NAME_PAIRS` drop a pair with a name the new rule refuses. Shipped: the stage names in `game()`. Keep lower-case words valid: the tests name their stages `a`, `start`, `arena` and `end`. ASCII names only: add `&& c < 0x80` to the check in `isName`, set `NAME_RULE = "one word of ASCII letters, digits and symbols (no spaces)"`, in `STAGE_NAMES` replace `ok("été"), ok("竜")` with `no("été"), no("竜")`, and in `NAME_PAIRS` drop `no(List.of("I", "ı"))`.
-
-The game is set in Java (`GameConfig.game()`), so the compiler checks names and types, and there are no config keys; a message names the rule and the value (`stage name must be one word of visible characters (no spaces, no §), got 'boss room'`).
-Minestom's `Pos` wraps yaw into range and clamps pitch to 90 itself, so a spawn's view direction is never refused. `/game` has no tab completion: its argument is a plain string array. Players named in `admins` may use `/game`; the console always can.
+The game checks stage names, kit amounts, the time and coordinates on start; a bad one stops it with one message naming the rule. Each rule, and how to change one for this game, is in `RULES.md`; `SharedRulesTest` holds their rows. Read them only to change a rule.
 
 ## Building the game
 
