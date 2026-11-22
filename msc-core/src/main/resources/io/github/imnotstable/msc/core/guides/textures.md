@@ -1,7 +1,7 @@
 TEXTURE GUIDE: pixel art that looks made for this server, not generated.
 
 THE RULE
-- kind= presets (gem, ingot, orb, sword, pickaxe, food) are shaded starts in your colours, shared by everyone. Make each one yours by editing a few of the rows it returns (a facet, a notch, an accent colour, a second material) and sending them back with rows=: far cheaper than drawing 256 pixels. Draw from scratch only when no preset or vanilla texture (texture_view) fits the shape.
+- Draw every item yourself with rows=, its own silhouette and details. The kind= shapes (gem, ingot, orb, sword, pickaxe, food) are examples, shared by everyone who asks for one: look at one for ideas (outline, ramp, glint placement) and then draw your own, never ship it as is. Vanilla textures (texture_view) are inspiration the same way.
 
 DRAWING A 16x16 ITEM
 1. Silhouette first: one readable shape that fills most of the 16x16, centred, 1-pixel dark outline (not pure black: a dark shade of the main colour). Tools and weapons run diagonally, bottom-left to top-right.

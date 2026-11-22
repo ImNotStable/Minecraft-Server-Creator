@@ -60,7 +60,7 @@ public final class TextureTools {
                 Schema.of().req("name", "string", "Texture name such as item/ruby or myplugin:block/ruby_ore, or a .png path for a file outside the pack")
                         .opt("palette", "strings", "Draw: symbol=#rrggbb or #rrggbbaa entries, for example \"r=#d4263a\". \".\" is transparent")
                         .opt("rows", "strings", "Draw: pixel rows, top first, all the same length (16 is standard)")
-                        .opt("kind", "string", "Generate: pattern noise, ore, planks or bricks, or 16x16 shape gem, ingot, orb, "
+                        .opt("kind", "string", "Generate: pattern noise, ore, planks or bricks, or 16x16 example shape gem, ingot, orb, "
                                 + "sword, pickaxe or food")
                         .opt("copy", "string", "Recolor: the pack texture to copy onto shades of color, keeping its shading")
                         .opt("color", "string", "Base color #rrggbb, for kind and copy")
@@ -315,8 +315,8 @@ public final class TextureTools {
             model = model(args, id, shape ? (kind.equals("sword") || kind.equals("pickaxe") ? "handheld" : "item") : "block");
             if (shape) {
                 warnings = List.of("a stock " + kind + " shape, shaded in your colors and shared by every " + kind
-                        + ": make it yours by editing a few of the rows below (a facet, a notch, an accent) and "
-                        + "sending them back with rows=; draw from scratch only when no shape fits");
+                        + ": an example to learn from (outline, light from the top left, tones, glint), not to ship; "
+                        + "draw your own item with rows=");
             }
         } else if (ways.contains("copy")) {
             Texture in = firstFrame(source, ResourceId.parse(args.str("copy")));
