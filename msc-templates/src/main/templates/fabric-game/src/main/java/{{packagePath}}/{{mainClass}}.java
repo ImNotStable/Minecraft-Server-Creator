@@ -1,5 +1,6 @@
 package {{packageName}};
 
+import io.github.imnotstable.msc.stdlib.fabric.Stdlib;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import net.fabricmc.api.DedicatedServerModInitializer;
@@ -17,6 +18,7 @@ public final class {{mainClass}} implements DedicatedServerModInitializer {
 
     @Override
     public void onInitializeServer() {
+        Stdlib.init(); // msc-stdlib: its scheduler runs on the server tick
         GameConfig config = GameConfig.game();
         Progress progress;
         try {

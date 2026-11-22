@@ -249,7 +249,7 @@ import io.github.imnotstable.msc.stdlib.geom.Shapes;
 import io.github.imnotstable.msc.stdlib.paper.Gui;
 import io.github.imnotstable.msc.stdlib.paper.ItemBuilder;
 import io.github.imnotstable.msc.stdlib.paper.ParticleEffect;
-import io.github.imnotstable.msc.stdlib.paper.Text;
+import io.github.imnotstable.msc.stdlib.text.Text;
 import io.github.imnotstable.msc.stdlib.time.Cooldowns;
 import io.github.imnotstable.msc.stdlib.time.Durations;
 import java.time.Duration;

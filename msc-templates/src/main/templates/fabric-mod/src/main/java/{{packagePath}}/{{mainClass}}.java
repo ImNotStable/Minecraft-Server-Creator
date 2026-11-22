@@ -1,5 +1,6 @@
 package {{packageName}};
 
+import io.github.imnotstable.msc.stdlib.fabric.Stdlib;
 import net.fabricmc.api.DedicatedServerModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
@@ -12,6 +13,7 @@ public final class {{mainClass}} implements DedicatedServerModInitializer {
 
     @Override
     public void onInitializeServer() {
+        Stdlib.init(); // msc-stdlib: its scheduler runs on the server tick
         Greeter greeter = new Greeter(Greeter.DEFAULT_JOIN, Greeter.DEFAULT_HELLO);
 
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) ->

@@ -10,6 +10,14 @@ java {
     toolchain.languageVersion = JavaLanguageVersion.of(libs.versions.java.get().toInt())
 }
 
+repositories {
+    mavenCentral()
+    // msc-stdlib, shipped with the project.
+    maven(uri("libs/repo")) {
+        content { includeGroup("io.github.imnotstable.msc") }
+    }
+}
+
 loom {
     // A server-side mod: compile against the dedicated server only, so client classes can't sneak in.
     serverOnlyMinecraftJar()
@@ -25,12 +33,23 @@ dependencies {
     minecraft(libs.minecraft)
     implementation(libs.fabric.loader)
     implementation(libs.fabric.api)
+    // MSC's standard library, nested in the mod jar (jar-in-jar; Fabric loads the newest copy when several mods
+    // carry it). include() is not transitive, so its own libraries are listed too; Minecraft ships Gson and slf4j.
+    implementation(libs.msc.stdlib.fabric) {
+        exclude(group = "org.slf4j")
+    }
+    include(libs.msc.stdlib.fabric)
+    include(libs.msc.stdlib)
+    include(libs.hikaricp)
+    // SQLite for msc-stdlib's Database on the server (about 13 MB): uncomment to nest it in the mod.
+    // include(libs.sqlite.jdbc)
 
     testImplementation(libs.fabric.loader.junit)
     testImplementation(platform(libs.junit.bom))
     testImplementation(libs.junit.jupiter)
     testImplementation(libs.assertj)
     testRuntimeOnly(libs.junit.platform.launcher)
+    testRuntimeOnly(libs.sqlite.jdbc)
 }
 
 tasks.withType<JavaCompile>().configureEach {
@@ -54,6 +73,7 @@ tasks.test {
     useJUnitPlatform()
     // Fabric Loader runs inside the test JVM (fabric-loader-junit); this mod only has the server jar.
     systemProperty("fabric.side", "server")
+    jvmArgs("--enable-native-access=ALL-UNNAMED") // sqlite-jdbc loads its native library
     // Short output: only failures, with the full exception.
     testLogging {
         events("failed")

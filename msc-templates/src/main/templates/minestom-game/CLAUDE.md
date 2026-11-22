@@ -58,6 +58,18 @@ The game checks stage names, kit amounts, the time and coordinates on start; a b
 - Code on any other thread (a virtual thread, a `CompletableFuture` callback, an async event such as `AsyncPlayerConfigurationEvent`) hops back before it touches game state: `MinecraftServer.getSchedulerManager().execute(() -> ...)` or `world.scheduleNextTick(w -> ...)`. `Game.confineTo` makes a change from another thread throw; `main` turns it on for the tick threads and `GameTest` for the test thread. `Progress` is the one exception: it is written to disk on a virtual thread, so it is thread-safe.
 - Do not block the tick thread (no files, network or sleeps in listeners or commands): do slow work on a virtual thread, then hop back with its result.
 
+## Standard library (msc-stdlib)
+
+The project depends on MSC's standard library (`libs.msc.stdlib.minestom`, shipped in `libs/repo/` with its sources, packed into the server jar). Use it before writing your own. `Stdlib.init(MinecraftServer.process())` runs in `main` (the template does it); in tests call `Stdlib.init(env.process())` first.
+
+- Menus: `Gui.chest(rows, title)` with `set(slot, item, click -> ...)`, `fill`, `border`, `editable`, `onClose`, `open(player)`; `Gui.paged(rows, title, list, icon, (entry, click) -> ...)`. Items cannot be taken out except from `editable` slots.
+- Items: `ItemBuilder.of(Material)` with `name`, `lore`, `glow`, `hideTooltip`, `model`, `tag(tag, value)`, `raw()` for other data components; `ItemBuilder.read(item, tag)`, `ItemBuilder.filler()`.
+- Text: `Text.mm("<green>Hi <name>", "name", value)` (values go in as plain text, `Component`s as they are), `Text.plain`.
+- Particles: `ParticleEffect.of(Particle.FLAME)` or `ParticleEffect.dust(color, size)`, then `spawn(instance, point)`, `draw(instance, origin, points)` or `play(scheduler, instance, origin, period, frames, frame -> points)`. Shapes in `Shapes` (`circle`, `sphere`, `helix`, `star`, `cuboidEdges`, ...); `Locations.facing` turns them to where a player looks. Scoreboards: Minestom's own `Sidebar`.
+- Databases: `Database.open(DatabaseConfig.sqlite(Path.of("data.db")))` (the SQLite driver is a dependency; add the MySQL, MariaDB or PostgreSQL driver to `libs.versions.toml` for `DatabaseConfig.server(...)`). `update`, `insert`, `query`, `queryOne`, `transaction`, `async(db -> ...)`; `Table.named(...)` schemas, `db.migrate(...)` with `Migration.of(...)`, `Store.sql(db, table, Codec.json(Account.class))` records by key, `Store.memory()` in tests.
+- Player data: `PlayerData.create(store, defaults)` loads each player's record while they configure, saves it when they leave; `get`, `update`, `saveAll` (call before stopping).
+- Time: `Cooldowns` (`tryUse`, `remaining`), `Durations.parse("1h30m")`, `Durations.format`, `Stdlib.scheduler()` (`later`, `repeat`, `countdown`). Loot: `WeightedRandom`.
+
 ## Tests
 
 - Every change comes with a test. Pure logic: plain JUnit + AssertJ. Worlds, players, events, commands: Minestom's test environment.

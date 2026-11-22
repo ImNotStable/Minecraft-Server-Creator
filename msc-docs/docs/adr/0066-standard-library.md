@@ -46,13 +46,20 @@ with no access to this repository, and msc-stdlib is not on Maven Central.
 ## Phases
 
 - Phase 1 (this ADR): msc-stdlib, msc-stdlib-paper, paper-plugin and paper-game.
-- Phase 2: Fabric (`include` jar-in-jar, a JSON config helper), Minestom (in its fat jar), then NeoForge, Forge and
-  Velocity, each an adapter module implementing `Scheduler` and its own menus and particles. `api_search` and
-  `api_class` index the stdlib jars from the project's `libs/repo/` (today they see only the platform's jars; the
-  guide points at the sources jar instead).
-
-## Left out
-
+- Phase 2a (1.1.0): `Text` moves to msc-stdlib (`text.Text`, Adventure compile-only: Paper and Velocity ship it, the
+  Minestom adapter brings MiniMessage, which Minestom lacks). `msc-stdlib-minestom`: `Stdlib.init(process)`, `Gui`
+  (an `Inventory` subclass, so one listener on the library's own event node finds the menu from the player's open
+  inventory), `ItemBuilder`, `ParticleEffect` (packets to an instance or players), `Locations`, `PlayerData` (loads in
+  `AsyncPlayerConfigurationEvent`), `MinestomScheduler`. Sidebars stay Minestom's own `Sidebar`. minestom-server and
+  minestom-game ship it with the SQLite driver as a runtime dependency (no Minestom server ships one), packed into the
+  fat jar by Shadow. `packTemplates` gives each template only the core and its own adapter.
+- Phase 2b: `msc-stdlib-fabric` (built with Loom against the server jar): `Stdlib.init()` (idempotent: Fabric loads one
+  copy for every mod that nests it), `FabricScheduler` on the server tick, server-side `Gui` (a `ChestMenu` that
+  refuses clicks outside editable slots and resyncs the client), `ItemBuilder` over data components, `ParticleEffect`
+  (`ServerLevel.sendParticles`), `Locations`, `PlayerData` (join, leave, server stop). fabric-mod and fabric-game nest it
+  with `include` (msc-stdlib and HikariCP listed too, as `include` is not transitive); the SQLite driver is on the test
+  classpath and one commented line away from the mod jar, since it is 13 MB.
+- Then NeoForge, Forge and Velocity.
 - MongoDB: a document store needs its own driver (several MB) and API; `Store` is an interface, so a Mongo backend
   can be added without changing callers. H2: Paper does not ship it and SQLite covers the file case.
 - Commands and config wrappers on Paper: Paper's Brigadier API and `getConfig()` already do the job, and the guide

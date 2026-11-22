@@ -1,5 +1,6 @@
 package io.github.imnotstable.msc.stdlib.paper;
 
+import io.github.imnotstable.msc.stdlib.text.Text;
 import io.github.imnotstable.msc.stdlib.db.Store;
 import net.kyori.adventure.text.Component;
 import org.bukkit.Material;
