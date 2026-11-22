@@ -34,6 +34,18 @@ public record BlockPattern(List<String> states, int[] cumulative, long seed, int
         this(states, cumulative, seed, clump, null);
     }
 
+    /** Every block this pattern can give, a ramp's stages included. */
+    public List<String> allStates() {
+        if (ramp == null) {
+            return states;
+        }
+        List<String> out = new ArrayList<>();
+        for (BlockPattern p : ramp.stages()) {
+            out.addAll(p.allStates());
+        }
+        return out;
+    }
+
     /** Whether this is a ramp still waiting for the box it spans. */
     public boolean needsSpan() {
         return ramp != null && ramp.from() == Integer.MIN_VALUE;

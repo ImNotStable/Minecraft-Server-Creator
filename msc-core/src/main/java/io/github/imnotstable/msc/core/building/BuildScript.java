@@ -35,7 +35,8 @@ public final class BuildScript {
     /** What every step verb takes, for the tool descriptions. */
     public static final String HELP = """
             One step per line; later steps win. B = a block or a mix like grass_block:78,moss_block:10; B{SNBT} adds \
-            block entity data; a>b>c a gradient (grade=y|x|z|-y). Every step takes replace=a,b (air = empty), seed=N,             repeat=N step=DX,DY,DZ, clump=N (patches). Blocks join as placed by hand; facing= left out turns to the wall.
+            block entity data; a>b>c a gradient (grade=y|x|z|-y). Every step takes replace=a,b (air = empty), seed=N, \
+            repeat=N step=DX,DY,DZ, clump=N (patches). Unsaid facing, half, axis, type, open, hinge... is refused.
             fill X,Y,Z X,Y,Z B [hollow|outline|walls]
             set X,Y,Z B
             cylinder X,Y,Z r=R h=H B [hollow] [thick=T] [inner=R]   (X,Y,Z = bottom centre)
@@ -65,6 +66,8 @@ public final class BuildScript {
     private static final Pattern OPTION = Pattern.compile("[a-z]+=.*");
     private static final Pattern BAND = Pattern.compile("\\d+=.+");
     private static final Set<String> FLAGS = Set.of("solid", "hollow", "outline", "walls");
+    /** Steps that set facing, half and the like on their own blocks from where each lands. */
+    private static final Set<String> SHAPING = Set.of("roof", "trim", "decorate", "weather");
 
     /** Where structures come from: files in the workspace and the world itself. */
     public interface StructureFiles {
@@ -91,6 +94,7 @@ public final class BuildScript {
     public List<Step> parse(String text) throws java.io.IOException, InterruptedException {
         List<Step> steps = new ArrayList<>();
         String[] lines = text.split("\\R");
+        List<String> unsaid = new ArrayList<>(); // every line's unsaid block data, refused together (ADR 0077)
         for (int i = 0; i < lines.length; i++) {
             String line = lines[i].strip();
             if (line.isEmpty() || line.startsWith("#") || line.startsWith("//")) {
@@ -109,14 +113,21 @@ public final class BuildScript {
                     if (j == lines.length) {
                         throw new ToolException("structure has no closing \"end\" line");
                     }
-                    steps.add(stamp(parts, TextGrid.parse(body.toString(), world, new BlockPos(0, 0, 0))));
                     i = j;
+                    steps.add(stamp(parts, TextGrid.parse(body.toString(), world, new BlockPos(0, 0, 0))));
                 } else {
                     steps.add(step(parts));
                 }
             } catch (ToolException e) {
+                if (e.getMessage().startsWith(BlockRules.UNSAID)) {
+                    unsaid.add("line " + lineNo + ": " + e.getMessage().substring(BlockRules.UNSAID.length()));
+                    continue;
+                }
                 throw new ToolException("line " + lineNo + " (" + abbreviate(line) + "): " + e.getMessage());
             }
+        }
+        if (!unsaid.isEmpty()) {
+            throw new ToolException("nothing placed; " + BlockRules.UNSAID + String.join("; ", unsaid) + BlockRules.EXAMPLE);
         }
         if (steps.isEmpty()) {
             throw new ToolException("no steps; write one step per line, for example: fill 0,64,0 4,64,4 stone");
@@ -205,6 +216,7 @@ public final class BuildScript {
                 if (BlockPattern.isMix(state)) {
                     throw new ToolException("set takes one block, not a mix");
                 }
+                BlockRules.require(List.of(state));
                 yield new Step.Set(world, p.points(), List.of(state), o.replace());
             }
             case "cylinder", "ring", "disc" -> {
@@ -516,6 +528,7 @@ public final class BuildScript {
         boolean air = airText == null || Boolean.parseBoolean(airText);
         List<String> replace = o.replace();
         o.done();
+        BlockRules.require(structure.palette());
         Region0 size = new Region0(structure.region().sizeX(), structure.region().sizeZ());
         Map<Integer, BlockGrid> turned = new HashMap<>();
         List<Step.Stamp.Placement> placements = new ArrayList<>();
@@ -679,13 +692,24 @@ public final class BuildScript {
         }
 
         BlockPattern block() {
-            return spanned(BlockPattern.parse(requireBlock(), seed()).withClump(clump()));
+            return chosen(spanned(BlockPattern.parse(requireBlock(), seed()).withClump(clump())));
+        }
+
+        /**
+         * Blocks the agent writes straight into the build say how they are placed (ADR 0077); the detail steps turn
+         * their own blocks to fit, so those are left to them.
+         */
+        BlockPattern chosen(BlockPattern b) {
+            if (!SHAPING.contains(p.verb())) {
+                BlockRules.require(b.allStates());
+            }
+            return b;
         }
 
         /** A block option such as {@code top=grass_block}, with the step's seed and clump; {@code fallback} when absent. */
         BlockPattern pattern(String key, BlockPattern fallback) {
             String v = string(key);
-            return v == null ? fallback : spanned(BlockPattern.parse(v, seed()).withClump(clump()));
+            return v == null ? fallback : chosen(spanned(BlockPattern.parse(v, seed()).withClump(clump())));
         }
 
         int clump() {

@@ -31,14 +31,27 @@ Against that list MSC's `build_batch` had shapes and fills, and three gaps that 
    panes, bars and walls connect to their own kind and to full blocks (not leaves); walls rise to a post where they turn
    and go tall under a block; stairs get the game's corner shape (its own `getStairsShape` rule); doors, beds and tall
    plants get their other half where it is free; vines and lichen cling to the blocks beside them; lanterns hang under a
-   ceiling; torches beside a wall become wall torches; and a stair, trapdoor, chest, furnace, barrel or ladder without
-   `facing=` turns to the wall beside it (stairs back to it and upside down under a ceiling, a trapdoor open flat on it).
-   Only what a step left unsaid is filled in, so saved structures and copies, which name every property, come out
-   exactly as they were. The canvas is one block wider than the steps so a door's top or a bed's head fits.
-2. **Gradients**: a block `a>b>c` (each stage a block or a mix) runs over the step's own box along `grade=` (y by
+   ceiling; torches beside a wall become wall torches; and a stair, trapdoor, chest, furnace, barrel or ladder that
+   `roof`, `trim` or `decorate` set without `facing=` turns to the wall beside it (stairs back to it and upside down
+   under a ceiling, a trapdoor open flat on it). Only what was left unsaid is filled in, so saved structures and copies,
+   which name every property, come out exactly as they were. The canvas is one block wider than the steps so a door's
+   top or a bed's head fits.
+2. **The agent decides placement** (`BlockRules`; Jeremiah: "force the AI to determine blockdata such as what
+   direction, waterlogged"). A block written straight into a build (`set`, `fill`, the shapes, land steps, structure
+   text and files) must say what a builder decides by how they place it: `facing`, `half` (stairs, trapdoors), `type`
+   (slabs), `axis` (logs, wood, stems, pillars, basalt, deepslate, chains...), `open` and `hinge` (doors, gates,
+   trapdoors), `face` (buttons, levers), `rotation` (standing signs, banners, heads), `hanging` (lanterns), `attachment`
+   (bells), `vertical_direction` (dripstone). Otherwise `build_batch` places nothing and names each block with what to
+   add, such as `oak_stairs needs facing=north|east|south|west half=bottom|top`. A waterloggable block in or beside water
+   must say `waterlogged=`; elsewhere dry is the only sensible answer and is not asked. What the game itself derives
+   from the neighbours (connections, stair corners, a door's top half) stays automatic, and `roof`, `trim` and
+   `decorate` place blocks whose facing differs per spot, so they turn them themselves. Only `minecraft:` blocks are
+   known; a mod's blocks pass. A `world_slice` without `states=true` drops properties, so pasting one back is refused
+   with that hint.
+3. **Gradients**: a block `a>b>c` (each stage a block or a mix) runs over the step's own box along `grade=` (y by
    default, `-y`, `x`, `z`...), each position moved up to most of a stage by a hash (or smooth noise with `clump=`), so
    neighbouring stages meet over a ragged seam and the first and last never touch.
-3. **Detail steps**, each working on what is already there (world and earlier steps):
+4. **Detail steps**, each working on what is already there (world and earlier steps):
    - `roof`: gable, hip or shed over a wall box, rows from the box's bottom y with `overhang=`; stairs face up the slope
      and their corners join, slabs alternate halves for a low pitch, full blocks step; `pitch=2` is steep, `gable=`
      closes the ends in the walls' planes, `ridge=` tops an odd span (the stair's own slab by default), and a box taller
@@ -58,12 +71,12 @@ Against that list MSC's `build_batch` had shapes and fills, and three gaps that 
      leaving `chip=` (slabs, stairs) or air: a ruin's broken wall.
    - `rough=N` on `sphere` and `dome`: the surface bulges in and out by up to N blocks of 3D noise, for boulders,
      canopies and hedges.
-4. **Review asks for finish** (`BuildReview`): plain wall tops (rooflines and wall tops ending on a plain block, aim under
+5. **Review asks for finish** (`BuildReview`): plain wall tops (rooflines and wall tops ending on a plain block, aim under
    60%), bare base (where the build meets the ground with nothing shaped, aim under 50%), floor under a roof against
    furnishings (one per 16 floor blocks; panes, bars and doors do not count), and plants. Straight lines are not judged.
    Each fix names the step that makes it.
-5. **Guide**: the build guide's detail pass names the steps, says joining is automatic, and says straight lines are fine
-   with detail layered on them.
+6. **Guide**: the build guide's detail pass names the steps, says which block data to decide and what joins
+   itself, and says straight lines are fine with detail layered on them.
 
 ## Consequences
 
@@ -75,8 +88,9 @@ Against that list MSC's `build_batch` had shapes and fills, and three gaps that 
   PR.
 - Joins add one world read around the joined blocks per build that has any; a build with none reads nothing more. A
   dry run without a server joins against the canvas alone.
-- A stair or trapdoor written without `facing=` used to face north; it now faces its wall. Anyone wanting north writes
-  `facing=north`.
+- Builds written before this that left placement to defaults (`set ... oak_stairs`, `fill ... oak_log`) are now
+  refused until they say it. That costs tokens per block (`oak_log[axis=y]`), which a legend entry or a mix pays once
+  per kind, not per block; the return is that no stair faces north by accident.
 - Existing world blocks next to a new build are not rejoined (a new fence beside an old one connects only on its own
   side); `physics=true` still asks the game to do that, with sand and water.
 - Not done: the renderer draws plants as cubes, so a flower bed reads as coloured blocks in a render; worth its own

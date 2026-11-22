@@ -32,7 +32,7 @@ class RepeatReplaceReadTest {
             public BlockGrid read(Region region) {
                 throw new AssertionError();
             }
-        }).parse("set 0,65,0 lantern replace=air repeat=8 step=1,0,0");
+        }).parse("set 0,65,0 lantern[hanging=false] replace=air repeat=8 step=1,0,0");
         List<Region> reads = new ArrayList<>();
         Canvas c = new Canvas(new Step.Group(steps).bounds(), r -> {
             reads.add(r);
@@ -44,7 +44,7 @@ class RepeatReplaceReadTest {
         assertThat(reads).hasSize(1);
         assertThat(c.placed()).isEqualTo(7);
         assertThat(c.planned(4, 65, 0)).isNull();
-        assertThat(c.planned(7, 65, 0)).isEqualTo("minecraft:lantern");
+        assertThat(c.planned(7, 65, 0)).isEqualTo("minecraft:lantern[hanging=false]");
     }
 
     @Test

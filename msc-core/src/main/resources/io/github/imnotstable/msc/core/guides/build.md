@@ -36,9 +36,13 @@ PALETTE
   astral: end_stone_bricks, purpur, amethyst_block, quartz, crying_obsidian, end_rod, glass panes
 
 DETAIL PASS (use most of these on every build; the steps work on what is already built, so block out first)
-- Joining is automatic: fences, panes, bars and walls connect, stair corners turn, doors, beds and tall plants get their
-  other half. A stair, trapdoor, torch, lantern, chest or ladder written without facing= turns to the wall beside it, so
-  "set X,Y,Z oak_stairs" or a legend "s=oak_stairs" is enough for a single detail block. Give a property to keep yours.
+- Decide every block's placement as a builder would: which way a stair, trapdoor, chest or wall torch faces and its half,
+  a log's axis, a slab's type, a door's hinge, open or closed, a sign's or banner's rotation, a lantern hanging or
+  standing, and in or beside water whether it is waterlogged. build_batch refuses a block that leaves these to the game's
+  default (every stair facing north, every log upright), naming what to add. Write them in each block or legend entry:
+  s=oak_stairs[facing=east,half=bottom]. What follows from the neighbours is added for you: fences, panes, bars and walls
+  connect, stair corners turn, doors, beds and tall plants get their other half, vines cling. roof, trim and decorate turn
+  their own blocks to where each lands.
 - Roofs: roof (gable, hip, shed) over the wall box: stairs face up the slope with corners joined, overhang=1-2, slabs for a
   low pitch, gable= closes the ends, a taller box caps it flat. Break long ridges: a second, lower roof, a dormer, a chimney.
 - Depth: no wall is one flat plane. trim at=base (plinth), at=band level=Y (belt course), at=top (cornice) and at=corners

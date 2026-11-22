@@ -40,7 +40,7 @@ class DetailStepsTest {
         Canvas c = draw("""
                 set 0,0,0 stone
                 fill 1,0,0 3,0,0 oak_fence
-                set 4,0,0 oak_fence_gate
+                set 4,0,0 oak_fence_gate[facing=east,open=false]
                 fill 0,1,0 2,1,0 glass_pane
                 fill 0,2,0 2,2,0 cobblestone_wall
                 set 2,2,1 cobblestone_wall
@@ -55,15 +55,12 @@ class DetailStepsTest {
     }
 
     @Test
-    void stairsTurnToTheirWallAndJoinAtCorners() throws Exception {
+    void stairsJoinAtCorners() throws Exception {
         Canvas c = draw("""
                 fill 0,0,0 4,0,4 stone
-                set 2,1,1 stone
-                set 2,1,2 oak_stairs
-                fill 0,2,0 2,2,0 oak_stairs[facing=south]
-                fill 0,2,1 0,2,2 oak_stairs[facing=east]
+                fill 0,2,0 2,2,0 oak_stairs[facing=south,half=bottom]
+                fill 0,2,1 0,2,2 oak_stairs[facing=east,half=bottom]
                 """);
-        assertThat(at(c, 2, 1, 2)).contains("facing=north"); // back against the block north of it
         assertThat(at(c, 0, 2, 0)).contains("shape=outer_");
         assertThat(at(c, 1, 2, 0)).doesNotContain("shape="); // straight, the default
     }
@@ -73,7 +70,7 @@ class DetailStepsTest {
         Canvas c = draw("""
                 fill 0,0,0 0,2,0 stone
                 fill 2,0,0 2,2,0 stone
-                set 1,0,0 oak_door
+                set 1,0,0 oak_door[facing=north,hinge=left,open=false]
                 set 5,0,5 red_bed[facing=east]
                 set 8,0,8 rose_bush
                 """);
@@ -85,19 +82,41 @@ class DetailStepsTest {
     }
 
     @Test
-    void lanternsHangTorchesMountTrapdoorsBecomeShutters() throws Exception {
+    void decoratedBlocksTurnToWhereEachLands() throws Exception {
         Canvas c = draw("""
                 fill 0,0,0 0,4,4 stone
                 fill 1,4,0 4,4,4 stone
-                set 3,3,3 lantern
-                set 1,2,1 torch
-                set 1,1,3 spruce_trapdoor
-                set 1,3,2 chest
+                decorate 3,3,3 3,3,3 lantern on=ceiling chance=100
+                decorate 1,3,1 1,3,1 torch on=wall chance=100 length=1
+                decorate 1,3,3 1,3,3 spruce_trapdoor on=wall chance=100 length=1
+                decorate 1,0,2 1,0,2 chest on=top chance=100
                 """);
         assertThat(at(c, 3, 3, 3)).contains("hanging=true");
-        assertThat(at(c, 1, 2, 1)).startsWith("wall_torch").contains("facing=east");
-        assertThat(at(c, 1, 1, 3)).contains("open=true").contains("facing=east");
-        assertThat(at(c, 1, 3, 2)).contains("facing=east");
+        assertThat(at(c, 1, 3, 1)).startsWith("wall_torch").contains("facing=east");
+        assertThat(at(c, 1, 3, 3)).contains("half=top"); // under a ceiling
+        assertThat(at(c, 1, 0, 2)).contains("facing=east");
+    }
+
+    @Test
+    void writtenBlocksSayHowTheyArePlaced() throws Exception {
+        assertThatThrownBy(() -> draw("set 0,0,0 oak_stairs")).isInstanceOf(ToolException.class)
+                .hasMessageContaining("oak_stairs needs facing=north|east|south|west half=bottom|top");
+        assertThatThrownBy(() -> draw("fill 0,0,0 3,3,3 oak_planks>oak_log")).hasMessageContaining("oak_log needs axis=x|y|z");
+        assertThatThrownBy(() -> draw("structure 0,0,0\nlegend: l=lantern\ny=0\nl\nend")).hasMessageContaining("hanging=");
+        assertThatThrownBy(() -> draw("set 0,0,0 oak_stairs\nfill 1,0,0 2,0,0 oak_log\nset 3,0,0 stone"))
+                .hasMessageStartingWith("nothing placed").hasMessageContaining("line 1: oak_stairs needs")
+                .hasMessageContaining("line 2: oak_log needs axis"); // every line at once, one round trip
+        assertThat(BlockRules.missing("oak_log[axis=x]")).isEmpty();
+        assertThat(BlockRules.missing("stone_bricks")).isEmpty();
+        assertThat(BlockRules.missing("oak_fence")).isEmpty(); // connections come from the neighbours
+        assertThat(BlockRules.missing("mymod:odd_stairs")).isEmpty();
+        assertThat(BlockRules.missing("spruce_trapdoor[facing=east]")).containsExactly("half=bottom|top", "open=true|false");
+        // Beside water, whether a block holds water is a choice too.
+        assertThatThrownBy(() -> draw("set 0,0,0 water\nset 1,0,0 oak_slab[type=bottom]"))
+                .hasMessageContaining("waterlogged=true|false");
+        assertThat(at(draw("set 0,0,0 water\nset 1,0,0 oak_slab[type=bottom,waterlogged=true]"), 1, 0, 0))
+                .contains("waterlogged=true");
+        assertThat(at(draw("set 5,0,5 oak_slab[type=top]"), 5, 0, 5)).isEqualTo("oak_slab[type=top]");
     }
 
     @Test

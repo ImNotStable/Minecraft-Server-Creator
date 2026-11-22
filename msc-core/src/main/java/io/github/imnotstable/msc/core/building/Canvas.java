@@ -106,6 +106,12 @@ public final class Canvas {
         };
     }
 
+    /** The world alone in {@code region}, as it was before this build (ADR 0077). */
+    public Lookup before(Region region) throws InterruptedException {
+        BlockGrid world = world(region);
+        return (x, y, z) -> world.region().contains(x, y, z) ? world.stateAt(x, y, z) : "minecraft:air";
+    }
+
     /** A block by position. */
     @FunctionalInterface
     public interface Lookup {

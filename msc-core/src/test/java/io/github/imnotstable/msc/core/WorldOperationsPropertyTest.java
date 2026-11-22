@@ -309,7 +309,7 @@ class WorldOperationsPropertyTest {
             int x = 8 + rnd.nextInt(8);
             int y = 63 + rnd.nextInt(3);
             int z = 8 + rnd.nextInt(8);
-            String b = List.of("sandstone", "glass:2,dirt:1", "oak_stairs[facing=west]", "air").get(rnd.nextInt(4));
+            String b = List.of("sandstone", "glass:2,dirt:1", "oak_stairs[facing=west,half=bottom]", "air").get(rnd.nextInt(4));
             out.append(switch (rnd.nextInt(8)) {
                 case 0 -> "fill " + x + "," + y + "," + z + " " + (x + rnd.nextInt(4)) + "," + (y + rnd.nextInt(4)) + ","
                         + (z + rnd.nextInt(4)) + " " + b;

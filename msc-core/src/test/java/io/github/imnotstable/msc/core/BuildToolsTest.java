@@ -41,15 +41,15 @@ class BuildToolsTest {
         String out = h.ok("build_batch", "steps", """
                 # a room, a pillar and a door
                 fill 0,64,0 4,67,4 stone_bricks hollow
-                set 2,65,0 oak_door[half=lower]
-                set 2,66,0 oak_door[half=upper]
-                cylinder 10,64,10 r=1 h=3 oak_log
+                set 2,65,0 oak_door[facing=north,half=lower,hinge=left,open=false]
+                set 2,66,0 oak_door[facing=north,half=upper,hinge=left,open=false]
+                cylinder 10,64,10 r=1 h=3 oak_log[axis=y]
                 """);
         assertThat(out).startsWith("edit e1: ").contains("region world 0,64,0 11,67,11").contains("stone_bricks 80");
         assertThat(h.agent.get(0, 64, 0)).isEqualTo("minecraft:stone_bricks");
         assertThat(h.agent.get(2, 65, 2)).isEqualTo("minecraft:air");
-        assertThat(h.agent.get(2, 65, 0)).isEqualTo("minecraft:oak_door[half=lower]");
-        assertThat(h.agent.get(10, 66, 11)).isEqualTo("minecraft:oak_log");
+        assertThat(h.agent.get(2, 65, 0)).isEqualTo("minecraft:oak_door[facing=north,half=lower,hinge=left,open=false]");
+        assertThat(h.agent.get(10, 66, 11)).isEqualTo("minecraft:oak_log[axis=y]");
         assertThat(h.ok("build_undo")).startsWith("undid e1");
         assertThat(h.agent.get(0, 64, 0)).isEqualTo("minecraft:air");
         assertThat(h.agent.get(2, 65, 0)).isEqualTo("minecraft:air");
@@ -177,17 +177,17 @@ class BuildToolsTest {
 
     @Test
     void stampRepeatsAndTurnsToFaceACentre() throws Exception {
-        String tower = "legend: #=stone d=oak_stairs[facing=north]\ny=0\n#d#\n###\nend";
+        String tower = "legend: #=stone d=oak_stairs[facing=north,half=bottom]\ny=0\n#d#\n###\nend";
         String out = h.ok("build_batch", "steps",
                 "structure 0,64,-10 10,64,0 0,64,10 -10,64,0 face=0,0 anchor=center\n" + tower);
         assertThat(out).startsWith("edit e1: 24 blocks changed");
         // The stair row (north side) of each copy points at the centre.
-        assertThat(h.agent.get(0, 64, 9)).isEqualTo("minecraft:oak_stairs[facing=north]");
+        assertThat(h.agent.get(0, 64, 9)).isEqualTo("minecraft:oak_stairs[facing=north,half=bottom]");
         assertThat(h.agent.get(0, 64, 10)).isEqualTo("minecraft:stone");
-        assertThat(h.agent.get(0, 64, -10)).isEqualTo("minecraft:oak_stairs[facing=south]");
+        assertThat(h.agent.get(0, 64, -10)).isEqualTo("minecraft:oak_stairs[facing=south,half=bottom]");
         assertThat(h.agent.get(0, 64, -11)).isEqualTo("minecraft:stone");
-        assertThat(h.agent.get(9, 64, 0)).isEqualTo("minecraft:oak_stairs[facing=west]");
-        assertThat(h.agent.get(-10, 64, 0)).isEqualTo("minecraft:oak_stairs[facing=east]");
+        assertThat(h.agent.get(9, 64, 0)).isEqualTo("minecraft:oak_stairs[facing=west,half=bottom]");
+        assertThat(h.agent.get(-10, 64, 0)).isEqualTo("minecraft:oak_stairs[facing=east,half=bottom]");
 
         Files.writeString(workspace.resolve("post.txt"), "legend: #=oak_fence\ny=0\n#\ny=1\n#");
         h.ok("build_batch", "steps", "structure 0,70,0 repeat=5 step=4,0,0 file=post.txt");

@@ -103,6 +103,7 @@ public final class Builder {
             s.draw(canvas);
         }
         Joins.apply(canvas);
+        BlockRules.requireWater(canvas);
         return canvas;
     }
 
