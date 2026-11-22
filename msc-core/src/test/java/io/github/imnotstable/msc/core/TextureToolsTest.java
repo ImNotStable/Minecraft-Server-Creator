@@ -231,7 +231,7 @@ class TextureToolsTest {
                 List.of("a=#204060", "b=#305070", "c=#406080", "d=#507090", "e=#6080a0"), "rows", big))
                 .contains("warning: #204060 fills 56%: break it up");
         assertThat(h.ok("texture", "name", "item/stock", "kind", "gem", "color", "#d4263a"))
-                .contains("warning: a stock gem shape in your colors");
+                .contains("warning: a stock gem shape, shaded in your colors");
     }
 
     @Test
@@ -241,6 +241,8 @@ class TextureToolsTest {
                 .contains("; item_model msc:ruby\nwarning: a stock gem shape").contains("\n16x16\npalette: .=transparent")
                 .endsWith("pack");
         assertThat(h.ok("texture_view", "name", "item/ruby")).startsWith("16x16\npalette:");
+        // An outline and five distinct body tones (ADR 0072), and a way to make the preset one's own.
+        assertThat(gem).contains("6 colors", "make it yours by editing a few of the rows below");
         String ore = h.ok("texture", "name", "block/ruby_ore", "kind", "ore", "color", "#7f7f7f",
                 "accent", "#d4263a", "size", 32, "seed", 7, "contrast", 0.5);
         assertThat(ore).startsWith("wrote msc:block/ruby_ore: 32x32, ").contains("item_model msc:ruby_ore");

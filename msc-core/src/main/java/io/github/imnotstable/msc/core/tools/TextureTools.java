@@ -314,8 +314,9 @@ public final class TextureTools {
             t = generated(args);
             model = model(args, id, shape ? (kind.equals("sword") || kind.equals("pickaxe") ? "handheld" : "item") : "block");
             if (shape) {
-                warnings = List.of("a stock " + kind + " shape in your colors, the same as every other " + kind
-                        + ": draw a signature item with rows instead (texture_view shows these rows to start from)");
+                warnings = List.of("a stock " + kind + " shape, shaded in your colors and shared by every " + kind
+                        + ": make it yours by editing a few of the rows below (a facet, a notch, an accent) and "
+                        + "sending them back with rows=; draw from scratch only when no shape fits");
             }
         } else if (ways.contains("copy")) {
             Texture in = firstFrame(source, ResourceId.parse(args.str("copy")));
@@ -434,7 +435,8 @@ public final class TextureTools {
             throw new ToolException("kind must be noise, ore, planks, bricks, gem, ingot, orb, sword, pickaxe or food");
         }
         KindArgs.check(args, kind);
-        Ramp ramp = Ramp.from(color(args), 5, args.number("contrast", shape ? 1.0 : 0.6));
+        // A shape outlines in the darkest of 7 shades and shades its body in the other 5 distinct tones (ADR 0072).
+        Ramp ramp = Ramp.from(color(args), shape ? 7 : 5, args.number("contrast", shape ? 1.0 : 0.6));
         Integer accent = args.has("accent") ? Colors.parse(args.str("accent")) : null;
         if (shape) {
             return Shapes.draw(kind, ramp, accent, null);

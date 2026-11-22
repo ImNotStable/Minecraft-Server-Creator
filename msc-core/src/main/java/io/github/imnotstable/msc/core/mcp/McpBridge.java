@@ -37,7 +37,7 @@ public final class McpBridge {
             + "call, in the world and not from plugin code; server_command runs several commands, one per line. Quality "
             + "bar: before building, drawing textures or making menus and HUDs read msc_status guide=build, textures or ux; "
             + "a build is done only after world_render and world_summary review=true and fixing what they show. Textures: "
-            + "texture kind=gem (or ingot, orb, sword...) drafts one in one call, rows draw a signature one, a .png name "
+            + "texture kind=gem (or ingot, orb, sword...) gives a shaded start, edit its rows to make it yours, a .png name "
             + "writes a plain file; pack makes the zip with the right pack.mcmeta (file= saves a copy). "
             + "Testing a game: server_setup mode=game, player_test to play it, world_entities, server_wait instead "
             + "of polling, server_command \"tick sprint 600\" to skip ahead. Chunks with no player nearby do not "
