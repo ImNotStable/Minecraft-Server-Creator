@@ -60,6 +60,9 @@ with no access to this repository, and msc-stdlib is not on Maven Central.
   with `include` (msc-stdlib and HikariCP listed too, as `include` is not transitive); the SQLite driver is on the test
   classpath and one commented line away from the mod jar, since it is 13 MB.
 - Then NeoForge, Forge and Velocity.
+- Verified 2026-11-22 on real dedicated servers through MSC's own tools (scaffold, server_setup, dev_cycle): fresh
+  neoforge-mod (NeoForge 26.3.0.102) and forge-mod (Forge 66.1.9) projects, MC 26.3, load msc-stdlib 2.3.0, msc-stdlib and
+  HikariCP from their nested jars, and its scheduler ticks.
 - (Phase 1 left out MongoDB and H2; the depth pass added both.)
 - Commands and config wrappers on Paper: Paper's Brigadier API and `getConfig()` already do the job, and the guide
   already teaches them.
