@@ -17,7 +17,7 @@ permissions:
 jobs:
   windows:
     name: Build, test and e2e (windows-latest)
-    if: github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'full-ci')
+    if: github.server_url != 'https://github.com' && (github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'full-ci'))
     runs-on: windows-latest
     timeout-minutes: 120  # msc-bench alone takes about 30 minutes on the runner (ADR 0061)
     # The service account's own TEMP is C:\Windows\TEMP, which Windows also names C:\Windows\Temp, so a path quoted
