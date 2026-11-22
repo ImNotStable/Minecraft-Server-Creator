@@ -1,5 +1,6 @@
 package {{packageName}};
 
+import io.github.imnotstable.msc.stdlib.paper.Stdlib;
 import io.papermc.paper.plugin.lifecycle.event.types.LifecycleEvents;
 import org.bukkit.plugin.java.JavaPlugin;
 
@@ -10,6 +11,7 @@ import org.bukkit.plugin.java.JavaPlugin;
 public class {{mainClass}} extends JavaPlugin {
     @Override
     public void onEnable() {
+        Stdlib.init(this); // msc-stdlib: GUIs, player data and its scheduler need it
         saveDefaultConfig();
         Greeter greeter = new Greeter(
                 getConfig().getString("join-message", Greeter.DEFAULT_JOIN),

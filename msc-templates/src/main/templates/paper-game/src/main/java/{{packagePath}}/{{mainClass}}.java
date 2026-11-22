@@ -1,5 +1,6 @@
 package {{packageName}};
 
+import io.github.imnotstable.msc.stdlib.paper.Stdlib;
 import io.papermc.paper.plugin.lifecycle.event.types.LifecycleEvents;
 import java.io.IOException;
 import java.util.logging.Level;
@@ -19,6 +20,7 @@ public class {{mainClass}} extends JavaPlugin {
 
     @Override
     public void onEnable() {
+        Stdlib.init(this); // msc-stdlib: GUIs, player data and its scheduler need it
         saveDefaultConfig();
         GameConfig config;
         try {

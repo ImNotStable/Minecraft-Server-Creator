@@ -23,10 +23,18 @@ paperweight {
 repositories {
     mavenCentral()
     maven("https://repo.papermc.io/repository/maven-public/")
+    // msc-stdlib, shipped with the project.
+    maven(uri("libs/repo")) {
+        content { includeGroup("io.github.imnotstable.msc") }
+    }
 }
 
 dependencies {
     paperweight.paperDevBundle(libs.versions.paper.get())
+    // Bundled into the plugin jar (see tasks.jar); Paper itself provides slf4j.
+    implementation(libs.msc.stdlib.paper) {
+        exclude(group = "org.slf4j")
+    }
 
     testImplementation(libs.paper.api)
     testImplementation(libs.mockbukkit)
@@ -34,6 +42,16 @@ dependencies {
     testImplementation(libs.junit.jupiter)
     testImplementation(libs.assertj)
     testRuntimeOnly(libs.junit.platform.launcher)
+    testRuntimeOnly(libs.sqlite.jdbc)
+}
+
+// Every implementation dependency goes inside the plugin jar (Paper gives each plugin its own class loader).
+// Declare libraries Paper already has (Adventure, Gson, the SQLite and MySQL drivers) compileOnly instead.
+tasks.jar {
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    from(configurations.runtimeClasspath.map { cp -> cp.files.map(::zipTree) }) {
+        exclude("META-INF/**", "module-info.class")
+    }
 }
 
 tasks.withType<JavaCompile>().configureEach {
@@ -52,6 +70,7 @@ bukkitPluginYaml {
 
 tasks.test {
     useJUnitPlatform()
+    jvmArgs("--enable-native-access=ALL-UNNAMED") // sqlite-jdbc loads its native library
     // Short output: only failures, with the full exception.
     testLogging {
         events("failed")

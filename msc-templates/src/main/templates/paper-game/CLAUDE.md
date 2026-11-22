@@ -65,6 +65,19 @@ Every message names the key path in `config.yml` (`stages[1].name: needs a stage
 - Minecraft internals (NMS) are on the compile classpath through paperweight-userdev, Mojang-named (`net.minecraft.*`, `org.bukkit.craftbukkit.*`): reach them with `((CraftPlayer) player).getHandle()`, `((CraftWorld) world).getHandle()`, `((CraftEntity) entity).getHandle()`. Use the Paper API first; NMS for what it lacks (packets, custom entity AI goals, registries, world generation). Keep NMS calls in their own classes: MockBukkit has no server internals, so a test that reaches them fails with `NoClassDefFoundError`; check that code on the dev server (`dev_cycle`, `player_test`). NMS changes between Minecraft versions, so it ties the plugin to this one. Look classes up with the MSC tools `api_search` and `api_class` after the first build.
 - Prefer small final classes and records, except the main plugin class: MockBukkit must subclass it, so never make it final. Pass dependencies through constructors; avoid static state so MockBukkit tests stay isolated.
 
+## Standard library (msc-stdlib)
+
+The project depends on MSC's standard library (`libs.msc.stdlib.paper`, shipped in `libs/repo/`, bundled into the plugin jar). Use it before writing your own, and call `Stdlib.init(this)` first in `onEnable` (the template does). Packages under `io.github.imnotstable.msc.stdlib`; its sources are in `libs/repo/` next to each jar.
+
+- Menus: `Gui.chest(rows, title)` with `set(slot, item, click -> ...)`, `fill`, `border`, `editable`, `onClose`; `Gui.paged(rows, title, list, icon, (entry, click) -> ...)` pages a list. Items cannot be taken out except from `editable` slots.
+- Items: `ItemBuilder.of(Material)` with `name`, `lore`, `enchant`, `glow`, `unbreakable`, `model`, `data(key, type, value)`, `meta(...)`; `ItemBuilder.read` gets the data back; `ItemBuilder.head(player)`, `ItemBuilder.filler()`.
+- Text: `Text.mm("<green>Hi <name>", "name", value)` (values are inserted as plain text, `Component`s as they are), `Text.plain`, `Text.legacy`.
+- Particles: `ParticleEffect.of(Particle.FLAME)` or `ParticleEffect.dust(color, size)`, then `spawn`, `draw(origin, points)` or `play(scheduler, origin, period, frames, frame -> points)`. Shapes in `Shapes`: `line`, `circle`, `arc`, `disc`, `sphere`, `helix`, `cuboidEdges`, `star`, `randomInSphere`, turned with `rotateY` and `translate`; `Locations.facing` turns them to where a player looks.
+- Databases: `Database.open(PaperDatabase.config(getConfig().getConfigurationSection("database"), getDataFolder().toPath()))` picks SQLite (default, a file in the plugin folder), MySQL, MariaDB or PostgreSQL from `config.yml`. `update`, `insert` (returns the id), `query`, `queryOne`, `batch`, `transaction`, and `async(db -> ...)` to stay off the main thread. Schemas: `Table.named(...).key(...).column(...).sql(db.type())` writes SQL every backend accepts; `db.migrate("{{projectId}}", List.of(Migration.of(1, "...", sql)))` applies each version once. `Store.sql(db, table, Codec.json(Account.class))` keeps records by key without writing SQL; `Store.memory()` for tests. Close the database in `onDisable`.
+- Player data: `PlayerData.create(store, defaults)` loads each player's record at login, keeps it while they play, saves it on quit; `get`, `update`, `saveAll` (call in `onDisable`).
+- Time: `Cooldowns` (`tryUse(key, duration)`, `remaining`), `Durations.parse("1h30m")`, `Durations.format`, `Stdlib.scheduler()` (`later`, `repeat`, `countdown`, `supplyAsync` that comes back on the main thread). Scoreboard: `Sidebar` (`lines`, `line`, `show`, `hide`). Loot and chances: `WeightedRandom`.
+- MockBukkit does not implement scoreboard number formats, so a test that makes a `Sidebar` is skipped there; test what fills its lines instead. SQLite works in tests (the driver is on the test classpath).
+
 ## Tests
 
 - Every change comes with a test. Pure logic: plain JUnit + AssertJ. Events, commands, players: MockBukkit.
