@@ -17,7 +17,8 @@ nothing but a tag push from `release.yml`, and only with a `GH_MIRROR_TOKEN` sec
 - **main:** `mirror.yml` pushes each new `main` commit to GitHub's `main`. It never force-pushes (CLAUDE.md), so a
   diverged GitHub `main` makes it fail red instead of losing commits.
 - **Releases:** `release.yml` publishes the Gitea release, then pushes the tag to GitHub and creates the same
-  release there (same notes, same assets) through the GitHub API.
+  release there (same notes, same assets) through the GitHub API. `release-sync.yml` (run by hand) copies any
+  Gitea release still missing on GitHub, such as those made before this ADR.
 - **Packages:** nothing publishes packages yet. When something does, it publishes to GitHub Packages from a Gitea
   workflow with the same token (plus `write:packages`).
 - **Wiki:** `docs/wiki/` is the only source. `wiki.yml` pushes it to the Gitea wiki (with `github.token`) and to
