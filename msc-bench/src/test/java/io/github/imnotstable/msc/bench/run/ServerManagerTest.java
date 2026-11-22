@@ -265,11 +265,13 @@ class ServerManagerTest {
             long start = System.nanoTime();
             Throwable refused = catchThrowable(() -> ServerManager.clearPorts(
                     new BenchConfig.Server(List.of("unused"), null, List.of(), null, true, theirPort, gamePort.port(),
-                            "pw", 1), RUN, serverDir.resolve("attempts"), Duration.ofSeconds(600)));
+                            "pw", 1), RUN, attempt.resolveSibling("baseline-2"), Duration.ofSeconds(600)));
             assertThat(refused).isInstanceOf(IOException.class).hasMessageContaining("port " + theirPort);
             assertThat(Duration.ofNanos(System.nanoTime() - start)).as("no wait for a stop never sent")
                     .isLessThan(Duration.ofSeconds(60));
             assertThat(theirs.isAlive()).as("a process this run did not start is never killed").isTrue();
+            // Still listening on its port for the next call: had it died here, any process could take the free port.
+            assertThat(ours.isAlive()).as("this run's process for another folder is not killed").isTrue();
 
             ServerManager.clearPorts(new BenchConfig.Server(List.of("unused"), null, List.of(), null, true, ourPort,
                     gamePort.port(), "pw", 1), RUN, serverDir.resolve("attempts"), Duration.ofSeconds(60));

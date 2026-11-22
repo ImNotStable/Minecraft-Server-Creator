@@ -15,6 +15,7 @@ import io.github.imnotstable.msc.protocol.world.BlockPos;
 import io.github.imnotstable.msc.protocol.world.Region;
 import java.time.Duration;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
@@ -321,7 +322,7 @@ class WorldOpsTest {
     }
 
     @Test
-    void aChunkTheGameUsesWhenItArrivesLateIsKept(Env env) throws InterruptedException {
+    void aChunkTheGameUsesWhenItArrivesLateIsKept(Env env) throws Exception {
         setUp(env);
         CountDownLatch slow = new CountDownLatch(1);
         world.setGenerator(unit -> {
@@ -332,10 +333,18 @@ class WorldOpsTest {
         MinestomWorld agentWorld = new MinestomWorld(world, "world", Duration.ofMillis(300));
         assertThatThrownBy(() -> agentWorld.loadAreaToRead(16, 0, 16, 0)).isInstanceOf(OpException.class);
         // The game asks for the same chunk while the read's load is in flight and spawns a mob in it.
-        world.loadChunk(1, 0).thenAccept(c -> spawn(20.5, 70, 2.5));
+        CompletableFuture<Void> game = world.loadChunk(1, 0).thenAccept(c -> spawn(20.5, 70, 2.5));
 
         slow.countDown();
-        assertThat(tickUntil(env, () -> world.getChunk(1, 0) != null)).isTrue();
+        // No tick until the chunk's callbacks ran: the game's spawn, and the read's tag that schedules its check for
+        // the next tick. The chunk shows in the world before either; a check scheduled only after the ticks below
+        // would run after the mob is removed and unload the chunk.
+        game.get(10, TimeUnit.SECONDS);
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+        while (!world.getChunk(1, 0).hasTag(MinestomWorld.READ_LOADED) && System.nanoTime() < deadline) {
+            Thread.sleep(10);
+        }
+        assertThat(world.getChunk(1, 0).hasTag(MinestomWorld.READ_LOADED)).as("the read's callback ran").isTrue();
         env.tick();
         env.tick();
         world.getEntities().forEach(Entity::remove);

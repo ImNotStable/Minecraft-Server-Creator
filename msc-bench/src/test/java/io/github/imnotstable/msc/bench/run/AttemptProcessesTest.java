@@ -76,7 +76,10 @@ class AttemptProcessesTest {
                 "{ command -v setsid >/dev/null && exec setsid sleep 300 || exec sleep 300; } "
                         + "</dev/null >/dev/null 2>&1 & echo $!"))).orElseThrow();
         started.add(detached);
-        Process wrapperProcess = start(elsewhere, run.marks(attempt), "sh", "-c", "env -i sleep 300 & echo $!; wait");
+        // The child prints its own pid once env -i has run: printed before (with $!), it could still be the fork
+        // that holds the wrapper's marks, and be counted.
+        Process wrapperProcess = start(elsewhere, run.marks(attempt), "sh", "-c",
+                "env -i sh -c 'echo $$; exec sleep 300' & wait");
         ProcessHandle unmarkedChild = ProcessHandle.of(firstLine(wrapperProcess)).orElseThrow();
         ProcessHandle wrapper = wrapperProcess.toHandle();
 

@@ -382,8 +382,9 @@ public final class ServerManager implements AutoCloseable {
             if (sawDone) {
                 ready = true;
                 // On Minestom the agent is part of the server and connects just after "Done": a report sent now
-                // would say "no agent connected". Wait for it a little, where an agent is expected at all.
-                if (expectsAgent()) {
+                // would say "no agent connected". Wait for it a little, where an agent is expected at all. An agent
+                // already connected is too: its server.ready can arrive just after the log's "Done".
+                if (expectsAgent() || hub.current() != null) {
                     long agentDeadline = Math.min(deadline, System.nanoTime() + AGENT_GRACE.toNanos());
                     while (System.nanoTime() < agentDeadline && started.isAlive()) {
                         if (hub.awaitReady(readyBefore, Duration.ofMillis(100))) {
