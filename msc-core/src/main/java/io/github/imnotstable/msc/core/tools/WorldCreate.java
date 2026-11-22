@@ -20,6 +20,10 @@ final class WorldCreate {
 
     static String run(CoreConfig config, ServerManager server, Args args) throws IOException {
         Platform platform = server.platform();
+        // It only writes files, so it is not a world tool that waits for the server; a proxy has no world to add to.
+        if (platform.noWorldTools() != null) {
+            throw new ToolException(platform.noWorldTools());
+        }
         if (platform == Platform.MINESTOM) {
             throw new ToolException("Minestom has no game world generator: set a generator on the instance in the "
                     + "project's code (InstanceContainer.setGenerator), or shape land with build_batch terrain");

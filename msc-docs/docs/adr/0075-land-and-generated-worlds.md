@@ -63,6 +63,8 @@ The causes are in MSC, not only in the model:
 - Measured on two 128 x 128 scenes drawn with the steps: the Meridian way (flat floor, bands, straight lines, a
   terracotta splat) gets "flat land 90%" and "straight ground edges 35%"; the same area with `terrain`, a winding
   `path` and scattered trees gets 35% and 3%, and passes.
+- The tool list every conversation pays for grows by about 1,150 characters (16,600 to 17,750; the budget in
+  `McpBridgeTest` is now 17,800): one tool and three steps, with help text cut to one line each. Land had no tool.
 - Nothing here sets a style: the terrains are the game's own, the steps take any block, and the guide names tools, not
   looks (ADR 0073, 0074).
 - A world made with `world_create` uses the main world's seed; per-world seeds and custom noise settings (sea level,

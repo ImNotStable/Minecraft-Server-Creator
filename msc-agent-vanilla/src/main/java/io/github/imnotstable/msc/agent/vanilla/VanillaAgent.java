@@ -5,6 +5,7 @@ import io.github.imnotstable.msc.agent.common.AgentLink;
 import io.github.imnotstable.msc.agent.common.AgentLog;
 import io.github.imnotstable.msc.agent.common.AgentRoutes;
 import io.github.imnotstable.msc.agent.common.EditHistory;
+import io.github.imnotstable.msc.agent.common.SavedPack;
 import io.github.imnotstable.msc.agent.common.ServerOps;
 import io.github.imnotstable.msc.agent.common.WorldOps;
 import io.github.imnotstable.msc.protocol.message.AgentInfo;
@@ -44,6 +45,8 @@ public final class VanillaAgent {
                 router.operations());
         link = new AgentLink(info, router, log());
         link.start();
+        // Started by hand, with no MSC session: serve the pack MSC saved beside the server (ADR 0076).
+        SavedPack.serveIfIdle(java.nio.file.Path.of(""), serverOps, log());
     }
 
     /** The worlds are loaded and the server takes players. */

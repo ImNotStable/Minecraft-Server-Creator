@@ -66,6 +66,7 @@ class BadInputBehaviourTest {
             new Row("build_batch", Map.of("steps", List.of("%s", "structure 0,70,0 file=%s", "fill %s stone")),
                     "steps", "fill 0,70,0 1,71,1 stone", "dryRun", true),
             new Row("build_undo"),
+            new Row("world_create", "name", "w", "terrain", "flat", "layers", List.of("bedrock", "dirt:2")),
             new Row("structure_save", "region", REGION, "file", "s/a.schem"),
             new Row("player_test", "actions", List.of("wait 1"), "leave", true),
             new Row("texture", Map.of("name", List.of("%s", "%s.png", "item/%s")),

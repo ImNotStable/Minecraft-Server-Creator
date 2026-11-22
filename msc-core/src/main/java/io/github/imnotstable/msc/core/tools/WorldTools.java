@@ -120,7 +120,7 @@ public final class WorldTools {
                 Schema.of().req("region", "string", REGION).opt("world", "string", WORLD)
                         .opt("path", "string", "\"x,y,z x,y,z\": can a player walk/jump from A to B; else the wall or gap")
                         .opt("diff", "string", "structure_save file of this region: what changed since")
-                        .opt("review", "boolean", "Score a build (variety, detail, flat walls, roofs, lights) and its land (flat ground, straight edges, floating blocks); say what to fix first"),
+                        .opt("review", "boolean", "Score a build and its land (detail, walls, roofs, lights, flat ground, floating blocks); say what to fix"),
                 args -> {
                     Region region = Coords.region(world.world(args.str("world", null)), args.str("region"));
                     String path = args.str("path", null);

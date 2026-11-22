@@ -149,6 +149,24 @@ public final class PackPublisher {
         return offers() ? Files.readAllBytes(properties) : null;
     }
 
+    /** The folder beside the server the msc agent reads (agent-common's {@code SavedPack.DIR}). */
+    static final String SAVED_PACK = "msc-pack";
+
+    /**
+     * Keep a copy of the pack beside the server, which its msc agent serves when the server is started without MSC
+     * (ADR 0076), with the address players reach. Best effort: without it only a server started by hand lacks the pack.
+     */
+    private void savePack(ResourcePack.Built built) {
+        Path dir = properties.toAbsolutePath().getParent().resolve(SAVED_PACK);
+        try {
+            Files.createDirectories(dir);
+            Files.copy(built.zip(), dir.resolve("pack.zip"), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            Files.writeString(dir.resolve("host"), java.net.URI.create(built.url()).getHost() + "\n");
+        } catch (IOException | RuntimeException e) {
+            // A server started by MSC is served by MSC; only one started by hand misses the pack.
+        }
+    }
+
     /**
      * Publish the workspace's current build: serve, offer, send, each as a step of {@code steps} when it is given.
      * {@code required}: the pack tool's own; null takes the workspace's pack to send, else what the file says.
@@ -156,6 +174,9 @@ public final class PackPublisher {
     Published publish(Steps steps, Send send, Boolean required) throws IOException, InterruptedException {
         ResourcePack.Serving serving = step(steps, SERVE, pack::serve);
         ResourcePack.Built built = serving.built();
+        if (built != null) {
+            savePack(built);
+        }
         Platform platform = server.platform();
         ResourcePack.Applied applied = pack.applied();
         boolean req = required != null ? required : applied != null ? applied.required()

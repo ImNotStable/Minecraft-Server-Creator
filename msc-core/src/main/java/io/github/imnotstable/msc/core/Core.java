@@ -319,7 +319,7 @@ public final class Core implements AutoCloseable {
 
     /** The tools that need a world (to read, edit, save or roll back, or to join): refused on a proxy. */
     static final List<String> WORLD_TOOLS = List.of("world_slice", "world_heightmap", "world_render", "world_summary",
-            "world_entities", "build_undo", "structure_save", "build_batch", "player_test", "world_create");
+            "world_entities", "build_undo", "structure_save", "build_batch", "player_test");
 
     private final ToolLog log;
     private final ToolRegistry registry;

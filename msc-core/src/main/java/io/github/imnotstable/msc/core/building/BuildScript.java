@@ -36,8 +36,8 @@ public final class BuildScript {
     public static final String HELP = """
             One step per line; later steps win. B = a block or a mix like grass_block:78,moss_block:10; B{SNBT} adds \
             block entity data. Every step \
-            takes replace=a,b (change only those; air = empty), seed=N, repeat=N step=DX,DY,DZ; a step with a block \
-            takes clump=N: the mix in patches about N across instead of block by block.
+            takes replace=a,b (change only those; air = empty), seed=N, repeat=N step=DX,DY,DZ, clump=N (mix in \
+            patches N across).
             fill X,Y,Z X,Y,Z B [hollow|outline|walls]
             set X,Y,Z B
             cylinder X,Y,Z r=R h=H B [hollow] [thick=T] [inner=R]   (X,Y,Z = bottom centre)
@@ -47,16 +47,12 @@ public final class BuildScript {
             line X,Y,Z X,Y,Z B [w=W]
             helix X,Y,Z r=R h=H B [turns=T] [w=W] [start=DEG]   (bottom centre; turns<0 anticlockwise; \
             start=0 north)
-            bands X,Y,Z [h=H] R1=B R2=B ... [jitter=J]   (flat rings out to each radius, edges wobbled by jitter)
-            terrain X,Y,Z X,Y,Z B [top=B] [under=B] [depth=3] [cliff=B] [bed=B] [style=hills|ridges|mesa|dunes] \
-            [scale=N] [edge=N] [ground=Y] [water=Y] [octaves=4] [steps=4]   (noise land rising from the box's bottom \
-            toward its top: B inside, top= on top, under= the next depth=, cliff= on steep sides, bed= under water \
-            and on shores; scale = hill size; the outer edge= blocks ease to ground= along a wavy rim, edge=0 fills \
-            the box, for tiling with one seed; below ground= it digs, and water= (at most ground=) fills the dug valleys)
-            path X,Y,Z X,Y,Z ... B [w=3] [wander=N] [depth=N] [bed=B]   (a curved way on the ground through the \
-            points, ragged edges, plants cleared; depth= digs a bowl filled with B over bed=: water for a stream)
-            scatter X,Y,Z X,Y,Z B|file=PATH,PATH [spacing=8] [chance=100] [on=B,B] [sink=N]   (on the ground in the \
-            box, one per spacing cell at a random spot: a block, or a structure file centred and turned at random)
+            bands X,Y,Z [h=H] R1=B R2=B ... [jitter=J]   (flat rings)
+            terrain X,Y,Z X,Y,Z B [top=B under=B depth=3 cliff=B bed=B style=hills|ridges|mesa|dunes scale=N edge=N \
+            ground=Y water=Y]   (noise land in the box; cliff= on steep sides, bed= under water; rim eases to ground= \
+            over edge= blocks, 0 fills the box; below ground= digs, water= fills)
+            path X,Y,Z X,Y,Z ... B [w=3 wander=N depth=N bed=B]   (curved way on the ground; depth= digs a stream)
+            scatter X,Y,Z X,Y,Z B|file=PATH,PATH [spacing=8 chance=100 on=B sink=N]   (on the ground, one per cell)
             structure X,Y,Z [X,Y,Z ...] [rotate=90] [face=X,Z] [anchor=center] [air=false] [file=PATH]
               then the text and "end", unless file= (.schem or text). Text: "legend: #=stone g=glass", then per \
             layer "y=N" and rows (z) of symbols (x); "." air, "_" unchanged; "y=N same as y=M", "y=N all #". rotate \
