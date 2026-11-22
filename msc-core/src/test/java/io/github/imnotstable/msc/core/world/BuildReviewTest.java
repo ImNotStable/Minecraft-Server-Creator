@@ -9,13 +9,23 @@ import org.junit.jupiter.api.Test;
 class BuildReviewTest {
     /** An 11x11 floor of grass with a box of {@code wall} on it, 9 wide, 8 tall, hollow, flat-roofed. */
     private static BlockGrid box(String wall) {
-        StringBuilder text = new StringBuilder("legend: g=grass_block #=" + wall + "\ny=0\n");
+        return box(wall, wall);
+    }
+
+    /** The same box with its blocks alternating {@code a} and {@code b} like a checkerboard. */
+    private static BlockGrid box(String a, String b) {
+        StringBuilder text = new StringBuilder("legend: g=grass_block #=" + a + " p=" + b + "\ny=0\n");
         text.append("ggggggggggg\n".repeat(11));
         for (int y = 1; y <= 8; y++) {
             text.append("y=").append(y).append("\n...........\n");
             for (int z = 1; z <= 9; z++) {
                 boolean solid = y == 8 || z == 1 || z == 9;
-                text.append('.').append(solid ? "#########" : "#.......#").append(".\n");
+                StringBuilder row = new StringBuilder(".");
+                for (int x = 1; x <= 9; x++) {
+                    boolean on = solid || x == 1 || x == 9;
+                    row.append(!on ? '.' : (x + y + z) % 2 == 0 ? '#' : 'p');
+                }
+                text.append(row).append(".\n");
             }
             text.append("...........\n");
         }
@@ -53,6 +63,27 @@ class BuildReviewTest {
         String review = BuildReview.review(TextGrid.parse(text.toString(), "world", new BlockPos(0, 0, 0)));
         assertThat(review).contains("7 types", "flat wall faces 0%", "shaped roof 100%")
                 .endsWith("no number below the bar; now judge the render: silhouette, story, scale");
+    }
+
+    @Test
+    void aRandomMixOfClashingColoursIsSpeckledButNearTonesAreNot() {
+        assertThat(BuildReview.review(box("deepslate_bricks", "prismarine_bricks")))
+                .contains("speckled walls").endsWith("then review this region again");
+        assertThat(BuildReview.review(box("stone_bricks", "mossy_stone_bricks"))).contains("speckled faces 0%")
+                .doesNotContain("speckled walls");
+    }
+
+    @Test
+    void aTreeCanopyIsNotAFlatRoof() {
+        StringBuilder text = new StringBuilder("legend: l=oak_log o=oak_leaves\n");
+        for (int y = 0; y < 9; y++) {
+            text.append("y=").append(y).append('\n');
+            for (int z = 0; z < 5; z++) {
+                text.append(y < 6 ? (z == 2 ? "..l.." : ".....") : "ooooo").append('\n');
+            }
+        }
+        assertThat(BuildReview.review(TextGrid.parse(text.toString(), "world", new BlockPos(0, 0, 0))))
+                .doesNotContain("flat roofs");
     }
 
     @Test

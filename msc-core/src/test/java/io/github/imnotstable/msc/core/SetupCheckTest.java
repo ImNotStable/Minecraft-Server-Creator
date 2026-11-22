@@ -104,6 +104,15 @@ class SetupCheckTest {
                 .singleElement().asString().contains("msc-core-1-b");
     }
 
+    @Test
+    void theFlatInstallSeesTheNewerInstallsInsideItAndSaysToDropTheOldRegistration() throws Exception {
+        Path flat = core(dir.resolve("core"), 1_000L);
+        assertThat(SetupCheck.newerInstall(flat)).isNull();
+
+        core(flat.resolve("msc-core-1-b"), 2_000L);
+        assertThat(SetupCheck.newerInstall(flat)).contains("msc-core-1-b").contains("claude mcp remove msc -s user");
+    }
+
     private static Path core(Path install, long installed) throws Exception {
         Files.createDirectories(install.resolve("lib"));
         Files.createFile(install.resolve("lib/msc-core-1.jar"));

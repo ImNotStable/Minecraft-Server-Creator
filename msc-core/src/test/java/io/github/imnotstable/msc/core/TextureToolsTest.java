@@ -201,6 +201,8 @@ class TextureToolsTest {
         assertThat(h.error("pack", "apply", false)).contains("the pack is empty");
         assertThat(h.error("texture", "name", "item/x", "palette", List.of("a=#000000"), "rows", List.of("ab")))
                 .contains("symbol 'b' in row 1 is not in the palette");
+        assertThat(h.error("texture", "name", "item/x", "palette", List.of("a=#000000"), "rows", List.of("ab", "cb")))
+                .contains("symbol 'b' in rows 1, 2; symbol 'c' in row 2 are not in the palette");
         assertThat(h.error("texture", "name", "item/x", "palette", List.of("a=red"), "rows", List.of("a")))
                 .contains("bad color \"red\"");
         assertThat(h.error("texture", "name", "item/x", "palette", List.of("a=#000"), "rows", List.of("aa", "a")))
