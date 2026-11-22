@@ -6,8 +6,14 @@ slf4j = "{{slf4jVersion}}"
 junit = "{{junitVersion}}"
 assertj = "{{assertjVersion}}"
 shadow = "{{shadowVersion}}"
+msc-stdlib = "{{mscStdlibVersion}}"
+sqlite-jdbc = "{{sqliteJdbcVersion}}"
 
 [libraries]
+# MSC's standard library (menus, items, particles, databases, player data...), shipped in libs/repo/.
+msc-stdlib-minestom = { module = "io.github.imnotstable.msc:msc-stdlib-minestom", version.ref = "msc-stdlib" }
+# The SQLite driver, for msc-stdlib's Database; add the MySQL, MariaDB or PostgreSQL driver the same way.
+sqlite-jdbc = { module = "org.xerial:sqlite-jdbc", version.ref = "sqlite-jdbc" }
 minestom = { module = "net.minestom:minestom", version.ref = "minestom" }
 minestom-testing = { module = "net.minestom:testing", version.ref = "minestom" }
 slf4j-simple = { module = "org.slf4j:slf4j-simple", version.ref = "slf4j" }

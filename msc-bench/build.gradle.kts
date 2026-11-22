@@ -90,6 +90,11 @@ fun templateClasspath(template: String): FileCollection {
         .findAll(toml.readText()).map { it.groupValues[1] to it.groupValues[2] }.toList()
     val scope = configurations.dependencyScope("${template}Template")
     libraries.forEach { (module, versionRef) ->
+        if (module.startsWith("io.github.imnotstable.msc:")) {
+            // msc-stdlib, which the template ships in libs/repo/: this repository builds it.
+            dependencies.add(scope.name, dependencies.project(mapOf("path" to ":" + module.substringAfter(':'))))
+            return@forEach
+        }
         val notation = if (versionRef.isEmpty()) module else "$module:" + catalog.findVersion(versionRef)
             .orElseThrow { GradleException("$toml: $module takes version $versionRef, which gradle/libs.versions.toml lacks") }
             .requiredVersion

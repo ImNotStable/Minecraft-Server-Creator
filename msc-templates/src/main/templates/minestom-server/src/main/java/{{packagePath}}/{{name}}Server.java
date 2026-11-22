@@ -1,6 +1,7 @@
 package {{packageName}};
 
 import io.github.imnotstable.msc.agent.minestom.MscAgent;
+import io.github.imnotstable.msc.stdlib.minestom.Stdlib;
 import java.nio.file.Path;
 import java.util.Locale;
 import net.kyori.adventure.key.Key;
@@ -32,6 +33,7 @@ public final class {{name}}Server {
     public static void main(String[] args) {
         long start = System.nanoTime();
         MinecraftServer server = MinecraftServer.init();
+        Stdlib.init(MinecraftServer.process()); // msc-stdlib: menus, player data and its scheduler need it
 
         InstanceContainer world = createWorld(MinecraftServer.getInstanceManager());
         // Keep the world in run/world, so what the AI builds survives dev_cycle restarts. Saved on stop.
