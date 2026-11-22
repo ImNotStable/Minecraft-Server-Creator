@@ -14,7 +14,7 @@ import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 /**
- * A project's own Java source as api_search {@code project=} sees it (ADR 0063): its types and methods by name, each
+ * A project's own Java source as api_search {@code project=} sees it (ADR 0065): its types and methods by name, each
  * with {@code path:line} and the test lines that call it, so an agent opens a few places instead of every file.
  * Read fresh on each call: a project is small and its source changes between calls.
  */

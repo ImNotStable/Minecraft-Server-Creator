@@ -1,4 +1,4 @@
-# Copies docs/wiki/ to the GitHub wiki whenever it changes on main.
+# Copies docs/wiki/ to the Gitea wiki and the GitHub wiki whenever it changes on main (ADR 0063).
 # The wiki must exist first: create any page once in the repo's Wiki tab.
 name: Publish wiki
 
@@ -13,22 +13,39 @@ permissions:
 
 jobs:
   publish:
+    if: github.server_url != 'https://github.com'  # runs on Gitea only; GitHub Actions is not used
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - name: Push docs/wiki to the wiki repo
+      - name: Push docs/wiki to the wiki repos
         env:
-          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TOKEN: ${{ github.token }}
+          SERVER: ${{ github.server_url }}
+          GH_MIRROR_TOKEN: ${{ secrets.GH_MIRROR_TOKEN }}
         run: |
-          if ! git clone "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.wiki.git" wiki; then
-            echo "::warning::Wiki not created yet; create one page in the Wiki tab, then re-run this workflow"
-            exit 0
+          set -euo pipefail
+          git config --global user.name "msc-wiki-bot"
+          git config --global user.email "wiki-bot@users.noreply.gitea.omen"
+          # publish <clone url> <dir> <rewrite github links to this server: yes/no>
+          publish() {
+            if ! git clone -q "$1" "$2"; then
+              echo "::warning::Wiki $2 not created yet; create one page in its Wiki tab, then re-run this workflow"
+              return 0
+            fi
+            rsync -a --delete --exclude .git --exclude README.md docs/wiki/ "$2/"
+            # Pages link to the GitHub repo, which is private; on Gitea point them at this server.
+            if [[ $3 == yes ]]; then
+              sed -i -e "s#https://github.com/ImNotStable/Minecraft-Server-Creator/blob/#$SERVER/$GITHUB_REPOSITORY/src/branch/#g" \
+                -e "s#https://github.com/ImNotStable/Minecraft-Server-Creator#$SERVER/$GITHUB_REPOSITORY#g" "$2"/*.md
+            fi
+            git -C "$2" add -A
+            git -C "$2" diff --cached --quiet && { echo "$2 already up to date"; return 0; }
+            git -C "$2" commit -qm "Sync wiki from ${GITHUB_SHA::7}"
+            git -C "$2" push -q
+          }
+          publish "${SERVER%%://*}://x-access-token:${TOKEN}@${SERVER#*://}/${GITHUB_REPOSITORY}.wiki.git" gitea-wiki yes
+          if [[ -n "$GH_MIRROR_TOKEN" ]]; then
+            publish "https://x-access-token:${GH_MIRROR_TOKEN}@github.com/ImNotStable/Minecraft-Server-Creator.wiki.git" github-wiki no
+          else
+            echo "::warning::No GH_MIRROR_TOKEN secret; GitHub wiki not synced"
           fi
-          rsync -a --delete --exclude .git --exclude README.md docs/wiki/ wiki/
-          cd wiki
-          git config user.name "github-actions[bot]"
-          git config user.email "41898900+github-actions[bot]@users.noreply.github.com"
-          git add -A
-          git diff --cached --quiet && { echo "wiki already up to date"; exit 0; }
-          git commit -m "Sync wiki from ${GITHUB_SHA::7}"
-          git push

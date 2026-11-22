@@ -1,4 +1,4 @@
-# Publishes a Gitea release (on omen) with the usable artifacts, and can mirror the tag to GitHub. Two ways to start it (ADR 0012):
+# Publishes a Gitea release (on omen) with the usable artifacts, and the same release on GitHub. Two ways to start it (ADR 0012):
 # - push a version tag (v1.2.3), or
 # - run it by hand on main with a version (1.2.3); the release then creates the tag v1.2.3 on that commit.
 name: Release
@@ -19,6 +19,7 @@ permissions:
 jobs:
   release:
     name: Build and publish
+    if: github.server_url != 'https://github.com'  # Gitea builds; the GitHub release is published from here
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -103,12 +104,22 @@ jobs:
           done
           echo "Published $TAG (release $id)"
 
-      # Optional: set the GH_MIRROR_TOKEN secret (a GitHub token with contents write) to also push the tag to GitHub.
-      - name: Mirror tag to GitHub
+      # GitHub carries main, releases and packages (ADR 0063): with the GH_MIRROR_TOKEN secret the tag and the same
+      # release (notes and assets) are published there too.
+      - name: Publish release on GitHub
         env:
           GH_MIRROR_TOKEN: ${{ secrets.GH_MIRROR_TOKEN }}
           TAG: ${{ steps.version.outputs.tag }}
         run: |
-          if [[ -z "$GH_MIRROR_TOKEN" ]]; then echo "No GH_MIRROR_TOKEN secret; skipping the GitHub mirror"; exit 0; fi
+          set -euo pipefail
+          if [[ -z "$GH_MIRROR_TOKEN" ]]; then echo "::warning::No GH_MIRROR_TOKEN secret; skipping the GitHub release"; exit 0; fi
           git push "https://x-access-token:$GH_MIRROR_TOKEN@github.com/ImNotStable/Minecraft-Server-Creator.git" \
             "$GITHUB_SHA:refs/tags/$TAG"
+          gh_api=https://api.github.com/repos/ImNotStable/Minecraft-Server-Creator
+          auth=(-H "Authorization: Bearer $GH_MIRROR_TOKEN" -H "Accept: application/vnd.github+json")
+          id=$(jq 'del(.target_commitish)' release.json | curl -fsS -X POST "${auth[@]}" --data @- "$gh_api/releases" | jq -r .id)
+          for f in dist/*; do
+            curl -fsS -o /dev/null -X POST "${auth[@]}" -H "Content-Type: application/octet-stream" --data-binary "@$f" \
+              "https://uploads.github.com/repos/ImNotStable/Minecraft-Server-Creator/releases/$id/assets?name=$(basename "$f")"
+          done
+          echo "Published $TAG on GitHub (release $id)"

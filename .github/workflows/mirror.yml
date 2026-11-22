@@ -1,0 +1,31 @@
+# Mirrors main to GitHub, which carries only main, releases and packages; Gitea is the working home (ADR 0063).
+# Needs the GH_MIRROR_TOKEN secret on Gitea. Never force-pushes: if GitHub's main has diverged, this fails red.
+name: Mirror to GitHub
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: mirror
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  mirror:
+    if: github.server_url != 'https://github.com' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0  # GitHub needs the history to accept the push
+      - name: Push main to GitHub
+        env:
+          GH_MIRROR_TOKEN: ${{ secrets.GH_MIRROR_TOKEN }}
+        run: |
+          if [[ -z "$GH_MIRROR_TOKEN" ]]; then echo "::warning::No GH_MIRROR_TOKEN secret; main not mirrored"; exit 0; fi
+          git push "https://x-access-token:$GH_MIRROR_TOKEN@github.com/ImNotStable/Minecraft-Server-Creator.git" \
+            "$GITHUB_SHA:refs/heads/main"

@@ -1,0 +1,34 @@
+# Weekly dependency PRs on Gitea, replacing Dependabot (ADR 0064). Config: renovate.json.
+# Needs the RENOVATE_TOKEN secret: a Gitea token with repository and issue read/write, user and organization read.
+name: Renovate
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"  # Monday 06:00 UTC
+  workflow_dispatch:
+
+concurrency:
+  group: renovate
+
+jobs:
+  renovate:
+    if: github.server_url != 'https://github.com'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    container:
+      image: ghcr.io/renovatebot/renovate:44
+      options: --user root  # act mounts its workspace as root
+    steps:
+      - name: Run Renovate
+        env:
+          RENOVATE_PLATFORM: gitea
+          RENOVATE_ENDPOINT: ${{ github.server_url }}/api/v1
+          RENOVATE_TOKEN: ${{ secrets.RENOVATE_TOKEN }}
+          RENOVATE_REPOSITORIES: ${{ github.repository }}
+          RENOVATE_ONBOARDING: "false"
+          RENOVATE_REQUIRE_CONFIG: required
+          GITHUB_COM_TOKEN: ${{ secrets.GH_MIRROR_TOKEN }}  # release notes and github.com lookups without the anonymous rate limit
+          LOG_LEVEL: info
+        run: |
+          if [ -z "$RENOVATE_TOKEN" ]; then echo "::warning::No RENOVATE_TOKEN secret; Renovate not run"; exit 0; fi
+          renovate

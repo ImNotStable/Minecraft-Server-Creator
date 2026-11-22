@@ -90,7 +90,7 @@ class ApiIndexTest {
 
     @Test
     void aMissOnAllWordsListsTheClosestMatchesAndTheClassToOpen() {
-        // The Sky Sprint bench missed on "PlayerMoveEvent constructor" and "Collector collect poll" (ADR 0063).
+        // The Sky Sprint bench missed on "PlayerMoveEvent constructor" and "Collector collect poll" (ADR 0065).
         assertThat(index.search("gadget constructor", null, 5, 100))
                 .isEqualTo("Gadget#Gadget(String label)");
         assertThat(index.search("gadget create poll", null, 1, 100)).isEqualTo("""

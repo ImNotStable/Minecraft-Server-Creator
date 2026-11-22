@@ -1,4 +1,4 @@
-# ADR 0063: What an outside review of the tools got right (2026-11-21)
+# ADR 0065: What an outside review of the tools got right (2026-11-21)
 
 Status: accepted, 2026-11-21. Decided by Claude. Jeremiah asked for the review to be treated as suggestions:
 check each claim against the code and the traces, then build what holds up.
