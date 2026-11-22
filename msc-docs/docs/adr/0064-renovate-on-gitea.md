@@ -14,7 +14,7 @@ a Dependabot PR can't be merged on GitHub without diverging `main`. Gitea has no
   Renovate itself bumps) on the omen runner every Monday 06:00 UTC and by hand. It opens PRs on Gitea.
 - `renovate.json` keeps Dependabot's behaviour: Gradle (catalog, settings plugins, wrapper) in a `minecraft
   platforms` group and a `libraries and plugins` group, workflow actions in an `actions` group, at most 5 open
-  PRs, `deps:`/`ci:` commit prefixes, Fabric API skipped (ADR 0012). New: `actions/upload-artifact` is skipped,
+  PRs, `deps:`/`ci:` commit prefixes, Fabric API skipped (ADR 0012). Added 2026-11-22: `mcprotocollib-previous` (same module as `mcprotocollib`) is held by a rule on its current value, moved by hand with the Minecraft line. New: `actions/upload-artifact` is skipped,
   because v4+ refuses Gitea. Dependency dashboard issue off, onboarding PR off.
 - Renovate authenticates with a `RENOVATE_TOKEN` Gitea secret. The Actions job token can't read `/user`, which
   Renovate needs, so it is a personal token with repository and issue read/write plus user and organization read

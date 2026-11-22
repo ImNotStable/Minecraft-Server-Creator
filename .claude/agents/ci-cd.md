@@ -28,7 +28,7 @@ Read ADR 0012 (CI and releases), 0022 (Minestom e2e in CI), 0025 (CI cost) and 0
 
 - Gradle versions live only in `gradle/libs.versions.toml`; the templates in `msc-templates` read theirs from it, so the root entry covers them.
 - The `minecraft platforms` group (Paper, Fabric, Loom, NeoForge, Forge, Minestom, MockBukkit, Mojang, GeyserMC mcprotocollib) moves with the Minecraft version, so these updates come as one PR. Renovate applies its rules in order, so the later `minecraft platforms` rule wins over `libraries and plugins`.
-- Renovate can't keep `mcprotocollib-previous` one Minecraft version behind `mcprotocollib`. Check it by hand in platform PRs.
+- `renovate.json` holds `mcprotocollib-previous` with a rule on its current value (`/^26\.2/`); move that pattern with the Minecraft line.
 - `fabric-loom` is also pinned in `settings.gradle.kts` (`fabric-loom-repositories`), which Renovate may not update. Make sure both versions match.
 - Paper uses a dynamic version (`26.3.build.+`), so Renovate skips it. Fabric API is ignored in Renovate: its versions carry the Minecraft line as a suffix (`0.166.0+26.3`) and Renovate proposes the next line's build, so it is bumped by hand together with `minecraft`. Moving to a new Minecraft line is a manual change for every platform (ADR 0012).
 

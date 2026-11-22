@@ -1,37 +1,72 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "description": "Weekly grouped dependency PRs on Gitea, run by .github/workflows/renovate.yml (ADR 0064).",
-  "extends": ["config:recommended"],
-  "dependencyDashboard": {"enabled": false},
+  "extends": [
+    "config:recommended"
+  ],
+  "dependencyDashboard": {
+    "enabled": false
+  },
   "prConcurrentLimit": 5,
   "prHourlyLimit": 0,
   "packageRules": [
     {
       "description": "Everything Gradle that is not a server platform.",
-      "matchManagers": ["gradle", "gradle-wrapper"],
+      "matchManagers": [
+        "gradle",
+        "gradle-wrapper"
+      ],
       "groupName": "libraries and plugins",
       "commitMessagePrefix": "deps:"
     },
     {
-      "description": "Server platforms move with the Minecraft version, so one PR keeps them in step. mcprotocollib-previous stays one Minecraft version behind on purpose: set it back in that PR.",
-      "matchManagers": ["gradle"],
-      "matchPackageNames": ["io.papermc**", "net.fabricmc**", "fabric-loom**", "net.neoforged**", "net.minecraftforge**", "net.minestom**", "org.geysermc**", "org.mockbukkit**", "com.mojang**"],
+      "description": "Server platforms move with the Minecraft version, so one PR keeps them in step. mcprotocollib-previous is held by its own rule below.",
+      "matchManagers": [
+        "gradle"
+      ],
+      "matchPackageNames": [
+        "io.papermc**",
+        "net.fabricmc**",
+        "fabric-loom**",
+        "net.neoforged**",
+        "net.minecraftforge**",
+        "net.minestom**",
+        "org.geysermc**",
+        "org.mockbukkit**",
+        "com.mojang**"
+      ],
       "groupName": "minecraft platforms"
     },
     {
       "description": "Fabric API versions end in the Minecraft line (0.166.0+26.3); it is bumped by hand with the Minecraft version (ADR 0012).",
-      "matchPackageNames": ["net.fabricmc.fabric-api:fabric-api"],
+      "matchPackageNames": [
+        "net.fabricmc.fabric-api:fabric-api"
+      ],
       "enabled": false
     },
     {
-      "matchManagers": ["github-actions"],
+      "description": "mcprotocollib-previous (same module as mcprotocollib) stays one Minecraft version behind for Minestom; it moves by hand with the Minecraft line, like this pattern.",
+      "matchPackageNames": [
+        "org.geysermc.mcprotocollib:protocol"
+      ],
+      "matchCurrentValue": "/^26\\.2/",
+      "enabled": false
+    },
+    {
+      "matchManagers": [
+        "github-actions"
+      ],
       "groupName": "actions",
       "commitMessagePrefix": "ci:"
     },
     {
       "description": "v4+ refuses non-github.com servers, so Gitea stays on v3 (ci.yml).",
-      "matchManagers": ["github-actions"],
-      "matchPackageNames": ["actions/upload-artifact"],
+      "matchManagers": [
+        "github-actions"
+      ],
+      "matchPackageNames": [
+        "actions/upload-artifact"
+      ],
       "enabled": false
     }
   ]
