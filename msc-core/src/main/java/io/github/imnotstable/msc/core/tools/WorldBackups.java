@@ -15,20 +15,20 @@ import java.io.IOException;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 
 /**
  * Whole-world backups and rollback (ADR 0041), on {@code build_undo backup=}: {@code list}, {@code save [label]}, or
  * a backup to restore. A running server is told {@code save-off} and {@code save-all flush} first, so the copy is
  * consistent and no autosave writes during it, and {@code save-on} after. A rollback stops the server (also one an
  * earlier session left running), saves the current world as a backup, restores, and starts the server again when it
- * was running. A build placing
- * {@link #AUTO_BLOCKS} or more takes a backup first, unless one is younger than {@link #AUTO_EVERY}.
+ * was running. Every tool call that edits the world takes a backup first, unless one is younger than
+ * {@link #autoEvery} (ADR 0069): the undo history covers the edits in between.
  */
 public final class WorldBackups {
-    /** Blocks a build places from which it takes a backup first. */
-    public static final long AUTO_BLOCKS = 100_000;
-    /** A backup younger than this makes a big build skip its own. */
-    static final Duration AUTO_EVERY = Duration.ofMinutes(5);
+    /** A backup younger than this makes an edit skip its own. */
+    static volatile Duration autoEvery = Duration.ofMinutes(5);
     static final String SAVE_CURRENT = "save the current world as a backup";
     static final String STOP = "stop the server";
     static final String RESTORE = "restore the backup";
@@ -41,6 +41,8 @@ public final class WorldBackups {
     private final ServerRun run;
     private final WorldService world;
     private final Backups backups;
+    /** This session's first automatic backup, the world before its first edit: the prune keeps it. */
+    private String first;
     /** How long a server with no agent may take to answer save-all flush; tests shorten it. */
     static volatile Duration saveWait = Duration.ofSeconds(60);
     private static final Duration OFF_WAIT = Duration.ofSeconds(5);
@@ -71,28 +73,46 @@ public final class WorldBackups {
                     throw new ToolException(why);
                 }
             }
-            Taken t = take(w.substring(4).strip(), null, true);
+            Taken t = take(w.substring(4).strip(), first, true);
             return "backup " + t.backup().describe() + t.note();
         }
         return rollback(w);
     }
 
-    /** Before a build of {@code blocks} blocks: a backup line for its result, or "" when none was due. */
-    public synchronized String beforeBigEdit(long blocks) throws InterruptedException {
-        if (blocks < AUTO_BLOCKS) {
+    /** Before a tool call edits the world: a backup line for its result, or "" when none was due. */
+    public synchronized String beforeEdit() throws InterruptedException {
+        // No server of this session and no agent: nothing can edit the world, and the call fails on its own.
+        if (!server.running() && hub.current() == null) {
             return "";
         }
         try {
             long age = backups.newestAgeSeconds();
-            if (age >= 0 && age < AUTO_EVERY.toSeconds() || WorldFolders.in(config.serverDir()).isEmpty()) {
+            if (age >= 0 && age < autoEvery.toSeconds() || WorldFolders.in(config.serverDir()).isEmpty()) {
                 return "";
             }
-            Taken t = take("auto", null, true);
+            Taken t = take("auto", first, true);
+            if (first == null) {
+                first = t.backup().name();
+            }
             return "backup " + t.backup().name() + " taken first (build_undo backup=NAME restores it)" + t.note();
         } catch (IOException | RuntimeException e) {
             return "no backup taken first: " + Steps.reason(e);
         }
     }
+
+    /**
+     * {@link #beforeEdit} for {@code server_command}, unless every line is a command that only reads or talks (a
+     * shortcut: any other command, a plugin's included, counts as an edit).
+     */
+    String beforeCommands(String commands) throws InterruptedException {
+        boolean edits = commands.lines().map(c -> c.strip().replaceFirst("^/", "").split(" ", 2)[0])
+                .anyMatch(c -> !c.isEmpty() && !READ_ONLY.contains(c.toLowerCase(Locale.ROOT)));
+        return edits ? beforeEdit() : "";
+    }
+
+    private static final Set<String> READ_ONLY = java.util.Set.of("list", "help", "say", "tell", "msg",
+            "w", "tellraw", "me", "seed", "version", "ver", "plugins", "pl", "tps", "mspt", "save-all", "save-on",
+            "save-off");
 
     private String rollback(String name) throws IOException, InterruptedException {
         server.checkNoOtherSession();

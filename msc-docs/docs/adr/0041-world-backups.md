@@ -46,7 +46,7 @@ The tool list is at its guard (30 tools, under 16,000 characters), so no new too
    world, so the swap is renames), the list of folders written, the current world folders renamed into
    `.msc-restore/old/`, the new ones renamed in, the old ones deleted. A failure puts the old folders back; a crash is
    put back (or finished, when every new folder was in) by the next backup or restore.
-6. **Automatic before big builds.** A `build_batch` that places 100,000 blocks or more takes a backup after its names
+6. **Automatic before big builds** (replaced by [ADR 0069](0069-backup-before-every-edit.md): before every edit). A `build_batch` that places 100,000 blocks or more takes a backup after its names
    are checked and before its first block is written, unless the newest backup is younger than 5 minutes (the undo
    history covers the edits in between; 5 minutes keeps a series of big builds from copying the world each time). The
    build result says `backup <name> taken first`. A failed backup does not stop the build; the result says so.

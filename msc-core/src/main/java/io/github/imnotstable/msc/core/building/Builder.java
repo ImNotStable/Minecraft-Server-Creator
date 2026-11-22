@@ -42,7 +42,7 @@ public final class Builder {
         this(hub, world, blocks -> "");
     }
 
-    /** {@code beforeWrite}: the world backup a big build takes first (ADR 0041). */
+    /** {@code beforeWrite}: the world backup an edit takes first (ADR 0041, 0069). */
     public Builder(AgentHub hub, WorldService world, BeforeWrite beforeWrite) {
         this.hub = hub;
         this.world = world;
