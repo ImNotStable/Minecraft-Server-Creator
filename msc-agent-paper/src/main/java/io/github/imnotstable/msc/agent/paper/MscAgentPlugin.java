@@ -6,6 +6,7 @@ import io.github.imnotstable.msc.agent.common.AgentLog;
 import io.github.imnotstable.msc.agent.common.AgentRoutes;
 import io.github.imnotstable.msc.agent.common.EditHistory;
 import io.github.imnotstable.msc.agent.common.MainThread;
+import io.github.imnotstable.msc.agent.common.SavedPack;
 import io.github.imnotstable.msc.agent.common.ServerOps;
 import io.github.imnotstable.msc.agent.common.WorldOps;
 import io.github.imnotstable.msc.protocol.message.AgentInfo;
@@ -49,6 +50,8 @@ public class MscAgentPlugin extends JavaPlugin implements Listener {
         getServer().getPluginManager().registerEvents(this, this);
         link = new AgentLink(info, router, log(getLogger()));
         link.start();
+        // Started by hand, with no MSC session: serve the pack MSC saved beside the server (ADR 0076).
+        SavedPack.serveIfIdle(java.nio.file.Path.of(""), serverOps, log(getLogger()));
     }
 
     @Override

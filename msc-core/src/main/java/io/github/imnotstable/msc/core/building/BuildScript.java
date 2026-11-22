@@ -36,7 +36,8 @@ public final class BuildScript {
     public static final String HELP = """
             One step per line; later steps win. B = a block or a mix like grass_block:78,moss_block:10; B{SNBT} adds \
             block entity data. Every step \
-            takes replace=a,b (change only those; air = empty), seed=N, repeat=N step=DX,DY,DZ.
+            takes replace=a,b (change only those; air = empty), seed=N, repeat=N step=DX,DY,DZ, clump=N (mix in \
+            patches N across).
             fill X,Y,Z X,Y,Z B [hollow|outline|walls]
             set X,Y,Z B
             cylinder X,Y,Z r=R h=H B [hollow] [thick=T] [inner=R]   (X,Y,Z = bottom centre)
@@ -46,7 +47,12 @@ public final class BuildScript {
             line X,Y,Z X,Y,Z B [w=W]
             helix X,Y,Z r=R h=H B [turns=T] [w=W] [start=DEG]   (bottom centre; turns<0 anticlockwise; \
             start=0 north)
-            bands X,Y,Z [h=H] R1=B R2=B ... [jitter=J]   (rings to each radius: land, beach, water)
+            bands X,Y,Z [h=H] R1=B R2=B ... [jitter=J]   (flat rings)
+            terrain X,Y,Z X,Y,Z B [top=B under=B depth=3 cliff=B bed=B style=hills|ridges|mesa|dunes scale=N edge=N \
+            ground=Y water=Y]   (noise land in the box; cliff= on steep sides, bed= under water; rim eases to ground= \
+            over edge= blocks, 0 fills the box; below ground= digs, water= fills)
+            path X,Y,Z X,Y,Z ... B [w=3 wander=N depth=N bed=B]   (curved way on the ground; depth= digs a stream)
+            scatter X,Y,Z X,Y,Z B|file=PATH,PATH [spacing=8 chance=100 on=B sink=N]   (on the ground, one per cell)
             structure X,Y,Z [X,Y,Z ...] [rotate=90] [face=X,Z] [anchor=center] [air=false] [file=PATH]
               then the text and "end", unless file= (.schem or text). Text: "legend: #=stone g=glass", then per \
             layer "y=N" and rows (z) of symbols (x); "." air, "_" unchanged; "y=N same as y=M", "y=N all #". rotate \
@@ -262,10 +268,60 @@ public final class BuildScript {
                     if (i > 0 && radii[i] <= radii[i - 1]) {
                         throw new ToolException("band radii must grow: " + radii[i - 1] + " then " + radii[i]);
                     }
-                    blocks.add(BlockPattern.parse(band.substring(eq + 1), o.seed()));
+                    blocks.add(BlockPattern.parse(band.substring(eq + 1), o.seed()).withClump(o.clump()));
                 }
                 o.done();
                 yield new Step.Bands(world, p.points().get(0), h, radii, blocks, jitter, o.seed(), o.replace());
+            }
+            case "terrain" -> {
+                o.points(2);
+                o.flags(Set.of());
+                Region box = new Region(world, p.points().get(0), p.points().get(1));
+                int shortSide = Math.min(box.sizeX(), box.sizeZ());
+                BlockPattern body = o.block();
+                BlockPattern top = o.pattern("top", body);
+                BlockPattern under = o.pattern("under", body);
+                BlockPattern cliff = o.pattern("cliff", body);
+                BlockPattern bed = o.pattern("bed", null);
+                String style = o.string("style");
+                int lo = box.min().y();
+                int hi = box.max().y();
+                int ground = o.integer("ground", lo, lo, hi);
+                String waterText = o.string("water");
+                Integer water = waterText == null ? null : o.integer("water", null, lo, ground);
+                yield new Step.Terrain(box, body, top, under, cliff, bed, style == null ? "hills" : style, ground, water,
+                        o.integer("depth", 3, 0, 64), o.integer("scale", Math.max(8, shortSide / 2), 2, 4096),
+                        o.integer("edge", shortSide / 4, 0, 4096), o.integer("octaves", 4, 1, 8),
+                        o.integer("steps", 4, 2, 32), o.seed(), o.replace());
+            }
+            case "path" -> {
+                if (p.points().size() < 2 || p.points().size() > 256) {
+                    throw new ToolException("path takes 2 to 256 positions X,Y,Z, got " + p.points().size());
+                }
+                o.flags(Set.of());
+                int w = o.integer("w", 3, 1, 64);
+                yield new Step.Path(world, p.points(), w, o.integer("wander", w + 1, 0, 256),
+                        o.integer("depth", 0, 0, 32), o.block(), o.pattern("bed", null), o.seed(), o.replace());
+            }
+            case "scatter" -> {
+                o.points(2);
+                o.flags(Set.of());
+                String file = o.string("file");
+                if ((file == null) == (p.block() == null)) {
+                    throw new ToolException("scatter takes a block (mix) or file=PATH[,PATH...] of structures, one of them");
+                }
+                List<BlockGrid> structures = new ArrayList<>();
+                if (file != null) {
+                    for (String f : file.split(",")) {
+                        structures.add(files.load(f.trim(), world));
+                    }
+                }
+                String on = o.string("on");
+                yield new Step.Scatter(new Region(world, p.points().get(0), p.points().get(1)),
+                        file == null ? o.block() : null, structures, o.integer("spacing", 8, 1, 1024),
+                        o.integer("chance", 100, 1, 100),
+                        on == null ? List.of() : BlockPattern.splitTopLevel(on).stream().map(String::trim)
+                                .filter(s -> !s.isEmpty()).toList(), o.integer("sink", 0, 0, 64), o.seed(), o.replace());
             }
             case "structure" -> {
                 String file = p.options().get("file");
@@ -276,7 +332,7 @@ public final class BuildScript {
             }
             case "copy" -> copy(p);
             default -> throw new ToolException("unknown step \"" + p.verb()
-                    + "\"; use fill, set, cylinder, ring, disc, sphere, dome, line, helix, bands, structure or copy");
+                    + "\"; use fill, set, cylinder, ring, disc, sphere, dome, line, helix, bands, terrain, path, scatter, structure or copy");
         };
         if (!p.verb().equals("structure") && !p.verb().equals("copy")) {
             o.done();
@@ -502,7 +558,17 @@ public final class BuildScript {
         }
 
         BlockPattern block() {
-            return BlockPattern.parse(requireBlock(), seed());
+            return BlockPattern.parse(requireBlock(), seed()).withClump(clump());
+        }
+
+        /** A block option such as {@code top=grass_block}, with the step's seed and clump; {@code fallback} when absent. */
+        BlockPattern pattern(String key, BlockPattern fallback) {
+            String v = string(key);
+            return v == null ? fallback : BlockPattern.parse(v, seed()).withClump(clump());
+        }
+
+        int clump() {
+            return integer("clump", 0, 0, 256);
         }
 
         List<String> replace() {

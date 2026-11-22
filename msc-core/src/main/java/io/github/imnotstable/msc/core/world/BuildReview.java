@@ -13,7 +13,8 @@ import java.util.Set;
 /**
  * Measurable signs of a plain build, so an agent judges its work by numbers and not only by its own look at a render
  * (ADR 0068): few block types, few shaped blocks, flat walls of one block, flat roofs, no lights, and walls
- * speckled by a random mix of clashing colours (ADR 0071).
+ * speckled by a random mix of clashing colours (ADR 0071). Soil is not part of a build's numbers, and the land around
+ * it gets its own ({@link LandReview}, ADR 0075).
  */
 public final class BuildReview {
     /** Name parts of blocks that add shape or detail: trim, roofs, sills, furniture, plants, lights. */
@@ -34,6 +35,8 @@ public final class BuildReview {
     static final int MAX_SPECKLED = 20;
     /** RGB distance where two blocks clash: stone_bricks to mossy_stone_bricks is 21, deepslate to prismarine 134. */
     static final int CLASH = 64;
+    /** A region at least this much land (by blocks) is judged as land only: hills are not walls or flat roofs. */
+    static final int LAND_ONLY = 60;
 
     private BuildReview() {
     }
@@ -41,9 +44,18 @@ public final class BuildReview {
     public static String review(BlockGrid grid) {
         Region r = grid.region();
         String[] names = new String[grid.palette().size()];
+        boolean[] fluid = new boolean[names.length];
+        boolean[] soil = new boolean[names.length];
         for (int i = 0; i < names.length; i++) {
             String id = BlockNames.brief(BlockNames.id(grid.palette().get(i)));
-            names[i] = BlockNames.isAir(grid.palette().get(i)) || FLUIDS.contains(id) ? null : id;
+            fluid[i] = FLUIDS.contains(id);
+            names[i] = BlockNames.isAir(grid.palette().get(i)) || fluid[i] ? null : id;
+            soil[i] = names[i] != null && LandReview.SOIL.contains(id);
+        }
+        LandReview.Result land = LandReview.review(grid, names, fluid);
+        if (land.landShare() >= LAND_ONLY) {
+            return withLand("review: mostly land (" + land.landShare() + "% of the blocks), so only the land is "
+                    + "judged; review each build on its own region", land, List.of(), false);
         }
         int[] rgb = new int[names.length];
         for (int i = 0; i < names.length; i++) {
@@ -61,7 +73,7 @@ public final class BuildReview {
             for (int z = r.min().z(); z <= r.max().z(); z++) {
                 for (int x = r.min().x(); x <= r.max().x(); x++) {
                     String b = name(grid, names, x, y, z);
-                    if (b == null) {
+                    if (b == null || soil[grid.blocks()[r.index(x, y, z)]]) {
                         continue;
                     }
                     total++;
@@ -81,7 +93,8 @@ public final class BuildReview {
             }
         }
         if (total == 0) {
-            return "review: nothing built above the ground" + (ground >= r.min().y() ? " (y " + ground + " and below)" : "");
+            return withLand("review: nothing built above the ground" + (ground >= r.min().y() ? " (y " + ground
+                    + " and below)" : ""), land, List.of(), false);
         }
         int[] roof = roof(grid, names, ground);
         List<Map.Entry<String, Integer>> top = new ArrayList<>(counts.entrySet());
@@ -131,10 +144,22 @@ public final class BuildReview {
         if (lights == 0 && total >= 200) {
             fixes.add("no lights: lanterns, torches or glowing blocks at doors, paths and windows");
         }
-        if (fixes.isEmpty()) {
-            return out.append("no number below the bar; now judge the render: silhouette, story, scale").toString();
+        return withLand(out.toString().stripTrailing(), land, fixes, true);
+    }
+
+    /** The build's text, the land's numbers on their own line, then every fix, or the pass line when there is none. */
+    private static String withLand(String text, LandReview.Result land, List<String> buildFixes, boolean built) {
+        StringBuilder out = new StringBuilder(text);
+        if (!land.line().isEmpty()) {
+            out.append("\nland: ").append(land.line());
         }
-        out.append("fix first:");
+        List<String> fixes = new ArrayList<>(buildFixes);
+        fixes.addAll(land.fixes());
+        if (fixes.isEmpty()) {
+            return !built && land.line().isEmpty() ? out.toString()
+                    : out.append("\nno number below the bar; now judge the render: silhouette, story, scale").toString();
+        }
+        out.append("\nfix first:");
         for (int i = 0; i < fixes.size(); i++) {
             out.append(i == 0 ? " " : "; ").append(i + 1).append(") ").append(fixes.get(i));
         }
@@ -174,8 +199,8 @@ public final class BuildReview {
                 for (int y = r.max().y(); y > ground; y--) {
                     String b = name(grid, names, x, y, z);
                     if (b != null) {
-                        if (b.contains("leaves")) {
-                            break; // a tree canopy is not a roof (ADR 0071)
+                        if (b.contains("leaves") || LandReview.SOIL.contains(b)) {
+                            break; // a tree canopy (ADR 0071) or the ground (ADR 0075) is not a roof
                         }
                         tops++;
                         shaped += b.contains("stairs") || b.contains("slab") ? 1 : 0;

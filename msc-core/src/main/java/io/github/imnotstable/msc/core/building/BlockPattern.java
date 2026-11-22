@@ -10,9 +10,11 @@ import java.util.regex.Pattern;
 /**
  * One block or a weighted mix such as {@code grass_block:78,moss_block:10,coarse_dirt:12}. A weight
  * is the number after the last colon; it defaults to 1. Which block a position gets depends only on
- * the position and the seed, so a dry run, a repeat and an undo-and-redo all give the same result.
+ * the position and the seed, so a dry run, a repeat and an undo-and-redo all give the same result. With
+ * {@code clump > 0} the mix comes in patches about that many blocks across, with wavy edges, instead of block by block
+ * (ADR 0075): ground and wall weathering that reads as patches, not static.
  */
-public record BlockPattern(List<String> states, int[] cumulative, long seed) {
+public record BlockPattern(List<String> states, int[] cumulative, long seed, int clump) {
     private static final Pattern WEIGHT = Pattern.compile("^(.*\\S):(\\d+)$");
 
     public BlockPattern {
@@ -20,7 +22,7 @@ public record BlockPattern(List<String> states, int[] cumulative, long seed) {
     }
 
     public static BlockPattern single(String state) {
-        return new BlockPattern(List.of(BlockNames.full(state)), new int[] {1}, 0);
+        return new BlockPattern(List.of(BlockNames.full(state)), new int[] {1}, 0, 0);
     }
 
     public static BlockPattern parse(String text) {
@@ -68,7 +70,7 @@ public record BlockPattern(List<String> states, int[] cumulative, long seed) {
             }
             cumulative[i] = (int) sum;
         }
-        return new BlockPattern(states, cumulative, seed);
+        return new BlockPattern(states, cumulative, seed, 0);
     }
 
     /** Whether {@code text} is more than a single block, so it needs this class rather than a plain fill. */
@@ -127,7 +129,12 @@ public record BlockPattern(List<String> states, int[] cumulative, long seed) {
     }
 
     public BlockPattern withSeed(long newSeed) {
-        return new BlockPattern(states, cumulative, newSeed);
+        return new BlockPattern(states, cumulative, newSeed, clump);
+    }
+
+    /** The same mix in patches about {@code size} blocks across; 0 picks block by block. */
+    public BlockPattern withClump(int size) {
+        return new BlockPattern(states, cumulative, seed, size);
     }
 
     /** The block for one position. */
@@ -135,7 +142,7 @@ public record BlockPattern(List<String> states, int[] cumulative, long seed) {
         if (states.size() == 1) {
             return states.get(0);
         }
-        long h = mix(seed ^ mix(x * 0x9E3779B97F4A7C15L ^ mix(y * 0xC2B2AE3D27D4EB4FL ^ mix(z))));
+        long h = clump > 0 ? patch(x, y, z) : mix(seed ^ mix(x * 0x9E3779B97F4A7C15L ^ mix(y * 0xC2B2AE3D27D4EB4FL ^ mix(z))));
         int total = cumulative[cumulative.length - 1];
         int roll = (int) Long.remainderUnsigned(h, total);
         for (int i = 0; i < cumulative.length; i++) {
@@ -144,6 +151,22 @@ public record BlockPattern(List<String> states, int[] cumulative, long seed) {
             }
         }
         return states.get(states.size() - 1);
+    }
+
+    /**
+     * One roll per patch: the position, pushed about by smooth noise so patch edges wave, picks a cell {@code clump}
+     * blocks across, and the cell's hash picks the block. Every cell is one roll, so the weights still hold.
+     */
+    private long patch(int x, int y, int z) {
+        double c = clump;
+        double push = 0.7 * c;
+        double wx = x + push * Noise.gradient(seed + 1, z / c, y / c);
+        double wy = y + push * Noise.gradient(seed + 2, x / c, z / c);
+        double wz = z + push * Noise.gradient(seed + 3, x / c, y / c);
+        long cx = (long) Math.floor(wx / c);
+        long cy = (long) Math.floor(wy / c);
+        long cz = (long) Math.floor(wz / c);
+        return mix(seed ^ mix(cx * 0x9E3779B97F4A7C15L ^ mix(cy * 0xC2B2AE3D27D4EB4FL ^ mix(cz))));
     }
 
     /** SplitMix64 finaliser: a fast, well-spread hash of one long. */
@@ -157,7 +180,7 @@ public record BlockPattern(List<String> states, int[] cumulative, long seed) {
     @Override
     public boolean equals(Object o) {
         return o instanceof BlockPattern p && p.states.equals(states) && java.util.Arrays.equals(p.cumulative, cumulative)
-                && p.seed == seed;
+                && p.seed == seed && p.clump == clump;
     }
 
     @Override

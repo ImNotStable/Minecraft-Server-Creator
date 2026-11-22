@@ -7,6 +7,7 @@ import io.github.imnotstable.msc.agent.common.AgentRoutes;
 import io.github.imnotstable.msc.agent.common.CoreAddress;
 import io.github.imnotstable.msc.agent.common.EditHistory;
 import io.github.imnotstable.msc.agent.common.MainThread;
+import io.github.imnotstable.msc.agent.common.SavedPack;
 import io.github.imnotstable.msc.agent.common.ServerOps;
 import io.github.imnotstable.msc.agent.common.WorldOps;
 import io.github.imnotstable.msc.protocol.message.AgentInfo;
@@ -100,6 +101,8 @@ public final class MscAgent {
     public static MscAgent start() {
         MscAgent agent = new MscAgent();
         agent.link.start();
+        // Started by hand, with no MSC session: serve the pack MSC saved beside the server (ADR 0076).
+        SavedPack.serveIfIdle(java.nio.file.Path.of(""), agent.serverOps, AgentLog.of(System.getLogger("msc-agent")));
         return agent;
     }
 
