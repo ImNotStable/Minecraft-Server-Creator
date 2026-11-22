@@ -95,6 +95,24 @@ public final class Canvas {
     }
 
     /**
+     * What each position in {@code region} holds once the earlier steps are drawn: their block, else the world's. For
+     * steps that sit on the ground, such as {@code path} and {@code scatter} (ADR 0075).
+     */
+    public Lookup current(Region region) throws InterruptedException {
+        BlockGrid world = world(region);
+        return (x, y, z) -> {
+            String p = planned(x, y, z);
+            return p != null ? p : world.region().contains(x, y, z) ? world.stateAt(x, y, z) : "minecraft:air";
+        };
+    }
+
+    /** A block by position. */
+    @FunctionalInterface
+    public interface Lookup {
+        String at(int x, int y, int z);
+    }
+
+    /**
      * Read all of {@code region} at once when a later step inside it first needs the world, so the copies
      * of a repeated step share one read. The world does not change while the canvas is drawn. Lasts until
      * {@link #endReadAhead}, so steps after the group read only their own bounds.

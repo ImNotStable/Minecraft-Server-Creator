@@ -65,6 +65,17 @@ public final class LifecycleTools {
                         .opt("bedrock", "boolean", "Geyser+Floodgate for Bedrock players; false removes")
                         .opt("acceptEula", "boolean", EulaPrompts.EULA_ARG),
                 setup::run);
+        registry.add("world_create",
+                "Add a generated world (real terrain, caves, biomes) beside the flat dev world, as a data pack; it "
+                        + "loads on the next server start, then build in it with world=msc:<name>. No name: list them.",
+                Schema.of().opt("name", "string", "a-z, 0-9, _; the world is msc:<name>")
+                        .opt("terrain", "string", "normal (default), amplified, large_biomes, caves, floating_islands, "
+                                + "nether, end, flat or void")
+                        .opt("biomes", "strings", "One biome everywhere, or several sharing the land (default: the "
+                                + "terrain's own mix)")
+                        .opt("layers", "strings", "flat only, bottom up, such as bedrock, stone:20, dirt:3, grass_block")
+                        .opt("remove", "boolean", "Take the world out of the pack (its saved chunks stay)"),
+                args -> WorldCreate.run(config, server, args));
         PluginTools plugins = new PluginTools(config, server,
                 new AddonSources(AddonSources.Urls.DEFAULT, config.downloadStore()));
         registry.add("plugins",

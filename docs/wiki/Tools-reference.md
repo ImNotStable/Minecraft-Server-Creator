@@ -1,6 +1,6 @@
 # Tools reference
 
-All 27 tools, one line each. You rarely call them by name: ask Claude in plain words and it picks the tool. Full arguments are in [tools.md](https://github.com/ImNotStable/Minecraft-Server-Creator/blob/main/msc-docs/docs/tools.md).
+All 28 tools, one line each. You rarely call them by name: ask Claude in plain words and it picks the tool. Full arguments are in [tools.md](https://github.com/ImNotStable/Minecraft-Server-Creator/blob/main/msc-docs/docs/tools.md).
 
 Coordinates are text: a position is `x,y,z`, a region is `x1,y1,z1 x2,y2,z2`, an area is `x1,z1 x2,z2`.
 
@@ -47,8 +47,9 @@ Coordinates are text: a position is `x,y,z`, a region is `x1,y1,z1 x2,y2,z2`, an
 
 | Tool | What it does |
 | --- | --- |
-| `build_batch` | The one build tool. Runs build steps as one edit: fills and rooms, single blocks, circles, rings, spheres, domes, lines, helixes (spiral stairs), terrain bands, structures from text or `.schem` files (repeated or turned), and copies; any step repeats with `repeat=N step=DX,DY,DZ`. Takes block mixes such as `grass_block:78,moss_block:10`, checks every block name before placing any, and has a `dryRun` option. |
+| `build_batch` | The one build tool. Runs build steps as one edit: fills and rooms, single blocks, circles, rings, spheres, domes, lines, helixes (spiral stairs), terrain bands, noise terrain (hills, ridges, mesas, dunes, lakes), winding paths and streams on the ground, things scattered over the ground (trees, rocks, flowers), structures from text or `.schem` files (repeated or turned), and copies; any step repeats with `repeat=N step=DX,DY,DZ`. Takes block mixes such as `grass_block:78,moss_block:10`, checks every block name before placing any, and has a `dryRun` option. |
 | `build_undo` | Undoes an edit (the last one by default). |
+| `world_create` | Adds a generated world beside the flat dev world: the game's own terrain (normal, amplified, large biomes, caves, floating islands, nether, end, flat or void) with one biome or several sharing the land. It loads on the next server start; then build there with `world=msc:<name>`. |
 | `structure_save` | Saves a region as a `.schem` file. Place it again with `build_batch` step `structure X,Y,Z file=PATH`. |
 
 ## Play-testing
