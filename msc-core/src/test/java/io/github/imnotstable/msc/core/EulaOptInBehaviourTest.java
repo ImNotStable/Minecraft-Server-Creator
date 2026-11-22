@@ -60,7 +60,7 @@ class EulaOptInBehaviourTest {
             new Row("project_scaffold", "name", "Srv", "dir", "srv2", "template", "paper-server", "acceptEula", false),
             new Row("server_setup", "platform", "paper"), new Row("server_setup", "acceptEula", false),
             new Row("plugins"), new Row("server_start", "timeoutSeconds", 60), new Row("server_start", "acceptEula", false),
-            new Row("dev_cycle", "project", "demo"), new Row("server_stop"));
+            new Row("dev_cycle", "project", "demo"), new Row("world_create", "name", "w"), new Row("server_stop"));
 
     /**
      * The calls that need a running server and an agent: a Minestom workspace (no EULA) with a stand-in server

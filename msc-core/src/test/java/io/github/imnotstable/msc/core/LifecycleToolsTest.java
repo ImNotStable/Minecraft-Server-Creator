@@ -248,6 +248,17 @@ class LifecycleToolsTest {
     }
 
     @Test
+    void aBuiltPackIsSavedBesideTheServerForItsAgent() throws Exception {
+        h.ok("server_start", "timeoutSeconds", 30);
+        h.ok("texture", "name", "item/dot", "palette", List.of("a=#ff0000"), "rows", List.of("a"));
+        h.ok("pack", "apply", false);
+        // The agent serves this when the server is started without MSC (ADR 0076).
+        Path saved = workspace.resolve("run/msc-pack");
+        assertThat(saved.resolve("pack.zip")).isNotEmptyFile();
+        assertThat(Files.readString(saved.resolve("host")).strip()).isNotEmpty();
+    }
+
+    @Test
     void stoppingADetachedServerInTheSameSessionStopsItsPackHostToo() throws Exception {
         h.ok("server_start", "timeoutSeconds", 30);
         h.ok("texture", "name", "item/dot", "palette", List.of("a=#ff0000"), "rows", List.of("a"));

@@ -24,7 +24,7 @@ import org.junit.jupiter.api.io.TempDir;
 class ArrayArgumentLinesTest {
     /** Every array argument of every tool, each with a test below. */
     private static final Set<String> COVERED = Set.of("player_test actions", "texture palette", "texture rows",
-            "model_create textures", "plugins install");
+            "model_create textures", "plugins install", "world_create biomes", "world_create layers");
 
     @TempDir
     Path workspace;
@@ -64,6 +64,14 @@ class ArrayArgumentLinesTest {
         assertThat(h.error("player_test", "actions", "say hi\twait 20")).isEqualTo("error: argument actions has a"
                 + " control character (U+0009); only line breaks may be in it, one item per line");
         assertThat(h.error("player_test", "actions", "\n\n")).isEqualTo("error: actions is empty");
+    }
+
+    @Test
+    void worldCreateTakesOneBiomeAndOneLayerPerLine() {
+        assertThat(h.ok("world_create", "name", "a", "biomes", "plains\ndesert"))
+                .contains("minecraft:plains, minecraft:desert");
+        assertThat(h.ok("world_create", "name", "b", "terrain", "flat", "layers", "bedrock\ndirt:2"))
+                .contains("msc:b, flat terrain");
     }
 
     @Test

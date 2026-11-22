@@ -62,6 +62,12 @@ public final class ServerOps {
         return main.call(() -> new Ops.PackResult(server.sendPack(request)));
     }
 
+    /** Send this pack to each player who joins from now on, unless MSC applies another ({@link SavedPack}). */
+    public void standby(String url, String sha1) {
+        UUID id = UUID.nameUUIDFromBytes(("msc-pack:" + url).getBytes(StandardCharsets.UTF_8));
+        pack.compareAndSet(null, new AgentServer.Pack(id, url, sha1, false));
+    }
+
     /** The pack to send to a player who joins, if one was applied. */
     public Optional<AgentServer.Pack> currentPack() {
         return Optional.ofNullable(pack.get());
