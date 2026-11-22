@@ -2,6 +2,7 @@ package io.github.imnotstable.msc.core.world;
 
 import io.github.imnotstable.msc.protocol.world.BlockGrid;
 import io.github.imnotstable.msc.protocol.world.Region;
+import io.github.imnotstable.msc.renderer.BlockColors;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -11,7 +12,8 @@ import java.util.Set;
 
 /**
  * Measurable signs of a plain build, so an agent judges its work by numbers and not only by its own look at a render
- * (ADR 0068): few block types, few shaped blocks, flat walls of one block, flat roofs, no lights.
+ * (ADR 0068): few block types, few shaped blocks, flat walls of one block, flat roofs, no lights, and walls
+ * speckled by a random mix of clashing colours (ADR 0071).
  */
 public final class BuildReview {
     /** Name parts of blocks that add shape or detail: trim, roofs, sills, furniture, plants, lights. */
@@ -29,6 +31,9 @@ public final class BuildReview {
     static final int MIN_DETAIL = 12;
     static final int MAX_FLAT = 45;
     static final int MIN_ROOF = 15;
+    static final int MAX_SPECKLED = 20;
+    /** RGB distance where two blocks clash: stone_bricks to mossy_stone_bricks is 21, deepslate to prismarine 134. */
+    static final int CLASH = 64;
 
     private BuildReview() {
     }
@@ -40,6 +45,10 @@ public final class BuildReview {
             String id = BlockNames.brief(BlockNames.id(grid.palette().get(i)));
             names[i] = BlockNames.isAir(grid.palette().get(i)) || FLUIDS.contains(id) ? null : id;
         }
+        int[] rgb = new int[names.length];
+        for (int i = 0; i < names.length; i++) {
+            rgb[i] = names[i] == null ? 0 : BlockColors.side(names[i]);
+        }
         int ground = groundTop(grid, names);
         Map<String, Integer> counts = new HashMap<>();
         int total = 0;
@@ -47,6 +56,7 @@ public final class BuildReview {
         int lights = 0;
         int faces = 0;
         int flat = 0;
+        int speckled = 0;
         for (int y = ground + 1; y <= r.max().y(); y++) {
             for (int z = r.min().z(); z <= r.max().z(); z++) {
                 for (int x = r.min().x(); x <= r.max().x(); x++) {
@@ -65,6 +75,7 @@ public final class BuildReview {
                         }
                         faces++;
                         flat += flatPatch(grid, names, b, x, y, z, s[0], s[1], ground) ? 1 : 0;
+                        speckled += clashes(grid, names, rgb, x, y, z, s[1], s[0]) >= 3 ? 1 : 0;
                     }
                 }
             }
@@ -78,6 +89,7 @@ public final class BuildReview {
         int topShare = pct(top.get(0).getValue(), total);
         int detailPct = pct(detail, total);
         int flatPct = faces == 0 ? 0 : pct(flat, faces);
+        int speckledPct = faces == 0 ? 0 : pct(speckled, faces);
         int roofPct = roof[1] == 0 ? 100 : pct(roof[0], roof[1]);
         int height = roof[2];
 
@@ -90,11 +102,17 @@ public final class BuildReview {
             out.append(i == 0 ? "" : ", ").append(top.get(i).getKey()).append(' ').append(pct(top.get(i).getValue(), total)).append('%');
         }
         out.append(String.format(Locale.ROOT, "\ndetail blocks %d%% (aim %d%%+), flat wall faces %d%% (aim under %d%%), "
-                + "shaped roof %d%%, lights %d\n", detailPct, MIN_DETAIL, flatPct, MAX_FLAT, roofPct, lights));
+                + "speckled faces %d%% (aim under %d%%), shaped roof %d%%, lights %d\n", detailPct, MIN_DETAIL,
+                flatPct, MAX_FLAT, speckledPct, MAX_SPECKLED, roofPct, lights));
         List<String> fixes = new ArrayList<>();
         if (flatPct > MAX_FLAT && faces >= 20) {
             fixes.add("flat walls: give each wall depth (pillars or a frame 1 out, windows 1 in), a base and a trim "
                     + "line of stairs or slabs, and mix in variants of the main block");
+        }
+        if (speckledPct > MAX_SPECKLED && faces >= 50) {
+            fixes.add("speckled walls: a random mix of clashing colours reads as noise; mix only near tones "
+                    + "(stone_bricks:70,cracked_stone_bricks:20,mossy_stone_bricks:10) and put contrast in lines: "
+                    + "trims, bands, frames, an accent at the focal point");
         }
         if (detailPct < MIN_DETAIL) {
             fixes.add("few shaped blocks: stairs and slabs for roofs, sills and trim; walls and fences for railings; "
@@ -120,7 +138,7 @@ public final class BuildReview {
         for (int i = 0; i < fixes.size(); i++) {
             out.append(i == 0 ? " " : "; ").append(i + 1).append(") ").append(fixes.get(i));
         }
-        return out.toString();
+        return out.append("; then review this region again").toString();
     }
 
     /**
@@ -156,6 +174,9 @@ public final class BuildReview {
                 for (int y = r.max().y(); y > ground; y--) {
                     String b = name(grid, names, x, y, z);
                     if (b != null) {
+                        if (b.contains("leaves")) {
+                            break; // a tree canopy is not a roof (ADR 0071)
+                        }
                         tops++;
                         shaped += b.contains("stairs") || b.contains("slab") ? 1 : 0;
                         height = Math.max(height, y - ground);
@@ -165,6 +186,27 @@ public final class BuildReview {
             }
         }
         return new int[] {shaped, tops, height};
+    }
+
+    /** How many of a wall face's four neighbours in its plane clash with it in colour; {@code ux, uz} runs along the wall. */
+    private static int clashes(BlockGrid grid, String[] names, int[] rgb, int x, int y, int z, int ux, int uz) {
+        int self = rgb[grid.blocks()[grid.region().index(x, y, z)]];
+        int[][] near = {{x + ux, y, z + uz}, {x - ux, y, z - uz}, {x, y + 1, z}, {x, y - 1, z}};
+        int n = 0;
+        for (int[] p : near) {
+            if (name(grid, names, p[0], p[1], p[2]) != null
+                    && distance(self, rgb[grid.blocks()[grid.region().index(p[0], p[1], p[2])]]) > CLASH) {
+                n++;
+            }
+        }
+        return n;
+    }
+
+    private static double distance(int a, int b) {
+        int dr = (a >> 16 & 0xff) - (b >> 16 & 0xff);
+        int dg = (a >> 8 & 0xff) - (b >> 8 & 0xff);
+        int db = (a & 0xff) - (b & 0xff);
+        return Math.sqrt(dr * dr + dg * dg + db * db);
     }
 
     private static boolean flatPatch(BlockGrid grid, String[] names, String b, int x, int y, int z, int dx, int dz,
