@@ -35,16 +35,13 @@ public final class BuildScript {
     /** What every step verb takes, for the tool descriptions. */
     public static final String HELP = """
             One step per line; later steps win. B = a block or a mix like grass_block:78,moss_block:10; B{SNBT} adds \
-            block entity data; a>b>c is a gradient over the step's box (grade=y, x, z, -y...). Every step takes \
-            replace=a,b (change only those; air = empty), seed=N, repeat=N step=DX,DY,DZ, clump=N (mix in patches N \
-            across). Blocks join as a player's would (fences, panes, walls, stair corners, door and bed halves); a \
-            stair, trapdoor, torch, lantern, chest or ladder without facing= turns to the wall beside it.
+            block entity data; a>b>c a gradient (grade=y|x|z|-y). Every step takes replace=a,b (air = empty), seed=N,             repeat=N step=DX,DY,DZ, clump=N (patches). Blocks join as placed by hand; facing= left out turns to the wall.
             fill X,Y,Z X,Y,Z B [hollow|outline|walls]
             set X,Y,Z B
             cylinder X,Y,Z r=R h=H B [hollow] [thick=T] [inner=R]   (X,Y,Z = bottom centre)
             ring X,Y,Z r=R B [h=H] [thick=T]
             disc X,Y,Z r=R B [inner=R]
-            sphere|dome X,Y,Z r=R B [hollow] [thick=T] [rough=N]   (dome: X,Y,Z = floor centre; rough= bulges it)
+            sphere|dome X,Y,Z r=R B [hollow] [thick=T] [rough=N]   (dome: X,Y,Z = floor centre)
             line X,Y,Z X,Y,Z B [w=W]
             helix X,Y,Z r=R h=H B [turns=T] [w=W] [start=DEG]   (bottom centre; turns<0 anticlockwise; \
             start=0 north)
@@ -54,14 +51,10 @@ public final class BuildScript {
             over edge= blocks, 0 fills the box; below ground= digs, water= fills)
             path X,Y,Z X,Y,Z ... B [w=3 wander=N depth=N bed=B]   (curved way on the ground; depth= digs a stream)
             scatter X,Y,Z X,Y,Z B|file=PATH,PATH [spacing=8 chance=100 on=B sink=N]   (on the ground, one per cell)
-            roof X,Y,Z X,Y,Z B [style=gable|hip|shed axis=x|z high=north pitch=1|2 overhang=1 gable=B ridge=B]   (over \
-            the walls, rows from the box's bottom; stairs face up the slope, slabs give a low pitch; taller box: flat cap)
-            trim X,Y,Z X,Y,Z B at=top|base|band|corners|sills|lintels|shutters|frames [out=1 level=Y]   (on the \
-            outside of the walls in the box: cornice, plinth, belt course, corner columns; at window and door holes)
-            decorate X,Y,Z X,Y,Z B [on=top|ground|floor|edge|corner|wall|ceiling chance=25 spacing=N length=A-B \
-            tip=B]   (on what is there: floors indoors, along walls, down wall faces, hanging from ceilings; tip= ends it)
-            weather X,Y,Z X,Y,Z [amount=30 swap=a>b break=N chip=B]   (moss low and on ledges, cracks on edges, \
-            verdigris on copper, in patches; break= knocks exposed top edges off)
+            roof X,Y,Z X,Y,Z B [style=gable|hip|shed axis=x|z high=DIR pitch=1|2 overhang=1 gable=B ridge=B]
+            trim X,Y,Z X,Y,Z B at=top|base|band|corners|sills|lintels|shutters|frames [out=1 level=Y]
+            decorate X,Y,Z X,Y,Z B [on=top|ground|floor|edge|corner|wall|ceiling chance=25 spacing=N length=A-B tip=B]
+            weather X,Y,Z X,Y,Z [amount=30 swap=a>b break=N chip=B]   (these four: msc_status guide=build)
             structure X,Y,Z [X,Y,Z ...] [rotate=90] [face=X,Z] [anchor=center] [air=false] [file=PATH]
               then the text and "end", unless file= (.schem or text). Text: "legend: #=stone g=glass", then per \
             layer "y=N" and rows (z) of symbols (x); "." air, "_" unchanged; "y=N same as y=M", "y=N all #". rotate \

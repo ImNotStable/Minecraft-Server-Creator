@@ -335,6 +335,7 @@ final class Joins {
         String id = id(s);
         String out = s;
         if (fence(id) || pane(id)) {
+            boolean any = false;
             for (int d = 0; d < 4; d++) {
                 String n = at.at(x + STEP[d][0], y, z + STEP[d][1]);
                 String nid = id(n);
@@ -342,6 +343,10 @@ final class Joins {
                         || nid.endsWith("fence_gate") || joinsSide(n)
                         : pane(nid) || wall(nid) || joinsSide(n);
                 out = with(out, DIRS[d], String.valueOf(join));
+                any |= join;
+            }
+            if (!any) {
+                return; // a post alone is the default state: left as written
             }
         } else if (wall(id) && !has(s, "up")) {
             String up = at.at(x, y + 1, z);

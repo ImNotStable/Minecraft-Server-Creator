@@ -65,7 +65,7 @@ class DetailStepsTest {
                 """);
         assertThat(at(c, 2, 1, 2)).contains("facing=north"); // back against the block north of it
         assertThat(at(c, 0, 2, 0)).contains("shape=outer_");
-        assertThat(at(c, 1, 2, 0)).contains("shape=straight");
+        assertThat(at(c, 1, 2, 0)).doesNotContain("shape="); // straight, the default
     }
 
     @Test

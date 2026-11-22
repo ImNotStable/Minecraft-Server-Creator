@@ -56,6 +56,21 @@ DETAIL PASS (use most of these on every build; the steps work on what is already
 - Organic shapes: sphere/dome rough=N for boulders, leaf canopies and hedges, never a perfect ball.
 - Light: lanterns, torches or glowing blocks at doors, paths and windows; no dark interiors.
 
+DETAIL STEPS (build_batch; each works on what the world and earlier steps already hold)
+- roof X,Y,Z X,Y,Z B: the box is the walls' footprint; rows start at its bottom y (the eave) and reach overhang= past the
+  walls. style=gable (ridge along axis=, the longer side by default), hip, or shed (rises toward high=north|east|...).
+  B stairs: pitch 1, or pitch=2 steep; B slabs: a low pitch; B full blocks: steps. gable=B closes the ends, ridge=B tops
+  an odd span (default the stair's own slab); a box taller than one layer caps the roof flat at its top y.
+- trim X,Y,Z X,Y,Z B at=...: only outside faces (facing away from the box's middle). top (cornice on wall tops), base
+  (plinth), band level=Y (belt course), out=N deep; corners (outer corner columns, replaced); at holes through a thin
+  wall: sills (under), lintels (over), shutters (trapdoors beside, opened flat on the wall), frames (around, replaced).
+- decorate X,Y,Z X,Y,Z B on=...: top (any upward face), ground (open to the sky), floor (indoors), edge and corner
+  (indoors, beside walls), wall (down wall faces from their tops), ceiling (hanging). chance=25 percent of the spots,
+  in patches with clump=N, or one per spacing=N cell (lights); length=A-B up from floors, down from walls and ceilings;
+  tip=B ends each (chain then lantern).
+- weather X,Y,Z X,Y,Z [amount=30]: moss low and on ledges, cracks on edges, verdigris on copper, in patches;
+  swap=from>to,... for other blocks; break=N knocks exposed top edges off, leaving chip=B or air.
+
 SCALE AND COMPOSITION
 - A landmark is seen from far away: give it a strong, asymmetric silhouette (a tall tower beside a low hall), not a box with a spike.
 - Towers taper or step in, have a base, a shaft and a cap; no 1-block-thick towers.
