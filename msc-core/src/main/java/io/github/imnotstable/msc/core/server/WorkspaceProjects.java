@@ -229,13 +229,13 @@ public final class WorkspaceProjects {
 
     /**
      * The project template for {@code platform}'s server, by the platform project_scaffold reads from each template
-     * ({@code template.properties}): the one of the platform's agent family that is neither server files only
-     * ({@code paper-server}) nor a minigame base ({@code <platform>-game}). Purpur and Folia get {@code paper-plugin},
+     * ({@code template.properties}): the one of the platform's agent family that is not server files only
+     * ({@code paper-server}). Purpur and Folia get {@code paper-plugin},
      * Quilt {@code fabric-mod}.
      */
     public static String template(Platform platform) {
         return Templates.ids().stream()
-                .filter(id -> !id.equals(Templates.PAPER_SERVER) && !id.endsWith("-game")
+                .filter(id -> !id.equals(Templates.PAPER_SERVER)
                         && platform.agent().equals(Templates.info(id).get("platform")))
                 .findFirst().orElse(Templates.PAPER_PLUGIN);
     }

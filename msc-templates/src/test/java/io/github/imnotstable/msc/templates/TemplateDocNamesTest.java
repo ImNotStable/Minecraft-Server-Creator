@@ -3,8 +3,6 @@ package io.github.imnotstable.msc.templates;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.IOException;
-import java.net.URISyntaxException;
-import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashSet;
@@ -20,9 +18,8 @@ import org.junit.jupiter.params.provider.MethodSource;
 /**
  * Every Java name a scaffolded project's CLAUDE.md or README.md writes in backticks (a class, method, field, event or
  * annotation) is one the template's builds compile (#480: neoforge-mod named {@code BlockEvent.BreakEvent}, which its
- * NeoForge does not have). A name counts when it is in the project's own code, in a {@code java} block of its docs, in
- * its {@code doc-names} test files, or in the edits {@link TemplateRecipesTest} makes; {@code verifyTemplates} builds
- * all of them. Paths, files and console lines are not names.
+ * NeoForge does not have). A name counts when it is in the project's own code or in a {@code java} block of its docs;
+ * {@code verifyTemplates} builds the project. Paths, files and console lines are not names.
  */
 class TemplateDocNamesTest {
     /** Placeholders the docs use for "any": {@code ChatFormatting.X}, {@code addListener(EventClass.class, ...)}. */
@@ -30,12 +27,9 @@ class TemplateDocNamesTest {
     /** Names the docs tell you not to use, and examples that are not code, per template. */
     private static final Map<String, Set<String>> NOT_CODE = Map.of(
             Templates.PAPER_PLUGIN, Set.of("ChatColor", "Hi"),
-            Templates.PAPER_GAME, Set.of("ChatColor", "Hi", "ARENA", "Steve"),
             Templates.FABRIC_MOD, Set.of("ServerPlayerEntity", "Text", "World"),
-            Templates.FABRIC_GAME, Set.of("ServerPlayerEntity", "Text", "World", "ARENA", "Steve"),
             Templates.NEOFORGE_MOD, Set.of("COMMON", "SERVER"),
             Templates.FORGE_MOD, Set.of("Missing"),
-            Templates.MINESTOM_GAME, Set.of("ARENA", "Steve"),
             Templates.VELOCITY_PLUGIN, Set.of("Hi"));
 
     @TempDir
@@ -47,14 +41,14 @@ class TemplateDocNamesTest {
 
     @ParameterizedTest
     @MethodSource("projects")
-    void everyNameInTheDocsIsInCodeThatBuilds(String id) throws IOException, URISyntaxException {
+    void everyNameInTheDocsIsInCodeThatBuilds(String id) throws IOException {
         Path project = Templates.scaffold(id, dir.resolve(id), TemplateVariables.of("Verify Me")).root();
 
         assertThat(unproven(project, id)).as(id + ": names in CLAUDE.md or README.md that no built code has").isEmpty();
     }
 
     @Test
-    void aNameTheTemplateDoesNotHaveIsReported() throws IOException, URISyntaxException {
+    void aNameTheTemplateDoesNotHaveIsReported() throws IOException {
         Path project = Templates.scaffold(Templates.NEOFORGE_MOD, dir.resolve("old"), TemplateVariables.of("Verify Me")).root();
         Files.delete(project.resolve("CLAUDE.md"));
         Files.writeString(project.resolve("README.md"),
@@ -78,18 +72,10 @@ class TemplateDocNamesTest {
         }
     }
 
-    private static Set<String> unproven(Path project, String id) throws IOException, URISyntaxException {
+    private static Set<String> unproven(Path project, String id) throws IOException {
         Set<String> known = new LinkedHashSet<>(DocCode.projectWords(project));
         for (DocCode.Block b : DocCode.javaBlocks(project)) {
             known.addAll(DocCode.words(b.code()));
-        }
-        Path docNames = docNames(id);
-        if (docNames != null) {
-            known.addAll(DocCode.projectWords(docNames));
-        }
-        for (TemplateRecipesTest.Edit e : Stream.concat(TemplateRecipesTest.edits(id).stream(),
-                TemplateRecipesTest.ruleChanges(id).stream()).toList()) {
-            known.addAll(DocCode.words(e.replacement()));
         }
         known.addAll(PLACEHOLDERS);
         known.addAll(NOT_CODE.getOrDefault(id, Set.of()));
@@ -103,11 +89,5 @@ class TemplateDocNamesTest {
             }
         }
         return missing;
-    }
-
-    /** The template's doc-names test files, or null if it has none. */
-    static Path docNames(String id) throws URISyntaxException {
-        URL url = TemplateDocNamesTest.class.getResource(DocCode.DOC_NAMES + id);
-        return url == null ? null : Path.of(url.toURI());
     }
 }

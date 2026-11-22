@@ -4,14 +4,14 @@ MSC supports eight server platforms and the Velocity proxy. Each workspace uses 
 
 | Platform | What you write | Template | Minecraft | EULA needed |
 | --- | --- | --- | --- | --- |
-| **Paper** (default) | A plugin | `paper-plugin`, `paper-game` | 26.3 | Yes |
-| **Purpur** | A Paper plugin (Purpur is a Paper fork) | `paper-plugin`, `paper-game` | 26.3 | Yes |
-| **Folia** | A Paper plugin with `folia-supported: true` (Folia is Paper with regions on many threads) | `paper-plugin`, `paper-game` | 26.3 | Yes |
-| **Fabric** | A server-side mod | `fabric-mod`, `fabric-game` | 26.3 | Yes |
-| **Quilt** | A Fabric mod (Quilt loads Fabric mods) | `fabric-mod`, `fabric-game` | 26.3 | Yes |
+| **Paper** (default) | A plugin | `paper-plugin` | 26.3 | Yes |
+| **Purpur** | A Paper plugin (Purpur is a Paper fork) | `paper-plugin` | 26.3 | Yes |
+| **Folia** | A Paper plugin with `folia-supported: true` (Folia is Paper with regions on many threads) | `paper-plugin` | 26.3 | Yes |
+| **Fabric** | A server-side mod | `fabric-mod` | 26.3 | Yes |
+| **Quilt** | A Fabric mod (Quilt loads Fabric mods) | `fabric-mod` | 26.3 | Yes |
 | **NeoForge** | A server-side mod | `neoforge-mod` | 26.3 | Yes |
 | **Forge** | A server-side mod | `forge-mod` | 26.3 | Yes |
-| **Minestom** | The whole server, from scratch | `minestom-server`, `minestom-game` | 26.2 | No |
+| **Minestom** | The whole server, from scratch | `minestom-server` | 26.2 | No |
 | **Velocity** | A proxy plugin (players reach a Paper backend through it) | `velocity-plugin` | any recent | No |
 
 The platform is picked by the template you scaffold. The agents are installed with MSC, and `server_setup` puts the right one in the server. You can also change it with `server_setup platform=...`, which is how you pick Purpur or Quilt for a Paper or Fabric project.
@@ -24,18 +24,11 @@ Best for most servers. Plugins use the Bukkit/Paper API.
 2. Accept the [EULA](https://aka.ms/MinecraftEULA) yourself, then: "server_setup with acceptEula=true."
 3. "Start the server." The agent goes into `plugins/`, `dev_cycle` deploys your plugin as `plugins/<jar name without version>.jar` (for example `lobby-0.1.0-SNAPSHOT.jar` becomes `plugins/lobby.jar`).
 
-### Making a minigame: the `paper-game` template
+### What a template contains
 
-For a game (a parkour course, wave defense, a set of trials), start from `paper-game` instead:
-"project_scaffold a Paper game called Lumen Siege, template paper-game."
+Every template is bare project scaffolding, like the IntelliJ Minecraft Development plugin makes: the Gradle build (wrapper, settings, version catalog, `.gitignore`), the platform's standard Gradle plugins, the project metadata, and one empty entry point class. There is no sample code, no tests and no game framework, so the code Claude writes follows your instructions and not a pattern already in the project ([ADR 0073](https://github.com/ImNotStable/Minecraft-Server-Creator/blob/main/msc-docs/docs/adr/0073-bare-templates.md)).
 
-It is the Paper plugin template plus the base every game ends up writing. All of it is set in the project's `config.yml`:
-
-- On join: inventory cleared, the kit given, adventure mode, teleported to the player's saved stage.
-- On death: items and levels kept, respawn at the current stage.
-- World: time and weather frozen, difficulty set (the dev server is peaceful otherwise), no natural mob spawns. Mobs your plugin spawns still appear.
-- Stages: an ordered list, each with a spawn point and an optional goal box. Walking into the goal moves the player on. Progress is saved and survives restarts.
-- A `/game` admin command, also usable from the console: `game status`, `game stage <name or number> [player]`, `game next`, `game reset`, `game kit`. Claude uses these with `server_command` to check the game and skip to any stage while testing. Every stage change is also logged, for example `Steve -> stage 2/3 arena (goal)`.
+`paper-plugin` builds with paperweight-userdev (Paper's server and Minecraft internals to compile against), writes `plugin.yml` with resource-factory and runs the dev server with run-paper.
 
 ## Fabric
 
@@ -47,8 +40,6 @@ For mods that change the game itself. Uses Fabric Loader and Fabric API.
 3. "Start the server." The first start downloads the Minecraft server, so it is slower. `dev_cycle` deploys your mod as `mods/<jar name without version>.jar`.
 
 Note: building a Fabric project needs Java 25 for Gradle (Fabric Loom). The template sets this up.
-
-For a game, use `template fabric-game`: the same minigame base as [`paper-game`](#making-a-minigame-the-paper-game-template), set in `GameConfig.game()` in Java instead of `config.yml`.
 
 ## Purpur and Quilt
 
@@ -88,7 +79,7 @@ For mods on the Forge family of loaders.
 
 Right after scaffolding, MSC starts the project's first build in the background, because these loaders set up Minecraft once (several minutes for Forge). `dev_cycle` waits for it if it is still running.
 
-`neoforge-mod` builds with ModDevGradle and runs its tests inside NeoForge, so command tests use the real Minecraft classes. `forge-mod` builds with ForgeGradle 7; its tests are plain JUnit.
+`neoforge-mod` builds with ModDevGradle (tests added later run inside NeoForge). `forge-mod` builds with ForgeGradle 7.
 
 ## Minestom
 
@@ -99,7 +90,7 @@ For fully custom servers with no vanilla game rules. There is no EULA step, beca
 2. `server_setup` is not needed. It just says so if called.
 3. "Start the server." `dev_cycle` builds the project's own jar and runs it as the server.
 
-For a game, use `template minestom-game`: the same minigame base as [`paper-game`](#making-a-minigame-the-paper-game-template), set in `GameConfig.game()`, with a `GameTest` that plays it through Minestom's `@EnvTest` players. No EULA step, so it is the quickest base for a prototype.
+The template's `main` starts a flat world in memory with the agent; nothing is saved between restarts until the project adds it.
 
 ## Same tools everywhere
 
@@ -108,18 +99,15 @@ All world, building and texture tools work the same on every platform but Folia 
 | Template id | Platform |
 | --- | --- |
 | `paper-plugin` | Paper |
-| `paper-game` | Paper (minigame base) |
 | `fabric-mod` | Fabric |
-| `fabric-game` | Fabric (minigame base) |
 | `neoforge-mod` | NeoForge |
 | `forge-mod` | Forge |
 | `minestom-server` | Minestom |
-| `minestom-game` | Minestom (minigame base) |
 | `velocity-plugin` | Velocity (proxy) |
 
 ## The standard library
 
-Every project template (`paper-plugin`, `paper-game`, `minestom-server`, `minestom-game`, `fabric-mod`, `fabric-game`, `neoforge-mod`, `forge-mod`, `velocity-plugin`) comes with MSC's standard library, `msc-stdlib`, so the AI does not rewrite the usual parts of a plugin each time. It is in the project's `libs/repo/` folder, listed in `gradle/libs.versions.toml`, and packed into the plugin, server or mod jar, so it needs nothing else on the server.
+Every project template (`paper-plugin`, `minestom-server`, `fabric-mod`, `neoforge-mod`, `forge-mod`, `velocity-plugin`) comes with MSC's standard library, `msc-stdlib`, so the AI does not rewrite the usual parts of a plugin each time. It is in the project's `libs/repo/` folder, listed in `gradle/libs.versions.toml`, and packed into the plugin, server or mod jar, so it needs nothing else on the server.
 
 - Data: SQLite by default, or MySQL, MariaDB, PostgreSQL or H2, plus MongoDB and Redis. Records are saved without writing SQL, with caches, an economy, typed settings files and messages between servers.
 - Players see: menus with themes, layouts, confirm screens and live updates; titles, action bars, boss bars, sounds, holograms, sidebars and name tags.

@@ -23,9 +23,8 @@ class TemplatesTest {
     @Test
     void listsTemplates() {
         assertThat(Templates.ids()).containsExactly(
-                Templates.FABRIC_GAME, Templates.FABRIC_MOD, Templates.FORGE_MOD, Templates.MINESTOM_GAME,
-                Templates.MINESTOM_SERVER, Templates.NEOFORGE_MOD, Templates.PAPER_GAME, Templates.PAPER_PLUGIN,
-                Templates.PAPER_SERVER, Templates.VELOCITY_PLUGIN);
+                Templates.FABRIC_MOD, Templates.FORGE_MOD, Templates.MINESTOM_SERVER, Templates.NEOFORGE_MOD,
+                Templates.PAPER_PLUGIN, Templates.PAPER_SERVER, Templates.VELOCITY_PLUGIN);
         assertThat(Templates.info(Templates.VELOCITY_PLUGIN)).containsEntry("platform", "velocity");
         assertThat(Templates.versions().get("velocityVersion")).matches("\\d+\\.\\d+\\.\\d+");
         assertThat(Templates.info(Templates.NEOFORGE_MOD)).containsEntry("platform", "neoforge");
@@ -33,9 +32,6 @@ class TemplatesTest {
         assertThat(Templates.versions().get("neoforgeVersion")).startsWith(Templates.versions().get("mcVersion") + ".");
         assertThat(Templates.versions().get("forgeVersion")).startsWith(Templates.versions().get("mcVersion") + "-");
         assertThat(Templates.versions()).containsKeys("quiltLoaderVersion", "quiltInstallerVersion");
-        assertThat(Templates.info(Templates.FABRIC_GAME)).containsEntry("platform", "fabric");
-        assertThat(Templates.info(Templates.MINESTOM_GAME)).containsEntry("platform", "minestom");
-        assertThat(Templates.info(Templates.PAPER_GAME)).containsEntry("platform", "paper");
         assertThat(Templates.info(Templates.FABRIC_MOD)).containsEntry("platform", "fabric");
         assertThat(Templates.info(Templates.MINESTOM_SERVER)).containsEntry("platform", "minestom");
         assertThat(Templates.versions()).containsKeys("fabricLoaderVersion", "fabricApiVersion", "fabricLoomVersion");
@@ -54,8 +50,7 @@ class TemplatesTest {
 
         assertThat(relative(r)).contains("build.gradle.kts", "settings.gradle.kts", ".gitignore", "CLAUDE.md",
                         "gradle/libs.versions.toml", "gradlew", "gradle/wrapper/gradle-wrapper.jar",
-                        "src/main/java/com/example/spawnlobby/SpawnLobbyPlugin.java",
-                        "src/test/java/com/example/spawnlobby/GreeterTest.java")
+                        "src/main/java/com/example/spawnlobby/SpawnLobbyPlugin.java")
                 .noneMatch(p -> p.startsWith("run/") || p.contains("eula"));
         assertThat(r.root().resolve("src/main/java/com/example/spawnlobby/SpawnLobbyPlugin.java"))
                 .content().contains("id = \"spawn-lobby\"");
@@ -71,8 +66,6 @@ class TemplatesTest {
                 "build.gradle.kts", "settings.gradle.kts", ".gitignore", "CLAUDE.md", "gradle/libs.versions.toml",
                 "gradlew", "gradle/wrapper/gradle-wrapper.jar",
                 "src/main/java/com/example/spawnlobby/SpawnLobbyPlugin.java",
-                "src/main/java/com/example/spawnlobby/HelloCommand.java",
-                "src/test/java/com/example/spawnlobby/HelloCommandTest.java",
                 "src/main/resources/fabric.mod.json", "run/server.properties", "run/eula.txt");
         assertThat(relative(r)).noneMatch(p -> p.endsWith(".tmpl") || p.contains("template.properties"));
         for (Path f : r.files()) {
@@ -94,8 +87,7 @@ class TemplatesTest {
         ScaffoldResult r = Templates.scaffold(Templates.NEOFORGE_MOD, dir.resolve("n"), vars);
 
         assertThat(relative(r)).contains("build.gradle.kts", "CLAUDE.md", "gradlew", "run/eula.txt",
-                "src/main/resources/META-INF/neoforge.mods.toml",
-                "src/test/java/com/example/spawnlobby/HelloCommandTest.java");
+                "src/main/resources/META-INF/neoforge.mods.toml");
         assertNoPlaceholders(r);
         assertThat(Files.readString(r.root().resolve("src/main/resources/META-INF/neoforge.mods.toml")))
                 .contains("modId = \"spawn_lobby\"", "[[dependencies.spawn_lobby]]", "version = \"${version}\"");
@@ -109,8 +101,7 @@ class TemplatesTest {
         ScaffoldResult r = Templates.scaffold(Templates.FORGE_MOD, dir.resolve("g"), vars);
 
         assertThat(relative(r)).contains("build.gradle.kts", "settings.gradle.kts", "CLAUDE.md", "gradlew",
-                "src/main/resources/META-INF/mods.toml", "src/main/resources/pack.mcmeta",
-                "src/test/java/com/example/spawnlobby/GreeterTest.java");
+                "src/main/resources/META-INF/mods.toml", "src/main/resources/pack.mcmeta");
         assertNoPlaceholders(r);
         assertThat(Files.readString(r.root().resolve("src/main/resources/META-INF/mods.toml")))
                 .contains("modId = \"spawn_lobby\"", "loaderVersion = \"[${forgeMajor},)\"");
@@ -139,7 +130,6 @@ class TemplatesTest {
                 "gradle/libs.versions.toml", "gradlew", "gradlew.bat",
                 "gradle/wrapper/gradle-wrapper.jar", "gradle/wrapper/gradle-wrapper.properties",
                 "src/main/java/com/example/spawnlobby/SpawnLobbyPlugin.java",
-                "src/test/java/com/example/spawnlobby/SpawnLobbyPluginTest.java",
                 "run/server.properties", "run/eula.txt");
         assertThat(relative(r)).noneMatch(p -> p.endsWith(".tmpl") || p.contains("template.properties"));
 
@@ -164,70 +154,6 @@ class TemplatesTest {
         assertThat(r.values()).containsEntry("rconPassword", "secret").containsEntry("serverPort", "25565").containsKey("mcVersion");
     }
 
-    @Test
-    void scaffoldsAPaperGame() throws IOException {
-        ScaffoldResult r = Templates.scaffold(Templates.PAPER_GAME, dir.resolve("g"), vars);
-
-        String pkg = "src/main/java/com/example/spawnlobby/";
-        assertThat(relative(r)).contains(
-                "build.gradle.kts", "settings.gradle.kts", ".gitignore", "CLAUDE.md", "gradlew",
-                "gradle/wrapper/gradle-wrapper.jar", "run/server.properties", "run/eula.txt",
-                pkg + "SpawnLobbyPlugin.java", pkg + "Game.java", pkg + "GameCommand.java", pkg + "GameConfig.java",
-                "src/test/java/com/example/spawnlobby/SpawnLobbyPluginTest.java",
-                "src/main/resources/config.yml");
-        for (Path f : r.files()) {
-            if (!f.toString().endsWith(".jar")) {
-                assertThat(Files.readString(f)).as(f.toString()).doesNotContain("{{");
-            }
-        }
-        assertThat(Files.readString(r.root().resolve("build.gradle.kts")))
-                .contains("main = \"com.example.spawnlobby.SpawnLobbyPlugin\"", "permissions.register(\"spawn-lobby.admin\")");
-        assertThat(Files.readString(r.root().resolve(pkg + "SpawnLobbyPlugin.java")))
-                .contains("ADMIN_PERMISSION = \"spawn-lobby.admin\"");
-        assertThat(Files.isExecutable(r.root().resolve("gradlew"))).isTrue();
-    }
-
-    @Test
-    void scaffoldsAMinestomGame() throws IOException {
-        ScaffoldResult r = Templates.scaffold(Templates.MINESTOM_GAME, dir.resolve("mg"), vars);
-
-        String pkg = "src/main/java/com/example/spawnlobby/";
-        assertThat(relative(r)).contains(
-                "build.gradle.kts", "settings.gradle.kts", ".gitignore", "CLAUDE.md", "gradlew",
-                "gradle/wrapper/gradle-wrapper.jar", "libs/msc-agent-minestom.jar",
-                pkg + "SpawnLobbyServer.java", pkg + "Game.java", pkg + "GameCommand.java", pkg + "GameConfig.java",
-                pkg + "GameEvents.java", pkg + "Progress.java", pkg + "Console.java",
-                "src/test/java/com/example/spawnlobby/GameTest.java");
-        assertThat(relative(r)).noneMatch(p -> p.endsWith(".tmpl") || p.contains("eula") || p.startsWith("run/"));
-        assertNoPlaceholdersLeft(r);
-        assertThat(Files.readString(r.root().resolve(pkg + "SpawnLobbyServer.java")))
-                .contains("MscAgent.start();", "GameConfig.game()", "server.start(\"127.0.0.1\", 25565);");
-        assertThat(Files.readString(r.root().resolve("build.gradle.kts")))
-                .contains("mainClass = \"com.example.spawnlobby.SpawnLobbyServer\"", "libs/msc-agent-minestom.jar");
-        assertThat(Files.isExecutable(r.root().resolve("gradlew"))).isTrue();
-    }
-
-    @Test
-    void scaffoldsAFabricGame() throws IOException {
-        ScaffoldResult r = Templates.scaffold(Templates.FABRIC_GAME, dir.resolve("fg"), vars);
-
-        String pkg = "src/main/java/com/example/spawnlobby/";
-        assertThat(relative(r)).contains(
-                "build.gradle.kts", "settings.gradle.kts", ".gitignore", "CLAUDE.md", "gradlew",
-                "gradle/wrapper/gradle-wrapper.jar", "run/server.properties", "run/eula.txt",
-                pkg + "SpawnLobbyPlugin.java", pkg + "Game.java", pkg + "GameCommand.java", pkg + "GameConfig.java",
-                pkg + "GameEvents.java", pkg + "WorldRules.java", "src/main/resources/fabric.mod.json",
-                "src/test/java/com/example/spawnlobby/GameCommandTest.java");
-        assertThat(relative(r)).noneMatch(p -> p.endsWith(".tmpl") || p.contains("template.properties"));
-        assertNoPlaceholdersLeft(r);
-        assertThat(Files.readString(r.root().resolve("src/main/resources/fabric.mod.json")))
-                .contains("\"server\": [\"com.example.spawnlobby.SpawnLobbyPlugin\"]", "\"fabric-api\": \"*\"");
-        assertThat(Files.readString(r.root().resolve(pkg + "SpawnLobbyPlugin.java")))
-                .contains("spawn-lobby-progress.properties");
-        assertThat(Files.readString(r.root().resolve("run/eula.txt"))).contains("eula=false");
-        assertThat(Files.isExecutable(r.root().resolve("gradlew"))).isTrue();
-    }
-
     private static void assertNoPlaceholdersLeft(ScaffoldResult r) throws IOException {
         for (Path f : r.files()) {
             if (!f.toString().endsWith(".jar")) {
@@ -243,9 +169,7 @@ class TemplatesTest {
         assertThat(relative(r)).contains(
                 "build.gradle.kts", "settings.gradle.kts", ".gitignore", "CLAUDE.md", "gradle/libs.versions.toml",
                 "gradlew", "gradle/wrapper/gradle-wrapper.jar", "libs/msc-agent-minestom.jar",
-                "src/main/java/com/example/spawnlobby/SpawnLobbyServer.java",
-                "src/main/java/com/example/spawnlobby/Console.java",
-                "src/test/java/com/example/spawnlobby/SpawnLobbyServerTest.java");
+                "src/main/java/com/example/spawnlobby/SpawnLobbyServer.java");
         assertThat(relative(r)).noneMatch(p -> p.endsWith(".tmpl") || p.contains("eula") || p.startsWith("run/"));
         for (Path f : r.files()) {
             if (!f.toString().endsWith(".jar")) {
@@ -253,7 +177,7 @@ class TemplatesTest {
             }
         }
         assertThat(Files.readString(r.root().resolve("src/main/java/com/example/spawnlobby/SpawnLobbyServer.java")))
-                .contains("package com.example.spawnlobby;", "MscAgent.start();", "new AnvilLoader(", "server.start(\"127.0.0.1\", 25565);");
+                .contains("package com.example.spawnlobby;", "MscAgent.start();", "server.start(\"127.0.0.1\", 25565);");
         assertThat(Files.readString(r.root().resolve("build.gradle.kts")))
                 .contains("mainClass = \"com.example.spawnlobby.SpawnLobbyServer\"", "libs/msc-agent-minestom.jar");
         assertThat(Files.readString(r.root().resolve("gradle/libs.versions.toml")))
@@ -261,6 +185,21 @@ class TemplatesTest {
         assertThat(Templates.versions().get("minestomVersion")).endsWith("-" + Templates.versions().get("minestomMcVersion"));
         assertThat(Files.size(r.root().resolve("libs/msc-agent-minestom.jar"))).isGreaterThan(10_000);
         assertThat(Files.isExecutable(r.root().resolve("gradlew"))).isTrue();
+    }
+
+    /** ADR 0073: a project template ships its entry point as its only Java code, and no tests. */
+    @Test
+    void aProjectHasOnlyItsEntryPointAsCode() throws IOException {
+        for (String id : Templates.ids()) {
+            if (id.equals(Templates.PAPER_SERVER)) {
+                continue;
+            }
+            ScaffoldResult r = Templates.scaffold(id, dir.resolve("only-" + id), vars);
+            assertThat(relative(r)).as(id).filteredOn(p -> p.startsWith("src/") && p.endsWith(".java"))
+                    .containsExactly("src/main/java/com/example/spawnlobby/SpawnLobby"
+                            + (id.equals(Templates.MINESTOM_SERVER) ? "Server" : "Plugin") + ".java");
+            assertThat(relative(r)).as(id).noneMatch(p -> p.startsWith("src/test/"));
+        }
     }
 
     @Test
@@ -283,8 +222,8 @@ class TemplatesTest {
                 .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("MinecraftServer").hasMessageContaining("Minecraft");
         assertThatThrownBy(() -> Templates.scaffold(Templates.PAPER_PLUGIN, dir.resolve("p"), TemplateVariables.of("Java")))
                 .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("JavaPlugin");
-        assertThatThrownBy(() -> Templates.scaffold(Templates.FABRIC_MOD, dir.resolve("f"), vars.withMainClass("Greeter")))
-                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("Greeter.java");
+        assertThatThrownBy(() -> Templates.scaffold(Templates.FABRIC_MOD, dir.resolve("f"), vars.withMainClass("DedicatedServerModInitializer")))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("net.fabricmc.api.DedicatedServerModInitializer");
         assertThat(dir.resolve("m")).doesNotExist();
         assertThat(dir.resolve("p")).doesNotExist();
         assertThat(dir.resolve("f")).doesNotExist();
@@ -293,17 +232,17 @@ class TemplatesTest {
     @Test
     void refusesModIdsAndPackagesTheLoaderOwns() throws IOException {
         record Case(String template, String name) {}
-        for (Case c : List.of(new Case(Templates.FABRIC_MOD, "Minecraft"), new Case(Templates.FABRIC_GAME, "Fabric Api"),
+        for (Case c : List.of(new Case(Templates.FABRIC_MOD, "Minecraft"), new Case(Templates.FABRIC_MOD, "Fabric Api"),
                 new Case(Templates.FABRIC_MOD, "Java"), new Case(Templates.NEOFORGE_MOD, "Minecraft"),
                 new Case(Templates.NEOFORGE_MOD, "Neoforge"), new Case(Templates.FORGE_MOD, "Forge"),
                 // MSC's own agent runs next to the project on the dev server (#293).
-                new Case(Templates.FABRIC_MOD, "Msc Agent"), new Case(Templates.FABRIC_GAME, "msc-agent"),
+                new Case(Templates.FABRIC_MOD, "Msc Agent"), new Case(Templates.FABRIC_MOD, "msc-agent"),
                 new Case(Templates.NEOFORGE_MOD, "MSC agent"), new Case(Templates.FORGE_MOD, "msc_agent"),
-                new Case(Templates.PAPER_PLUGIN, "Msc Agent"), new Case(Templates.PAPER_GAME, "MscAgent"),
-                new Case(Templates.PAPER_PLUGIN, "Minecraft"), new Case(Templates.PAPER_GAME, "Bukkit"),
+                new Case(Templates.PAPER_PLUGIN, "Msc Agent"), new Case(Templates.PAPER_PLUGIN, "MscAgent"),
+                new Case(Templates.PAPER_PLUGIN, "Minecraft"), new Case(Templates.PAPER_PLUGIN, "Bukkit"),
                 // ...and its jar, msc-agent-<platform>.jar, sits where dev_cycle deploys <projectId>.jar (#311).
-                new Case(Templates.PAPER_PLUGIN, "Msc Agent Paper"), new Case(Templates.PAPER_GAME, "msc-agent-paper"),
-                new Case(Templates.FABRIC_MOD, "msc-agent-fabric"), new Case(Templates.FABRIC_GAME, "MSC Agent Fabric"),
+                new Case(Templates.PAPER_PLUGIN, "Msc Agent Paper"), new Case(Templates.PAPER_PLUGIN, "msc-agent-paper"),
+                new Case(Templates.FABRIC_MOD, "msc-agent-fabric"), new Case(Templates.FABRIC_MOD, "MSC Agent Fabric"),
                 new Case(Templates.NEOFORGE_MOD, "msc-agent-neoforge"), new Case(Templates.FORGE_MOD, "Msc Agent Forge"))) {
             Path target = dir.resolve(c.template() + "-" + c.name());
             assertThatThrownBy(() -> Templates.scaffold(c.template(), target, TemplateVariables.of(c.name())))

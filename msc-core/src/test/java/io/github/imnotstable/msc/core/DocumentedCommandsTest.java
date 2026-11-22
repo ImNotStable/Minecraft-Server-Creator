@@ -41,7 +41,7 @@ class DocumentedCommandsTest {
     void scansTheTextOfEveryModule() {
         assertThat(RepoFiles.list(SET)).contains("README.md", "CLAUDE.md", "msc-bench/PLAN.md",
                 "msc-bench/src/main/java/io/github/imnotstable/msc/bench/run/MachineEula.java",
-                "msc-templates/src/main/templates/fabric-game/CLAUDE.md", "msc-plugin/.mcp.json",
+                "msc-templates/src/main/templates/fabric-mod/CLAUDE.md", "msc-plugin/.mcp.json",
                 "msc-core/build.gradle.kts", "gradle.properties")
                 .noneMatch(f -> f.contains("/build/") || f.contains("/test/") || f.matches("(.*/)?\\.[^/]*/.*"));
     }

@@ -39,6 +39,7 @@ import net.minestom.server.timer.TaskSchedule;
  * {@code MSC_TOKEN} are set, or the {@code msc.core.address} and {@code msc.token} system
  * properties) and otherwise stays idle, so it is safe to leave in a production build. Connecting
  * happens on a virtual thread and never delays startup. While the core runs the server, the agent also adds a
+ * console on standard input (msc-core types {@code stop} and server_command there) and a
  * {@code /tp <player> <x> <y> <z>} command on the first tick when the server has none by then, so the AI's test player can move as on other
  * platforms.
  */
@@ -71,9 +72,11 @@ public final class MscAgent {
         });
         events.addListener(PlayerDisconnectEvent.class, e -> link.playerQuit(e.getPlayer().getUsername(), e.getPlayer().getUuid()));
         MinecraftServer.getGlobalEventHandler().addChild(events);
-        // The test player moves with /tp, which Minestom does not have: give the dev server one once it runs,
-        // so a tp the server registers after start() wins instead of failing to register.
+        // msc-core stops the server and runs server_command through standard input. The test player moves with /tp,
+        // which Minestom does not have: give the dev server one once it runs, so a tp the server registers after
+        // start() wins instead of failing to register.
         if (CoreAddress.resolve().isPresent()) {
+            Console.start();
             DevTeleport.registerOnFirstTick(MinecraftServer.getSchedulerManager(), MinecraftServer.getCommandManager(),
                     MinecraftServer.getConnectionManager()::getOnlinePlayerByUsername);
         }

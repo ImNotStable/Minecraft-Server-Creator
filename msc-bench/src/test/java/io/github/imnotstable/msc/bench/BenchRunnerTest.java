@@ -624,7 +624,7 @@ class BenchRunnerTest {
         Path task = Files.createDirectories(dir.resolve("tasks/game"));
         Files.writeString(task.resolve("task.json"), """
                 {"category":"game","title":"x","platform":"minestom",
-                 "scaffold":{"template":"minestom-game","name":"Sprint","package":"bench.sprint"},
+                 "scaffold":{"template":"minestom-server","name":"Sprint","package":"bench.sprint"},
                  "checks":[{"type":"file","path":"src/main/java/bench/sprint/SprintServer.java","contains":"25566"}]}
                 """);
         Files.writeString(task.resolve("prompt.md"), "Build it.");

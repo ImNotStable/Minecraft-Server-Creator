@@ -36,7 +36,7 @@ class TemplateDocsTest {
         Build build = TemplateDocs.build(Files.readString(project.resolve("build.gradle.kts")));
         List<Command> commands = TemplateDocs.commands(project);
 
-        assertThat(commands).extracting(Command::task).contains("build", "test");
+        assertThat(commands).extracting(Command::task).contains("build");
         assertThat(commands).extracting(Command::task).containsAnyOf("run", "runServer", "runVelocity");
         for (Command c : commands) {
             assertThat(build.tasks()).as(c.doc() + ": " + c.line()).contains(c.task());

@@ -9,6 +9,8 @@ import io.github.imnotstable.msc.buildlogic.RepoFiles;
 import java.io.File;
 import java.io.IOException;
 import java.io.StringWriter;
+import java.net.URI;
+import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -30,7 +32,8 @@ import org.junit.jupiter.params.provider.MethodSource;
 
 /**
  * #610: the files a check adds to a scaffolded project (such as Sky Sprint's hidden {@code BenchSprintTest}) call the
- * template's API, which the templates piece may change. Every bundled task that scaffolds a template and has a check
+ * template's API, which the templates piece may change, and the API the task's prompt asks for, kept as stubs in
+ * {@code src/test/resources/prompt-api/<task>/}. Every bundled task that scaffolds a template and has a check
  * with {@code addFiles} is set up as a run sets it up (the scaffold, the fixtures, then the added files) and the
  * project's main and test sources are compiled, so a template change that breaks those files fails the build instead
  * of every attempt of a real run.
@@ -81,6 +84,11 @@ class HiddenTestsCompileTest {
         Workspaces.scaffold(task.scaffold(), workspace, BenchConfig.defaults().server().serverPort());
         for (Path fixture : task.fixtures()) {
             Workspaces.copyTree(fixture, workspace);
+        }
+        // The classes the prompt asks the agent to write, as bodiless stubs (the bare templates have none, ADR 0073).
+        URL api = HiddenTestsCompileTest.class.getResource("/prompt-api/" + task.id());
+        if (api != null) {
+            Workspaces.copyTree(Path.of(URI.create(api.toString())), workspace);
         }
         Workspaces.copyTree(added, workspace);
 

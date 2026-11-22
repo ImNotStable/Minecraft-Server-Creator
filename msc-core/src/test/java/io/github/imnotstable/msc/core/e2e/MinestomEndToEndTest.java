@@ -19,7 +19,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 /**
  * A real Minestom server driven end to end through the installed core over MCP stdio, the way Claude Code drives it:
- * scaffold minestom-game, dev_cycle (Gradle build, deploy, start), build_batch, world_slice, world_summary,
+ * scaffold minestom-server, dev_cycle (Gradle build, deploy, start), build_batch, world_slice, world_summary,
  * world_render, player_test (a real client joins), world_entities, an unchanged dev_cycle (no restart), an edit and a dev_cycle (restart), server_logs and
  * server_stop, then stdin closes and the core exits. Minestom has no EULA, so CI can run it. Run with {@code ./gradlew :msc-core:e2eTest}.
  */
@@ -76,7 +76,7 @@ class MinestomEndToEndTest {
     private void run(McpStdioClient core, Path workspace) throws Exception {
         core.initialize();
 
-        ok(core, "project_scaffold", SHORT, "name", "E2eGame", "dir", "game", "template", "minestom-game");
+        ok(core, "project_scaffold", SHORT, "name", "E2eGame", "dir", "game", "template", "minestom-server");
         assertThat(ok(core, "server_setup", SHORT, "platform", "minestom").text()).contains("no EULA step");
 
         // Build, deploy and start: the server reports ready with the agent connected.
@@ -114,14 +114,16 @@ class MinestomEndToEndTest {
         assertThat(ok(core, "dev_cycle", BUILD, "project", "game").text()).contains("jar unchanged")
                 .doesNotContain("server ready");
 
-        // The edit-test loop a second time: an edit, a rebuild, a restart, and what was built survives the restart.
+        // The edit-test loop a second time: an edit, a rebuild and a restart. The bare template keeps no world, so the
+        // restarted server has a fresh one.
         Path main = workspace.resolve("game/src/main/java/com/example/e2egame/E2eGameServer.java");
-        Files.writeString(main, Files.readString(main).replace("game ready: ", "game ready (edited): "));
+        Files.writeString(main, Files.readString(main).replace("        server.start(",
+                "        System.out.println(\"e2e edit loaded\");\n        server.start("));
         assertThat(ok(core, "dev_cycle", BUILD, "project", "game").text()).contains("server ready");
-        assertThat(ok(core, "world_slice", SHORT, "region", "6,-57,6 6,-57,6").text()).contains("glowstone");
+        assertThat(ok(core, "world_slice", SHORT, "region", "6,-57,6 6,-57,6").text()).doesNotContain("glowstone");
 
-        // The server's own output, as the AI reads it; the template's ready line is in it.
-        assertThat(ok(core, "server_logs", SHORT, "mode", "tail", "lines", 20, "all", true).text()).contains("game ready");
+        // The server's own output, as the AI reads it; the edit's line is in it.
+        assertThat(ok(core, "server_logs", SHORT, "mode", "tail", "lines", 20, "all", true).text()).contains("e2e edit loaded");
         assertThat(ok(core, "server_stop", SHORT).text()).contains("stopped");
     }
 
