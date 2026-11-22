@@ -1,7 +1,8 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "description": "Weekly grouped dependency PRs on Gitea, run by .github/workflows/renovate.yml (ADR 0064).",
-  "extends": ["config:recommended", ":dependencyDashboardDisabled"],
+  "extends": ["config:recommended"],
+  "dependencyDashboard": false,
   "prConcurrentLimit": 5,
   "prHourlyLimit": 0,
   "packageRules": [
