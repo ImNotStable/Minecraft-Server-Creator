@@ -9,6 +9,7 @@ import io.github.imnotstable.msc.plugin.MscLauncher.Plan;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.FileTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
@@ -52,6 +53,17 @@ class MscLauncherTest {
         install(home.resolve("msc-core-0.1.0-SNAPSHOT-x"), "0.1.0-SNAPSHOT", 1_000L);
 
         assertThat(MscLauncher.newest(home, 5_000L).orElseThrow().dir()).isEqualTo(home);
+    }
+
+    @Test
+    void anOldFlatInstallFirstSeenAfterANewInstallStillLoses() throws IOException {
+        // An installMsc install made at 5000, then a flat core jar from long ago that a launcher first saw at 9000.
+        Path fresh = home.resolve("msc-core-0.1.0-SNAPSHOT-20261122-015239");
+        install(fresh, "0.1.0-SNAPSHOT", 5_000L);
+        install(home, "0.1.0-SNAPSHOT", 9_000L);
+        Files.setLastModifiedTime(home.resolve("lib/msc-core-0.1.0-SNAPSHOT.jar"), FileTime.fromMillis(1_000L));
+
+        assertThat(MscLauncher.newest(home, 20_000L).orElseThrow().dir()).isEqualTo(fresh);
     }
 
     @Test

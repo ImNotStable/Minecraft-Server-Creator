@@ -1,6 +1,7 @@
 package io.github.imnotstable.msc.textures;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -44,13 +45,22 @@ public final class PaletteText {
         if (rows.isEmpty()) {
             throw new TextureException("texture has no rows");
         }
-        int width = rows.getFirst().length();
+        int width = commonWidth(rows);
+        List<String> odd = new ArrayList<>();
+        for (int y = 0; y < rows.size(); y++) {
+            if (rows.get(y).length() != width) {
+                odd.add(Integer.toString(y + 1));
+            }
+        }
+        if (!odd.isEmpty()) {
+            // Every odd row at once, so one retry fixes them all (an agent fixed one row per call, ADR 0068).
+            int first = Integer.parseInt(odd.getFirst()) - 1;
+            throw new TextureException("row " + odd.getFirst() + " has " + rows.get(first).length() + " pixels, expected "
+                    + width + (odd.size() == 1 ? "" : " (rows " + String.join(", ", odd) + " all differ)"));
+        }
         Texture t = new Texture(width, rows.size());
         for (int y = 0; y < rows.size(); y++) {
             String row = rows.get(y);
-            if (row.length() != width) {
-                throw new TextureException("row " + (y + 1) + " has " + row.length() + " pixels, expected " + width);
-            }
             for (int x = 0; x < width; x++) {
                 Integer argb = colors.get(row.charAt(x));
                 if (argb == null) {
@@ -155,5 +165,18 @@ public final class PaletteText {
             out.append('\n').append(row);
         }
         return out.toString();
+    }
+
+    /** The width most rows have; on a tie, the first row's. */
+    static int commonWidth(List<String> rows) {
+        Map<Integer, Integer> counts = new HashMap<>();
+        rows.forEach(r -> counts.merge(r.length(), 1, Integer::sum));
+        int best = rows.getFirst().length();
+        for (Map.Entry<Integer, Integer> e : counts.entrySet()) {
+            if (e.getValue() > counts.get(best)) {
+                best = e.getKey();
+            }
+        }
+        return best;
     }
 }

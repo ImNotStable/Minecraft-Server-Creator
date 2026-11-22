@@ -7,6 +7,7 @@ import io.github.imnotstable.msc.core.tool.Tool;
 import io.github.imnotstable.msc.core.tool.ToolException;
 import io.github.imnotstable.msc.core.tool.ToolRegistry;
 import io.github.imnotstable.msc.core.world.BlockNames;
+import io.github.imnotstable.msc.core.world.BuildReview;
 import io.github.imnotstable.msc.core.world.Coords;
 import io.github.imnotstable.msc.core.world.Diff;
 import io.github.imnotstable.msc.core.world.Schematic;
@@ -118,13 +119,18 @@ public final class WorldTools {
                 "Summarize a region: block counts (where rare ones are), non-air bounds, fill per layer, entities. Use before world_slice on unknown areas and to find a block.",
                 Schema.of().req("region", "string", REGION).opt("world", "string", WORLD)
                         .opt("path", "string", "\"x,y,z x,y,z\": can a player walk/jump from A to B; else the wall or gap")
-                        .opt("diff", "string", "structure_save file of this region: what changed since"),
+                        .opt("diff", "string", "structure_save file of this region: what changed since")
+                        .opt("review", "boolean", "Score a build (variety, detail, flat walls, roofs, lights) and say what to fix first"),
                 args -> {
                     Region region = Coords.region(world.world(args.str("world", null)), args.str("region"));
                     String path = args.str("path", null);
                     String diff = args.str("diff", null);
-                    if (path != null && diff != null) {
-                        throw new ToolException("give path or diff, not both");
+                    boolean review = args.bool("review", false);
+                    if ((path != null ? 1 : 0) + (diff != null ? 1 : 0) + (review ? 1 : 0) > 1) {
+                        throw new ToolException("give one of path, diff or review");
+                    }
+                    if (review) {
+                        return BuildReview.review(world.readAll(region, WorldService.MAX_BULK_VOLUME, "world_summary review"));
                     }
                     if (path != null) {
                         String[] ends = path.trim().split("\\s+");

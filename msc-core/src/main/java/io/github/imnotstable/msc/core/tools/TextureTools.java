@@ -29,7 +29,9 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -311,6 +313,10 @@ public final class TextureTools {
             boolean shape = Shapes.NAMES.contains(kind);
             t = generated(args);
             model = model(args, id, shape ? (kind.equals("sword") || kind.equals("pickaxe") ? "handheld" : "item") : "block");
+            if (shape) {
+                warnings = List.of("a stock " + kind + " shape in your colors, the same as every other " + kind
+                        + ": draw a signature item with rows instead (texture_view shows these rows to start from)");
+            }
         } else if (ways.contains("copy")) {
             Texture in = firstFrame(source, ResourceId.parse(args.str("copy")));
             t = Edits.recolor(in, Ramp.from(color(args), 5));
@@ -485,6 +491,29 @@ public final class TextureTools {
         int colors = t.colors().size();
         if (colors > 16) {
             warnings.add(colors + " colors; vanilla-style textures use 4 to 12");
+        }
+        int opaque = t.opaqueCount();
+        if (width >= 16 && opaque >= 64) {
+            if (colors < 5) {
+                warnings.add("only " + colors + " colors: shade each material with 3-4 tones (dark outline, shadow, "
+                        + "base, highlight), as vanilla textures do");
+            } else {
+                Map<Integer, Integer> uses = new HashMap<>();
+                for (int y = 0; y < height; y++) {
+                    for (int x = 0; x < width; x++) {
+                        int c = t.get(x, y);
+                        if (Colors.opaque(c)) {
+                            uses.merge(c, 1, Integer::sum);
+                        }
+                    }
+                }
+                Map.Entry<Integer, Integer> top = Collections.max(uses.entrySet(), Map.Entry.comparingByValue());
+                int share = 100 * top.getValue() / opaque;
+                if (share > 40) {
+                    warnings.add(String.format(Locale.ROOT, "#%06x fills %d%%: break it up with a darker and a lighter "
+                            + "tone (grain, scratches, dither)", top.getKey() & 0xffffff, share));
+                }
+            }
         }
         return warnings;
     }
