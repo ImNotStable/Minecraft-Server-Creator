@@ -12,7 +12,7 @@ dependencies {
         exclude(group = "com.google.code.gson")
     }
 
-    testImplementation(libs.paper.api)
+    testImplementation(libs.paper.api.mockbukkit)
     testImplementation(libs.mockbukkit)
 }
 
