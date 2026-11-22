@@ -19,6 +19,9 @@ jobs:
           TOKEN: ${{ github.token }}
           API: ${{ github.api_url }}/repos/${{ github.repository }}
           GH_MIRROR_TOKEN: ${{ secrets.GH_MIRROR_TOKEN }}
+          # Gitea refuses the job token on its release download route (404 on a private repo), so files are fetched with
+          # a personal token that has repository read; Renovate's is one. shortcut: own secret if Renovate's ever goes.
+          DL_TOKEN: ${{ secrets.RENOVATE_TOKEN }}
         run: |
           set -euo pipefail
           [[ -n "$GH_MIRROR_TOKEN" ]] || { echo "::error::No GH_MIRROR_TOKEN secret"; exit 1; }
@@ -40,9 +43,7 @@ jobs:
             jq -r '.assets[] | "\(.name)\t\(.browser_download_url)"' <<<"$r" | while IFS=$'\t' read -r name url; do
               jq -e --arg n "$name" 'any(.assets[]; .name == $n)' <<<"$gh" >/dev/null && continue
               echo "  uploading $name"
-              # The web download route may refuse the job token as a header; basic auth is the fallback.
-              curl -fsSL -H "Authorization: token $TOKEN" -o "assets/$name" "$url" \
-                || curl -fsSL -u "x-access-token:$TOKEN" -o "assets/$name" "$url"
+              curl -fsSL -H "Authorization: token $DL_TOKEN" -o "assets/$name" "$url"
               curl -fsS -o /dev/null -X POST "${auth[@]}" -H "Content-Type: application/octet-stream" --data-binary "@assets/$name" \
                 "https://uploads.github.com/repos/ImNotStable/Minecraft-Server-Creator/releases/$id/assets?name=$name"
             done
