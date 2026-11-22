@@ -29,6 +29,18 @@ Fabric server mod for Minecraft {{mcVersion}}, Java {{javaVersion}}, Gradle Kotl
 - Config files go in `FabricLoader.getInstance().getConfigDir()`. Fabric has no config API; the recipe below reads a properties file.
 - Prefer small final classes and records. Pass dependencies through constructors; avoid static state.
 
+## Standard library (msc-stdlib)
+
+The project depends on MSC's standard library (`libs.msc.stdlib.fabric`, shipped in `libs/repo/` with its sources, nested in the mod jar). Use it before writing your own. `Stdlib.init()` runs first in `onInitializeServer` (the template does it); `Stdlib.server()` is the running server.
+
+- Menus (server-side, vanilla clients see a chest): `Gui.chest(rows, title)` with `set(slot, item, click -> ...)`, `fill`, `border`, `editable`, `onClose`, `open(player)`; `Gui.paged(rows, title, list, icon, (entry, click) -> ...)`. Items cannot be taken out except from `editable` slots.
+- Items: `ItemBuilder.of(Items.DIAMOND)` with `name`, `lore`, `glow`, `unbreakable`, `model`, `data(key, value)`, `with(component, value)`; `ItemBuilder.read(item, key)`, `ItemBuilder.filler()`, `ItemBuilder.text("Hi", ChatFormatting.GREEN)`.
+- Particles: `ParticleEffect.of(ParticleTypes.FLAME)` or `ParticleEffect.dust(0xFF0000, size)`, then `spawn(level, point)`, `draw(level, origin, points)` or `play(scheduler, level, origin, period, frames, frame -> points)`. Shapes in `Shapes` (`circle`, `sphere`, `helix`, `star`, `cuboidEdges`, ...); `Locations.vec(player.position())` and `Locations.facing(player, points)`.
+- Databases: `Database.open(DatabaseConfig.sqlite(path))` once `include(libs.sqlite.jdbc)` is uncommented in `build.gradle.kts` (tests already have the driver); for MySQL, MariaDB or PostgreSQL add their driver the same way and use `DatabaseConfig.server(...)`. `update`, `insert`, `query`, `queryOne`, `transaction`, `async(db -> ...)`; `Table.named(...)` schemas, `db.migrate(...)` with `Migration.of(...)`, `Store.sql(db, table, Codec.json(Account.class))` records by key, `Store.memory()` in tests.
+- Player data: `PlayerData.create(store, defaults)` (in `onInitializeServer`) loads each player's record when they join, saves it when they leave and when the server stops; `get`, `update`, `saveAll`.
+- Time: `Cooldowns` (`tryUse`, `remaining`), `Durations.parse("1h30m")`, `Durations.format`, `Stdlib.scheduler()` (`later`, `repeat`, `countdown`, `supplyAsync`). Loot: `WeightedRandom`.
+- Tests that make items need Minecraft's item components: after `Bootstrap.bootStrap()`, run `BuiltInRegistries.DATA_COMPONENT_INITIALIZERS.build(VanillaRegistries.createWorldLookup()).forEach(DataComponentInitializers.PendingComponents::apply)` once.
+
 ## Recipes
 
 Built and tested against this project's pinned versions; copy them as they are.
@@ -101,6 +113,7 @@ The entry point with both wired in, and a block-break listener that reads the se
 ```java
 package {{packageName}};
 
+import io.github.imnotstable.msc.stdlib.fabric.Stdlib;
 import net.fabricmc.api.DedicatedServerModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.player.PlayerBlockBreakEvents;
@@ -115,6 +128,7 @@ public final class {{mainClass}} implements DedicatedServerModInitializer {
 
     @Override
     public void onInitializeServer() {
+        Stdlib.init();
         Greeter greeter = new Greeter(Greeter.DEFAULT_JOIN, Greeter.DEFAULT_HELLO);
         Settings settings = Settings.load(FabricLoader.getInstance().getConfigDir().resolve("{{projectId}}.properties"));
 

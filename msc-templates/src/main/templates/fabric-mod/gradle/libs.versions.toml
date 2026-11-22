@@ -7,8 +7,17 @@ fabric-api = "{{fabricApiVersion}}"
 fabric-loom = "{{fabricLoomVersion}}"
 junit = "{{junitVersion}}"
 assertj = "{{assertjVersion}}"
+msc-stdlib = "{{mscStdlibVersion}}"
+hikaricp = "{{hikaricpVersion}}"
+sqlite-jdbc = "{{sqliteJdbcVersion}}"
 
 [libraries]
+# MSC's standard library (menus, items, particles, databases, player data...), shipped in libs/repo/.
+msc-stdlib-fabric = { module = "io.github.imnotstable.msc:msc-stdlib-fabric", version.ref = "msc-stdlib" }
+msc-stdlib = { module = "io.github.imnotstable.msc:msc-stdlib", version.ref = "msc-stdlib" }
+hikaricp = { module = "com.zaxxer:HikariCP", version.ref = "hikaricp" }
+# The SQLite driver: on the test classpath; nest it in the mod (see build.gradle.kts) to use SQLite on the server.
+sqlite-jdbc = { module = "org.xerial:sqlite-jdbc", version.ref = "sqlite-jdbc" }
 minecraft = { module = "com.mojang:minecraft", version.ref = "minecraft" }
 fabric-loader = { module = "net.fabricmc:fabric-loader", version.ref = "fabric-loader" }
 fabric-loader-junit = { module = "net.fabricmc:fabric-loader-junit", version.ref = "fabric-loader" }
