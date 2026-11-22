@@ -14,18 +14,37 @@ java {
 repositories {
     mavenCentral()
     maven("https://repo.papermc.io/repository/maven-public/")
+    // msc-stdlib, shipped with the project.
+    maven(uri("libs/repo")) {
+        content { includeGroup("io.github.imnotstable.msc") }
+    }
 }
 
 dependencies {
     compileOnly(libs.velocity.api)
     // Writes velocity-plugin.json from the @Plugin annotation.
     annotationProcessor(libs.velocity.api)
+    // Bundled into the plugin jar (see tasks.jar); Velocity provides slf4j and Gson.
+    implementation(libs.msc.stdlib.velocity) {
+        exclude(group = "org.slf4j")
+    }
+    // A database driver for msc-stdlib's Database is bundled the same way, for example:
+    // implementation(libs.sqlite.jdbc)
 
     testImplementation(libs.velocity.api)
     testImplementation(platform(libs.junit.bom))
     testImplementation(libs.junit.jupiter)
     testImplementation(libs.assertj)
     testRuntimeOnly(libs.junit.platform.launcher)
+    testRuntimeOnly(libs.sqlite.jdbc)
+}
+
+// Every implementation dependency goes inside the plugin jar (Velocity gives each plugin its own class loader).
+tasks.jar {
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    from(configurations.runtimeClasspath.map { cp -> cp.files.map(::zipTree) }) {
+        exclude("META-INF/**", "module-info.class")
+    }
 }
 
 tasks.withType<JavaCompile>().configureEach {
@@ -36,6 +55,7 @@ tasks.withType<JavaCompile>().configureEach {
 
 tasks.test {
     useJUnitPlatform()
+    jvmArgs("--enable-native-access=ALL-UNNAMED") // sqlite-jdbc loads its native library
     // Short output: only failures, with the full exception.
     testLogging {
         events("failed")

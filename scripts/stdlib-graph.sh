@@ -7,7 +7,7 @@ root="$(cd "$(dirname "$0")/.." && pwd)"
 out="$root/msc-templates/src/main/stdlib-graphs"
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
-for platform in paper minestom fabric; do
+for platform in paper minestom fabric velocity; do
   dir="$work/$platform"
   mkdir -p "$dir/src"
   # The same layout the templates ship: libs/stdlib/src/<module>/<package path>.

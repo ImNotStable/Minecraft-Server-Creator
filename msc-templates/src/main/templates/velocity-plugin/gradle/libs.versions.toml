@@ -5,8 +5,14 @@ velocity = "{{velocityVersion}}"
 junit = "{{junitVersion}}"
 assertj = "{{assertjVersion}}"
 run-paper = "{{runPaperVersion}}"
+msc-stdlib = "{{mscStdlibVersion}}"
+sqlite-jdbc = "{{sqliteJdbcVersion}}"
 
 [libraries]
+# MSC's standard library (data, caches, messaging between servers, player data, formatting...), in libs/repo/.
+msc-stdlib-velocity = { module = "io.github.imnotstable.msc:msc-stdlib-velocity", version.ref = "msc-stdlib" }
+# The SQLite driver: on the test classpath; see build.gradle.kts to bundle it or another driver.
+sqlite-jdbc = { module = "org.xerial:sqlite-jdbc", version.ref = "sqlite-jdbc" }
 velocity-api = { module = "com.velocitypowered:velocity-api", version.ref = "velocity" }
 junit-bom = { module = "org.junit:junit-bom", version.ref = "junit" }
 junit-jupiter = { module = "org.junit.jupiter:junit-jupiter" }

@@ -5,6 +5,7 @@ import com.velocitypowered.api.command.CommandManager;
 import com.velocitypowered.api.event.Subscribe;
 import com.velocitypowered.api.event.proxy.ProxyInitializeEvent;
 import com.velocitypowered.api.proxy.ProxyServer;
+import io.github.imnotstable.msc.stdlib.velocity.Stdlib;
 import org.slf4j.Logger;
 
 /**
@@ -26,6 +27,7 @@ public final class {{mainClass}} {
 
     @Subscribe
     public void onProxyInitialization(ProxyInitializeEvent event) {
+        Stdlib.init(this, proxy); // msc-stdlib: its scheduler, player data and languages need it
         Greeter greeter = new Greeter(Greeter.DEFAULT_JOIN, Greeter.DEFAULT_HELLO);
         proxy.getEventManager().register(this, new JoinListener(greeter));
         CommandManager commands = proxy.getCommandManager();
