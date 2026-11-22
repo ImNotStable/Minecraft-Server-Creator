@@ -51,6 +51,7 @@ class ConnectionTest {
     private final BlockingQueue<CoreServer.AgentSession> sessions = new LinkedBlockingQueue<>();
     private final BlockingQueue<Event> events = new LinkedBlockingQueue<>();
     private final BlockingQueue<String> rejections = new LinkedBlockingQueue<>();
+    private volatile boolean eventBeforeConnected;
     private CoreServer server;
 
     @BeforeEach
@@ -63,6 +64,7 @@ class ConnectionTest {
 
             @Override
             public void event(CoreServer.AgentSession session, Event event) {
+                eventBeforeConnected |= sessions.isEmpty();
                 events.add(event);
             }
 
@@ -183,6 +185,8 @@ class ConnectionTest {
         Event event = events.poll(5, TimeUnit.SECONDS);
         assertThat(event).isNotNull();
         assertThat(event.name()).isEqualTo(Events.SERVER_READY);
+        // The core knows the session before its first event: a server.ready never counts for no connected agent.
+        assertThat(eventBeforeConnected).isFalse();
     }
 
     @Test

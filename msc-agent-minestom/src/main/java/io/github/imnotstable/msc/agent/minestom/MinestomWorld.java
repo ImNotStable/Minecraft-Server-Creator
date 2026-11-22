@@ -41,7 +41,7 @@ final class MinestomWorld implements AgentWorld<Block> {
     /** On a chunk an edit loaded, so a read never unloads it. */
     private static final Tag<Boolean> KEEP = Tag.Boolean("msc:keep");
     /** On a chunk a read loaded, until the first check once no operation uses it (see {@link #unloadIfUnused}). */
-    private static final Tag<Boolean> READ_LOADED = Tag.<Boolean>Transient("msc:read-loaded");
+    static final Tag<Boolean> READ_LOADED = Tag.<Boolean>Transient("msc:read-loaded");
     /** On the instance: the chunks operations are using right now. */
     private static final Tag<ChunkReaders> READERS = Tag.<ChunkReaders>Transient("msc:readers");
 

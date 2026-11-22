@@ -28,8 +28,9 @@ public final class LockHoldMain {
 
     /** Starts it on {@code file} and returns once the lock is held. */
     public static Process hold(Path file) throws Exception {
-        Process p = new ProcessBuilder(Path.of(System.getProperty("java.home"), "bin", "java").toString(), "-cp",
-                System.getProperty("java.class.path"), LockHoldMain.class.getName(), file.toString())
+        // The JVM's own warnings (a busy hsperfdata file, say) go to stderr, not into the line read below.
+        Process p = new ProcessBuilder(Path.of(System.getProperty("java.home"), "bin", "java").toString(),
+                "-Xlog:disable", "-Xlog:all=warning:stderr", "-cp", System.getProperty("java.class.path"), LockHoldMain.class.getName(), file.toString())
                 .redirectError(ProcessBuilder.Redirect.DISCARD).start();
         String line = p.inputReader().readLine();
         if (!"locked".equals(line)) {

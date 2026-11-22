@@ -271,6 +271,11 @@ class WorkspaceOwnershipTest {
             ProcessHandle server = pidOf("server.pid");
             server.destroyForcibly();
             server.onExit().get(15, TimeUnit.SECONDS);
+            // The core learns of the exit when its own Process is reaped, a moment after the system's exit.
+            long end = System.nanoTime() + Duration.ofSeconds(10).toNanos();
+            while (h.core.keptWorkspaces() > 0 && System.nanoTime() < end) {
+                Thread.sleep(20);
+            }
             assertThat(h.ok("msc_workspace", "path", workspace.toString()))
                     .doesNotContain("the server this session detached here runs on");
             assertThat(host.isAlive()).isFalse();

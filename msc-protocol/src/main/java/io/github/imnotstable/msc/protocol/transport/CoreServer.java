@@ -179,6 +179,9 @@ public final class CoreServer implements AutoCloseable {
             socket.setSoTimeout(0);
             connection.send(new Welcome(ProtocolVersion.CURRENT, sessionId,
                     HandshakeProof.core(token, hello.nonce(), coreNonce)));
+            // Announced before its first event is read: a server.ready the agent sends right after the welcome finds
+            // the session connected.
+            listener.connected(session);
             connection.start(handler, new Connection.Listener() {
                 @Override
                 public void onEvent(Event event) {
@@ -190,7 +193,6 @@ public final class CoreServer implements AutoCloseable {
                     listener.disconnected(session, cause);
                 }
             });
-            listener.connected(session);
         } catch (ProtocolException e) {
             reject(connection, ErrorCodes.BAD_FRAME, e.getMessage());
         } catch (IOException e) {
