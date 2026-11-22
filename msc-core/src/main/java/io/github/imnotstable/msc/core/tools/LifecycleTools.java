@@ -85,7 +85,7 @@ public final class LifecycleTools {
                 "Build, deploy and restart in one call. Tests run during the restart; an unchanged "
                         + "jar skips it. Returns build, test and startup errors, and phase times.",
                 Schema.of().opt("project", "string", "Project folder in the workspace. Default: the workspace")
-                        .opt("restart", "boolean", "Restart the server after deploying. Default true")
+                        .opt("restart", "boolean", "Default true. false still deploys")
                         .maxChars(),
                 cycle::run);
         registry.add("server_logs",

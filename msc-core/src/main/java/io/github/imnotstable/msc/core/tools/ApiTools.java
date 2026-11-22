@@ -2,6 +2,7 @@ package io.github.imnotstable.msc.core.tools;
 
 import io.github.imnotstable.msc.core.CoreConfig;
 import io.github.imnotstable.msc.core.api.ApiIndex;
+import io.github.imnotstable.msc.core.api.ProjectSource;
 import io.github.imnotstable.msc.core.server.Platform;
 import io.github.imnotstable.msc.core.tool.Budget;
 import io.github.imnotstable.msc.core.tool.Schema;
@@ -70,13 +71,19 @@ public final class ApiTools {
 
     public void register(ToolRegistry registry) {
         registry.add("api_search",
-                "Search the workspace platform's API by class, method, field or constant name; "
-                        + "one line per match with full signature.",
-                Schema.of().req("query", "string", "Words that must all match, for example \"player teleport\"")
+                "Platform API names, one line per match with signature. "
+                        + "project: its own source, with path:line and tests.",
+                Schema.of().req("query", "string", "Words, e.g. \"player teleport\"")
                         .opt("kind", "string", "class, interface, enum, record, annotation or event")
                         .range("limit", 1, MAX_SEARCH, "Default 15")
+                        .opt("project", "string", "Project folder")
                         .maxChars(),
                 args -> {
+                    if (args.str("project", null) != null) {
+                        Path project = args.path("project", ".", config.inWorkspace());
+                        return Budget.truncate(ProjectSource.search(project, args.str("query"), args.integer("limit", 15)),
+                                Budget.of(args), "Add words or lower limit.");
+                    }
                     String kind = args.str("kind", null);
                     if (kind != null && !List.of("class", "interface", "enum", "record", "annotation", "event").contains(kind)) {
                         throw new ToolException("kind must be class, interface, enum, record, annotation or event");
