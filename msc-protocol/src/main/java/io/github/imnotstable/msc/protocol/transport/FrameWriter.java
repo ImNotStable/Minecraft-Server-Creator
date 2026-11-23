@@ -27,16 +27,24 @@ public final class FrameWriter {
      * {@link FrameTooLargeException}) before a byte is written; any other {@link IOException} means the stream broke.
      */
     public void write(String frame) throws IOException {
+        write(frame, null);
+    }
+
+    /**
+     * {@link #write(String)}, sealed with {@code seal} (null: as it is) under the writer's lock, so sequence numbers
+     * follow the order frames go out. The limit counts the seal's MAC too.
+     */
+    public void write(String frame, FrameSeal seal) throws IOException {
         if (frame.indexOf('\n') >= 0) {
             throw new ProtocolException("frame contains a newline");
         }
-        byte[] bytes = frame.getBytes(StandardCharsets.UTF_8);
-        if (bytes.length > maxBytes) {
-            throw new FrameTooLargeException("frame", bytes.length, maxBytes);
+        int length = frame.getBytes(StandardCharsets.UTF_8).length + (seal == null ? 0 : FrameSeal.OVERHEAD);
+        if (length > maxBytes) {
+            throw new FrameTooLargeException("frame", length, maxBytes);
         }
         lock.lock();
         try {
-            out.write(bytes);
+            out.write((seal == null ? frame : seal.seal(frame)).getBytes(StandardCharsets.UTF_8));
             out.write('\n');
             out.flush();
         } finally {

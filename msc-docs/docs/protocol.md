@@ -1,4 +1,4 @@
-# Core-to-agent protocol, version 2
+# Core-to-agent protocol, version 3
 
 Source of truth is the code in `msc-protocol` (`io.github.imnotstable.msc.protocol`). This page is the overview; design reasons are in [ADR 0002](adr/0002-protocol.md).
 
@@ -15,21 +15,30 @@ Source of truth is the code in `msc-protocol` (`io.github.imnotstable.msc.protoc
 Each side proves it holds the token without sending it ([ADR 0043](adr/0043-agent-link-auth.md)):
 
 ```
-agent -> core  {"type":"hello","protocolVersion":2,"nonce":"<Na>","agent":{"platform":"paper","platformVersion":"26.3.build.231-stable","minecraftVersion":"26.3","operations":["server.info","world.read"]}}
+agent -> core  {"type":"hello","protocolVersion":3,"nonce":"<Na>","agent":{"platform":"paper","platformVersion":"26.3.build.231-stable","minecraftVersion":"26.3","operations":["server.info","world.read"]}}
 core -> agent  {"type":"challenge","nonce":"<Nc>"}
 agent -> core  {"type":"proof","proof":"<HMAC-SHA256(token, \"msc-agent-proof\n\" + Na + \"\n\" + Nc), hex>"}
-core -> agent  {"type":"welcome","protocolVersion":2,"sessionId":"6f1c...","proof":"<HMAC-SHA256(token, \"msc-core-proof\n\" + Na + \"\n\" + Nc), hex>"}
+core -> agent  {"type":"welcome","protocolVersion":3,"sessionId":"6f1c...","proof":"<HMAC-SHA256(token, \"msc-core-proof\n\" + Na + \"\n\" + Nc), hex>"}
 ```
 
 Nonces are 32 random bytes as hex (`HandshakeProof`), at most 128 characters; proofs are compared in constant time.
 The agent proves first and handles no request until the core's proof checks out; a core that fails it is treated as
 unreachable, so `AgentLink` retries.
 
-On failure the core sends `{"type":"goodbye","code":"unauthorized","reason":"bad token"}` and closes. Codes: `version_mismatch` (checked first, so an agent of protocol 1 gets it), `unauthorized`, `bad_frame`.
+On failure the core sends `{"type":"goodbye","code":"unauthorized","reason":"bad token"}` and closes. Codes: `version_mismatch` (checked first, so an agent of an older protocol gets it), `unauthorized`, `bad_frame`.
 
 Before the handshake completes: frames are at most 64 KiB (`Limits.MAX_HANDSHAKE_FRAME_BYTES`), the whole handshake
 must finish within one deadline (10 s on the core, the connect timeout on the agent), at most 16 connections may wait
 for their handshake at once, and a first line that is not JSON (such as an HTTP request) is closed without an answer.
+
+### Sealed frames (protocol 3)
+
+Every frame after the welcome, both ways, is `<mac> <frame>`: 64 hex characters, a space, then the JSON
+([ADR 0092](adr/0092-sealed-frames.md)). `mac` is HMAC-SHA256 under the session key
+`HMAC-SHA256(token, "msc-session-key\n" + Na + "\n" + Nc)` over `"<direction>\n<seq>\n" + frame`, where direction is
+`agent>core` or `core>agent` and `seq` counts that direction's frames from 0 (`FrameSeal`). A frame that fails the
+check (injected, replayed, reordered, dropped before it, or sent back the other way) ends the connection with a
+`bad_frame` goodbye. The frame limit counts the MAC. Frames are authenticated, not encrypted.
 
 ## Messages after the handshake
 

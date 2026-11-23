@@ -26,6 +26,7 @@ import io.github.imnotstable.msc.protocol.transport.ConnectionClosedException;
 import io.github.imnotstable.msc.protocol.transport.CoreServer;
 import io.github.imnotstable.msc.protocol.transport.FrameReader;
 import io.github.imnotstable.msc.protocol.transport.FrameTooLargeException;
+import io.github.imnotstable.msc.protocol.transport.FrameSeal;
 import io.github.imnotstable.msc.protocol.transport.FrameWriter;
 import io.github.imnotstable.msc.protocol.transport.OpException;
 import io.github.imnotstable.msc.protocol.transport.OpRouter;
@@ -168,12 +169,50 @@ class ConnectionTest {
                 socket.setSoTimeout(5_000);
                 FrameWriter writer = new FrameWriter(socket.getOutputStream(), Limits.MAX_FRAME_BYTES);
                 FrameReader reader = new FrameReader(socket.getInputStream(), Limits.MAX_FRAME_BYTES);
-                RawHandshake.agent(writer, reader, TOKEN, info);
-                writer.write("this is not json");
+                FrameSeal seal = RawHandshake.agent(writer, reader, TOKEN, info).seal();
+                writer.write("this is not json", seal);
                 String frame = reader.read();
                 assertThat(frame).as("goodbye before close").isNotNull();
-                assertThat(MessageCodec.decode(frame)).isInstanceOfSatisfying(Goodbye.class,
+                assertThat(MessageCodec.decode(seal.open(frame))).isInstanceOfSatisfying(Goodbye.class,
                         g -> assertThat(g.code()).isEqualTo(ErrorCodes.BAD_FRAME));
+            }
+        }
+    }
+
+    /**
+     * ADR 0092: after the welcome a frame without the session's MAC (a bare one, one replayed, one sent back the other
+     * way) ends the connection with a goodbye, and the core never acts on it.
+     */
+    @Test
+    void framesAfterTheHandshakeMustCarryTheSessionMac() throws Exception {
+        AgentInfo info = new AgentInfo("paper", "test", "26.3", List.of());
+        String event = MessageCodec.encode(new Event(Events.SERVER_READY, new JsonObject()));
+        for (String attack : List.of("bare", "replay", "reflected")) {
+            try (Socket socket = new Socket("127.0.0.1", server.port())) {
+                socket.setSoTimeout(5_000);
+                FrameWriter writer = new FrameWriter(socket.getOutputStream(), Limits.MAX_FRAME_BYTES);
+                FrameReader reader = new FrameReader(socket.getInputStream(), Limits.MAX_FRAME_BYTES);
+                RawHandshake.Raw raw = RawHandshake.agent(writer, reader, TOKEN, info);
+                events.clear();
+                switch (attack) {
+                    case "bare" -> writer.write(event);
+                    case "replay" -> {
+                        String sealed = raw.seal().seal(event);
+                        writer.write(sealed);
+                        assertThat(events.poll(5, TimeUnit.SECONDS)).as("the sealed original arrives").isNotNull();
+                        writer.write(sealed);
+                    }
+                    default -> {
+                        // A core-to-agent MAC presented to the core.
+                        FrameSeal core = FrameSeal.core(TOKEN, "x".repeat(64), "y".repeat(64));
+                        writer.write(core.seal(event));
+                    }
+                }
+                String frame = reader.read();
+                assertThat(frame).as(attack).isNotNull();
+                assertThat(MessageCodec.decode(raw.seal().open(frame))).as(attack).isInstanceOfSatisfying(
+                        Goodbye.class, g -> assertThat(g.code()).isEqualTo(ErrorCodes.BAD_FRAME));
+                assertThat(events.poll(200, TimeUnit.MILLISECONDS)).as(attack + " is never handled").isNull();
             }
         }
     }
@@ -228,16 +267,16 @@ class ConnectionTest {
                 socket.setSoTimeout(5_000);
                 FrameWriter writer = new FrameWriter(socket.getOutputStream(), Limits.MAX_FRAME_BYTES);
                 FrameReader reader = new FrameReader(socket.getInputStream(), Limits.MAX_FRAME_BYTES);
-                RawHandshake.agent(writer, reader, TOKEN, info);
+                FrameSeal seal = RawHandshake.agent(writer, reader, TOKEN, info).seal();
                 Connection core = sessions.poll(5, TimeUnit.SECONDS).connection();
                 CompletableFuture<Response> call = core.request("server.info", new JsonObject(), TIMEOUT);
                 CompletableFuture<Duration> ping = core.ping(TIMEOUT);
-                Request request = (Request) MessageCodec.decode(reader.read());
-                Ping sent = (Ping) MessageCodec.decode(reader.read());
+                Request request = (Request) MessageCodec.decode(seal.open(reader.read()));
+                Ping sent = (Ping) MessageCodec.decode(seal.open(reader.read()));
                 // Response, pong and goodbye in one write, so the core reads them in one go.
-                String burst = MessageCodec.encode(Response.ok(request.id(), new JsonObject())) + "\n"
-                        + MessageCodec.encode(new Pong(sent.nonce())) + "\n"
-                        + MessageCodec.encode(new Goodbye(ErrorCodes.SHUTDOWN, "bye")) + "\n";
+                String burst = seal.seal(MessageCodec.encode(Response.ok(request.id(), new JsonObject()))) + "\n"
+                        + seal.seal(MessageCodec.encode(new Pong(sent.nonce()))) + "\n"
+                        + seal.seal(MessageCodec.encode(new Goodbye(ErrorCodes.SHUTDOWN, "bye"))) + "\n";
                 socket.getOutputStream().write(burst.getBytes(StandardCharsets.UTF_8));
                 assertThat(call.get(5, TimeUnit.SECONDS).isOk()).as("response %d", i).isTrue();
                 assertThat(ping.get(5, TimeUnit.SECONDS)).as("pong %d", i).isNotNull();

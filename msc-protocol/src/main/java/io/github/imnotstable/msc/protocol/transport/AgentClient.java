@@ -56,6 +56,7 @@ public final class AgentClient {
                 }
                 deadline.finishOrThrow("msc-core on " + host + ":" + port);
                 socket.setSoTimeout(0);
+                connection.seal(FrameSeal.agent(token, agentNonce, challenge.nonce()));
                 connection.start(handler, listener);
                 return new Session(welcome.sessionId(), connection);
             } finally {

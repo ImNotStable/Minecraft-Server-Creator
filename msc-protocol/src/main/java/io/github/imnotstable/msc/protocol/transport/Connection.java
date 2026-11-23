@@ -66,6 +66,8 @@ public final class Connection implements AutoCloseable {
     private final AtomicBoolean closed = new AtomicBoolean();
     private final ExecutorService events = Executors.newSingleThreadExecutor(Thread.ofVirtual().name("msc-events").factory());
     private volatile Throwable closeCause;
+    /** Seals and opens every frame once the handshake is done (ADR 0092); null before. */
+    private volatile FrameSeal seal;
     private RequestHandler handler = RequestHandler.none();
     private Listener listener = new Listener() {
     };
@@ -82,6 +84,11 @@ public final class Connection implements AutoCloseable {
                 new FrameReader(socket.getInputStream(), Limits.MAX_FRAME_BYTES),
                 new FrameWriter(socket.getOutputStream(), Limits.MAX_FRAME_BYTES),
                 socket.getRemoteSocketAddress().toString());
+    }
+
+    /** From now on every frame either way is sealed: set once, after the welcome, before {@link #start}. */
+    void seal(FrameSeal seal) {
+        this.seal = seal;
     }
 
     /** Start reading. Call once, after the handshake. */
@@ -182,7 +189,7 @@ public final class Connection implements AutoCloseable {
             throw new ProtocolException("could not encode " + describe(message) + ": " + e.getMessage(), e);
         }
         try {
-            writer.write(frame);
+            writer.write(frame, seal);
         } catch (FrameTooLargeException e) {
             throw new FrameTooLargeException(describe(message), e.bytes(), e.limit());
         }
@@ -204,7 +211,8 @@ public final class Connection implements AutoCloseable {
         try {
             String frame;
             while ((frame = reader.read()) != null) {
-                Message message = MessageCodec.decode(frame);
+                FrameSeal s = seal;
+                Message message = MessageCodec.decode(s == null ? frame : s.open(frame));
                 if (!dispatch(message)) {
                     break;
                 }

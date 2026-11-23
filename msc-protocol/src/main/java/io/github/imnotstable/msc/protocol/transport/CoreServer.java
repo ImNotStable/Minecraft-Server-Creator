@@ -179,6 +179,8 @@ public final class CoreServer implements AutoCloseable {
             socket.setSoTimeout(0);
             connection.send(new Welcome(ProtocolVersion.CURRENT, sessionId,
                     HandshakeProof.core(token, hello.nonce(), coreNonce)));
+            // The welcome is the last frame in the clear; the agent seals from its first frame after it (ADR 0092).
+            connection.seal(FrameSeal.core(token, hello.nonce(), coreNonce));
             // Announced before its first event is read: a server.ready the agent sends right after the welcome finds
             // the session connected.
             listener.connected(session);

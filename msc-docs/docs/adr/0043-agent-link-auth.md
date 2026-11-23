@@ -1,6 +1,7 @@
 # ADR 0043: Mutual proof on the agent link
 
-Status: accepted, 2026-11-14, decided by Claude.
+Status: accepted, 2026-11-14, decided by Claude. Its residual risk of unauthenticated frames after the handshake is
+closed by ADR 0092 (protocol 3).
 
 ## Context
 

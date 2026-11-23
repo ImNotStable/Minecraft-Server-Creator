@@ -42,6 +42,14 @@ public final class HandshakeProof {
         return hmac(token, "msc-core-proof\n" + agentNonce + "\n" + coreNonce);
     }
 
+    /**
+     * The key both sides seal frames with after the handshake ({@link FrameSeal}, ADR 0092): a third label, so it is
+     * neither side's proof.
+     */
+    public static String sessionKey(String token, String agentNonce, String coreNonce) {
+        return hmac(token, "msc-session-key\n" + agentNonce + "\n" + coreNonce);
+    }
+
     /** Whether {@code presented} is {@code expected}, in time that does not depend on where they differ. */
     public static boolean matches(String expected, String presented) {
         return presented != null && MessageDigest.isEqual(expected.getBytes(StandardCharsets.UTF_8),
