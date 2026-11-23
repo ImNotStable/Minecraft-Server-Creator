@@ -1,6 +1,6 @@
 # Tools reference
 
-All 31 tools, one line each. You rarely call them by name: ask Claude in plain words and it picks the tool. Full arguments are in [tools.md](https://github.com/ImNotStable/Minecraft-Server-Creator/blob/main/msc-docs/docs/tools.md).
+All 32 tools, one line each. You rarely call them by name: ask Claude in plain words and it picks the tool. Full arguments are in [tools.md](https://github.com/ImNotStable/Minecraft-Server-Creator/blob/main/msc-docs/docs/tools.md).
 
 Coordinates are text: a position is `x,y,z`, a region is `x1,y1,z1 x2,y2,z2`, an area is `x1,z1 x2,z2`.
 
@@ -44,6 +44,7 @@ Coordinates are text: a position is `x,y,z`, a region is `x1,y1,z1 x2,y2,z2`, an
 | `world_entities` | Lists the entities in a region with name, position, health and tags. |
 | `world_heightmap` | Shows the ground height of an area, one character per column. |
 | `world_render` | Draws a region as a PNG picture from any angle. |
+| `world_tour` | Walks a build at eye height: views of its doors, rooms and flagged spots, with its review. |
 
 ## Building
 

@@ -37,6 +37,7 @@ class ProxyWorldToolsTest {
         CALLS.put("world_slice", List.<Object[]>of(new Object[] {"region", region}));
         CALLS.put("world_heightmap", List.<Object[]>of(new Object[] {"area", "0,0 1,1"}));
         CALLS.put("world_render", List.<Object[]>of(new Object[] {"region", region}));
+        CALLS.put("world_tour", List.<Object[]>of(new Object[] {"region", region}));
         CALLS.put("world_summary", List.<Object[]>of(new Object[] {"region", region}));
         CALLS.put("world_entities", List.<Object[]>of(new Object[] {"region", region}));
         CALLS.put("build_undo", List.of(new Object[] {}, new Object[] {"backup", "list"},

@@ -65,6 +65,7 @@ class BadInputBehaviourTest {
             new Row("world_entities", "region", REGION),
             new Row("world_heightmap", "area", "0,0 3,3"),
             new Row("world_render", "region", REGION, "size", 64),
+            new Row("world_tour", "region", REGION, "stops", 1),
             new Row("build_batch", Map.of("steps", List.of("%s", "structure 0,70,0 file=%s", "fill %s stone")),
                     "steps", "fill 0,70,0 1,71,1 stone", "dryRun", true),
             new Row("build_undo"),

@@ -40,7 +40,8 @@ THE LOOP (every build)
 2. Block out the masses: walls 1-2 thick, real floor heights (4-5 per storey), doors 2-3 tall, roofs (roof step).
 3. Detail pass (below). This is most of the work; a block-out is not a build. Straight walls and rows are fine:
    good builds have plenty. What makes them look hand-made is the single blocks layered on that structure.
-4. world_render the build from 2 views (iso and one side) and run world_summary review=true on the same region.
+4. world_render the build from 2 views (iso and one side), world_tour it (eye-height views at its doors, inside and
+   at what the review flags: what a visitor sees) and run world_summary review=true on the same region.
 5. Name the 3 weakest things concretely ("north wall is a flat 12x8 plane of one block"), fix them in one build_batch, re-render. Repeat until review passes and the render reads well. Never call a build done on its first render, and never praise a render the review flags.
 
 PALETTE

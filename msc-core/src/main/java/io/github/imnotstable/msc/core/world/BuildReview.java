@@ -192,6 +192,7 @@ public final class BuildReview {
                 + "floor under a roof %d with %d furnishings, plants %d\n", plainTopPct, MAX_PLAIN_TOPS, bareBasePct,
                 MAX_BARE_BASE, floor, props, plants));
         List<String> fixes = new ArrayList<>(doors(grid, names));
+        fixes.addAll(masses(grid, names, isGround));
         if (flatPct > MAX_FLAT && faces >= 20) {
             fixes.add("flat walls: give each wall depth (pillars or a frame 1 out, windows 1 in), a base and a trim "
                     + "line of stairs or slabs (trim at=base, band, top; sills, shutters, frames), and mix in variants "
@@ -325,6 +326,98 @@ public final class BuildReview {
     }
 
     static final int MIN_HOLES = 4;
+    static final int MAX_LEAVES_IN_WALLS = 8;
+    static final int MAX_BOXY_LEAVES = 12;
+    static final int MAX_CLOTH = 6;
+    static final int MAX_TRAPDOOR_CLUMPS = 6;
+
+    /**
+     * Shapes a hand would not make (ADR 0094): leaves wedged into walls (a tree grown through a house), leaves in flat
+     * boxes (a hedge as a pillar of leaf blocks), full wool hanging in the air (an awning that should be carpet, banners
+     * or slabs), and trapdoors in clumps of three or more on a wall (a facade of trapdoors instead of shutters).
+     */
+    public static List<String> masses(BlockGrid grid, String[] names, boolean[] isGround) {
+        Region r = grid.region();
+        int wedged = 0;
+        int leafFaces = 0;
+        int boxy = 0;
+        int cloth = 0;
+        int clumped = 0;
+        String firstWedged = null;
+        String firstCloth = null;
+        String firstClump = null;
+        int[][] six = {{1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}};
+        for (int y = r.min().y(); y <= r.max().y(); y++) {
+            for (int z = r.min().z(); z <= r.max().z(); z++) {
+                for (int x = r.min().x(); x <= r.max().x(); x++) {
+                    String n = name(grid, names, x, y, z);
+                    if (n == null) {
+                        continue;
+                    }
+                    String at = x + "," + y + "," + z;
+                    if (n.contains("leaves")) {
+                        // Under a built block and against another: a canopy inside a house or under its eaves, not
+                        // a bush at a wall's foot (ADR 0094).
+                        boolean[] wall = new boolean[6];
+                        for (int k = 0; k < 6; k++) {
+                            int[] d = six[k];
+                            String o = name(grid, names, x + d[0], y + d[1], z + d[2]);
+                            wall[k] = o != null && !o.contains("leaves") && !o.endsWith("_log") && !o.endsWith("_wood")
+                                    && !o.endsWith("_stem") && !matches(o, PLANTS)
+                                    && !isGround[r.index(x + d[0], y + d[1], z + d[2])];
+                        }
+                        if (wall[2] && (wall[0] || wall[1] || wall[4] || wall[5])) {
+                            wedged++;
+                            firstWedged = firstWedged == null ? at : firstWedged;
+                        }
+                        // A leaf in a run three tall with no wood near: a hedge or canopy stacked as blocks, not grown.
+                        String below = name(grid, names, x, y - 1, z);
+                        String above = name(grid, names, x, y + 1, z);
+                        if (below != null && below.contains("leaves") && above != null && above.contains("leaves")) {
+                            leafFaces++;
+                            boxy += wood(grid, names, x, y, z) ? 0 : 1;
+                        }
+                    } else if (n.endsWith("_wool") && r.contains(x, y - 1, z) && r.contains(x, y + 1, z)
+                            && name(grid, names, x, y - 1, z) == null && name(grid, names, x, y + 1, z) == null) {
+                        cloth++;
+                        firstCloth = firstCloth == null ? at : firstCloth;
+                    } else if (n.endsWith("trapdoor")) {
+                        int near = 0;
+                        for (int[] d : six) {
+                            String o = name(grid, names, x + d[0], y + d[1], z + d[2]);
+                            near += o != null && o.endsWith("trapdoor") ? 1 : 0;
+                        }
+                        if (near >= 2) {
+                            clumped++;
+                            firstClump = firstClump == null ? at : firstClump;
+                        }
+                    }
+                }
+            }
+        }
+        List<String> fixes = new ArrayList<>();
+        if (wedged >= MAX_LEAVES_IN_WALLS) {
+            fixes.add("leaves in walls: " + wedged + " leaf blocks (first at " + firstWedged + ") are wedged against "
+                    + "walls or roofs on two sides, a tree grown through a building; move the tree into the open or "
+                    + "trim its canopy back from the walls");
+        }
+        if (boxy >= MAX_BOXY_LEAVES) {
+            fixes.add("stacked leaves: " + boxy + " leaf blocks stand in columns three or more tall with no wood within "
+                    + "6 blocks, a hedge or canopy built as a box of leaves; grow trees with tree or forest, keep hedges "
+                    + "1-2 tall (decorate on=ground) or round them with sphere rough=");
+        }
+        if (cloth >= MAX_CLOTH) {
+            fixes.add("hanging wool: " + cloth + " full wool blocks (first at " + firstCloth + ") hang in the air, an "
+                    + "awning or canopy as a slab of solid cloth; use carpet on a slab or trapdoor frame, banners or "
+                    + "stairs for a sloped awning");
+        }
+        if (clumped >= MAX_TRAPDOOR_CLUMPS) {
+            fixes.add("trapdoor clumps: " + clumped + " trapdoors (first at " + firstClump + ") sit in clumps of three or "
+                    + "more, a facade or window of trapdoors reads as noise; one shutter each side of a window, panes in "
+                    + "the window, and a plain wall between");
+        }
+        return fixes;
+    }
 
     /**
      * An air block through a wall: built blocks on both sides along the wall and above it (a lintel), open to air on
@@ -344,6 +437,21 @@ public final class BuildReview {
                     && name(grid, names, x + dx + dz, y, z + dz + dx) == null
                     && name(grid, names, x + dx - dz, y, z + dz - dx) == null) {
                 return true;
+            }
+        }
+        return false;
+    }
+
+    /** Whether a log, wood or stem lies within 6 blocks: leaves of a tree, not a stack of leaf blocks. */
+    private static boolean wood(BlockGrid grid, String[] names, int x, int y, int z) {
+        for (int dy = -6; dy <= 6; dy++) {
+            for (int dz = -6; dz <= 6; dz++) {
+                for (int dx = -6; dx <= 6; dx++) {
+                    String o = name(grid, names, x + dx, y + dy, z + dz);
+                    if (o != null && (o.endsWith("_log") || o.endsWith("_wood") || o.endsWith("_stem"))) {
+                        return true;
+                    }
+                }
             }
         }
         return false;
