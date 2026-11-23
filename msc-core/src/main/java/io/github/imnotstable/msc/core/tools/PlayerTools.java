@@ -54,10 +54,11 @@ public final class PlayerTools implements AutoCloseable {
         registry.add("player_test",
                 "Play-test: a headless player joins the dev server, runs actions, reports results, damage, deaths, "
                         + "chat, titles. Stays joined. Vanilla-like moves; a missed jump may suit people. "
-                        + "inventory/hud: items, menu, bossbars, sidebar, pack.",
+                        + "inventory/hud: items, menu, bossbars, sidebar, served pack lint, sounds, glyphs it lacks.",
                 Schema.of().req("actions", "strings", "goto x,y,z|forward ticks [sprint] [jump], walk x,y,z (path route), jump, "
-                                + "look yaw pitch, lookat x,y,z, wait ticks, use [x,y,z], attack|interact [type], "
-                                + "slot 1-9, say text, /command, tp x,y,z, entities, inventory, hud, close")
+                                + "look yaw pitch, lookat x,y,z, wait ticks, use [x,y,z], attack|interact [type|name], "
+                                + "click menu-slot|chat-text, slot 1-9, say text, /command, tp x,y,z, entities, inventory, "
+                                + "hud, close")
                         .opt("name", "string", "Default MscTester")
                         .opt("gamemode", "string", "survival, adventure, creative. Default: the game's")
                         .opt("leave", "boolean", "Disconnect after"),

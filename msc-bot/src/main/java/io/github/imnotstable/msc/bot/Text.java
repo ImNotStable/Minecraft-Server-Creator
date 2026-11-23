@@ -4,6 +4,7 @@ import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.TextComponent;
 import net.kyori.adventure.text.TranslatableComponent;
 import net.kyori.adventure.text.TranslationArgument;
+import net.kyori.adventure.text.event.ClickEvent;
 
 /**
  * Chat components as plain text: literal text as is, the chat translations as the client shows them, other
@@ -34,6 +35,31 @@ final class Text {
             return word.isEmpty() ? key : Character.toUpperCase(word.charAt(0)) + word.substring(1);
         }
         return plain(c);
+    }
+
+    /**
+     * The parts of a chat line that run a command when clicked, each with its own text (and its children's), as the
+     * player sees it to click.
+     */
+    static java.util.List<TestPlayer.Clickable> clickables(Component c) {
+        java.util.List<TestPlayer.Clickable> out = new java.util.ArrayList<>();
+        collect(c, out);
+        return out;
+    }
+
+    private static void collect(Component c, java.util.List<TestPlayer.Clickable> out) {
+        if (c == null) {
+            return;
+        }
+        ClickEvent<?> click = c.clickEvent();
+        if (click != null && click.action() == ClickEvent.Action.RUN_COMMAND
+                && click.payload() instanceof ClickEvent.Payload.Text command) {
+            out.add(new TestPlayer.Clickable(plain(c), command.value()));
+            return; // a child inherits its parent's click
+        }
+        for (Component child : c.children()) {
+            collect(child, out);
+        }
     }
 
     /** Plain text with its spaces kept, for pieces joined later such as a team prefix. */

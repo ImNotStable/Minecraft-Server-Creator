@@ -10,8 +10,8 @@ import java.util.concurrent.TimeoutException;
 /** The test player's actions, one per script line. Each runs on the tick thread until it reports a result. */
 final class Script {
     static final String HELP = "goto x,y,z|x,z [sprint] [jump], walk x,y,z [sprint], forward ticks [sprint] [jump], jump, look yaw pitch, "
-            + "lookat x,y,z, wait ticks, use, use x,y,z, attack [type], interact [type], slot 1-9, say text, /command, "
-            + "tp x,y,z, entities, inventory, hud, close";
+            + "lookat x,y,z, wait ticks, use, use x,y,z, attack [type|name], interact [type|name], click slot|text, "
+            + "slot 1-9, say text, /command, tp x,y,z, entities, inventory, hud, close";
     /** How far from the eyes to an entity's middle attack and interact look, as before: hitbox reach is about 3. */
     private static final double REACH = 4.5;
 
@@ -184,6 +184,20 @@ final class Script {
                     return hit == null ? "no " + (type == null ? "entity" : type) + " within reach" : "clicked " + hit;
                 }, 5);
             }
+            case "click" -> {
+                String what = line.substring(op.length()).strip();
+                if (what.isEmpty()) {
+                    throw new IllegalArgumentException("missing value: " + line);
+                }
+                if (what.matches("\\d+")) {
+                    int slot = Integer.parseInt(what);
+                    yield once(line, p -> p.clickSlot(slot) ? "clicked menu slot " + slot : "no menu open", 5);
+                }
+                yield once(line, p -> {
+                    String ran = p.clickChat(what);
+                    return ran == null ? "no clickable chat text has \"" + what + "\"" : "clicked " + ran;
+                }, 10);
+            }
             case "inventory" -> once(line, p -> "\n" + indent(p.inventoryReport()), 0);
             case "hud" -> once(line, p -> "\n" + indent(p.hudReport()), 0);
             case "close" -> once(line, p -> p.closeMenu() ? "closed the menu" : "no menu open", 2);
@@ -218,9 +232,9 @@ final class Script {
         };
     }
 
-    /** The optional entity type after attack or interact, as the entities action names it. */
+    /** The optional entity type or name after attack or interact, as the entities action shows them. */
     private static String entityType(String[] w) {
-        return w.length > 1 ? w[1].toLowerCase(Locale.ROOT).replace("minecraft:", "") : null;
+        return w.length > 1 ? String.join(" ", List.of(w).subList(1, w.length)) : null;
     }
 
     private static String indent(String report) {

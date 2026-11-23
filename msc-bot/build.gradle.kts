@@ -12,6 +12,8 @@ dependencies {
     // Raises the netty-all 4.2.1.Final that MCProtocolLib pulls; reaches msc-core and msc-bench through msc-bot.
     implementation(platform(libs.netty.bom))
     implementation(libs.gson)
+    // PackLint checks the pack the server serves, as the client gets it.
+    implementation(project(":msc-textures"))
     // HttpStall: the one stall rule for HTTP reads (the pack download), shared with msc-core and msc-bench.
     implementation(project(":msc-process"))
     testImplementation(testFixtures(project(":msc-process")))

@@ -32,6 +32,8 @@ final class Inventory {
     private final ItemStack[] own = new ItemStack[SIZE];
     private int held;
     private int screenId = -1;
+    /** The server's state id of the open menu's contents, which a click sends back. */
+    private int stateId;
     private String screen;
     private int screenSize = -1;
     private ItemStack[] screenItems = new ItemStack[0];
@@ -45,6 +47,7 @@ final class Inventory {
     synchronized boolean accept(Packet packet) {
         switch (packet) {
             case ClientboundContainerSetContentPacket p -> {
+                stateId = p.getStateId();
                 if (p.getContainerId() == 0) {
                     System.arraycopy(p.getItems(), 0, own, 0, Math.min(SIZE, p.getItems().length));
                 } else if (p.getContainerId() == screenId) {
@@ -55,6 +58,7 @@ final class Inventory {
                 }
             }
             case ClientboundContainerSetSlotPacket p -> {
+                stateId = p.getStateId();
                 if (p.getContainerId() == 0) {
                     put(own, p.getSlot(), p.getItem());
                 } else if (p.getContainerId() == screenId) {
@@ -95,6 +99,10 @@ final class Inventory {
     /** The open menu's id, or -1. */
     synchronized int screenId() {
         return screenId;
+    }
+
+    synchronized int stateId() {
+        return stateId;
     }
 
     synchronized void closed() {

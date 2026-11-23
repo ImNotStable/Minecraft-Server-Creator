@@ -12,12 +12,14 @@ import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import net.kyori.adventure.text.Component;
 import org.cloudburstmc.math.vector.Vector3d;
 import org.cloudburstmc.math.vector.Vector3i;
 import org.geysermc.mcprotocollib.network.ClientSession;
@@ -59,6 +61,13 @@ import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.entity.play
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.entity.player.ClientboundPlayerPositionPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.entity.player.ClientboundSetHealthPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.entity.ClientboundAddEntityPacket;
+import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.entity.ClientboundSetEntityDataPacket;
+import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.ClientboundPlayerInfoUpdatePacket;
+import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.ClientboundSoundEntityPacket;
+import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.level.ClientboundSoundPacket;
+import org.geysermc.mcprotocollib.protocol.data.game.PlayerListEntry;
+import org.geysermc.mcprotocollib.protocol.data.game.PlayerListEntryAction;
+import org.geysermc.mcprotocollib.protocol.data.game.entity.metadata.EntityMetadata;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.level.ClientboundChunkBatchFinishedPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.level.ClientboundGameEventPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.title.ClientboundSetActionBarTextPacket;
@@ -88,7 +97,25 @@ import org.geysermc.mcprotocollib.protocol.packet.login.serverbound.ServerboundC
  */
 public final class TestPlayer implements Bot {
     /** A tracked entity near the player. */
-    record Tracked(String type, double x, double y, double z) {
+    record Tracked(String type, String name, double x, double y, double z) {
+        Tracked at(double nx, double ny, double nz) {
+            return new Tracked(type, name, nx, ny, nz);
+        }
+
+        /** An entity the attack and interact actions mean: any for null, else its type or a part of its name. */
+        boolean matches(String target) {
+            return target == null || type.equals(target.toLowerCase(java.util.Locale.ROOT).replace("minecraft:", ""))
+                    || name != null && name.toLowerCase(java.util.Locale.ROOT)
+                            .contains(target.toLowerCase(java.util.Locale.ROOT));
+        }
+
+        String label() {
+            return name == null ? type : type + " \"" + name + "\"";
+        }
+    }
+
+    /** A chat line's part that runs a command when clicked, as an NPC's or a menu's choices in chat do. */
+    record Clickable(String label, String command) {
     }
 
     private final String name;
@@ -107,6 +134,17 @@ public final class TestPlayer implements Bot {
     private final java.util.ArrayDeque<String> events = new java.util.ArrayDeque<>();
     private long droppedEvents;
     private final Map<Integer, Tracked> entities = new ConcurrentHashMap<>();
+    /** Player names by profile id, from the tab list, so a player-shaped NPC has its name. */
+    private final Map<java.util.UUID, String> profiles = new ConcurrentHashMap<>();
+    /** The newest clickable chat parts, newest last. */
+    static final int MAX_CLICKABLES = 30;
+    private final java.util.ArrayDeque<Clickable> clickables = new java.util.ArrayDeque<>();
+    /** The pack the server served, once downloaded; what the player sees and hears is checked against it. */
+    private volatile PackContents served;
+    /** Private Use Area characters seen in chat, titles, the action bar, the sidebar and boss bars. */
+    private final Set<Integer> glyphs = ConcurrentHashMap.newKeySet();
+    /** Sound events the server played to the player, in the order first heard. */
+    private final Set<String> sounds = java.util.Collections.synchronizedSet(new java.util.LinkedHashSet<>());
     private final AtomicInteger sequence = new AtomicInteger();
     private final CountDownLatch spawned = new CountDownLatch(1);
     private final Inventory inventory = new Inventory(Items.forVersion(minecraftVersion()));
@@ -452,6 +490,7 @@ public final class TestPlayer implements Bot {
     }
 
     void event(String text) {
+        seeGlyphs(text);
         synchronized (events) {
             // Action bars repeat every second or so: keep one of each in a row.
             if (!events.isEmpty() && events.getLast().equals(text)) {
@@ -613,7 +652,68 @@ public final class TestPlayer implements Bot {
     }
 
     String hudReport() {
-        return hud.report();
+        String hudText = hud.report();
+        seeGlyphs(hudText);
+        List<String> lines = new ArrayList<>(List.of(hudText));
+        PackContents pack = served;
+        List<String> heard;
+        synchronized (sounds) {
+            heard = List.copyOf(sounds);
+        }
+        if (!heard.isEmpty()) {
+            lines.add("sounds heard: " + String.join(", ", heard.subList(0, Math.min(12, heard.size())))
+                    + (heard.size() > 12 ? " (+" + (heard.size() - 12) + ")" : ""));
+        }
+        String noPack = pack == null ? ", no pack loaded" : "";
+        PackContents against = pack == null ? PackContents.NONE : pack;
+        List<String> missingSounds = against.missingSounds(Set.copyOf(heard));
+        if (!missingSounds.isEmpty()) {
+            lines.add("SOUNDS NOT IN THE PACK (a client plays nothing): " + String.join(", ", missingSounds) + noPack);
+        }
+        List<Integer> missing = against.missingGlyphs(glyphs);
+        if (!missing.isEmpty()) {
+            lines.add("GLYPHS NO PACK FONT DRAWS (a client shows boxes): " + String.join(" ", missing.stream()
+                    .map(c -> String.format("U+%04X", c)).toList()) + noPack);
+        }
+        return String.join("\n", lines);
+    }
+
+    private void seeGlyphs(String text) {
+        text.codePoints().filter(PackContents::custom).forEach(glyphs::add);
+    }
+
+    /** Run the command of the newest clickable chat part whose text has {@code text}; what ran, or null. */
+    String clickChat(String text) {
+        Clickable hit = null;
+        synchronized (clickables) {
+            for (java.util.Iterator<Clickable> it = clickables.descendingIterator(); it.hasNext(); ) {
+                Clickable c = it.next();
+                if (c.label().toLowerCase(java.util.Locale.ROOT).contains(text.toLowerCase(java.util.Locale.ROOT))) {
+                    hit = c;
+                    break;
+                }
+            }
+        }
+        if (hit == null) {
+            return null;
+        }
+        send(new ServerboundChatCommandPacket(hit.command().startsWith("/") ? hit.command().substring(1)
+                : hit.command()));
+        return "\"" + hit.label() + "\" ran /" + hit.command().replaceFirst("^/", "");
+    }
+
+    /** Left-click a slot of the open menu, as the inventory action numbers them; false when no menu is open. */
+    boolean clickSlot(int slot) {
+        int id = inventory.screenId();
+        if (id < 0) {
+            return false;
+        }
+        // No carried item or changed slots: a menu plugin cancels the click, and a real move is corrected by the server.
+        send(new org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.inventory.ServerboundContainerClickPacket(
+                id, inventory.stateId(), slot,
+                org.geysermc.mcprotocollib.protocol.data.game.inventory.ContainerActionType.CLICK_ITEM,
+                org.geysermc.mcprotocollib.protocol.data.game.inventory.ClickItemAction.LEFT_CLICK, null, Map.of()));
+        return true;
     }
 
     /** Close the menu a server opened, like pressing Escape; false when none is open. */
@@ -671,7 +771,7 @@ public final class TestPlayer implements Bot {
     }
 
     private String describe(Tracked t) {
-        return String.format("%s at %.1f blocks", t.type(), Math.sqrt(Math.pow(t.x() - body.x, 2)
+        return String.format("%s at %.1f blocks", t.label(), Math.sqrt(Math.pow(t.x() - body.x, 2)
                 + Math.pow(t.y() + 0.9 - body.y - 1.62, 2) + Math.pow(t.z() - body.z, 2)));
     }
 
@@ -685,7 +785,7 @@ public final class TestPlayer implements Bot {
         for (Map.Entry<Integer, Tracked> e : entities.entrySet()) {
             Tracked t = e.getValue();
             double d = Math.sqrt(Math.pow(t.x() - ex, 2) + Math.pow(t.y() + 0.9 - ey, 2) + Math.pow(t.z() - ez, 2));
-            if (e.getKey() != entityId && d <= bestD && (type == null || t.type().equals(type))) {
+            if (e.getKey() != entityId && d <= bestD && t.matches(type)) {
                 best = e;
                 bestD = d;
             }
@@ -708,7 +808,7 @@ public final class TestPlayer implements Bot {
                 .map(e -> Map.entry(e.getValue(), Math.sqrt(Math.pow(e.getValue().x() - body.x, 2)
                         + Math.pow(e.getValue().y() - body.y, 2) + Math.pow(e.getValue().z() - body.z, 2))))
                 .sorted(Map.Entry.comparingByValue()).limit(limit)
-                .map(e -> String.format("%s %.1f,%.1f,%.1f (%.1f away)", e.getKey().type(), e.getKey().x(),
+                .map(e -> String.format("%s %.1f,%.1f,%.1f (%.1f away)", e.getKey().label(), e.getKey().x(),
                         e.getKey().y(), e.getKey().z(), e.getValue()))
                 .toList();
     }
@@ -780,8 +880,42 @@ public final class TestPlayer implements Bot {
                 spawnedIn(key);
                 event(wasDead ? "[respawned]" : "[changed world] " + key);
             }
-            case ClientboundSystemChatPacket p -> event((p.isOverlay() ? "[actionbar] " : "[chat] ")
-                    + Text.plain(p.getContent()));
+            case ClientboundSystemChatPacket p -> {
+                List<Clickable> found = p.isOverlay() ? List.of() : Text.clickables(p.getContent());
+                synchronized (clickables) {
+                    for (Clickable c : found) {
+                        if (clickables.size() == MAX_CLICKABLES) {
+                            clickables.removeFirst();
+                        }
+                        clickables.add(c);
+                    }
+                }
+                event((p.isOverlay() ? "[actionbar] " : "[chat] ") + Text.plain(p.getContent())
+                        + (found.isEmpty() ? "" : " (click: " + String.join(" | ",
+                                found.stream().map(Clickable::label).toList()) + ")"));
+            }
+            case ClientboundSoundPacket p -> sounds.add(PackContents.qualify(p.getSound().getName()));
+            case ClientboundSoundEntityPacket p -> sounds.add(PackContents.qualify(p.getSound().getName()));
+            case ClientboundPlayerInfoUpdatePacket p -> {
+                if (p.getActions().contains(PlayerListEntryAction.ADD_PLAYER)) {
+                    for (PlayerListEntry e : p.getEntries()) {
+                        if (e.getProfile() != null && e.getProfile().getName() != null) {
+                            profiles.put(e.getProfileId(), e.getProfile().getName());
+                        }
+                    }
+                }
+            }
+            case ClientboundSetEntityDataPacket p -> {
+                for (EntityMetadata<?, ?> m : p.getMetadata()) {
+                    // Index 2 of every entity: its custom name, an optional component.
+                    if (m.getId() == 2 && m.getValue() instanceof java.util.Optional<?> o) {
+                        String named = o.filter(Component.class::isInstance).map(c -> Text.plain((Component) c))
+                                .filter(n -> !n.isEmpty()).orElse(null);
+                        entities.computeIfPresent(p.getEntityId(),
+                                (k, t) -> new Tracked(t.type(), named, t.x(), t.y(), t.z()));
+                    }
+                }
+            }
             case ClientboundPlayerChatPacket p -> event("[chat] <" + Text.plain(p.getName()) + "> "
                     + (p.getUnsignedContent() != null ? Text.plain(p.getUnsignedContent()) : p.getContent()));
             case ClientboundSetTitleTextPacket p -> event("[title] " + Text.plain(p.getText()));
@@ -792,7 +926,8 @@ public final class TestPlayer implements Bot {
             case ClientboundPingPacket p -> send(new ServerboundPongPacket(p.getId()));
             case ClientboundChunkBatchFinishedPacket p -> send(new ServerboundChunkBatchReceivedPacket(64f));
             case ClientboundAddEntityPacket p -> entities.put(p.getEntityId(), new Tracked(
-                    p.getType().name().toLowerCase(java.util.Locale.ROOT), p.getX(), p.getY(), p.getZ()));
+                    p.getType().name().toLowerCase(java.util.Locale.ROOT), profiles.get(p.getUuid()), p.getX(),
+                    p.getY(), p.getZ()));
             case ClientboundRemoveEntitiesPacket p -> {
                 for (int id : p.getEntityIds()) {
                     entities.remove(id);
@@ -836,11 +971,11 @@ public final class TestPlayer implements Bot {
     }
 
     private void moveEntity(int id, double dx, double dy, double dz) {
-        entities.computeIfPresent(id, (k, t) -> new Tracked(t.type(), t.x() + dx, t.y() + dy, t.z() + dz));
+        entities.computeIfPresent(id, (k, t) -> t.at(t.x() + dx, t.y() + dy, t.z() + dz));
     }
 
     private void placeEntity(int id, Vector3d pos) {
-        entities.computeIfPresent(id, (k, t) -> new Tracked(t.type(), pos.getX(), pos.getY(), pos.getZ()));
+        entities.computeIfPresent(id, (k, t) -> t.at(pos.getX(), pos.getY(), pos.getZ()));
     }
 
     private void position(ClientboundPlayerPositionPacket p) {
@@ -988,7 +1123,7 @@ public final class TestPlayer implements Bot {
     }
 
     /** What a pack download came to: whether a client would load it, and what the hud and events say. */
-    record PackCheck(boolean ok, String result) {
+    record PackCheck(boolean ok, String result, PackContents contents) {
     }
 
     /** Download a pack like the client: follow redirects, need HTTP 200, the hash (when given) and pack.mcmeta. */
@@ -1008,11 +1143,25 @@ public final class TestPlayer implements Bot {
             String sha1 = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-1").digest(r.body()));
             boolean ok = r.statusCode() == 200 && (hash == null || hash.isEmpty() || hash.equalsIgnoreCase(sha1));
             boolean pack = ok && hasPackMeta(r.body());
+            PackContents contents = pack ? PackContents.of(r.body()) : null;
             String result = "HTTP " + r.statusCode() + ", " + r.body().length + " bytes"
                     + (r.statusCode() == 200 ? (ok ? ", sha1 matches" : ", sha1 DIFFERS from " + hash) : "")
-                    + (ok && !pack ? ", but no pack.mcmeta at the zip root" : "");
-            return new PackCheck(pack, result);
+                    + (ok && !pack ? ", but no pack.mcmeta at the zip root" : "")
+                    + (contents == null ? "" : ", " + lintSummary(contents.lint()));
+            return new PackCheck(pack, result, contents);
         }
+    }
+
+    /** The served pack's lint as one line: a client still loads a pack with errors, but draws them wrong. */
+    static String lintSummary(io.github.imnotstable.msc.textures.PackLint.Report lint) {
+        long errors = lint.count(io.github.imnotstable.msc.textures.PackLint.Severity.ERROR);
+        if (errors == 0) {
+            return "lint clean";
+        }
+        return "lint: " + errors + " error" + (errors == 1 ? "" : "s") + " ("
+                + String.join("; ", lint.findings().stream()
+                        .filter(f -> f.severity() == io.github.imnotstable.msc.textures.PackLint.Severity.ERROR)
+                        .limit(3).map(Object::toString).toList()) + (errors > 3 ? "; ..." : "") + ")";
     }
 
     /** Accept the pack, and check that it downloads and matches its hash, which a real client would need. */
@@ -1024,6 +1173,9 @@ public final class TestPlayer implements Bot {
             ResourcePackStatus status;
             try {
                 PackCheck check = checkPack(p.getUrl(), p.getHash());
+                if (check.contents() != null) {
+                    served = check.contents();
+                }
                 event("[pack] download: " + check.result());
                 hud.pack((check.ok() ? "loaded (" : "FAILED (") + check.result() + ")"
                         + (p.isRequired() ? ", required" : ""));
