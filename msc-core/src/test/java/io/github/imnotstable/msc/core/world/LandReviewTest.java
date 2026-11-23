@@ -32,7 +32,17 @@ class LandReviewTest {
                 : x > 25 && z > 25 ? Character.valueOf('s') : null);
         String review = BuildReview.review(g);
         assertThat(review).contains("mostly land", "ground at one level 100%", "flat land: 100% of the ground is at y 0",
-                "ground at one level 100%").doesNotContain("straight");
+                "ground at one level 100%").doesNotContain("straight", "land on the dev world");
+        assertThat(BuildReview.review(g, true)).contains("land on the dev world", "world_create");
+    }
+
+    @Test
+    void aRandomMixOfGroundIsSpeckledButPatchesAreNot() {
+        java.util.Random random = new java.util.Random(7);
+        String mixed = BuildReview.review(painted((x, z) -> random.nextBoolean() ? Character.valueOf('s') : null));
+        assertThat(mixed).contains("speckled ground:");
+        String patches = BuildReview.review(painted((x, z) -> x + z / 3 < 20 ? Character.valueOf('s') : null));
+        assertThat(patches).contains("speckled ground 0%").doesNotContain("speckled ground:");
     }
 
     @Test
@@ -47,7 +57,7 @@ class LandReviewTest {
         }
         String review = BuildReview.review(c.grid(Region.of("world", 0, 0, 0, 63, 24, 63)));
         assertThat(review).contains("mostly land", "ground at one level").doesNotContain("flat land:",
-                "floating");
+                "floating", "speckled ground:");
     }
 
     @Test

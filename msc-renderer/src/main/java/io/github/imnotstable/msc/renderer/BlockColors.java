@@ -91,6 +91,11 @@ public final class BlockColors {
         return find(name, SIDE).argb() & 0xffffff;
     }
 
+    /** The RGB colour of a block's top, as a top view draws it; for checks that judge ground and roofs from above. */
+    public static int top(String name) {
+        return find(name, TOP).argb() & 0xffffff;
+    }
+
     static Found find(String name, int faceKind) {
         // "Wood" blocks have bark on every face, unlike logs.
         int kind = name.endsWith("_wood") || name.endsWith("_hyphae") ? SIDE : faceKind;

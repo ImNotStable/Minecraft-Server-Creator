@@ -12,7 +12,7 @@ LAND FIRST
 - Ground cover: give ground mixes clump= (patches with wavy edges); a plain mix reads as static.
 - Nature: structure_save a few trees, rocks and bushes and scatter them (file=a,b,c spacing= chance=) so each stands on the ground; scatter flowers and grass the same way. Nothing floats: leaves join a trunk, rails and props rest on something.
 - Fit builds to the land: foundations reach down to the ground on slopes, a plaza is cut into the hill with retaining walls, and the ground at a build is worn (paths to doors, coarse dirt, gravel), not a clean edge.
-- Review land as well as builds: world_summary review=true on a land region reports ground at one level and floating blocks.
+- Review land as well as builds: world_summary review=true on a land region reports ground at one level, speckled ground (a random mix of clashing blocks) and floating blocks, and it fails land reviewed on the flat dev world: give a map its own world_create worlds. Review the whole map once too, not only each plot.
 
 THE LOOP (every build)
 1. Plan in 3 lines: purpose and story (who lived here, what happened), silhouette (3+ masses of different heights), palette.

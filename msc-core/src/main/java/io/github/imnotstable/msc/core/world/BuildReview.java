@@ -40,6 +40,8 @@ public final class BuildReview {
     static final int MAX_FLAT = 45;
     static final int MIN_ROOF = 15;
     static final int MAX_SPECKLED = 20;
+    /** Roofs and ground seen from above: a lone clashing block is rarer there than on a wall with windows (ADR 0078). */
+    static final int MAX_SPECKLED_ROOF = 10;
     /** RGB distance where two blocks clash: stone_bricks to mossy_stone_bricks is 21, deepslate to prismarine 134. */
     static final int CLASH = 64;
     /** A region at least this much land (by blocks) is judged as land only: hills are not walls or flat roofs. */
@@ -53,6 +55,11 @@ public final class BuildReview {
     }
 
     public static String review(BlockGrid grid) {
+        return review(grid, false);
+    }
+
+    /** {@code devFloor}: the region is in the flat dev world, where land does not belong (ADR 0078). */
+    public static String review(BlockGrid grid, boolean devFloor) {
         Region r = grid.region();
         String[] names = new String[grid.palette().size()];
         boolean[] fluid = new boolean[names.length];
@@ -63,7 +70,7 @@ public final class BuildReview {
             names[i] = BlockNames.isAir(grid.palette().get(i)) || fluid[i] ? null : id;
             soil[i] = names[i] != null && LandReview.SOIL.contains(id);
         }
-        LandReview.Result land = LandReview.review(grid, names, fluid);
+        LandReview.Result land = LandReview.review(grid, names, fluid, devFloor);
         if (land.landShare() >= LAND_ONLY) {
             return withLand("review: mostly land (" + land.landShare() + "% of the blocks), so only the land is "
                     + "judged; review each build on its own region", land, List.of(), false);
@@ -150,6 +157,7 @@ public final class BuildReview {
         int flatPct = faces == 0 ? 0 : pct(flat, faces);
         int speckledPct = faces == 0 ? 0 : pct(speckled, faces);
         int roofPct = roof[1] == 0 ? 100 : pct(roof[0], roof[1]);
+        int speckledRoofPct = roof[1] == 0 ? 0 : pct(roof[3], roof[1]);
         int height = roof[2];
         int plainTopPct = tops == 0 ? 0 : pct(plainTops, tops);
         int bareBasePct = base == 0 ? 0 : pct(bareBase, base);
@@ -163,8 +171,9 @@ public final class BuildReview {
             out.append(i == 0 ? "" : ", ").append(top.get(i).getKey()).append(' ').append(pct(top.get(i).getValue(), total)).append('%');
         }
         out.append(String.format(Locale.ROOT, "\ndetail blocks %d%% (aim %d%%+), flat wall faces %d%% (aim under %d%%), "
-                + "speckled faces %d%% (aim under %d%%), shaped roof %d%%, lights %d\n", detailPct, MIN_DETAIL,
-                flatPct, MAX_FLAT, speckledPct, MAX_SPECKLED, roofPct, lights));
+                + "speckled faces %d%% (aim under %d%%), shaped roof %d%%, speckled roof %d%% (aim under %d%%), "
+                + "lights %d\n", detailPct, MIN_DETAIL, flatPct, MAX_FLAT, speckledPct, MAX_SPECKLED, roofPct,
+                speckledRoofPct, MAX_SPECKLED_ROOF, lights));
         out.append(String.format(Locale.ROOT, "plain wall tops %d%% (aim under %d%%), bare base %d%% (aim under %d%%), "
                 + "floor under a roof %d with %d furnishings, plants %d\n", plainTopPct, MAX_PLAIN_TOPS, bareBasePct,
                 MAX_BARE_BASE, floor, props, plants));
@@ -178,6 +187,11 @@ public final class BuildReview {
             fixes.add("speckled walls: a random mix of clashing colours reads as noise; mix only near tones "
                     + "(stone_bricks:70,cracked_stone_bricks:20,mossy_stone_bricks:10) and put contrast in lines: "
                     + "trims, bands, frames, an accent at the focal point");
+        }
+        if (speckledRoofPct > MAX_SPECKLED_ROOF && roof[1] >= 50) {
+            fixes.add("speckled roof: seen from above, " + speckledRoofPct + "% of the roof is a lone block among "
+                    + "clashing ones; keep a roof to one material and its near tones, weather it in streaks from the "
+                    + "ridge and eaves (weather), and put contrast in lines: ridge, eaves, dormers");
         }
         if (detailPct < MIN_DETAIL) {
             fixes.add("few shaped blocks: stairs and slabs for roofs, sills and trim; walls and fences for railings; "
@@ -256,12 +270,14 @@ public final class BuildReview {
         return y - 1;
     }
 
-    /** Shaped tops, all tops and the build's height: what a roof looks like from above. */
+    /** Shaped tops, all tops, the build's height and speckled tops (ADR 0078): what a roof looks like from above. */
     private static int[] roof(BlockGrid grid, String[] names, int ground) {
         Region r = grid.region();
         int shaped = 0;
         int tops = 0;
         int height = 0;
+        int[] rgb = new int[r.sizeX() * r.sizeZ()];
+        java.util.Arrays.fill(rgb, -1);
         for (int z = r.min().z(); z <= r.max().z(); z++) {
             for (int x = r.min().x(); x <= r.max().x(); x++) {
                 for (int y = r.max().y(); y > ground; y--) {
@@ -273,12 +289,13 @@ public final class BuildReview {
                         tops++;
                         shaped += b.contains("stairs") || b.contains("slab") ? 1 : 0;
                         height = Math.max(height, y - ground);
+                        rgb[(z - r.min().z()) * r.sizeX() + x - r.min().x()] = BlockColors.top(b);
                         break;
                     }
                 }
             }
         }
-        return new int[] {shaped, tops, height};
+        return new int[] {shaped, tops, height, LandReview.speckled(rgb, r.sizeX(), r.sizeZ())};
     }
 
     /** How many of a wall face's four neighbours in its plane clash with it in colour; {@code ux, uz} runs along the wall. */
@@ -295,7 +312,7 @@ public final class BuildReview {
         return n;
     }
 
-    private static double distance(int a, int b) {
+    static double distance(int a, int b) {
         int dr = (a >> 16 & 0xff) - (b >> 16 & 0xff);
         int dg = (a >> 8 & 0xff) - (b >> 8 & 0xff);
         int db = (a & 0xff) - (b & 0xff);
