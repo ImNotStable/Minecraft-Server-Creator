@@ -1,5 +1,15 @@
 BUILD GUIDE: what makes a build look hand-made, and the loop that gets it there.
 
+DONE MEANS (check before you report a build or a map finished)
+- Every build and every land region has a world_summary review=true that ends "no number below the bar". A review
+  that says "verdict: NOT DONE" is not done, however good the render looks; msc_status and dev_cycle list the reviews
+  still failing until one of the same region passes.
+- Land was shaped, not only generated: terrain, smooth or paint where the build meets it, path to each door, scatter
+  or flora for ground cover, forest or tree around it. Generated land is the start, not the finish.
+- Every build met the ground: trim at=base (a plinth), decorate on=ground (bushes, flowers) and worn ground at the
+  doors; rooms furnished (decorate on=edge, corner, ceiling); weather for age.
+- If the run must end with a review still failing, say which and why in the report; never call it done.
+
 WHERE TO BUILD
 - Build in the world with build_batch (one building per call), not with plugin code that places blocks: code builds are never seen, reviewed or undone. Plugin code only swaps prepared states at runtime (save each state with structure_save, paste it from code or with build_batch structure file=).
 - Land first (next section), then builds fitted into it.
@@ -17,6 +27,12 @@ LAND FIRST
   Mix kinds and sizes, leave clearings, thicken toward water and slopes. Nothing floats: rails and props rest on
   something.
 - Fit builds to the land: foundations reach down to the ground on slopes, a plaza is cut into the hill with retaining walls, and the ground at a build is worn (paths to doors, coarse dirt, gravel), not a clean edge.
+- Underwater builds: find the sea floor with world_slice of a thin column (world_heightmap stops at the water's
+  surface), stand the build on
+  it and let the water stay around it: walls, columns and arches rise from the floor, and only the top (spires, a
+  roof) may break the surface. Waterlogged=true for stairs, slabs, fences, lanterns and chains in the water; a dry
+  room inside is a sealed hull filled with air in a later step. A build resting on the water surface is a floating
+  barge, not a sunken one.
 - Review land as well as builds: world_summary review=true on a land region reports ground at one level, speckled ground (a random mix of clashing blocks) and floating blocks, and it fails land reviewed on the flat dev world: give a map its own world_create worlds. Review the whole map once too, not only each plot.
 
 THE LOOP (every build)
@@ -109,6 +125,41 @@ SHAPING STEPS (build_batch; they reshape what the world and earlier steps hold, 
 - tunnel X,Y,Z X,Y,Z ... [r=3 rough=1 B]: a winding tunnel through 3D points (air, or B such as water or lava).
 - cave X,Y,Z X,Y,Z [density=30 scale=16 roof=4 B]: noise caves through the box's solid ground, keeping roof= blocks
   under the surface.
+
+THINGS IN A BUILD (build_batch; values with spaces in quotes: text="Two words")
+- sign X,Y,Z B text="line 1|line 2" [back= color=dye glow=true wax=false]: B oak_sign[rotation=N], oak_wall_sign[facing=]
+  or a hanging sign; waxed by default so players cannot edit it.
+- banner X,Y,Z B patterns=stripe_top:red,cross:black (bottom layer first, up to 16; pattern ids as /give takes them).
+- head X,Y,Z B player=NAME | skin=HASH|URL | texture=BASE64: decorative object heads (a globe, a crate, food) come from
+  head sites as a textures.minecraft.net hash or base64 value; B is the player head block with rotation=N, or its wall
+  form with facing=.
+- book X,Y,Z lectern[facing=] title="..." author=... pages="page one|page two" (\n inside a page breaks the line).
+- container X,Y,Z B items=bread:16,iron_ingot:3 | loot=chests/village/village_weaponsmith: chests, barrels, shulkers.
+- entity X,Y,Z TYPE [data={SNBT} still=true yaw=DEG count=N]: mobs, villagers (data={VillagerData:{profession:
+  "minecraft:farmer"}}), display entities; still=true keeps it standing there (no AI, silent, never despawns).
+- frame X,Y,Z item=ID facing=DIR [glow=true invisible=true turn=0-7]: an item frame in the air block in front of a wall,
+  facing out. stand X,Y,Z [head= chest= legs= feet= mainhand= offhand= yaw= small=true base=false arms=false
+  data={Pose:{...}}]: a dressed armor stand.
+  Entities are summoned after the blocks, tagged with the build, and build_undo removes them.
+- biome X,Y,Z X,Y,Z ID [only=ID]: paints the biome (grass, foliage and water colours, weather, mob spawns) with /fillbiome.
+- feature X,Y,Z ID [count=N spread=R]: the game's own feature (fancy_oak, mega_spruce, birch_bees_005, huge_red_mushroom,
+  forest_rock, amethyst_geode, flower_meadow...) with /place feature, on the ground when spread= is given. Not on
+  Minestom. Biomes and features are not undone by build_undo (the world backup is).
+- light X,Y,Z X,Y,Z [B level=8 on=floor|ground|top|wall|ceiling]: lights wherever existing light would fall below
+  level=, spread out, as few as needed: lanterns by default, hanging ones for on=ceiling, torches on walls, or B
+  (light[level=15] for invisible light).
+
+ROOMS, PICTURES AND FILES
+- furnish X,Y,Z X,Y,Z room= [wood=spruce color=red density=50]: furnishes a built room by its use: bedroom, kitchen,
+  dining, library, study, tavern, storage, smithy, alchemy, chapel, throne, shop, barracks, bathroom. Give the room's
+  inside (floor to ceiling) after walls and roof: props go in corners and along walls (chests and shelves facing out,
+  beds head to the wall), a centre piece (tables with chairs, a long dining table, pews and an altar, a throne, a
+  counter), a rug around it and a lantern on a chain; spots beside doors and openings stay clear. Then add your own
+  touches: it is a start, not the finished room.
+- image X,Y,Z file=PNG w=N [h=N plane=x|z|floor palette=all|wool|concrete|terracotta|glass dither=true]: a picture as
+  blocks, X,Y,Z its bottom-left (walls) or north-west corner (floor, for map art); transparent pixels are left alone.
+- structure file= and scatter file= read Sponge .schem, the game's structure .nbt files and Litematica .litematic,
+  told apart by content; MCEdit .schematic from before 1.13 must be re-saved as .schem.
 
 SCALE AND COMPOSITION
 - A landmark is seen from far away: give it a strong, asymmetric silhouette (a tall tower beside a low hall), not a box with a spike.

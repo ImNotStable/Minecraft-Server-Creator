@@ -1,4 +1,4 @@
-# ADR 0084: Minigames, loot, permissions, data packs and dialogue in msc-stdlib
+# ADR 0085: Minigames, loot, permissions, data packs and dialogue in msc-stdlib
 
 Status: accepted, 2026-11-23. Decided by Claude, filling the standard library half of Jeremiah's gap list: "no NPCs",
 "no minigame framework for arenas, teams, queues and countdowns", "no permissions, loot tables or recipes", and his

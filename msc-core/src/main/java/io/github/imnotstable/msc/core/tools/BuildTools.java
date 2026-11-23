@@ -37,6 +37,15 @@ public final class BuildTools {
             public BlockGrid read(Region region) throws InterruptedException {
                 return world.readAllWithData(region, Builder.MAX_VOLUME, "build_batch");
             }
+
+            @Override
+            public Path file(String path) {
+                Path file = config.inWorkspace().resolve("image file", path);
+                if (!Files.isRegularFile(file)) {
+                    throw new ToolException("no file " + file);
+                }
+                return file;
+            }
         };
         registry.add("build_batch",
                 "The one build tool. All steps are one edit with one undo id; every block name is checked "

@@ -22,6 +22,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Objects;
 import java.util.function.BooleanSupplier;
+import java.util.function.Supplier;
 
 /** Health and usage tools. */
 public final class MetaTools {
@@ -81,7 +82,7 @@ public final class MetaTools {
     }
 
     public static void register(ToolRegistry registry, CoreConfig config, AgentHub hub, ServerManager server,
-                                ToolLog log, ApiTools api, BooleanSupplier closed) {
+                                ToolLog log, ApiTools api, BooleanSupplier closed, Supplier<String> openReviews) {
         registry.add("msc_status", "Where things stand: workspace, platform, server, agent, API index. stats=true: this "
                         + "session's calls, errors, time and result tokens per tool instead. guide=build, textures, pack or ux: how "
                         + "to do that work well.",
@@ -131,7 +132,8 @@ public final class MetaTools {
                     for (String w : SetupCheck.warnings(config)) {
                         out.append('\n').append(w);
                     }
-                    return out.toString();
+                    String open = openReviews.get();
+                    return open.isEmpty() ? out.toString() : out.append('\n').append(open).toString();
                 });
     }
 

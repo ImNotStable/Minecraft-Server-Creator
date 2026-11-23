@@ -57,11 +57,13 @@ class McpBridgeTest {
                 // for the plugins tool, a capability no existing tool could carry; ADR 0068 by 200 for guide= and
                 // review=, which cost nothing until called and replace re-reading builds by eye; ADR 0075 by 1200
                 // for world_create and the terrain, path and scatter steps: land had no tool at all; ADR 0077 by 450
-                // for the roof, trim, decorate and weather steps, one line each, their details in guide=build; ADR 0081
+                // for the roof, trim, decorate and weather steps, one line each, their details in guide=build; ADR 0079
+                // for the roof, trim, decorate and weather steps, one line each, their details in guide=build; ADR 0079
                 // by 300 for tree, forest and flora, the same way; ADR 0080 by 200 for the seven shaping steps;
                 // ADR 0081 by 900 for pack_asset (every pack file but textures had no tool) and guide pages,
-                // its formats in guide=pack.
-                assertThat(listed.toString().length()).isLessThan(19650);
+                // its formats in guide=pack; ADR 0082 by 350 for the block entity, entity, biome, feature and light steps;
+                // ADR 0083 by 200 for furnish and image.
+                assertThat(listed.toString().length()).isLessThan(20200);
                 JsonObject batch = tools.get(names.indexOf("build_batch")).getAsJsonObject().getAsJsonObject("inputSchema");
                 assertThat(batch.getAsJsonArray("required").toString()).isEqualTo("[\"steps\"]");
                 // Every project template the jar ships (paper-server is only nested in others) is named in project_scaffold's schema, so none goes unseen.

@@ -29,6 +29,10 @@ public final class Canvas {
     private final List<Region> readAhead = new ArrayList<>();
     private final List<BlockGrid> worldReads = new ArrayList<>();
     private long placed;
+    /** Commands to run after the blocks are written (ADR 0082): entities, biomes, vanilla features. */
+    private final List<String> commands = new ArrayList<>();
+    /** The tag every entity this build summons carries, so build_undo can remove them. */
+    private final String tag = "msc_" + Long.toString(java.util.concurrent.ThreadLocalRandom.current().nextLong() >>> 1, 36);
 
     /**
      * @param worldReader reads the current world for steps that only replace some blocks; called at
@@ -220,6 +224,20 @@ public final class Canvas {
     @FunctionalInterface
     public interface Mask {
         boolean allows(int x, int y, int z);
+    }
+
+    /** Queue a server command to run once the blocks are written. */
+    public void command(String command) {
+        commands.add(command);
+    }
+
+    public List<String> commands() {
+        return List.copyOf(commands);
+    }
+
+    /** The entity tag of this build. */
+    public String tag() {
+        return tag;
     }
 
     /** Blocks this build sets, counting each position once. */

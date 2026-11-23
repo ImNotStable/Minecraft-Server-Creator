@@ -182,7 +182,7 @@ public final class Core implements AutoCloseable {
             // Kept for its detached server, it is closed to the tools until a switch back (only after a failed switch
             // is such a workspace the current one).
             MetaTools.register(tools, config, hub, server, log, api,
-                    () -> closed.get() || kept.containsKey(realOrSelf(config.workspace())));
+                    () -> closed.get() || kept.containsKey(realOrSelf(config.workspace())), () -> world.reviews().line());
             WorldBackups backups = LifecycleTools.register(tools, config, hub, server, pack, publisher,
                     new ProjectBuilder(config),
                     new PaperDownloader(config.downloadsUrl(), config.cacheDir(),

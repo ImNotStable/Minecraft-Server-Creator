@@ -25,7 +25,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-/** Loot tables, permissions, data packs and dialogue (ADR 0084). */
+/** Loot tables, permissions, data packs and dialogue (ADR 0085). */
 class RulesAndContentTest {
     @TempDir
     Path dir;
