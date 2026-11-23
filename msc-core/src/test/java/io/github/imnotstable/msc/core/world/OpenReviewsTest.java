@@ -11,14 +11,17 @@ class OpenReviewsTest {
             + "region again";
 
     @Test
-    void aFailedReviewStaysListedUntilARegionAroundItPasses() {
+    void aFailedReviewStaysListedUntilTheSameRegionPasses() {
         OpenReviews open = new OpenReviews();
         Region hut = Region.of("msc:a", 0, 60, 0, 10, 70, 10);
         open.record(hut, FAILED);
         open.record(Region.of("msc:b", 0, 60, 0, 10, 70, 10), FAILED);
         assertThat(open.line()).startsWith("reviews still failing (2;")
                 .contains("\n- msc:a 0,60,0 10,70,10: bare base, floating");
+        // A wider region that passes does not settle it: run 8 widened regions until one passed.
         open.record(Region.of("msc:a", -5, 50, -5, 20, 90, 20), "review: 10 blocks\nno number below the bar");
+        assertThat(open.line()).startsWith("reviews still failing (2;");
+        open.record(hut, "review: 10 blocks\nno number below the bar");
         assertThat(open.line()).startsWith("reviews still failing (1;").doesNotContain("msc:a");
         open.record(Region.of("msc:b", 0, 60, 0, 10, 70, 10), "review: 10 blocks\nno number below the bar");
         assertThat(open.line()).isEmpty();

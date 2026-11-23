@@ -10,8 +10,8 @@ import java.util.regex.Pattern;
 
 /**
  * Reviews that failed and were not passed since, for this session (ADR 0084): msc_status and dev_cycle name them, so
- * an agent cannot end a run on a review it read and left failing. A passing review of a region clears every failed
- * one inside it.
+ * an agent cannot end a run on a review it read and left failing. Only a passing review of the same region clears
+ * a failed one (ADR 0095).
  */
 public final class OpenReviews {
     private static final Pattern FIX = Pattern.compile("(?:fix first: |; )\\d+\\) ([^:;]+):");
@@ -21,7 +21,9 @@ public final class OpenReviews {
 
     /** Records a review's text for its region: failed when it has fixes, else passed. */
     public synchronized void record(Region region, String review) {
-        open.keySet().removeIf(r -> inside(r, region));
+        // Only a review of the same region settles it: run 8 widened failing regions a block at a time until a
+        // wider one passed (ADR 0095).
+        open.remove(region);
         List<String> fixes = fixes(review);
         if (!fixes.isEmpty()) {
             open.put(region, fixes);
@@ -61,10 +63,5 @@ public final class OpenReviews {
                     .append(',').append(r.max().z()).append(": ").append(String.join(", ", e.getValue()));
         }
         return out.toString();
-    }
-
-    private static boolean inside(Region a, Region b) {
-        return a.world().equals(b.world()) && b.contains(a.min().x(), a.min().y(), a.min().z())
-                && b.contains(a.max().x(), a.max().y(), a.max().z());
     }
 }

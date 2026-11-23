@@ -46,6 +46,8 @@ public final class BuildReview {
     static final int CLASH = 64;
     /** A region at least this much land (by blocks) is judged as land only: hills are not walls or flat roofs. */
     static final int LAND_ONLY = 60;
+    /** Fewer built (not ground) blocks than this in a mostly-land region: only the land is judged (ADR 0095). */
+    static final int MIN_BUILT = 400;
     static final int MAX_PLAIN_TOPS = 60;
     static final int MAX_BARE_BASE = 50;
     /** One furnishing per this many floor blocks under a roof. */
@@ -71,7 +73,14 @@ public final class BuildReview {
             soil[i] = names[i] != null && LandReview.SOIL.contains(id);
         }
         LandReview.Result land = LandReview.review(grid, names, fluid, devFloor);
-        if (land.landShare() >= LAND_ONLY) {
+        boolean[] isGround = ground(grid, names, soil);
+        int built = 0;
+        for (int i = 0; i < isGround.length; i++) {
+            int b = grid.blocks()[i];
+            built += b >= 0 && names[b] != null && !isGround[i] ? 1 : 0;
+        }
+        // Builds in a region that is mostly land are still judged: run 8 hid unfinished houses in big land regions.
+        if (land.landShare() >= LAND_ONLY && built < MIN_BUILT) {
             return withLand("review: mostly land (" + land.landShare() + "% of the blocks), so only the land is "
                     + "judged; review each build on its own region", land, List.of(), false);
         }
@@ -80,7 +89,6 @@ public final class BuildReview {
             rgb[i] = names[i] == null ? 0 : BlockColors.side(names[i]);
         }
         int ground = groundTop(grid, names);
-        boolean[] isGround = ground(grid, names, soil);
         Map<String, Integer> counts = new HashMap<>();
         int total = 0;
         int detail = 0;
