@@ -991,7 +991,7 @@ public sealed interface Step {
         }
     }
 
-    /** Entities summoned at a block's centre once the blocks are written (ADR 0081), tagged so build_undo removes them. */
+    /** Entities summoned at a block's centre once the blocks are written (ADR 0082), tagged so build_undo removes them. */
     record Summon(String world, BlockPos at, String type, String nbt, int count, double dy) implements Step {
         @Override
         public Region bounds() {
@@ -1006,7 +1006,7 @@ public sealed interface Step {
         }
     }
 
-    /** A biome painted over {@code box} with /fillbiome (ADR 0081); {@code only} limits it to one biome there. */
+    /** A biome painted over {@code box} with /fillbiome (ADR 0082); {@code only} limits it to one biome there. */
     record Biome(Region box, String biome, String only) implements Step {
         @Override
         public Region bounds() {
@@ -1022,7 +1022,7 @@ public sealed interface Step {
         }
     }
 
-    /** The game's own configured feature placed with /place feature (ADR 0081), {@code count} times on the ground. */
+    /** The game's own configured feature placed with /place feature (ADR 0082), {@code count} times on the ground. */
     record Feature(String world, BlockPos at, String feature, int count, int spread, long seed) implements Step {
         @Override
         public Region bounds() {
@@ -1040,7 +1040,7 @@ public sealed interface Step {
         }
     }
 
-    /** Lights where it is dark in {@code box} (ADR 0081); see {@link Things#light}. */
+    /** Lights where it is dark in {@code box} (ADR 0082); see {@link Things#light}. */
     record Light(Region box, BlockPattern block, String on, int level, long seed, List<String> replace) implements Step {
         @Override
         public Region bounds() {
@@ -1053,7 +1053,7 @@ public sealed interface Step {
         }
     }
 
-    /** A built room furnished by what it is for (ADR 0082); see {@link io.github.imnotstable.msc.core.building.Furnish}. */
+    /** A built room furnished by what it is for (ADR 0083); see {@link io.github.imnotstable.msc.core.building.Furnish}. */
     record Furnish(Region box, String room, String wood, String color, int density, long seed, List<String> replace)
             implements Step {
         @Override

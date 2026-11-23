@@ -158,7 +158,7 @@ public final class BuildScript {
         List<String> out = new ArrayList<>();
         StringBuilder word = new StringBuilder();
         BlockPattern.Nesting n = new BlockPattern.Nesting();
-        boolean quoted = false; // text="two words" keeps its spaces (ADR 0081)
+        boolean quoted = false; // text="two words" keeps its spaces (ADR 0082)
         for (char c : line.trim().toCharArray()) {
             boolean top = n.top(c);
             if (top && c == '"') {

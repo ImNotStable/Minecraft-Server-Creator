@@ -115,7 +115,8 @@ THINGS IN A BUILD (build_batch; values with spaces in quotes: text="Two words")
   or a hanging sign; waxed by default so players cannot edit it.
 - banner X,Y,Z B patterns=stripe_top:red,cross:black (bottom layer first, up to 16; pattern ids as /give takes them).
 - head X,Y,Z B player=NAME | skin=HASH|URL | texture=BASE64: decorative object heads (a globe, a crate, food) come from
-  head sites as a textures.minecraft.net hash or base64 value; B player_head[rotation=N] or player_wall_head[facing=].
+  head sites as a textures.minecraft.net hash or base64 value; B is the player head block with rotation=N, or its wall
+  form with facing=.
 - book X,Y,Z lectern[facing=] title="..." author=... pages="page one|page two" (\n inside a page breaks the line).
 - container X,Y,Z B items=bread:16,iron_ingot:3 | loot=chests/village/village_weaponsmith: chests, barrels, shulkers.
 - entity X,Y,Z TYPE [data={SNBT} still=true yaw=DEG count=N]: mobs, villagers (data={VillagerData:{profession:

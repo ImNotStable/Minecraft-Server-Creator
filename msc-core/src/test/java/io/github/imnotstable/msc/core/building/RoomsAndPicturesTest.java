@@ -14,7 +14,7 @@ import javax.imageio.ImageIO;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-/** furnish and image (ADR 0082). The world: a closed stone room 0..12 x 0..6 x 0..10 with a door gap at x 6, z 0. */
+/** furnish and image (ADR 0083). The world: a closed stone room 0..12 x 0..6 x 0..10 with a door gap at x 6, z 0. */
 class RoomsAndPicturesTest {
     @TempDir
     Path dir;

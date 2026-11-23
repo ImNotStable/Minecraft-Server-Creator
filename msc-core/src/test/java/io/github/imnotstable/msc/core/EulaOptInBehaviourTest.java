@@ -84,6 +84,7 @@ class EulaOptInBehaviourTest {
             new Row("texture", "name", "item/ruby", "kind", "gem", "color", "#d4263a"),
             new Row("texture_view", "name", "item/ruby"),
             new Row("model_create", "name", "item/ruby", "kind", "item", "textures", List.of("item/ruby")),
+            new Row("pack_asset", "type", "lang", "name", "en_us", "json", "{}"),
             new Row("pack", "check", true), new Row("pack"),
             new Row("server_detach"), new Row("server_stop"));
 

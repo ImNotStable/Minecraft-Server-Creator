@@ -9,7 +9,7 @@ import io.github.imnotstable.msc.protocol.world.Region;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
-/** Block entity helpers, entities, biomes, features and light (ADR 0081), drawn over stone floor at y 0. */
+/** Block entity helpers, entities, biomes, features and light (ADR 0082), drawn over stone floor at y 0. */
 class ThingsStepsTest {
     /** Stone at y 0 and below; a closed stone room from 20,1,0 to 30,5,10. */
     private static BlockGrid world(Region r) {

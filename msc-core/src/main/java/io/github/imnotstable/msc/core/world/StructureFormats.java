@@ -13,7 +13,7 @@ import java.util.Map;
 import java.util.TreeMap;
 
 /**
- * Structure files other than Sponge schematics (ADR 0082): the game's own structure files ({@code .nbt}, as structure
+ * Structure files other than Sponge schematics (ADR 0083): the game's own structure files ({@code .nbt}, as structure
  * blocks and {@code /place template} use them) and Litematica's {@code .litematic}, so builds found online load as they
  * are. Blocks and block entity data are kept; entities are not.
  */

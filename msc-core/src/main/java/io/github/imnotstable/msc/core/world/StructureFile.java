@@ -13,7 +13,7 @@ import java.util.Locale;
 
 /**
  * The one rule for structure and snapshot files (#509). Readers also take the game's structure files (.nbt) and
- * Litematica's .litematic (ADR 0082), told apart by their content. structure_save writes a Sponge schematic and only under a name
+ * Litematica's .litematic (ADR 0083), told apart by their content. structure_save writes a Sponge schematic and only under a name
  * ending in {@code .schem} (any case), so a name says what the file is. Readers (world_summary diff=, build_batch's
  * {@code file=}) go by the content, not the name: gzip data is a schematic, anything else must be UTF-8 text in the
  * text structure format; a file that is neither is refused in one line naming it and the formats.

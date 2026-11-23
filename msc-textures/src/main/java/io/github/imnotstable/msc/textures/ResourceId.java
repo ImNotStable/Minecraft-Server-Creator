@@ -34,6 +34,13 @@ public record ResourceId(String namespace, String path) {
         return colon < 0 ? new ResourceId(defaultNamespace, t) : new ResourceId(t.substring(0, colon), t.substring(colon + 1));
     }
 
+    /** Parse keeping the whole path, extension included, such as {@code minecraft:core/terrain.fsh}. */
+    public static ResourceId parseExact(String text) {
+        String t = text.trim();
+        int colon = t.indexOf(':');
+        return colon < 0 ? new ResourceId(DEFAULT_NAMESPACE, t) : new ResourceId(t.substring(0, colon), t.substring(colon + 1));
+    }
+
     /** The last path segment, such as {@code ruby} for {@code item/ruby}. */
     public String name() {
         return path.substring(path.lastIndexOf('/') + 1);

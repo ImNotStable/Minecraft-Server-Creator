@@ -15,7 +15,7 @@ import java.util.Map;
 import javax.imageio.ImageIO;
 
 /**
- * Pictures as blocks (ADR 0082): an image scaled to a size and matched pixel by pixel to the nearest block colour of a
+ * Pictures as blocks (ADR 0083): an image scaled to a size and matched pixel by pixel to the nearest block colour of a
  * palette, optionally dithered, laid on a wall or on the ground (map art). Transparent pixels leave the world as it is.
  */
 final class Images {

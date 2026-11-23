@@ -29,7 +29,7 @@ public final class Canvas {
     private final List<Region> readAhead = new ArrayList<>();
     private final List<BlockGrid> worldReads = new ArrayList<>();
     private long placed;
-    /** Commands to run after the blocks are written (ADR 0081): entities, biomes, vanilla features. */
+    /** Commands to run after the blocks are written (ADR 0082): entities, biomes, vanilla features. */
     private final List<String> commands = new ArrayList<>();
     /** The tag every entity this build summons carries, so build_undo can remove them. */
     private final String tag = "msc_" + Long.toString(java.util.concurrent.ThreadLocalRandom.current().nextLong() >>> 1, 36);

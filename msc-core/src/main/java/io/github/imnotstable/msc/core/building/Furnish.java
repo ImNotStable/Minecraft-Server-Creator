@@ -9,7 +9,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Furnishing a built room by what it is for (ADR 0082): props in its corners and along its walls, a centre piece, a rug
+ * Furnishing a built room by what it is for (ADR 0083): props in its corners and along its walls, a centre piece, a rug
  * and a light, in one wood and one colour. It reads the room as built: floor spots under a ceiling, the wall beside each,
  * the corners, and keeps the ways in clear (nothing beside a door or in front of an opening). Facings follow the room:
  * chests and barrels face out from their wall, chairs face their table, beds turn so their head is against a wall.

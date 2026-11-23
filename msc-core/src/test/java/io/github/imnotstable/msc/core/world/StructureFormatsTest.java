@@ -15,7 +15,7 @@ import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-/** The game's structure files and Litematica schematics load through the one structure file rule (ADR 0082). */
+/** The game's structure files and Litematica schematics load through the one structure file rule (ADR 0083). */
 class StructureFormatsTest {
     @TempDir
     Path dir;

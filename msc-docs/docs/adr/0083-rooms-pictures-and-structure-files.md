@@ -1,4 +1,4 @@
-# ADR 0082: Furnished rooms, pictures as blocks, more structure files
+# ADR 0083: Furnished rooms, pictures as blocks, more structure files
 
 Status: accepted, 2026-11-23. Decided by Claude, finishing the build half of Jeremiah's gap list: "no interior
 furnishing by room type", "no image-to-build or map art", "only .schem files can be imported". The plugin survey ranks

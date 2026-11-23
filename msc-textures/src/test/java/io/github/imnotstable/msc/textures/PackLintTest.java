@@ -40,7 +40,7 @@ class PackLintTest {
                 text("{\"parent\":\"minecraft:item/generated\",\"textures\":{\"layer0\":\"msc:item/rubyy\"}}"));
         files.put("assets/msc/models/block/odd.json", text("{\"parent\":\"msc:block/base\"}"));
         files.put("assets/msc/items/ruby.json",
-                text("{\"model\":{\"type\":\"minecraft:select\",\"cases\":[{\"model\":{\"type\":\"minecraft:model\",\"model\":\"msc:item/gone\"}}],"
+                text("{\"model\":{\"type\":\"minecraft:select\",\"property\":\"minecraft:main_hand\",\"cases\":[{\"when\":\"left\",\"model\":{\"type\":\"minecraft:model\",\"model\":\"msc:item/gone\"}}],"
                         + "\"fallback\":{\"type\":\"minecraft:model\",\"model\":\"msc:item/ruby\"}}}"));
         files.put("assets/msc/textures/item/ruby.png", Shapes.draw("gem", Ramp.from(0xFFD4263A, 5), null).toPng());
         files.put("assets/minecraft/models/item/stick.json",
