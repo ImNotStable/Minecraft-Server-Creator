@@ -1,6 +1,6 @@
 # Tools reference
 
-All 28 tools, one line each. You rarely call them by name: ask Claude in plain words and it picks the tool. Full arguments are in [tools.md](https://github.com/ImNotStable/Minecraft-Server-Creator/blob/main/msc-docs/docs/tools.md).
+All 29 tools, one line each. You rarely call them by name: ask Claude in plain words and it picks the tool. Full arguments are in [tools.md](https://github.com/ImNotStable/Minecraft-Server-Creator/blob/main/msc-docs/docs/tools.md).
 
 Coordinates are text: a position is `x,y,z`, a region is `x1,y1,z1 x2,y2,z2`, an area is `x1,z1 x2,z2`.
 
@@ -65,4 +65,5 @@ Coordinates are text: a position is `x,y,z`, a region is `x1,y1,z1 x2,y2,z2`, an
 | `texture` | Adds a texture: draws it from a palette and rows of characters, generates it from a pattern (noise, ore, planks, bricks) or shape (gem, ingot, orb, sword, pickaxe, food), or copies one in a new colour. Can also animate it (scroll or pulse). Give a `.png` path as the name to write a plain image file outside the pack. |
 | `texture_view` | Shows a texture back as text. |
 | `model_create` | Makes a block or item model for textures. |
+| `pack_asset` | Writes every other pack file, checked first: fonts and HUD glyphs, sounds, lang, models with elements, item definitions, blockstates, equipment, atlases, animation and GUI sprite metadata, shaders, post effects, particles, waypoint styles, texts and copied files. `msc_status guide=pack` has each format. |
 | `pack` | Zips the pack, serves it, sends it to players and lists any problems. `check` only checks it. `file` also saves the zip to a path, such as `ruby-pack.zip`; the result names the pack_format it wrote. |

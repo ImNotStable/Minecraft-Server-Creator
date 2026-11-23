@@ -23,3 +23,6 @@ A SET LOOKS LIKE A SET
 CHECK BEFORE PACKING
 - texture_view each new texture; world_render shows placed blocks with the pack's textures.
 - pack sends the pack to the running server; look in game: dark textures vanish in shadow, tiny highlights vanish at distance.
+
+BEYOND TEXTURES
+- HUD icons and glyphs in chat, titles and boss bars, sounds, lang, models with elements, item definitions, armour as worn, GUI sprites (nine_slice), shaders: pack_asset. msc_status guide=pack has every format.

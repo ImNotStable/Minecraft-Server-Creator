@@ -36,8 +36,18 @@ class GuidesTest {
     @Test
     void everyGuideLoadsAndNamesOnlyRealTools() {
         Set<String> tools = h.core.registry().tools().stream().map(Tool::name).collect(Collectors.toSet());
-        for (String topic : new String[] {"build", "textures", "ux"}) {
-            String guide = h.ok("msc_status", "guide", topic);
+        for (String topic : new String[] {"build", "textures", "pack", "ux"}) {
+            // ADR 0079: every page fits a result's cap, ends by naming the next, and together they hold the whole guide.
+            StringBuilder all = new StringBuilder(h.ok("msc_status", "guide", topic));
+            for (int page = 2; all.toString().endsWith(" page=" + page + "]"); page++) {
+                all.setLength(all.lastIndexOf("\n\n[page "));
+                String next = h.ok("msc_status", "guide", topic, "page", page);
+                assertThat(next).hasSizeLessThanOrEqualTo(io.github.imnotstable.msc.core.tool.Budget.DEFAULT_CHARS)
+                        .doesNotContain("[truncated");
+                all.append("\n\n").append(next);
+            }
+            String guide = all.toString();
+            assertThat(guide).doesNotContain("[truncated");
             assertThat(guide).startsWith(topic.equals("ux") ? "UX GUIDE" : topic.toUpperCase(java.util.Locale.ROOT)
                     .replaceAll("S$", "") + " GUIDE");
             Matcher m = TOOLISH.matcher(guide);
@@ -45,6 +55,6 @@ class GuidesTest {
                 assertThat(tools).as("%s guide names %s", topic, m.group()).contains(m.group());
             }
         }
-        assertThat(h.error("msc_status", "guide", "music")).contains("guide is one of build, textures, ux, not \"music\"");
+        assertThat(h.error("msc_status", "guide", "music")).contains("guide is one of build, textures, pack, ux, not \"music\"");
     }
 }

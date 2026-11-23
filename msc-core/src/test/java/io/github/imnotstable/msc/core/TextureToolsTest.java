@@ -524,4 +524,29 @@ class TextureToolsTest {
                 HttpResponse.BodyHandlers.discarding());
         assertThat(served.statusCode()).isEqualTo(200);
     }
+
+    /** ADR 0079: pack_asset writes a glyph, reports a texture it lacks yet, and refuses a file the game would not load. */
+    @Test
+    void packAssetWritesChecksAndRefuses() throws Exception {
+        assertThat(h.ok("pack_asset", "type", "glyph", "name", "myplugin:icons", "json", "{\"file\":\"myplugin:font/coin.png\"}"))
+                .startsWith("wrote glyph \\uE000 in myplugin:icons: show it with {\"text\":\"\\uE000\",\"font\":\"myplugin:icons\"}")
+                .contains("\nerror: bitmap file myplugin:font/coin.png is not in the pack").endsWith("\nnext: pack");
+        Path font = workspace.resolve(".msc/pack/assets/myplugin/font/icons.json");
+        assertThat(font).content().contains("\uE000");
+
+        String before = java.nio.file.Files.readString(font);
+        assertThat(h.error("pack_asset", "type", "font", "name", "myplugin:icons", "json", "{\"providers\":[{\"type\":\"bitmap\"}]}"))
+                .isEqualTo("error: not written, the game would not load assets/myplugin/font/icons.json: bitmap provider "
+                        + "has no file");
+        assertThat(font).content().isEqualTo(before);
+
+        assertThat(h.error("pack_asset", "type", "lang", "name", "en_us", "text", "x"))
+                .isEqualTo("error: lang takes json, not text");
+        assertThat(h.error("pack_asset", "type", "sound", "name", "boss.roar", "from", "nope.ogg"))
+                .startsWith("error: from ").endsWith("nope.ogg is not a file");
+        assertThat(h.ok("pack_asset", "type", "shader", "name", "minecraft:include/wave.glsl", "text",
+                "float wave(float t) {\n  return sin(t);\n}\n")).startsWith("wrote assets/minecraft/shaders/include/wave.glsl");
+        assertThat(h.ok("msc_status", "guide", "pack")).startsWith("PACK GUIDE").contains("type=glyph")
+                .endsWith("next: msc_status guide=pack page=2]");
+    }
 }

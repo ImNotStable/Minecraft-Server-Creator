@@ -51,14 +51,16 @@ class McpBridgeTest {
                         "plugins", "server_start", "server_stop", "server_detach", "dev_cycle", "server_logs", "server_command", "server_wait", "api_search",
                         "api_class", "world_slice", "world_heightmap", "world_render", "world_summary", "world_entities", "build_undo",
                         "structure_save", "build_batch",
-                        "texture", "texture_view", "model_create", "pack", "player_test", "msc_workspace");
+                        "texture", "texture_view", "model_create", "pack_asset", "pack", "player_test", "msc_workspace");
                 // The tool list is paid for in every conversation: keep it small. ADR 0019 folded five build tools
                 // into build_batch and msc_stats into msc_status (18.5k chars to 15.5k). ADR 0057 raised it by 400
                 // for the plugins tool, a capability no existing tool could carry; ADR 0068 by 200 for guide= and
                 // review=, which cost nothing until called and replace re-reading builds by eye; ADR 0075 by 1200
                 // for world_create and the terrain, path and scatter steps: land had no tool at all; ADR 0077 by 450
-                // for the roof, trim, decorate and weather steps, one line each, their details in guide=build.
-                assertThat(listed.toString().length()).isLessThan(18250);
+                // for the roof, trim, decorate and weather steps, one line each, their details in guide=build; ADR 0079
+                // by 900 for pack_asset (every pack file but textures had no tool) and guide pages, its formats in
+                // guide=pack.
+                assertThat(listed.toString().length()).isLessThan(19150);
                 JsonObject batch = tools.get(names.indexOf("build_batch")).getAsJsonObject().getAsJsonObject("inputSchema");
                 assertThat(batch.getAsJsonArray("required").toString()).isEqualTo("[\"steps\"]");
                 // Every project template the jar ships (paper-server is only nested in others) is named in project_scaffold's schema, so none goes unseen.
