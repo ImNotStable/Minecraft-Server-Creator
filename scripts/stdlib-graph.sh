@@ -18,7 +18,9 @@ for platform in $platforms; do
   # The same layout the templates ship: libs/stdlib/src/<module>/<package path>.
   for module in msc-stdlib "msc-stdlib-$platform"; do
     mkdir -p "$dir/src/$module"
-    unzip -q -o "$(ls "$root/$module"/build/repo/io/github/imnotstable/msc/"$module"/*/*-sources.jar)" '*.java' -d "$dir/src/$module"
+    # Unpack everything, then keep only .java: Git Bash's unzip on Windows matches no pattern.
+    unzip -q -o "$(ls "$root/$module"/build/repo/io/github/imnotstable/msc/"$module"/*/*-sources.jar)" -d "$dir/src/$module"
+    find "$dir/src/$module" -type f ! -name '*.java' -delete
   done
   (cd "$dir" && graphify update . > /dev/null)
   mkdir -p "$out/$platform"
