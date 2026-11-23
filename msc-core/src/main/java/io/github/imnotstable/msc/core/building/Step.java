@@ -873,4 +873,121 @@ public sealed interface Step {
             Nature.forest(c, this);
         }
     }
+
+    /** The ground in {@code box} smoothed (ADR 0080): column heights averaged over {@code radius}, {@code strength} times. */
+    record Smooth(Region box, int radius, int strength, List<String> replace) implements Step {
+        @Override
+        public Region bounds() {
+            return box;
+        }
+
+        @Override
+        public void draw(Canvas c) throws InterruptedException {
+            Brushes.smooth(c, this);
+        }
+    }
+
+    /** Edges melted, pits filled or both (ADR 0080), {@code iterations} times; see {@link Brushes#erode}. */
+    record Erode(Region box, String mode, int faces, int iterations, List<String> replace) implements Step {
+        public static final List<String> MODES = List.of("melt", "fill", "smooth");
+
+        public Erode {
+            if (!MODES.contains(mode)) {
+                throw new ToolException("unknown erode mode=" + mode + "; use one of " + MODES);
+            }
+        }
+
+        @Override
+        public Region bounds() {
+            return box;
+        }
+
+        @Override
+        public void draw(Canvas c) throws InterruptedException {
+            Brushes.erode(c, this);
+        }
+    }
+
+    /** Every block the most common of its neighbours (ADR 0080); {@code shape} false blends only materials. */
+    record Blend(Region box, boolean shape, int iterations, List<String> replace) implements Step {
+        @Override
+        public Region bounds() {
+            return box;
+        }
+
+        @Override
+        public void draw(Canvas c) throws InterruptedException {
+            Brushes.blend(c, this);
+        }
+    }
+
+    /** The exposed skin of what is in {@code box} painted with {@code block} (ADR 0080); see {@link Brushes#paint}. */
+    record Paint(Region box, BlockPattern block, String faces, int depth, int minSlope, int maxSlope, int chance,
+                 long seed, List<String> replace) implements Step {
+        public static final List<String> FACES = List.of("top", "side", "all");
+
+        public Paint {
+            if (!FACES.contains(faces)) {
+                throw new ToolException("unknown paint faces=" + faces + "; use one of " + FACES);
+            }
+        }
+
+        @Override
+        public Region bounds() {
+            return box;
+        }
+
+        @Override
+        public void draw(Canvas c) throws InterruptedException {
+            Brushes.paint(c, this);
+        }
+    }
+
+    /** A river through {@code points} with a level water surface and sloped banks (ADR 0080); see {@link Brushes#river}. */
+    record River(String world, List<BlockPos> points, int width, int wander, int depth, int bank, double slope,
+                 BlockPattern water, BlockPattern bed, BlockPattern shore, long seed, List<String> replace) implements Step {
+        @Override
+        public Region bounds() {
+            int reach = width / 2 + bank + wander + 2;
+            Region box = Shapes.box(world, points);
+            return Region.of(world, box.min().x() - reach, box.min().y() - Path.SEARCH - depth - 1, box.min().z() - reach,
+                    box.max().x() + reach, box.max().y() + Path.SEARCH, box.max().z() + reach);
+        }
+
+        @Override
+        public void draw(Canvas c) throws InterruptedException {
+            Brushes.river(c, this);
+        }
+    }
+
+    /** A winding tunnel through 3D {@code points}, about {@code radius} round (ADR 0080). */
+    record Tunnel(String world, List<BlockPos> points, int radius, int rough, BlockPattern block, long seed,
+                  List<String> replace) implements Step {
+        @Override
+        public Region bounds() {
+            int reach = (int) Math.ceil(radius * 1.3) + rough + 1;
+            Region box = Shapes.box(world, points);
+            return Region.of(world, box.min().x() - reach, box.min().y() - reach, box.min().z() - reach,
+                    box.max().x() + reach, box.max().y() + reach, box.max().z() + reach);
+        }
+
+        @Override
+        public void draw(Canvas c) throws InterruptedException {
+            Brushes.tunnel(c, this);
+        }
+    }
+
+    /** Noise caves through the solid ground of {@code box} (ADR 0080); see {@link Brushes#caves}. */
+    record Caves(Region box, int density, int scale, int roof, BlockPattern block, long seed, List<String> replace)
+            implements Step {
+        @Override
+        public Region bounds() {
+            return box;
+        }
+
+        @Override
+        public void draw(Canvas c) throws InterruptedException {
+            Brushes.caves(c, this);
+        }
+    }
 }

@@ -90,6 +90,26 @@ DETAIL STEPS (build_batch; each works on what the world and earlier steps alread
   mushroom, nether, crimson, warped; or your own plant mix. chance=35 percent of open ground, clump=5 patches, only on
   the style's soil (soil= to change; decorate takes soil= too).
 
+
+SHAPING STEPS (build_batch; they reshape what the world and earlier steps hold, terrain and builds alike)
+- smooth X,Y,Z X,Y,Z [radius=3 strength=2]: averages the ground's column heights, keeping each column's top block on
+  top; the box's rim eases back to the land around it. The box must reach from below the lowest to above the highest
+  ground. Use after terrain, or to soften a hand-built hill.
+- erode X,Y,Z X,Y,Z [mode=melt|fill|smooth faces=4 times=1]: melt removes blocks with faces= or more open sides (spikes,
+  lone blocks, sharp edges); fill fills open blocks with faces= solid sides with their neighbours' block (pits,
+  notches); smooth does both. Raise times= for stronger, lower faces= for harsher.
+- blend X,Y,Z X,Y,Z [shape=true times=1]: each block becomes the most common in its 3x3x3; shape=false blends only
+  materials (softens a seam between stone and dirt without changing the shape).
+- paint X,Y,Z X,Y,Z B [faces=top|side|all depth=1 slope=A-B chance=100]: paints the exposed skin. slope= in degrees picks
+  by the ground's steepness: stone on cliffs (slope=50-90), grass on flats (slope=0-30), gravel on screes; chance= and
+  a clump= mix splatter it.
+- river X,Y,Z X,Y,Z ... [w=5 depth=3 bank=4 slope=1 wander=w water=B bed=B shore=B]: a channel whose water holds one
+  level that only falls downstream (no water staircases), banks sloping down to it, shore= on the waterline. Points on
+  the ground, upstream first.
+- tunnel X,Y,Z X,Y,Z ... [r=3 rough=1 B]: a winding tunnel through 3D points (air, or B such as water or lava).
+- cave X,Y,Z X,Y,Z [density=30 scale=16 roof=4 B]: noise caves through the box's solid ground, keeping roof= blocks
+  under the surface.
+
 SCALE AND COMPOSITION
 - A landmark is seen from far away: give it a strong, asymmetric silhouette (a tall tower beside a low hall), not a box with a spike.
 - Towers taper or step in, have a base, a shaft and a cap; no 1-block-thick towers.
