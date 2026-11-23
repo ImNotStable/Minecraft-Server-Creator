@@ -723,6 +723,12 @@ public final class ServerManager implements AutoCloseable {
         updateRecord(held -> held.deleteIfNames(p.pid()));
     }
 
+    /** The running server's process, for a profile (ADR 0090); empty when none runs. */
+    public synchronized java.util.Optional<ProcessHandle> runningProcess() {
+        return process != null && process.isAlive() ? java.util.Optional.of(process.toHandle())
+                : java.util.Optional.empty();
+    }
+
     /** The current or last server process, for tests. */
     synchronized Process process() {
         return process;

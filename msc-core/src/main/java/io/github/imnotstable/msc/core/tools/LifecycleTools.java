@@ -121,6 +121,10 @@ public final class LifecycleTools {
         registry.add("server_wait", "Wait until a log or chat line matches a regex, instead of polling.",
                 Schema.of().req("until", "string", "Regex, case-insensitive")
                         .range("timeoutSeconds", 1, ServerConsole.MAX_WAIT_SECONDS, "Default 60"), console::await);
+        registry.add("server_profile", "Profile the running server while it is loaded: where time goes (your code, "
+                        + "plugins or mods, server areas), hottest methods, GC, allocation, and config to tune.",
+                Schema.of().range("seconds", 5, ServerProfile.MAX_SECONDS, "Default 30"),
+                args -> ServerProfile.run(config, hub, server, args.integer("seconds", 30)));
         return backups;
     }
 

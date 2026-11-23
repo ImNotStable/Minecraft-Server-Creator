@@ -71,7 +71,7 @@ class EulaOptInBehaviourTest {
      */
     private static final List<Row> RUNNING = List.of(
             new Row("server_setup", "platform", "minestom"), new Row("dev_cycle", "project", "game"),
-            new Row("server_start", "timeoutSeconds", 60),
+            new Row("server_start", "timeoutSeconds", 60), new Row("server_profile", "seconds", 5),
             new Row("server_logs"), new Row("server_command", "command", "list"),
             new Row("server_wait", "until", "Starting", "timeoutSeconds", 1),
             new Row("api_search", "query", "timeout"), new Row("api_class", "name", "Assertions"),

@@ -1,6 +1,6 @@
 # Tools reference
 
-All 29 tools, one line each. You rarely call them by name: ask Claude in plain words and it picks the tool. Full arguments are in [tools.md](https://github.com/ImNotStable/Minecraft-Server-Creator/blob/main/msc-docs/docs/tools.md).
+All 30 tools, one line each. You rarely call them by name: ask Claude in plain words and it picks the tool. Full arguments are in [tools.md](https://github.com/ImNotStable/Minecraft-Server-Creator/blob/main/msc-docs/docs/tools.md).
 
 Coordinates are text: a position is `x,y,z`, a region is `x1,y1,z1 x2,y2,z2`, an area is `x1,z1 x2,z2`.
 
@@ -25,6 +25,7 @@ Coordinates are text: a position is `x,y,z`, a region is `x1,y1,z1 x2,y2,z2`, an
 | `server_logs` | Shows errors, the last lines, or lines matching a pattern, with stack traces trimmed. |
 | `server_command` | Runs a console command and returns its output; several commands, one per line, run in one call. `tick sprint 600` skips 30 game seconds ahead. |
 | `server_wait` | Waits until a log or chat line matches a pattern, instead of polling. |
+| `server_profile` | Profiles the running server for a few seconds while it is busy: where the time goes (your code, each plugin or mod, chunk generation, entities...), the hottest methods with their source lines, garbage collection and memory, and which settings to change. |
 
 ## API lookup
 
