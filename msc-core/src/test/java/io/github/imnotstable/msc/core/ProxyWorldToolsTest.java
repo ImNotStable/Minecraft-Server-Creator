@@ -27,7 +27,7 @@ class ProxyWorldToolsTest {
     /** The tools that work on a proxy: none reads or writes a world. */
     private static final List<String> PROXY_TOOLS = List.of("msc_status", "project_scaffold", "server_setup",
             "plugins", "server_start", "server_stop", "server_detach", "dev_cycle", "server_logs", "server_command", "server_wait",
-            "api_search", "api_class", "texture", "texture_view", "model_create", "pack", "msc_workspace", "world_create");
+            "api_search", "api_class", "texture", "texture_view", "model_create", "pack_asset", "pack", "msc_workspace", "world_create");
 
     /** Each world tool with arguments that reach its handler, the backup ones once per kind of backup= call. */
     private static final Map<String, List<Object[]>> CALLS = new LinkedHashMap<>();

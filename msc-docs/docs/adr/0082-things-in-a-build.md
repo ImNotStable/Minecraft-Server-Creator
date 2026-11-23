@@ -1,4 +1,4 @@
-# ADR 0081: Signs, heads, entities, biomes, features and light in build_batch
+# ADR 0082: Signs, heads, entities, biomes, features and light in build_batch
 
 Status: accepted, 2026-11-23. Decided by Claude, filling Jeremiah's gap list ("no tools to place mobs, villagers, armor
 stands or item frames", "biomes can't be painted after a world is made", "no easy signs, banners, books or player

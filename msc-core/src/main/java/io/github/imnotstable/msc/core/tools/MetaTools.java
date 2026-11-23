@@ -6,6 +6,7 @@ import io.github.imnotstable.msc.core.SetupCheck;
 import io.github.imnotstable.msc.core.agent.AgentHub;
 import io.github.imnotstable.msc.core.metrics.ToolLog;
 import io.github.imnotstable.msc.core.server.ServerManager;
+import io.github.imnotstable.msc.core.tool.Budget;
 import io.github.imnotstable.msc.core.tool.Schema;
 import io.github.imnotstable.msc.core.tool.ToolException;
 import io.github.imnotstable.msc.core.tool.ToolRegistry;
@@ -25,20 +26,50 @@ import java.util.function.BooleanSupplier;
 /** Health and usage tools. */
 public final class MetaTools {
     /** The guides msc_status guide= serves (ADR 0068): read on demand, so they cost nothing until needed. */
-    static final List<String> GUIDES = List.of("build", "textures", "ux");
+    static final List<String> GUIDES = List.of("build", "textures", "pack", "ux");
 
     private MetaTools() {
     }
 
+    /** A guide page's size: the result cap less room for the line that points to the next page. */
+    static final int GUIDE_PAGE_CHARS = Budget.DEFAULT_CHARS - 200;
+
     static String guide(String topic) {
+        return guide(topic, 1);
+    }
+
+    /**
+     * Page {@code page} of a guide (ADR 0081). A guide longer than a result's cap is cut into pages at its section
+     * headings (an upper-case line after a blank one), never mid-section, so no part is cut off unseen: each page but
+     * the last ends by naming the next.
+     */
+    static String guide(String topic, int page) {
         if (!GUIDES.contains(topic)) {
             throw new ToolException("guide is one of " + String.join(", ", GUIDES) + ", not \"" + topic + "\"");
         }
+        String text;
         try (InputStream in = MetaTools.class.getResourceAsStream("/io/github/imnotstable/msc/core/guides/" + topic + ".md")) {
-            return new String(Objects.requireNonNull(in, topic).readAllBytes(), StandardCharsets.UTF_8).strip();
+            text = new String(Objects.requireNonNull(in, topic).readAllBytes(), StandardCharsets.UTF_8).strip();
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
+        List<String> pages = new java.util.ArrayList<>();
+        StringBuilder current = new StringBuilder();
+        for (String section : text.split("\n\n(?=[A-Z]{2}[A-Z ]*(?:[ (:][^\n]*)?\n)")) {
+            if (!current.isEmpty() && current.length() + 2 + section.length() > GUIDE_PAGE_CHARS) {
+                pages.add(current.toString());
+                current.setLength(0);
+            }
+            current.append(current.isEmpty() ? "" : "\n\n").append(section);
+        }
+        pages.add(current.toString());
+        if (page > pages.size()) {
+            throw new ToolException("the " + topic + " guide has " + pages.size() + (pages.size() == 1 ? " page" : " pages"));
+        }
+        String out = pages.get(page - 1);
+        return page < pages.size()
+                ? out + "\n\n[page " + page + " of " + pages.size() + "; next: msc_status guide=" + topic + " page=" + (page + 1) + "]"
+                : out;
     }
 
     /**
@@ -52,12 +83,16 @@ public final class MetaTools {
     public static void register(ToolRegistry registry, CoreConfig config, AgentHub hub, ServerManager server,
                                 ToolLog log, ApiTools api, BooleanSupplier closed) {
         registry.add("msc_status", "Where things stand: workspace, platform, server, agent, API index. stats=true: this "
-                        + "session's calls, errors, time and result tokens per tool instead. guide=build, textures or ux: how "
+                        + "session's calls, errors, time and result tokens per tool instead. guide=build, textures, pack or ux: how "
                         + "to do that work well.",
                 Schema.of().opt("stats", "boolean", "Show call stats")
-                        .opt("guide", "string", String.join(", ", GUIDES)), args -> {
+                        .opt("guide", "string", String.join(", ", GUIDES))
+                        .range("page", 1, 20, "Guide page"), args -> {
                     if (args.has("guide")) {
-                        return guide(args.str("guide"));
+                        return guide(args.str("guide"), args.integer("page", 1));
+                    }
+                    if (args.has("page")) {
+                        throw new ToolException("page is for guide; add guide= or leave it out");
                     }
                     if (args.bool("stats", false)) {
                         return log.summary();

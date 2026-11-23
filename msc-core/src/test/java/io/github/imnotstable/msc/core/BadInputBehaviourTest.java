@@ -73,6 +73,7 @@ class BadInputBehaviourTest {
                     "name", "item/ruby", "kind", "gem", "color", "#d4263a"),
             new Row("texture_view", Map.of("name", List.of("%s", "item/%s")), "name", "item/ruby"),
             new Row("model_create", "name", "item/ruby", "kind", "item", "textures", List.of("item/ruby")),
+            new Row("pack_asset", "type", "lang", "name", "en_us", "json", "{}"),
             new Row("pack", "apply", false));
 
     /** A real jar to index for api_search and api_class: JUnit's API, on the test class path. */

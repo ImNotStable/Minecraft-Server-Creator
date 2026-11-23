@@ -518,7 +518,7 @@ public final class WorldService {
         return remember(agentEdits, where, run, List.of());
     }
 
-    /** As {@link #remember(List, Footprint, Run)}, with commands its undo runs after the blocks (ADR 0081). */
+    /** As {@link #remember(List, Footprint, Run)}, with commands its undo runs after the blocks (ADR 0082). */
     public synchronized String remember(List<String> agentEdits, Footprint where, Run run, List<String> undoCommands) {
         forgetEnded();
         String id = "e" + (++editCounter);

@@ -83,7 +83,7 @@ class BuildToolsTest {
                 .contains("line 1").contains("bad SNBT");
     }
 
-    /** ADR 0081: entities are summoned after the blocks, tagged, and build_undo removes them. */
+    /** ADR 0082: entities are summoned after the blocks, tagged, and build_undo removes them. */
     @Test
     void entitiesRunAfterTheBlocksAndUndoRemovesThem() {
         String out = h.ok("build_batch", "steps", "set 0,64,0 stone\nentity 0,65,0 cow still=true");

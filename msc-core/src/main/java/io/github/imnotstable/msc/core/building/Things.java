@@ -12,7 +12,7 @@ import java.util.Locale;
 import java.util.regex.Pattern;
 
 /**
- * The things a build holds besides plain blocks (ADR 0081): written signs, patterned banners, textured heads, books on
+ * The things a build holds besides plain blocks (ADR 0082): written signs, patterned banners, textured heads, books on
  * lecterns, filled containers, entities (mobs, villagers, armor stands, item frames, displays), painted biomes, the
  * game's own features, and light where it is dark.
  */
@@ -296,7 +296,7 @@ final class Things {
     }
 
     /**
-     * Light where it is dark (ADR 0081): over the spots of kind {@code on} in the box, in a spread-out order, a light
+     * Light where it is dark (ADR 0082): over the spots of kind {@code on} in the box, in a spread-out order, a light
      * goes wherever the light from the sources already there (and lights placed so far) falls below {@code level},
      * counting a block's light as fading one per block of walking distance (walls are not traced).
      */

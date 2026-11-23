@@ -159,7 +159,7 @@ public final class Builder {
     }
 
     /**
-     * Run the build's commands once its blocks are written (ADR 0081), and say how they went: entities carry the
+     * Run the build's commands once its blocks are written (ADR 0082), and say how they went: entities carry the
      * build's tag so build_undo removes them; biome and feature changes are not undone.
      */
     private String runCommands(WorldService.Run run, List<String> commands, String tag) throws InterruptedException {
