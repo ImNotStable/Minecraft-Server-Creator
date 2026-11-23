@@ -68,9 +68,9 @@ class BuildReviewTest {
     @Test
     void aRandomMixOfClashingColoursIsSpeckledButNearTonesAreNot() {
         assertThat(BuildReview.review(box("deepslate_bricks", "prismarine_bricks")))
-                .contains("speckled walls").endsWith("then review this region again");
-        assertThat(BuildReview.review(box("stone_bricks", "mossy_stone_bricks"))).contains("speckled faces 0%")
-                .doesNotContain("speckled walls");
+                .contains("speckled walls", "speckled roof:").endsWith("then review this region again");
+        assertThat(BuildReview.review(box("stone_bricks", "mossy_stone_bricks"))).contains("speckled faces 0%",
+                "speckled roof 0%").doesNotContain("speckled walls", "speckled roof:");
     }
 
     @Test

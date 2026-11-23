@@ -130,7 +130,10 @@ public final class WorldTools {
                         throw new ToolException("give one of path, diff or review");
                     }
                     if (review) {
-                        return BuildReview.review(world.readAll(region, WorldService.MAX_BULK_VOLUME, "world_summary review"));
+                        // The default world is the superflat dev floor (ADR 0078); world_create worlds are not.
+                        boolean devFloor = region.world().equals(world.world(null));
+                        return BuildReview.review(world.readAll(region, WorldService.MAX_BULK_VOLUME, "world_summary review"),
+                                devFloor);
                     }
                     if (path != null) {
                         String[] ends = path.trim().split("\\s+");

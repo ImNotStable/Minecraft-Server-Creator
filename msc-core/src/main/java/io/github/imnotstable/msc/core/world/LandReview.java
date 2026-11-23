@@ -2,6 +2,7 @@ package io.github.imnotstable.msc.core.world;
 
 import io.github.imnotstable.msc.protocol.world.BlockGrid;
 import io.github.imnotstable.msc.protocol.world.Region;
+import io.github.imnotstable.msc.renderer.BlockColors;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -10,7 +11,8 @@ import java.util.Set;
 /**
  * Signs of hand-painted land (ADR 0075), measured for {@code world_summary review=true} beside the build numbers:
  * ground at one level (land painted onto the flat dev floor) and blocks that nothing holds up (leaves, rails, a
- * tower off its base). Straight lines are not judged: roads, walls and rails need them (ADR 0077).
+ * tower off its base). Straight lines are not judged: roads, walls and rails need them (ADR 0077). ADR 0078 adds
+ * speckled ground (a random mix of clashing blocks) and land reviewed on the flat dev world.
  */
 public final class LandReview {
     /** Soil and loose ground: never part of a build's own numbers. */
@@ -20,12 +22,14 @@ public final class LandReview {
     /** Ground that is also a building block: counts as land for the land numbers only. */
     private static final Set<String> ROCK = Set.of("stone", "deepslate", "andesite", "diorite", "granite", "tuff",
             "calcite", "terracotta", "sandstone", "red_sandstone", "netherrack", "end_stone", "basalt", "blackstone",
-            "packed_ice", "ice", "blue_ice", "dripstone_block", "cobblestone", "mossy_cobblestone", "bedrock");
+            "packed_ice", "ice", "blue_ice", "dripstone_block", "cobblestone", "mossy_cobblestone", "bedrock", "magma_block");
     private static final int[][] SIDES = {{1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}};
 
     /** Columns a region needs before its ground is judged: a build's own plot is not land. */
     static final int MIN_COLUMNS = 1024;
     static final int MAX_FLAT = 80;
+    /** Ground columns a region needs before its ground is judged for speckle. */
+    static final int SPECKLE_COLUMNS = 256;
 
     private LandReview() {
     }
@@ -39,8 +43,11 @@ public final class LandReview {
         return SOIL.contains(id) || ROCK.contains(id) || id.endsWith("_terracotta") && !id.contains("glazed");
     }
 
-    /** {@code names}: brief ids by palette index, null for air and fluids; {@code fluid}: water, lava. */
-    static Result review(BlockGrid grid, String[] names, boolean[] fluid) {
+    /**
+     * {@code names}: brief ids by palette index, null for air and fluids; {@code fluid}: water, lava; {@code devFloor}:
+     * the region is in the flat dev world, a test floor and not a place for land (ADR 0078).
+     */
+    static Result review(BlockGrid grid, String[] names, boolean[] fluid, boolean devFloor) {
         Region r = grid.region();
         int sx = r.sizeX();
         int sz = r.sizeZ();
@@ -75,7 +82,8 @@ public final class LandReview {
         for (String t : top) {
             groundColumns += t != null ? 1 : 0;
         }
-        if (columns >= MIN_COLUMNS && groundColumns * 2 >= columns) {
+        boolean judged = columns >= MIN_COLUMNS && groundColumns * 2 >= columns;
+        if (judged) {
             int[] level = flatLevel(topY, top);
             int flatPct = pct(level[1], groundColumns);
             parts.add(String.format(Locale.ROOT, "ground at one level %d%% (y %d, aim under %d%%)", flatPct, level[0],
@@ -85,6 +93,26 @@ public final class LandReview {
                         + "build_batch terrain (hills, ridges, valleys, water) or build in a world_create world, "
                         + "and let builds step with the slope");
             }
+        }
+        if (groundColumns >= SPECKLE_COLUMNS) {
+            int[] rgb = new int[top.length];
+            for (int i = 0; i < top.length; i++) {
+                rgb[i] = top[i] == null ? -1 : BlockColors.top(top[i]);
+            }
+            int speckledPct = pct(speckled(rgb, sx, sz), groundColumns);
+            parts.add(String.format(Locale.ROOT, "speckled ground %d%% (aim under %d%%)", speckledPct,
+                    BuildReview.MAX_SPECKLED_ROOF));
+            if (speckledPct > BuildReview.MAX_SPECKLED_ROOF) {
+                fixes.add("speckled ground: " + speckledPct + "% of the ground is a single block among clashing "
+                        + "neighbours (snow on stone, magma in blackstone); lay ground in patches with soft edges "
+                        + "(scatter clump=, terrain top=) and mix only near tones within a patch");
+            }
+        }
+        if (devFloor && judged) {
+            fixes.add("land on the dev world: the flat dev world is a test floor, so land painted on it stays a flat "
+                    + "plate with square edges; make the land in a world_create world (one per region, or biomes "
+                    + "sharing the land), restart and build there with world=msc:<name> (an arena meant to be flat "
+                    + "can stay)");
         }
         int[] floating = floating(grid, names, fluid);
         if (floating[0] > 0) {
@@ -99,6 +127,33 @@ public final class LandReview {
         }
         String line = String.join(", ", parts);
         return new Result(line, fixes, solid == 0 ? 0 : pct(landBlocks, solid));
+    }
+
+    /**
+     * How many cells of a top map ({@code rgb} per column, -1 where there is nothing to judge) clash in colour with at
+     * least three of their judged neighbours: a lone block in a random mix, not the edge of a patch (ADR 0071, 0078).
+     */
+    static int speckled(int[] rgb, int sx, int sz) {
+        int n = 0;
+        for (int z = 0; z < sz; z++) {
+            for (int x = 0; x < sx; x++) {
+                int self = rgb[z * sx + x];
+                if (self < 0) {
+                    continue;
+                }
+                int clashing = 0;
+                for (int[] d : new int[][] {{1, 0}, {-1, 0}, {0, 1}, {0, -1}}) {
+                    int nx = x + d[0];
+                    int nz = z + d[1];
+                    if (nx >= 0 && nz >= 0 && nx < sx && nz < sz && rgb[nz * sx + nx] >= 0
+                            && BuildReview.distance(self, rgb[nz * sx + nx]) > BuildReview.CLASH) {
+                        clashing++;
+                    }
+                }
+                n += clashing >= 3 ? 1 : 0;
+            }
+        }
+        return n;
     }
 
     /** Short plants and snow layers do not hide the ground. */
