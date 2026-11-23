@@ -113,7 +113,7 @@ class AddonSourcesTest {
         assertThatThrownBy(() -> sources.install(List.of(AddonSources.Ref.of("hangar:Ext")), Platform.PAPER, "26.3",
                 tmp.resolve("plugins"))).hasMessageContaining("is hosted outside Hangar (https://github.com/x/releases)");
         assertThatThrownBy(() -> sources.install(List.of(AddonSources.Ref.of("hangar:Shop")), Platform.FABRIC, "26.3",
-                tmp.resolve("mods"))).hasMessageContaining("hangar has Paper and Velocity plugins only");
+                tmp.resolve("mods"))).hasMessageContaining("hangar has Paper, Velocity and Waterfall plugins only");
     }
 
     @Test

@@ -11,6 +11,7 @@ import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
@@ -30,6 +31,10 @@ public final class ProxyForwarding {
     public static final String VELOCITY_TOML = "velocity.toml";
     /** The backend's Paper config (Purpur and Folia read it too). */
     public static final String PAPER_GLOBAL = "config/paper-global.yml";
+    /** Waterfall's (BungeeCord's) config. */
+    public static final String BUNGEE_CONFIG = "config.yml";
+    /** The backend's Spigot config, where BungeeCord forwarding is switched on. */
+    public static final String SPIGOT_YML = "spigot.yml";
 
     private static final Pattern SECRET = Pattern.compile("[0-9a-f]{32,128}");
 
@@ -81,6 +86,217 @@ public final class ProxyForwarding {
         out.append("backend: a paper, purpur or folia server set up with proxy=velocity, running on ")
                 .append(BACKEND_ADDRESS).append('\n');
         return out.toString();
+    }
+
+    /**
+     * Sets up a Waterfall folder: {@code config.yml} only when missing (BungeeCord fills in the keys it leaves out),
+     * listening where Velocity would, offline, with IP forwarding to one backend. Returns the lines for the report.
+     */
+    public static String waterfall(Path dir) throws IOException {
+        Files.createDirectories(dir);
+        Path config = dir.resolve(BUNGEE_CONFIG);
+        if (Files.exists(config)) {
+            return BUNGEE_CONFIG + " kept as it is\n";
+        }
+        AtomicFile.write(config, to -> Files.writeString(to, bungeeConfig(), StandardCharsets.UTF_8));
+        return "wrote " + BUNGEE_CONFIG + ": players join " + PROXY_ADDRESS + ", sent to the backend at "
+                + BACKEND_ADDRESS + " by BungeeCord IP forwarding\n"
+                + "backend: a paper, purpur or folia server set up with proxy=bungeecord, running on "
+                + BACKEND_ADDRESS + "\n";
+    }
+
+    private static final Pattern LISTEN = Pattern.compile("(?m)^\\s*(?:bind\\s*=\\s*\"|-?\\s*host:\\s*)[^\"\\s]*:(\\d{1,5})");
+
+    /** The port players join {@code proxy} at, from its config's bind or first listener; Velocity's default without. */
+    public static int listenPort(Path dir, Platform proxy) {
+        try {
+            Matcher m = LISTEN.matcher(Files.readString(dir.resolve(proxy == Platform.WATERFALL ? BUNGEE_CONFIG
+                    : VELOCITY_TOML), StandardCharsets.UTF_8));
+            return m.find() ? Integer.parseInt(m.group(1)) : 25577;
+        } catch (IOException e) {
+            return 25577;
+        }
+    }
+
+    /**
+     * Points a proxy's config at {@code servers} (name to {@code host:port}, the first one where players land), in
+     * place of the backends it listed: Velocity's {@code [servers]} table and its {@code try} list, BungeeCord's
+     * {@code servers:} block and its listener's {@code priorities}. Every other line stays as it was.
+     */
+    public static void servers(Path dir, Platform proxy, java.util.SequencedMap<String, String> servers)
+            throws IOException {
+        Path file = dir.resolve(proxy == Platform.WATERFALL ? BUNGEE_CONFIG : VELOCITY_TOML);
+        String before = Files.readString(file, StandardCharsets.UTF_8);
+        String after = proxy == Platform.WATERFALL ? withBungeeServers(before, servers)
+                : withVelocityServers(before, servers);
+        AtomicFile.write(file, to -> Files.writeString(to, after, StandardCharsets.UTF_8));
+    }
+
+    static String withVelocityServers(String toml, java.util.SequencedMap<String, String> servers) {
+        List<String> lines = new ArrayList<>(List.of(toml.split("\n", -1)));
+        StringBuilder table = new StringBuilder("[servers]\n");
+        servers.forEach((name, address) -> table.append(name).append(" = \"").append(address).append("\"\n"));
+        table.append("try = [\n    \"").append(servers.firstEntry().getKey()).append("\"\n]\n");
+        int start = -1;
+        int end = lines.size();
+        for (int i = 0; i < lines.size(); i++) {
+            String line = lines.get(i).strip();
+            if (start < 0 && line.equals("[servers]")) {
+                start = i;
+            } else if (start >= 0 && line.startsWith("[")) {
+                end = i;
+                break;
+            }
+        }
+        if (start < 0) {
+            return toml + (toml.endsWith("\n") ? "" : "\n") + "\n" + table;
+        }
+        // Forced hosts name backends too: one that names a server no longer listed would fail Velocity's start.
+        List<String> out = new ArrayList<>(lines.subList(0, start));
+        out.addAll(List.of(table.toString().split("\n")));
+        out.add("");
+        List<String> rest = lines.subList(end, lines.size());
+        for (int i = 0; i < rest.size(); i++) {
+            out.add(rest.get(i));
+            if (rest.get(i).strip().equals("[forced-hosts]")) {
+                while (i + 1 < rest.size() && !rest.get(i + 1).strip().startsWith("[")) {
+                    i++;
+                }
+                out.add("");
+            }
+        }
+        return String.join("\n", out);
+    }
+
+    static String withBungeeServers(String yaml, java.util.SequencedMap<String, String> servers) {
+        List<String> lines = new ArrayList<>(List.of(yaml.split("\n", -1)));
+        if (!lines.isEmpty() && lines.getLast().isEmpty()) {
+            lines.removeLast();
+        }
+        List<String> block = new ArrayList<>(List.of("servers:"));
+        servers.forEach((name, address) -> block.addAll(List.of("  " + name + ":", "    address: " + address,
+                "    motd: " + name, "    restricted: false")));
+        int at = find(lines, 0, lines.size(), "", "servers:");
+        if (at >= 0) {
+            int end = blockEnd(lines, at, 0);
+            lines.subList(at, end).clear();
+            lines.addAll(at, block);
+        } else {
+            lines.addAll(block);
+        }
+        // Each listener's priorities: where a player lands, then where a kicked one goes.
+        for (int i = 0; i < lines.size(); i++) {
+            String line = lines.get(i);
+            if (line.strip().equals("priorities:")) {
+                int indent = indentOf(line);
+                int end = i + 1;
+                while (end < lines.size() && lines.get(end).strip().startsWith("- ")
+                        && indentOf(lines.get(end)) >= indent) {
+                    end++;
+                }
+                lines.subList(i + 1, end).clear();
+                String item = " ".repeat(indent) + "- ";
+                lines.addAll(i + 1, servers.sequencedKeySet().stream().map(n -> item + n).toList());
+            }
+        }
+        return String.join("\n", lines) + "\n";
+    }
+
+    /**
+     * Turns BungeeCord forwarding ({@code settings.bungeecord} in {@code spigot.yml}) on or off in a backend, writing
+     * the file when there is none and {@code on} (Spigot fills in the rest on its next start).
+     */
+    public static void bungeeBackend(Path serverDir, boolean on) throws IOException {
+        Path file = serverDir.resolve(SPIGOT_YML);
+        String before = Files.isRegularFile(file) ? Files.readString(file, StandardCharsets.UTF_8) : "";
+        if (before.isEmpty() && !on) {
+            return;
+        }
+        String after = withNested(before, "settings:", "bungeecord: " + on);
+        if (!after.equals(before)) {
+            AtomicFile.write(file, to -> Files.writeString(to, after, StandardCharsets.UTF_8));
+        }
+    }
+
+    /** True when the backend's {@code spigot.yml} has {@code settings.bungeecord: true}. */
+    public static boolean bungeeEnabled(Path serverDir) throws IOException {
+        Path file = serverDir.resolve(SPIGOT_YML);
+        if (!Files.isRegularFile(file)) {
+            return false;
+        }
+        List<String> lines = Files.readAllLines(file, StandardCharsets.UTF_8);
+        int settings = find(lines, 0, lines.size(), "", "settings:");
+        int at = settings < 0 ? -1 : find(lines, settings + 1, blockEnd(lines, settings, 0), "  ", "bungeecord:");
+        return at >= 0 && lines.get(at).substring("  bungeecord:".length()).split("#", 2)[0].strip().equals("true");
+    }
+
+    /** {@code yaml} with the top-level {@code section} holding {@code key} (one level down), added where missing. */
+    static String withNested(String yaml, String section, String key) {
+        List<String> lines = new ArrayList<>(yaml.isEmpty() ? List.of() : List.of(yaml.split("\n", -1)));
+        if (!lines.isEmpty() && lines.getLast().isEmpty()) {
+            lines.removeLast();
+        }
+        int at = find(lines, 0, lines.size(), "", section);
+        if (at < 0) {
+            lines.add(section);
+            at = lines.size() - 1;
+        }
+        String name = key.substring(0, key.indexOf(':') + 1);
+        int end = blockEnd(lines, at, 0);
+        int found = find(lines, at + 1, end, "  ", name);
+        if (found >= 0) {
+            lines.set(found, "  " + key);
+        } else {
+            lines.add(end, "  " + key);
+        }
+        return String.join("\n", lines) + "\n";
+    }
+
+    /** The dev Waterfall's config: what BungeeCord needs to listen, forward and find one backend. */
+    static String bungeeConfig() {
+        return """
+                # Dev proxy from Minecraft Server Creator (ADR 0088): loopback only, offline mode, IP forwarding.
+                # Backends are under servers; a backend needs settings.bungeecord: true in its spigot.yml.
+                listeners:
+                - host: %s
+                  query_port: 25577
+                  query_enabled: false
+                  motd: '&3MSC dev proxy'
+                  max_players: 8
+                  priorities:
+                  - lobby
+                  force_default_server: false
+                  forced_hosts: {}
+                  tab_list: GLOBAL_PING
+                  tab_size: 60
+                  bind_local_address: true
+                  ping_passthrough: false
+                  proxy_protocol: false
+                online_mode: false
+                ip_forward: true
+                prevent_proxy_connections: false
+                enforce_secure_profile: false
+                log_commands: false
+                log_pings: false
+                connection_throttle: -1
+                servers:
+                  lobby:
+                    address: %s
+                    motd: lobby
+                    restricted: false
+                permissions:
+                  default:
+                  - bungeecord.command.server
+                  - bungeecord.command.list
+                  admin:
+                  - bungeecord.command.alert
+                  - bungeecord.command.end
+                  - bungeecord.command.ip
+                  - bungeecord.command.reload
+                  - bungeecord.command.kick
+                  - bungeecord.command.send
+                  - bungeecord.command.find
+                """.formatted(PROXY_ADDRESS, BACKEND_ADDRESS);
     }
 
     /**

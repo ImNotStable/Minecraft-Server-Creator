@@ -70,8 +70,11 @@ public final class LogReader {
     /** Continuation lines kept per entry: a longer trace is cut and the cut lines counted. */
     public static final int MAX_ENTRY_LINES = 1000;
 
-    /** The ready line every platform prints: vanilla and the loaders after their prefix, Minestom's template bare. */
-    static final Pattern READY = Pattern.compile(".*\\bDone \\(\\d.*\\)!.*");
+    /**
+     * The ready line every platform prints: vanilla and the loaders after their prefix, Minestom's template bare;
+     * Waterfall (BungeeCord) prints no "Done", only "Listening on /127.0.0.1:25577".
+     */
+    static final Pattern READY = Pattern.compile(".*\\bDone \\(\\d.*\\)!.*|.*\\bListening on /.*");
     /**
      * A stack frame; the class loader and module prefixes ({@code app//}, {@code java.base/}, Forge's
      * {@code TRANSFORMER/mymod@1.0/}) are skipped.

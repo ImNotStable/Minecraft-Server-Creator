@@ -17,6 +17,7 @@ final class FakeDownloads implements AutoCloseable {
     static final String MINECRAFT = minecraft();
     /** The Velocity version server_setup installs: the pinned one. */
     static final String VELOCITY = Templates.versions().get("velocityVersion");
+    static final String WATERFALL = Templates.versions().get("waterfallVersion");
 
     private final HttpServer http;
     private final String base;
@@ -31,7 +32,7 @@ final class FakeDownloads implements AutoCloseable {
         HttpServer http = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         FakeDownloads fake = new FakeDownloads(http);
         String base = fake.base;
-        Map<String, String> texts = Map.of(
+        Map<String, String> texts = new java.util.HashMap<>(Map.of(
                 "/fill/v3/projects/paper/versions/" + MINECRAFT + "/builds",
                 "[{\"id\":5,\"channel\":\"STABLE\",\"downloads\":{\"server:default\":{\"name\":\"paper-" + MINECRAFT
                         + "-5.jar\",\"url\":\"" + base + "/fill/paper.jar\"}}}]",
@@ -44,7 +45,15 @@ final class FakeDownloads implements AutoCloseable {
                 "/purpur/v2/purpur/" + MINECRAFT + "/9/download", "purpur server",
                 "/meta/v2/versions/installer", "[{\"version\":\"1.1.2\",\"stable\":true}]",
                 "/meta/v2/versions/loader/" + MINECRAFT + "/" + Templates.versions().get("fabricLoaderVersion")
-                        + "/1.1.2/server/jar", "fabric server");
+                        + "/1.1.2/server/jar", "fabric server"));
+        // Waterfall (ADR 0088): its jar, and one command module with its SHA-256, as Fill lists them.
+        texts.put("/fill/v3/projects/waterfall/versions/" + WATERFALL + "/builds", build(base, "waterfall", 615));
+        texts.put("/fill/waterfall.jar", "waterfall server");
+        texts.put("/fill/v3/projects/waterfall/versions/" + WATERFALL + "/builds/615",
+                "{\"id\":615,\"downloads\":{\"module:cmd_server\":{\"name\":\"cmd_server-615.jar\",\"url\":\""
+                        + base + "/fill/cmd_server.jar\",\"checksums\":{\"sha256\":\"" + sha256("cmd_server module")
+                        + "\"}}}}");
+        texts.put("/fill/cmd_server.jar", "cmd_server module");
         http.createContext("/", exchange -> {
             String path = exchange.getRequestURI().getRawPath();
             byte[] body;
@@ -82,7 +91,12 @@ final class FakeDownloads implements AutoCloseable {
             "/geyser/v2/projects/geyser/versions/2.12.1/builds/1302/downloads/spigot", "geyser jar",
             "/geyser/v2/projects/floodgate/versions/latest/builds/latest", latest("floodgate", "2.2.5", 141,
                     "floodgate jar"),
-            "/geyser/v2/projects/floodgate/versions/2.2.5/builds/141/downloads/spigot", "floodgate jar");
+            "/geyser/v2/projects/floodgate/versions/2.2.5/builds/141/downloads/spigot", "floodgate jar",
+            // The proxies' builds (ADR 0088): Geyser names BungeeCord's "bungeecord", Floodgate "bungee".
+            "/geyser/v2/projects/geyser/versions/2.12.1/builds/1302/downloads/velocity", "geyser jar",
+            "/geyser/v2/projects/floodgate/versions/2.2.5/builds/141/downloads/velocity", "floodgate jar",
+            "/geyser/v2/projects/geyser/versions/2.12.1/builds/1302/downloads/bungeecord", "geyser jar",
+            "/geyser/v2/projects/floodgate/versions/2.2.5/builds/141/downloads/bungee", "floodgate jar");
 
     /** A {@code builds/latest} answer naming {@code jar}'s sha256 for the spigot download. */
     static String latest(String project, String version, int build, String jar) {
@@ -90,7 +104,9 @@ final class FakeDownloads implements AutoCloseable {
             String sha = java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
                     .digest(jar.getBytes(StandardCharsets.UTF_8)));
             return "{\"project_id\":\"" + project + "\",\"version\":\"" + version + "\",\"build\":" + build
-                    + ",\"downloads\":{\"spigot\":{\"name\":\"x.jar\",\"sha256\":\"" + sha + "\"}}}";
+                    + ",\"downloads\":{" + java.util.stream.Stream.of("spigot", "velocity", "bungeecord", "bungee")
+                    .map(k -> "\"" + k + "\":{\"name\":\"x.jar\",\"sha256\":\"" + sha + "\"}")
+                    .collect(java.util.stream.Collectors.joining(",")) + "}}";
         } catch (java.security.NoSuchAlgorithmException e) {
             throw new IllegalStateException(e);
         }
@@ -99,6 +115,15 @@ final class FakeDownloads implements AutoCloseable {
     @Override
     public void close() {
         http.stop(0);
+    }
+
+    static String sha256(String text) {
+        try {
+            return java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
+                    .digest(text.getBytes(StandardCharsets.UTF_8)));
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new IllegalStateException(e);
+        }
     }
 
     /** A Fill builds answer with one stable build of {@code project}, served at {@code /fill/<project>.jar}. */

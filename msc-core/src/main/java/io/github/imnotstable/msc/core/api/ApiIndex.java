@@ -59,7 +59,8 @@ public final class ApiIndex {
                     "net.minecraftforge.eventbus.api.event.MutableEvent",
                     "net.minecraftforge.eventbus.api.event.InheritableEvent"),
             "minestom", EventRule.subtypeOf("net.minestom.server.event.Event"),
-            "velocity", EventRule.named("com.velocitypowered.api.event.", Set.of("class", "record"), "Event"));
+            "velocity", EventRule.named("com.velocitypowered.api.event.", Set.of("class", "record"), "Event"),
+            "waterfall", EventRule.subtypeOf("net.md_5.bungee.api.plugin.Event"));
 
     private final Map<String, ClassInfo> classes = new LinkedHashMap<>();
     private final List<Path> jars;
@@ -154,6 +155,13 @@ public final class ApiIndex {
             case "velocity" -> {
                 addNewest(out, files.resolve("com.velocitypowered").resolve("velocity-api"));
                 addAdventure(out, files);
+            }
+            case "waterfall" -> {
+                // Waterfall's API is split in modules; the events are in waterfall-api and waterfall-event.
+                for (String module : List.of("waterfall-api", "waterfall-event", "waterfall-chat", "waterfall-config")) {
+                    addNewest(out, files.resolve("io.github.waterfallmc").resolve(module));
+                }
+                addNewest(out, files.resolve("net.md-5").resolve("bungeecord-chat"));
             }
             case "minestom" -> {
                 addNewest(out, files.resolve("net.minestom").resolve("minestom"));

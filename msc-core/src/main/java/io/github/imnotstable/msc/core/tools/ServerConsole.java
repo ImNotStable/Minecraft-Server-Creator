@@ -4,6 +4,7 @@ import io.github.imnotstable.msc.core.agent.AgentHub;
 import io.github.imnotstable.msc.core.server.CrashTriage;
 import io.github.imnotstable.msc.core.server.LogBuffer;
 import io.github.imnotstable.msc.core.server.LogCondenser;
+import io.github.imnotstable.msc.core.server.Network;
 import io.github.imnotstable.msc.core.server.ServerManager;
 import io.github.imnotstable.msc.core.tool.Args;
 import io.github.imnotstable.msc.core.tool.Budget;
@@ -140,6 +141,32 @@ final class ServerConsole {
         return out.text(Budget.DEFAULT_CHARS, null, "Run fewer commands per call.");
     }
 
+    /** How long a backend's console is read after a command: it has no agent to say when the command is done. */
+    static final java.time.Duration BACKEND_SETTLE = java.time.Duration.ofMillis(1500);
+
+    /**
+     * {@code @<name> <command>}: typed on a network backend's console (ADR 0088), answered with the lines its console
+     * printed in the next {@link #BACKEND_SETTLE}.
+     */
+    private Output backend(String command) throws IOException, InterruptedException {
+        String[] parts = command.substring(1).split("\\s+", 2);
+        if (parts.length < 2 || parts[1].isBlank()) {
+            throw new ToolException("give a command after @" + parts[0] + ", such as @" + parts[0] + " list");
+        }
+        java.nio.file.Path console = Network.console(server.serverDir(), parts[0]);
+        long before = java.nio.file.Files.exists(console) ? java.nio.file.Files.size(console) : 0;
+        server.network().command(parts[0], parts[1].strip().replaceFirst("^/", ""));
+        Thread.sleep(BACKEND_SETTLE.toMillis());
+        String printed = "";
+        if (java.nio.file.Files.exists(console)) {
+            byte[] all = java.nio.file.Files.readAllBytes(console);
+            printed = new String(all, (int) Math.min(before, all.length), (int) Math.max(0, all.length - before),
+                    java.nio.charset.StandardCharsets.UTF_8).strip();
+        }
+        return new Output(printed.isEmpty() ? "sent to " + parts[0] + "; its console printed nothing" : "", parts[0]
+                + " console:\n", printed);
+    }
+
     /**
      * What one command printed: its own reply, then under {@code label} the end of the log it caused (#611). A cut
      * keeps the start of the reply and the end of the log, so the newest log lines survive.
@@ -168,6 +195,9 @@ final class ServerConsole {
     private Output one(String command) throws IOException, InterruptedException {
         if (command.startsWith("/")) {
             command = command.substring(1);
+        }
+        if (command.startsWith("@")) {
+            return backend(command);
         }
         // The agent of a stopping server is not asked, its console is: it refuses this session's own stop as the agent
         // would (#723), and still takes a command after a stop only the agent announced (#729).

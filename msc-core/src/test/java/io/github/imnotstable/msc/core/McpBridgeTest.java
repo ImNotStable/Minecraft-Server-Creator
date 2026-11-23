@@ -38,7 +38,7 @@ class McpBridgeTest {
                 assertThat(init.getAsJsonObject("serverInfo").get("name").getAsString()).isEqualTo("msc-core");
                 assertThat(init.get("instructions").getAsString()).contains("dev_cycle").contains("acceptEula=true")
                         .contains("never accept it for them")
-                        .contains("(Paper, Purpur, Folia, Fabric, Quilt, NeoForge, Forge, Minestom or Velocity)")
+                        .contains("(Paper, Purpur, Folia, Fabric, Quilt, NeoForge, Forge, Minestom, Velocity or Waterfall)")
                         .contains("Paper, Purpur, Folia, Fabric, Quilt, NeoForge and Forge need the user's agreement");
                 send(toServer, "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}");
 

@@ -27,17 +27,23 @@ final class BedrockRule {
         return serverDir.resolve(Platform.PAPER.addonDir());
     }
 
-    /** True when Geyser-Spigot is in {@code plugins/}. */
+    /** True when a Geyser jar (any flavor) is in {@code plugins/}. */
     static boolean installed(Path serverDir) {
-        return Files.isRegularFile(plugins(serverDir).resolve(GeyserDownloader.Project.GEYSER.jarName()));
+        return GeyserDownloader.Flavor.installed(plugins(serverDir)) != null;
     }
 
     /** Why Geyser cannot work on {@code platform} with {@code forwarding}, or null where it works. */
     static String blocker(Platform platform, boolean forwarding) {
-        if (platform != Platform.PAPER && platform != Platform.PURPUR) {
-            return "needs paper or purpur (Geyser and Floodgate install as plugins), not " + platform.id();
+        if (platform != Platform.PAPER && platform != Platform.PURPUR && !platform.proxy()) {
+            return "needs paper, purpur, velocity or waterfall (Geyser and Floodgate install as plugins), not "
+                    + platform.id();
         }
-        return forwarding ? "does not work with proxy=velocity (the backend refuses direct joins, Geyser's too)" : null;
+        return forwarding ? "does not work behind a proxy (the backend refuses direct joins, Geyser's too)" : null;
+    }
+
+    /** True when the backend in {@code serverDir} forwards from Velocity or BungeeCord. */
+    static boolean forwards(Path serverDir) throws IOException {
+        return ProxyForwarding.enabled(serverDir) || ProxyForwarding.bungeeEnabled(serverDir);
     }
 
     /**
@@ -65,10 +71,25 @@ final class BedrockRule {
         return Action.INSTALL;
     }
 
+    /**
+     * As {@link #decide(Platform, boolean, Boolean, boolean)} with the flavor of Geyser in {@code plugins/} (null for
+     * none): a kept Geyser built for another platform (the Spigot one after a switch to Velocity) is refused, as that
+     * platform never loads it; {@code bedrock=true} replaces it (ADR 0088).
+     */
+    static Action decide(Platform platform, boolean forwarding, Boolean bedrock, GeyserDownloader.Flavor installed) {
+        GeyserDownloader.Flavor wanted = GeyserDownloader.Flavor.of(platform);
+        if (bedrock == null && installed != null && installed != wanted && blocker(platform, forwarding) == null) {
+            throw new ToolException("Geyser in plugins/ is the " + installed.key(GeyserDownloader.Project.GEYSER)
+                    + " build, which " + platform.id() + " does not load: bedrock=true installs "
+                    + platform.id() + "'s, bedrock=false removes it");
+        }
+        return decide(platform, forwarding, bedrock, installed != null);
+    }
+
     /** The start report's {@code bedrock:} line, or null where Geyser is not installed or cannot work. */
     static String startLine(Platform platform, Path serverDir) {
         try {
-            return blocker(platform, ProxyForwarding.enabled(serverDir)) == null ? BedrockConfig.line(serverDir) : null;
+            return blocker(platform, forwards(serverDir)) == null ? BedrockConfig.line(serverDir) : null;
         } catch (IOException e) {
             return null;
         }

@@ -48,7 +48,8 @@ public final class AddonCheck {
         QUILT("quilt.mod.json", "a Quilt mod", Platform.QUILT),
         NEOFORGE("META-INF/neoforge.mods.toml", "a NeoForge mod", Platform.NEOFORGE),
         FORGE("META-INF/mods.toml", "a Forge mod", Platform.FORGE),
-        VELOCITY("velocity-plugin.json", "a Velocity plugin", Platform.VELOCITY);
+        VELOCITY("velocity-plugin.json", "a Velocity plugin", Platform.VELOCITY),
+        BUNGEE("bungee.yml", "a BungeeCord plugin", Platform.WATERFALL);
 
         final String file;
         final String what;
@@ -63,7 +64,7 @@ public final class AddonCheck {
 
     /** Ids a platform provides itself, never a jar in the folder. */
     private static final Set<String> BUILT_IN = Set.of("minecraft", "java", "fabricloader", "fabric-loader",
-            "quilt_loader", "neoforge", "forge", "fml", "velocity");
+            "quilt_loader", "neoforge", "forge", "fml", "velocity", "bungeecord", "waterfall");
 
     private AddonCheck() {
     }
@@ -103,8 +104,8 @@ public final class AddonCheck {
         for (Addon a : addons) {
             if (a.kinds().isEmpty()) {
                 if (unknown) {
-                    out.add(a.describe(dir) + " is not a plugin or mod (no plugin.yml, fabric.mod.json, mods.toml or "
-                            + "velocity-plugin.json, or not a jar)");
+                    out.add(a.describe(dir) + " is not a plugin or mod (no plugin.yml, fabric.mod.json, mods.toml, "
+                            + "velocity-plugin.json or bungee.yml, or not a jar)");
                 }
                 continue;
             }
@@ -196,11 +197,13 @@ public final class AddonCheck {
             kinds.add(k);
             String text = new String(bytes, StandardCharsets.UTF_8);
             switch (k) {
-                case BUKKIT, PAPER -> {
+                case BUKKIT, PAPER, BUNGEE -> {
                     id = id != null ? id : yamlScalar(text, "name");
                     version = version != null ? version : yamlScalar(text, "version");
                     provides.addAll(yamlList(text, "provides"));
-                    if (k == Kind.BUKKIT) {
+                    if (k == Kind.BUNGEE) {
+                        requires.addAll(yamlList(text, "depends"));
+                    } else if (k == Kind.BUKKIT) {
                         requires.addAll(yamlList(text, "depend"));
                     } else {
                         requires.addAll(paperRequired(text));

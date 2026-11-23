@@ -27,13 +27,13 @@ class BedrockConfigTest {
 
     @Test
     void aNewConfigBindsLikeTheJavaServerOnTheFirstFreePortWithFloodgateSignIn() throws Exception {
-        Files.writeString(server.resolve("server.properties"), "server-ip=127.0.0.1\nserver-port=25570\n");
+        Files.writeString(server.resolve("server.properties"), "server-ip=192.168.0.7\nserver-port=25570\n");
 
         BedrockConfig.Result r = BedrockConfig.configure(server, taken(19132));
 
-        assertThat(r).isEqualTo(new BedrockConfig.Result("127.0.0.1", 19133, BedrockConfig.Change.WROTE));
+        assertThat(r).isEqualTo(new BedrockConfig.Result("192.168.0.7", 19133, BedrockConfig.Change.WROTE));
         List<String> lines = Files.readAllLines(BedrockConfig.file(server));
-        assertThat(BedrockConfig.get(lines, "bedrock", "address")).isEqualTo("127.0.0.1");
+        assertThat(BedrockConfig.get(lines, "bedrock", "address")).isEqualTo("192.168.0.7");
         assertThat(BedrockConfig.get(lines, "bedrock", "port")).isEqualTo("19133");
         assertThat(BedrockConfig.get(lines, "java", "auth-type")).isEqualTo("floodgate");
         assertThat(lines).contains("config-version: " + BedrockConfig.CONFIG_VERSION);
@@ -42,7 +42,10 @@ class BedrockConfigTest {
     @Test
     void withoutServerIpGeyserListensOnEveryAddressAndAnIpv6OneIsQuoted() throws Exception {
         assertThat(BedrockConfig.configure(server, taken()).address()).isEqualTo("0.0.0.0");
-        assertThat(BedrockConfig.bindAddress(Map.of("server-ip", "[::1]"))).isEqualTo("::1");
+        assertThat(BedrockConfig.bindAddress(Map.of("server-ip", "[fd00::5]"))).isEqualTo("fd00::5");
+        // Geyser 2.12 times every Bedrock player out on loopback (ADR 0088).
+        assertThat(BedrockConfig.bindAddress(Map.of("server-ip", "[::1]"))).isEqualTo("0.0.0.0");
+        assertThat(BedrockConfig.bindAddress(Map.of("server-ip", "127.0.0.1"))).isEqualTo("0.0.0.0");
         assertThat(BedrockConfig.fresh("::1", 19132)).contains("  address: \"::1\"\n");
         assertThat(BedrockConfig.get(BedrockConfig.fresh("::1", 19132).lines().toList(), "bedrock", "address"))
                 .isEqualTo("::1");
@@ -106,9 +109,10 @@ class BedrockConfigTest {
         BedrockConfig.configure(server, taken());
         Files.writeString(server.resolve("plugins/Geyser-Spigot.jar"), "jar");
 
-        assertThat(BedrockConfig.line(server)).isEqualTo("bedrock: UDP 127.0.0.1:19132 (Geyser, fronting Java port "
-                + "25570; Floodgate sign-in; bedrock.address 0.0.0.0 in plugins/Geyser-Spigot/config.yml lets the "
-                + "LAN in)");
+        assertThat(BedrockConfig.line(server)).isEqualTo("bedrock: UDP 0.0.0.0:19132 (Geyser, fronting Java port "
+                + "25570; Floodgate sign-in, open to the network)");
+        assertThat(BedrockConfig.describe("127.0.0.1", 19132, Map.of())).endsWith("; bedrock.address 0.0.0.0 in "
+                + "plugins/Geyser-Spigot/config.yml lets the LAN in)");
         assertThat(BedrockConfig.describe("0.0.0.0", 19133, Map.of())).isEqualTo(
                 "bedrock: UDP 0.0.0.0:19133 (Geyser, fronting Java port 25565; Floodgate sign-in, open to the network)");
     }

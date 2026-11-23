@@ -45,7 +45,12 @@ public enum Platform {
      * The Velocity proxy, plugins in {@code plugins/}. Not a Minecraft server: no world, no msc agent and no EULA step;
      * players reach a Paper backend through it (ADR 0045).
      */
-    VELOCITY("Velocity", "velocity.jar", "plugins", false, "velocity", List.of("com.velocitypowered.", "net.kyori."));
+    VELOCITY("Velocity", "velocity.jar", "plugins", false, "velocity", List.of("com.velocitypowered.", "net.kyori.")),
+    /**
+     * The Waterfall proxy, PaperMC's BungeeCord fork (checksummed on Fill, which BungeeCord's own Jenkins is not): it
+     * runs BungeeCord plugins, plugins in {@code plugins/}. A proxy like Velocity (ADR 0088).
+     */
+    WATERFALL("Waterfall", "waterfall.jar", "plugins", false, "waterfall", List.of("net.md_5.", "io.github.waterfallmc."));
 
     private final String displayName;
     private final String serverJar;
@@ -107,7 +112,7 @@ public enum Platform {
     /**
      * Which msc agent runs on this platform, and so also which API and project layout it shares: {@code paper},
      * {@code fabric}, {@code neoforge}, {@code forge} or {@code minestom}. Purpur and Folia share Paper's, Quilt
-     * Fabric's. Velocity has none: {@code velocity} names only its API and project layout.
+     * Fabric's. The proxies have none: {@code velocity} and {@code waterfall} name only their API and project layout.
      */
     public String agent() {
         return agent;
@@ -123,7 +128,12 @@ public enum Platform {
 
     /** True for a proxy: it runs no world and no msc agent, so world, build and player tools do not apply. */
     public boolean proxy() {
-        return this == VELOCITY;
+        return this == VELOCITY || this == WATERFALL;
+    }
+
+    /** The console command that stops the server: BungeeCord's is {@code end}, every other platform's {@code stop}. */
+    public String stopCommand() {
+        return this == WATERFALL ? "end" : "stop";
     }
 
     /** The one line world, build and player tools answer with on a proxy, or null where they work. */
@@ -149,7 +159,7 @@ public enum Platform {
     public boolean readsPackProperties() {
         return switch (this) {
             case PAPER, PURPUR, FOLIA, FABRIC, QUILT, NEOFORGE, FORGE -> true;
-            case MINESTOM, VELOCITY -> false;
+            case MINESTOM, VELOCITY, WATERFALL -> false;
         };
     }
 
@@ -322,6 +332,9 @@ public enum Platform {
             Sign.build(PAPER, "io.papermc.paperweight.userdev", "xyz.jpenilla.run-paper"),
             Sign.build(VELOCITY, "xyz.jpenilla.run-velocity"),
             Sign.build(VELOCITY, "velocity-api"),
+            Sign.descriptor(WATERFALL, "bungee.yml"),
+            Sign.build(WATERFALL, "xyz.jpenilla.run-waterfall"),
+            Sign.build(WATERFALL, "waterfall-api", "bungeecord-api"),
             Sign.build(MINESTOM, "minestom"));
 
     /** Platform of the Gradle project in {@code project}, or null when it does not say: the first of {@link #runsOn}. */
@@ -381,7 +394,7 @@ public enum Platform {
             case PAPER, PURPUR, FOLIA -> List.of(java, "-Xmx2G", "-jar", serverJar, "--nogui");
             case FABRIC, QUILT, NEOFORGE, FORGE -> List.of(java, "-Xmx2G", "-jar", serverJar, "nogui");
             case MINESTOM -> List.of(java, "-Xmx1G", "-jar", serverJar);
-            case VELOCITY -> List.of(java, "-Xmx512M", "-jar", serverJar);
+            case VELOCITY, WATERFALL -> List.of(java, "-Xmx512M", "-jar", serverJar);
         };
     }
 }

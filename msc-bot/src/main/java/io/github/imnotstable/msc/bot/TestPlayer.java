@@ -956,7 +956,9 @@ public final class TestPlayer implements Bot {
     private void reconfigure() {
         event("[configuring] the server re-configures the player");
         synchronized (this) {
-            on(Life.Input.CONFIGURE, "stopped: the server re-configured the player");
+            // Also how a proxy moves a player to another backend (/server name): the step ends there, as it should.
+            on(Life.Input.CONFIGURE, "stopped: the server re-configured the player (a proxy does this to switch "
+                    + "servers)");
         }
     }
 

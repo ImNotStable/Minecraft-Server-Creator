@@ -30,7 +30,8 @@ class TemplateDocNamesTest {
             Templates.FABRIC_MOD, Set.of("ServerPlayerEntity", "Text", "World"),
             Templates.NEOFORGE_MOD, Set.of("COMMON", "SERVER"),
             Templates.FORGE_MOD, Set.of("Missing"),
-            Templates.VELOCITY_PLUGIN, Set.of("Hi"));
+            Templates.VELOCITY_PLUGIN, Set.of("Hi"),
+            Templates.WATERFALL_PLUGIN, Set.of());
 
     @TempDir
     Path dir;

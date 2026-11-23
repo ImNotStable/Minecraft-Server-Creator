@@ -40,6 +40,8 @@ public final class Templates {
     public static final String MINESTOM_SERVER = "minestom-server";
     /** A bare Velocity proxy plugin; no Minecraft server files, no EULA step. ADR 0045. */
     public static final String VELOCITY_PLUGIN = "velocity-plugin";
+    /** A bare Waterfall (BungeeCord) proxy plugin; no Minecraft server files, no EULA step. ADR 0088. */
+    public static final String WATERFALL_PLUGIN = "waterfall-plugin";
 
     private static final String ROOT = "msc/templates/";
     private static final String TEMPLATE_SUFFIX = ".tmpl";

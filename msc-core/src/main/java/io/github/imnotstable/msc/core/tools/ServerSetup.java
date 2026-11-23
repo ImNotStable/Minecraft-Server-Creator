@@ -6,6 +6,7 @@ import io.github.imnotstable.msc.core.server.FabricDownloader;
 import io.github.imnotstable.msc.core.server.GeyserDownloader;
 import io.github.imnotstable.msc.core.server.LoaderInstaller;
 import io.github.imnotstable.msc.core.server.MachineEula;
+import io.github.imnotstable.msc.core.server.Network;
 import io.github.imnotstable.msc.core.server.PaperDownloader;
 import io.github.imnotstable.msc.core.server.Platform;
 import io.github.imnotstable.msc.core.server.ProxyForwarding;
@@ -67,7 +68,9 @@ final class ServerSetup {
         Platform chosen = args.str("platform", null) == null ? null : Platform.of(args.str("platform"));
         Platform platform = chosen == null ? server.platform() : chosen;
         // An argument this platform does not read is refused, not dropped with an OK (#619).
-        WayArgs.check(args, Set.of(platform.id()), WayArgs.SETUP);
+        List<String> servers = args.has("servers") ? Network.names(args.strings("servers")) : null;
+        WayArgs.check(args, servers != null ? Set.of(platform.id(), WayArgs.NETWORK) : Set.of(platform.id()),
+                WayArgs.SETUP);
         String version = args.str("version", config.minecraft()).strip();
         if (!VERSION.matcher(version).matches()) {
             throw new ToolException("version must look like " + config.minecraft()
@@ -80,17 +83,25 @@ final class ServerSetup {
         } catch (IllegalArgumentException e) {
             throw new ToolException(e.getMessage());
         }
-        Boolean forwarding = forwarding(args.str("proxy", null), platform);
+        Forward forwarding = forwarding(args.str("proxy", null), platform);
         Boolean bedrock = args.has("bedrock") ? args.bool("bedrock", false) : null;
         // One check of Geyser against the final platform and forwarding, before anything changes (ADR 0046, #590).
-        BedrockRule.Action geyser = BedrockRule.decide(platform, forwarding != null ? forwarding
-                : ProxyForwarding.enabled(config.serverDir()), bedrock, BedrockRule.installed(config.serverDir()));
+        BedrockRule.Action geyser = BedrockRule.decide(platform, forwarding != null ? forwarding != Forward.NONE
+                : BedrockRule.forwards(config.serverDir()), bedrock,
+                GeyserDownloader.Flavor.installed(BedrockRule.plugins(config.serverDir())));
         Path dir = OutputFile.checkFolder(config.serverDir(), "server folder");
         Steps steps = new Steps("server_setup");
         String rememberFails = "the server folder is set up, but the workspace platform is still "
                 + Platform.current(config).id() + ": run server_setup again";
-        if (platform == Platform.VELOCITY) {
-            return velocity(steps, chosen, dir, geyser, rememberFails);
+        if (platform.proxy()) {
+            if (servers != null && !acceptEula && config.machineEula().read().isEmpty()) {
+                throw new ToolException("the network's backends run Mojang's server, and the Minecraft EULA is not "
+                        + "accepted on this machine: once the user agrees to https://aka.ms/MinecraftEULA, run "
+                        + "server_setup again with acceptEula=true");
+            }
+            String backends = args.has("version") ? version : platform == Platform.WATERFALL
+                    ? pinned("waterfallMinecraftVersion", "Waterfall's Minecraft") : config.minecraft();
+            return proxy(steps, platform, chosen, dir, geyser, rememberFails, servers, backends, acceptEula);
         }
         if (platform == Platform.MINESTOM) {
             steps.then(CREATE_FOLDER);
@@ -146,10 +157,7 @@ final class ServerSetup {
             // The Minecraft version plugin installs match (ADR 0057).
             AtomicFile.write(dir.resolve(PluginTools.VERSION_FILE), to -> Files.writeString(to, version + "\n"));
             if (geyser == BedrockRule.Action.INSTALL) {
-                for (GeyserDownloader.Project p : GeyserDownloader.Project.values()) {
-                    bedrockJars.add(note(this.geyser.download(p, BedrockRule.plugins(dir).resolve(p.jarName())),
-                            GeyserDownloader.Download::note, installed));
-                }
+                bedrockJars.addAll(downloadBedrock(platform, dir, installed));
             }
         });
         StringBuilder out = new StringBuilder();
@@ -165,10 +173,14 @@ final class ServerSetup {
                     .append(mode.settings().get("difficulty")).append(" difficulty from the next start\n");
         }
         if (forwarding != null) {
-            steps.run(FORWARDING, () -> ProxyForwarding.backend(dir,
-                    forwarding ? ProxyForwarding.secret(config.proxySecretFile()) : null));
-            out.append(forwarding ? "proxy velocity: players join only through the Velocity proxy (modern forwarding, "
-                    + "this machine's secret); proxy=none undoes it\n" : "proxy none: players join directly\n");
+            steps.run(FORWARDING, () -> forward(dir, forwarding));
+            out.append(switch (forwarding) {
+                case VELOCITY -> "proxy velocity: players join only through the Velocity proxy (modern forwarding, "
+                        + "this machine's secret); proxy=none undoes it\n";
+                case BUNGEECORD -> "proxy bungeecord: players join through the Waterfall proxy (BungeeCord IP "
+                        + "forwarding, settings.bungeecord in spigot.yml); proxy=none undoes it\n";
+                case NONE -> "proxy none: players join directly\n";
+            });
         }
         out.append(installed);
         // The addon folder exists after setup even without an agent, for the deploys that follow.
@@ -191,20 +203,26 @@ final class ServerSetup {
     static final String BEDROCK = "install or remove Geyser and Floodgate";
     static final String EULA = "apply the EULA answer";
     static final String REMEMBER = "remember the workspace platform";
-    static final String FORWARDING = "set up Velocity forwarding";
+    static final String FORWARDING = "set up proxy forwarding";
+    static final String NETWORK = "set up the network's backend servers";
     /** Said once a Folia server is installed: what a plugin needs there, and what MSC does not do there (ADR 0045). */
     static final String FOLIA_NOTE = "folia: plugins load only with folia-supported: true in plugin.yml and must use "
             + "Folia's region schedulers; world, build and player tools do not work on Folia yet (server_command does)";
 
-    /** {@code proxy=}: true for velocity, false for none, null when not given. Refused before anything changes. */
-    static Boolean forwarding(String proxy, Platform platform) {
+    /** How a Paper-family backend lets players in: through Velocity, through BungeeCord (Waterfall), or directly. */
+    enum Forward { VELOCITY, BUNGEECORD, NONE }
+
+    /** {@code proxy=}: the forwarding asked for, null when not given. Refused before anything changes. */
+    static Forward forwarding(String proxy, Platform platform) {
         if (proxy == null) {
             return null;
         }
-        Boolean on = switch (proxy.strip().toLowerCase(java.util.Locale.ROOT)) {
-            case "velocity" -> true;
-            case "none" -> false;
-            default -> throw new ToolException("proxy must be velocity or none, not \"" + proxy.strip() + "\"");
+        Forward on = switch (proxy.strip().toLowerCase(java.util.Locale.ROOT)) {
+            case "velocity" -> Forward.VELOCITY;
+            case "bungeecord", "waterfall" -> Forward.BUNGEECORD;
+            case "none" -> Forward.NONE;
+            default -> throw new ToolException("proxy must be velocity, bungeecord or none, not \"" + proxy.strip()
+                    + "\"");
         };
         if (!platform.agent().equals("paper")) {
             throw new ToolException("proxy= sets up a paper, purpur or folia backend, not " + platform.id()
@@ -213,30 +231,97 @@ final class ServerSetup {
         return on;
     }
 
+    /** Sets a backend's forwarding to {@code forwarding}, the other kind off. */
+    private void forward(Path dir, Forward forwarding) throws IOException {
+        ProxyForwarding.backend(dir, forwarding == Forward.VELOCITY
+                ? ProxyForwarding.secret(config.proxySecretFile()) : null);
+        ProxyForwarding.bungeeBackend(dir, forwarding == Forward.BUNGEECORD);
+    }
+
     /**
-     * Velocity: the pinned Velocity jar (it serves every recent Minecraft version, so {@code version} is refused, as
-     * are {@code mode} and {@code acceptEula}: {@link WayArgs#SETUP}), its config and the machine's forwarding secret.
-     * No defaults, game mode, agent or EULA: it is not a Minecraft server.
+     * A proxy, Velocity or Waterfall: the pinned jar (it serves every recent Minecraft version, so {@code version} is
+     * refused, as is {@code mode}: {@link WayArgs#SETUP}), its config, and for Velocity the machine's forwarding
+     * secret. No defaults, game mode, agent or EULA: it is not a Minecraft server. With {@code servers}, a network
+     * (ADR 0088): a Paper backend per name in {@code servers/<name>/}, forwarding from this proxy, on its own port, and
+     * the proxy's server list pointing at them.
      */
-    private String velocity(Steps steps, Platform chosen, Path dir, BedrockRule.Action geyser,
-                            String rememberFails) throws InterruptedException {
-        String velocity = pinned("velocityVersion", "Velocity");
+    private String proxy(Steps steps, Platform platform, Platform chosen, Path dir, BedrockRule.Action geyser,
+                         String rememberFails, List<String> servers, String backends, boolean acceptEula)
+            throws InterruptedException {
+        String version = platform == Platform.WATERFALL ? pinned("waterfallVersion", "Waterfall")
+                : pinned("velocityVersion", "Velocity");
         String partly = "the proxy is installed but not fully set up; server_setup again finishes it";
         steps.then(INSTALL).then(FORWARDING).ifFails(FORWARDING, partly);
+        if (servers != null) {
+            steps.then(NETWORK).ifFails(NETWORK, partly);
+        }
         planBedrock(steps, geyser, partly);
         if (chosen != null) {
             steps.then(REMEMBER).ifFails(REMEMBER, rememberFails);
         }
         StringBuilder out = new StringBuilder();
-        steps.run(INSTALL, () -> fill(Platform.VELOCITY, velocity, dir, out));
-        steps.run(FORWARDING, () -> {
-            out.append(ProxyForwarding.proxy(dir, ProxyForwarding.secret(config.proxySecretFile())));
-            Files.createDirectories(dir.resolve(Platform.VELOCITY.addonDir()));
+        List<Network.Member> members = servers == null ? List.of() : Network.plan(dir, servers);
+        List<GeyserDownloader.Download> bedrockJars = new java.util.ArrayList<>();
+        steps.run(INSTALL, () -> {
+            fill(platform, version, dir, out);
+            if (geyser == BedrockRule.Action.INSTALL) {
+                bedrockJars.addAll(downloadBedrock(platform, dir, out));
+            }
+            for (Network.Member m : members) {
+                fill(Platform.PAPER, backends, m.dir(), new StringBuilder());
+            }
+            if (!members.isEmpty()) {
+                out.append("paper ").append(backends).append(" for ").append(members.size())
+                        .append(members.size() == 1 ? " backend\n" : " backends\n");
+            }
         });
-        runBedrock(steps, geyser, dir, List.of(), out);
+        steps.run(FORWARDING, () -> {
+            String written = platform == Platform.WATERFALL ? ProxyForwarding.waterfall(dir)
+                    : ProxyForwarding.proxy(dir, ProxyForwarding.secret(config.proxySecretFile()));
+            // With a network, its line below says where players go instead of the single-backend default.
+            out.append(servers == null && Network.members(dir).isEmpty() ? written : written.lines().filter(l -> !l.startsWith("backend: "))
+                    .map(l -> l.replaceFirst(", sent to the backend at \\S+ by", ", forwarding by"))
+                    .map(l -> l + "\n").reduce("", String::concat));
+            Files.createDirectories(dir.resolve(platform.addonDir()));
+        });
+        if (servers != null) {
+            steps.run(NETWORK, () -> network(platform, dir, members, acceptEula, out));
+        }
+        runBedrock(steps, geyser, dir, bedrockJars, out);
         remember(steps, chosen);
-        return out.append("velocity proxy ready in ").append(dir).append(" (no EULA step, no msc agent); next: "
-                + "server_start or " + WorkspaceProjects.nextDevCycle(config)).toString();
+        return out.append(platform.id()).append(" proxy ready in ").append(dir).append(" (no EULA step, no msc "
+                + "agent); next: server_start or " + WorkspaceProjects.nextDevCycle(config)).toString();
+    }
+
+    /** The network's backends set up, listed in the proxy's config and in {@link Network#FILE}. */
+    private void network(Platform proxy, Path dir, List<Network.Member> members, boolean acceptEula,
+                         StringBuilder out) throws IOException {
+        if (acceptEula) {
+            // The user's yes on this call, as for the server's own eula.txt: the one opt-in (ADR 0020).
+            Files.createDirectories(members.getFirst().dir());
+            eulaStep(members.getFirst().dir().resolve("eula.txt"), true, out);
+        }
+        java.util.SequencedMap<String, String> list = new java.util.LinkedHashMap<>();
+        for (Network.Member m : members) {
+            Path b = m.dir();
+            writeMissingDefaults(b, acceptEula);
+            ServerPropertiesFile.set(b.resolve(ServerPropertiesFile.NAME), java.util.Map.of("server-port",
+                    String.valueOf(m.port()), "server-ip", "127.0.0.1", "online-mode", "false", "motd", m.name()));
+            forward(b, proxy == Platform.WATERFALL ? Forward.BUNGEECORD : Forward.VELOCITY);
+            Files.createDirectories(b.resolve(Platform.PAPER.addonDir()));
+            config.machineEula().applyTo(b.resolve("eula.txt"));
+            list.put(m.name(), m.address());
+        }
+        ProxyForwarding.servers(dir, proxy, list);
+        Network.write(dir, members);
+        out.append("network: ");
+        for (int i = 0; i < members.size(); i++) {
+            Network.Member m = members.get(i);
+            out.append(i == 0 ? "" : ", ").append(m.name()).append(" on ").append(m.address())
+                    .append(i == 0 ? " (players land here)" : "");
+        }
+        out.append(". Each is a Paper server in ").append(Network.DIR).append("/<name>/ that server_start starts "
+                + "after the proxy; switch with /server <name>; plugins for a backend go in its plugins/\n");
     }
 
     /** Declares the Geyser step when {@code geyser} does something, with {@code ifFails} when not null. */
@@ -300,6 +385,12 @@ final class ServerSetup {
             throws IOException, InterruptedException {
         PaperDownloader.Download d = note(paper.download(platform, version), PaperDownloader.Download::note, out);
         ServerFiles.place(d.jar(), dir, platform.serverJar());
+        if (platform == Platform.WATERFALL) {
+            // BungeeCord's own commands (/server, /glist, ...) are modules; it fetches missing ones from a retired API.
+            for (java.util.Map.Entry<String, Path> m : paper.modules(platform, version, d.build()).entrySet()) {
+                ServerFiles.place(m.getValue(), Files.createDirectories(dir.resolve("modules")), m.getKey());
+            }
+        }
         return out.append(platform.id()).append(' ').append(d.version()).append(" build ").append(d.build())
                 .append(d.cached() ? " (cached)" : " (downloaded)").append('\n');
     }
@@ -392,9 +483,17 @@ final class ServerSetup {
     private void installBedrock(Path dir, Path pluginDir, List<GeyserDownloader.Download> jars, StringBuilder out)
             throws IOException {
         Files.createDirectories(pluginDir);
+        // Another platform's build of the two (a switch between Paper and a proxy) is loaded by neither: it goes.
+        for (GeyserDownloader.Flavor f : GeyserDownloader.Flavor.values()) {
+            if (jars.stream().noneMatch(d -> d.flavor() == f)) {
+                for (GeyserDownloader.Project p : GeyserDownloader.Project.values()) {
+                    Files.deleteIfExists(pluginDir.resolve(f.jarName(p)));
+                }
+            }
+        }
         StringBuilder names = new StringBuilder();
         for (GeyserDownloader.Download d : jars) {
-            Path target = pluginDir.resolve(d.project().jarName());
+            Path target = pluginDir.resolve(d.flavor().jarName(d.project()));
             boolean same = Files.exists(target) && Files.mismatch(d.jar(), target) == -1;
             if (!same) {
                 ScanFolders.copy(d.jar(), target, dir);
@@ -407,16 +506,29 @@ final class ServerSetup {
         if (r.change() == BedrockConfig.Change.MOVED) {
             out.append("bedrock.port was taken, moved to ").append(r.port()).append('\n');
         }
-        out.append(BedrockConfig.describe(r.address(), r.port(),
-                ServerPropertiesFile.read(dir.resolve(ServerPropertiesFile.NAME)))).append('\n');
+        out.append(BedrockConfig.line(dir)).append('\n');
     }
 
-    /** bedrock=false: the two jars go; their config folders stay for a later bedrock=true. */
+    /** The newest Geyser and Floodgate in the flavor {@code platform} loads, falling back to the ones installed. */
+    private List<GeyserDownloader.Download> downloadBedrock(Platform platform, Path dir, StringBuilder out)
+            throws IOException, InterruptedException {
+        GeyserDownloader.Flavor flavor = GeyserDownloader.Flavor.of(platform);
+        List<GeyserDownloader.Download> jars = new java.util.ArrayList<>();
+        for (GeyserDownloader.Project p : GeyserDownloader.Project.values()) {
+            jars.add(note(this.geyser.download(p, flavor, BedrockRule.plugins(dir).resolve(flavor.jarName(p))),
+                    GeyserDownloader.Download::note, out));
+        }
+        return jars;
+    }
+
+    /** bedrock=false: the two jars go, every flavor; their config folders stay for a later bedrock=true. */
     private static void removeBedrock(Path pluginDir, StringBuilder out) throws IOException {
         int removed = 0;
-        for (GeyserDownloader.Project p : GeyserDownloader.Project.values()) {
-            if (Files.deleteIfExists(pluginDir.resolve(p.jarName()))) {
-                removed++;
+        for (GeyserDownloader.Flavor f : GeyserDownloader.Flavor.values()) {
+            for (GeyserDownloader.Project p : GeyserDownloader.Project.values()) {
+                if (Files.deleteIfExists(pluginDir.resolve(f.jarName(p)))) {
+                    removed++;
+                }
             }
         }
         if (removed > 0) {

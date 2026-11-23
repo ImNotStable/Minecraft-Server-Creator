@@ -24,7 +24,9 @@ class TemplatesTest {
     void listsTemplates() {
         assertThat(Templates.ids()).containsExactly(
                 Templates.FABRIC_MOD, Templates.FORGE_MOD, Templates.MINESTOM_SERVER, Templates.NEOFORGE_MOD,
-                Templates.PAPER_PLUGIN, Templates.PAPER_SERVER, Templates.VELOCITY_PLUGIN);
+                Templates.PAPER_PLUGIN, Templates.PAPER_SERVER, Templates.VELOCITY_PLUGIN, Templates.WATERFALL_PLUGIN);
+        assertThat(Templates.info(Templates.WATERFALL_PLUGIN)).containsEntry("platform", "waterfall");
+        assertThat(Templates.versions().get("waterfallVersion")).matches("\\d+\\.\\d+");
         assertThat(Templates.info(Templates.VELOCITY_PLUGIN)).containsEntry("platform", "velocity");
         assertThat(Templates.versions().get("velocityVersion")).matches("\\d+\\.\\d+\\.\\d+");
         assertThat(Templates.info(Templates.NEOFORGE_MOD)).containsEntry("platform", "neoforge");

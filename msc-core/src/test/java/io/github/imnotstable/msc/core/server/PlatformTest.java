@@ -30,7 +30,7 @@ class PlatformTest {
         assertThat(Platform.MINESTOM.addonDir()).isNull();
         assertThat(Platform.of(" Fabric\n")).isEqualTo(Platform.FABRIC);
         assertThatThrownBy(() -> Platform.of("spigot")).isInstanceOf(ToolException.class)
-                .hasMessageContaining("paper, purpur, folia, fabric, quilt, neoforge, forge, minestom, velocity");
+                .hasMessageContaining("paper, purpur, folia, fabric, quilt, neoforge, forge, minestom, velocity, waterfall");
     }
 
     @Test
@@ -53,8 +53,8 @@ class PlatformTest {
         assertThat(Platform.FORGE.agent()).isEqualTo("forge");
         assertThat(Platform.FORGE.launchCommand("java")).containsExactly("java", "-Xmx2G", "-jar", "forge-server.jar", "nogui");
         for (Platform p : Platform.values()) {
-            assertThat(p.needsEula()).as(p.id()).isEqualTo(p != Platform.MINESTOM && p != Platform.VELOCITY);
-            assertThat(p.proxy()).as(p.id()).isEqualTo(p == Platform.VELOCITY);
+            assertThat(p.needsEula()).as(p.id()).isEqualTo(p != Platform.MINESTOM && !p.proxy());
+            assertThat(p.proxy()).as(p.id()).isEqualTo(p == Platform.VELOCITY || p == Platform.WATERFALL);
             assertThat(p.noWorldTools() != null).as(p.id()).isEqualTo(p.proxy());
         }
     }

@@ -217,7 +217,8 @@ class WorkspaceAndPackTest {
     }
 
     /** The platforms whose server does not read its pack from server.properties (ADR 0017, #718). */
-    private static final Set<Platform> NO_PACK_LINES = EnumSet.of(Platform.MINESTOM, Platform.VELOCITY);
+    private static final Set<Platform> NO_PACK_LINES = EnumSet.of(Platform.MINESTOM, Platform.VELOCITY,
+            Platform.WATERFALL);
 
     /**
      * #718: every call that writes the pack into server.properties (pack, server_detach, the next start) writes it only

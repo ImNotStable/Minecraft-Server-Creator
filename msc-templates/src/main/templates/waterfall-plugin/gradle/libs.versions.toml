@@ -1,0 +1,19 @@
+# Every version this project uses. Change versions here only.
+[versions]
+java = "{{javaVersion}}"
+waterfall = "{{waterfallVersion}}"
+junit = "{{junitVersion}}"
+assertj = "{{assertjVersion}}"
+run-paper = "{{runPaperVersion}}"
+
+[libraries]
+# Waterfall's API is BungeeCord's plus Waterfall's additions; published as snapshots for each version line.
+waterfall-api = { module = "io.github.waterfallmc:waterfall-api", version = "{{waterfallVersion}}-R0.1-SNAPSHOT" }
+junit-bom = { module = "org.junit:junit-bom", version.ref = "junit" }
+junit-jupiter = { module = "org.junit.jupiter:junit-jupiter" }
+junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher" }
+assertj = { module = "org.assertj:assertj-core", version.ref = "assertj" }
+
+[plugins]
+# run-waterfall comes from the same run-task project, at the same version, as run-paper.
+run-waterfall = { id = "xyz.jpenilla.run-waterfall", version.ref = "run-paper" }

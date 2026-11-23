@@ -79,6 +79,18 @@ class ServerSetupPlatformsTest {
             assertThat(run.resolve("eula.txt")).doesNotExist();
             return;
         }
+        if (platform == Platform.WATERFALL) {
+            // ADR 0088: like Velocity, plus BungeeCord's command modules beside the jar.
+            assertThat(out).doesNotContain("internal").doesNotContain("warning").doesNotContain("EULA is not")
+                    .contains("waterfall " + FakeDownloads.WATERFALL + " build 615").contains("config.yml")
+                    .endsWith("next: server_start or project_scaffold template=waterfall-plugin then dev_cycle");
+            assertThat(run.resolve("waterfall.jar")).hasContent("waterfall server");
+            assertThat(run.resolve("modules/cmd_server.jar")).hasContent("cmd_server module");
+            assertThat(run.resolve("config.yml")).content().contains("ip_forward: true");
+            assertThat(run.resolve("plugins")).isDirectory().isEmptyDirectory();
+            assertThat(run.resolve("eula.txt")).doesNotExist();
+            return;
+        }
         if (platform == Platform.VELOCITY) {
             // ADR 0045: a proxy has no EULA step, no agent and no Minecraft defaults; it gets its own config.
             assertThat(out).doesNotContain("internal").doesNotContain("warning").doesNotContain("EULA is not")

@@ -53,8 +53,12 @@ public record WayArgs(String arg, Set<String> readers, String refusal) {
     public static final List<WayArgs> WORKSPACE = List.of(
             new WayArgs("create", Set.of("switch"), "create is for a path to switch to; leave it out"));
 
-    /** The platforms server_setup installs as a Minecraft server: not Minestom (the project) or Velocity (a proxy). */
+    /** The platforms server_setup installs as a Minecraft server: not Minestom (the project) or a proxy. */
     private static final Set<String> MINECRAFT = Arrays.stream(Platform.values()).filter(Platform::needsEula)
+            .map(Platform::id).collect(Collectors.toUnmodifiableSet());
+    /** The way of a proxy setup or start that has a network of Paper backends (ADR 0088), which take the EULA. */
+    static final String NETWORK = "network";
+    private static final Set<String> PROXIES = Arrays.stream(Platform.values()).filter(Platform::proxy)
             .map(Platform::id).collect(Collectors.toUnmodifiableSet());
 
     /**
@@ -62,16 +66,23 @@ public record WayArgs(String arg, Set<String> readers, String refusal) {
      * platform its own way: server_setup the one it sets up, server_start the workspace's, project_scaffold the
      * template's ({@link #checkEula}, #625).
      */
-    private static final WayArgs EULA = new WayArgs("acceptEula", MINECRAFT, "acceptEula is for a server with a "
-            + "Minecraft EULA; minestom and velocity have none, leave it out");
+    private static final WayArgs EULA = new WayArgs("acceptEula", with(MINECRAFT, NETWORK), "acceptEula is for a "
+            + "server with a Minecraft EULA; minestom and a proxy without servers= have none, leave it out");
 
     /** The server_setup tool. Ways: the platform it sets up. */
     static final List<WayArgs> SETUP = List.of(
-            new WayArgs("version", MINECRAFT, "version is for the Minecraft servers MSC installs; minestom and "
-                    + "velocity do not take one, leave it out"),
+            new WayArgs("version", with(MINECRAFT, NETWORK), "version is for the Minecraft servers MSC installs; "
+                    + "minestom and a proxy without servers= do not take one, leave it out"),
             new WayArgs("mode", MINECRAFT, "mode is for a Minecraft server's world; minestom sets it in its own "
-                    + "code and velocity has no world, leave it out"),
+                    + "code and a proxy has no world, leave it out"),
+            new WayArgs("servers", PROXIES, "servers is for a proxy (velocity or waterfall): its backends; set up "
+                    + "a backend with proxy= instead"),
             EULA);
+
+    private static Set<String> with(Set<String> set, String more) {
+        return java.util.stream.Stream.concat(set.stream(), java.util.stream.Stream.of(more))
+                .collect(Collectors.toUnmodifiableSet());
+    }
 
     /** Refuses acceptEula for {@code platform} when it has no Minecraft EULA: the shared rule of {@link #EULA}. */
     static void checkEula(Args args, Platform platform) {

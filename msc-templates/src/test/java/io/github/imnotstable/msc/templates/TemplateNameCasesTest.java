@@ -72,7 +72,7 @@ class TemplateNameCasesTest {
                 name("spawn-lobby"), name("spawn_lobby"), name("my_cool-mod"), name("-lobby"), name("lobby-"),
                 name("a--b"), name("Mc 2"), name("L2b"), name("l2B"), name("aB"), name("Ab"), name("x y"),
                 name("True Story"), name("Void Run"), name("Record"), name("Var"), name("Yield"), name("Sealed"),
-                name("Module"), name("Yes"), name("No"), name("On"), name("Off"), name("Plugin"), name("Server"),
+                name("Module"), name("Yes"), name("No"), name("On"), name("Off"), name("Plugin", "waterfall"), name("Server"),
                 name("String"), name("Object"), name("System"), name("Greeter"), name("Hello Command"), name("Game"),
                 name("Box"), name("Progress"), name("Logger"), name("Instance"), name("Minestom"), name("Paper"),
                 name("Quilt Loader"), name("Neo Forge"), name("Minecraft Tools"), name("a".repeat(64)),
@@ -163,6 +163,7 @@ class TemplateNameCasesTest {
             case "paper" -> paperMain(files, vars);
             case "minestom" -> gradleMain(files);
             case "velocity" -> velocityMain(files, vars);
+            case "waterfall" -> bungeeMain(files, vars);
             default -> throw new AssertionError("unknown platform " + platform);
         };
         assertThat(mainClass).startsWith(vars.packageName() + ".");
@@ -233,6 +234,15 @@ class TemplateNameCasesTest {
         assertThat(name.find() && main.find()).as("name and main in bukkitPluginYaml").isTrue();
         assertThat(name.group(1)).isEqualTo(vars.name());
         assertThat(name.group(1).toLowerCase(java.util.Locale.ROOT)).isNotIn(PAPER_RESTRICTED).isNotEqualTo("mscagent");
+        return main.group(1);
+    }
+
+    private static String bungeeMain(Map<String, byte[]> files, TemplateVariables vars) {
+        String yml = text(files, "src/main/resources/bungee.yml");
+        Matcher name = Pattern.compile("(?m)^name: (.*)$").matcher(yml);
+        Matcher main = Pattern.compile("(?m)^main: (.*)$").matcher(yml);
+        assertThat(name.find() && main.find()).as("name and main in bungee.yml").isTrue();
+        assertThat(name.group(1)).isEqualTo(vars.projectId());
         return main.group(1);
     }
 

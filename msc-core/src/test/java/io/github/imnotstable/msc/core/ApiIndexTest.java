@@ -144,7 +144,9 @@ class ApiIndexTest {
                     "net.minestom.server.event.player.PlayerJoinEvent", "java.lang.Object", "net.minestom.server.event.Event"),
             // Velocity's events share no supertype: PostLoginEvent is a plain final class.
             "velocity", new Family("com.velocitypowered/velocity-api/1/a/velocity-api-1.jar",
-                    "com.velocitypowered.api.event.connection.PostJoinEvent", "java.lang.Object", null));
+                    "com.velocitypowered.api.event.connection.PostJoinEvent", "java.lang.Object", null),
+            "waterfall", new Family("io.github.waterfallmc/waterfall-api/1/a/waterfall-api-1.jar",
+                    "net.md_5.bungee.api.event.PostJoinEvent", "net.md_5.bungee.api.plugin.Event", null));
 
     @Test
     void eachPlatformsEventSearchFindsItsEvents(@TempDir Path gradleHome) throws Exception {

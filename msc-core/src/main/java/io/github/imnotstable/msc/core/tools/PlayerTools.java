@@ -10,6 +10,8 @@ import io.github.imnotstable.msc.core.tool.ToolException;
 import io.github.imnotstable.msc.core.tool.ToolRegistry;
 import io.github.imnotstable.msc.core.world.Walk;
 import io.github.imnotstable.msc.core.world.WorldService;
+import io.github.imnotstable.msc.core.server.Platform;
+import io.github.imnotstable.msc.core.server.ProxyForwarding;
 import io.github.imnotstable.msc.process.ServerAddress;
 import io.github.imnotstable.msc.process.ServerPropertiesFile;
 import io.github.imnotstable.msc.protocol.op.Ops;
@@ -72,9 +74,11 @@ public final class PlayerTools implements AutoCloseable {
                 throw ToolException.workspaceClosed("player_test did not run");
             }
         }
+        // Behind a proxy with a network (ADR 0088) the player joins the proxy, which has no agent: no block view.
+        boolean proxy = Platform.current(config).proxy();
         // The same reason as the world tools give (#705, #723), else that this session's server has no agent (yet).
-        boolean connected = hub.current() != null;
-        String refused = connected ? hub.stopping() : hub.refusal();
+        boolean connected = proxy || hub.current() != null;
+        String refused = proxy ? null : connected ? hub.stopping() : hub.refusal();
         if (!connected || refused != null) {
             throw new ToolException(refused != null ? refused
                     : "the server is not running with the agent. Start it with server_start first.");
@@ -93,6 +97,19 @@ public final class PlayerTools implements AutoCloseable {
             throw new ToolException("gamemode must be survival, adventure or creative");
         }
         boolean leave = args.bool("leave", false);
+        if (proxy) {
+            if (gamemode != null) {
+                throw new ToolException("gamemode is set on a backend behind the proxy: server_command \"@<backend> "
+                        + "gamemode " + gamemode + " " + name + "\"");
+            }
+            for (String a : actions) {
+                if (a.strip().matches("(?i)(goto|walk|forward|jump)\\b.*")) {
+                    throw new ToolException("\"" + a.strip() + "\": through the proxy the test player sees no blocks "
+                            + "(the proxy has no agent), so it does not walk or jump; tp, /commands, use, interact, "
+                            + "click, say, hud and inventory work");
+                }
+            }
+        }
         // Every action is read before anything happens (#717): a refusal leaves no player joined, dropped, made op or
         // switched to another game mode, as build_batch checks every block name before it places one.
         try {
@@ -101,12 +118,13 @@ public final class PlayerTools implements AutoCloseable {
             throw new ToolException(e.getMessage());
         }
         // A player that uses, attacks or runs commands may change the world: a backup first, as for build_batch.
-        String backup = actions.stream().map(String::strip).anyMatch(a -> a.matches("(use|attack|interact)\\b.*"))
+        String backup = proxy ? "" : actions.stream().map(String::strip).anyMatch(a -> a.matches("(use|attack|interact)\\b.*"))
                 ? backups.beforeEdit() : backups.beforeCommands(String.join("\n",
                         actions.stream().map(String::strip).filter(a -> a.startsWith("/")).toList()));
-        Ops.ServerInfo info = hub.call(Ops.SERVER_INFO, new Ops.Empty());
         // The overworld; the test player asks worldOf which world the server put it in, else goes by the dimension.
-        String world = info.worlds().isEmpty() ? "world" : info.worlds().getFirst();
+        // Behind a proxy: none, so the player stands where the server puts it.
+        List<String> worlds = proxy ? List.of() : hub.call(Ops.SERVER_INFO, new Ops.Empty()).worlds();
+        String world = proxy ? null : worlds.isEmpty() ? "world" : worlds.getFirst();
         StringBuilder out = new StringBuilder(backup.isEmpty() ? "" : backup + "\n");
         Bot bot = current();
         if (bot != null && (!bot.connected() || !bot.name().equals(name))) {
@@ -115,9 +133,13 @@ public final class PlayerTools implements AutoCloseable {
         }
         if (bot == null) {
             // Bots pings the server and picks the client for its version, or says which versions it speaks.
-            ServerAddress address = address();
+            ServerAddress address = proxy ? new ServerAddress("127.0.0.1",
+                    ProxyForwarding.listenPort(config.serverDir(), Platform.current(config))) : address();
             try {
-                bot = adopt(Bots.join(name, address.host(), address.port(),
+                bot = adopt(proxy ? Bots.join(name, address.host(), address.port(), region -> {
+                    throw new IllegalStateException("the proxy has no world");
+                }, null, null, Duration.ofSeconds(20), config.installDir() == null ? null
+                        : config.installDir().resolve("bot")) : Bots.join(name, address.host(), address.port(),
                         region -> hub.call(Ops.WORLD_READ, new Ops.ReadParams(region, false)).grid(), this::route,
                         (who, at) -> worldOf(hub.call(Ops.SERVER_INFO, new Ops.Empty()).worlds(), who, at,
                                 region -> hub.call(Ops.WORLD_ENTITIES, new Ops.EntitiesParams(region, PLAYER, 0))
@@ -132,11 +154,12 @@ public final class PlayerTools implements AutoCloseable {
             }
             // A dev-server test player: op so commands and tp work, in the mode real players will have.
             // Minestom has only the commands the server registered, so these may not exist there.
-            boolean op = console("op " + name);
+            boolean op = !proxy && console("op " + name);
             String mode = gamemode == null ? "the game's own mode" : gamemode(gamemode, name);
             out.append("joined as ").append(name).append(" (").append(mode)
-                    .append(op ? ", op" : ", not op: the server has no op command").append(")\n");
-        } else if (gamemode != null) {
+                    .append(op ? ", op" : proxy ? ", through the proxy; not op: server_command \"@<backend> op "
+                            + name + "\"" : ", not op: the server has no op command").append(")\n");
+        } else if (gamemode != null && !proxy) {
             // Already joined: said only when the mode was not set, so the actions are not read as in that mode (#626).
             String mode = gamemode(gamemode, name);
             if (!mode.equals(gamemode)) {

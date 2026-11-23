@@ -1,6 +1,7 @@
 # ADR 0046: Bedrock players through Geyser on `server_setup`
 
-Status: accepted, 2026-11-15, decided by Claude.
+Status: accepted, 2026-11-15, decided by Claude. Amended by ADR 0088: Geyser on Velocity and Waterfall, and all
+addresses where the server binds loopback (Geyser 2.12 cannot serve Bedrock there).
 
 ## Context
 

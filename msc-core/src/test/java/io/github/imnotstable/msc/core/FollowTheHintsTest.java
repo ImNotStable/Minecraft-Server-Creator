@@ -280,6 +280,7 @@ class FollowTheHintsTest {
             case FORGE -> "forge-mod";
             case MINESTOM -> "minestom-server";
             case VELOCITY -> "velocity-plugin";
+            case WATERFALL -> "waterfall-plugin";
         };
         String scaffold = "project_scaffold" + (template == null ? "" : " template=" + template);
         for (boolean root : List.of(true, false)) {

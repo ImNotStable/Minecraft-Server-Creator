@@ -88,6 +88,10 @@ final class TemplateDocs {
             tasks.add("runVelocity"); // the same run-task AbstractRun as run-paper
             stdin.add("runVelocity");
         }
+        if (aliases.contains("run.waterfall")) {
+            tasks.add("runWaterfall");
+            stdin.add("runWaterfall");
+        }
         for (String plugin : aliases) {
             if (!RUN_CONFIG_PLUGINS.contains(plugin)) {
                 continue;

@@ -20,7 +20,8 @@ import org.junit.jupiter.api.io.TempDir;
  * combination that would keep or add it is refused.
  */
 class BedrockRuleTest {
-    private static final Set<Platform> GEYSER_PLATFORMS = Set.of(Platform.PAPER, Platform.PURPUR);
+    private static final Set<Platform> GEYSER_PLATFORMS = Set.of(Platform.PAPER, Platform.PURPUR, Platform.VELOCITY,
+            Platform.WATERFALL);
 
     @TempDir
     Path dir;
@@ -48,7 +49,7 @@ class BedrockRuleTest {
                         } else {
                             assertThatThrownBy(decide::get).as(row).isInstanceOf(ToolException.class)
                                     .hasMessageStartingWith(bedrock != null ? "bedrock=true " : "Geyser is in plugins/ ")
-                                    .hasMessageContaining(GEYSER_PLATFORMS.contains(platform) ? "proxy=velocity"
+                                    .hasMessageContaining(GEYSER_PLATFORMS.contains(platform) ? "behind a proxy"
                                             : "not " + platform.id())
                                     .hasMessageNotContaining("\n");
                         }

@@ -43,6 +43,8 @@ val templateVersions = mapOf(
     "forgeGradleVersion" to catalogVersion("forgegradle"),
     "forgeEventbusVersion" to catalogVersion("forge-eventbus"),
     "velocityVersion" to catalogVersion("velocity"),
+    "waterfallVersion" to catalogVersion("waterfall"),
+    "waterfallMinecraftVersion" to catalogVersion("waterfall-minecraft"),
     "minestomVersion" to minestom,
     "minestomMcVersion" to minestom.substringAfterLast("-"),
     "slf4jVersion" to catalogVersion("slf4j"),
@@ -100,7 +102,7 @@ abstract class PackTemplates : DefaultTask() {
         val PROJECT_TEMPLATES = setOf("paper-plugin", "fabric-mod", "neoforge-mod", "forge-mod")
         val MINESTOM_TEMPLATES = setOf("minestom-server")
         /** A proxy plugin: its own wrapper, no Minecraft server files in run/ (the proxy writes its own config). */
-        val PROXY_TEMPLATES = setOf("velocity-plugin")
+        val PROXY_TEMPLATES = setOf("velocity-plugin", "waterfall-plugin")
         /** Templates that ship msc-stdlib, and the platform adapter each gets beside the core. */
         val STDLIB_TEMPLATES = mapOf("paper-plugin" to "paper", "minestom-server" to "minestom",
             "fabric-mod" to "fabric", "velocity-plugin" to "velocity",

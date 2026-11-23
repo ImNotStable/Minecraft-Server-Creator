@@ -1,6 +1,6 @@
 # Platforms
 
-MSC supports eight server platforms and the Velocity proxy. Each workspace uses one of them.
+MSC supports eight server platforms and two proxies, Velocity and Waterfall. Each workspace uses one of them.
 
 | Platform | What you write | Template | Minecraft | EULA needed |
 | --- | --- | --- | --- | --- |
@@ -13,6 +13,7 @@ MSC supports eight server platforms and the Velocity proxy. Each workspace uses 
 | **Forge** | A server-side mod | `forge-mod` | 26.3 | Yes |
 | **Minestom** | The whole server, from scratch | `minestom-server` | 26.2 | No |
 | **Velocity** | A proxy plugin (players reach a Paper backend through it) | `velocity-plugin` | any recent | No |
+| **Waterfall** | A BungeeCord proxy plugin (Waterfall is PaperMC's BungeeCord fork, end of life) | `waterfall-plugin` | up to 26.2 | No |
 
 The platform is picked by the template you scaffold. The agents are installed with MSC, and `server_setup` puts the right one in the server. You can also change it with `server_setup platform=...`, which is how you pick Purpur or Quilt for a Paper or Fabric project.
 
@@ -65,7 +66,27 @@ A proxy plugin needs two servers: the Velocity proxy, and a Paper (or Purpur or 
 2. Proxy: "project_scaffold a Velocity plugin called My Proxy Plugin, template velocity-plugin", then "server_setup platform=velocity" (no EULA step) and `dev_cycle`.
 3. Join `localhost:25577`. The proxy sends you to the backend on `127.0.0.1:25565`, using a forwarding secret MSC keeps for your machine in `~/.msc/velocity.secret`.
 
-World, build and player tools do not apply to a proxy; use them in the backend's workspace. BungeeCord and Waterfall are not supported.
+World and build tools do not apply to a proxy; use them in the backend's workspace.
+
+### A whole network in one workspace
+
+A proxy workspace can also run its own backends ([ADR 0088](https://github.com/ImNotStable/Minecraft-Server-Creator/blob/main/msc-docs/docs/adr/0088-proxy-networks.md)):
+
+1. "server_setup platform=velocity servers=lobby,game" (with `acceptEula=true` the first time: the backends are Paper servers). Each backend gets its own folder in `run/servers/`, its own port from 25566 and forwarding from the proxy; the proxy's config lists them, the first one is where players land.
+2. "Start the server." The proxy starts, then every backend. A `dev_cycle` of your proxy plugin restarts only the proxy.
+3. "Run `@game op Steve` on the server": `server_command` with `@<backend>` types on that backend. Its console is in `run/servers/game/console.log`.
+4. "player_test with /server game" joins through the proxy and switches servers.
+
+## Waterfall (BungeeCord proxy)
+
+Waterfall runs BungeeCord plugins. It is end of life and lags Paper by a Minecraft version, so prefer Velocity for new work. BungeeCord itself is not installed: its builds have no checksums, and Waterfall runs the same plugins.
+
+1. "project_scaffold a Waterfall plugin called My Proxy Plugin, template waterfall-plugin", then "server_setup platform=waterfall" and `dev_cycle`.
+2. Backends in their own workspace: "server_setup proxy=bungeecord" (sets `settings.bungeecord: true` in `spigot.yml`). Or a network as above: "server_setup platform=waterfall servers=hub,arena".
+
+## Bedrock players
+
+"server_setup bedrock=true" installs Geyser and Floodgate on Paper, Purpur, Velocity or Waterfall, so Bedrock players (phones, consoles, Windows) can join with their Xbox sign-in. On a proxy, Geyser fronts the proxy, so Bedrock players reach every backend.
 
 ## NeoForge and Forge
 

@@ -66,6 +66,11 @@ class TemplateBuildTest {
         buildsAndPassesItsTests(Templates.VELOCITY_PLUGIN);
     }
 
+    @Test
+    void waterfallPluginBuilds() throws IOException, InterruptedException {
+        buildsAndPassesItsTests(Templates.WATERFALL_PLUGIN);
+    }
+
     private static void buildsAndPassesItsTests(String id) throws IOException, InterruptedException {
         ScaffoldResult r = scaffoldFresh(id, id);
         String output = daemon.run(r.root(), "build", "tasks", "--all");

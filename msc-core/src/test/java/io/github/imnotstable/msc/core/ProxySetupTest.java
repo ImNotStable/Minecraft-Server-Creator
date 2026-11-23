@@ -66,7 +66,7 @@ class ProxySetupTest {
                     .contains("proxy= sets up a paper, purpur or folia backend, not fabric");
             assertThat(s.error("server_setup", "platform", "velocity", "proxy", "velocity"))
                     .contains("the proxy itself always forwards");
-            assertThat(s.error("server_setup", "proxy", "bungeecord")).contains("proxy must be velocity or none");
+            assertThat(s.error("server_setup", "proxy", "spigot")).contains("proxy must be velocity, bungeecord or none");
         }
         assertThat(dir.resolve("ws/run")).doesNotExist();
         assertThat(dir.resolve("home/.msc/velocity.secret")).doesNotExist();

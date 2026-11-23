@@ -38,10 +38,10 @@ class AddonCheckTest {
 
         assertThat(AddonCheck.problems(server, Platform.PAPER, false)).hasSize(3);
         assertThat(AddonCheck.problems(server, Platform.PAPER, true)).containsExactly(
-                "? (plugins/broken.jar) is not a plugin or mod (no plugin.yml, fabric.mod.json, mods.toml or "
-                        + "velocity-plugin.json, or not a jar)",
-                "? (plugins/lib.jar) is not a plugin or mod (no plugin.yml, fabric.mod.json, mods.toml or "
-                        + "velocity-plugin.json, or not a jar)",
+                "? (plugins/broken.jar) is not a plugin or mod (no plugin.yml, fabric.mod.json, mods.toml, "
+                        + "velocity-plugin.json or bungee.yml, or not a jar)",
+                "? (plugins/lib.jar) is not a plugin or mod (no plugin.yml, fabric.mod.json, mods.toml, "
+                        + "velocity-plugin.json or bungee.yml, or not a jar)",
                 "sodium (plugins/sodium.jar) is a Fabric mod; Paper does not load it: delete it",
                 "LuckPerms is in 2 jars: LuckPerms (plugins/LuckPerms-1.jar), LuckPerms (plugins/LuckPerms-2.jar); keep one",
                 "Shop (plugins/Shop.jar) requires Vault, which is not installed");

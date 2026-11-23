@@ -104,6 +104,7 @@ public final class AddonSources {
             case NEOFORGE -> List.of("neoforge");
             case FORGE -> List.of("forge");
             case VELOCITY -> List.of("velocity");
+            case WATERFALL -> List.of("waterfall", "bungeecord");
             case MINESTOM -> throw new ToolException("minestom has no plugins folder: add a library to the project's "
                     + "build.gradle.kts instead");
         };
@@ -111,21 +112,22 @@ public final class AddonSources {
 
     /** True where a plugin built for an older Minecraft version usually still loads (Bukkit's API stays compatible). */
     static boolean plugins(Platform platform) {
-        return platform.agent().equals("paper") || platform == Platform.VELOCITY;
+        return platform.agent().equals("paper") || platform.proxy();
     }
 
     private static String hangarPlatform(Platform platform) {
         return switch (platform) {
             case PAPER, PURPUR, FOLIA -> "PAPER";
             case VELOCITY -> "VELOCITY";
-            default -> throw new ToolException("hangar has Paper and Velocity plugins only, not " + platform.displayName()
+            case WATERFALL -> "WATERFALL";
+            default -> throw new ToolException("hangar has Paper, Velocity and Waterfall plugins only, not " + platform.displayName()
                     + " mods: use modrinth");
         };
     }
 
     /** One line per match, {@code source:id  Name: description (downloads)}, from every source the platform has. */
     public List<String> search(String query, Platform platform) throws IOException, InterruptedException {
-        List<String> sources = plugins(platform) && platform != Platform.VELOCITY
+        List<String> sources = plugins(platform) && !platform.proxy()
                 ? List.of("modrinth", "hangar", "spigot") : plugins(platform) ? List.of("modrinth", "hangar")
                 : List.of("modrinth");
         List<String> out = new ArrayList<>();

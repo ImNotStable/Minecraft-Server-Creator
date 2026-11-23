@@ -1,0 +1,4 @@
+name: {{projectId}}
+main: {{packageName}}.{{mainClass}}
+version: ${version}
+description: ${description}

@@ -6,6 +6,7 @@ import io.github.imnotstable.msc.core.metrics.ToolLog;
 import io.github.imnotstable.msc.core.server.FabricDownloader;
 import io.github.imnotstable.msc.core.server.PaperDownloader;
 import io.github.imnotstable.msc.core.server.ProjectBuilder;
+import io.github.imnotstable.msc.core.server.Network;
 import io.github.imnotstable.msc.core.server.ServerManager;
 import io.github.imnotstable.msc.core.server.WorkspacePorts;
 import io.github.imnotstable.msc.core.texture.ResourcePack;
@@ -196,7 +197,11 @@ public final class Core implements AutoCloseable {
             PlayerTools players = PlayerTools.register(tools, config, hub, world, backups);
             // On a proxy every world, build and player tool answers one line before it sends, saves or stops anything,
             // whether or not it reaches the agent (ADR 0045, #591).
-            tools.gate(WORLD_TOOLS, () -> server.platform().noWorldTools());
+            tools.gate(WORLD_TOOLS.stream().filter(t -> !t.equals(PLAYER_TEST)).toList(),
+                    () -> server.platform().noWorldTools());
+            // The test player joins a proxy that has a network to send it to (ADR 0088).
+            tools.gate(List.of(PLAYER_TEST), () -> Network.members(config.serverDir()).isEmpty()
+                    ? server.platform().noWorldTools() : null);
             Bench bench = new Bench(config, hub, server, pack, publisher, players, tools, background, closed, kept);
             // Not on the exiting process's own thread: the close waits for the pack host to end.
             server.onExit(() -> Thread.ofVirtual().name("msc-kept-release").start(bench::releaseIfExited));
@@ -318,6 +323,7 @@ public final class Core implements AutoCloseable {
     }
 
     /** The tools that need a world (to read, edit, save or roll back, or to join): refused on a proxy. */
+    private static final String PLAYER_TEST = "player_test";
     static final List<String> WORLD_TOOLS = List.of("world_slice", "world_heightmap", "world_render", "world_summary",
             "world_entities", "build_undo", "structure_save", "build_batch", "player_test");
 

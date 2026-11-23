@@ -69,6 +69,8 @@ public final class ServerManager implements AutoCloseable {
      * before this monitor, never inside it: the wait for the leftover to exit holds only this lock (#712).
      */
     private final ReentrantLock leftoverStop = new ReentrantLock();
+    /** A proxy workspace's backends (ADR 0088); none elsewhere. */
+    private final Network network = new Network();
 
     public ServerManager(CoreConfig config, AgentHub hub) {
         this.config = config;
@@ -689,7 +691,7 @@ public final class ServerManager implements AutoCloseable {
             stopping = true;
             try {
                 if (!asked) {
-                    write("stop");
+                    write(platform().stopCommand());
                 }
             } catch (IOException e) {
                 if (!announced) {
@@ -794,7 +796,7 @@ public final class ServerManager implements AutoCloseable {
         return detached();
     }
 
-    /** Stop the server unless detached. Nothing starts after this, even from a call already running. */
+    /** Stop the server unless detached, and a proxy's backends with it. Nothing starts after this. */
     @Override
     public void close() {
         if (seal()) {
@@ -805,5 +807,11 @@ public final class ServerManager implements AutoCloseable {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
+        network.close();
+    }
+
+    /** The backends of this proxy workspace's network (ADR 0088). */
+    public Network network() {
+        return network;
     }
 }

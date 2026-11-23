@@ -1,6 +1,7 @@
 # ADR 0045: Folia servers and a Velocity proxy
 
-Status: accepted, 2026-11-15, decided by Claude (backlog item 9).
+Status: accepted, 2026-11-15, decided by Claude (backlog item 9). Its proxy items under "Not done" are done in
+ADR 0088, except Folia's world tools.
 
 ## Context
 

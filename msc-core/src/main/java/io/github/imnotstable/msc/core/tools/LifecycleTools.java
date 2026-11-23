@@ -52,15 +52,17 @@ public final class LifecycleTools {
                 "Create a bare project from a template (Gradle KTS build, dev server task, empty entry point). Target directory must be empty.",
                 Schema.of().req("name", "string", "Project name, for example MyPlugin")
                         .opt("dir", "string", "Folder in the workspace. Default: the workspace")
-                        .opt("template", "string", "paper-plugin (default), fabric-mod (also Quilt), neoforge-mod, forge-mod, minestom-server or velocity-plugin")
+                        .opt("template", "string", "paper-plugin (default), fabric-mod (also Quilt), neoforge-mod, forge-mod, minestom-server, velocity-plugin or waterfall-plugin")
                         .opt("package", "string", "Java package. Default com.example.<name>")
                         .opt("acceptEula", "boolean", EulaPrompts.SCAFFOLD_EULA_ARG),
                 scaffold::run);
         registry.add("server_setup",
                 "Prepare the dev server: install it, write dev defaults, install the msc agent.",
                 Schema.of().opt("version", "string", "Minecraft version. Default " + config.minecraft())
-                        .opt("platform", "string", "paper, purpur, folia, fabric, quilt, neoforge, forge, minestom or velocity")
-                        .opt("proxy", "string", "velocity: backend behind Velocity; none: off")
+                        .opt("platform", "string", "paper, purpur, folia, fabric, quilt, neoforge, forge, minestom, "
+                                + "velocity or waterfall")
+                        .opt("proxy", "string", "velocity or bungeecord: backend behind that proxy; none: off")
+                        .opt("servers", "strings", "Proxy: Paper backends it starts, such as lobby, game")
                         .opt("mode", "string", "build (creative, peaceful) or game (survival, normal)")
                         .opt("bedrock", "boolean", "Geyser+Floodgate for Bedrock players; false removes")
                         .opt("acceptEula", "boolean", EulaPrompts.EULA_ARG),
@@ -109,7 +111,8 @@ public final class LifecycleTools {
                         .maxChars(),
                 console::logs);
         registry.add("server_command", "Run console commands on the server and return their output.",
-                Schema.of().req("command", "string", "Command without the leading slash; several: one per line"),
+                Schema.of().req("command", "string", "Command without the leading slash; several: one per line; "
+                                + "@<backend> first for a proxy's backend"),
                 args -> {
                     String first = backups.beforeCommands(args.text("command"));
                     String out = console.command(args);

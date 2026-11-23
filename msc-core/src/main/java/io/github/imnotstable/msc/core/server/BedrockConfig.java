@@ -47,16 +47,38 @@ public final class BedrockConfig {
     private BedrockConfig() {
     }
 
-    /** {@code <server>/plugins/Geyser-Spigot/config.yml}. */
+    /**
+     * {@code <server>/plugins/Geyser-Spigot/config.yml}, or the folder of the Geyser flavor in {@code plugins/}
+     * (Geyser-Velocity, Geyser-BungeeCord on a proxy, ADR 0088).
+     */
     public static Path file(Path serverDir) {
-        return serverDir.resolve("plugins").resolve("Geyser-Spigot").resolve("config.yml");
+        return serverDir.resolve("plugins").resolve(flavor(serverDir).folder()).resolve("config.yml");
+    }
+
+    private static GeyserDownloader.Flavor flavor(Path serverDir) {
+        GeyserDownloader.Flavor f = GeyserDownloader.Flavor.installed(serverDir.resolve("plugins"));
+        return f == null ? GeyserDownloader.Flavor.SPIGOT : f;
+    }
+
+    /**
+     * What Geyser binds and fronts like: the server's {@code server.properties}, or for a proxy, which has none, its
+     * loopback listener and port.
+     */
+    static Map<String, String> javaSide(Path serverDir) throws IOException {
+        Path properties = serverDir.resolve(ServerPropertiesFile.NAME);
+        if (Files.isRegularFile(properties) || flavor(serverDir) == GeyserDownloader.Flavor.SPIGOT) {
+            return ServerPropertiesFile.read(properties);
+        }
+        Platform proxy = flavor(serverDir) == GeyserDownloader.Flavor.VELOCITY ? Platform.VELOCITY : Platform.WATERFALL;
+        return Map.of("server-ip", "127.0.0.1", "server-port",
+                Integer.toString(ProxyForwarding.listenPort(serverDir, proxy)));
     }
 
     /** A new config bound like the Java server ({@code server-ip}), or the kept one with its port free. */
     public static Result configure(Path serverDir, PortCheck check) throws IOException {
         Path file = file(serverDir);
         if (!Files.exists(file)) {
-            String address = bindAddress(ServerPropertiesFile.read(serverDir.resolve(ServerPropertiesFile.NAME)));
+            String address = bindAddress(javaSide(serverDir));
             int port = freePort(address, DEFAULT_PORT, check);
             Files.createDirectories(file.getParent());
             AtomicFile.write(file, to -> Files.writeString(to, fresh(address, port)));
@@ -79,14 +101,14 @@ public final class BedrockConfig {
      * fronts. Null without Geyser; best effort, never fails a start.
      */
     public static String line(Path serverDir) {
-        if (!Files.isRegularFile(serverDir.resolve("plugins").resolve(GeyserDownloader.Project.GEYSER.jarName()))) {
+        if (GeyserDownloader.Flavor.installed(serverDir.resolve("plugins")) == null) {
             return null;
         }
         try {
             Path file = file(serverDir);
             List<String> lines = Files.exists(file) ? Files.readAllLines(file, StandardCharsets.UTF_8) : List.of();
             return describe(orDefault(get(lines, "bedrock", "address"), "0.0.0.0"), port(get(lines, "bedrock", "port")),
-                    ServerPropertiesFile.read(serverDir.resolve(ServerPropertiesFile.NAME)));
+                    javaSide(serverDir));
         } catch (IOException | RuntimeException e) {
             return null;
         }
@@ -116,13 +138,19 @@ public final class BedrockConfig {
                 + "plugins/Geyser-Spigot/config.yml lets the LAN in)");
     }
 
-    /** Where Geyser binds: {@code server-ip} like the Java server, all addresses when it is empty. */
+    /**
+     * Where Geyser binds: {@code server-ip} like the Java server, all addresses when it is empty or loopback. Geyser
+     * 2.12 refuses loopback for Bedrock ("NetherNet cannot work that way: every player will time out, including ones on
+     * this machine"), so a dev server bound to loopback still gets a Bedrock port Bedrock can use (ADR 0088). Bedrock
+     * players sign in through Xbox (Floodgate), unlike the offline Java side.
+     */
     static String bindAddress(Map<String, String> properties) {
         String ip = properties.getOrDefault("server-ip", "").strip();
         if (ip.startsWith("[") && ip.endsWith("]")) {
             ip = ip.substring(1, ip.length() - 1);
         }
-        return ip.isEmpty() ? "0.0.0.0" : ip;
+        boolean loopback = ip.equals("localhost") || ip.startsWith("127.") || ip.equals("::1");
+        return ip.isEmpty() || loopback ? "0.0.0.0" : ip;
     }
 
     /** The first port from {@code first} up that {@code check} finds free; refuses when none of {@link #TRIES} is. */
@@ -153,7 +181,7 @@ public final class BedrockConfig {
                 # Written by Minecraft Server Creator's server_setup (ADR 0046). Geyser uses its defaults for every
                 # setting not here. Your edits are kept; server_setup only moves bedrock.port when it is taken.
                 bedrock:
-                  # Bound like the Java server's server-ip. 0.0.0.0 lets phones and consoles on the LAN join.
+                  # Bound like the Java server's server-ip; all addresses for a loopback one, which Bedrock cannot use.
                   address: %s
                   port: %d
                 java:

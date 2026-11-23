@@ -26,7 +26,7 @@ class ServerSetupTest {
                 case NEOFORGE -> "msc-agent-neoforge";
                 case FORGE -> "msc-agent-forge";
                 case MINESTOM -> "msc-agent-minestom";
-                case VELOCITY -> null; // a proxy runs no agent: server_setup never looks for one
+                case VELOCITY, WATERFALL -> null; // a proxy runs no agent: server_setup never looks for one
             };
             if (jar == null) {
                 continue;

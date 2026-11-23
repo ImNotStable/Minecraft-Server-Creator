@@ -33,7 +33,14 @@ class FrameworkPackagesTest {
             Platform.FORGE, List.of("net.minecraftforge.eventbus.EventBus", "cpw.mods.modlauncher.Launcher"),
             Platform.MINESTOM, List.of("net.minestom.server.MinecraftServer"),
             Platform.VELOCITY, List.of("com.velocitypowered.proxy.connection.MinecraftConnection",
-                    "com.velocitypowered.proxy.event.VelocityEventManager"));
+                    "com.velocitypowered.proxy.event.VelocityEventManager"))
+            .entrySet().stream().collect(java.util.stream.Collectors.collectingAndThen(
+                    java.util.stream.Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue),
+                    m -> {
+                        m.put(Platform.WATERFALL, List.of("net.md_5.bungee.BungeeCord",
+                                "io.github.waterfallmc.waterfall.conf.WaterfallConfiguration"));
+                        return Map.copyOf(m);
+                    }));
 
     @Test
     void everyPlatformsServerCodeIsFramework() {

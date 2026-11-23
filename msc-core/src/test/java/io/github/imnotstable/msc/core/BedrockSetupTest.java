@@ -40,8 +40,8 @@ class BedrockSetupTest {
             String first = h.ok("server_setup", "platform", "paper", "bedrock", true);
 
             assertThat(first).contains("geyser 2.12.1 build 1302 (downloaded), floodgate 2.2.5 build 141 (downloaded)\n")
-                    .containsPattern("\nbedrock: UDP 127\\.0\\.0\\.1:\\d+ \\(Geyser, fronting Java port \\d+; "
-                            + "Floodgate sign-in; .*\\)\n");
+                    .containsPattern("\nbedrock: UDP 0\\.0\\.0\\.0:\\d+ \\(Geyser, fronting Java port \\d+; "
+                            + "Floodgate sign-in, open to the network\\)\n");
             assertThat(plugins.resolve("Geyser-Spigot.jar")).hasContent("geyser jar");
             assertThat(plugins.resolve("floodgate-spigot.jar")).hasContent("floodgate jar");
             Path config = BedrockConfig.file(ws.resolve("run"));
@@ -88,7 +88,7 @@ class BedrockSetupTest {
         try (CoreHarness h = new CoreHarness(ws, c -> downloads.apply(c).withProxySecret(dir.resolve("velocity.secret")))) {
             Map<String, String> before = TreeSnapshot.of(ws);
             assertThat(h.error("server_setup", "platform", "paper", "bedrock", true, "proxy", "velocity"))
-                    .isEqualTo("error: bedrock=true does not work with proxy=velocity (the backend refuses direct "
+                    .isEqualTo("error: bedrock=true does not work behind a proxy (the backend refuses direct "
                             + "joins, Geyser's too)");
             assertThat(TreeSnapshot.of(ws)).isEqualTo(before);
 
@@ -96,7 +96,7 @@ class BedrockSetupTest {
             h.ok("server_setup", "platform", "paper", "bedrock", true);
             Map<String, String> withGeyser = TreeSnapshot.of(ws);
             assertThat(h.error("server_setup", "proxy", "velocity")).isEqualTo("error: Geyser is in plugins/ and does "
-                    + "not work with proxy=velocity (the backend refuses direct joins, Geyser's too): bedrock=false "
+                    + "not work behind a proxy (the backend refuses direct joins, Geyser's too): bedrock=false "
                     + "removes it");
             assertThat(TreeSnapshot.of(ws)).isEqualTo(withGeyser);
             assertThat(h.ok("server_setup", "proxy", "velocity", "bedrock", false))
@@ -104,7 +104,7 @@ class BedrockSetupTest {
             assertThat(plugins.resolve("Geyser-Spigot.jar")).doesNotExist();
 
             // Forwarding on: bedrock=true alone is refused too, since the folder keeps forwarding.
-            assertThat(h.error("server_setup", "bedrock", true)).contains("does not work with proxy=velocity");
+            assertThat(h.error("server_setup", "bedrock", true)).contains("does not work behind a proxy");
             assertThat(h.ok("server_setup", "proxy", "none", "bedrock", true)).contains("bedrock: UDP");
         }
     }
@@ -120,8 +120,10 @@ class BedrockSetupTest {
                 h.ok("server_setup", "platform", "paper", "bedrock", true);
                 Map<String, String> before = TreeSnapshot.of(ws);
 
-                assertThat(h.error("server_setup", "platform", platform)).as(platform).isEqualTo("error: Geyser is in "
-                        + "plugins/ and needs paper or purpur (Geyser and Floodgate install as plugins), not " + platform
+                assertThat(h.error("server_setup", "platform", platform)).as(platform).isEqualTo(platform.equals("velocity")
+                        ? "error: Geyser in plugins/ is the spigot build, which velocity does not load: bedrock=true "
+                        + "installs velocity's, bedrock=false removes it" : "error: Geyser is in plugins/ and needs paper, "
+                        + "purpur, velocity or waterfall (Geyser and Floodgate install as plugins), not " + platform
                         + ": bedrock=false removes it");
                 assertThat(TreeSnapshot.of(ws)).as(platform).isEqualTo(before);
 
@@ -143,7 +145,7 @@ class BedrockSetupTest {
                 Map<String, String> before = TreeSnapshot.of(ws);
 
                 assertThat(h.error("server_setup", "platform", platform, "bedrock", true)).isEqualTo(
-                        "error: bedrock=true needs paper or purpur (Geyser and Floodgate install as plugins), not "
+                        "error: bedrock=true needs paper, purpur, velocity or waterfall (Geyser and Floodgate install as plugins), not "
                                 + platform);
                 assertThat(TreeSnapshot.of(ws)).isEqualTo(before);
             }

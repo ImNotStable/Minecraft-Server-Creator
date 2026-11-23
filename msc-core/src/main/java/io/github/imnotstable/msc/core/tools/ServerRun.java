@@ -6,6 +6,7 @@ import io.github.imnotstable.msc.core.server.AddonCheck;
 import io.github.imnotstable.msc.core.server.CrashTriage;
 import io.github.imnotstable.msc.core.server.LogCondenser;
 import io.github.imnotstable.msc.core.server.MachineEula;
+import io.github.imnotstable.msc.core.server.Network;
 import io.github.imnotstable.msc.core.server.Platform;
 import io.github.imnotstable.msc.core.server.ServerManager;
 import io.github.imnotstable.msc.core.server.ServerProperties;
@@ -85,7 +86,10 @@ final class ServerRun {
         server.checkNoOtherSession();
         Platform platform = server.platform();
         // acceptEula on a platform with no EULA is refused, as server_setup refuses it, not dropped with an OK (#625).
-        WayArgs.checkEula(args, platform);
+        // A proxy with a network takes it for its Paper backends (ADR 0088).
+        if (!platform.proxy() || Network.members(config.serverDir()).isEmpty()) {
+            WayArgs.checkEula(args, platform);
+        }
         boolean accepting = args.bool("acceptEula", false);
         checkStart(platform, accepting);
         Steps steps = new Steps("server_start");
@@ -179,9 +183,32 @@ final class ServerRun {
                 .ifFails(START, "the server is not running; server_start starts it");
     }
 
+    /**
+     * A proxy's backends (ADR 0088), once the proxy is ready: the machine's EULA acceptance goes into each one's
+     * eula.txt as for the workspace's own server, then each that is not running starts. "" with no network.
+     */
+    private String startNetwork(int timeoutSeconds) throws IOException, InterruptedException {
+        if (!server.platform().proxy() || Network.members(config.serverDir()).isEmpty()) {
+            return "";
+        }
+        for (Network.Member m : Network.members(config.serverDir())) {
+            config.machineEula().applyTo(m.dir().resolve("eula.txt"));
+        }
+        return server.network().start(config.serverDir(), config.javaCommand(), Duration.ofSeconds(timeoutSeconds));
+    }
+
     String stop(Args args) throws InterruptedException {
         // Checked first: another live session's server and its pack host are that session's (ADR 0037).
         server.checkNoOtherSession();
+        String backends = server.network().stop(Duration.ofSeconds(30));
+        if (!backends.isEmpty()) {
+            String proxy = stopProxy();
+            return proxy + "; " + backends;
+        }
+        return stopProxy();
+    }
+
+    private String stopProxy() throws InterruptedException {
         // The whole stop again, also on a leftover that resisted before: the user asked for exactly this (#408).
         Ended ended = end(true, true);
         if (ended.own()) {
@@ -310,6 +337,10 @@ final class ServerRun {
             String bedrock = BedrockRule.startLine(server.platform(), config.serverDir());
             if (bedrock != null) {
                 out.append('\n').append(bedrock);
+            }
+            String network = startNetwork(timeoutSeconds);
+            if (!network.isEmpty()) {
+                out.append('\n').append(network);
             }
             if (s != null) {
                 out.append(packForAgent());

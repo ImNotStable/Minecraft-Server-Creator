@@ -24,7 +24,7 @@ import org.junit.jupiter.api.io.TempDir;
 class ArrayArgumentLinesTest {
     /** Every array argument of every tool, each with a test below. */
     private static final Set<String> COVERED = Set.of("player_test actions", "texture palette", "texture rows",
-            "model_create textures", "plugins install", "world_create biomes", "world_create layers");
+            "model_create textures", "plugins install", "world_create biomes", "world_create layers", "server_setup servers");
 
     @TempDir
     Path workspace;
@@ -72,6 +72,15 @@ class ArrayArgumentLinesTest {
                 .contains("minecraft:plains, minecraft:desert");
         assertThat(h.ok("world_create", "name", "b", "terrain", "flat", "layers", "bedrock\ndirt:2"))
                 .contains("msc:b, flat terrain");
+    }
+
+    @Test
+    void serverSetupTakesOneServerPerLine() {
+        // Names are checked before any download, so the second line's bad name is what the call names (ADR 0088).
+        assertThat(h.error("server_setup", "platform", "velocity", "servers", "lobby\nBad Name!"))
+                .isEqualTo("error: a server name is 1 to 16 of a-z, 0-9, _ and -, not \"Bad Name!\"");
+        assertThat(h.error("server_setup", "platform", "velocity", "servers", "lobby\nLOBBY"))
+                .isEqualTo("error: server lobby is named twice");
     }
 
     @Test

@@ -27,6 +27,7 @@ final class UpstreamCheck {
     static final String MOJANG = "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json";
     static final String PAPER = "https://fill.papermc.io/v3/projects/paper";
     static final String VELOCITY = "https://fill.papermc.io/v3/projects/velocity";
+    static final String WATERFALL = "https://fill.papermc.io/v3/projects/waterfall";
     static final String FABRIC_LOADER = "https://meta.fabricmc.net/v2/versions/loader";
     static final String FABRIC_API = "https://maven.fabricmc.net/net/fabricmc/fabric-api/fabric-api/maven-metadata.xml";
     static final String NEOFORGE = "https://maven.neoforged.net/releases/net/neoforged/neoforge/maven-metadata.xml";
@@ -125,6 +126,10 @@ final class UpstreamCheck {
                 f -> newestOf(mavenVersions(f.get(MINESTOM)), v -> true)));
         String velocity = pin(catalog, "velocity");
         list.add(new Component("velocity", velocity, f -> fill(f, VELOCITY, velocity)));
+        if (catalog.containsKey("waterfall")) {
+            String waterfall = pin(catalog, "waterfall");
+            list.add(new Component("waterfall", waterfall, f -> fill(f, WATERFALL, waterfall)));
+        }
         // The build tooling the templates write (ADR 0057): Gradle itself and each Gradle plugin, when pinned.
         if (catalog.containsKey("gradle")) {
             list.add(new Component("gradle", catalog.get("gradle"), UpstreamCheck::gradle));

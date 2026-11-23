@@ -140,12 +140,12 @@ class WayArgsBehaviourTest {
     @Test
     void serverSetupRefusesWhatItsPlatformDoesNotRead() throws Exception {
         Map<String, String> refusals = Map.of(
-                "version", "error: version is for the Minecraft servers MSC installs; minestom and velocity do not "
-                        + "take one, leave it out",
+                "version", "error: version is for the Minecraft servers MSC installs; minestom and a proxy without "
+                        + "servers= do not take one, leave it out",
                 "mode", "error: mode is for a Minecraft server's world; minestom sets it in its own code and "
-                        + "velocity has no world, leave it out",
-                "acceptEula", "error: acceptEula is for a server with a Minecraft EULA; minestom and velocity have "
-                        + "none, leave it out");
+                        + "a proxy has no world, leave it out",
+                "acceptEula", "error: acceptEula is for a server with a Minecraft EULA; minestom and a proxy without "
+                        + "servers= have none, leave it out");
         Map<String, Object> values = Map.of("version", "26.3", "mode", "game", "acceptEula", false);
         Path ws = Files.createDirectories(dir.resolve("setup"));
         try (CoreHarness h = new CoreHarness(ws)) {
@@ -165,8 +165,8 @@ class WayArgsBehaviourTest {
     @Test
     void everyToolThatTakesAcceptEulaRefusesItWhereThePlatformHasNone() throws Exception {
         // #625: server_start dropped it with an OK (a fake server started); project_scaffold goes by the template.
-        String refusal = "error: acceptEula is for a server with a Minecraft EULA; minestom and velocity have none, "
-                + "leave it out";
+        String refusal = "error: acceptEula is for a server with a Minecraft EULA; minestom and a proxy without "
+                + "servers= have none, leave it out";
         Path home = dir.resolve("home");
         for (String template : List.of("minestom-server", "velocity-plugin")) {
             Path ws = Files.createDirectories(dir.resolve(template));
