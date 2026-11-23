@@ -37,7 +37,7 @@ class GuidesTest {
     void everyGuideLoadsAndNamesOnlyRealTools() {
         Set<String> tools = h.core.registry().tools().stream().map(Tool::name).collect(Collectors.toSet());
         for (String topic : new String[] {"build", "textures", "pack", "ux"}) {
-            // ADR 0079: every page fits a result's cap, ends by naming the next, and together they hold the whole guide.
+            // ADR 0081: every page fits a result's cap, ends by naming the next, and together they hold the whole guide.
             StringBuilder all = new StringBuilder(h.ok("msc_status", "guide", topic));
             for (int page = 2; all.toString().endsWith(" page=" + page + "]"); page++) {
                 all.setLength(all.lastIndexOf("\n\n[page "));

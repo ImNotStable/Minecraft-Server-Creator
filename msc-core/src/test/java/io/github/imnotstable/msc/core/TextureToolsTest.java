@@ -525,7 +525,7 @@ class TextureToolsTest {
         assertThat(served.statusCode()).isEqualTo(200);
     }
 
-    /** ADR 0079: pack_asset writes a glyph, reports a texture it lacks yet, and refuses a file the game would not load. */
+    /** ADR 0081: pack_asset writes a glyph, reports a texture it lacks yet, and refuses a file the game would not load. */
     @Test
     void packAssetWritesChecksAndRefuses() throws Exception {
         assertThat(h.ok("pack_asset", "type", "glyph", "name", "myplugin:icons", "json", "{\"file\":\"myplugin:font/coin.png\"}"))

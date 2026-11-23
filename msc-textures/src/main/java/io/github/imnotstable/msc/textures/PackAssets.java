@@ -19,7 +19,7 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Every resource pack file other than a drawn texture (ADR 0079): where each type lives in the pack, and how a write
+ * Every resource pack file other than a drawn texture (ADR 0081): where each type lives in the pack, and how a write
  * merges into what is already there (a lang file gains keys, sounds.json gains events, an atlas gains sources, a font
  * gains glyphs, a texture's .png.mcmeta gains sections). {@link #plan} only computes the files; nothing is written until
  * the caller has checked them with {@link PackLint#checkFiles}.

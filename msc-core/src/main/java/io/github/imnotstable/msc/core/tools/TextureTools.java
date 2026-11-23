@@ -176,7 +176,7 @@ public final class TextureTools {
     static final long MAX_FROM_BYTES = 16L << 20;
 
     /**
-     * pack_asset (ADR 0079): the files a type writes, checked by PackLint against the whole pack before anything is
+     * pack_asset (ADR 0081): the files a type writes, checked by PackLint against the whole pack before anything is
      * written. A finding that would stop the file loading refuses the call; one that only names a file the pack lacks
      * yet (a model's texture drawn next) is reported, so files can be written in any order.
      */

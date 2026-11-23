@@ -14,7 +14,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * {@link PackLint}'s checks of every pack file other than textures and their models (ADR 0079): fonts, sounds, lang,
+ * {@link PackLint}'s checks of every pack file other than textures and their models (ADR 0081): fonts, sounds, lang,
  * blockstates, equipment, atlases, texture metadata, element models, item definitions, shaders, post effects,
  * particles, waypoint styles and texts. The field names and allowed values are those of the Minecraft {@value
  * PackSource#MINECRAFT} client's own parsers; a reference into {@code minecraft} is taken to be vanilla, except shaders,

@@ -10,7 +10,12 @@ LAND FIRST
 - Land by hand: build_batch terrain (styles hills, ridges, mesa, dunes; water= for lakes, bed= for shores, cliff= for rock on steep sides). The box's height is the land's: hills rise 10-40 blocks, mountains more. Big areas: tile boxes with edge=0 and one seed.
 - Ways: path through 3+ points with wander= (curves, ragged sides, on the ground); a stream is path depth=2 with water and bed=.
 - Ground cover: give ground mixes clump= (patches with wavy edges); a plain mix reads as static.
-- Nature: structure_save a few trees, rocks and bushes and scatter them (file=a,b,c spacing= chance=) so each stands on the ground; scatter flowers and grass the same way. Nothing floats: leaves join a trunk, rails and props rest on something.
+- Nature: forest (kind=oak:3,birch:1 size=mixed spacing= chance=) grows real trees on the ground, each different; tree
+  places one (19 kinds: oak, spruce, pine, jungle, acacia, dark_oak, cherry, mangrove, pale_oak, azalea, willow, dead,
+  palm, bush, huge mushrooms, crimson and warped fungi; size small to huge). flora style=meadow|forest|taiga|swamp|
+  desert|cherry|lush|nether... covers open ground with that biome's plants in patches, only on soil they grow on.
+  Mix kinds and sizes, leave clearings, thicken toward water and slopes. Nothing floats: rails and props rest on
+  something.
 - Fit builds to the land: foundations reach down to the ground on slopes, a plaza is cut into the hill with retaining walls, and the ground at a build is worn (paths to doors, coarse dirt, gravel), not a clean edge.
 - Review land as well as builds: world_summary review=true on a land region reports ground at one level, speckled ground (a random mix of clashing blocks) and floating blocks, and it fails land reviewed on the flat dev world: give a map its own world_create worlds. Review the whole map once too, not only each plot.
 
@@ -74,6 +79,36 @@ DETAIL STEPS (build_batch; each works on what the world and earlier steps alread
   tip=B ends each (chain then lantern).
 - weather X,Y,Z X,Y,Z [amount=30]: moss low and on ledges, cracks on edges, verdigris on copper, in patches;
   swap=from>to,... for other blocks; break=N knocks exposed top edges off, leaving chip=B or air.
+
+- tree X,Y,Z: X,Y,Z is the lowest trunk block (one above the ground). kind= oak, birch, spruce, pine, jungle, acacia,
+  dark_oak, cherry, mangrove, pale_oak, azalea, willow, dead, palm, bush, red_mushroom, brown_mushroom, crimson, warped;
+  size= small, medium, large (big oaks branch, jungles and spruces go 2 wide), huge; h= the trunk height; log= and
+  leaves= any block or mix (stripped_oak_log, azalea_leaves:3,flowering_azalea_leaves:1). seed= makes another tree.
+- forest X,Y,Z X,Y,Z: one tree per spacing= cell (default 7) kept with chance= percent, on the top ground in the box
+  (on= limits the ground blocks); kind= weights (oak:3,birch:1,bush:2), size=mixed by default.
+- flora X,Y,Z X,Y,Z style=: meadow, plains, flowers, forest, taiga, swamp, jungle, savanna, desert, cherry, lush, snowy,
+  mushroom, nether, crimson, warped; or your own plant mix. chance=35 percent of open ground, clump=5 patches, only on
+  the style's soil (soil= to change; decorate takes soil= too).
+
+
+SHAPING STEPS (build_batch; they reshape what the world and earlier steps hold, terrain and builds alike)
+- smooth X,Y,Z X,Y,Z [radius=3 strength=2]: averages the ground's column heights, keeping each column's top block on
+  top; the box's rim eases back to the land around it. The box must reach from below the lowest to above the highest
+  ground. Use after terrain, or to soften a hand-built hill.
+- erode X,Y,Z X,Y,Z [mode=melt|fill|smooth faces=4 times=1]: melt removes blocks with faces= or more open sides (spikes,
+  lone blocks, sharp edges); fill fills open blocks with faces= solid sides with their neighbours' block (pits,
+  notches); smooth does both. Raise times= for stronger, lower faces= for harsher.
+- blend X,Y,Z X,Y,Z [shape=true times=1]: each block becomes the most common in its 3x3x3; shape=false blends only
+  materials (softens a seam between stone and dirt without changing the shape).
+- paint X,Y,Z X,Y,Z B [faces=top|side|all depth=1 slope=A-B chance=100]: paints the exposed skin. slope= in degrees picks
+  by the ground's steepness: stone on cliffs (slope=50-90), grass on flats (slope=0-30), gravel on screes; chance= and
+  a clump= mix splatter it.
+- river X,Y,Z X,Y,Z ... [w=5 depth=3 bank=4 slope=1 wander=w water=B bed=B shore=B]: a channel whose water holds one
+  level that only falls downstream (no water staircases), banks sloping down to it, shore= on the waterline. Points on
+  the ground, upstream first.
+- tunnel X,Y,Z X,Y,Z ... [r=3 rough=1 B]: a winding tunnel through 3D points (air, or B such as water or lava).
+- cave X,Y,Z X,Y,Z [density=30 scale=16 roof=4 B]: noise caves through the box's solid ground, keeping roof= blocks
+  under the surface.
 
 SCALE AND COMPOSITION
 - A landmark is seen from far away: give it a strong, asymmetric silhouette (a tall tower beside a low hall), not a box with a spike.

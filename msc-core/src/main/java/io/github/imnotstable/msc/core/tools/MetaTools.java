@@ -39,7 +39,7 @@ public final class MetaTools {
     }
 
     /**
-     * Page {@code page} of a guide (ADR 0079). A guide longer than a result's cap is cut into pages at its section
+     * Page {@code page} of a guide (ADR 0081). A guide longer than a result's cap is cut into pages at its section
      * headings (an upper-case line after a blank one), never mid-section, so no part is cut off unseen: each page but
      * the last ends by naming the next.
      */

@@ -1,4 +1,4 @@
-# ADR 0079: A tool, a check and a guide for every resource pack file
+# ADR 0081: A tool, a check and a guide for every resource pack file
 
 Status: accepted, 2026-11-23. Decided by Claude, on Jeremiah's ask for proper MSC tools for every resource pack asset
 type, comprehensive rather than minimal, targeting the current pack format, with no decision cards.
@@ -42,7 +42,7 @@ those files by hand into `.msc/pack`, unchecked, and `PackLint` judged textures 
 5. **Guides come in pages.** `msc_status guide=pack` holds every format with 26.3 examples. A guide longer than a
    result's 6000-character cap is cut at its section headings into pages, each ending with the call for the next
    (`page=2`). This also fixes the build guide, which had outgrown the cap and was silently cut short since ADR 0077.
-6. The tool list grows by about 900 characters (19150 cap), for a capability no tool had.
+6. The tool list grows by about 900 characters (19650 cap with ADR 0079 and 0080), for a capability no tool had.
 
 ## Verified
 
