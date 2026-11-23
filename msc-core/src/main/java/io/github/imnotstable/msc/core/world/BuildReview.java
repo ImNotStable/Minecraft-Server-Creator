@@ -80,6 +80,7 @@ public final class BuildReview {
             rgb[i] = names[i] == null ? 0 : BlockColors.side(names[i]);
         }
         int ground = groundTop(grid, names);
+        boolean[] isGround = ground(grid, names, soil);
         Map<String, Integer> counts = new HashMap<>();
         int total = 0;
         int detail = 0;
@@ -98,11 +99,11 @@ public final class BuildReview {
             for (int z = r.min().z(); z <= r.max().z(); z++) {
                 for (int x = r.min().x(); x <= r.max().x(); x++) {
                     String b = name(grid, names, x, y, z);
-                    if (b == null && r.contains(x, y - 1, z) && built(grid, names, soil, x, y - 1, z)
+                    if (b == null && r.contains(x, y - 1, z) && built(grid, names, isGround, x, y - 1, z)
                             && covered(grid, names, x, y, z)) {
                         floor++;
                     }
-                    if (b == null || soil[grid.blocks()[r.index(x, y, z)]]) {
+                    if (b == null || isGround[r.index(x, y, z)]) {
                         continue;
                     }
                     total++;
@@ -120,7 +121,7 @@ public final class BuildReview {
                         tops++;
                         plainTops += shaped ? 0 : 1;
                     }
-                    boolean onGround = y - 1 <= ground || r.contains(x, y - 1, z) && !built(grid, names, soil, x, y - 1, z)
+                    boolean onGround = y - 1 <= ground || r.contains(x, y - 1, z) && !built(grid, names, isGround, x, y - 1, z)
                             && name(grid, names, x, y - 1, z) != null;
                     if (onGround && !green) {
                         for (int[] s : SIDES) {
@@ -149,7 +150,7 @@ public final class BuildReview {
             return withLand("review: nothing built above the ground" + (ground >= r.min().y() ? " (y " + ground
                     + " and below)" : ""), land, List.of(), false);
         }
-        int[] roof = roof(grid, names, ground);
+        int[] roof = roof(grid, names, isGround, ground);
         List<Map.Entry<String, Integer>> top = new ArrayList<>(counts.entrySet());
         top.sort(Map.Entry.<String, Integer>comparingByValue().reversed().thenComparing(Map.Entry.comparingByKey()));
         int topShare = pct(top.get(0).getValue(), total);
@@ -241,6 +242,9 @@ public final class BuildReview {
             return !built && land.line().isEmpty() ? out.toString()
                     : out.append("\nno number below the bar; now judge the render: silhouette, story, scale").toString();
         }
+        // A plain verdict first: agents read "fix first" as advice and called failing builds done (ADR 0082).
+        out.append("\nverdict: NOT DONE, ").append(fixes.size()).append(fixes.size() == 1 ? " check" : " checks")
+                .append(" below the bar");
         out.append("\nfix first:");
         for (int i = 0; i < fixes.size(); i++) {
             out.append(i == 0 ? " " : "; ").append(i + 1).append(") ").append(fixes.get(i));
@@ -271,7 +275,7 @@ public final class BuildReview {
     }
 
     /** Shaped tops, all tops, the build's height and speckled tops (ADR 0078): what a roof looks like from above. */
-    private static int[] roof(BlockGrid grid, String[] names, int ground) {
+    private static int[] roof(BlockGrid grid, String[] names, boolean[] land, int ground) {
         Region r = grid.region();
         int shaped = 0;
         int tops = 0;
@@ -283,8 +287,8 @@ public final class BuildReview {
                 for (int y = r.max().y(); y > ground; y--) {
                     String b = name(grid, names, x, y, z);
                     if (b != null) {
-                        if (b.contains("leaves") || LandReview.SOIL.contains(b)) {
-                            break; // a tree canopy (ADR 0071) or the ground (ADR 0075) is not a roof
+                        if (b.contains("leaves") || land[r.index(x, y, z)]) {
+                            break; // a tree canopy (ADR 0071) or the ground (ADR 0075, 0082) is not a roof
                         }
                         tops++;
                         shaped += b.contains("stairs") || b.contains("slab") ? 1 : 0;
@@ -335,10 +339,36 @@ public final class BuildReview {
         return true;
     }
 
-    /** Whether a block is part of the build (not air, fluid or soil). */
-    private static boolean built(BlockGrid grid, String[] names, boolean[] soil, int x, int y, int z) {
+    /** Whether a block is part of the build (not air, fluid or ground). */
+    private static boolean built(BlockGrid grid, String[] names, boolean[] land, int x, int y, int z) {
         String n = name(grid, names, x, y, z);
-        return n != null && !soil[grid.blocks()[grid.region().index(x, y, z)]];
+        return n != null && !land[grid.region().index(x, y, z)];
+    }
+
+    /**
+     * Ground by position: soil, and rock, terracotta or ore in an unbroken column up from the region's bottom, so a
+     * generated world's hills, cliffs and mesas are not judged as walls with a bare base (ADR 0082). Rock standing on
+     * soil (a cobblestone wall on grass) stays part of the build.
+     * shortcut: rock above an underground dirt or gravel pocket counts as built; tell them apart by edit history if
+     * that shows up in reviews.
+     */
+    static boolean[] ground(BlockGrid grid, String[] names, boolean[] soil) {
+        Region r = grid.region();
+        boolean[] out = new boolean[grid.blocks().length];
+        for (int z = r.min().z(); z <= r.max().z(); z++) {
+            for (int x = r.min().x(); x <= r.max().x(); x++) {
+                boolean natural = true;
+                for (int y = r.min().y(); y <= r.max().y(); y++) {
+                    int i = r.index(x, y, z);
+                    int b = grid.blocks()[i];
+                    String n = b < 0 ? null : names[b];
+                    boolean isSoil = n != null && soil[b];
+                    natural &= n != null && !isSoil && (LandReview.land(n) || n.endsWith("_ore"));
+                    out[i] = isSoil || natural;
+                }
+            }
+        }
+        return out;
     }
 
     /** Whether something lies above within 8 blocks: a room's ceiling or a roof. */

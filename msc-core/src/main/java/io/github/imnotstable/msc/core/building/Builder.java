@@ -14,7 +14,10 @@ import io.github.imnotstable.msc.protocol.world.Region;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Runs steps as one edit: draw them all on a {@link Canvas}, check every block name with the agent,
@@ -135,11 +138,52 @@ public final class Builder {
             throw cleanUp(run, ids, where, used, e);
         }
         String counts = counts(canvas.counts());
+        String edit = world.remember(ids, where, run);
+        String drops = clearDrops(run, used);
         // One kind of block, or nothing left unchanged: the extra numbers say nothing new.
-        return "edit " + world.remember(ids, where, run) + ": " + changed + " blocks changed"
+        return "edit " + edit + ": " + changed + " blocks changed"
                 + (changed == canvas.placed() ? "" : " (" + canvas.placed() + " placed)") + ", region "
                 + Coords.show(used) + (canvas.counts().size() > 1 ? "\n" + counts : "")
-                + (backup.isEmpty() ? "" : "\n" + backup);
+                + (backup.isEmpty() ? "" : "\n" + backup) + drops;
+    }
+
+    private static final Pattern KILLED = Pattern.compile("Killed (\\d+) entities");
+
+    /**
+     * Items the edit knocked loose (a torch without its wall, a plant on the wrong soil) lie around the build for five
+     * minutes and show in renders: clear them from its box (ADR 0082). Best effort: a platform without the command
+     * (Minestom) keeps them, and the build stands either way.
+     */
+    private String clearDrops(WorldService.Run run, Region used) {
+        try {
+            String command = dropsCommand(used, world.world(null));
+            if (command == null) {
+                return "";
+            }
+            Ops.CommandResult r = world.call(run, Ops.SERVER_COMMAND, new Ops.CommandParams(command));
+            String out = r.output() == null ? "" : String.join(" ", r.output());
+            Matcher m = KILLED.matcher(out);
+            int n = m.find() ? Integer.parseInt(m.group(1)) : out.startsWith("Killed ") ? 1 : 0;
+            return n == 0 ? "" : "\ncleared " + n + (n == 1 ? " dropped item" : " dropped items")
+                    + " the edit knocked loose; give torches, plants and rails what holds them";
+        } catch (RuntimeException | InterruptedException e) {
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+            return "";
+        }
+    }
+
+    /** The kill command for item entities in and just around {@code used}; null for a world it cannot name. */
+    static String dropsCommand(Region used, String mainWorld) {
+        String dimension = used.world().contains(":") ? used.world()
+                : used.world().equals(mainWorld) ? "minecraft:overworld" : null;
+        if (dimension == null) {
+            return null;
+        }
+        return String.format(Locale.ROOT, "execute in %s run kill @e[type=item,x=%d,y=%d,z=%d,dx=%d,dy=%d,dz=%d]",
+                dimension, used.min().x() - 1, used.min().y() - 1, used.min().z() - 1, used.sizeX() + 1,
+                used.sizeY() + 1, used.sizeZ() + 1);
     }
 
     /**

@@ -1,5 +1,15 @@
 BUILD GUIDE: what makes a build look hand-made, and the loop that gets it there.
 
+DONE MEANS (check before you report a build or a map finished)
+- Every build and every land region has a world_summary review=true that ends "no number below the bar". A review
+  that says "verdict: NOT DONE" is not done, however good the render looks; msc_status and dev_cycle list the reviews
+  still failing until one of the same region passes.
+- Land was shaped, not only generated: terrain, smooth or paint where the build meets it, path to each door, scatter
+  or flora for ground cover, forest or tree around it. Generated land is the start, not the finish.
+- Every build met the ground: trim at=base (a plinth), decorate on=ground (bushes, flowers) and worn ground at the
+  doors; rooms furnished (decorate on=edge, corner, ceiling); weather for age.
+- If the run must end with a review still failing, say which and why in the report; never call it done.
+
 WHERE TO BUILD
 - Build in the world with build_batch (one building per call), not with plugin code that places blocks: code builds are never seen, reviewed or undone. Plugin code only swaps prepared states at runtime (save each state with structure_save, paste it from code or with build_batch structure file=).
 - Land first (next section), then builds fitted into it.
@@ -17,6 +27,12 @@ LAND FIRST
   Mix kinds and sizes, leave clearings, thicken toward water and slopes. Nothing floats: rails and props rest on
   something.
 - Fit builds to the land: foundations reach down to the ground on slopes, a plaza is cut into the hill with retaining walls, and the ground at a build is worn (paths to doors, coarse dirt, gravel), not a clean edge.
+- Underwater builds: find the sea floor with world_slice of a thin column (world_heightmap stops at the water's
+  surface), stand the build on
+  it and let the water stay around it: walls, columns and arches rise from the floor, and only the top (spires, a
+  roof) may break the surface. Waterlogged=true for stairs, slabs, fences, lanterns and chains in the water; a dry
+  room inside is a sealed hull filled with air in a later step. A build resting on the water surface is a floating
+  barge, not a sunken one.
 - Review land as well as builds: world_summary review=true on a land region reports ground at one level, speckled ground (a random mix of clashing blocks) and floating blocks, and it fails land reviewed on the flat dev world: give a map its own world_create worlds. Review the whole map once too, not only each plot.
 
 THE LOOP (every build)
