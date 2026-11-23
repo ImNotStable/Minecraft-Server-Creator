@@ -990,4 +990,66 @@ public sealed interface Step {
             Brushes.caves(c, this);
         }
     }
+
+    /** Entities summoned at a block's centre once the blocks are written (ADR 0082), tagged so build_undo removes them. */
+    record Summon(String world, BlockPos at, String type, String nbt, int count, double dy) implements Step {
+        @Override
+        public Region bounds() {
+            return Region.of(world, at.x(), at.y(), at.z(), at.x(), at.y(), at.z());
+        }
+
+        @Override
+        public void draw(Canvas c) {
+            for (int i = 0; i < count; i++) {
+                c.command(Things.summon(world, type, at.x() + 0.5, at.y() + dy, at.z() + 0.5, nbt, c.tag()));
+            }
+        }
+    }
+
+    /** A biome painted over {@code box} with /fillbiome (ADR 0082); {@code only} limits it to one biome there. */
+    record Biome(Region box, String biome, String only) implements Step {
+        @Override
+        public Region bounds() {
+            return Region.of(box.world(), box.min().x(), box.min().y(), box.min().z(), box.min().x(), box.min().y(),
+                    box.min().z());
+        }
+
+        @Override
+        public void draw(Canvas c) {
+            for (String command : Things.biome(box, biome, only)) {
+                c.command(command);
+            }
+        }
+    }
+
+    /** The game's own configured feature placed with /place feature (ADR 0082), {@code count} times on the ground. */
+    record Feature(String world, BlockPos at, String feature, int count, int spread, long seed) implements Step {
+        @Override
+        public Region bounds() {
+            return Region.of(world, at.x() - spread, at.y() - 16, at.z() - spread, at.x() + spread, at.y() + 16,
+                    at.z() + spread);
+        }
+
+        @Override
+        public void draw(Canvas c) throws InterruptedException {
+            Canvas.Lookup ground = spread == 0 ? null : c.current(bounds());
+            for (BlockPos p : Things.featureSpots(ground, this)) {
+                c.command("execute in " + Things.dimension(world) + " run place feature " + feature + " " + p.x() + " "
+                        + p.y() + " " + p.z());
+            }
+        }
+    }
+
+    /** Lights where it is dark in {@code box} (ADR 0082); see {@link Things#light}. */
+    record Light(Region box, BlockPattern block, String on, int level, long seed, List<String> replace) implements Step {
+        @Override
+        public Region bounds() {
+            return box;
+        }
+
+        @Override
+        public void draw(Canvas c) throws InterruptedException {
+            Things.light(c, this);
+        }
+    }
 }
