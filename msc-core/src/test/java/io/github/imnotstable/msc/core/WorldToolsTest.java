@@ -153,11 +153,11 @@ class WorldToolsTest {
     @Test
     void sliceWritesRepeatedRowsAndLayerRunsOnceAndPastesBack() {
         h.ok("build_batch", "steps", "fill 0,64,0 6,67,6 stone_bricks walls\nfill 0,68,0 6,68,6 oak_planks\n"
-                + "set 3,64,0 oak_door[facing=north,half=lower,hinge=left,open=false]\nset 0,66,3 glass");
+                + "set 3,64,0 oak_stairs[facing=north,half=bottom]\nset 0,66,3 glass");
         String slice = h.ok("world_slice", "region", "0,64,0 6,70,6");
         assertThat(slice).isEqualTo("""
                 region world 0,64,0 6,70,6 size 7x7x7 rows=z cols=x
-                legend: .=air #=stone_bricks a=oak_planks b=oak_door@3,64,0 c=glass@0,66,3
+                legend: .=air #=stone_bricks a=oak_planks b=oak_stairs@3,64,0 c=glass@0,66,3
                 y=64
                 ###b###
                 #.....# (x5)
@@ -176,11 +176,11 @@ class WorldToolsTest {
                 y=68 all a
                 y=69..70 all .""");
         String body = slice.substring(slice.indexOf("legend:"));
-        // A slice without states leaves the door's placement unsaid: build_batch asks for it (ADR 0077).
+        // A slice without states leaves the stair's placement unsaid: build_batch asks for it (ADR 0077).
         assertThat(h.error("build_batch", "steps", "structure 20,64,20\n" + body + "\nend"))
-                .contains("oak_door needs facing=").contains("states=true");
-        String sayDoor = body.replace("b=oak_door@3,64,0", "b=oak_door[facing=north,half=lower,hinge=left,open=false]");
-        h.ok("build_batch", "steps", "structure 20,64,20\n" + sayDoor + "\nend");
+                .contains("oak_stairs needs facing=").contains("states=true");
+        String sayStair = body.replace("b=oak_stairs@3,64,0", "b=oak_stairs[facing=north,half=bottom]");
+        h.ok("build_batch", "steps", "structure 20,64,20\n" + sayStair + "\nend");
         String copy = h.ok("world_slice", "region", "20,64,20 26,70,26");
         assertThat(copy.substring(copy.indexOf("legend:")))
                 .isEqualTo(body.replace("@3,64,0", "@23,64,20").replace("@0,66,3", "@20,66,23"));

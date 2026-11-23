@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.imnotstable.msc.protocol.world.BlockGrid;
 import io.github.imnotstable.msc.protocol.world.BlockPos;
+import io.github.imnotstable.msc.protocol.world.Region;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 
 class BuildReviewTest {
@@ -109,6 +111,34 @@ class BuildReviewTest {
         }
         String review = BuildReview.review(TextGrid.parse(text.toString(), "world", new BlockPos(0, 64, 0)));
         assertThat(review).contains("1 types: bricks 100%").doesNotContain("stone ");
+    }
+
+    @Test
+    void aDarkRoomAndALadderEndingInTheAirAreFlagged() {
+        // A closed 12x12 stone_bricks room on a grass floor, no lights, a ladder on the wall from y 3 up.
+        Region r = Region.of("world", 0, 0, 0, 13, 7, 13);
+        int[] blocks = new int[Math.toIntExact(r.volume())];
+        for (int y = 0; y <= 7; y++) {
+            for (int z = 0; z <= 13; z++) {
+                for (int x = 0; x <= 13; x++) {
+                    boolean shell = y == 0 || y == 1 || y == 7 || x == 0 || x == 13 || z == 0 || z == 13;
+                    blocks[r.index(x, y, z)] = y == 0 ? 1 : shell ? 2 : 0;
+                }
+            }
+        }
+        for (int y = 3; y <= 6; y++) {
+            blocks[r.index(1, y, 5)] = 3;
+        }
+        BlockGrid grid = new BlockGrid(r, List.of("minecraft:air", "minecraft:grass_block", "minecraft:stone_bricks",
+                "minecraft:ladder[facing=east,waterlogged=false]"), blocks);
+        String review = BuildReview.review(grid);
+        assertThat(review).contains("dark rooms: 100% of the floor inside").contains("broken ladders: 1 (first at 1,3,5)");
+        blocks[r.index(6, 6, 6)] = 4;
+        blocks[r.index(1, 2, 5)] = 3;
+        blocks[r.index(1, 1, 5)] = 2;
+        String fixed = BuildReview.review(new BlockGrid(r, List.of("minecraft:air", "minecraft:grass_block",
+                "minecraft:stone_bricks", "minecraft:ladder[facing=east,waterlogged=false]", "minecraft:lantern"), blocks));
+        assertThat(fixed).doesNotContain("dark rooms").doesNotContain("broken ladders");
     }
 
     @Test

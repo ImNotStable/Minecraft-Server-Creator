@@ -67,6 +67,15 @@ class ThingsStepsTest {
     }
 
     @Test
+    void aNameWrittenAsQuotedJsonBecomesAComponent() {
+        // Run 6's villagers showed {"text":"Archivist Vela","color":"gold"} over their heads.
+        assertThat(Things.components("{VillagerData:{profession:\"minecraft:librarian\"},CustomName:'{\"text\":\"Archivist Vela\","
+                + "\"color\":\"gold\"}'}")).isEqualTo("{VillagerData:{profession:\"minecraft:librarian\"},"
+                + "CustomName:{\"text\":\"Archivist Vela\",\"color\":\"gold\"}}");
+        assertThat(Things.components("{CustomName:\"Plain\"}")).isEqualTo("{CustomName:\"Plain\"}");
+    }
+
+    @Test
     void entitiesAreSummonedTaggedAfterTheBlocks() throws Exception {
         Canvas c = draw("""
                 entity 0,1,0 villager data={VillagerData:{profession:"minecraft:farmer"}} still=true yaw=90
