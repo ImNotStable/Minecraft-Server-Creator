@@ -1,6 +1,7 @@
 # ADR 0040: Crash and start-up failure triage as a mode of server_logs
 
-Status: accepted, 2026-11-14, decided by Claude.
+Status: accepted, 2026-11-14, decided by Claude. Extended by ADR 0089 (source links, jar names, proxy causes, 5
+findings).
 
 ## Context
 

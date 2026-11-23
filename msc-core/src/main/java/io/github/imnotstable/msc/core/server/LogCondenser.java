@@ -58,7 +58,10 @@ public final class LogCondenser {
             // Quilt on Minecraft 26.x, which ships unobfuscated: there is no intermediary to remap to, and vanilla's
             // asset lookup does not know Quilt's in-memory file system.
             Pattern.compile("^Not remapping mods because intermediary is missing!$"),
-            Pattern.compile("^Assets URL 'quilt\\.zfs://[^']*' uses unexpected schema$"));
+            Pattern.compile("^Assets URL 'quilt\\.zfs://[^']*' uses unexpected schema$"),
+            // Waterfall's banner on every start (ADR 0088), and Geyser replacing Velocity's channel initializers.
+            Pattern.compile("^Waterfall has reached end of life and is no longer maintained\\..*"),
+            Pattern.compile("^The (server|backend) channel initializer has been replaced by .*"));
     /**
      * Netty probing the macOS and Linux native transports on another OS (NeoForge and Forge log the failed probe
      * with its trace). Matched anywhere in an entry together with {@link #NETTY_UNSUPPORTED}.

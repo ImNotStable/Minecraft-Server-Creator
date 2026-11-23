@@ -1,0 +1,43 @@
+[08:21:08] [main/INFO] [com.velocitypowered.proxy.VelocityServer]: Booting up Velocity 4.3.1...
+[08:21:08] [main/INFO] [com.velocitypowered.proxy.network.ConnectionManager]: Connections will use epoll channels, libdeflate (Linux x86_64) compression, OpenSSL 3.x.x (Linux x86_64) ciphers
+[08:21:08] [main/WARN] [com.velocitypowered.proxy.config.VelocityConfiguration]: The proxy is running in offline mode! This is a security risk and you will NOT receive any support!
+[08:21:08] [main/INFO] [com.velocitypowered.proxy.VelocityServer]: Loading localizations...
+[08:21:08] [main/INFO] [com.velocitypowered.proxy.VelocityServer]: Loading plugins...
+[08:21:08] [main/ERROR] [com.velocitypowered.proxy.plugin.VelocityPluginManager]: Can't load plugin needv due to missing dependency luckperms
+[08:21:08] [main/INFO] [com.velocitypowered.proxy.plugin.VelocityPluginManager]: Loaded plugin boomv 1.0 by 
+[08:21:09] [main/INFO] [floodgate]: Took 139ms to boot Floodgate
+[08:21:09] [main/INFO] [com.velocitypowered.proxy.plugin.VelocityPluginManager]: Loaded plugin floodgate 2.2.5-SNAPSHOT (b141-81b65cc) by GeyserMC
+[08:21:09] [main/INFO] [com.velocitypowered.proxy.plugin.VelocityPluginManager]: Loaded plugin geyser 2.12.1-b1307 (git-master-2a2f5af) by GeyserMC
+[08:21:09] [main/INFO] [com.velocitypowered.proxy.VelocityServer]: Loaded 4 plugins
+[08:21:09] [BoomV - Task Executor #0/ERROR] [com.velocitypowered.proxy.event.VelocityEventManager]: Couldn't pass ProxyInitializeEvent to boomv 1.0
+java.lang.NullPointerException: Cannot invoke "Object.toString()" because "o" is null
+	at com.example.boomv.BoomV.onInit(BoomV.java:8)
+	at com.velocitypowered.proxy.event.UntargetedEventHandler$VoidHandler.lambda$buildHandler$0(UntargetedEventHandler.java:56)
+	at com.velocitypowered.proxy.event.VelocityEventManager.fire(VelocityEventManager.java:553)
+	at com.velocitypowered.proxy.event.VelocityEventManager.lambda$fire$0(VelocityEventManager.java:542)
+	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1090)
+	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:614)
+	at java.base/java.lang.Thread.run(Thread.java:1474)
+[08:21:09] [BoomV - Task Executor #0/WARN] [com.velocitypowered.proxy.network.ConnectionManager]: The server channel initializer has been replaced by java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:104)
+[08:21:09] [BoomV - Task Executor #0/WARN] [com.velocitypowered.proxy.network.ConnectionManager]: The backend channel initializer has been replaced by java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:104)
+[08:21:09] [BoomV - Task Executor #0/INFO] [geyser]: Loading extensions...
+[08:21:09] [BoomV - Task Executor #0/INFO] [geyser]: Loaded 0 extension(s)
+[08:21:09] [Netty epoll Boss #0/INFO] [com.velocitypowered.proxy.network.ConnectionManager]: Listening on /127.0.0.1:25577
+[08:21:09] [main/INFO] [com.velocitypowered.proxy.Velocity]: Done (1.64s)!
+[08:21:10] [Thread-2/INFO] [com.velocitypowered.proxy.VelocityServer]: Shutting down the proxy...
+[08:21:10] [Thread-2/INFO] [com.velocitypowered.proxy.network.ConnectionManager]: Closing endpoint /127.0.0.1:25577
+[08:21:10] [floodgate - Task Executor #0/INFO] [geyser]: Geyser shutdown successfully.
+[08:21:11] [Geyser-Velocity - Task Executor #0/INFO] [geyser]: ******************************************
+[08:21:11] [Geyser-Velocity - Task Executor #0/INFO] [geyser]: 
+[08:21:11] [Geyser-Velocity - Task Executor #0/INFO] [geyser]: Loading Geyser version 2.12.1-b1307 (git-master-2a2f5af)
+[08:21:11] [Geyser-Velocity - Task Executor #0/INFO] [geyser]: 
+[08:21:11] [Geyser-Velocity - Task Executor #0/INFO] [geyser]: ******************************************
+[08:21:12] [Geyser-Velocity - Task Executor #0/INFO] [geyser]: Registered 199 custom block overrides.
+[08:21:12] [Geyser-Velocity - Task Executor #0/INFO] [geyser]: Registered 2 custom block item overrides.
+[08:21:12] [Geyser-Velocity - Task Executor #0/INFO] [geyser]: Registered 7 custom blocks.
+[08:21:13] [Geyser-Velocity - Task Executor #0/INFO] [geyser]: Registered 1 custom items
+[08:21:13] [Geyser-Velocity - Task Executor #0/WARN] [geyser]: The Bedrock "address" 127.0.0.1 is a loopback address which only accepts connections from this machine. NetherNet cannot work that way: every player will time out, including ones on this machine. Set "address" in the "bedrock" section to 0.0.0.0, or to this machine's local network address.
+[08:21:14] [NetherNet Built-in Signaling-4-1/INFO] [org.cloudburstmc.netty.util.nethernet.StunObserver]: Running STUN discovery through stun.cloudflare.com:3478 on udp/19132
+[08:21:14] [NetherNet Built-in Signaling-4-1/INFO] [org.cloudburstmc.netty.util.nethernet.StunObserver]: Running STUN discovery through stun.l.google.com:19302 on udp/19132
+[08:21:14] [Geyser-Velocity - Task Executor #0/INFO] [geyser]: Built-in signaling started on http://127.0.0.1:19132
+[08:21:14] [Geyser-Velocity - Task Executor #0/INFO] [geyser]: Done (2.671s)! Run /geyser help for help!

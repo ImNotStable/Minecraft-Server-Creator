@@ -30,6 +30,94 @@ class CrashTriageTest {
                   fix: fix the code at Arena.java:42 (com.example.myplugin.Arena.load)""");
     }
 
+    /** Real logs from omen (ADR 0089): four broken Paper plugins, as the start report and mode=triage see them. */
+    @Test
+    void realPaperPluginFailuresAreEachNamed() {
+        assertThat(triage("paper-plugins")).isEqualTo("""
+                missing dependency Vault of plugin Needy [log 08:21:05]
+                  fix: install it into plugins/ or mods/, or make the dependency optional
+                plugin jar Future.jar failed to load [log 08:21:05]
+                  cause: org.bukkit.plugin.InvalidPluginException: Unsupported API version 99.0
+                  at org.bukkit.craftbukkit.util.CraftMagicNumbers.checkSupported(CraftMagicNumbers.java:378)
+                  fix: api-version 99.0 in plugin.yml is newer than this server: set the server's Minecraft version \
+                there, or set the server up with that version
+                plugin Linky failed to enable [log 08:21:05]
+                  culprit: com.example.linky.Linky.onEnable
+                  cause: java.lang.NoSuchMethodError: 'java.lang.String com.example.lib.Lib.greet(java.lang.String)'
+                  at com.example.linky.Linky.onEnable(Linky.java:4)
+                  fix: compiled against another version than the server runs: match the API or dependency version to \
+                the server
+                plugin Boom failed to enable [log 08:21:05]
+                  culprit: com.example.boom.Boom.onEnable
+                  cause: java.lang.NullPointerException: Cannot invoke "String.trim()" because "mode" is null
+                  at com.example.boom.Boom.onEnable(Boom.java:9)
+                  fix: fix the code at Boom.java:9 (com.example.boom.Boom.onEnable)""");
+    }
+
+    /**
+     * ADR 0089: with the project's source beside the server folder and the plugins in it, a project frame is its file
+     * and line with the code, another plugin's class is named by its jar, and a missing method by the plugin that lacks it.
+     */
+    @Test
+    void framesLinkToTheProjectAndClassesToTheirJars() throws IOException {
+        Path run = Files.createDirectories(dir.resolve("ws/run/plugins")).getParent();
+        Path src = Files.createDirectories(dir.resolve("ws/boom/src/main/java/com/example/boom"));
+        Files.writeString(src.resolve("Boom.java"), "package com.example.boom;\n\n".repeat(4)
+                + "        start(mode.trim());\n");
+        jar(run.resolve("plugins/Lib.jar"), "name: Lib\nversion: 2.0\nmain: com.example.lib.Lib\n", "com/example/lib/Lib.class");
+        jar(run.resolve("plugins/Linky.jar"), "name: Linky\nversion: 1.0\nmain: com.example.linky.Linky\n",
+                "com/example/linky/Linky.class");
+        String out = CrashTriage.triage(lines("crash-logs/paper-plugins.txt"), run, null, Platform.PAPER).render(null);
+        assertThat(out).contains("""
+                  culprit: com.example.linky.Linky.onEnable in plugin Linky 1.0 (plugins/Linky.jar)
+                  cause: java.lang.NoSuchMethodError: 'java.lang.String com.example.lib.Lib.greet(java.lang.String)'
+                  at com.example.linky.Linky.onEnable(Linky.java:4)
+                  fix: the installed plugin Lib 2.0 (plugins/Lib.jar) has no such member of com.example.lib.Lib: the \
+                caller was built against another version of it; install that version or rebuild against this one""")
+                .contains("\n  culprit: com.example.boom.Boom.onEnable\n  cause: java.lang.NullPointerException: Cannot "
+                        + "invoke \"String.trim()\" because \"mode\" is null\n  at com.example.boom.Boom.onEnable -> "
+                        + "boom/src/main/java/com/example/boom/Boom.java:9: start(mode.trim());\n  fix: fix the code at "
+                        + "boom/src/main/java/com/example/boom/Boom.java:9");
+        CrashSources sources = new CrashSources(run, Platform.PAPER);
+        assertThat(sources.linkage("java.lang.NoClassDefFoundError: com/example/gone/Thing", "x")).isEqualTo(
+                "no installed plugin or mod has com.example.gone.Thing: install the one that provides it, or shade the "
+                        + "library into the jar");
+        assertThat(sources.linkage("java.lang.NoClassDefFoundError: com/example/lib/Lib", "x")).startsWith(
+                "plugin Lib 2.0 (plugins/Lib.jar) has com.example.lib.Lib but the caller's class loader cannot see it");
+        assertThat(sources.linkage("java.lang.NoSuchMethodError: 'void org.bukkit.entity.Player.fly()'", "x"))
+                .startsWith("built against another Paper API than the server runs (org.bukkit.entity.Player lacks it)");
+    }
+
+    /** Real Velocity and Waterfall logs from omen (ADR 0089): a missing dependency and a plugin that throws. */
+    @Test
+    void proxyPluginFailuresAreNamed() {
+        assertThat(triage("velocity-plugins")).isEqualTo("""
+                missing dependency luckperms of plugin needv [log 08:21:08]
+                  fix: install it into plugins/ or mods/, or make the dependency optional
+                plugin boomv failed in its ProxyInitializeEvent listener [log 08:21:09]
+                  culprit: com.example.boomv.BoomV.onInit
+                  cause: java.lang.NullPointerException: Cannot invoke "Object.toString()" because "o" is null
+                  at com.example.boomv.BoomV.onInit(BoomV.java:8)
+                  fix: fix the code at BoomV.java:8 (com.example.boomv.BoomV.onInit)""");
+        assertThat(triage("waterfall-plugins")).isEqualTo("""
+                missing dependency LuckPerms of plugin NeedW [log 08:21:16]
+                  fix: install it into plugins/ or mods/, or make the dependency optional
+                plugin BoomW failed to load [log 08:21:16]
+                  culprit: com.example.boomw.BoomW.onEnable
+                  cause: java.lang.IllegalStateException: no config
+                  at com.example.boomw.BoomW.onEnable(BoomW.java:4)
+                  fix: fix the code at BoomW.java:4 (com.example.boomw.BoomW.onEnable)""");
+    }
+
+    private static void jar(Path file, String pluginYml, String cls) throws IOException {
+        try (java.util.zip.ZipOutputStream out = new java.util.zip.ZipOutputStream(Files.newOutputStream(file))) {
+            out.putNextEntry(new java.util.zip.ZipEntry("plugin.yml"));
+            out.write(pluginYml.getBytes(StandardCharsets.UTF_8));
+            out.putNextEntry(new java.util.zip.ZipEntry(cls));
+            out.write(new byte[] {(byte) 0xCA, (byte) 0xFE});
+        }
+    }
+
     @Test
     void knownCausesAreOneLineAndAFix() {
         assertThat(triage("paper-dependency")).isEqualTo("""
@@ -213,9 +301,11 @@ class CrashTriageTest {
                 "[12:00:02 WARN]: **** FAILED TO BIND TO PORT!",
                 "[12:00:03 ERROR]: Error occurred while enabling A v1",
                 "[12:00:04 ERROR]: Error occurred while enabling B v1",
-                "[12:00:05 ERROR]: Error occurred while enabling C v1");
+                "[12:00:05 ERROR]: Error occurred while enabling C v1",
+                "[12:00:06 ERROR]: Error occurred while enabling D v1",
+                "[12:00:07 ERROR]: Error occurred while enabling E v1");
         assertThat(CrashTriage.triage(lines, dir, null, Platform.PAPER).render(null))
-                .endsWith("\n+2 more: server_logs mode=errors").contains("plugin A failed").doesNotContain("plugin B");
+                .endsWith("\n+2 more: server_logs mode=errors").contains("plugin C failed").doesNotContain("plugin D");
     }
 
     private String triage(String fixture) {

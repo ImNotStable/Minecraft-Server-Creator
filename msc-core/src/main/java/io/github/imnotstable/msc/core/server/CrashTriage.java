@@ -33,7 +33,7 @@ import java.util.stream.Collectors;
  */
 public final class CrashTriage {
     /** Findings shown at most; the rest are counted. */
-    static final int MAX_FINDINGS = 3;
+    static final int MAX_FINDINGS = 5;
     /** Key frames shown per finding. */
     static final int MAX_FRAMES = 3;
     private static final int MAX_CAUSE_CHARS = 200;
@@ -47,6 +47,7 @@ public final class CrashTriage {
     private static final Pattern CAUSED_BY = Pattern.compile("^\\s*Caused by(?: \\d+)?: (.*)$");
     private static final Pattern SUPPRESSED = Pattern.compile("^\\s*Suppressed: .*");
     private static final Pattern UNCAUGHT = Pattern.compile("^Exception in thread \"[^\"]*\" (.*)$");
+    private static final Pattern UNSUPPORTED_API = Pattern.compile("Unsupported API version (\\S+)");
     private static final Pattern PORT = Pattern.compile("Starting (?:Minecraft )?server on \\S*:(\\d+)");
     private static final Pattern FATAL = Pattern.compile(
             "^(Exception in thread |Encountered an unexpected exception|Exception stopping the server|"
@@ -189,8 +190,19 @@ public final class CrashTriage {
                     m -> "missing dependency " + m.group("dep") + " of mod " + m.group("who"), m -> DEP_FIX),
             Rule.of("Error occurred while enabling (?<who>\\S+)", m -> "plugin " + m.group("who") + " failed to enable",
                     null),
-            Rule.of("Could not load '(?:plugins[/\\\\])?(?<who>[^']+)' in (?:folder )?'", m -> "plugin jar "
+            Rule.of("Could not load (?:plugin )?'(?:plugins[/\\\\])?(?<who>[^']+)' in (?:folder )?'", m -> "plugin jar "
                     + m.group("who") + " failed to load", null),
+            // Velocity (ADR 0089).
+            Rule.of("Can't load plugin (?<who>\\S+) due to missing dependency (?<dep>\\S+)",
+                    m -> "missing dependency " + m.group("dep") + " of plugin " + m.group("who"), m -> DEP_FIX),
+            Rule.of("Couldn't pass (?<event>\\w+) to (?<who>\\S+)", m -> "plugin " + m.group("who") + " failed in its "
+                    + m.group("event") + " listener", null),
+            Rule.of("Can't create plugin (?<who>\\S+)", m -> "plugin " + m.group("who") + " failed to construct", null),
+            // Waterfall and BungeeCord.
+            Rule.of("(?<dep>\\S+) \\(required by (?<who>\\S+)\\) is unavailable",
+                    m -> "missing dependency " + m.group("dep") + " of plugin " + m.group("who"), m -> DEP_FIX),
+            Rule.of("Exception encountered when loading plugin: (?<who>\\S+)", m -> "plugin " + m.group("who")
+                    + " failed to load", null),
             Rule.of("Could not execute entrypoint stage '(?<stage>\\w+)' due to errors, provided by '(?<who>[\\w.-]+)'",
                     m -> "mod " + m.group("who") + " failed in its " + m.group("stage") + " entrypoint", null),
             Rule.of("Mixin apply (?:for mod (?<who>[\\w.-]+) )?failed", m -> "mixin "
@@ -284,6 +296,8 @@ public final class CrashTriage {
             add(found, new Finding(what + (t.inProject() ? " in plugin or mod code" : " in server code"),
                     t.culprit(), t.cause().isEmpty() ? e.text() : t.cause(), t.frames(), exceptionFix(t), source));
         }
+        CrashSources sources = new CrashSources(serverDir, platform);
+        found.replaceAll(sources::locate);
         return new Result(found, lines.size(), logSource);
     }
 
@@ -413,6 +427,11 @@ public final class CrashTriage {
                 || c.contains("IncompatibleClassChangeError")) {
             return "compiled against another version than the server runs: match the API or dependency version to "
                     + "the server";
+        }
+        Matcher api = UNSUPPORTED_API.matcher(c);
+        if (api.find()) {
+            return "api-version " + api.group(1) + " in plugin.yml is newer than this server: set the server's "
+                    + "Minecraft version there, or set the server up with that version";
         }
         if (c.contains("InvalidDescriptionException") || c.contains("InvalidPluginException")) {
             return "plugin.yml or paper-plugin.yml is wrong: check name, version, main and api-version";
