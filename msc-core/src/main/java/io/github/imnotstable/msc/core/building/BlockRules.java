@@ -117,7 +117,7 @@ final class BlockRules {
 
     private static boolean axis(String id) {
         return (id.endsWith("_log") || id.endsWith("_wood") || id.endsWith("_stem") || id.endsWith("_hyphae")
-                || AXIS.contains(id)) && !id.equals("petrified_oak_slab");
+                || AXIS.contains(id)) && !id.equals("petrified_oak_slab") && !id.equals("mushroom_stem");
     }
 
     static boolean waterloggable(String id) {

@@ -56,6 +56,9 @@ public final class BuildScript {
             trim X,Y,Z X,Y,Z B at=top|base|band|corners|sills|lintels|shutters|frames [out=1 level=Y]
             decorate X,Y,Z X,Y,Z B [on=top|ground|floor|edge|corner|wall|ceiling chance=25 spacing=N length=A-B tip=B]
             weather X,Y,Z X,Y,Z [amount=30 swap=a>b break=N chip=B]   (these four: msc_status guide=build)
+            tree X,Y,Z [kind=oak size=medium h=N log=B leaves=B]   (bottom trunk block)
+            forest X,Y,Z X,Y,Z [kind=oak:3,birch:1 spacing=7 chance=80 on=B]
+            flora X,Y,Z X,Y,Z style=meadow|B [chance=35 soil=B]   (these three: guide=build)
             structure X,Y,Z [X,Y,Z ...] [rotate=90] [face=X,Z] [anchor=center] [air=false] [file=PATH]
               then the text and "end", unless file= (.schem or text). Text: "legend: #=stone g=glass", then per \
             layer "y=N" and rows (z) of symbols (x); "." air, "_" unchanged; "y=N same as y=M", "y=N all #". rotate \
@@ -67,7 +70,7 @@ public final class BuildScript {
     private static final Pattern BAND = Pattern.compile("\\d+=.+");
     private static final Set<String> FLAGS = Set.of("solid", "hollow", "outline", "walls");
     /** Steps that set facing, half and the like on their own blocks from where each lands. */
-    private static final Set<String> SHAPING = Set.of("roof", "trim", "decorate", "weather");
+    private static final Set<String> SHAPING = Set.of("roof", "trim", "decorate", "weather", "tree", "forest");
 
     /** Where structures come from: files in the workspace and the world itself. */
     public interface StructureFiles {
@@ -389,7 +392,64 @@ public final class BuildScript {
                 int[] length = o.range("length", on.equals("wall") ? new int[] {1, 4} : new int[] {1, 1}, 1, 64);
                 yield new Step.Decorate(new Region(world, p.points().get(0), p.points().get(1)), o.block(),
                         o.pattern("tip", null), on, o.integer("chance", spacing > 1 ? 100 : 25, 1, 100), spacing,
-                        length[0], length[1], o.clump(), o.seed(), o.replace());
+                        length[0], length[1], o.clump(), o.list("soil"), o.seed(), o.replace());
+            }
+            case "flora" -> {
+                o.points(2);
+                o.flags(Set.of());
+                String style = o.string("style");
+                if ((style == null) == (p.block() == null)) {
+                    throw new ToolException("flora takes style=" + String.join("|", Nature.FLORA)
+                            + " or a plant mix, one of them");
+                }
+                int clump = o.clump() == 0 ? 5 : o.clump();
+                String[] preset = style == null ? null : Nature.flora(style);
+                BlockPattern plants = preset == null ? o.block()
+                        : o.chosen(BlockPattern.parse(preset[0], o.seed()).withClump(clump));
+                List<String> soil = o.list("soil");
+                if (soil.isEmpty() && preset != null) {
+                    soil = List.of(preset[1].split(",")).stream().map(BlockNames::full).toList();
+                }
+                yield new Step.Decorate(new Region(world, p.points().get(0), p.points().get(1)), plants, null, "ground",
+                        o.integer("chance", 35, 1, 100), 1, 1, 1, clump, soil, o.seed(), o.replace());
+            }
+            case "tree" -> {
+                o.points(1);
+                o.flags(Set.of());
+                String kind = o.string("kind");
+                kind = kind == null ? "oak" : kind;
+                Nature.checkKind(kind);
+                String size = o.string("size");
+                size = size == null ? "medium" : size;
+                Nature.checkSize(size);
+                yield new Step.Tree(world, p.points().get(0), kind, size, o.integer("h", 0, 0, 64),
+                        o.pattern("log", null), o.pattern("leaves", null), o.seed(), o.replace());
+            }
+            case "forest" -> {
+                o.points(2);
+                o.flags(Set.of());
+                String kindText = o.string("kind");
+                List<String> kinds = new ArrayList<>();
+                List<Integer> weights = new ArrayList<>();
+                for (String entry : (kindText == null ? "oak" : kindText).split(",")) {
+                    String[] kw = entry.trim().split(":");
+                    Nature.checkKind(kw[0]);
+                    kinds.add(kw[0]);
+                    try {
+                        weights.add(kw.length > 1 ? Math.max(1, Integer.parseInt(kw[1])) : 1);
+                    } catch (NumberFormatException e) {
+                        throw new ToolException("kind takes kind:weight entries, such as oak:3,birch:1; got " + entry);
+                    }
+                }
+                String size = o.string("size");
+                size = size == null ? "mixed" : size;
+                if (!size.equals("mixed")) {
+                    Nature.checkSize(size);
+                }
+                yield new Step.Forest(new Region(world, p.points().get(0), p.points().get(1)), kinds,
+                        weights.stream().mapToInt(Integer::intValue).toArray(), size, o.pattern("log", null),
+                        o.pattern("leaves", null), o.integer("spacing", 7, 2, 256), o.integer("chance", 80, 1, 100),
+                        o.list("on"), o.seed(), o.replace());
             }
             case "weather" -> {
                 o.points(2);
@@ -422,7 +482,7 @@ public final class BuildScript {
             case "copy" -> copy(p);
             default -> throw new ToolException("unknown step \"" + p.verb()
                     + "\"; use fill, set, cylinder, ring, disc, sphere, dome, line, helix, bands, terrain, path, scatter, roof, trim, "
-                    + "decorate, weather, structure or copy");
+                    + "decorate, weather, flora, tree, forest, structure or copy");
         };
         if (!p.verb().equals("structure") && !p.verb().equals("copy")) {
             o.done();
@@ -714,6 +774,13 @@ public final class BuildScript {
 
         int clump() {
             return integer("clump", 0, 0, 256);
+        }
+
+        /** {@code key=a,b} as full block names; empty when absent. */
+        List<String> list(String key) {
+            String v = string(key);
+            return v == null ? List.of() : BlockPattern.splitTopLevel(v).stream().map(String::trim)
+                    .filter(t -> !t.isEmpty()).map(BlockNames::full).toList();
         }
 
         List<String> replace() {
