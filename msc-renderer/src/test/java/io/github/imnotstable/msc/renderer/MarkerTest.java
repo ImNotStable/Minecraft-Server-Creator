@@ -44,6 +44,12 @@ class MarkerTest {
     }
 
     @Test
+    void symbolsTheFontLacksAreDroppedButLettersStay() {
+        assertThat(WorldRenderer.textLines(List.of("🌿 Worldroot ✦ Café", "❄")))
+                .containsExactly("Worldroot Café");
+    }
+
+    @Test
     void theFontHasLettersAndPunctuation() {
         assertThat("Hello, World! 1-2 (ok)?".chars()).allMatch(c -> PixelFont.known((char) c.intValue()));
         assertThat(PixelFont.known('é')).isFalse();

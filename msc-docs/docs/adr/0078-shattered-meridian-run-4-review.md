@@ -42,5 +42,10 @@ The rest are agent mistakes: no `world_create`, buildings left on a bare base, a
    world, one per region or biomes sharing the land, and allows an arena meant to be flat.
 4. The build guide names these and says to review the whole map once, not only each plot.
 
-Not done: the IDE not showing MSC's tools (Antigravity's side; the CLI run of ADR 0071 had them), and emoji in text
-displays drawn as `?` in renders.
+5. Renders drop symbols the 3x5 pixel font has no glyph for (emoji, stars) from text boxes instead of drawing each
+   UTF-16 half as `?`: "🌿 Worldroot" read as "?? WORLDROOT", like broken text. Letters it lacks (é) still show as `?`,
+   and the caption keeps the full text.
+
+Not MSC's: the IDE not showing MSC's tools. Antigravity's own state for the run listed the server `msc_msc` as ready with
+all 29 tools, yet the agent's tool list had none of them; the CLI run of ADR 0071 had them. The likeliest cause is the
+conversation fixing its tool list before the Java launcher finished starting, which MSC cannot change from its side.

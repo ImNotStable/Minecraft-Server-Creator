@@ -390,11 +390,17 @@ public final class WorldRenderer {
         return false;
     }
 
-    /** Lines as the image shows them: formatting codes gone, blank lines dropped, each line and the count capped. */
+    /**
+     * Lines as the image shows them: formatting codes and symbols the pixel font has no glyph for (emoji, stars) gone,
+     * blank lines dropped, each line and the count capped. An emoji drawn as "??" read like broken text (ADR 0078); the
+     * caption keeps the full text.
+     */
     static List<String> textLines(List<String> text) {
         List<String> out = new ArrayList<>();
         for (String raw : text) {
-            String line = raw.replaceAll("\u00a7.", "").strip().replaceAll("\\s+", " ");
+            String drawable = raw.replaceAll("§.", "").codePoints().filter(cp -> cp < 128 || Character.isLetterOrDigit(cp))
+                    .collect(StringBuilder::new, StringBuilder::appendCodePoint, StringBuilder::append).toString();
+            String line = drawable.replaceAll("\u00a7.", "").strip().replaceAll("\\s+", " ");
             if (line.isEmpty()) {
                 continue;
             }
