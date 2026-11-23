@@ -56,6 +56,7 @@ class BadInputBehaviourTest {
             new Row("server_logs"),
             new Row("server_command", "command", "list"),
             new Row("server_profile", "seconds", 5),
+            new Row("server_export", "target", "docker", "dir", "export/bad", "world", false),
             new Row("server_wait", "until", "Done", "timeoutSeconds", 1),
             new Row("api_search", "query", "timeout"),
             new Row("api_class", "name", "Assertions"),

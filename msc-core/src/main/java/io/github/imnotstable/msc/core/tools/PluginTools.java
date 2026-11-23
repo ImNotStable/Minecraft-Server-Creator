@@ -20,6 +20,11 @@ import java.util.List;
 final class PluginTools {
     /** In the server folder: the Minecraft version server_setup installed, which installs match. */
     static final String VERSION_FILE = ".msc-minecraft";
+    /**
+     * In the server folder: where each installed jar came from, {@code <source>:<id> <jar name>} per line, so an export
+     * lets the production server keep it up to date from that source (ADR 0091).
+     */
+    static final String SOURCES_FILE = ".msc-plugins";
 
     private final CoreConfig config;
     private final ServerManager server;
@@ -64,6 +69,7 @@ final class PluginTools {
             String minecraft = Files.exists(versionFile) ? Files.readString(versionFile).strip() : config.minecraft();
             for (AddonSources.Installed i : sources.install(refs, platform, minecraft, dir)) {
                 replaceOlder(dir, i.jar());
+                recordSource(config.serverDir(), i.ref(), i.jar().getFileName().toString());
                 out.append("installed ").append(i.ref()).append(i.version() == null ? "" : " " + i.version())
                         .append(" -> ").append(platform.addonDir()).append('/').append(i.jar().getFileName());
                 if (i.note() != null) {
@@ -88,6 +94,31 @@ final class PluginTools {
             problems.forEach(p -> out.append("- ").append(p).append('\n'));
         }
         return out.toString().strip();
+    }
+
+    /** Records that {@code jar} came from {@code ref}, replacing an earlier line for the same ref. */
+    static void recordSource(Path serverDir, AddonSources.Ref ref, String jar) throws IOException {
+        Path file = serverDir.resolve(SOURCES_FILE);
+        String key = ref.source() + ":" + ref.id();
+        List<String> lines = new ArrayList<>(Files.exists(file) ? Files.readAllLines(file) : List.of());
+        lines.removeIf(l -> l.startsWith(key + " "));
+        lines.add(key + " " + jar);
+        io.github.imnotstable.msc.process.AtomicFile.write(file, to -> Files.write(to, lines));
+    }
+
+    /** The recorded sources: jar name to {@code <source>:<id>}, for jars still in the folder. */
+    static java.util.Map<String, String> sources(Path serverDir) throws IOException {
+        Path file = serverDir.resolve(SOURCES_FILE);
+        java.util.Map<String, String> out = new java.util.LinkedHashMap<>();
+        if (Files.exists(file)) {
+            for (String l : Files.readAllLines(file)) {
+                String[] w = l.strip().split(" ", 2);
+                if (w.length == 2) {
+                    out.put(w[1], w[0]);
+                }
+            }
+        }
+        return out;
     }
 
     /** Deletes the other jars in {@code dir} that declare the same id as {@code jar}: an install replaces, never adds a copy. */

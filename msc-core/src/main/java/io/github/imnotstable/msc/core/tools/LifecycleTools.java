@@ -121,6 +121,13 @@ public final class LifecycleTools {
         registry.add("server_wait", "Wait until a log or chat line matches a regex, instead of polling.",
                 Schema.of().req("until", "string", "Regex, case-insensitive")
                         .range("timeoutSeconds", 1, ServerConsole.MAX_WAIT_SECONDS, "Default 60"), console::await);
+        ServerExport export = new ServerExport(config, server);
+        registry.add("server_export", "Ship the dev server: docker (Compose on the itzg images: server jar and "
+                        + "Modrinth/Spigot plugins update themselves, scheduled world backups) or a pterodactyl egg.",
+                Schema.of().opt("target", "string", "docker (default) or pterodactyl")
+                        .opt("dir", "string", "Empty folder in the workspace. Default export/<target>")
+                        .opt("world", "boolean", "Include the world (server stopped)"),
+                export::run);
         registry.add("server_profile", "Profile the running server while it is loaded: where time goes (your code, "
                         + "plugins or mods, server areas), hottest methods, GC, allocation, and config to tune.",
                 Schema.of().range("seconds", 5, ServerProfile.MAX_SECONDS, "Default 30"),
