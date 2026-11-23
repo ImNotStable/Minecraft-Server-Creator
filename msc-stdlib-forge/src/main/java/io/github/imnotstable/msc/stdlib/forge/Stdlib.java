@@ -47,6 +47,10 @@ public final class Stdlib {
         // A predicate listener cancels the event by returning true.
         PlayerInteractEvent.RightClickItem.BUS.addListener((Predicate<PlayerInteractEvent.RightClickItem>) e -> e.getHand() == InteractionHand.MAIN_HAND
                 && e.getEntity() instanceof ServerPlayer p && CustomItems.use(p, e.getItemStack()));
+        net.minecraftforge.event.RegisterCommandsEvent.BUS.addListener(e -> Hooks.commands(e.getDispatcher()));
+        PlayerInteractEvent.EntityInteractSpecific.BUS.addListener((Predicate<PlayerInteractEvent.EntityInteractSpecific>) e ->
+                e.getHand() == InteractionHand.MAIN_HAND && e.getEntity() instanceof ServerPlayer p
+                        && Hooks.interact(p, e.getTarget()));
         AttackEntityEvent.BUS.addListener((Predicate<AttackEntityEvent>) e -> {
             if (e.getTarget() instanceof ServerPlayer victim && !Regions.canAttack(victim)) {
                 return true;

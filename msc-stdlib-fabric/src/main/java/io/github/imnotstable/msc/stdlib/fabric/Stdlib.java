@@ -1,10 +1,12 @@
 package io.github.imnotstable.msc.stdlib.fabric;
 
+import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.event.player.AttackEntityCallback;
 import net.fabricmc.fabric.api.event.player.PlayerBlockBreakEvents;
 import net.fabricmc.fabric.api.event.player.UseBlockCallback;
+import net.fabricmc.fabric.api.event.player.UseEntityCallback;
 import net.fabricmc.fabric.api.event.player.UseItemCallback;
 import net.fabricmc.fabric.api.message.v1.ServerMessageEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
@@ -52,6 +54,10 @@ public final class Stdlib {
                 player.getItemInHand(hand).getItem() instanceof BlockItem
                         && !Regions.canBuild(level.dimension(), hit.getBlockPos().relative(hit.getDirection()))
                         ? InteractionResult.FAIL : InteractionResult.PASS);
+        CommandRegistrationCallback.EVENT.register((dispatcher, registries, environment) -> Hooks.commands(dispatcher));
+        UseEntityCallback.EVENT.register((player, level, hand, entity, hit) -> hand == InteractionHand.MAIN_HAND
+                && player instanceof ServerPlayer sp && Hooks.interact(sp, entity) ? InteractionResult.SUCCESS
+                : InteractionResult.PASS);
         ServerMessageEvents.ALLOW_CHAT_MESSAGE.register((message, sender, params) ->
                 !Prompt.answer(sender.getUUID(), message.signedContent()));
     }

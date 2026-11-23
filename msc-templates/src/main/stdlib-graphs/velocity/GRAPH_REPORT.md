@@ -1,52 +1,51 @@
 
 ## Corpus Check
-- 56 files · ~26,400 words
+- 58 files · ~27,634 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 1008 nodes · 2134 edges · 50 communities (21 shown, 29 thin omitted)
-- Extraction: 93% EXTRACTED · 7% INFERRED · 0% AMBIGUOUS · INFERRED: 153 edges (avg confidence: 0.85)
+- 1061 nodes · 2252 edges · 49 communities (22 shown, 27 thin omitted)
+- Extraction: 93% EXTRACTED · 7% INFERRED · 0% AMBIGUOUS · INFERRED: 164 edges (avg confidence: 0.85)
 - Token cost: 0 input · 0 output
 
 ## Community Hubs (Navigation)
-- Permissions
 - net.kyori.adventure.audience.Audience
+- Permissions
+- CommandTree
 - MongoRepository
 - DatabaseType
 - Datapack
-- VelocityScheduler
+- Format
 - Cache
+- VelocityScheduler
 - Vec3
 - Redis
 - Scheduler
+- Repository.java
 - Database
-- Format
 - Query
 - Codec
-- LootTable
 - Override
-- Game
-- Team
-- Sounds
-- Json.java
-- Dialogue
+- LootTable
 - list
+- Sounds
+- Dialogue
 - Repository
 - Row
+- Listener
+- Game
+- Cuboid
 - Region
 - DatabaseConfig
 - java.sql.Connection
 - .update
 - Arena
-- Cuboid
-- EventBus
 - .end
+- Team
+- EventBus
 - Leaderboard
-- Listener
-- Id.java
 - Builder
 - Randoms
-- Cooldowns
 - .apply
 - Phase
 - RateLimiter
@@ -61,7 +60,7 @@
 7. `Datapack` - 28 edges
 8. `Store` - 26 edges
 9. `Cache` - 22 edges
-10. `Cuboid` - 22 edges
+10. `CommandTree` - 22 edges
 
 ## Surprising Connections (you probably didn't know these)
 - `VelocityScheduler` --implements--> `Scheduler`  [EXTRACTED]
@@ -78,61 +77,69 @@
 ## Import Cycles
 - None detected.
 
-## Communities (50 total, 29 thin omitted)
+## Communities (49 total, 27 thin omitted)
 
-### Community 0 - "Permissions"
+### Community 0 - "net.kyori.adventure.audience.Audience"
+Cohesion: 0.05
+Nodes (5): Messages, Text, Bar, Feedback, Lang
+
+### Community 1 - "Permissions"
 Cohesion: 0.07
 Nodes (7): Store, WriteBehind, Group, GroupEdit, Permissions, User, PlayerData
 
-### Community 1 - "net.kyori.adventure.audience.Audience"
+### Community 2 - "CommandTree"
 Cohesion: 0.06
-Nodes (5): Messages, Text, Bar, Feedback, Lang
+Nodes (8): CommandTree, Ctx, Fail, Source, Cooldowns, Cmd, SimpleCommand, CommandTree.Source
 
-### Community 2 - "MongoRepository"
-Cohesion: 0.07
+### Community 3 - "MongoRepository"
+Cohesion: 0.06
 Nodes (6): Messenger, Messenger, Subscription, Mongo, Store<>, MongoRepository
 
-### Community 3 - "DatabaseType"
+### Community 4 - "DatabaseType"
 Cohesion: 0.08
 Nodes (18): ColumnType, BOOLEAN, BYTES, DOUBLE, INSTANT, INT, LONG, STRING (+10 more)
 
-### Community 4 - "Datapack"
+### Community 5 - "Datapack"
 Cohesion: 0.10
 Nodes (3): Config, Validated, Datapack
 
-### Community 5 - "VelocityScheduler"
-Cohesion: 0.11
-Nodes (4): Servers, Stdlib, VelocityScheduler, Task
+### Community 6 - "Format"
+Cohesion: 0.08
+Nodes (5): Id, Indexed, Length, Durations, Format
 
-### Community 6 - "Cache"
+### Community 7 - "Cache"
 Cohesion: 0.10
 Nodes (10): Builder, Cache, Cause, EXPIRED, INVALIDATED, REPLACED, SIZE, Entry (+2 more)
 
-### Community 8 - "Redis"
+### Community 8 - "VelocityScheduler"
+Cohesion: 0.11
+Nodes (4): Servers, Stdlib, VelocityScheduler, Task
+
+### Community 10 - "Redis"
 Cohesion: 0.12
 Nodes (5): Lock, Redis, JedisPubSub, Messenger, Store<>
 
-### Community 9 - "Scheduler"
+### Community 11 - "Scheduler"
 Cohesion: 0.12
 Nodes (5): Scheduler, Task, Sequence, Scheduler.Task, Step
 
-### Community 10 - "Database"
+### Community 14 - "Database"
 Cohesion: 0.13
 Nodes (3): Database, PoolStats, RowMapper
 
-### Community 15 - "Codec"
+### Community 16 - "Codec"
 Cohesion: 0.17
 Nodes (3): Codec, Codec<>, FileStore
 
-### Community 16 - "LootTable"
+### Community 17 - "Override"
+Cohesion: 0.15
+Nodes (3): Store<>, Store<>, Store<>
+
+### Community 18 - "LootTable"
 Cohesion: 0.19
 Nodes (7): Builder, Context, Drop, Entry, LootTable, Pool, PoolBuilder
 
-### Community 18 - "Override"
-Cohesion: 0.16
-Nodes (3): Store<>, Store<>, Store<>
-
-### Community 21 - "Sounds"
+### Community 22 - "Sounds"
 Cohesion: 0.13
 Nodes (12): Sounds, CLICK, DEFEAT, FAIL, GO, NOTIFY, OPEN, PICKUP (+4 more)
 
@@ -140,49 +147,45 @@ Nodes (12): Sounds, CLICK, DEFEAT, FAIL, GO, NOTIFY, OPEN, PICKUP (+4 more)
 Cohesion: 0.22
 Nodes (4): Builder, Choice, Dialogue, Page
 
-### Community 28 - "Region"
+### Community 29 - "Region"
 Cohesion: 0.17
 Nodes (3): Region, Region, Region
 
-### Community 30 - "java.sql.Connection"
+### Community 31 - "java.sql.Connection"
 Cohesion: 0.23
 Nodes (3): DatabaseException, SqlFunction, Schema
 
-### Community 34 - "EventBus"
+### Community 35 - ".end"
+Cohesion: 0.20
+Nodes (7): Reason, LAST_STANDING, SCORE, STOPPED, TIME, Result, Winner
+
+### Community 37 - "EventBus"
 Cohesion: 0.21
 Nodes (5): Cancellable, CancellableEvent, EventBus, Handler, Subscription
 
-### Community 35 - ".end"
-Cohesion: 0.21
-Nodes (7): Reason, LAST_STANDING, SCORE, STOPPED, TIME, Result, Winner
-
-### Community 38 - "Id.java"
-Cohesion: 0.47
-Nodes (3): Id, Indexed, Length
-
-### Community 48 - "Phase"
+### Community 46 - "Phase"
 Cohesion: 0.33
 Nodes (5): Phase, ENDING, RUNNING, STARTING, WAITING
 
 ## Knowledge Gaps
 - **37 isolated node(s):** `EXPIRED`, `SIZE`, `REPLACED`, `INVALIDATED`, `STRING` (+32 more)
-  These have ≤1 connection - possible missing edges. (Counts symbols only; 219 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
-- **29 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+  These have ≤1 connection - possible missing edges. (Counts symbols only; 230 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
+- **27 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `Repository` connect `Repository` to `DatabaseType`, `duration`, `Database`, `Query`, `MongoRepository.java`, `Json.java`, `Row`, `.update`?**
-  _High betweenness centrality (0.109) - this node is a cross-community bridge._
+- **Why does `Game` connect `Game` to `Arena`, `.addScore`, `.end`, `Team`, `Builder`, `Game.java`, `Scheduler`, `Phase`, `Listener`?**
+  _High betweenness centrality (0.132) - this node is a cross-community bridge._
 - **What connects `EXPIRED`, `SIZE`, `REPLACED` to the rest of the system?**
   _37 weakly-connected nodes found - possible missing edges._
+- **Should `net.kyori.adventure.audience.Audience` be split into smaller, more focused modules?**
+  _Cohesion score 0.054274084124830396 - nodes in this community are weakly interconnected._
+- **Why does `Vec3` connect `Vec3` to `Arena`, `.addScore`, `.orient`, `Game.java`, `.lerp`, `map`, `Listener`, `Cuboid`, `Region`?**
+  _High betweenness centrality (0.129) - this node is a cross-community bridge._
 - **Should `Permissions` be split into smaller, more focused modules?**
   _Cohesion score 0.06746031746031746 - nodes in this community are weakly interconnected._
-- **Why does `Store` connect `Permissions` to `MongoRepository`, `DatabaseType`, `Redis`, `MongoRepository.java`, `Codec`, `Override`, `map`?**
-  _High betweenness centrality (0.091) - this node is a cross-community bridge._
-- **Should `net.kyori.adventure.audience.Audience` be split into smaller, more focused modules?**
-  _Cohesion score 0.05888376856118792 - nodes in this community are weakly interconnected._
-- **Why does `Game` connect `Game` to `Arena`, `.end`, `Listener`, `.join`, `Scheduler`, `Builder`, `Phase`, `Database.java`, `Team`?**
-  _High betweenness centrality (0.091) - this node is a cross-community bridge._
-- **Should `MongoRepository` be split into smaller, more focused modules?**
-  _Cohesion score 0.0660377358490566 - nodes in this community are weakly interconnected._
+- **Why does `Scheduler` connect `Scheduler` to `net.kyori.adventure.audience.Audience`, `Arena`, `VelocityScheduler`, `Builder`, `Game.java`, `MongoRepository.java`, `list`, `Game`?**
+  _High betweenness centrality (0.126) - this node is a cross-community bridge._
+- **Should `CommandTree` be split into smaller, more focused modules?**
+  _Cohesion score 0.06233766233766234 - nodes in this community are weakly interconnected._
