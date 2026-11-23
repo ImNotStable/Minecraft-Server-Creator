@@ -28,6 +28,19 @@ class OpenReviewsTest {
     }
 
     @Test
+    void anEditAfterAPassReopensTheReviewItTouches() {
+        OpenReviews open = new OpenReviews();
+        Region house = Region.of("msc:a", 0, 60, 0, 10, 70, 10);
+        Region other = Region.of("msc:a", 50, 60, 50, 60, 70, 60);
+        open.record(house, "review: 10 blocks\nno number below the bar");
+        open.record(other, "review: 10 blocks\nno number below the bar");
+        open.edited(Region.of("msc:a", -20, 55, -20, 20, 80, 20)); // landscaping the town around the house
+        assertThat(open.line()).contains("- msc:a 0,60,0 10,70,10: edited since it passed").doesNotContain("50,60,50");
+        open.record(house, "review: 10 blocks\nno number below the bar");
+        assertThat(open.line()).isEmpty();
+    }
+
+    @Test
     void aPassingReviewOfAPartLeavesTheWholeFailing() {
         OpenReviews open = new OpenReviews();
         open.record(Region.of("msc:a", 0, 60, 0, 100, 90, 100), FAILED);
