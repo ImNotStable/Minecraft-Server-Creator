@@ -5,6 +5,7 @@ import io.github.imnotstable.msc.core.tool.ToolException;
 import io.github.imnotstable.msc.core.world.Coords;
 import io.github.imnotstable.msc.core.world.Footprint;
 import io.github.imnotstable.msc.core.world.WorldService;
+import io.github.imnotstable.msc.protocol.Limits;
 import io.github.imnotstable.msc.protocol.message.ErrorCodes;
 import io.github.imnotstable.msc.protocol.op.Ops;
 import io.github.imnotstable.msc.protocol.op.PartialEdit;
@@ -69,14 +70,17 @@ public final class Builder {
         if (dryRun) {
             Canvas canvas = draw(bounds, steps, tool);
             Region used = canvas.used();
+            List<String> commands = canvas.commands();
             if (used == null) {
-                return NOTHING;
+                return commands.isEmpty() ? NOTHING : "dry run, nothing run: no blocks, " + commands.size()
+                        + " command" + (commands.size() == 1 ? "" : "s") + ", first: " + commands.getFirst();
             }
             String check = hub.current() == null ? "block names not checked: the server is not running"
                     : check(world.run(), canvas, used) == null ? "block names: all valid" : null;
             return "dry run, nothing placed: " + canvas.placed() + " blocks in " + Coords.show(used) + " size "
                     + used.sizeX() + "x" + used.sizeY() + "x" + used.sizeZ() + "\n" + counts(canvas.counts()) + "\n"
-                    + check;
+                    + check + (commands.isEmpty() ? "" : "\nthen " + commands.size() + " command"
+                    + (commands.size() == 1 ? "" : "s"));
         }
         // From the first read of the world (replace=, copy) to the new id, no other edit is written or undone, so the
         // world is what the edits give applied in id order (ADR 0049, #704).
@@ -110,17 +114,22 @@ public final class Builder {
     private String build(Region bounds, List<Step> steps, boolean physics, String tool) throws InterruptedException {
         Canvas canvas = draw(bounds, steps, tool);
         Region used = canvas.used();
-        if (used == null) {
+        List<String> commands = canvas.commands();
+        if (used == null && commands.isEmpty()) {
             return NOTHING;
         }
         WorldService.Run run = world.run();
-        check(run, canvas, used);
+        if (used != null) {
+            check(run, canvas, used);
+        }
         String backup = beforeWrite.before(canvas.placed());
-        Footprint where = canvas.footprint(used);
+        Footprint where = used != null ? canvas.footprint(used)
+                : new Footprint(Region.of(bounds.world(), bounds.min().x(), bounds.min().y(), bounds.min().z(),
+                bounds.min().x(), bounds.min().y(), bounds.min().z()), new java.util.BitSet());
         List<String> ids = new ArrayList<>();
         long changed = 0;
         try {
-            for (Region part : Coords.split(used)) {
+            for (Region part : used == null ? List.<Region>of() : Coords.split(used)) {
                 BlockGrid grid = canvas.grid(part);
                 if (grid != null) {
                     Ops.EditResult r = world.call(run, Ops.WORLD_WRITE, new Ops.WriteParams(grid, physics));
@@ -134,12 +143,53 @@ public final class Builder {
             }
             throw cleanUp(run, ids, where, used, e);
         }
+        String ran = commands.isEmpty() ? "" : "\n" + runCommands(run, commands, canvas.tag());
+        boolean summons = commands.stream().anyMatch(c -> c.contains(" summon "));
+        String id = world.remember(ids, where, run,
+                summons ? List.of("kill @e[tag=" + canvas.tag() + "]") : List.of());
+        if (used == null) {
+            return "edit " + id + ": no blocks" + ran + (backup.isEmpty() ? "" : "\n" + backup);
+        }
         String counts = counts(canvas.counts());
         // One kind of block, or nothing left unchanged: the extra numbers say nothing new.
-        return "edit " + world.remember(ids, where, run) + ": " + changed + " blocks changed"
+        return "edit " + id + ": " + changed + " blocks changed"
                 + (changed == canvas.placed() ? "" : " (" + canvas.placed() + " placed)") + ", region "
-                + Coords.show(used) + (canvas.counts().size() > 1 ? "\n" + counts : "")
+                + Coords.show(used) + (canvas.counts().size() > 1 ? "\n" + counts : "") + ran
                 + (backup.isEmpty() ? "" : "\n" + backup);
+    }
+
+    /**
+     * Run the build's commands once its blocks are written (ADR 0081), and say how they went: entities carry the
+     * build's tag so build_undo removes them; biome and feature changes are not undone.
+     */
+    private String runCommands(WorldService.Run run, List<String> commands, String tag) throws InterruptedException {
+        List<String> failed = new ArrayList<>();
+        for (String command : commands) {
+            try {
+                Ops.CommandResult r = world.call(run, Ops.SERVER_COMMAND, new Ops.CommandParams(command));
+                if (!r.success()) {
+                    failed.add(Limits.shorten(command, 60) + ": " + (r.output().isEmpty() ? "failed"
+                            : Limits.shorten(r.output().getFirst(), 120)));
+                }
+            } catch (OpException e) {
+                failed.add(Limits.shorten(command, 60) + ": " + Limits.shorten(e.detail(), 120));
+            }
+        }
+        StringBuilder out = new StringBuilder(commands.size() - failed.size() + " of " + commands.size() + " command"
+                + (commands.size() == 1 ? "" : "s") + " ran");
+        if (commands.stream().anyMatch(c -> c.contains(" summon "))) {
+            out.append("; entities tagged ").append(tag).append(" (build_undo removes them)");
+        }
+        if (commands.stream().anyMatch(c -> c.contains(" fillbiome ") || c.contains(" place "))) {
+            out.append("; biome and feature changes are not undone");
+        }
+        for (int i = 0; i < Math.min(5, failed.size()); i++) {
+            out.append("\nfailed: ").append(failed.get(i));
+        }
+        if (failed.size() > 5) {
+            out.append("\n(+").append(failed.size() - 5).append(" more failed)");
+        }
+        return out.toString();
     }
 
     /**

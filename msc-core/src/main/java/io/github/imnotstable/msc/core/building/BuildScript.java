@@ -61,6 +61,9 @@ public final class BuildScript {
             flora X,Y,Z X,Y,Z style=meadow|B [chance=35 soil=B]   (these three: guide=build)
             smooth|erode|blend X,Y,Z X,Y,Z   paint X,Y,Z X,Y,Z B [slope=A-B]   (shape what is there)
             river|tunnel X,Y,Z X,Y,Z ...   cave X,Y,Z X,Y,Z   (these seven: guide=build)
+            sign|banner|head|book|container X,Y,Z B text="a|b"|patterns=|player=|pages=|items=
+            entity X,Y,Z TYPE [data={} still=true]  frame X,Y,Z item= facing=  stand X,Y,Z [head= mainhand=]
+            biome X,Y,Z X,Y,Z ID  feature X,Y,Z ID [count= spread=]  light X,Y,Z X,Y,Z [B level=8]  (guide=build)
             structure X,Y,Z [X,Y,Z ...] [rotate=90] [face=X,Z] [anchor=center] [air=false] [file=PATH]
               then the text and "end", unless file= (.schem or text). Text: "legend: #=stone g=glass", then per \
             layer "y=N" and rows (z) of symbols (x); "." air, "_" unchanged; "y=N same as y=M", "y=N all #". rotate \
@@ -149,8 +152,13 @@ public final class BuildScript {
         List<String> out = new ArrayList<>();
         StringBuilder word = new StringBuilder();
         BlockPattern.Nesting n = new BlockPattern.Nesting();
+        boolean quoted = false; // text="two words" keeps its spaces (ADR 0081)
         for (char c : line.trim().toCharArray()) {
-            if (n.top(c) && Character.isWhitespace(c)) {
+            boolean top = n.top(c);
+            if (top && c == '"') {
+                quoted = !quoted;
+            }
+            if (top && !quoted && Character.isWhitespace(c)) {
                 if (!word.isEmpty()) {
                     out.add(word.toString());
                     word.setLength(0);
@@ -181,7 +189,11 @@ public final class BuildScript {
                 bands.add(t);
             } else if (OPTION.matcher(t).matches()) {
                 int eq = t.indexOf('=');
-                if (options.put(t.substring(0, eq), t.substring(eq + 1)) != null) {
+                String value = t.substring(eq + 1);
+                if (value.length() >= 2 && value.startsWith("\"") && value.endsWith("\"")) {
+                    value = value.substring(1, value.length() - 1);
+                }
+                if (options.put(t.substring(0, eq), value) != null) {
                     throw new ToolException(t.substring(0, eq) + "= is given twice");
                 }
             } else if (FLAGS.contains(t.toLowerCase(java.util.Locale.ROOT))) {
@@ -474,6 +486,94 @@ public final class BuildScript {
                         o.integer("density", 30, 1, 100), o.integer("scale", 16, 4, 256), o.integer("roof", 4, 0, 64),
                         p.block() == null ? BlockPattern.single("minecraft:air") : o.block(), o.seed(), o.replace());
             }
+            case "sign", "banner", "head", "book", "container" -> {
+                o.points(1);
+                o.flags(Set.of());
+                String data = switch (p.verb()) {
+                    case "sign" -> Things.sign(o.string("text"), o.string("back"), o.string("color"),
+                            Boolean.parseBoolean(o.string("glow")), !"false".equals(o.string("wax")));
+                    case "banner" -> {
+                        String patterns = o.string("patterns");
+                        if (patterns == null) {
+                            throw new ToolException("banner needs patterns=pattern:colour,... (bottom layer first)");
+                        }
+                        yield Things.banner(patterns);
+                    }
+                    case "head" -> Things.head(o.string("player"), o.string("texture"), o.string("skin"));
+                    case "book" -> Things.book(o.string("title"), o.string("author"), o.string("pages"));
+                    default -> Things.container(o.string("items"), o.string("loot"));
+                };
+                String state = Things.withData(o.requireBlock(), data);
+                BlockRules.require(List.of(state));
+                yield new Step.Set(world, p.points(), List.of(state), o.replace());
+            }
+            case "entity" -> {
+                o.points(1);
+                o.flags(Set.of());
+                String type = o.requireBlock();
+                String data = o.string("data");
+                boolean still = Boolean.parseBoolean(o.string("still"));
+                String extra = (still ? Things.STILL : "") + rotation(o);
+                yield new Step.Summon(world, p.points().get(0), type, merge(data, extra), o.integer("count", 1, 1, 64), 0);
+            }
+            case "frame" -> {
+                o.points(1);
+                o.flags(Set.of());
+                String item = o.string("item");
+                String facing = o.string("facing");
+                if (facing == null) {
+                    throw new ToolException("frame needs facing=north|south|east|west|up|down, the way it faces out");
+                }
+                String data = "Facing:" + Things.facing(facing) + "b"
+                        + (item == null ? "" : ",Item:" + Things.item(item))
+                        + ("false".equals(o.string("fixed")) ? "" : ",Fixed:1b")
+                        + (Boolean.parseBoolean(o.string("invisible")) ? ",Invisible:1b" : "")
+                        + ",ItemRotation:" + o.integer("turn", 0, 0, 7) + "b";
+                yield new Step.Summon(world, p.points().get(0),
+                        Boolean.parseBoolean(o.string("glow")) ? "glow_item_frame" : "item_frame",
+                        merge(o.string("data"), data), 1, 0.5);
+            }
+            case "stand" -> {
+                o.points(1);
+                o.flags(Set.of());
+                List<String> gear = new ArrayList<>();
+                for (String slot : List.of("head", "chest", "legs", "feet", "mainhand", "offhand")) {
+                    String item = o.string(slot);
+                    if (item != null) {
+                        gear.add(slot + ":" + Things.item(item));
+                    }
+                }
+                String data = "Invulnerable:1b,ShowArms:" + ("false".equals(o.string("arms")) ? "0b" : "1b")
+                        + (Boolean.parseBoolean(o.string("small")) ? ",Small:1b" : "")
+                        + ("false".equals(o.string("base")) ? ",NoBasePlate:1b" : "")
+                        + (Boolean.parseBoolean(o.string("invisible")) ? ",Invisible:1b" : "")
+                        + (gear.isEmpty() ? "" : ",equipment:{" + String.join(",", gear) + "}") + rotation(o);
+                yield new Step.Summon(world, p.points().get(0), "armor_stand", merge(o.string("data"), data), 1, 0);
+            }
+            case "biome" -> {
+                o.points(2);
+                o.flags(Set.of());
+                String only = o.string("only");
+                yield new Step.Biome(new Region(world, p.points().get(0), p.points().get(1)),
+                        Things.id(o.requireBlock(), "biome"), only == null ? null : Things.id(only, "only"));
+            }
+            case "feature" -> {
+                o.points(1);
+                o.flags(Set.of());
+                yield new Step.Feature(world, p.points().get(0), Things.id(o.requireBlock(), "feature"),
+                        o.integer("count", 1, 1, 256), o.integer("spread", 0, 0, 64), o.seed());
+            }
+            case "light" -> {
+                o.points(2);
+                o.flags(Set.of());
+                String on = o.string("on");
+                on = on == null ? "floor" : on;
+                if (!Step.Decorate.ON.contains(on)) {
+                    throw new ToolException("light on= is one of " + Step.Decorate.ON + ", got " + on);
+                }
+                yield new Step.Light(new Region(world, p.points().get(0), p.points().get(1)),
+                        p.block() == null ? null : o.block(), on, o.integer("level", 8, 1, 15), o.seed(), o.replace());
+            }
             case "tree" -> {
                 o.points(1);
                 o.flags(Set.of());
@@ -543,8 +643,8 @@ public final class BuildScript {
             case "copy" -> copy(p);
             default -> throw new ToolException("unknown step \"" + p.verb()
                     + "\"; use fill, set, cylinder, ring, disc, sphere, dome, line, helix, bands, terrain, path, scatter, roof, trim, "
-                    + "decorate, weather, flora, tree, forest, smooth, erode, blend, paint, river, tunnel, cave, structure or "
-                    + "copy");
+                    + "decorate, weather, flora, tree, forest, smooth, erode, blend, paint, river, tunnel, cave, sign, banner, "
+                    + "head, book, container, entity, frame, stand, biome, feature, light, structure or copy");
         };
         if (!p.verb().equals("structure") && !p.verb().equals("copy")) {
             o.done();
@@ -581,6 +681,31 @@ public final class BuildScript {
             copies.add(step(new Parts(p.verb(), moved, options, p.flags(), p.bands(), p.block())));
         }
         return new Step.Group(copies);
+    }
+
+    /** {@code yaw=DEG} as an entity's Rotation, or nothing. */
+    private static String rotation(Options o) {
+        String yaw = o.string("yaw");
+        if (yaw == null) {
+            return "";
+        }
+        return ",Rotation:[" + (float) o.decimal("yaw", 0, -360, 360) + "f,0.0f]";
+    }
+
+    /** The agent's own SNBT compound with the step's entries added. */
+    private static String merge(String data, String extra) {
+        String e = extra.startsWith(",") ? extra.substring(1) : extra;
+        if (data == null || data.isBlank()) {
+            return "{" + e + "}";
+        }
+        String d = data.trim();
+        if (!d.startsWith("{") || !d.endsWith("}")) {
+            throw new ToolException("data must be one SNBT compound {...}, got " + data);
+        }
+        if (e.isEmpty()) {
+            return d;
+        }
+        return "{" + e + (d.length() > 2 ? "," + d.substring(1) : "}");
     }
 
     /** Read a region of the world now and stamp it at {@code to=}, with every structure option. */

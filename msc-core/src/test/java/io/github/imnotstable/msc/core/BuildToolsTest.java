@@ -83,6 +83,18 @@ class BuildToolsTest {
                 .contains("line 1").contains("bad SNBT");
     }
 
+    /** ADR 0081: entities are summoned after the blocks, tagged, and build_undo removes them. */
+    @Test
+    void entitiesRunAfterTheBlocksAndUndoRemovesThem() {
+        String out = h.ok("build_batch", "steps", "set 0,64,0 stone\nentity 0,65,0 cow still=true");
+        assertThat(out).startsWith("edit e1: ").contains("1 of 1 command ran").contains("build_undo removes them");
+        String summon = h.agent.commands.stream().filter(c -> c.contains(" summon ")).findFirst().orElseThrow();
+        String tag = summon.replaceAll(".*\"msc_build\",\"([^\"]+)\".*", "$1");
+        assertThat(h.ok("build_undo")).startsWith("undid e1");
+        assertThat(h.agent.commands).contains("kill @e[tag=" + tag + "]");
+        assertThat(h.ok("build_batch", "steps", "entity 0,65,0 cow")).startsWith("edit e2: no blocks");
+    }
+
     @Test
     void badBlockNamesStopTheWholeBatchAndAreAllListed() {
         String err = h.error("build_batch", "steps", """

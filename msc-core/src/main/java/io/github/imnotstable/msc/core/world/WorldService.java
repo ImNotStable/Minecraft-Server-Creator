@@ -498,7 +498,8 @@ public final class WorldService {
         return hub.call(run.agent(), op, params);
     }
 
-    private record Edit(List<String> parts, Footprint where, Run run) {
+    /** {@code undoCommands}: run after the parts are undone, such as removing the entities a build summoned. */
+    private record Edit(List<String> parts, Footprint where, Run run, List<String> undoCommands) {
     }
 
     /**
@@ -514,9 +515,14 @@ public final class WorldService {
      * set, and return that id. Call it only while that run lasts: once it has ended, the next call forgets the id.
      */
     public synchronized String remember(List<String> agentEdits, Footprint where, Run run) {
+        return remember(agentEdits, where, run, List.of());
+    }
+
+    /** As {@link #remember(List, Footprint, Run)}, with commands its undo runs after the blocks (ADR 0081). */
+    public synchronized String remember(List<String> agentEdits, Footprint where, Run run, List<String> undoCommands) {
         forgetEnded();
         String id = "e" + (++editCounter);
-        edits.put(id, new Edit(new ArrayList<>(agentEdits), where, run));
+        edits.put(id, new Edit(new ArrayList<>(agentEdits), where, run, List.copyOf(undoCommands)));
         return id;
     }
 
@@ -554,6 +560,7 @@ public final class WorldService {
 
     private String undoNow(String id) throws InterruptedException {
         List<String> agentEdits;
+        List<String> undoCommands;
         Run run;
         Region box;
         String target = id;
@@ -587,6 +594,7 @@ public final class WorldService {
                         + " first (build_undo edit=" + over.getFirst() + "), then " + target + ".");
             }
             agentEdits = edit.parts();
+            undoCommands = edit.undoCommands();
             run = edit.run();
             box = edit.where().box();
         }
@@ -606,6 +614,13 @@ public final class WorldService {
                 throw stopped(target, changed, run, box, e);
             }
             agentEdits.remove(i);
+        }
+        for (String command : undoCommands) {
+            try {
+                call(run, Ops.SERVER_COMMAND, new Ops.CommandParams(command));
+            } catch (RuntimeException e) {
+                throw stopped(target, changed, run, box, e);
+            }
         }
         synchronized (this) {
             edits.remove(target);
