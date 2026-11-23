@@ -126,6 +126,41 @@ SHAPING STEPS (build_batch; they reshape what the world and earlier steps hold, 
 - cave X,Y,Z X,Y,Z [density=30 scale=16 roof=4 B]: noise caves through the box's solid ground, keeping roof= blocks
   under the surface.
 
+THINGS IN A BUILD (build_batch; values with spaces in quotes: text="Two words")
+- sign X,Y,Z B text="line 1|line 2" [back= color=dye glow=true wax=false]: B oak_sign[rotation=N], oak_wall_sign[facing=]
+  or a hanging sign; waxed by default so players cannot edit it.
+- banner X,Y,Z B patterns=stripe_top:red,cross:black (bottom layer first, up to 16; pattern ids as /give takes them).
+- head X,Y,Z B player=NAME | skin=HASH|URL | texture=BASE64: decorative object heads (a globe, a crate, food) come from
+  head sites as a textures.minecraft.net hash or base64 value; B is the player head block with rotation=N, or its wall
+  form with facing=.
+- book X,Y,Z lectern[facing=] title="..." author=... pages="page one|page two" (\n inside a page breaks the line).
+- container X,Y,Z B items=bread:16,iron_ingot:3 | loot=chests/village/village_weaponsmith: chests, barrels, shulkers.
+- entity X,Y,Z TYPE [data={SNBT} still=true yaw=DEG count=N]: mobs, villagers (data={VillagerData:{profession:
+  "minecraft:farmer"}}), display entities; still=true keeps it standing there (no AI, silent, never despawns).
+- frame X,Y,Z item=ID facing=DIR [glow=true invisible=true turn=0-7]: an item frame in the air block in front of a wall,
+  facing out. stand X,Y,Z [head= chest= legs= feet= mainhand= offhand= yaw= small=true base=false arms=false
+  data={Pose:{...}}]: a dressed armor stand.
+  Entities are summoned after the blocks, tagged with the build, and build_undo removes them.
+- biome X,Y,Z X,Y,Z ID [only=ID]: paints the biome (grass, foliage and water colours, weather, mob spawns) with /fillbiome.
+- feature X,Y,Z ID [count=N spread=R]: the game's own feature (fancy_oak, mega_spruce, birch_bees_005, huge_red_mushroom,
+  forest_rock, amethyst_geode, flower_meadow...) with /place feature, on the ground when spread= is given. Not on
+  Minestom. Biomes and features are not undone by build_undo (the world backup is).
+- light X,Y,Z X,Y,Z [B level=8 on=floor|ground|top|wall|ceiling]: lights wherever existing light would fall below
+  level=, spread out, as few as needed: lanterns by default, hanging ones for on=ceiling, torches on walls, or B
+  (light[level=15] for invisible light).
+
+ROOMS, PICTURES AND FILES
+- furnish X,Y,Z X,Y,Z room= [wood=spruce color=red density=50]: furnishes a built room by its use: bedroom, kitchen,
+  dining, library, study, tavern, storage, smithy, alchemy, chapel, throne, shop, barracks, bathroom. Give the room's
+  inside (floor to ceiling) after walls and roof: props go in corners and along walls (chests and shelves facing out,
+  beds head to the wall), a centre piece (tables with chairs, a long dining table, pews and an altar, a throne, a
+  counter), a rug around it and a lantern on a chain; spots beside doors and openings stay clear. Then add your own
+  touches: it is a start, not the finished room.
+- image X,Y,Z file=PNG w=N [h=N plane=x|z|floor palette=all|wool|concrete|terracotta|glass dither=true]: a picture as
+  blocks, X,Y,Z its bottom-left (walls) or north-west corner (floor, for map art); transparent pixels are left alone.
+- structure file= and scatter file= read Sponge .schem, the game's structure .nbt files and Litematica .litematic,
+  told apart by content; MCEdit .schematic from before 1.13 must be re-saved as .schem.
+
 SCALE AND COMPOSITION
 - A landmark is seen from far away: give it a strong, asymmetric silhouette (a tall tower beside a low hall), not a box with a spike.
 - Towers taper or step in, have a base, a shaft and a cap; no 1-block-thick towers.

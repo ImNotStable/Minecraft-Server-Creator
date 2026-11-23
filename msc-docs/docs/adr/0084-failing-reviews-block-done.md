@@ -1,4 +1,4 @@
-# ADR 0083: Failing reviews block "done", natural rock is ground, builds clear their drops
+# ADR 0084: Failing reviews block "done", natural rock is ground, builds clear their drops
 
 Status: accepted, 2026-11-23. Decided by Claude. After the fifth Antigravity run of "The Shattered Meridian"
 Jeremiah asked (through the project coordinator) for failing reviews to block "done" more firmly, a guide that pushes

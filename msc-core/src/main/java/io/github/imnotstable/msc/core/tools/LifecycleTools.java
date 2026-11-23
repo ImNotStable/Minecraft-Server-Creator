@@ -121,7 +121,7 @@ public final class LifecycleTools {
         return backups;
     }
 
-    /** A result, then the reviews still failing: a run that ends on dev_cycle sees them (ADR 0082). */
+    /** A result, then the reviews still failing: a run that ends on dev_cycle sees them (ADR 0084). */
     static String withOpenReviews(String result, WorldService world) {
         String open = world.reviews().line();
         return open.isEmpty() ? result : result + "\n" + open;

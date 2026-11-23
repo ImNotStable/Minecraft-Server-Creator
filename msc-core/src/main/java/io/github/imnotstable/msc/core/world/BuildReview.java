@@ -242,7 +242,7 @@ public final class BuildReview {
             return !built && land.line().isEmpty() ? out.toString()
                     : out.append("\nno number below the bar; now judge the render: silhouette, story, scale").toString();
         }
-        // A plain verdict first: agents read "fix first" as advice and called failing builds done (ADR 0082).
+        // A plain verdict first: agents read "fix first" as advice and called failing builds done (ADR 0084).
         out.append("\nverdict: NOT DONE, ").append(fixes.size()).append(fixes.size() == 1 ? " check" : " checks")
                 .append(" below the bar");
         out.append("\nfix first:");
@@ -347,7 +347,7 @@ public final class BuildReview {
 
     /**
      * Ground by position: soil, and rock, terracotta or ore in an unbroken column up from the region's bottom, so a
-     * generated world's hills, cliffs and mesas are not judged as walls with a bare base (ADR 0082). Rock standing on
+     * generated world's hills, cliffs and mesas are not judged as walls with a bare base (ADR 0084). Rock standing on
      * soil (a cobblestone wall on grass) stays part of the build.
      * shortcut: rock above an underground dirt or gravel pocket counts as built; tell them apart by edit history if
      * that shows up in reviews.

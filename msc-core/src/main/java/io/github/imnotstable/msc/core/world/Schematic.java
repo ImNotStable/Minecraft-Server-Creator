@@ -102,14 +102,22 @@ public final class Schematic {
     }
 
     /** Load a schematic and place its lowest corner at {@code origin}. */
-    @SuppressWarnings("unchecked")
     public static BlockGrid load(Path file, String world, BlockPos origin) throws IOException {
-        Map<String, Object> root;
+        return load(read(file), file, world, origin);
+    }
+
+    /** A gzipped NBT file's root compound. */
+    static Map<String, Object> read(Path file) throws IOException {
         try (InputStream in = Files.newInputStream(file)) {
-            root = Nbt.read(in);
+            return Nbt.read(in);
         } catch (IOException e) {
             throw new ToolException("cannot read " + file + " as a schematic: " + e.getMessage());
         }
+    }
+
+    /** A schematic from its already read root. */
+    @SuppressWarnings("unchecked")
+    static BlockGrid load(Map<String, Object> root, Path file, String world, BlockPos origin) {
         if (root.get("Schematic") instanceof Map<?, ?> v3) {
             root = (Map<String, Object>) v3;
         }

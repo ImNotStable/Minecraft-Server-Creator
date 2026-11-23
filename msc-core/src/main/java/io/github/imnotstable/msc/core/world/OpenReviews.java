@@ -9,7 +9,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Reviews that failed and were not passed since, for this session (ADR 0082): msc_status and dev_cycle name them, so
+ * Reviews that failed and were not passed since, for this session (ADR 0084): msc_status and dev_cycle name them, so
  * an agent cannot end a run on a review it read and left failing. A passing review of a region clears every failed
  * one inside it.
  */
