@@ -20,7 +20,7 @@ The tool tables are generated from the tool definitions in `msc-core` (`io.githu
 - `world` is optional everywhere and defaults to the server's first world.
 - Every call is logged (see "Tool log").
 - World and build tools fail at once with `error: the server is not running...` when the core has no server running and none was attached with `MSC_CORE_ADDRESS`, and with `error: the server is stopping...` once its server was asked to stop (by `server_stop`, `dev_cycle`, or a `stop` that reached the agent), also while the process is still exiting (#703). They wait (up to 30 s) for an agent only while the server starts or its agent reconnects. A server another session runs, or one an earlier session left running (after `server_detach`), is named in the refusal as `msc_status` names it: `the server running here (pid N) was left by an earlier session and has no connection to this one: server_start or dev_cycle restarts it under this session, server_stop stops it`. `server_command`, `server_detach`, `server_wait` and `player_test` give the same reason (#705). A `stop` only the agent announced (`server.stopping`) counts until the server exits or a new agent connects, and only as a hint: an agent also announces it when just the agent stops (Paper's `/reload`, a plugin manager disabling it, Minestom's `MscAgent.stop()`) and the server runs on. So `server_command` still types into the console then, and `server_stop` types `stop` unless `server_stop` or `dev_cycle` already did, so the server saves its world rather than being killed after 30 s (#729).
-- <!-- tool-list -->The tool definitions (31 tools: names, descriptions, argument schemas) are 20,867 characters, about 5,217 tokens in every conversation before MCP framing.<!-- /tool-list --> `McpBridgeTest` fails if the tool list as the client receives it grows past 16,600 characters ([ADR 0019](adr/0019-smaller-tool-surface.md), [ADR 0023](adr/0023-texture-tools.md), [ADR 0057](adr/0057-plugins-from-modrinth-hangar-spigot.md), [ADR 0068](adr/0068-quality-bar-for-any-agent.md)).
+- <!-- tool-list -->The tool definitions (32 tools: names, descriptions, argument schemas) are 21,346 characters, about 5,337 tokens in every conversation before MCP framing.<!-- /tool-list --> `McpBridgeTest` fails if the tool list as the client receives it grows past 16,600 characters ([ADR 0019](adr/0019-smaller-tool-surface.md), [ADR 0023](adr/0023-texture-tools.md), [ADR 0057](adr/0057-plugins-from-modrinth-hangar-spigot.md), [ADR 0068](adr/0068-quality-bar-for-any-agent.md)).
 - Results are text. The one exception is `world_render`, which adds one PNG image next to its text.
 
 ## Typical loop
@@ -122,7 +122,7 @@ Results: `api_search` gives one line per match, such as `interface org.bukkit.en
 
 ## Seeing the world
 
-<!-- tools: world_summary world_slice world_entities world_heightmap world_render -->
+<!-- tools: world_summary world_slice world_entities world_heightmap world_render world_tour -->
 | Tool | Arguments | What it does |
 | --- | --- | --- |
 | `world_summary` | `region` (string): Corners, inclusive: "x1,y1,z1 x2,y2,z2"<br>`world`? (string): Default: main<br>`path`? (string): "x,y,z x,y,z": can a player walk/jump from A to B; else the wall or gap<br>`diff`? (string): structure_save file of this region: what changed since<br>`review`? (boolean): Score a build and its land (detail, walls, roofs, lights, flat ground, floating blocks); say what to fix | Summarize a region: block counts (where rare ones are), non-air bounds, fill per layer, entities. Use before world_slice on unknown areas and to find a block. |
@@ -130,6 +130,7 @@ Results: `api_search` gives one line per match, such as `interface org.bukkit.en
 | `world_entities` | `region` (string): Corners, inclusive: "x1,y1,z1 x2,y2,z2"<br>`type`? (string): Only this type, such as zombie<br>`limit`? (integer, 1 to 1000): Default 50<br>`ids`? (boolean): Add UUIDs<br>`world`? (string): Default: main | List entities in a region: type, name, position, health, tags. Loaded chunks only, except on Minestom. |
 | `world_heightmap` | `area` (string): Corners: "x1,z1 x2,z2"<br>`world`? (string): Default: main<br>`maxChars`? (integer, 200 to 24000): Default 6000 | Surface height per column, as a compact grid. |
 | `world_render` | `region` (string): Corners, inclusive: "x1,y1,z1 x2,y2,z2"<br>`view`? (string): Camera. Default iso<br>`size`? (integer, 64 to 1568): Longest side in pixels. Default 512<br>`entities`? (boolean): Number entities; show hologram and sign text. Default true<br>`world`? (string): Default: main | See how a region looks, as a small PNG. Views: iso, top, north, south, east, west, iso-ne/nw/sw/se, "eye x,y,z look x,y,z". |
+| `world_tour` | `region` (string): Corners, inclusive: "x1,y1,z1 x2,y2,z2"<br>`world`? (string): Default: main<br>`stops`? (integer, 1 to 9): Views. Default 6 | A build seen walking it: eye-height views of flagged spots, each door (out, in) and the outside, with its review. Use before calling a build done. |
 <!-- /tools -->
 
 Results:

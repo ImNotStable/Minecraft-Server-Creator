@@ -142,6 +142,45 @@ class BuildReviewTest {
     }
 
     @Test
+    void leavesInWallsBoxyHedgesHangingWoolAndTrapdoorClumpsAreFlagged() {
+        // Run 6's Havenfall: a hedge pillar of leaves, a tree pushed between two walls, a wool awning, a trapdoor facade.
+        Region r = Region.of("world", 0, 0, 0, 19, 8, 19);
+        int[] b = new int[Math.toIntExact(r.volume())];
+        for (int y = 0; y <= 5; y++) {
+            for (int z = 1; z <= 3; z++) {
+                for (int x = 1; x <= 3; x++) {
+                    b[r.index(x, y, z)] = 1; // the leaf pillar
+                }
+            }
+        }
+        for (int z = 8; z <= 17; z++) {
+            for (int y = 0; y <= 6; y++) {
+                b[r.index(8, y, z)] = 2; // a house's two walls, its roof, and a canopy inside under the roof
+                b[r.index(10, y, z)] = 2;
+            }
+            b[r.index(9, 6, z)] = 1;
+            for (int x = 8; x <= 10; x++) {
+                b[r.index(x, 7, z)] = 2;
+            }
+        }
+        for (int x = 14; x <= 16; x++) {
+            for (int z = 14; z <= 15; z++) {
+                b[r.index(x, 4, z)] = 3; // wool awning over air
+            }
+            for (int y = 1; y <= 3; y++) {
+                b[r.index(x, y, 18)] = 4; // trapdoors on a wall
+                b[r.index(x, y, 19)] = 2;
+            }
+        }
+        BlockGrid grid = new BlockGrid(r, List.of("minecraft:air", "minecraft:oak_leaves", "minecraft:stone_bricks",
+                "minecraft:white_wool", "minecraft:spruce_trapdoor[facing=north,half=bottom,open=true]"), b);
+        String[] names = {null, "oak_leaves", "stone_bricks", "white_wool", "spruce_trapdoor"};
+        assertThat(String.join("\n", BuildReview.masses(grid, names, new boolean[b.length])))
+                .contains("leaves in walls: 10 leaf blocks").contains("stacked leaves:").contains("hanging wool: 6")
+                .contains("trapdoor clumps: 9");
+    }
+
+    @Test
     void anEmptyRegionSaysSo() {
         BlockGrid air = TextGrid.parse("legend: #=stone\ny=0\n...\n...", "world", new BlockPos(0, 0, 0));
         assertThat(BuildReview.review(air)).isEqualTo("review: nothing built above the ground");

@@ -79,6 +79,7 @@ class EulaOptInBehaviourTest {
             new Row("world_summary", REGION.toArray()), new Row("world_slice", REGION.toArray()),
             new Row("world_entities", REGION.toArray()), new Row("world_heightmap", "area", "0,0 3,3"),
             new Row("world_render", "region", REGION.get(1), "size", 64),
+            new Row("world_tour", "region", REGION.get(1), "stops", 1),
             new Row("build_batch", "steps", "fill 0,70,0 1,71,1 minecraft:stone"), new Row("build_undo"),
             new Row("structure_save", "region", REGION.get(1), "file", "structures/a.schem"),
             new Row("player_test", "actions", List.of("wait 1"), "leave", true),

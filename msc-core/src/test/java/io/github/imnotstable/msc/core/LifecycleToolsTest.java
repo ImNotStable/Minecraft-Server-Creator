@@ -1570,6 +1570,7 @@ class LifecycleToolsTest {
         table.put("world_slice", new Object[] {"region", "0,60,0 1,60,1"});
         table.put("world_heightmap", new Object[] {"area", "0,0 1,1"});
         table.put("world_render", new Object[] {"region", "0,60,0 1,60,1"});
+        table.put("world_tour", new Object[] {"region", "0,60,0 1,60,1", "stops", 1});
         table.put("world_summary", new Object[] {"region", "0,60,0 1,61,1"});
         table.put("world_entities", new Object[] {"region", "0,60,0 1,61,1"});
         table.put("build_undo", new Object[] {"backup", "save"});

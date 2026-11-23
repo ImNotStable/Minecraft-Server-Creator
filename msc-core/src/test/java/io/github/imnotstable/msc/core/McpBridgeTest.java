@@ -49,7 +49,7 @@ class McpBridgeTest {
                 tools.forEach(t -> names.add(t.getAsJsonObject().get("name").getAsString()));
                 assertThat(names).containsExactly("msc_status", "project_scaffold", "server_setup", "world_create",
                         "plugins", "server_start", "server_stop", "server_detach", "dev_cycle", "server_logs", "server_command", "server_wait", "server_export", "server_profile", "api_search",
-                        "api_class", "world_slice", "world_heightmap", "world_render", "world_summary", "world_entities", "build_undo",
+                        "api_class", "world_slice", "world_heightmap", "world_render", "world_tour", "world_summary", "world_entities", "build_undo",
                         "structure_save", "build_batch",
                         "texture", "texture_view", "model_create", "pack_asset", "pack", "player_test", "msc_workspace");
                 // The tool list is paid for in every conversation: keep it small. ADR 0019 folded five build tools
@@ -63,8 +63,9 @@ class McpBridgeTest {
                 // ADR 0081 by 900 for pack_asset (every pack file but textures had no tool) and guide pages,
                 // its formats in guide=pack; ADR 0082 by 350 for the block entity, entity, biome, feature and light steps;
                 // ADR 0083 by 200 for furnish and image; ADR 0090 by 400 for server_profile: the server's own run
-                // time had no tool at all; ADR 0091 by 400 for server_export: nothing shipped the server.
-                assertThat(listed.toString().length()).isLessThan(21000);
+                // time had no tool at all; ADR 0091 by 400 for server_export: nothing shipped the server; ADR 0094 by
+                // 500 for world_tour: no tool saw a build as a visitor walking it does.
+                assertThat(listed.toString().length()).isLessThan(21500);
                 JsonObject batch = tools.get(names.indexOf("build_batch")).getAsJsonObject().getAsJsonObject("inputSchema");
                 assertThat(batch.getAsJsonArray("required").toString()).isEqualTo("[\"steps\"]");
                 // Every project template the jar ships (paper-server is only nested in others) is named in project_scaffold's schema, so none goes unseen.

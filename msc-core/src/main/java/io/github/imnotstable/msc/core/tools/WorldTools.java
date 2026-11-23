@@ -115,6 +115,24 @@ public final class WorldTools {
                     return new Tool.Output(r.caption() + (file[0] == null ? "" : "\nsaved: " + file[0]) + saved + pruned,
                             r.png(), r.estimatedTokens());
                 });
+        registry.addImage("world_tour",
+                "A build seen walking it: eye-height views of flagged spots, each door (out, in) and the outside, "
+                        + "with its review. Use before calling a build done.",
+                Schema.of().req("region", "string", REGION).opt("world", "string", WORLD)
+                        .range("stops", 1, Tour.MAX_STOPS, "Views. Default " + Tour.DEFAULT_STOPS),
+                args -> {
+                    Region region = Coords.region(world.world(args.str("world", null)), args.str("region"));
+                    boolean devFloor = region.world().equals(world.world(null));
+                    BlockGrid build = world.readAll(region, WorldService.MAX_BULK_VOLUME, "world_tour review");
+                    String review = BuildReview.review(build, devFloor);
+                    world.reviews().record(region, review);
+                    // Room around the build to stand in front of its doors and walls.
+                    Region around = Region.of(region.world(), region.min().x() - Tour.MARGIN, region.min().y(),
+                            region.min().z() - Tour.MARGIN, region.max().x() + Tour.MARGIN,
+                            region.max().y() + Tour.MARGIN, region.max().z() + Tour.MARGIN);
+                    BlockGrid grid = world.readAll(around, MAX_RENDER_BLOCKS, "world_tour");
+                    return Tour.walk(renderer, grid, review, args.integer("stops", Tour.DEFAULT_STOPS));
+                });
         registry.add("world_summary",
                 "Summarize a region: block counts (where rare ones are), non-air bounds, fill per layer, entities. Use before world_slice on unknown areas and to find a block.",
                 Schema.of().req("region", "string", REGION).opt("world", "string", WORLD)
