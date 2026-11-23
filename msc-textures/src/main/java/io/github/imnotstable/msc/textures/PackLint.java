@@ -38,6 +38,11 @@ public final class PackLint {
         public String toString() {
             return severity + " " + path + ": " + message;
         }
+
+        /** A reference to a file the pack does not have yet: fixed by adding that file, not by changing this one. */
+        public boolean missing() {
+            return message.endsWith(" is not in the pack");
+        }
     }
 
     /** All findings, errors first. */
@@ -77,6 +82,7 @@ public final class PackLint {
 
     private final Map<String, byte[]> files;
     private final List<Finding> findings = new ArrayList<>();
+    private final Set<String> usedTextures = new HashSet<>();
 
     private PackLint(Map<String, byte[]> files) {
         this.files = files;
@@ -87,13 +93,18 @@ public final class PackLint {
     }
 
     public static Report checkDirectory(Path root) throws IOException {
+        return check(read(root));
+    }
+
+    /** Every file under a pack folder, by its pack-relative path. */
+    public static Map<String, byte[]> read(Path root) throws IOException {
         Map<String, byte[]> files = new TreeMap<>();
         try (Stream<Path> walk = Files.walk(root)) {
             for (Path p : walk.filter(Files::isRegularFile).toList()) {
                 files.put(root.relativize(p).toString().replace('\\', '/'), Files.readAllBytes(p));
             }
         }
-        return check(files);
+        return files;
     }
 
     public static Report checkZip(InputStream zip) throws IOException {
@@ -131,23 +142,26 @@ public final class PackLint {
                 models.add(mm.group(1) + ":" + mm.group(2));
             }
             if (path.endsWith(".png.mcmeta") && !files.containsKey(path.substring(0, path.length() - 7))) {
-                add(Severity.WARNING, path, "animation file without its PNG");
+                add(Severity.WARNING, path, ".png.mcmeta without its PNG");
             }
         }
         checkResolutions(textures);
-        Set<String> usedTextures = new HashSet<>();
         for (Map.Entry<String, byte[]> e : files.entrySet()) {
             var mm = MODEL.matcher(e.getKey());
             if (mm.matches()) {
-                checkModel(e.getKey(), e.getValue(), textures.keySet(), models, usedTextures);
+                checkModel(e.getKey(), e.getValue(), textures.keySet(), models);
             }
             var im = ITEM.matcher(e.getKey());
             if (im.matches()) {
                 checkItem(e.getKey(), e.getValue(), models);
             }
         }
+        new AssetLint(this, files, models).run();
         for (String id : textures.keySet()) {
-            if (!id.startsWith("minecraft:") && !usedTextures.contains(id)) {
+            String texPath = id.substring(id.indexOf(':') + 1);
+            // Only block and item textures need a model; gui sprites, fonts, entities and the rest are read by name.
+            if ((texPath.startsWith("block/") || texPath.startsWith("item/"))
+                    && !id.startsWith("minecraft:") && !usedTextures.contains(id)) {
                 add(Severity.INFO, texturePath(id), "not used by any model in the pack");
             }
         }
@@ -189,22 +203,20 @@ public final class PackLint {
     private void checkTexture(String path, String texPath, Texture t) {
         int w = t.width();
         int h = t.height();
-        boolean animated = files.containsKey(path + ".mcmeta");
+        JsonObject meta = files.containsKey(path + ".mcmeta") ? quietJson(files.get(path + ".mcmeta")) : null;
+        boolean animated = meta != null && meta.has("animation");
+        // Frames of their own size: the animation check sizes them.
+        boolean framed = animated && meta.get("animation") instanceof JsonObject a && (a.has("width") || a.has("height"));
         if (Integer.bitCount(w) != 1) {
             add(Severity.WARNING, path, "width " + w + " is not a power of two");
         }
-        if (h != w && !texPath.startsWith("gui/") && !texPath.startsWith("font/") && !texPath.startsWith("entity/")
-                && !texPath.startsWith("painting/")) {
+        if (h != w && !framed && !texPath.startsWith("gui/") && !texPath.startsWith("font/") && !texPath.startsWith("entity/")
+                && !texPath.startsWith("painting/")
+                && !texPath.startsWith("environment/")) {
             if (h % w != 0) {
                 add(Severity.WARNING, path, w + "x" + h + " is neither square nor a stack of square frames");
             } else if (!animated) {
                 add(Severity.ERROR, path, (h / w) + " stacked frames but no .png.mcmeta; it will show as missing");
-            }
-        }
-        if (animated) {
-            JsonObject meta = json(path + ".mcmeta", files.get(path + ".mcmeta"));
-            if (meta != null && !meta.has("animation")) {
-                add(Severity.WARNING, path + ".mcmeta", "no \"animation\" object");
             }
         }
         int colors = t.colors().size();
@@ -245,7 +257,7 @@ public final class PackLint {
         }
     }
 
-    private void checkModel(String path, byte[] data, Set<String> textures, Set<String> models, Set<String> used) {
+    private void checkModel(String path, byte[] data, Set<String> textures, Set<String> models) {
         JsonObject json = json(path, data);
         if (json == null) {
             return;
@@ -261,12 +273,14 @@ public final class PackLint {
         }
         if (json.has("textures") && json.get("textures").isJsonObject()) {
             for (Map.Entry<String, JsonElement> slot : json.getAsJsonObject("textures").entrySet()) {
-                String ref = string(path, "texture " + slot.getKey(), slot.getValue());
+                // A slot is a texture name, or { "sprite": name, "force_translucent": true }.
+                JsonElement value = slot.getValue() instanceof JsonObject o && o.has("sprite") ? o.get("sprite") : slot.getValue();
+                String ref = string(path, "texture " + slot.getKey(), value);
                 if (ref == null || ref.startsWith("#")) {
                     continue;
                 }
                 String id = qualify(ref);
-                used.add(id);
+                usedTextures.add(id);
                 if (!id.startsWith("minecraft:") && !textures.contains(id)) {
                     add(Severity.ERROR, path, "texture " + slot.getKey() + " = " + id + " is not in the pack");
                 }
@@ -314,7 +328,21 @@ public final class PackLint {
         }
     }
 
-    private JsonObject json(String path, byte[] data) {
+    /** The JSON object, or null without a finding: for a file another check reports on. */
+    static JsonObject quietJson(byte[] data) {
+        try {
+            return JsonParser.parseString(new String(data, StandardCharsets.UTF_8)) instanceof JsonObject o ? o : null;
+        } catch (JsonParseException ex) {
+            return null;
+        }
+    }
+
+    /** Note a texture as used by something in the pack. */
+    void used(String id) {
+        usedTextures.add(id);
+    }
+
+    JsonObject json(String path, byte[] data) {
         try {
             JsonElement e = JsonParser.parseString(new String(data, StandardCharsets.UTF_8));
             if (e.isJsonObject()) {
@@ -328,7 +356,7 @@ public final class PackLint {
     }
 
     /** The value if it is a JSON string; otherwise an ERROR finding and null. */
-    private String string(String path, String what, JsonElement value) {
+    String string(String path, String what, JsonElement value) {
         if (value.isJsonPrimitive() && value.getAsJsonPrimitive().isString()) {
             return value.getAsString();
         }
@@ -344,7 +372,7 @@ public final class PackLint {
         return nl < 0 ? s : s.substring(0, nl);
     }
 
-    private static String qualify(String ref) {
+    static String qualify(String ref) {
         return ref.contains(":") ? ref : "minecraft:" + ref;
     }
 
@@ -353,7 +381,7 @@ public final class PackLint {
         return "assets/" + id.substring(0, colon) + "/textures/" + id.substring(colon + 1) + ".png";
     }
 
-    private void add(Severity s, String path, String message) {
+    void add(Severity s, String path, String message) {
         findings.add(new Finding(s, path, message));
     }
 }

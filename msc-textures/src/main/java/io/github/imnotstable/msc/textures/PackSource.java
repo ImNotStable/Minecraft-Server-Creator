@@ -69,12 +69,21 @@ public final class PackSource {
         return Texture.readPng(Files.readAllBytes(file));
     }
 
-    /** Write a still texture, removing any animation file left from an earlier version. */
+    /**
+     * Write a still texture, removing the animation left from an earlier version; the .png.mcmeta's other sections
+     * (gui scaling, texture, villager) stay, as the new image takes their place.
+     */
     public Path writeTexture(ResourceId id, Texture texture) throws IOException {
         Path file = texturePath(id);
         Files.createDirectories(file.getParent());
         Files.write(file, texture.toPng());
-        Files.deleteIfExists(mcmetaPath(file));
+        JsonObject meta = readMeta(mcmetaPath(file));
+        meta.remove("animation");
+        if (meta.isEmpty()) {
+            Files.deleteIfExists(mcmetaPath(file));
+        } else {
+            writeJson(mcmetaPath(file), meta);
+        }
         return file;
     }
 
@@ -82,8 +91,15 @@ public final class PackSource {
         Path file = texturePath(id);
         Files.createDirectories(file.getParent());
         Files.write(file, animation.strip().toPng());
-        writeJson(mcmetaPath(file), animation.mcmeta());
+        JsonObject meta = readMeta(mcmetaPath(file));
+        meta.add("animation", animation.mcmeta().get("animation"));
+        writeJson(mcmetaPath(file), meta);
         return file;
+    }
+
+    /** The .png.mcmeta's object, or an empty one when there is none or it is not a JSON object. */
+    private static JsonObject readMeta(Path mcmeta) throws IOException {
+        return Files.isRegularFile(mcmeta) && readJson(mcmeta) instanceof JsonObject o ? o : new JsonObject();
     }
 
     private static Path mcmetaPath(Path png) {
