@@ -53,6 +53,14 @@ public final class Stdlib {
                 e.setCancellationResult(InteractionResult.FAIL);
             }
         });
+        bus.addListener(net.neoforged.neoforge.event.RegisterCommandsEvent.class, e -> Hooks.commands(e.getDispatcher()));
+        bus.addListener(PlayerInteractEvent.EntityInteract.class, e -> {
+            if (e.getHand() == InteractionHand.MAIN_HAND && e.getEntity() instanceof ServerPlayer p
+                    && Hooks.interact(p, e.getTarget())) {
+                e.setCanceled(true);
+                e.setCancellationResult(InteractionResult.SUCCESS);
+            }
+        });
         bus.addListener(AttackEntityEvent.class, e -> {
             if (e.getTarget() instanceof ServerPlayer victim && !Regions.canAttack(victim)) {
                 e.setCanceled(true);
