@@ -59,6 +59,8 @@ public final class BuildScript {
             tree X,Y,Z [kind=oak size=medium h=N log=B leaves=B]   (bottom trunk block)
             forest X,Y,Z X,Y,Z [kind=oak:3,birch:1 spacing=7 chance=80 on=B]
             flora X,Y,Z X,Y,Z style=meadow|B [chance=35 soil=B]   (these three: guide=build)
+            smooth|erode|blend X,Y,Z X,Y,Z   paint X,Y,Z X,Y,Z B [slope=A-B]   (shape what is there)
+            river|tunnel X,Y,Z X,Y,Z ...   cave X,Y,Z X,Y,Z   (these seven: guide=build)
             structure X,Y,Z [X,Y,Z ...] [rotate=90] [face=X,Z] [anchor=center] [air=false] [file=PATH]
               then the text and "end", unless file= (.schem or text). Text: "legend: #=stone g=glass", then per \
             layer "y=N" and rows (z) of symbols (x); "." air, "_" unchanged; "y=N same as y=M", "y=N all #". rotate \
@@ -413,6 +415,65 @@ public final class BuildScript {
                 yield new Step.Decorate(new Region(world, p.points().get(0), p.points().get(1)), plants, null, "ground",
                         o.integer("chance", 35, 1, 100), 1, 1, 1, clump, soil, o.seed(), o.replace());
             }
+            case "smooth" -> {
+                o.points(2);
+                o.flags(Set.of());
+                yield new Step.Smooth(new Region(world, p.points().get(0), p.points().get(1)),
+                        o.integer("radius", 3, 1, 32), o.integer("strength", 2, 1, 16), o.replace());
+            }
+            case "erode" -> {
+                o.points(2);
+                o.flags(Set.of());
+                String mode = o.string("mode");
+                yield new Step.Erode(new Region(world, p.points().get(0), p.points().get(1)), mode == null ? "smooth" : mode,
+                        o.integer("faces", 4, 1, 6), o.integer("times", 1, 1, 16), o.replace());
+            }
+            case "blend" -> {
+                o.points(2);
+                o.flags(Set.of());
+                String shape = o.string("shape");
+                yield new Step.Blend(new Region(world, p.points().get(0), p.points().get(1)),
+                        shape == null || Boolean.parseBoolean(shape), o.integer("times", 1, 1, 16), o.replace());
+            }
+            case "paint" -> {
+                o.points(2);
+                o.flags(Set.of());
+                String faces = o.string("faces");
+                int[] slope = o.range("slope", new int[] {0, 90}, 0, 90);
+                yield new Step.Paint(new Region(world, p.points().get(0), p.points().get(1)), o.block(),
+                        faces == null ? "top" : faces, o.integer("depth", 1, 1, 16), slope[0], slope[1],
+                        o.integer("chance", 100, 1, 100), o.seed(), o.replace());
+            }
+            case "river" -> {
+                if (p.points().size() < 2 || p.points().size() > 256) {
+                    throw new ToolException("river takes 2 to 256 positions X,Y,Z, got " + p.points().size());
+                }
+                o.flags(Set.of());
+                if (p.block() != null) {
+                    throw new ToolException("river takes water=, bed= and shore= blocks, not \"" + p.block() + "\"");
+                }
+                int w = o.integer("w", 5, 1, 64);
+                yield new Step.River(world, p.points(), w, o.integer("wander", w, 0, 256), o.integer("depth", 3, 1, 16),
+                        o.integer("bank", 4, 0, 32), o.decimal("slope", 1, 0.2, 8),
+                        o.pattern("water", BlockPattern.single("minecraft:water")),
+                        o.pattern("bed", BlockPattern.parse("gravel:3,sand:2,clay:1", o.seed())), o.pattern("shore", null),
+                        o.seed(), o.replace());
+            }
+            case "tunnel" -> {
+                if (p.points().size() < 2 || p.points().size() > 256) {
+                    throw new ToolException("tunnel takes 2 to 256 positions X,Y,Z, got " + p.points().size());
+                }
+                o.flags(Set.of());
+                yield new Step.Tunnel(world, p.points(), o.integer("r", 3, 1, 32), o.integer("rough", 1, 0, 8),
+                        p.block() == null ? BlockPattern.single("minecraft:air") : o.block(), o.seed(), o.replace());
+            }
+            case "cave" -> {
+                o.points(2);
+                o.flags(Set.of());
+                yield new Step.Caves(new Region(world, p.points().get(0), p.points().get(1)),
+                        o.integer("density", 30, 1, 100), o.integer("scale", 16, 4, 256), o.integer("roof", 4, 0, 64),
+                        p.block() == null ? BlockPattern.single("minecraft:air") : o.block(), o.seed(), o.replace());
+            }
             case "tree" -> {
                 o.points(1);
                 o.flags(Set.of());
@@ -482,7 +543,8 @@ public final class BuildScript {
             case "copy" -> copy(p);
             default -> throw new ToolException("unknown step \"" + p.verb()
                     + "\"; use fill, set, cylinder, ring, disc, sphere, dome, line, helix, bands, terrain, path, scatter, roof, trim, "
-                    + "decorate, weather, flora, tree, forest, structure or copy");
+                    + "decorate, weather, flora, tree, forest, smooth, erode, blend, paint, river, tunnel, cave, structure or "
+                    + "copy");
         };
         if (!p.verb().equals("structure") && !p.verb().equals("copy")) {
             o.done();
