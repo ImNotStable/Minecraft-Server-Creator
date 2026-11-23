@@ -15,6 +15,7 @@ import io.github.imnotstable.msc.textures.Animation;
 import io.github.imnotstable.msc.textures.Colors;
 import io.github.imnotstable.msc.textures.Edits;
 import io.github.imnotstable.msc.textures.Models;
+import io.github.imnotstable.msc.textures.PackAssets;
 import io.github.imnotstable.msc.textures.PackLint;
 import io.github.imnotstable.msc.textures.PackSource;
 import io.github.imnotstable.msc.textures.PaletteText;
@@ -103,6 +104,15 @@ public final class TextureTools {
                             () -> source.writeModel(model, kind, slots, withItem));
                     return "wrote model " + model + (item == null ? "" : "; item_model " + item) + "\nnext: pack";
                 }));
+        registry.add("pack_asset",
+                "Write any other pack file (HUD glyphs, sounds, element models, GUI sprites...), checked against "
+                        + "Minecraft " + config.minecraft() + " first. How: msc_status guide=pack.",
+                Schema.of().req("type", "string", PackAssets.Type.ids())
+                        .req("name", "string", "Such as myplugin:hud, myplugin:boss.roar (sound), en_us (lang)")
+                        .opt("json", "string", "JSON object; lang, sound, atlas, glyph, mcmeta merge")
+                        .opt("text", "string", "Shader or text source")
+                        .opt("from", "string", "Workspace file to copy (.ogg, .ttf, .png...)"),
+                textures(args -> packAsset(args, source, config)));
         registry.add("pack",
                 "Zip the workspace's resource pack (pack.mcmeta for Minecraft " + config.minecraft() + ", format "
                         + pack.packFormat() + "), list problems, send it to a running server. "
@@ -159,6 +169,65 @@ public final class TextureTools {
             throw new ToolException(kind.id() + " needs textures for " + all + "; missing " + String.join(", ", missing));
         }
         return slots;
+    }
+
+    static final String WRITE_ASSET = "write the pack file";
+    /** The largest file from= copies: well above any sound or font, far below a size that would stall a pack send. */
+    static final long MAX_FROM_BYTES = 16L << 20;
+
+    /**
+     * pack_asset (ADR 0081): the files a type writes, checked by PackLint against the whole pack before anything is
+     * written. A finding that would stop the file loading refuses the call; one that only names a file the pack lacks
+     * yet (a model's texture drawn next) is reported, so files can be written in any order.
+     */
+    private static String packAsset(Args args, PackSource source, CoreConfig config)
+            throws IOException, InterruptedException {
+        PackAssets.Type type = PackAssets.Type.parse(args.str("type"));
+        boolean exact = type == PackAssets.Type.SHADER || type == PackAssets.Type.TEXT || type == PackAssets.Type.FILE;
+        ResourceId name = exact ? ResourceId.parseExact(args.str("name")) : ResourceId.parse(args.str("name"));
+        byte[] from = null;
+        String fromName = null;
+        if (args.has("from")) {
+            Path file = args.path("from", config.inWorkspace());
+            if (!Files.isRegularFile(file)) {
+                throw new ToolException("from " + file + " is not a file");
+            }
+            if (Files.size(file) > MAX_FROM_BYTES) {
+                throw new ToolException("from " + file + " is " + Files.size(file) + " bytes; at most " + MAX_FROM_BYTES
+                        + " fit a pack file");
+            }
+            from = Files.readAllBytes(file);
+            fromName = file.getFileName().toString();
+        }
+        PackAssets.Content content = new PackAssets.Content(
+                args.has("json") ? PackAssets.parseObject(args.text("json")) : null,
+                args.has("text") ? args.text("text") : null, from, fromName);
+        PackAssets.Plan plan = PackAssets.plan(source, type, name, content);
+        for (String path : plan.files().keySet()) {
+            OutputFile.check(source.root().resolve(path), "pack file");
+        }
+        Map<String, byte[]> files = Files.isDirectory(source.root()) ? PackLint.read(source.root()) : new HashMap<>();
+        files.putAll(plan.files());
+        // pack builds pack.mcmeta; until then it is not this file's problem.
+        files.putIfAbsent("pack.mcmeta", "{\"pack\":{\"pack_format\":1,\"description\":\"\"}}".getBytes(
+                java.nio.charset.StandardCharsets.UTF_8));
+        List<PackLint.Finding> found = PackLint.check(files).findings().stream()
+                .filter(f -> plan.files().containsKey(f.path())).toList();
+        List<PackLint.Finding> blocking = found.stream()
+                .filter(f -> f.severity() == PackLint.Severity.ERROR && !f.missing()).toList();
+        if (!blocking.isEmpty()) {
+            throw new ToolException("not written, the game would not load " + blocking.getFirst().path() + ": "
+                    + String.join("; ", blocking.stream().limit(5).map(PackLint.Finding::message).toList())
+                    + (blocking.size() > 5 ? "; and " + (blocking.size() - 5) + " more" : ""));
+        }
+        new Steps("pack_asset").then(WRITE_ASSET).run(WRITE_ASSET, () -> PackAssets.write(source, plan));
+        StringBuilder out = new StringBuilder("wrote ").append(plan.note());
+        found.stream().limit(10).forEach(f -> out.append("\n").append(f.severity().name().toLowerCase(Locale.ROOT))
+                .append(": ").append(f.message()));
+        if (found.size() > 10) {
+            out.append("\n... ").append(found.size() - 10).append(" more: pack check=true");
+        }
+        return out.append("\nnext: pack").toString();
     }
 
     static final String BUILD = "build the pack";
