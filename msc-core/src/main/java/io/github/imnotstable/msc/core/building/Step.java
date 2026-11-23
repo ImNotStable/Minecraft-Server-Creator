@@ -1052,4 +1052,18 @@ public sealed interface Step {
             Things.light(c, this);
         }
     }
+
+    /** A built room furnished by what it is for (ADR 0082); see {@link io.github.imnotstable.msc.core.building.Furnish}. */
+    record Furnish(Region box, String room, String wood, String color, int density, long seed, List<String> replace)
+            implements Step {
+        @Override
+        public Region bounds() {
+            return box;
+        }
+
+        @Override
+        public void draw(Canvas c) throws InterruptedException {
+            io.github.imnotstable.msc.core.building.Furnish.draw(c, this);
+        }
+    }
 }

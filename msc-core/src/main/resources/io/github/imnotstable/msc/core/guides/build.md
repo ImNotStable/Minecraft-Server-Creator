@@ -132,6 +132,18 @@ THINGS IN A BUILD (build_batch; values with spaces in quotes: text="Two words")
   level=, spread out, as few as needed: lanterns by default, hanging ones for on=ceiling, torches on walls, or B
   (light[level=15] for invisible light).
 
+ROOMS, PICTURES AND FILES
+- furnish X,Y,Z X,Y,Z room= [wood=spruce color=red density=50]: furnishes a built room by its use: bedroom, kitchen,
+  dining, library, study, tavern, storage, smithy, alchemy, chapel, throne, shop, barracks, bathroom. Give the room's
+  inside (floor to ceiling) after walls and roof: props go in corners and along walls (chests and shelves facing out,
+  beds head to the wall), a centre piece (tables with chairs, a long dining table, pews and an altar, a throne, a
+  counter), a rug around it and a lantern on a chain; spots beside doors and openings stay clear. Then add your own
+  touches: it is a start, not the finished room.
+- image X,Y,Z file=PNG w=N [h=N plane=x|z|floor palette=all|wool|concrete|terracotta|glass dither=true]: a picture as
+  blocks, X,Y,Z its bottom-left (walls) or north-west corner (floor, for map art); transparent pixels are left alone.
+- structure file= and scatter file= read Sponge .schem, the game's structure .nbt files and Litematica .litematic,
+  told apart by content; MCEdit .schematic from before 1.13 must be re-saved as .schem.
+
 SCALE AND COMPOSITION
 - A landmark is seen from far away: give it a strong, asymmetric silhouette (a tall tower beside a low hall), not a box with a spike.
 - Towers taper or step in, have a base, a shaft and a cap; no 1-block-thick towers.

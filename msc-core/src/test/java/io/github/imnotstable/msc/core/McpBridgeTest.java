@@ -59,8 +59,8 @@ class McpBridgeTest {
                 // for world_create and the terrain, path and scatter steps: land had no tool at all; ADR 0077 by 450
                 // for the roof, trim, decorate and weather steps, one line each, their details in guide=build; ADR 0079
                 // by 300 for tree, forest and flora, the same way; ADR 0080 by 200 for the seven shaping steps; ADR 0081
-                // by 350 for the block entity, entity, biome, feature and light steps.
-                assertThat(listed.toString().length()).isLessThan(19100);
+                // by 350 for the block entity, entity, biome, feature and light steps; ADR 0082 by 200 for furnish and image.
+                assertThat(listed.toString().length()).isLessThan(19300);
                 JsonObject batch = tools.get(names.indexOf("build_batch")).getAsJsonObject().getAsJsonObject("inputSchema");
                 assertThat(batch.getAsJsonArray("required").toString()).isEqualTo("[\"steps\"]");
                 // Every project template the jar ships (paper-server is only nested in others) is named in project_scaffold's schema, so none goes unseen.

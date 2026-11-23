@@ -64,6 +64,7 @@ public final class BuildScript {
             sign|banner|head|book|container X,Y,Z B text="a|b"|patterns=|player=|pages=|items=
             entity X,Y,Z TYPE [data={} still=true]  frame X,Y,Z item= facing=  stand X,Y,Z [head= mainhand=]
             biome X,Y,Z X,Y,Z ID  feature X,Y,Z ID [count= spread=]  light X,Y,Z X,Y,Z [B level=8]  (guide=build)
+            furnish X,Y,Z X,Y,Z room=bedroom|kitchen|...  image X,Y,Z file=PNG w=N [plane=x|z|floor]  (guide=build)
             structure X,Y,Z [X,Y,Z ...] [rotate=90] [face=X,Z] [anchor=center] [air=false] [file=PATH]
               then the text and "end", unless file= (.schem or text). Text: "legend: #=stone g=glass", then per \
             layer "y=N" and rows (z) of symbols (x); "." air, "_" unchanged; "y=N same as y=M", "y=N all #". rotate \
@@ -84,6 +85,11 @@ public final class BuildScript {
 
         /** The blocks in a region of the world as they are now, with block entity data, at their own coordinates. */
         BlockGrid read(Region region) throws InterruptedException;
+
+        /** A file in the workspace, which must exist (images for the image step). */
+        default java.nio.file.Path file(String path) {
+            throw new ToolException("files are not available here");
+        }
     }
 
     private final String world;
@@ -574,6 +580,37 @@ public final class BuildScript {
                 yield new Step.Light(new Region(world, p.points().get(0), p.points().get(1)),
                         p.block() == null ? null : o.block(), on, o.integer("level", 8, 1, 15), o.seed(), o.replace());
             }
+            case "furnish" -> {
+                o.points(2);
+                o.flags(Set.of());
+                String room = o.string("room");
+                if (room == null) {
+                    throw new ToolException("furnish needs room=" + String.join("|", Furnish.ROOMS));
+                }
+                String wood = o.string("wood");
+                String color = o.string("color");
+                wood = wood == null ? "spruce" : wood;
+                color = color == null ? "red" : color;
+                Furnish.check(room, wood, color);
+                yield new Step.Furnish(new Region(world, p.points().get(0), p.points().get(1)), room, wood, color,
+                        o.integer("density", 50, 0, 100), o.seed(), o.replace());
+            }
+            case "image" -> {
+                o.points(1);
+                o.flags(Set.of());
+                String file = o.string("file");
+                if (file == null) {
+                    throw new ToolException("image needs file=PATH (a PNG or JPEG in the workspace)");
+                }
+                String plane = o.string("plane");
+                String palette = o.string("palette");
+                BlockGrid picture = Images.grid(files.file(file), world, o.integer("w", null, 1, 512),
+                        o.integer("h", 0, 0, 512), plane == null ? "x" : plane, palette == null ? "all" : palette,
+                        !"false".equals(o.string("dither")));
+                List<String> replace = o.replace();
+                o.done();
+                yield new Step.Stamp(world, List.of(new Step.Stamp.Placement(picture, p.points().get(0))), false, replace);
+            }
             case "tree" -> {
                 o.points(1);
                 o.flags(Set.of());
@@ -644,7 +681,7 @@ public final class BuildScript {
             default -> throw new ToolException("unknown step \"" + p.verb()
                     + "\"; use fill, set, cylinder, ring, disc, sphere, dome, line, helix, bands, terrain, path, scatter, roof, trim, "
                     + "decorate, weather, flora, tree, forest, smooth, erode, blend, paint, river, tunnel, cave, sign, banner, "
-                    + "head, book, container, entity, frame, stand, biome, feature, light, structure or copy");
+                    + "head, book, container, entity, frame, stand, biome, feature, light, furnish, image, structure or copy");
         };
         if (!p.verb().equals("structure") && !p.verb().equals("copy")) {
             o.done();
