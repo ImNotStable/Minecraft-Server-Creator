@@ -55,8 +55,16 @@ final class Joins {
         for (int[] p : todo) {
             connect(c, at, p[0], p[1], p[2]);
         }
+        List<String> halfDoors = new java.util.ArrayList<>();
         for (int[] p : todo) {
-            pair(c, at, p[0], p[1], p[2]);
+            pair(c, at, p[0], p[1], p[2], halfDoors);
+        }
+        if (!halfDoors.isEmpty()) {
+            // Half a door is unusable and was the mark of a floor laid at the door's top (ADR 0093).
+            throw new ToolException("nothing placed: " + halfDoors.size() + (halfDoors.size() == 1 ? " door has" : " doors have")
+                    + " no room for the other half (" + String.join("; ", halfDoors.subList(0, Math.min(3, halfDoors.size())))
+                    + "). A door is two blocks: its bottom stands on the floor's level, its top needs the block above free "
+                    + "(set the door before a floor or lintel only if they leave that block, or lower the door)");
         }
     }
 
@@ -212,8 +220,11 @@ final class Joins {
         if (stairs(id)) {
             return !has(state, "shape") || !has(state, "facing") || !has(state, "half");
         }
-        if (door(id) || TALL_PLANTS.contains(id)) {
-            return !has(state, "half") || door(id) && !has(state, "facing");
+        if (door(id)) {
+            return true; // even a door with every state given: its other half is checked (ADR 0093)
+        }
+        if (TALL_PLANTS.contains(id)) {
+            return !has(state, "half");
         }
         if (id.endsWith("_bed")) {
             return !has(state, "part");
@@ -344,6 +355,14 @@ final class Joins {
                         : pane(nid) || wall(nid) || joinsSide(n);
                 out = with(out, DIRS[d], String.valueOf(join));
                 any |= join;
+                // A fence or pane already in the world turns to meet this one: a line built over two calls joins
+                // up instead of ending in a post that faces away (ADR 0093).
+                int nx = x + STEP[d][0];
+                int nz = z + STEP[d][1];
+                if (join && c.planned(nx, y, nz) == null && (fence(nid) || pane(nid)) && c.bounds().contains(nx, y, nz)
+                        && !get(n, DIRS[(d + 2) % 4], "false").equals("true")) {
+                    c.set(nx, y, nz, with(n, DIRS[(d + 2) % 4], "true"));
+                }
             }
             if (!any) {
                 return; // a post alone is the default state: left as written
@@ -418,10 +437,25 @@ final class Joins {
     }
 
     /** The other half of doors, tall plants and beds, where it is free. */
-    private static void pair(Canvas c, Canvas.Lookup at, int x, int y, int z) {
+    private static void pair(Canvas c, Canvas.Lookup at, int x, int y, int z, List<String> halfDoors) {
         String s = c.planned(x, y, z);
         String id = id(s);
-        if ((door(id) || TALL_PLANTS.contains(id)) && !has(s, "half")) {
+        if (door(id)) {
+            // A door's half given or not, the other half must be there: set, already in the world, or free to add.
+            boolean lower = !get(s, "half", "lower").equals("upper");
+            int oy = lower ? y + 1 : y - 1;
+            String other = c.planned(x, oy, z);
+            String there = other != null ? other : at.at(x, oy, z);
+            if (id(there).equals(id) && get(there, "half", "").equals(lower ? "upper" : "lower")) {
+                return;
+            }
+            if (free(c, at, x, oy, z)) {
+                c.set(x, y, z, with(s, "half", lower ? "lower" : "upper"));
+                c.set(x, oy, z, with(s, "half", lower ? "upper" : "lower"));
+            } else {
+                halfDoors.add(id + " at " + x + "," + y + "," + z + " has " + id(there) + (lower ? " above" : " below"));
+            }
+        } else if (TALL_PLANTS.contains(id) && !has(s, "half")) {
             if (free(c, at, x, y + 1, z)) {
                 c.set(x, y, z, with(s, "half", "lower"));
                 c.set(x, y + 1, z, with(s, "half", "upper"));

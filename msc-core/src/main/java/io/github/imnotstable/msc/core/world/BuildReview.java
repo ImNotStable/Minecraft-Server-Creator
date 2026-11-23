@@ -95,13 +95,21 @@ public final class BuildReview {
         int plants = 0;
         int floor = 0;
         int props = 0;
+        int dark = 0;
+        int ladders = 0;
+        String firstLadder = null;
+        boolean[] light = new boolean[names.length];
+        for (int i = 0; i < names.length; i++) {
+            light[i] = names[i] != null && matches(names[i], LIGHTS);
+        }
         for (int y = ground + 1; y <= r.max().y(); y++) {
             for (int z = r.min().z(); z <= r.max().z(); z++) {
                 for (int x = r.min().x(); x <= r.max().x(); x++) {
                     String b = name(grid, names, x, y, z);
                     if (b == null && r.contains(x, y - 1, z) && built(grid, names, isGround, x, y - 1, z)
-                            && covered(grid, names, x, y, z)) {
+                            && covered(grid, names, x, y, z) && enclosed(grid, names, x, y, z)) {
                         floor++;
+                        dark += lit(grid, light, x, y, z) ? 0 : 1;
                     }
                     if (b == null || isGround[r.index(x, y, z)]) {
                         continue;
@@ -111,8 +119,13 @@ public final class BuildReview {
                     boolean green = matches(b, PLANTS);
                     plants += green ? 1 : 0;
                     // Windows and doors sit in the walls: not furnishings.
+                    // Trapdoors are shutters and facades as often as furniture, so they do not count (ADR 0093).
                     props += shaped && !green && !b.contains("pane") && !b.contains("bars") && !b.contains("door")
-                            && covered(grid, names, x, y, z) ? 1 : 0;
+                            && covered(grid, names, x, y, z) && enclosed(grid, names, x, y, z) ? 1 : 0;
+                    if (b.equals("ladder") && r.contains(x, y - 1, z) && name(grid, names, x, y - 1, z) == null) {
+                        ladders++;
+                        firstLadder = firstLadder == null ? x + "," + y + "," + z : firstLadder;
+                    }
                     boolean open = false;
                     for (int[] s : SIDES) {
                         open |= grid.region().contains(x + s[0], y, z + s[1]) && name(grid, names, x + s[0], y, z + s[1]) == null;
@@ -178,7 +191,7 @@ public final class BuildReview {
         out.append(String.format(Locale.ROOT, "plain wall tops %d%% (aim under %d%%), bare base %d%% (aim under %d%%), "
                 + "floor under a roof %d with %d furnishings, plants %d\n", plainTopPct, MAX_PLAIN_TOPS, bareBasePct,
                 MAX_BARE_BASE, floor, props, plants));
-        List<String> fixes = new ArrayList<>();
+        List<String> fixes = new ArrayList<>(doors(grid, names));
         if (flatPct > MAX_FLAT && faces >= 20) {
             fixes.add("flat walls: give each wall depth (pillars or a frame 1 out, windows 1 in), a base and a trim "
                     + "line of stairs or slabs (trim at=base, band, top; sills, shutters, frames), and mix in variants "
@@ -220,6 +233,15 @@ public final class BuildReview {
             fixes.add("empty rooms: " + floor + " floor blocks under a roof and " + props + " furnishings; furnish "
                     + "them (decorate on=edge, corner, ceiling; tables from slabs and fences, beds, shelves, lights)");
         }
+        if (floor >= 24 && dark * 100 > floor * MAX_DARK) {
+            fixes.add("dark rooms: " + pct(dark, floor) + "% of the floor inside has no light within " + LIGHT_REACH
+                    + " blocks (aim under " + MAX_DARK + "%), so it is dark and mobs spawn there; hang lanterns "
+                    + "(decorate on=ceiling tip=lantern spacing=6) or set lights in walls and floors");
+        }
+        if (ladders > 0) {
+            fixes.add("broken ladders: " + ladders + " (first at " + firstLadder + ") end in the air above a gap; run "
+                    + "each ladder from the floor up, one block above another, against a wall");
+        }
         if (plants == 0 && total >= 300) {
             fixes.add("no plants: vines and leaves on walls (decorate on=wall), bushes and flowers at the base, moss "
                     + "on ledges (weather); leave this where nothing grows");
@@ -228,6 +250,107 @@ public final class BuildReview {
             fixes.add("no lights: lanterns, torches or glowing blocks at doors, paths and windows");
         }
         return withLand(out.toString().stripTrailing(), land, fixes, true);
+    }
+
+    /**
+     * Doors a player cannot use (ADR 0093): half a door (its other half gone, under a floor or lintel), and a door whose
+     * bottom has a full block in front or behind (a floor laid at the door's top half, ground piled against it).
+     */
+    public static List<String> doors(BlockGrid grid, String[] names) {
+        Region r = grid.region();
+        int half = 0;
+        int blocked = 0;
+        String firstHalf = null;
+        String firstBlocked = null;
+        int holes = 0;
+        int filled = 0;
+        String firstHole = null;
+        for (int y = r.min().y(); y <= r.max().y(); y++) {
+            for (int z = r.min().z(); z <= r.max().z(); z++) {
+                for (int x = r.min().x(); x <= r.max().x(); x++) {
+                    int b = grid.blocks()[r.index(x, y, z)];
+                    String n = b < 0 ? null : names[b];
+                    if (n == null) {
+                        holes += hole(grid, names, x, y, z) ? 1 : 0;
+                        firstHole = firstHole == null && hole(grid, names, x, y, z) ? x + "," + y + "," + z : firstHole;
+                        continue;
+                    }
+                    filled += n.contains("pane") || n.contains("glass") || n.contains("bars") ? 1 : 0;
+                    if (!n.endsWith("_door") || n.endsWith("trapdoor")) {
+                        continue;
+                    }
+                    filled++;
+                    String state = grid.palette().get(b);
+                    boolean lower = !state.contains("half=upper");
+                    int oy = lower ? y + 1 : y - 1;
+                    if (r.contains(x, oy, z)) {
+                        int o = grid.blocks()[r.index(x, oy, z)];
+                        if (o < 0 || !n.equals(names[o])
+                                || !grid.palette().get(o).contains(lower ? "half=upper" : "half=lower")) {
+                            half++;
+                            firstHalf = firstHalf == null ? x + "," + y + "," + z : firstHalf;
+                        }
+                    }
+                    if (lower) {
+                        boolean alongX = state.contains("facing=east") || state.contains("facing=west");
+                        for (int s = -1; s <= 1; s += 2) {
+                            String side = name(grid, names, alongX ? x + s : x, y, alongX ? z : z + s);
+                            if (side != null && !matches(side, DETAIL) && !matches(side, PLANTS)) {
+                                blocked++;
+                                firstBlocked = firstBlocked == null ? x + "," + y + "," + z : firstBlocked;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        List<String> fixes = new ArrayList<>();
+        if (half > 0) {
+            fixes.add("half doors: " + half + " (first at " + firstHalf + ") lack their other half, cut off by a floor, "
+                    + "lintel or wall; a door is two blocks, its bottom on the floor's level and the block above free");
+        }
+        if (blocked > 0) {
+            fixes.add("blocked doors: " + blocked + " (first at " + firstBlocked + ") have a full block in front of or "
+                    + "behind their bottom half, so no one walks through; lay the floor inside at the door's bottom "
+                    + "level (the floor block one below it) and clear the step outside");
+        }
+        // Open arches are fine among glazed windows; a build whose wall holes are mostly empty was left unfinished.
+        if (holes >= MIN_HOLES && holes > filled) {
+            fixes.add("open holes: " + holes + " gaps through walls with nothing in them (first at " + firstHole + "), "
+                    + "more than the " + filled + " panes, glass and doors; glaze windows (glass panes, bars) and hang "
+                    + "doors in doorways");
+        }
+        return fixes;
+    }
+
+    static final int MIN_HOLES = 4;
+
+    /**
+     * An air block through a wall: built blocks on both sides along the wall and above it (a lintel), open to air on
+     * both faces; a window, or a doorway's cell.
+     */
+    private static boolean hole(BlockGrid grid, String[] names, int x, int y, int z) {
+        if (!full(name(grid, names, x, y + 1, z))) {
+            return false;
+        }
+        for (int a = 0; a < 2; a++) {
+            int dx = a == 0 ? 1 : 0;
+            int dz = 1 - dx;
+            if (full(name(grid, names, x + dx, y, z + dz)) && full(name(grid, names, x - dx, y, z - dz))
+                    && name(grid, names, x + dz, y, z + dx) == null && name(grid, names, x - dz, y, z - dx) == null
+                    && grid.region().contains(x + dz, y, z + dx) && grid.region().contains(x - dz, y, z - dx)
+                    // the wall beside it is open on both faces too: a hole through a wall, not a 1-wide corridor
+                    && name(grid, names, x + dx + dz, y, z + dz + dx) == null
+                    && name(grid, names, x + dx - dz, y, z + dz - dx) == null) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean full(String name) {
+        return name != null && !matches(name, DETAIL) && !matches(name, PLANTS);
     }
 
     /** The build's text, the land's numbers on their own line, then every fix, or the pass line when there is none. */
@@ -369,6 +492,42 @@ public final class BuildReview {
             }
         }
         return out;
+    }
+
+    /** Floor inside farther than this from any light is dark. */
+    static final int LIGHT_REACH = 6;
+    static final int MAX_DARK = 25;
+
+    /** Whether a light block lies within {@link #LIGHT_REACH} blocks (a cube) of a spot. */
+    private static boolean lit(BlockGrid grid, boolean[] light, int x, int y, int z) {
+        Region r = grid.region();
+        for (int dy = -LIGHT_REACH; dy <= LIGHT_REACH; dy++) {
+            for (int dz = -LIGHT_REACH; dz <= LIGHT_REACH; dz++) {
+                for (int dx = -LIGHT_REACH; dx <= LIGHT_REACH; dx++) {
+                    if (r.contains(x + dx, y + dy, z + dz)) {
+                        int b = grid.blocks()[r.index(x + dx, y + dy, z + dz)];
+                        if (b >= 0 && light[b]) {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    /** Whether built blocks stand within 8 blocks on at least three of the four sides: inside a room, not a porch. */
+    private static boolean enclosed(BlockGrid grid, String[] names, int x, int y, int z) {
+        int walls = 0;
+        for (int[] s : SIDES) {
+            for (int k = 1; k <= 8; k++) {
+                if (name(grid, names, x + s[0] * k, y, z + s[1] * k) != null) {
+                    walls++;
+                    break;
+                }
+            }
+        }
+        return walls >= 3;
     }
 
     /** Whether something lies above within 8 blocks: a room's ceiling or a roof. */

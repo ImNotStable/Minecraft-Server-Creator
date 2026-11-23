@@ -55,6 +55,24 @@ class DetailStepsTest {
     }
 
     @Test
+    void aFenceInTheWorldTurnsToMeetANewOne() throws Exception {
+        // The world holds a fence post at 0,0,0; this build continues the line east of it.
+        Canvas.WorldReader withPost = r -> {
+            BlockGrid g = world(r);
+            int[] blocks = g.blocks().clone();
+            if (r.contains(0, 0, 0)) {
+                blocks[r.index(0, 0, 0)] = 2;
+            }
+            return new BlockGrid(r, List.of("minecraft:air", "minecraft:stone",
+                    "minecraft:oak_fence[east=false,north=false,south=false,waterlogged=false,west=false]"), blocks);
+        };
+        List<Step> parsed = new BuildScript("world", null).parse("fill 1,0,0 2,0,0 oak_fence");
+        Canvas c = Builder.drawJoined(new Step.Group(parsed).bounds(), parsed, withPost);
+        assertThat(at(c, 1, 0, 0)).contains("west=true");
+        assertThat(at(c, 0, 0, 0)).contains("east=true").contains("west=false");
+    }
+
+    @Test
     void stairsJoinAtCorners() throws Exception {
         Canvas c = draw("""
                 fill 0,0,0 4,0,4 stone
@@ -79,6 +97,69 @@ class DetailStepsTest {
         assertThat(at(c, 5, 0, 5)).contains("part=foot");
         assertThat(at(c, 6, 0, 5)).contains("part=head");
         assertThat(at(c, 8, 1, 8)).contains("half=upper");
+    }
+
+    @Test
+    void aDoorGivenAsItsLowerHalfGetsItsTopOrIsRefused() throws Exception {
+        // Run 6's customs office: the door's half said, its top left as air, so only the bottom was placed.
+        Canvas c = draw("""
+                set 1,1,0 air
+                set 1,0,0 spruce_door[facing=east,half=lower,hinge=left,open=false]
+                """);
+        assertThat(at(c, 1, 1, 0)).contains("spruce_door").contains("half=upper").contains("hinge=left");
+        // A floor laid at the door's top takes the room it needs: nothing is placed.
+        assertThatThrownBy(() -> draw("""
+                set 1,0,0 spruce_door[facing=east,half=lower,hinge=left,open=false]
+                fill 0,1,0 2,1,0 oak_planks
+                """)).isInstanceOf(ToolException.class)
+                .hasMessageContaining("1 door has no room for the other half (spruce_door at 1,0,0 has oak_planks above)");
+    }
+
+    @Test
+    void theReviewFindsHalfAndBlockedDoors() throws Exception {
+        // A door whose top was cut off by a floor, and a whole door with the floor inside at its bottom half.
+        Region r = Region.of("world", 0, 0, 0, 4, 3, 4);
+        int[] blocks = new int[Math.toIntExact(r.volume())];
+        blocks[r.index(1, 1, 1)] = 1;
+        blocks[r.index(1, 2, 1)] = 3;
+        blocks[r.index(3, 1, 1)] = 1;
+        blocks[r.index(3, 2, 1)] = 2;
+        blocks[r.index(4, 1, 1)] = 3;
+        BlockGrid grid = new BlockGrid(r, List.of("minecraft:air",
+                "minecraft:oak_door[facing=east,half=lower,hinge=left,open=false]",
+                "minecraft:oak_door[facing=east,half=upper,hinge=left,open=false]", "minecraft:oak_planks"), blocks);
+        String[] names = {null, "oak_door", "oak_door", "oak_planks"};
+        assertThat(String.join("\n", BuildReview.doors(grid, names)))
+                .contains("half doors: 1 (first at 1,1,1)").contains("blocked doors: 1 (first at 3,1,1)");
+    }
+
+    @Test
+    void theReviewFindsWindowsLeftOpenButNotACorridor() {
+        // A plank wall at z 2 with four window holes at y 2; then the same wall with two of them glazed.
+        Region r = Region.of("world", 0, 0, 0, 8, 4, 4);
+        int[] blocks = new int[Math.toIntExact(r.volume())];
+        for (int y = 0; y <= 4; y++) {
+            for (int x = 0; x <= 8; x++) {
+                blocks[r.index(x, y, 2)] = y == 2 && x % 2 == 1 ? 0 : 1;
+            }
+        }
+        List<String> palette = List.of("minecraft:air", "minecraft:oak_planks", "minecraft:glass_pane");
+        String[] names = {null, "oak_planks", "glass_pane"};
+        assertThat(BuildReview.doors(new BlockGrid(r, palette, blocks), names)).singleElement().asString()
+                .startsWith("open holes: 4 gaps through walls with nothing in them (first at 1,2,2)");
+        blocks[r.index(1, 2, 2)] = 2;
+        blocks[r.index(3, 2, 2)] = 2;
+        assertThat(BuildReview.doors(new BlockGrid(r, palette, blocks), names)).isEmpty();
+        // A 1-wide covered corridor along z between two thick walls is not a hole.
+        int[] corridor = new int[Math.toIntExact(r.volume())];
+        for (int z = 0; z <= 4; z++) {
+            for (int y = 0; y <= 4; y++) {
+                for (int x = 0; x <= 8; x++) {
+                    corridor[r.index(x, y, z)] = x == 4 && y >= 1 && y <= 2 ? 0 : 1;
+                }
+            }
+        }
+        assertThat(BuildReview.doors(new BlockGrid(r, palette, corridor), names)).isEmpty();
     }
 
     @Test

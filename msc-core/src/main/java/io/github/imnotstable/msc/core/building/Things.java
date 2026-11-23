@@ -212,7 +212,18 @@ final class Things {
     /** The summon command for one entity at a block's centre. */
     static String summon(String world, String type, double x, double y, double z, String nbt, String tag) {
         return "execute in " + dimension(world) + " run summon " + id(type, "entity type") + " " + x + " " + y + " " + z
-                + " " + tagged(nbt, tag);
+                + " " + tagged(nbt == null ? null : components(nbt), tag);
+    }
+
+    private static final java.util.regex.Pattern QUOTED_NAME =
+            java.util.regex.Pattern.compile("(CustomName:)'(\\{[^']*\\}|\\[[^']*\\])'");
+
+    /**
+     * A text component written as a quoted JSON string (the old format, CustomName:'{"text":"Vela"}') shows its JSON
+     * as the name in today's game, which reads components as SNBT; JSON is valid SNBT, so the quotes go (ADR 0093).
+     */
+    static String components(String nbt) {
+        return QUOTED_NAME.matcher(nbt).replaceAll("$1$2");
     }
 
     /** Data that makes a mob stay as placed: no AI, silent, never despawns, unhurt. */

@@ -69,8 +69,14 @@ DETAIL PASS (use most of these on every build; the steps work on what is already
 - Depth: no wall is one flat plane. trim at=base (plinth), at=band level=Y (belt course), at=top (cornice) and at=corners
   (pillars or quoins of logs or polished stone); windows set 1 in, pillars or a timber frame 1 out.
 - Windows and doors: trim at=sills, lintels, shutters (trapdoors), frames; panes or bars in the hole.
+- Doors are two blocks and people walk through them: the door's bottom stands on the floor's top level inside and out
+  (the floor block itself is one below), the block above it is the door's top, the lintel goes above that. Lay the
+  interior floor before you cut the doorway, and never at the door's top half. build_batch refuses half a door;
+  review=true counts half doors, blocked doors and wall holes left open.
 - Gradient: a>b>c on the walls, darker and heavier at the base (cobblestone>stone_bricks>andesite), seams ragged, no
   shade skipped; grade=x or z for a run along a wall.
+- Interiors: every room furnished and lit (review=true counts dark floor: a light within 6 blocks); ladders run from
+  the floor up without gaps; signs, NPC names and holograms as text components (CustomName:{text:"Vela",color:"gold"}).
 - Props: decorate on=edge (barrels, shelves, crates along walls), on=corner (beds, chests), on=ceiling with tip=
   (chain then lantern), on=floor (carpets in patches with clump=), on=top (props on ledges); furnished interiors, tables
   from slabs and fences, beds, shelves; lanterns on chains, banners, signs, flower pots, hay, carts, market stalls.
