@@ -390,7 +390,8 @@ final class Detail {
         for (int y = box.min().y(); y <= box.max().y(); y++) {
             for (int z = box.min().z(); z <= box.max().z(); z++) {
                 for (int x = box.min().x(); x <= box.max().x(); x++) {
-                    if (!fits(at, d.on(), x, y, z)) {
+                    if (!fits(at, d.on(), x, y, z)
+                            || !d.soil().isEmpty() && !Canvas.matches(at.at(x, y - 1, z), d.soil())) {
                         continue;
                     }
                     long h = Noise.hash(d.seed() ^ BlockPattern.mix(y * 0x51L), x, z);

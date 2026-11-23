@@ -624,20 +624,7 @@ public sealed interface Step {
 
         /** The chosen spots as x, z and a hash for the pick and the turn. */
         List<long[]> spots() {
-            List<long[]> out = new ArrayList<>();
-            BlockPos lo = region.min();
-            BlockPos hi = region.max();
-            for (int cz = 0; lo.z() + (long) cz * spacing <= hi.z(); cz++) {
-                for (int cx = 0; lo.x() + (long) cx * spacing <= hi.x(); cx++) {
-                    long h = Noise.hash(seed, cx, cz);
-                    long x = lo.x() + (long) cx * spacing + (long) (Noise.unit(h) * spacing);
-                    long z = lo.z() + (long) cz * spacing + (long) (Noise.unit(BlockPattern.mix(h)) * spacing);
-                    if (x <= hi.x() && z <= hi.z() && Noise.unit(BlockPattern.mix(h + 1)) * 100 < chance) {
-                        out.add(new long[] {x, z, BlockPattern.mix(h + 2)});
-                    }
-                }
-            }
-            return out;
+            return Nature.spots(region, spacing, chance, seed);
         }
 
         @Override
@@ -802,7 +789,8 @@ public sealed interface Step {
      * ending in {@code tip}.
      */
     record Decorate(Region box, BlockPattern block, BlockPattern tip, String on, int chance, int spacing,
-                    int minLength, int maxLength, int clump, long seed, List<String> replace) implements Step {
+                    int minLength, int maxLength, int clump, List<String> soil, long seed, List<String> replace)
+            implements Step {
         public static final List<String> ON = List.of("top", "ground", "floor", "edge", "corner", "wall", "ceiling");
 
         public Decorate {
@@ -839,6 +827,50 @@ public sealed interface Step {
         @Override
         public void draw(Canvas c) throws InterruptedException {
             Detail.weather(c, this);
+        }
+    }
+
+    /**
+     * One tree, bush or huge fungus standing on {@code base}, its lowest trunk block (ADR 0079): {@code kind} picks the
+     * silhouette, {@code size} its scale, {@code height} 0 a height for both; {@code log} and {@code leaves} null keep
+     * the kind's own blocks.
+     */
+    record Tree(String world, BlockPos base, String kind, String size, int height, BlockPattern log, BlockPattern leaves,
+                long seed, List<String> replace) implements Step {
+        List<Nature.Part> parts() {
+            return Nature.grow(kind, base, size, height, log, leaves, seed);
+        }
+
+        @Override
+        public Region bounds() {
+            return Nature.box(world, parts());
+        }
+
+        @Override
+        public void draw(Canvas c) throws InterruptedException {
+            Region b = bounds();
+            Nature.place(c, parts(), c.current(b), c.mask(b, replace));
+        }
+    }
+
+    /**
+     * Trees on the ground across {@code region} (ADR 0079): one per {@code spacing} cell kept with {@code chance}, each
+     * of a kind picked by weight and grown from that spot's seed, on the column's top ground (only on {@code on} blocks
+     * when given). {@code size} mixed picks small, medium or large per tree.
+     */
+    record Forest(Region region, List<String> kinds, int[] weights, String size, BlockPattern log, BlockPattern leaves,
+                  int spacing, int chance, List<String> on, long seed, List<String> replace) implements Step {
+        @Override
+        public Region bounds() {
+            int[] reach = Nature.reach(size.equals("mixed") ? "large" : size);
+            return Region.of(region.world(), region.min().x() - reach[0], region.min().y() - 4,
+                    region.min().z() - reach[0], region.max().x() + reach[0], region.max().y() + reach[1],
+                    region.max().z() + reach[0]);
+        }
+
+        @Override
+        public void draw(Canvas c) throws InterruptedException {
+            Nature.forest(c, this);
         }
     }
 }
