@@ -181,6 +181,27 @@ class BuildReviewTest {
     }
 
     @Test
+    void aHouseInARegionThatIsMostlyLandIsStillJudged() {
+        // Seven layers of natural stone under a 12x12 bricks house: 92% of the blocks are land.
+        Region r = Region.of("world", 0, 0, 0, 29, 16, 29);
+        int[] b = new int[Math.toIntExact(r.volume())];
+        for (int z = 0; z <= 29; z++) {
+            for (int x = 0; x <= 29; x++) {
+                for (int y = 0; y <= 6; y++) {
+                    b[r.index(x, y, z)] = 1;
+                }
+                boolean in = x >= 9 && x <= 20 && z >= 9 && z <= 20;
+                for (int y = 7; y <= 15 && in; y++) {
+                    b[r.index(x, y, z)] = y == 15 || x == 9 || x == 20 || z == 9 || z == 20 ? 2 : 0;
+                }
+            }
+        }
+        String review = BuildReview.review(new BlockGrid(r, List.of("minecraft:air", "minecraft:stone",
+                "minecraft:bricks"), b));
+        assertThat(review).doesNotContain("mostly land").contains("types: bricks 100%");
+    }
+
+    @Test
     void anEmptyRegionSaysSo() {
         BlockGrid air = TextGrid.parse("legend: #=stone\ny=0\n...\n...", "world", new BlockPos(0, 0, 0));
         assertThat(BuildReview.review(air)).isEqualTo("review: nothing built above the ground");
