@@ -41,7 +41,7 @@ public final class McpBridge {
             + "a build is done only when its world_summary review=true passes after a world_render (msc_status lists "
             + "reviews still failing). Textures: "
             + "draw items with texture rows= (kind=gem, sword... are examples to learn shading from, not to ship), a .png name "
-            + "writes a plain file; pack makes the zip with the right pack.mcmeta (file= saves a copy). "
+            + "writes a plain file; HUD glyphs, sounds and every other pack file: pack_asset; pack makes the zip with the right pack.mcmeta (file= saves a copy). "
             + "Testing a game: server_setup mode=game, player_test to play it, world_entities, server_wait instead "
             + "of polling, server_command \"tick sprint 600\" to skip ahead. Chunks with no player nearby do not "
             + "tick: keep game areas loaded with forceload. Results are size-capped: narrow the request rather than "
