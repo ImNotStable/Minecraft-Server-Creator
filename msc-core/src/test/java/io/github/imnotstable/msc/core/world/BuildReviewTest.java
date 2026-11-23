@@ -87,6 +87,31 @@ class BuildReviewTest {
     }
 
     @Test
+    void aFailingReviewSaysNotDone() {
+        assertThat(BuildReview.review(box("bricks"))).contains("\nverdict: NOT DONE, 7 checks below the bar\nfix first: 1)");
+    }
+
+    @Test
+    void naturalRockIsGroundNotABuild() {
+        // A stone floor, a stone hill on the west half rising in solid columns, and a bricks hut on the east.
+        StringBuilder text = new StringBuilder("legend: s=stone b=bricks\n");
+        for (int y = 0; y <= 9; y++) {
+            text.append("y=").append(y).append('\n');
+            for (int z = 0; z < 11; z++) {
+                StringBuilder row = new StringBuilder();
+                for (int x = 0; x < 11; x++) {
+                    boolean hill = x < 3 && y <= 2;
+                    boolean hut = x >= 4 && y >= 1 && (y == 9 || x == 4 || x == 10 || z == 0 || z == 10);
+                    row.append(y == 0 || hill ? 's' : hut ? 'b' : '.');
+                }
+                text.append(row).append('\n');
+            }
+        }
+        String review = BuildReview.review(TextGrid.parse(text.toString(), "world", new BlockPos(0, 64, 0)));
+        assertThat(review).contains("1 types: bricks 100%").doesNotContain("stone ");
+    }
+
+    @Test
     void anEmptyRegionSaysSo() {
         BlockGrid air = TextGrid.parse("legend: #=stone\ny=0\n...\n...", "world", new BlockPos(0, 0, 0));
         assertThat(BuildReview.review(air)).isEqualTo("review: nothing built above the ground");

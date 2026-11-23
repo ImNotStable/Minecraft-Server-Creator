@@ -97,7 +97,7 @@ public final class LifecycleTools {
                 Schema.of().opt("project", "string", "Project folder in the workspace. Default: the workspace")
                         .opt("restart", "boolean", "Default true. false still deploys")
                         .maxChars(),
-                cycle::run);
+                args -> withOpenReviews(cycle.run(args), world));
         registry.add("server_logs",
                 "Read the server log. mode=errors (default): warnings and errors, traces trimmed, repeats "
                         + "collapsed. mode=tail: last lines. mode=grep: regex matches. mode=triage: why it crashed or "
@@ -119,5 +119,11 @@ public final class LifecycleTools {
                 Schema.of().req("until", "string", "Regex, case-insensitive")
                         .range("timeoutSeconds", 1, ServerConsole.MAX_WAIT_SECONDS, "Default 60"), console::await);
         return backups;
+    }
+
+    /** A result, then the reviews still failing: a run that ends on dev_cycle sees them (ADR 0084). */
+    static String withOpenReviews(String result, WorldService world) {
+        String open = world.reviews().line();
+        return open.isEmpty() ? result : result + "\n" + open;
     }
 }

@@ -132,8 +132,10 @@ public final class WorldTools {
                     if (review) {
                         // The default world is the superflat dev floor (ADR 0078); world_create worlds are not.
                         boolean devFloor = region.world().equals(world.world(null));
-                        return BuildReview.review(world.readAll(region, WorldService.MAX_BULK_VOLUME, "world_summary review"),
-                                devFloor);
+                        String text = BuildReview.review(world.readAll(region, WorldService.MAX_BULK_VOLUME,
+                                "world_summary review"), devFloor);
+                        world.reviews().record(region, text);
+                        return text;
                     }
                     if (path != null) {
                         String[] ends = path.trim().split("\\s+");

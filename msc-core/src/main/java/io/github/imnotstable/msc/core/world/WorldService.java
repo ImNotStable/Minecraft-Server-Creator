@@ -43,6 +43,7 @@ public final class WorldService {
     }
 
     private final AgentHub hub;
+    private final OpenReviews reviews = new OpenReviews();
     /** The edits still applied, oldest first: each one's agent parts and the positions it set. */
     private final Map<String, Edit> edits = new LinkedHashMap<>();
     /**
@@ -56,6 +57,11 @@ public final class WorldService {
     private int editCounter;
     private String worldSession;
     private String worldName;
+
+    /** Reviews that failed this session and were not passed since (ADR 0084). */
+    public OpenReviews reviews() {
+        return reviews;
+    }
 
     public WorldService(AgentHub hub) {
         this.hub = hub;
