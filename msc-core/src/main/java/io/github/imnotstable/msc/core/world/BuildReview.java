@@ -278,8 +278,54 @@ public final class BuildReview {
                         + String.join("; ", failing.subList(0, Math.min(4, failing.size()))) + "); review each "
                         + "building's own region and fix it there");
             }
+            int[] streets = streets(grid, names, light, buildings);
+            if (streets[1] >= STREET_CELLS && streets[0] * 100 > streets[1] * MAX_DARK_STREETS) {
+                // Run 11's Havenfall: skeletons and a spider in the streets at night, 22 mob drops (ADR 0098).
+                fixes.add("dark streets: " + pct(streets[0], streets[1]) + "% of the open ground within " + STREET_REACH
+                        + " blocks of the buildings has no light within " + LIGHT_REACH + " (aim under " + MAX_DARK_STREETS
+                        + "%), so mobs spawn in town at night; lamp posts along paths and lanterns at doors "
+                        + "(decorate on=ground with a fence and tip=lantern, spacing=8)");
+            }
         }
         return withLand(out.toString().stripTrailing(), land, fixes, true);
+    }
+
+    static final int STREET_REACH = 4;
+    static final int STREET_CELLS = 100;
+    static final int MAX_DARK_STREETS = 50;
+
+    /**
+     * Dark and all open ground cells (air over a solid block, open to the sky) within {@link #STREET_REACH} of a
+     * building's box and outside every box: the streets and yards of a town.
+     */
+    private static int[] streets(BlockGrid grid, String[] names, boolean[] light, List<Region> buildings) {
+        Region r = grid.region();
+        int dark = 0;
+        int all = 0;
+        for (int z = r.min().z(); z <= r.max().z(); z++) {
+            for (int x = r.min().x(); x <= r.max().x(); x++) {
+                boolean near = false;
+                boolean inside = false;
+                for (Region b : buildings) {
+                    inside |= x >= b.min().x() && x <= b.max().x() && z >= b.min().z() && z <= b.max().z();
+                    near |= x >= b.min().x() - STREET_REACH && x <= b.max().x() + STREET_REACH
+                            && z >= b.min().z() - STREET_REACH && z <= b.max().z() + STREET_REACH;
+                }
+                if (!near || inside) {
+                    continue;
+                }
+                // The column's top solid block, looking through air and plants; a player stands on it.
+                for (int y = r.max().y() - 1; y >= r.min().y(); y--) {
+                    String n = name(grid, names, x, y, z);
+                    if (n != null && (LandReview.SOIL.contains(n) || !matches(n, PLANTS))) { // grass_block is ground
+                        all++;
+                        dark += lit(grid, light, x, y + 1, z) ? 0 : 1;
+                        break;
+                    }
+                }
+            }
+        }
+        return new int[] {dark, all};
     }
 
     /**
