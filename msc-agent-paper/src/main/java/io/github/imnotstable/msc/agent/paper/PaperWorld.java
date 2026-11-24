@@ -34,11 +34,40 @@ final class PaperWorld implements AgentWorld<BlockData> {
     private static final Map<Material, Boolean> HOLDS = new ConcurrentHashMap<>();
 
     private final World world;
-    private final DataCommands data;
+    private final BlockNbt data;
+    /** Folia's chunk loading, or null on Paper, which loads chunks on access on its main thread. */
+    private final FoliaChunks folia;
 
-    PaperWorld(World world, DataCommands data) {
+    PaperWorld(World world, BlockNbt data) {
+        this(world, data, null);
+    }
+
+    PaperWorld(World world, BlockNbt data, FoliaChunks folia) {
         this.world = world;
         this.data = data;
+        this.folia = folia;
+    }
+
+    @Override
+    public void loadArea(int minX, int minZ, int maxX, int maxZ) {
+        if (folia != null) {
+            folia.holdForEdit(world, minX, minZ, maxX, maxZ);
+        }
+    }
+
+    @Override
+    public Runnable loadAreaToRead(int minX, int minZ, int maxX, int maxZ) {
+        return folia == null ? () -> {
+        } : folia.hold(world, minX, minZ, maxX, maxZ);
+    }
+
+    @Override
+    public void loadPositions(long[] positions) {
+        if (folia != null && positions.length > 0) {
+            var area = io.github.imnotstable.msc.agent.common.ChunkArea.ofPositions(name(), positions);
+            folia.holdForEdit(world, area.minChunkX() << 4, area.minChunkZ() << 4, area.maxChunkX() << 4,
+                    area.maxChunkZ() << 4);
+        }
     }
 
     /** Whether blocks in this state are block entities, which keep data. */
@@ -53,12 +82,12 @@ final class PaperWorld implements AgentWorld<BlockData> {
 
     @Override
     public String blockData(int x, int y, int z) {
-        return data.get(world.getKey().asString(), x, y, z);
+        return data.get(world, x, y, z);
     }
 
     @Override
     public void mergeBlockData(int x, int y, int z, Object snbt) {
-        data.merge(world.getKey().asString(), x, y, z, (String) snbt);
+        data.merge(world, x, y, z, (String) snbt);
     }
 
     @Override

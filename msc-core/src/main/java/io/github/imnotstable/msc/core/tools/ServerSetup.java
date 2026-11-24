@@ -205,9 +205,9 @@ final class ServerSetup {
     static final String REMEMBER = "remember the workspace platform";
     static final String FORWARDING = "set up proxy forwarding";
     static final String NETWORK = "set up the network's backend servers";
-    /** Said once a Folia server is installed: what a plugin needs there, and what MSC does not do there (ADR 0045). */
+    /** Said once a Folia server is installed: what a plugin needs there (ADR 0045, 0100). */
     static final String FOLIA_NOTE = "folia: plugins load only with folia-supported: true in plugin.yml and must use "
-            + "Folia's region schedulers; world, build and player tools do not work on Folia yet (server_command does)";
+            + "Folia's region schedulers; MSC's world tools run on the region that owns each area";
 
     /** How a Paper-family backend lets players in: through Velocity, through BungeeCord (Waterfall), or directly. */
     enum Forward { VELOCITY, BUNGEECORD, NONE }
