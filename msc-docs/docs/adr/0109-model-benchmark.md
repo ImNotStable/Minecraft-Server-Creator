@@ -34,6 +34,8 @@ it to work for every strong model, and the weakest of the strong ones shows the 
   Sonnet 5.5's hologram showed its raw JSON.
 - The main world counts as the flat dev floor in reviews only when server.properties' level-type is flat (or unset):
   Gemini 4 Neon set it to minecraft:normal, built on real coast, and was told it built on the dev world.
+- A build standing mostly in water (a pier) gets no flat-roof or no-plants fix, and a deck over water at the shore's
+  level is not on the ground: Gemini 4 Hydrogen's pier failed all three. A hut on stilts over water counts as a pier.
 
 ## Not done
 
