@@ -174,7 +174,7 @@ public final class WorldTools {
                         .opt("world", "string", WORLD),
                 args -> world.entities(Coords.region(world.world(args.str("world", null)), args.str("region")),
                         args.str("type", null), args.integer("limit", 50), args.bool("ids", false), Budget.DEFAULT_CHARS));
-        registry.add("build_undo", "Undo a build_batch edit.",
+        registry.add("build_undo", "Undo a build_batch edit, or list, save or restore world backups.",
                 Schema.of().opt("edit", "string", "Edit id such as e3. Default: the most recent edit")
                         .opt("backup", "string", "World backups: list, save [label], or one to restore "
                                 + "(restarts the server). Edits save one first"),

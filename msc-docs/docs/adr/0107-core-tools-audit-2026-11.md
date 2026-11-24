@@ -55,6 +55,14 @@ From scratch: the dev proxy's MOTD (Velocity, Waterfall) is plain text, not an M
 
 Docs: `tools.md` states the tool-list guard as it is (21,500 characters).
 
+Round 2 (lifecycle edge paths: failed builds, structures and copies, diffs, backups, world removal, Pterodactyl export
+twice, waits, log modes, plugin ids, workspace switches, Minestom setup):
+
+13. A failed `dev_cycle` build no longer repeats `BUILD FAILED in`, nor carries Gradle's "[Incubating] Problems report"
+    line or the "(registered by plugin class ...)" suffix: the compiler errors and the failed task stay.
+14. `build_undo`'s description says it also lists, saves and restores world backups; `player_test`'s says what a
+    missed jump means ("hard for players too").
+
 ## Consequences
 
 - Item ids are checked against bundled lists: a Minecraft newer than the newest list refuses its new items until that

@@ -69,12 +69,16 @@ public final class LogCondenser {
     private static final Pattern NETTY_NATIVE = Pattern.compile("io\\.netty\\.channel\\.(kqueue|epoll|uring)\\.Native");
     private static final Pattern NETTY_UNSUPPORTED = Pattern.compile("Only supported on (OSX/BSD|Linux)");
 
+    /** Gradle 9 names the plugin that registered a failed task: no help in fixing it. */
+    private static final Pattern REGISTERED_BY = Pattern.compile(" \\(registered by plugin (class )?'[^']*'\\)");
     private static final List<Pattern> BUILD_NOISE = List.of(
             Pattern.compile("^> Task (?!.*FAILED).*"),
             Pattern.compile("^(Picked up |Download|Starting a Gradle Daemon|Daemon will be stopped|To honour the JVM)"),
             Pattern.compile("^> (Run with|Get more help).*"),
             Pattern.compile("^(Deprecated Gradle features|You can use '--warning-mode|For more on this, please refer|See https://docs.gradle.org).*"),
             Pattern.compile("^\\d+ actionable tasks?:.*"),
+            // dev_cycle leads with its own "BUILD FAILED in" line; the problems report is an HTML file for people.
+            Pattern.compile("^(BUILD FAILED in |\\[Incubating] Problems report is available).*"),
             Pattern.compile("^(Calculating task graph|Configuration cache entry|Reusing configuration cache).*"),
             Pattern.compile("^Note: (Some input files|Recompile with).*"),
             Pattern.compile("^(BUILD SUCCESSFUL|Welcome to Gradle|Starting a Gradle Daemon|> Configure project).*"),
@@ -227,7 +231,7 @@ public final class LogCondenser {
         Map<String, int[]> seen = new LinkedHashMap<>();
         boolean skipping = false;
         for (String raw : output.split("\\R")) {
-            String line = LogReader.stripAnsi(raw).stripTrailing();
+            String line = REGISTERED_BY.matcher(LogReader.stripAnsi(raw).stripTrailing()).replaceFirst("");
             // Gradle 9 repeats the whole compiler output, indented, after this line.
             if (line.startsWith("* Try:") || line.startsWith("* Get more help") || line.startsWith("* Exception is:")
                     || line.startsWith("> Compilation failed; see the compiler output below")) {

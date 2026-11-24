@@ -273,8 +273,10 @@ class LogCondenserTest {
 
                 FAILURE: Build failed with an exception.
 
+                [Incubating] Problems report is available at: file:///work/build/reports/problems/problems-report.html
+
                 * What went wrong:
-                Execution failed for task ':compileJava'.
+                Execution failed for task ':compileJava' (registered by plugin class 'org.gradle.api.plugins.JavaBasePlugin').
                 > Compilation failed; see the compiler output below.
                   /work/src/main/java/com/example/Foo.java:12: error: cannot find symbol
                           player.sendMesage("hi");
@@ -299,8 +301,7 @@ class LogCondenserTest {
                   location: variable player of type Player
                 1 error
                 * What went wrong:
-                Execution failed for task ':compileJava'.
-                BUILD FAILED in 2s""");
+                Execution failed for task ':compileJava'.""");
     }
 
     /** Minestom logs with slf4j-simple: {@code [thread] LEVEL logger - msg}, no timestamp (#272). */

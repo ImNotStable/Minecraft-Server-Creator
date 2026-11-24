@@ -55,7 +55,7 @@ public final class PlayerTools implements AutoCloseable {
         PlayerTools t = new PlayerTools(config, hub, worlds, backups);
         registry.add("player_test",
                 "Play-test: a headless player joins the dev server, runs actions, reports results, damage, deaths, "
-                        + "chat, titles. Stays joined. Vanilla-like moves; a missed jump may suit people. "
+                        + "chat, titles. Stays joined. Vanilla-like moves: a jump it misses is hard for players too. "
                         + "inventory/hud: items, menu, bossbars, sidebar, served pack lint, sounds, glyphs it lacks.",
                 Schema.of().req("actions", "strings", "goto x,y,z|forward ticks [sprint] [jump], walk x,y,z (path route), jump, "
                                 + "look yaw pitch, lookat x,y,z, wait ticks, use [x,y,z], attack|interact [type|name], "
