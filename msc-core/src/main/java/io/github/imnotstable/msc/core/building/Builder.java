@@ -159,7 +159,7 @@ public final class Builder {
             return "edit " + id + ": no blocks" + ran + (backup.isEmpty() ? "" : "\n" + backup);
         }
         String counts = counts(canvas.counts());
-        world.reviews().edited(used);
+        world.reviews().edited(used, (int) Math.min(changed, Integer.MAX_VALUE));
         String drops = clearDrops(run, used);
         // One kind of block, or nothing left unchanged: the extra numbers say nothing new.
         return "edit " + id + ": " + changed + " blocks changed"

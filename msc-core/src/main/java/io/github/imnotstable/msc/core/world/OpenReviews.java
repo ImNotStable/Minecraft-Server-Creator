@@ -19,6 +19,11 @@ public final class OpenReviews {
 
     private final Map<Region, List<String>> open = new LinkedHashMap<>();
     private final java.util.Set<Region> passed = new java.util.LinkedHashSet<>();
+    /** Built areas no review has looked at yet, with the blocks placed in each (ADR 0109). */
+    private final Map<Region, Integer> unreviewed = new LinkedHashMap<>();
+
+    /** Blocks placed in one area before it counts as a build that needs a review (a sign or a lamp does not). */
+    static final int UNREVIEWED_BLOCKS = 150;
 
     /** Records a review's text for its region: failed when it has fixes, else passed. */
     public synchronized void record(Region region, String review) {
@@ -26,6 +31,9 @@ public final class OpenReviews {
         // wider one passed (ADR 0095).
         open.remove(region);
         passed.remove(region);
+        unreviewed.keySet().removeIf(b -> b.world().equals(region.world())
+                && region.contains((b.min().x() + b.max().x()) / 2, (b.min().y() + b.max().y()) / 2,
+                (b.min().z() + b.max().z()) / 2));
         List<String> fixes = fixes(review);
         if (!fixes.isEmpty()) {
             open.put(region, fixes);
@@ -39,6 +47,33 @@ public final class OpenReviews {
      * 9 landscaped its whole town after reviewing each house, and two houses no longer passed (ADR 0096).
      */
     public synchronized void edited(Region box) {
+        edited(box, 0);
+    }
+
+    /**
+     * The same, with the blocks the edit changed: areas built nearby merge, and one with {@link #UNREVIEWED_BLOCKS}+
+     * blocks that no later review covers is listed as never reviewed. Sonnet 5.5 built a dock and reported done
+     * without ever reviewing it (ADR 0109).
+     */
+    public synchronized void edited(Region box, int changed) {
+        Region area = box;
+        int blocks = changed;
+        for (boolean merged = true; merged; ) {
+            merged = false;
+            for (Map.Entry<Region, Integer> e : unreviewed.entrySet()) {
+                Region u = e.getKey();
+                if (near(u, area, 4)) {
+                    area = Region.of(area.world(), Math.min(u.min().x(), area.min().x()), Math.min(u.min().y(),
+                            area.min().y()), Math.min(u.min().z(), area.min().z()), Math.max(u.max().x(), area.max().x()),
+                            Math.max(u.max().y(), area.max().y()), Math.max(u.max().z(), area.max().z()));
+                    blocks += e.getValue();
+                    unreviewed.remove(u);
+                    merged = true;
+                    break;
+                }
+            }
+        }
+        unreviewed.put(area, blocks);
         for (java.util.Iterator<Region> it = passed.iterator(); it.hasNext(); ) {
             Region r = it.next();
             if (r.world().equals(box.world()) && r.min().x() <= box.max().x() && box.min().x() <= r.max().x()
@@ -48,6 +83,17 @@ public final class OpenReviews {
                 open.put(r, List.of("edited since it passed"));
             }
         }
+    }
+
+    private static boolean near(Region a, Region b, int gap) {
+        return a.world().equals(b.world()) && a.min().x() <= b.max().x() + gap && b.min().x() <= a.max().x() + gap
+                && a.min().y() <= b.max().y() + gap && b.min().y() <= a.max().y() + gap
+                && a.min().z() <= b.max().z() + gap && b.min().z() <= a.max().z() + gap;
+    }
+
+    private List<Region> neverReviewed() {
+        return unreviewed.entrySet().stream().filter(e -> e.getValue() >= UNREVIEWED_BLOCKS).map(Map.Entry::getKey)
+                .toList();
     }
 
     /** The short names of a review's fixes ("bare base", "empty rooms"), in its order; empty when it passed. */
@@ -69,8 +115,14 @@ public final class OpenReviews {
      * agent read the full list at the end of dev_cycle four times and reported done without it (ADR 0105).
      */
     public synchronized String count() {
-        return open.isEmpty() ? "" : open.size() + (open.size() == 1 ? " review" : " reviews")
-                + " still failing (msc_status lists them): the work is not done";
+        int never = neverReviewed().size();
+        if (open.isEmpty() && never == 0) {
+            return "";
+        }
+        String failing = open.size() + (open.size() == 1 ? " review" : " reviews") + " still failing";
+        String unseen = never + (never == 1 ? " build" : " builds") + " never reviewed";
+        return (never == 0 ? failing : open.isEmpty() ? unseen : failing + ", " + unseen)
+                + " (msc_status lists them): the work is not done";
     }
 
     /** Failing reviews at which building elsewhere stops until one is fixed (ADR 0108). */
@@ -99,22 +151,30 @@ public final class OpenReviews {
 
     /** One line per failing review, or empty when none is open. */
     public synchronized String line() {
-        if (open.isEmpty()) {
+        List<Region> never = neverReviewed();
+        if (open.isEmpty() && never.isEmpty()) {
             return "";
         }
-        StringBuilder out = new StringBuilder("reviews still failing (" + open.size() + "; the work is not done until "
-                + "each passes: fix, then world_summary review=true on the same region):");
+        StringBuilder out = new StringBuilder(open.isEmpty() ? "builds never reviewed (" + never.size() + "; the work "
+                + "is not done until each is reviewed and passes):" : "reviews still failing (" + open.size() + "; the "
+                + "work is not done until each passes: fix, then world_summary review=true on the same region):");
+        for (Region r : never) {
+            out.append("\n- ").append(show(r)).append(": never reviewed (").append(unreviewed.get(r))
+                    .append(" blocks placed): world_summary review=true on it");
+        }
         int shown = 0;
         for (Map.Entry<Region, List<String>> e : open.entrySet()) {
             if (shown++ == SHOWN) {
                 out.append("\n- ").append(open.size() - SHOWN).append(" more");
                 break;
             }
-            Region r = e.getKey();
-            out.append("\n- ").append(r.world()).append(' ').append(r.min().x()).append(',').append(r.min().y())
-                    .append(',').append(r.min().z()).append(' ').append(r.max().x()).append(',').append(r.max().y())
-                    .append(',').append(r.max().z()).append(": ").append(String.join(", ", e.getValue()));
+            out.append("\n- ").append(show(e.getKey())).append(": ").append(String.join(", ", e.getValue()));
         }
         return out.toString();
+    }
+
+    private static String show(Region r) {
+        return r.world() + " " + r.min().x() + "," + r.min().y() + "," + r.min().z() + " " + r.max().x() + ","
+                + r.max().y() + "," + r.max().z();
     }
 }

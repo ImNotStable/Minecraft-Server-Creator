@@ -57,6 +57,19 @@ class OpenReviewsTest {
     }
 
     @Test
+    void aBigBuildNoReviewCoversIsListedUntilReviewed() {
+        OpenReviews open = new OpenReviews();
+        open.edited(Region.of("msc:a", 0, 60, 0, 10, 62, 30), 120); // a dock deck
+        open.edited(Region.of("msc:a", 12, 58, 0, 14, 62, 30), 60); // its posts, two blocks away: the same build
+        open.edited(Region.of("msc:a", 100, 60, 100, 100, 61, 100), 2); // a sign: not a build
+        assertThat(open.count()).isEqualTo("1 build never reviewed (msc_status lists them): the work is not done");
+        assertThat(open.line()).startsWith("builds never reviewed (1;")
+                .contains("- msc:a 0,58,0 14,62,30: never reviewed (180 blocks placed)").doesNotContain("100,60,100");
+        open.record(Region.of("msc:a", -2, 55, -2, 16, 70, 32), FAILED);
+        assertThat(open.line()).startsWith("reviews still failing (1;").doesNotContain("never reviewed");
+    }
+
+    @Test
     void aPassingReviewOfAPartLeavesTheWholeFailing() {
         OpenReviews open = new OpenReviews();
         open.record(Region.of("msc:a", 0, 60, 0, 100, 90, 100), FAILED);
