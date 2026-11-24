@@ -52,19 +52,15 @@ public final class BuildScript {
             over edge= blocks, 0 fills the box; below ground= digs, water= fills)
             path X,Y,Z X,Y,Z ... B [w=3 wander=N depth=N bed=B]   (curved way on the ground; depth= digs a stream)
             scatter X,Y,Z X,Y,Z B|file=PATH,PATH [spacing=8 chance=100 on=B sink=N]   (on the ground, one per cell)
-            roof X,Y,Z X,Y,Z B [style=gable|hip|shed axis=x|z high=DIR pitch=1|2 overhang=1 gable=B ridge=B]
             trim X,Y,Z X,Y,Z B at=top|base|band|corners|sills|lintels|shutters|frames [out=1 level=Y]
             decorate X,Y,Z X,Y,Z B [on=top|ground|floor|edge|corner|wall|ceiling chance=25 spacing=N length=A-B tip=B]
-            weather X,Y,Z X,Y,Z [amount=30 swap=a>b break=N chip=B]   (these four: msc_status guide=build)
-            tree X,Y,Z [kind=oak size=medium h=N log=B leaves=B]   (bottom trunk block)
-            forest X,Y,Z X,Y,Z [kind=oak:3,birch:1 spacing=7 chance=80 on=B]
-            flora X,Y,Z X,Y,Z style=meadow|B [chance=35 soil=B]   (these three: guide=build)
+            weather X,Y,Z X,Y,Z [amount=30 swap=a>b break=N chip=B]   (these three: msc_status guide=build)
+            flora X,Y,Z X,Y,Z B [chance=35 soil=B]   (your own plant mix on open ground; guide=build)
             smooth|erode|blend X,Y,Z X,Y,Z   paint X,Y,Z X,Y,Z B [slope=A-B]   (shape what is there)
             river|tunnel X,Y,Z X,Y,Z ...   cave X,Y,Z X,Y,Z   (these seven: guide=build)
             sign|banner|head|book|container X,Y,Z B text="a|b"|patterns=|player=|pages=|items=
             entity X,Y,Z TYPE [data={} still=true]  frame X,Y,Z item= facing=  stand X,Y,Z [head= mainhand=]
-            biome X,Y,Z X,Y,Z ID  feature X,Y,Z ID [count= spread=]  light X,Y,Z X,Y,Z [B level=8]  (guide=build)
-            furnish X,Y,Z X,Y,Z room=bedroom|kitchen|...  image X,Y,Z file=PNG w=N [plane=x|z|floor]  (guide=build)
+            biome X,Y,Z X,Y,Z ID  light X,Y,Z X,Y,Z [B level=8]  image X,Y,Z file=PNG w=N [plane=x|z|floor]  (guide=build)
             structure X,Y,Z [X,Y,Z ...] [rotate=90] [face=X,Z] [anchor=center] [air=false] [file=PATH]
               then the text and "end", unless file= (.schem or text). Text: "legend: #=stone g=glass", then per \
             layer "y=N" and rows (z) of symbols (x); "." air, "_" unchanged; "y=N same as y=M", "y=N all #". rotate \
@@ -76,7 +72,7 @@ public final class BuildScript {
     private static final Pattern BAND = Pattern.compile("\\d+=.+");
     private static final Set<String> FLAGS = Set.of("solid", "hollow", "outline", "walls");
     /** Steps that set facing, half and the like on their own blocks from where each lands. */
-    private static final Set<String> SHAPING = Set.of("roof", "trim", "decorate", "weather", "tree", "forest");
+    private static final Set<String> SHAPING = Set.of("trim", "decorate", "weather");
 
     /** Where structures come from: files in the workspace and the world itself. */
     public interface StructureFiles {
@@ -370,28 +366,6 @@ public final class BuildScript {
                         on == null ? List.of() : BlockPattern.splitTopLevel(on).stream().map(String::trim)
                                 .filter(s -> !s.isEmpty()).toList(), o.integer("sink", 0, 0, 64), o.seed(), o.replace());
             }
-            case "roof" -> {
-                o.points(2);
-                o.flags(Set.of());
-                Region box = new Region(world, p.points().get(0), p.points().get(1));
-                String style = o.string("style");
-                String axisText = o.string("axis");
-                int axis = axisText == null ? (box.sizeX() >= box.sizeZ() ? 0 : 2) : switch (axisText) {
-                    case "x" -> 0;
-                    case "z" -> 2;
-                    default -> throw new ToolException("axis is x or z (the way the ridge runs), got " + axisText);
-                };
-                String highText = o.string("high");
-                int high = highText == null ? 2 : Joins.dir(highText);
-                if (high < 0) {
-                    throw new ToolException("high is north, east, south or west (the side a shed roof rises to), got "
-                            + highText);
-                }
-                BlockPattern block = o.block();
-                yield new Step.Roof(box, block, style == null ? "gable" : style, axis, high, o.integer("pitch", 1, 1, 3),
-                        o.integer("overhang", 1, 0, 8), o.pattern("gable", null), o.pattern("ridge", Detail.ridgeFor(block)),
-                        o.replace());
-            }
             case "trim" -> {
                 o.points(2);
                 o.flags(Set.of());
@@ -417,21 +391,13 @@ public final class BuildScript {
             case "flora" -> {
                 o.points(2);
                 o.flags(Set.of());
-                String style = o.string("style");
-                if ((style == null) == (p.block() == null)) {
-                    throw new ToolException("flora takes style=" + String.join("|", Nature.FLORA)
-                            + " or a plant mix, one of them");
+                if (p.options().containsKey("style")) {
+                    throw new ToolException("flora takes your own plant mix (short_grass:40,poppy:3,...), not a style; "
+                            + "pick the plants that grow there (ADR 0103)");
                 }
                 int clump = o.clump() == 0 ? 5 : o.clump();
-                String[] preset = style == null ? null : Nature.flora(style);
-                BlockPattern plants = preset == null ? o.block()
-                        : o.chosen(BlockPattern.parse(preset[0], o.seed()).withClump(clump));
-                List<String> soil = o.list("soil");
-                if (soil.isEmpty() && preset != null) {
-                    soil = List.of(preset[1].split(",")).stream().map(BlockNames::full).toList();
-                }
-                yield new Step.Decorate(new Region(world, p.points().get(0), p.points().get(1)), plants, null, "ground",
-                        o.integer("chance", 35, 1, 100), 1, 1, 1, clump, soil, o.seed(), o.replace());
+                yield new Step.Decorate(new Region(world, p.points().get(0), p.points().get(1)), o.block(), null, "ground",
+                        o.integer("chance", 35, 1, 100), 1, 1, 1, clump, o.list("soil"), o.seed(), o.replace());
             }
             case "smooth" -> {
                 o.points(2);
@@ -563,12 +529,6 @@ public final class BuildScript {
                 yield new Step.Biome(new Region(world, p.points().get(0), p.points().get(1)),
                         Things.id(o.requireBlock(), "biome"), only == null ? null : Things.id(only, "only"));
             }
-            case "feature" -> {
-                o.points(1);
-                o.flags(Set.of());
-                yield new Step.Feature(world, p.points().get(0), Things.id(o.requireBlock(), "feature"),
-                        o.integer("count", 1, 1, 256), o.integer("spread", 0, 0, 64), o.seed());
-            }
             case "light" -> {
                 o.points(2);
                 o.flags(Set.of());
@@ -579,21 +539,6 @@ public final class BuildScript {
                 }
                 yield new Step.Light(new Region(world, p.points().get(0), p.points().get(1)),
                         p.block() == null ? null : o.block(), on, o.integer("level", 8, 1, 15), o.seed(), o.replace());
-            }
-            case "furnish" -> {
-                o.points(2);
-                o.flags(Set.of());
-                String room = o.string("room");
-                if (room == null) {
-                    throw new ToolException("furnish needs room=" + String.join("|", Furnish.ROOMS));
-                }
-                String wood = o.string("wood");
-                String color = o.string("color");
-                wood = wood == null ? "spruce" : wood;
-                color = color == null ? "red" : color;
-                Furnish.check(room, wood, color);
-                yield new Step.Furnish(new Region(world, p.points().get(0), p.points().get(1)), room, wood, color,
-                        o.integer("density", 50, 0, 100), o.seed(), o.replace());
             }
             case "image" -> {
                 o.points(1);
@@ -610,44 +555,6 @@ public final class BuildScript {
                 List<String> replace = o.replace();
                 o.done();
                 yield new Step.Stamp(world, List.of(new Step.Stamp.Placement(picture, p.points().get(0))), false, replace);
-            }
-            case "tree" -> {
-                o.points(1);
-                o.flags(Set.of());
-                String kind = o.string("kind");
-                kind = kind == null ? "oak" : kind;
-                Nature.checkKind(kind);
-                String size = o.string("size");
-                size = size == null ? "medium" : size;
-                Nature.checkSize(size);
-                yield new Step.Tree(world, p.points().get(0), kind, size, o.integer("h", 0, 0, 64),
-                        o.pattern("log", null), o.pattern("leaves", null), o.seed(), o.replace());
-            }
-            case "forest" -> {
-                o.points(2);
-                o.flags(Set.of());
-                String kindText = o.string("kind");
-                List<String> kinds = new ArrayList<>();
-                List<Integer> weights = new ArrayList<>();
-                for (String entry : (kindText == null ? "oak" : kindText).split(",")) {
-                    String[] kw = entry.trim().split(":");
-                    Nature.checkKind(kw[0]);
-                    kinds.add(kw[0]);
-                    try {
-                        weights.add(kw.length > 1 ? Math.max(1, Integer.parseInt(kw[1])) : 1);
-                    } catch (NumberFormatException e) {
-                        throw new ToolException("kind takes kind:weight entries, such as oak:3,birch:1; got " + entry);
-                    }
-                }
-                String size = o.string("size");
-                size = size == null ? "mixed" : size;
-                if (!size.equals("mixed")) {
-                    Nature.checkSize(size);
-                }
-                yield new Step.Forest(new Region(world, p.points().get(0), p.points().get(1)), kinds,
-                        weights.stream().mapToInt(Integer::intValue).toArray(), size, o.pattern("log", null),
-                        o.pattern("leaves", null), o.integer("spacing", 7, 2, 256), o.integer("chance", 80, 1, 100),
-                        o.list("on"), o.seed(), o.replace());
             }
             case "weather" -> {
                 o.points(2);
@@ -679,9 +586,9 @@ public final class BuildScript {
             }
             case "copy" -> copy(p);
             default -> throw new ToolException("unknown step \"" + p.verb()
-                    + "\"; use fill, set, cylinder, ring, disc, sphere, dome, line, helix, bands, terrain, path, scatter, roof, trim, "
-                    + "decorate, weather, flora, tree, forest, smooth, erode, blend, paint, river, tunnel, cave, sign, banner, "
-                    + "head, book, container, entity, frame, stand, biome, feature, light, furnish, image, structure or copy");
+                    + "\"; use fill, set, cylinder, ring, disc, sphere, dome, line, helix, bands, terrain, path, scatter, trim, "
+                    + "decorate, weather, flora, smooth, erode, blend, paint, river, tunnel, cave, sign, banner, "
+                    + "head, book, container, entity, frame, stand, biome, light, image, structure or copy");
         };
         if (!p.verb().equals("structure") && !p.verb().equals("copy")) {
             o.done();

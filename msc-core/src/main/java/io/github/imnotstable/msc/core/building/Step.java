@@ -624,7 +624,7 @@ public sealed interface Step {
 
         /** The chosen spots as x, z and a hash for the pick and the turn. */
         List<long[]> spots() {
-            return Nature.spots(region, spacing, chance, seed);
+            return Spots.spots(region, spacing, chance, seed);
         }
 
         @Override
@@ -722,38 +722,6 @@ public sealed interface Step {
     }
 
     /**
-     * A pitched roof over the walls in {@code box} (ADR 0077): its rows start at the box's bottom y, the eave, and
-     * reach {@code overhang} past the walls; stairs face up the slope and their corners join, slabs alternate halves
-     * for a low pitch, full blocks step. {@code gable} closes the ends in the walls' planes; {@code ridge} tops an odd
-     * span; a box taller than one layer caps the roof flat at its top y.
-     */
-    record Roof(Region box, BlockPattern block, String style, int axis, int high, int pitch, int overhang,
-                BlockPattern gable, BlockPattern ridge, List<String> replace) implements Step {
-        public static final List<String> STYLES = List.of("gable", "hip", "shed");
-
-        public Roof {
-            if (!STYLES.contains(style)) {
-                throw new ToolException("unknown roof style " + style + "; use one of " + STYLES);
-            }
-        }
-
-        @Override
-        public Region bounds() {
-            int top = box.min().y() + Detail.roofHeight(this);
-            if (box.max().y() > box.min().y()) {
-                top = Math.min(top, box.max().y());
-            }
-            return Region.of(box.world(), box.min().x() - overhang, box.min().y(), box.min().z() - overhang,
-                    box.max().x() + overhang, top, box.max().z() + overhang);
-        }
-
-        @Override
-        public void draw(Canvas c) throws InterruptedException {
-            Detail.roof(c, this);
-        }
-    }
-
-    /**
      * Detail along the walls already in {@code box} (ADR 0077), outside faces only (those facing away from the box's
      * middle): {@code top} a cornice, {@code base} a plinth, {@code band} a belt course at {@code level}, {@code out}
      * blocks deep; {@code corners} replaces outer corner columns; at window and door holes {@code sills},
@@ -827,50 +795,6 @@ public sealed interface Step {
         @Override
         public void draw(Canvas c) throws InterruptedException {
             Detail.weather(c, this);
-        }
-    }
-
-    /**
-     * One tree, bush or huge fungus standing on {@code base}, its lowest trunk block (ADR 0079): {@code kind} picks the
-     * silhouette, {@code size} its scale, {@code height} 0 a height for both; {@code log} and {@code leaves} null keep
-     * the kind's own blocks.
-     */
-    record Tree(String world, BlockPos base, String kind, String size, int height, BlockPattern log, BlockPattern leaves,
-                long seed, List<String> replace) implements Step {
-        List<Nature.Part> parts() {
-            return Nature.grow(kind, base, size, height, log, leaves, seed);
-        }
-
-        @Override
-        public Region bounds() {
-            return Nature.box(world, parts());
-        }
-
-        @Override
-        public void draw(Canvas c) throws InterruptedException {
-            Region b = bounds();
-            Nature.place(c, parts(), c.current(b), c.mask(b, replace));
-        }
-    }
-
-    /**
-     * Trees on the ground across {@code region} (ADR 0079): one per {@code spacing} cell kept with {@code chance}, each
-     * of a kind picked by weight and grown from that spot's seed, on the column's top ground (only on {@code on} blocks
-     * when given). {@code size} mixed picks small, medium or large per tree.
-     */
-    record Forest(Region region, List<String> kinds, int[] weights, String size, BlockPattern log, BlockPattern leaves,
-                  int spacing, int chance, List<String> on, long seed, List<String> replace) implements Step {
-        @Override
-        public Region bounds() {
-            int[] reach = Nature.reach(size.equals("mixed") ? "large" : size);
-            return Region.of(region.world(), region.min().x() - reach[0], region.min().y() - 4,
-                    region.min().z() - reach[0], region.max().x() + reach[0], region.max().y() + reach[1],
-                    region.max().z() + reach[0]);
-        }
-
-        @Override
-        public void draw(Canvas c) throws InterruptedException {
-            Nature.forest(c, this);
         }
     }
 
@@ -1022,24 +946,6 @@ public sealed interface Step {
         }
     }
 
-    /** The game's own configured feature placed with /place feature (ADR 0082), {@code count} times on the ground. */
-    record Feature(String world, BlockPos at, String feature, int count, int spread, long seed) implements Step {
-        @Override
-        public Region bounds() {
-            return Region.of(world, at.x() - spread, at.y() - 16, at.z() - spread, at.x() + spread, at.y() + 16,
-                    at.z() + spread);
-        }
-
-        @Override
-        public void draw(Canvas c) throws InterruptedException {
-            Canvas.Lookup ground = spread == 0 ? null : c.current(bounds());
-            for (BlockPos p : Things.featureSpots(ground, this)) {
-                c.command("execute in " + Things.dimension(world) + " run place feature " + feature + " " + p.x() + " "
-                        + p.y() + " " + p.z());
-            }
-        }
-    }
-
     /** Lights where it is dark in {@code box} (ADR 0082); see {@link Things#light}. */
     record Light(Region box, BlockPattern block, String on, int level, long seed, List<String> replace) implements Step {
         @Override
@@ -1053,17 +959,4 @@ public sealed interface Step {
         }
     }
 
-    /** A built room furnished by what it is for (ADR 0083); see {@link io.github.imnotstable.msc.core.building.Furnish}. */
-    record Furnish(Region box, String room, String wood, String color, int density, long seed, List<String> replace)
-            implements Step {
-        @Override
-        public Region bounds() {
-            return box;
-        }
-
-        @Override
-        public void draw(Canvas c) throws InterruptedException {
-            io.github.imnotstable.msc.core.building.Furnish.draw(c, this);
-        }
-    }
 }

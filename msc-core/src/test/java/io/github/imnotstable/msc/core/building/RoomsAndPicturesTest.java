@@ -14,7 +14,7 @@ import javax.imageio.ImageIO;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-/** furnish and image (ADR 0083). The world: a closed stone room 0..12 x 0..6 x 0..10 with a door gap at x 6, z 0. */
+/** image (ADR 0083; furnish is gone, ADR 0103). The world: a closed stone room 0..12 x 0..6 x 0..10 with a door gap at x 6, z 0. */
 class RoomsAndPicturesTest {
     @TempDir
     Path dir;
@@ -53,31 +53,6 @@ class RoomsAndPicturesTest {
         };
         List<Step> parsed = new BuildScript("world", files).parse(steps);
         return Builder.drawJoined(new Step.Group(parsed).bounds(), parsed, RoomsAndPicturesTest::world);
-    }
-
-    @Test
-    void everyRoomFurnishesWithPlaceableBlocksAndKeepsTheDoorClear() throws Exception {
-        for (String room : Furnish.ROOMS) {
-            Canvas c = draw("furnish 1,1,1 11,5,9 room=" + room + " wood=oak color=blue seed=3");
-            Map<String, Long> counts = c.counts();
-            assertThat(counts).as(room).isNotEmpty();
-            List<String> placed = c.palette();
-            BlockRules.require(placed);
-            // Inside the door and beside it stays open.
-            for (int x = 5; x <= 7; x++) {
-                assertThat(c.planned(x, 1, 1)).as(room + " at the door x=" + x).isNull();
-            }
-            // Nothing in the walls or floor.
-            assertThat(c.planned(0, 1, 5)).isNull();
-            assertThat(c.planned(5, 0, 5)).isNull();
-        }
-        Canvas bedroom = draw("furnish 1,1,1 11,5,9 room=bedroom wood=spruce color=red");
-        assertThat(bedroom.palette()).anyMatch(s -> s.startsWith("minecraft:red_bed[") && s.contains("part=head"));
-        assertThat(bedroom.palette()).anyMatch(s -> s.startsWith("minecraft:lantern[hanging=true]"));
-        Canvas dining = draw("furnish 1,1,1 11,5,9 room=dining");
-        assertThat(dining.palette()).anyMatch(s -> s.startsWith("minecraft:spruce_stairs[facing="));
-        assertThatThrownBy(() -> draw("furnish 1,1,1 11,5,9 room=garage")).isInstanceOf(ToolException.class)
-                .hasMessageContaining("bedroom");
     }
 
     @Test

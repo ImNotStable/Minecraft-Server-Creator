@@ -5,7 +5,7 @@ DONE MEANS (check before you report a build or a map finished)
   that says "verdict: NOT DONE" is not done, however good the render looks; msc_status and dev_cycle list the reviews
   still failing until one of the same region passes.
 - Land was shaped, not only generated: terrain, smooth or paint where the build meets it, path to each door, scatter
-  or flora for ground cover, forest or tree around it. Generated land is the start, not the finish.
+  or flora for ground cover, trees you built around it. Generated land is the start, not the finish.
 - Every build met the ground: trim at=base (a plinth), decorate on=ground (bushes, flowers) and worn ground at the
   doors; rooms furnished (decorate on=edge, corner, ceiling); weather for age.
 - If the run must end with a review still failing, say which and why in the report; never call it done.
@@ -20,12 +20,12 @@ LAND FIRST
 - Land by hand: build_batch terrain (styles hills, ridges, mesa, dunes; water= for lakes, bed= for shores, cliff= for rock on steep sides). The box's height is the land's: hills rise 10-40 blocks, mountains more. Big areas: tile boxes with edge=0 and one seed.
 - Ways: path through 3+ points with wander= (curves, ragged sides, on the ground); a stream is path depth=2 with water and bed=.
 - Ground cover: give ground mixes clump= (patches with wavy edges); a plain mix reads as static.
-- Nature: forest (kind=oak:3,birch:1 size=mixed spacing= chance=) grows real trees on the ground, each different; tree
-  places one (19 kinds: oak, spruce, pine, jungle, acacia, dark_oak, cherry, mangrove, pale_oak, azalea, willow, dead,
-  palm, bush, huge mushrooms, crimson and warped fungi; size small to huge). flora style=meadow|forest|taiga|swamp|
-  desert|cherry|lush|nether... covers open ground with that biome's plants in patches, only on soil they grow on.
-  Mix kinds and sizes, leave clearings, thicken toward water and slopes. Nothing floats: rails and props rest on
-  something.
+- Nature: MSC has no tree or plant presets (ADR 0103); build each tree yourself. A trunk of logs that tapers or forks,
+  branches of logs or wood going out and up (axis= along them), and leaves in loose, uneven clusters around the
+  branch tips (sphere rough= or set by hand), never a box or a ball on a stick; vary height, lean and size from tree to
+  tree, roots and a few fallen leaves at the base. Ground cover: flora with your own plant mix for that biome
+  (short_grass:40,fern:10,poppy:2...), in patches with clump=, soil= where it grows. Mix kinds and sizes, leave
+  clearings, thicken toward water and slopes. Nothing floats: rails and props rest on something.
 - Fit builds to the land: foundations reach down to the ground on slopes, a plaza is cut into the hill with retaining walls, and the ground at a build is worn (paths to doors, coarse dirt, gravel), not a clean edge.
 - Underwater builds: find the sea floor with world_slice of a thin column (world_heightmap stops at the water's
   surface), stand the build on
@@ -89,10 +89,9 @@ DETAIL PASS (use most of these on every build; the steps work on what is already
 - Light: lanterns, torches or glowing blocks at doors, paths and windows; no dark interiors.
 
 DETAIL STEPS (build_batch; each works on what the world and earlier steps already hold)
-- roof X,Y,Z X,Y,Z B: the box is the walls' footprint; rows start at its bottom y (the eave) and reach overhang= past the
-  walls. style=gable (ridge along axis=, the longer side by default), hip, or shed (rises toward high=north|east|...).
-  B stairs: pitch 1, or pitch=2 steep; B slabs: a low pitch; B full blocks: steps. gable=B closes the ends, ridge=B tops
-  an odd span (default the stair's own slab); a box taller than one layer caps the roof flat at its top y.
+- Roofs are yours to shape (no roof generator, ADR 0103): stairs rising row by row from the eave (half=bottom facing
+  up the slope, upside-down stairs under the overhang), a ridge of slabs or stairs, gable ends closed in the wall
+  block, overhang 1; vary pitch and form between buildings (gable, hip, shed, mansard, dormers).
 - trim X,Y,Z X,Y,Z B at=...: only outside faces (facing away from the box's middle). top (cornice on wall tops), base
   (plinth), band level=Y (belt course), out=N deep; corners (outer corner columns, replaced); at holes through a thin
   wall: sills (under), lintels (over), shutters (trapdoors beside, opened flat on the wall), frames (around, replaced).
@@ -103,15 +102,8 @@ DETAIL STEPS (build_batch; each works on what the world and earlier steps alread
 - weather X,Y,Z X,Y,Z [amount=30]: moss low and on ledges, cracks on edges, verdigris on copper, in patches;
   swap=from>to,... for other blocks; break=N knocks exposed top edges off, leaving chip=B or air.
 
-- tree X,Y,Z: X,Y,Z is the lowest trunk block (one above the ground). kind= oak, birch, spruce, pine, jungle, acacia,
-  dark_oak, cherry, mangrove, pale_oak, azalea, willow, dead, palm, bush, red_mushroom, brown_mushroom, crimson, warped;
-  size= small, medium, large (big oaks branch, jungles and spruces go 2 wide), huge; h= the trunk height; log= and
-  leaves= any block or mix (stripped_oak_log, azalea_leaves:3,flowering_azalea_leaves:1). seed= makes another tree.
-- forest X,Y,Z X,Y,Z: one tree per spacing= cell (default 7) kept with chance= percent, on the top ground in the box
-  (on= limits the ground blocks); kind= weights (oak:3,birch:1,bush:2), size=mixed by default.
-- flora X,Y,Z X,Y,Z style=: meadow, plains, flowers, forest, taiga, swamp, jungle, savanna, desert, cherry, lush, snowy,
-  mushroom, nether, crimson, warped; or your own plant mix. chance=35 percent of open ground, clump=5 patches, only on
-  the style's soil (soil= to change; decorate takes soil= too).
+- flora X,Y,Z X,Y,Z B [chance=35 clump=5 soil=B]: your plant mix on open ground, in patches, only on soil= blocks
+  when given (decorate takes soil= too).
 
 
 SHAPING STEPS (build_batch; they reshape what the world and earlier steps hold, terrain and builds alike)
@@ -164,21 +156,15 @@ THINGS IN A BUILD (build_batch; values with spaces in quotes: text="Two words")
   facing out. stand X,Y,Z [head= chest= legs= feet= mainhand= offhand= yaw= small=true base=false arms=false
   data={Pose:{...}}]: a dressed armor stand.
   Entities are summoned after the blocks, tagged with the build, and build_undo removes them.
-- biome X,Y,Z X,Y,Z ID [only=ID]: paints the biome (grass, foliage and water colours, weather, mob spawns) with /fillbiome.
-- feature X,Y,Z ID [count=N spread=R]: the game's own feature (fancy_oak, mega_spruce, birch_bees_005, huge_red_mushroom,
-  forest_rock, amethyst_geode, flower_meadow...) with /place feature, on the ground when spread= is given. Not on
-  Minestom. Biomes and features are not undone by build_undo (the world backup is).
+- biome X,Y,Z X,Y,Z ID [only=ID]: paints the biome (grass, foliage and water colours, weather, mob spawns) with /fillbiome. Not undone by build_undo (the world backup is).
 - light X,Y,Z X,Y,Z [B level=8 on=floor|ground|top|wall|ceiling]: lights wherever existing light would fall below
   level=, spread out, as few as needed: lanterns by default, hanging ones for on=ceiling, torches on walls, or B
   (light[level=15] for invisible light).
 
 ROOMS, PICTURES AND FILES
-- furnish X,Y,Z X,Y,Z room= [wood=spruce color=red density=50]: furnishes a built room by its use: bedroom, kitchen,
-  dining, library, study, tavern, storage, smithy, alchemy, chapel, throne, shop, barracks, bathroom. Give the room's
-  inside (floor to ceiling) after walls and roof: props go in corners and along walls (chests and shelves facing out,
-  beds head to the wall), a centre piece (tables with chairs, a long dining table, pews and an altar, a throne, a
-  counter), a rug around it and a lantern on a chain; spots beside doors and openings stay clear. Then add your own
-  touches: it is a start, not the finished room.
+- Furnish rooms yourself by their use (no furnish preset, ADR 0103): props in corners and along walls (chests and
+  shelves facing out, beds head to the wall), a centre piece (a table of slabs, fences or trapdoors with chairs of
+  stairs), a rug, a light; keep the spots beside doors clear. Two rooms of one use should not look alike.
 - image X,Y,Z file=PNG w=N [h=N plane=x|z|floor palette=all|wool|concrete|terracotta|glass dither=true]: a picture as
   blocks, X,Y,Z its bottom-left (walls) or north-west corner (floor, for map art); transparent pixels are left alone.
 - structure file= and scatter file= read Sponge .schem, the game's structure .nbt files and Litematica .litematic,

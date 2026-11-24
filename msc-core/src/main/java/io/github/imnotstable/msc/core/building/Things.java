@@ -364,26 +364,4 @@ final class Things {
             sources.add(new int[] {x, y, z, strength});
         }
     }
-
-    /** Ground spots for a feature: {@code count} spots within {@code spread} of the point, on the ground. */
-    static List<BlockPos> featureSpots(Canvas.Lookup at, Step.Feature f) {
-        List<BlockPos> out = new ArrayList<>();
-        BlockPos p = f.at();
-        if (f.spread() == 0) {
-            for (int i = 0; i < f.count(); i++) {
-                out.add(p);
-            }
-            return out;
-        }
-        for (int i = 0; i < f.count(); i++) {
-            long h = Noise.hash(f.seed() + 29, i, f.count());
-            int x = p.x() + (int) Math.round((Noise.unit(h) * 2 - 1) * f.spread());
-            int z = p.z() + (int) Math.round((Noise.unit(BlockPattern.mix(h)) * 2 - 1) * f.spread());
-            int y = Surface.top(at, x, z, p.y() + 16, p.y() - 16);
-            if (y != Surface.NONE && !Surface.fluid(at.at(x, y, z))) {
-                out.add(new BlockPos(x, y + 1, z));
-            }
-        }
-        return out;
-    }
 }
