@@ -244,10 +244,6 @@ public final class WorldTools {
     }
 
     /**
-     * Deletes the oldest {@code render-*.png} in {@code dir} beyond {@code keep}, never {@code latest}, whatever path
-     * spells it (#398).
-     */
-    /**
      * Whether the main world is the superflat dev floor: what server.properties' level-type says, flat when it says
      * nothing (MSC sets it up flat). Gemini 4 Neon switched its main world to minecraft:normal and built its hamlet on
      * real coast, and the review still called it the dev floor (ADR 0109).
@@ -262,6 +258,10 @@ public final class WorldTools {
         return p.getProperty("level-type", "minecraft:flat").toLowerCase(java.util.Locale.ROOT).contains("flat");
     }
 
+    /**
+     * Deletes the oldest {@code render-*.png} in {@code dir} beyond {@code keep}, never {@code latest}, whatever path
+     * spells it (#398).
+     */
     static void pruneRenders(Path dir, Path latest, int keep) throws IOException {
         List<Path> older;
         try (Stream<Path> list = Files.list(dir)) {
