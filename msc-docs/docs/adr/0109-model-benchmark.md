@@ -23,6 +23,16 @@ it to work for every strong model, and the weakest of the strong ones shows the 
   Codex, so the two never share a folder, a core or Gemini quota.
 - Improvements follow ADR 0106: guides, review checks and gates, never prefabs.
 
+## Changes from the baseline
+
+- Dock posts standing in water no longer count toward bare base: water beside a post hides its base line, and Opus
+  5.5's dock failed at 46% however much seagrass it added.
+- Builds never reviewed are listed with the failing reviews (build results, msc_status, dev_cycle): a built area of
+  150+ placed blocks, merged with builds within 4 blocks, until a review covers its centre. Sonnet 5.5 finished
+  without ever reviewing its dock.
+
 ## Not done
+
+- build_undo does not drop a never-reviewed area: reviewing the spot clears it.
 
 - One run per model is noisy; a model whose score moves by less than about 10 points is treated as unchanged.
