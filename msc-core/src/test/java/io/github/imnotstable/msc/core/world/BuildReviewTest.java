@@ -67,6 +67,30 @@ class BuildReviewTest {
                 .endsWith("no number below the bar; now judge the render: silhouette, story, scale");
     }
 
+    /** A 9x9 sand seabed, nine log posts up to a plank deck at y=4, {@code fill} (water or air) around the posts. */
+    private static BlockGrid dock(char fill) {
+        StringBuilder text = new StringBuilder("legend: s=sand l=spruce_log p=spruce_planks w=water\ny=0\n");
+        text.append("sssssssss\n".repeat(9));
+        for (int y = 1; y <= 4; y++) {
+            text.append("y=").append(y).append('\n');
+            for (int z = 0; z < 9; z++) {
+                StringBuilder row = new StringBuilder();
+                for (int x = 0; x < 9; x++) {
+                    boolean post = x % 4 == 0 && z % 4 == 0;
+                    row.append(y == 4 ? 'p' : post ? 'l' : fill);
+                }
+                text.append(row).append('\n');
+            }
+        }
+        return TextGrid.parse(text.toString(), "world", new BlockPos(0, 60, 0));
+    }
+
+    @Test
+    void dockPostsStandingInWaterHaveNoBareBase() {
+        assertThat(BuildReview.review(dock('.'))).contains("bare base: the build meets the ground");
+        assertThat(BuildReview.review(dock('w'))).doesNotContain("bare base: the build meets the ground");
+    }
+
     @Test
     void aRandomMixOfClashingColoursIsSpeckledButNearTonesAreNot() {
         assertThat(BuildReview.review(box("deepslate_bricks", "prismarine_bricks")))

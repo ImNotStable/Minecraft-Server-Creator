@@ -161,7 +161,9 @@ public final class BuildReview {
                             && name(grid, names, x, y - 1, z) != null;
                     if (onGround && !green) {
                         for (int[] s : SIDES) {
-                            if (grid.region().contains(x + s[0], y, z + s[1]) && name(grid, names, x + s[0], y, z + s[1]) == null) {
+                            // A dock post standing in water shows no base line to dress (ADR 0109).
+                            if (grid.region().contains(x + s[0], y, z + s[1]) && name(grid, names, x + s[0], y, z + s[1]) == null
+                                    && !wet(grid, fluid, x + s[0], y, z + s[1])) {
                                 base++;
                                 bareBase += shaped ? 0 : 1;
                             }
@@ -817,6 +819,11 @@ public final class BuildReview {
             }
         }
         return false;
+    }
+
+    private static boolean wet(BlockGrid grid, boolean[] fluid, int x, int y, int z) {
+        int i = grid.blocks()[grid.region().index(x, y, z)];
+        return i >= 0 && fluid[i];
     }
 
     private static String name(BlockGrid grid, String[] names, int x, int y, int z) {
