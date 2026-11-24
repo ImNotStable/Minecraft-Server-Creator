@@ -29,6 +29,21 @@ class OpenReviewsTest {
     }
 
     @Test
+    void threeFailingReviewsStopNewBuildsButNotFixes() {
+        OpenReviews open = new OpenReviews();
+        Region elsewhere = Region.of("msc:a", 500, 60, 500, 510, 70, 510);
+        for (int i = 0; i < 2; i++) {
+            open.record(Region.of("msc:a", i * 100, 60, 0, i * 100 + 10, 70, 10), FAILED);
+        }
+        assertThat(open.gate(elsewhere)).isNull();
+        open.record(Region.of("msc:a", 200, 60, 0, 210, 70, 10), FAILED);
+        assertThat(open.gate(elsewhere)).startsWith("nothing placed: 3 reviews still fail")
+                .contains("- msc:a 200,60,0 210,70,10: bare base, floating");
+        assertThat(open.gate(Region.of("msc:a", 205, 60, 5, 220, 70, 20))).isNull(); // fixing one of them
+        assertThat(open.gate(Region.of("msc:b", 205, 60, 5, 220, 70, 20))).isNotNull(); // another world
+    }
+
+    @Test
     void anEditAfterAPassReopensTheReviewItTouches() {
         OpenReviews open = new OpenReviews();
         Region house = Region.of("msc:a", 0, 60, 0, 10, 70, 10);

@@ -73,6 +73,30 @@ public final class OpenReviews {
                 + " still failing (msc_status lists them): the work is not done";
     }
 
+    /** Failing reviews at which building elsewhere stops until one is fixed (ADR 0108). */
+    public static final int GATE = 3;
+
+    /**
+     * Why a build in {@code box} may not go ahead, or null: with {@link #GATE} or more reviews failing, only builds
+     * that touch a failing region (fixing it) are allowed. Codex runs 13-18 read every failing review and moved on to
+     * new builds; Gemini runs fixed theirs (ADR 0108).
+     */
+    public synchronized String gate(Region box) {
+        if (open.size() < GATE) {
+            return null;
+        }
+        for (Region r : open.keySet()) {
+            if (r.world().equals(box.world()) && r.min().x() <= box.max().x() && box.min().x() <= r.max().x()
+                    && r.min().y() <= box.max().y() && box.min().y() <= r.max().y()
+                    && r.min().z() <= box.max().z() && box.min().z() <= r.max().z()) {
+                return null;
+            }
+        }
+        return "nothing placed: " + open.size() + " reviews still fail, so no new build starts until they are fixed. "
+                + "build_batch inside a failing region works (that is the fix), then world_summary review=true on "
+                + "the same region:\n" + line().substring(line().indexOf('\n') + 1);
+    }
+
     /** One line per failing review, or empty when none is open. */
     public synchronized String line() {
         if (open.isEmpty()) {
