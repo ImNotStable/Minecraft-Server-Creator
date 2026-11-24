@@ -198,7 +198,7 @@ class BuildReviewTest {
         }
         String review = BuildReview.review(new BlockGrid(r, List.of("minecraft:air", "minecraft:stone",
                 "minecraft:bricks"), b));
-        assertThat(review).doesNotContain("mostly land").contains("types: bricks 100%");
+        assertThat(review).doesNotContain("mostly land").contains("type: bricks 100%");
     }
 
     @Test
