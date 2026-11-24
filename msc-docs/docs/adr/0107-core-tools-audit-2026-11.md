@@ -75,6 +75,14 @@ review, tour, a play-test through the door, a drawn block texture, pack, a refus
     palette line gave the same numbers. Both now say to keep the main block under half the build and how; the
     speckled-walls fix names no blocks either.
 
+Round 5 (texture copy and animations, `texture_view`, `api_search kind=event`, `api_class` by full name, first-person
+and refused render views, small `maxChars` on heightmap and slice, Geyser on and off):
+
+17. A bad `world_render view` lists `iso-se` too, as the description does.
+
+Rounds 4 and 5 were each one small fix; the audit stops here, with every tool exercised on Paper and the new paths on
+Minestom and a Velocity network.
+
 ## Consequences
 
 - Item ids are checked against bundled lists: a Minecraft newer than the newest list refuses its new items until that

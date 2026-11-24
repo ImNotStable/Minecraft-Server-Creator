@@ -106,7 +106,7 @@ public sealed interface View {
             // fall through to the one message that lists every form
         }
         throw new IllegalArgumentException("bad view \"" + text + "\"; use top, north, south, east, west, iso, iso-ne, "
-                + "iso-nw, iso-sw, \"eye x,y,z look x,y,z\" or \"eye x,y,z yaw N pitch N\" (optional \"fov N\", 10-140)");
+                + "iso-nw, iso-sw, iso-se, \"eye x,y,z look x,y,z\" or \"eye x,y,z yaw N pitch N\" (optional \"fov N\", 10-140)");
     }
 
     private static double[] point(String text) {
