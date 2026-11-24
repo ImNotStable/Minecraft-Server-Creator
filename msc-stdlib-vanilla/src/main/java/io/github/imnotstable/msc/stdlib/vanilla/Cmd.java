@@ -7,7 +7,6 @@ import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.tree.LiteralCommandNode;
 import io.github.imnotstable.msc.stdlib.cmd.CommandTree;
 import io.github.imnotstable.msc.stdlib.perm.Permissions;
-import net.minecraft.ChatFormatting;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
@@ -138,7 +137,7 @@ public final class Cmd {
 
             @Override
             public void fail(String text) {
-                s.sendSystemMessage(Component.literal(text).withStyle(ChatFormatting.RED));
+                s.sendSystemMessage(Component.literal(text));
             }
         };
     }

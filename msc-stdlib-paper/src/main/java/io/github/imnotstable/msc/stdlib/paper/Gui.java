@@ -1,6 +1,5 @@
 package io.github.imnotstable.msc.stdlib.paper;
 
-import io.github.imnotstable.msc.stdlib.ui.Sounds;
 import io.github.imnotstable.msc.stdlib.text.Text;
 import net.kyori.adventure.text.Component;
 import org.bukkit.Bukkit;
@@ -21,6 +20,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.BiConsumer;
+import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
@@ -30,11 +30,11 @@ import java.util.function.Function;
  *
  * <pre>{@code
  * Gui.chest(3, Text.mm("<gold>Shop"))
- *         .fill(ItemBuilder.filler())
+ *         .fill(ItemBuilder.pane(Material.BROWN_STAINED_GLASS_PANE))
  *         .set(13, ItemBuilder.of(Material.DIAMOND).name("<aqua>Buy diamond").build(), click -> buy(click.player()))
  *         .open(player);
  * Gui.paged(6, Text.mm("Warps"), warps, w -> ItemBuilder.of(Material.ENDER_PEARL).name(w.name()).build(),
- *         (w, click) -> click.player().teleport(w.location())).open(player);
+ *         (w, click) -> click.player().teleport(w.location()), new Gui.Nav(back, next, null)).open(player);
  * }</pre>
  */
 public final class Gui implements InventoryHolder {
@@ -44,27 +44,20 @@ public final class Gui implements InventoryHolder {
     private Consumer<Player> onClose = p -> {};
     private String[] layout;
     private final java.util.List<java.util.Map.Entry<Long, Consumer<Gui>>> refreshers = new java.util.ArrayList<>();
-    private net.kyori.adventure.sound.Sound clickSound = Sounds.CLICK.sound();
+    private net.kyori.adventure.sound.Sound clickSound;
     private final java.util.List<io.github.imnotstable.msc.stdlib.sched.Scheduler.Task> tasks = new java.util.ArrayList<>();
 
     /**
-     * Colours and sound shared by menus: {@code Gui.chest(3, title).theme(Theme.DARK)}. {@code filler} goes in empty
-     * slots, {@code border} on the outer ring; either may be null.
+     * Your look for a set of menus: {@code border} on the outer ring, {@code filler} in empty slots (either may be
+     * null), {@code click} for buttons (null: silent). There are no stock themes (ADR 0106).
      */
-    public record Theme(ItemStack border, ItemStack filler, net.kyori.adventure.sound.Sound click) {
-        public static final Theme DEFAULT = new Theme(null, ItemBuilder.pane(Material.GRAY_STAINED_GLASS_PANE),
-                Sounds.CLICK.sound());
-        public static final Theme DARK = new Theme(ItemBuilder.pane(Material.BLACK_STAINED_GLASS_PANE),
-                ItemBuilder.pane(Material.GRAY_STAINED_GLASS_PANE), Sounds.CLICK.sound());
-        public static final Theme GOLD = new Theme(ItemBuilder.pane(Material.ORANGE_STAINED_GLASS_PANE),
-                ItemBuilder.pane(Material.YELLOW_STAINED_GLASS_PANE), Sounds.CLICK.sound());
-        public static final Theme OCEAN = new Theme(ItemBuilder.pane(Material.BLUE_STAINED_GLASS_PANE),
-                ItemBuilder.pane(Material.LIGHT_BLUE_STAINED_GLASS_PANE), Sounds.CLICK.sound());
-        public static final Theme NATURE = new Theme(ItemBuilder.pane(Material.GREEN_STAINED_GLASS_PANE),
-                ItemBuilder.pane(Material.LIME_STAINED_GLASS_PANE), Sounds.CLICK.sound());
-        public static final Theme DANGER = new Theme(ItemBuilder.pane(Material.RED_STAINED_GLASS_PANE),
-                ItemBuilder.pane(Material.BLACK_STAINED_GLASS_PANE), Sounds.CLICK.sound());
-    }
+    public record Theme(ItemStack border, ItemStack filler, net.kyori.adventure.sound.Sound click) {}
+
+    /**
+     * {@link #paged}'s buttons, made by you: {@code back} and {@code next} arrows, and {@code page} (may be null) for the
+     * middle of the last row, given the page and the page count, both counted from 1.
+     */
+    public record Nav(ItemStack back, ItemStack next, BiFunction<Integer, Integer, ItemStack> page) {}
 
     /** A click in the menu: who, which slot, how (left, right, shift...), and the event for anything else. */
     public record Click(Player player, int slot, ClickType type, InventoryClickEvent event) {
@@ -86,10 +79,10 @@ public final class Gui implements InventoryHolder {
     }
 
     /**
-     * A menu over a list, a page at a time: every row but the last holds entries, the last has back and next arrows.
+     * A menu over a list, a page at a time: every row but the last holds entries, the last has {@code nav}'s buttons.
      */
     public static <T> Gui paged(int rows, Component title, List<T> entries, Function<T, ItemStack> icon,
-                                BiConsumer<T, Click> onClick) {
+                                BiConsumer<T, Click> onClick, Nav nav) {
         Gui gui = new Gui(Math.max(2, rows), title);
         List<T> list = List.copyOf(entries);
         int perPage = (Math.max(2, rows) - 1) * 9;
@@ -104,19 +97,20 @@ public final class Gui implements InventoryHolder {
                 gui.set(i, icon.apply(entry), c -> onClick.accept(entry, c));
             }
             if (page[0] > 0) {
-                gui.set(perPage, ItemBuilder.of(Material.ARROW).name("<yellow>Back").build(), c -> {
+                gui.set(perPage, nav.back(), c -> {
                     page[0]--;
                     render[0].run();
                 });
             }
             if (page[0] < pages - 1) {
-                gui.set(perPage + 8, ItemBuilder.of(Material.ARROW).name("<yellow>Next").build(), c -> {
+                gui.set(perPage + 8, nav.next(), c -> {
                     page[0]++;
                     render[0].run();
                 });
             }
-            gui.set(perPage + 4, ItemBuilder.of(Material.PAPER)
-                    .name("<gray>Page <p>/<n>", "p", page[0] + 1, "n", pages).build());
+            if (nav.page() != null) {
+                gui.set(perPage + 4, nav.page().apply(page[0] + 1, pages));
+            }
         };
         render[0].run();
         return gui;
@@ -192,7 +186,7 @@ public final class Gui implements InventoryHolder {
         return this;
     }
 
-    /** The sound a click on a button makes ({@link Sounds#CLICK} unless changed); null for none. */
+    /** The sound a click on a button makes; null (the default) for none. */
     public Gui clickSound(net.kyori.adventure.sound.Sound sound) {
         this.clickSound = sound;
         return this;
@@ -207,7 +201,7 @@ public final class Gui implements InventoryHolder {
      *         "#########",
      *         "# a b c #",
      *         "####x####")
-     *     .bind('#', ItemBuilder.filler(), c -> {})
+     *     .bind('#', ItemBuilder.pane(Material.BLACK_STAINED_GLASS_PANE), c -> {})
      *     .bind('a', kitA, c -> pick(c.player(), "a")) ...
      * }</pre>
      */
@@ -268,34 +262,6 @@ public final class Gui implements InventoryHolder {
     /** Everyone viewing the menu. */
     public java.util.List<Player> viewers() {
         return inventory.getViewers().stream().filter(h -> h instanceof Player).map(h -> (Player) h).toList();
-    }
-
-    /**
-     * A yes/no screen: green confirm on the left, red cancel on the right, {@code question} in the middle. Closing it
-     * counts as cancel.
-     */
-    public static Gui confirm(Component title, ItemStack question, Consumer<Player> onYes, Consumer<Player> onNo) {
-        boolean[] answered = {false};
-        Gui gui = chest(3, title);
-        gui.set(13, question)
-                .set(11, ItemBuilder.of(Material.LIME_CONCRETE).name("<green><bold>Confirm").build(), c -> {
-                    answered[0] = true;
-                    c.close();
-                    onYes.accept(c.player());
-                })
-                .set(15, ItemBuilder.of(Material.RED_CONCRETE).name("<red><bold>Cancel").build(), c -> {
-                    answered[0] = true;
-                    c.close();
-                    onNo.accept(c.player());
-                })
-                .onClose(p -> {
-                    if (!answered[0]) {
-                        answered[0] = true;
-                        onNo.accept(p);
-                    }
-                })
-                .theme(Theme.DEFAULT);
-        return gui;
     }
 
     public Gui open(Player player) {

@@ -1,7 +1,6 @@
 package io.github.imnotstable.msc.stdlib.vanilla;
 
 import io.github.imnotstable.msc.stdlib.sched.Scheduler;
-import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 
@@ -15,7 +14,7 @@ import java.util.function.Consumer;
  * Asks a player to type an answer in chat (not shown to others); {@code cancel} or the timeout gives up.
  *
  * <pre>{@code
- * Prompt.ask(player, "Name your home:", Duration.ofSeconds(30), name -> homes.create(player, name), () -> {});
+ * Prompt.ask(player, Component.literal("Name your home (or cancel):"), Duration.ofSeconds(30), name -> homes.create(player, name), () -> {});
  * }</pre>
  */
 public final class Prompt {
@@ -25,10 +24,9 @@ public final class Prompt {
 
     private Prompt() {}
 
-    public static void ask(ServerPlayer player, String question, Duration timeout, Consumer<String> answer,
+    public static void ask(ServerPlayer player, Component question, Duration timeout, Consumer<String> answer,
                            Runnable cancelled) {
-        player.sendSystemMessage(Component.literal(question).withStyle(ChatFormatting.YELLOW));
-        player.sendSystemMessage(Component.literal("Type your answer in chat, or cancel.").withStyle(ChatFormatting.GRAY));
+        player.sendSystemMessage(question);
         UUID id = player.getUUID();
         Scheduler.Task task = Stdlib.scheduler().later(Math.max(1, timeout.toMillis() / 50), () -> {
             Pending p = PENDING.remove(id);

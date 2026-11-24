@@ -22,7 +22,7 @@ import java.util.function.Consumer;
  * <pre>{@code
  * Prompt.ask(player, "<yellow>Name your home:", Duration.ofSeconds(30),
  *         name -> homes.create(player, name),
- *         () -> Feedback.fail(player, "No name given"));
+ *         () -> Feedback.message(player, "No name given"));
  * }</pre>
  */
 public final class Prompt {
@@ -37,7 +37,6 @@ public final class Prompt {
     public static void ask(Player player, String question, Duration timeout, Consumer<String> answer, Runnable cancelled) {
         listen();
         player.sendMessage(Text.mm(question));
-        player.sendMessage(Text.mm("<gray>Type your answer in chat, or <white>cancel</white>."));
         UUID id = player.getUniqueId();
         var task = Stdlib.scheduler().later(Math.max(1, timeout.toMillis() / 50), () -> {
             Pending p = PENDING.remove(id);

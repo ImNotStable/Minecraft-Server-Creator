@@ -47,11 +47,6 @@ public final class ItemBuilder {
         return of(Material.PLAYER_HEAD).meta(m -> ((SkullMeta) m).setOwningPlayer(owner));
     }
 
-    /** An unnamed grey pane, for GUI backgrounds. */
-    public static ItemStack filler() {
-        return pane(Material.GRAY_STAINED_GLASS_PANE);
-    }
-
     /** A glass pane (or any item) with no name and no tooltip, for menu borders: {@code pane(Material.BLACK_STAINED_GLASS_PANE)}. */
     public static ItemStack pane(Material material) {
         return of(material).name(Component.empty()).hideTooltip().build();

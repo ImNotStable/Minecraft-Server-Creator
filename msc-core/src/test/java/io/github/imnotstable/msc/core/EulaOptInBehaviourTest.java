@@ -83,7 +83,7 @@ class EulaOptInBehaviourTest {
             new Row("build_batch", "steps", "fill 0,70,0 1,71,1 minecraft:stone"), new Row("build_undo"),
             new Row("structure_save", "region", REGION.get(1), "file", "structures/a.schem"),
             new Row("player_test", "actions", List.of("wait 1"), "leave", true),
-            new Row("texture", "name", "item/ruby", "kind", "gem", "color", "#d4263a"),
+            new Row("texture", "name", "item/ruby", "palette", Drawings.palette("#d4263a"), "rows", Drawings.rows()),
             new Row("texture_view", "name", "item/ruby"),
             new Row("model_create", "name", "item/ruby", "kind", "item", "textures", List.of("item/ruby")),
             new Row("pack_asset", "type", "lang", "name", "en_us", "json", "{}"),

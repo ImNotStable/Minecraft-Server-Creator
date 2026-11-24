@@ -19,10 +19,8 @@ import io.github.imnotstable.msc.textures.PackAssets;
 import io.github.imnotstable.msc.textures.PackLint;
 import io.github.imnotstable.msc.textures.PackSource;
 import io.github.imnotstable.msc.textures.PaletteText;
-import io.github.imnotstable.msc.textures.Patterns;
 import io.github.imnotstable.msc.textures.Ramp;
 import io.github.imnotstable.msc.textures.ResourceId;
-import io.github.imnotstable.msc.textures.Shapes;
 import io.github.imnotstable.msc.textures.Stats;
 import io.github.imnotstable.msc.textures.Texture;
 import io.github.imnotstable.msc.textures.TextureException;
@@ -56,24 +54,18 @@ public final class TextureTools {
         PackSource source = pack.source();
         registry.add("texture",
                 "Add a texture to the workspace's resource pack, no server needed: draw it as text "
-                        + "(palette, rows), generate it (kind, color) or recolor a pack texture (copy, color). "
+                        + "(palette, rows) or recolor a pack texture of your own (copy, color). "
                         + "animate animates it; with only name and animate, the texture already there.",
                 Schema.of().req("name", "string", "Texture name such as item/ruby or myplugin:block/ruby_ore, or a .png path for a file outside the pack")
                         .opt("palette", "strings", "Draw: symbol=#rrggbb or #rrggbbaa entries, for example \"r=#d4263a\". \".\" is transparent")
                         .opt("rows", "strings", "Draw: pixel rows, top first, all the same length (16 is standard)")
-                        .opt("kind", "string", "Generate: pattern noise, ore, planks or bricks, or 16x16 example shape gem, ingot, orb, "
-                                + "sword, pickaxe or food")
                         .opt("copy", "string", "Recolor: the pack texture to copy onto shades of color, keeping its shading")
-                        .opt("color", "string", "Base color #rrggbb, for kind and copy")
-                        .opt("accent", "string", "kind's second color: ore's ore, bricks' mortar, a tool's handle, food's bone")
-                        .opt("size", "integer", "Patterns: 16 (default), 32 or 64")
-                        .opt("seed", "integer", "Pattern seed. Default 1")
-                        .range("contrast", Ramp.MIN_CONTRAST, Ramp.MAX_CONTRAST, "Default 1 for shapes, 0.6 for patterns")
+                        .opt("color", "string", "Base color #rrggbb, for copy")
                         .opt("animate", "string", "scroll (flows down), \"scroll dx,dy\" or pulse (glows)")
                         .range("frames", MIN_FRAMES, Animation.MAX_FRAMES, "Default: one full loop for scroll, 8 for pulse")
                         .opt("frametime", "integer", "Ticks per frame. Default 2")
                         .opt("model", "string", "Also write a model and item definition: item (flat), handheld (tools), "
-                                + "block (cube) or none. Default block for patterns, handheld for sword and pickaxe, none for minecraft:, else item"),
+                                + "block (cube) or none. Default none for minecraft:, else item"),
                 textures(args -> texture(args, pack, source, config)));
         registry.add("texture_view",
                 "Show a pack texture as a palette and pixel rows, the format texture draws. Animations show frame 1.",
@@ -349,20 +341,20 @@ public final class TextureTools {
     private static String texture(Args args, ResourcePack pack, PackSource source, CoreConfig config)
             throws IOException, InterruptedException {
         List<String> ways = new ArrayList<>();
-        for (String way : List.of("rows", "kind", "copy")) {
+        for (String way : List.of("rows", "copy")) {
             if (args.has(way)) {
                 ways.add(way);
             }
         }
         if (ways.size() > 1) {
-            throw new ToolException("give one of rows, kind or copy, not " + String.join(" and ", ways));
+            throw new ToolException("give one of rows or copy, not " + String.join(" and ", ways));
         }
         if (args.str("name").toLowerCase(Locale.ROOT).endsWith(".png")) {
             return looseFile(args, source, args.path("name", config.inWorkspace()), ways);
         }
         if (ways.isEmpty() && !args.has("animate")) {
-            throw new ToolException("give rows and palette to draw, kind and color to generate, copy and color to "
-                    + "recolor, or animate to animate the texture already there");
+            throw new ToolException("give rows and palette to draw, copy and color to recolor, "
+                    + "or animate to animate the texture already there");
         }
         Set<String> read = new HashSet<>(ways);
         if (!ways.isEmpty()) {
@@ -375,7 +367,6 @@ public final class TextureTools {
         ResourceId id = ResourceId.parse(args.str("name"));
         // Everything that can refuse the arguments runs before the first write, so a refused call (a bad animate,
         // too many frames, an item that shows another model) leaves the pack as it was.
-        String kind = args.str("kind", null);
         Texture t = null;
         String model = null;
         List<String> warnings = List.of();
@@ -386,15 +377,6 @@ public final class TextureTools {
             t = PaletteText.parse(args.strings("palette"), args.strings("rows"));
             model = model(args, id, "item");
             warnings = drawWarnings(t);
-        } else if (kind != null) {
-            boolean shape = Shapes.NAMES.contains(kind);
-            t = generated(args);
-            model = model(args, id, shape ? (kind.equals("sword") || kind.equals("pickaxe") ? "handheld" : "item") : "block");
-            if (shape) {
-                warnings = List.of("a stock " + kind + " shape, shaded in your colors and shared by every " + kind
-                        + ": an example to learn from (outline, light from the top left, tones, glint), not to ship; "
-                        + "draw your own item with rows=");
-            }
         } else if (ways.contains("copy")) {
             Texture in = firstFrame(source, ResourceId.parse(args.str("copy")));
             t = Edits.recolor(in, Ramp.from(color(args), 5));
@@ -427,12 +409,6 @@ public final class TextureTools {
             }
             for (String warning : warnings) {
                 out.append("\nwarning: ").append(warning);
-            }
-            if (kind != null && animation == null) {
-                // One budget (#473): the drawing gets what the lines around it leave, "next: pack" stays last.
-                parts.add(out.append('\n').toString())
-                        .cut(n -> Budget.truncate(PaletteText.render(written), n, "Use texture_view."));
-                out.setLength(0);
             }
         }
         if (animation != null) {
@@ -470,7 +446,7 @@ public final class TextureTools {
             throw new ToolException("animate needs a pack texture name such as item/ruby, not a .png path");
         }
         if (ways.isEmpty()) {
-            throw new ToolException("give rows and palette to draw, kind and color to generate, or copy and color to recolor");
+            throw new ToolException("give rows and palette to draw, or copy and color to recolor");
         }
         WayArgs.check(args, Set.copyOf(ways), WayArgs.TEXTURE);
         OutputFile.check(file, "png");
@@ -482,12 +458,10 @@ public final class TextureTools {
             }
             t = PaletteText.parse(args.strings("palette"), args.strings("rows"));
             warnings = drawWarnings(t);
-        } else if (args.has("kind")) {
-            t = generated(args);
         } else if (args.has("copy")) {
             t = Edits.recolor(firstFrame(source, ResourceId.parse(args.str("copy"))), Ramp.from(color(args), 5));
         } else {
-            throw new ToolException("give rows and palette to draw, kind and color to generate, or copy and color to recolor");
+            throw new ToolException("give rows and palette to draw, or copy and color to recolor");
         }
         Texture image = t;
         new Steps("texture").then(WRITE_PNG).run(WRITE_PNG, () -> OutputFile.replace(file, to -> {
@@ -498,28 +472,7 @@ public final class TextureTools {
         StringBuilder out = new StringBuilder("wrote ").append(file).append(": ").append(Stats.of(t));
         warnings.forEach(w -> out.append("\nwarning: ").append(w));
         Budget.Parts parts = new Budget.Parts().add(out.toString());
-        if (args.has("kind")) {
-            parts.add("\n").cut(n -> Budget.truncate(PaletteText.render(t), n, "Too large to show."));
-        }
         return parts.text(Budget.DEFAULT_CHARS, null, "Too large to show.");
-    }
-
-    /** The texture of {@code kind}: a 16x16 shape or a tiling pattern. */
-    static Texture generated(Args args) {
-        String kind = args.str("kind");
-        boolean shape = Shapes.NAMES.contains(kind);
-        if (!shape && !Patterns.NAMES.contains(kind)) {
-            throw new ToolException("kind must be noise, ore, planks, bricks, gem, ingot, orb, sword, pickaxe or food");
-        }
-        KindArgs.check(args, kind);
-        // A shape outlines in the darkest of 7 shades and shades its body in the other 5 distinct tones (ADR 0072).
-        Ramp ramp = Ramp.from(color(args), shape ? 7 : 5, args.number("contrast", shape ? 1.0 : 0.6));
-        Integer accent = args.has("accent") ? Colors.parse(args.str("accent")) : null;
-        if (shape) {
-            return Shapes.draw(kind, ramp, accent, null);
-        }
-        return Patterns.generate(kind, args.integer("size", 16), ramp,
-                accent == null ? null : Ramp.from(accent, 4, 1.0), args.integer("seed", 1));
     }
 
     /** The animation {@code animate} asks for, made from {@code base}; refuses a bad spec without writing anything. */
@@ -599,7 +552,7 @@ public final class TextureTools {
 
     private static int color(Args args) {
         if (!args.has("color")) {
-            throw new ToolException("kind and copy need a color #rrggbb");
+            throw new ToolException("copy needs a color #rrggbb");
         }
         return Colors.parse(args.str("color"));
     }

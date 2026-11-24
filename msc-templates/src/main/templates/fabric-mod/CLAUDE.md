@@ -19,3 +19,7 @@ Fabric server mod for Minecraft {{mcVersion}}, Java {{javaVersion}}, Gradle Kotl
 
 - `run/eula.txt` must say `eula=true` before the server starts. Accepting the Minecraft EULA (https://aka.ms/MinecraftEULA) is the owner's decision: if it says `false`, ask them, never change it yourself.
 - Offline mode, bound to {{serverIp}}:{{serverPort}}; RCON on port {{rconPort}}, password `rcon.password` in `run/server.properties`.
+
+## From scratch
+
+- Write every system, config, texture, model, structure and piece of text in this project yourself, for this server. Minecraft Server Creator and msc-stdlib give primitives (APIs, build steps, checks), never ready-made content: no stock themes, sounds, messages, prefab builds or textures to copy.

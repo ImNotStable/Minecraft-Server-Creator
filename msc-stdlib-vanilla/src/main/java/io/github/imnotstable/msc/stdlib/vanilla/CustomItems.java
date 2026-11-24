@@ -1,7 +1,6 @@
 package io.github.imnotstable.msc.stdlib.vanilla;
 
 import io.github.imnotstable.msc.stdlib.time.Cooldowns;
-import io.github.imnotstable.msc.stdlib.util.Format;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.item.ItemStack;
@@ -37,6 +36,7 @@ public final class CustomItems {
         private Consumer<ServerPlayer> onUse;
         private BiConsumer<ServerPlayer, Entity> onHit;
         private Duration cooldown;
+        private java.util.function.BiConsumer<ServerPlayer, Duration> tooSoon = (who, left) -> {};
         private final Cooldowns<UUID> cooldowns = new Cooldowns<>();
 
         private Definition(Supplier<ItemStack> factory) {
@@ -55,8 +55,16 @@ public final class CustomItems {
             return this;
         }
 
+        /** Time between uses per player; a use too soon does nothing. */
         public Definition cooldown(Duration time) {
             this.cooldown = time;
+            return this;
+        }
+
+        /** Same, and {@code tooSoon} gets the player and the time left, to tell them your way. */
+        public Definition cooldown(Duration time, java.util.function.BiConsumer<ServerPlayer, Duration> tooSoon) {
+            this.cooldown = time;
+            this.tooSoon = tooSoon;
             return this;
         }
     }
@@ -94,7 +102,7 @@ public final class CustomItems {
             if (x.cooldown == null || x.cooldowns.tryUse(player.getUUID(), x.cooldown)) {
                 x.onUse.accept(player);
             } else {
-                Feedback.actionBar(player, "Wait " + Format.duration(x.cooldowns.remaining(player.getUUID())));
+                x.tooSoon.accept(player, x.cooldowns.remaining(player.getUUID()));
             }
         });
         return d.isPresent();

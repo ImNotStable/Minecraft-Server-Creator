@@ -35,13 +35,6 @@ class FabricToolkitTest {
     }
 
     @Test
-    void everySoundPresetIsARealSound() {
-        assertThat(java.util.Arrays.stream(Sounds.values()).map(Sounds::key)
-                .filter(k -> BuiltInRegistries.SOUND_EVENT.get(Identifier.withDefaultNamespace(k)).isEmpty()).toList())
-                .isEmpty();
-    }
-
-    @Test
     void customItemsKeepTheirId() {
         CustomItems.register("dash", () -> ItemBuilder.of(Items.FEATHER).name(Component.literal("Dash")).build());
         ItemStack dash = CustomItems.create("dash");

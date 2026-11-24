@@ -100,8 +100,8 @@ class ArrayArgumentLinesTest {
 
     @Test
     void modelCreateTakesTexturesOneSlotPerLine() throws Exception {
-        h.ok("texture", "name", "block/a", "kind", "noise", "color", "#808080");
-        h.ok("texture", "name", "block/b", "kind", "noise", "color", "#404040");
+        h.ok("texture", "name", "block/a", "palette", Drawings.palette("#808080"), "rows", Drawings.rows());
+        h.ok("texture", "name", "block/b", "palette", Drawings.palette("#404040"), "rows", Drawings.rows());
         h.ok("model_create", "name", "block/lines", "kind", "cube_column", "textures", "side=block/a\nend=block/b",
                 "item", false);
         h.ok("model_create", "name", "block/items", "kind", "cube_column", "textures",

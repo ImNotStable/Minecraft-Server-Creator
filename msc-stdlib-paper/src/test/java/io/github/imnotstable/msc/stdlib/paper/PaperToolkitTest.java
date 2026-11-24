@@ -70,14 +70,10 @@ class PaperToolkitTest {
     }
 
     @Test
-    void feedbackSendsPrefixedLines() {
+    void feedbackSendsTheLinesAsWritten() {
         PlayerMock p = server.addPlayer();
-        Feedback.success(p, "Bought <item>", "item", "a sword");
-        Feedback.fail(p, "Too poor");
-        Feedback.info(p, "Hello");
-        assertThat(next(p)).isEqualTo("✔ Bought a sword");
-        assertThat(next(p)).isEqualTo("✘ Too poor");
-        assertThat(next(p)).isEqualTo("» Hello");
+        Feedback.message(p, "<green>Bought <item>", "item", "a sword");
+        assertThat(next(p)).isEqualTo("Bought a sword");
         Feedback.title(p, "<gold>Round <n>", "<gray>Go", "n", 2);
         Feedback.actionBar(p, "<yellow>Coins: <c>", "c", 5);
     }
@@ -158,7 +154,8 @@ class PaperToolkitTest {
                         "#########")
                 .bind('a', ItemStack.of(Material.IRON_SWORD), c -> clicks.add("a"))
                 .bind('b', ItemStack.of(Material.BOW), c -> clicks.add("b"))
-                .theme(Gui.Theme.DARK)
+                .theme(new Gui.Theme(ItemBuilder.pane(Material.BLACK_STAINED_GLASS_PANE),
+                        ItemBuilder.pane(Material.GRAY_STAINED_GLASS_PANE), null))
                 .refreshEvery(5, g -> g.update(13, ItemStack.of(Material.CLOCK, server.getCurrentTick() % 60 + 1)))
                 .open(p);
         assertThat(gui.slots('#')).hasSize(20);
@@ -170,12 +167,6 @@ class PaperToolkitTest {
         server.getScheduler().performTicks(6);
         assertThat(gui.getInventory().getItem(13).getType()).isEqualTo(Material.CLOCK);
         assertThat(gui.viewers()).containsExactly(p);
-
-        List<String> answers = new ArrayList<>();
-        Gui.confirm(Component.text("Sure?"), ItemStack.of(Material.TNT), pl -> answers.add("yes"), pl -> answers.add("no"))
-                .open(p);
-        click(p, 11);
-        assertThat(answers).containsExactly("yes");
     }
 
     @Test

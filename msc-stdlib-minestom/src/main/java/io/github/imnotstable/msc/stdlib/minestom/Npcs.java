@@ -4,8 +4,6 @@ import io.github.imnotstable.msc.stdlib.npc.Dialogue;
 import io.github.imnotstable.msc.stdlib.text.Text;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.event.ClickEvent;
-import net.kyori.adventure.text.format.NamedTextColor;
-import net.kyori.adventure.text.format.TextDecoration;
 import net.minestom.server.coordinate.Pos;
 import net.minestom.server.entity.Entity;
 import net.minestom.server.entity.EntityType;
@@ -87,9 +85,7 @@ public final class Npcs {
             List<Dialogue.Choice> choices = d.choices(player.getUuid());
             Component row = Component.empty();
             for (int i = 0; i < choices.size(); i++) {
-                row = row.append(Component.text("[" + choices.get(i).label() + "]", NamedTextColor.AQUA)
-                        .decorate(TextDecoration.UNDERLINED)
-                        .clickEvent(ClickEvent.runCommand("/npcchoice " + i))).append(Component.text("  "));
+                row = row.append(Text.mm(choices.get(i).label()).clickEvent(ClickEvent.runCommand("/npcchoice " + i))).append(Component.text("  "));
             }
             if (!choices.isEmpty()) {
                 player.sendMessage(row);

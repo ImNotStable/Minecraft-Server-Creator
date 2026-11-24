@@ -22,7 +22,7 @@ class PackTest {
     @Test
     void rubyPackMeetsTheBenchZipCheck() throws IOException {
         PackSource pack = new PackSource(dir.resolve("src"));
-        pack.writeTexture(ResourceId.parse("minecraft:item/diamond"), Shapes.draw("gem", RUBY, null));
+        pack.writeTexture(ResourceId.parse("minecraft:item/diamond"), Drawn.gem(RUBY));
         pack.writePackMeta(97, "Rubies instead of diamonds");
         PackSource.Zipped zipped = pack.zip(dir.resolve("ruby-pack.zip"));
         try (ZipFile zip = new ZipFile(zipped.zip().toFile())) {
@@ -41,7 +41,7 @@ class PackTest {
     @Test
     void zipIsDeterministic() throws IOException {
         PackSource pack = new PackSource(dir.resolve("src"));
-        pack.writeTexture(ResourceId.parse("block/ruby_ore"), Patterns.ore(16, Ramp.from(0xFF7F7F7F, 4), RUBY, 1));
+        pack.writeTexture(ResourceId.parse("block/ruby_ore"), Drawn.ore(Ramp.from(0xFF7F7F7F, 4), RUBY, 1));
         pack.writePackMeta(97, "x");
         String a = pack.zip(dir.resolve("a.zip")).sha1();
         String b = pack.zip(dir.resolve("b.zip")).sha1();
@@ -53,12 +53,12 @@ class PackTest {
         PackSource pack = new PackSource(dir);
         ResourceId log = ResourceId.parse("block/ruby_log");
         ResourceId top = ResourceId.parse("block/ruby_log_top");
-        pack.writeTexture(log, Patterns.planks(16, Ramp.from(0xFF8A5A2B, 4), 1));
-        pack.writeTexture(top, Patterns.noise(16, Ramp.from(0xFF8A5A2B, 4), 1));
+        pack.writeTexture(log, Drawn.tile(Ramp.from(0xFF8A5A2B, 4), 1));
+        pack.writeTexture(top, Drawn.tile(Ramp.from(0xFF8A5A2B, 4), 1));
         String block = pack.writeModel(log, Models.Kind.CUBE_COLUMN, Map.of("side", log, "end", top), true);
         assertThat(block).isEqualTo("msc:ruby_log");
         ResourceId gem = ResourceId.parse("item/ruby");
-        pack.writeTexture(gem, Shapes.draw("gem", RUBY, null));
+        pack.writeTexture(gem, Drawn.gem(RUBY));
         assertThat(pack.writeModel(gem, Models.Kind.ITEM, Map.of("layer0", gem), false)).isEqualTo("msc:ruby");
         assertThat(Files.readString(pack.itemPath(ResourceId.parse("ruby"))))
                 .contains("\"model\":\"msc:item/ruby\"");
@@ -97,7 +97,7 @@ class PackTest {
     void animationWritesMcmetaAndStillTextureRemovesIt() throws IOException {
         PackSource pack = new PackSource(dir);
         ResourceId id = ResourceId.parse("block/glow");
-        Texture base = Patterns.ore(16, Ramp.from(0xFF7F7F7F, 4), RUBY, 2);
+        Texture base = Drawn.ore(Ramp.from(0xFF7F7F7F, 4), RUBY, 2);
         Path png = pack.writeAnimation(id, Animation.pulse(base, RUBY, 4, 4));
         assertThat(png.resolveSibling("glow.png.mcmeta")).exists();
         pack.writeTexture(id, base);

@@ -258,12 +258,12 @@ class SideEffectStepsTest {
 
         @Override
         public void prepare(CoreHarness h, Path ws) throws Exception {
-            h.ok("texture", "name", "item/ruby", "kind", "gem", "color", "#d4263a");
+            h.ok("texture", "name", "item/ruby", "palette", Drawings.palette("#d4263a"), "rows", Drawings.rows());
             String built = h.ok("pack");
             String url = built.lines().filter(l -> l.startsWith("url: ")).findFirst().orElseThrow().substring(5);
             Files.createDirectories(ws.resolve("run"));
             Files.writeString(ws.resolve("run/server.properties"), "motd=kept\nresource-pack=" + url + "\n");
-            h.ok("texture", "name", "item/ruby", "kind", "gem", "color", "#2655d4");
+            h.ok("texture", "name", "item/ruby", "palette", Drawings.palette("#2655d4"), "rows", Drawings.rows());
         }
 
         @Override
@@ -298,7 +298,7 @@ class SideEffectStepsTest {
 
         @Override
         public Object[] call(Path ws) {
-            return new Object[] {"texture", "name", "item/ruby", "kind", "gem", "color", "#d4263a", "animate", "pulse"};
+            return new Object[] {"texture", "name", "item/ruby", "palette", Drawings.palette("#d4263a"), "rows", Drawings.rows(), "animate", "pulse"};
         }
 
         @Override
@@ -324,7 +324,7 @@ class SideEffectStepsTest {
 
         @Override
         public Object[] call(Path ws) {
-            return new Object[] {"texture", "name", "art/ruby.png", "kind", "gem", "color", "#d4263a"};
+            return new Object[] {"texture", "name", "art/ruby.png", "palette", Drawings.palette("#d4263a"), "rows", Drawings.rows()};
         }
 
         @Override
@@ -346,7 +346,7 @@ class SideEffectStepsTest {
 
         @Override
         public void prepare(CoreHarness h, Path ws) {
-            h.ok("texture", "name", "block/ruby_block", "kind", "bricks", "color", "#d4263a", "model", "none");
+            h.ok("texture", "name", "block/ruby_block", "palette", Drawings.palette("#d4263a"), "rows", Drawings.rows(), "model", "none");
         }
 
         @Override
@@ -662,7 +662,7 @@ class SideEffectStepsTest {
         @Override
         public void prepare(CoreHarness h, Path ws) {
             h.ok("server_start", "timeoutSeconds", 60);
-            h.ok("texture", "name", "item/ruby", "kind", "gem", "color", "#d4263a");
+            h.ok("texture", "name", "item/ruby", "palette", Drawings.palette("#d4263a"), "rows", Drawings.rows());
             h.ok("pack");
         }
 

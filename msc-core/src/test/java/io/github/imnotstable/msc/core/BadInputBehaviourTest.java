@@ -73,7 +73,7 @@ class BadInputBehaviourTest {
             new Row("structure_save", "region", REGION, "file", "s/a.schem"),
             new Row("player_test", "actions", List.of("wait 1"), "leave", true),
             new Row("texture", Map.of("name", List.of("%s", "%s.png", "item/%s")),
-                    "name", "item/ruby", "kind", "gem", "color", "#d4263a"),
+                    "name", "item/ruby", "palette", Drawings.palette("#d4263a"), "rows", Drawings.rows()),
             new Row("texture_view", Map.of("name", List.of("%s", "item/%s")), "name", "item/ruby"),
             new Row("model_create", "name", "item/ruby", "kind", "item", "textures", List.of("item/ruby")),
             new Row("pack_asset", "type", "lang", "name", "en_us", "json", "{}"),

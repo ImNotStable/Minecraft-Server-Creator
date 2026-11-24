@@ -222,11 +222,11 @@ public final class Cmd {
     /** Runs the command as {@code sender} would: for tests and for calling one command from another. */
     public void run(CommandSender sender, String[] args, String label) {
         if (permission != null && !sender.hasPermission(permission)) {
-            sender.sendMessage(Text.mm("<red>You don't have permission."));
+            sender.sendMessage(Text.mm("You don't have permission."));
             return;
         }
         if (playerOnly && !(sender instanceof Player)) {
-            sender.sendMessage(Text.mm("<red>Only players can use this."));
+            sender.sendMessage(Text.mm("Only players can use this."));
             return;
         }
         if (args.length > 0 && subs.containsKey(args[0].toLowerCase(Locale.ROOT))) {
@@ -236,7 +236,7 @@ public final class Cmd {
         }
         try {
             if (executor == null) {
-                sender.sendMessage(Text.mm("<gold>" + label + "</gold> <gray>" + String.join(" | ", subs.values()
+                sender.sendMessage(Text.mm(label + " " + String.join(" | ", subs.values()
                         .stream().distinct().map(s -> s.name + (s.usage.isEmpty() ? "" : " " + s.usage)).toList())));
                 return;
             }
@@ -245,7 +245,7 @@ public final class Cmd {
             }
             executor.accept(new Ctx(sender, args, label + (usage.isEmpty() ? "" : " " + usage)));
         } catch (Fail f) {
-            sender.sendMessage(Text.mm("<red>" + f.getMessage()));
+            sender.sendMessage(Text.mm(f.getMessage()));
         }
     }
 

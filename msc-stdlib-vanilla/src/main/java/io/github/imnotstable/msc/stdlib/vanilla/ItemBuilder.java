@@ -40,9 +40,9 @@ public final class ItemBuilder {
         return new ItemBuilder(stack.copy());
     }
 
-    /** An unnamed grey pane, for menu backgrounds. */
-    public static ItemStack filler() {
-        return of(Items.STAINED_GLASS_PANE.gray()).name(Component.empty()).build();
+    /** {@code item} with no name, for menu borders and backgrounds you choose. */
+    public static ItemStack pane(net.minecraft.world.item.Item item) {
+        return of(item).name(Component.empty()).build();
     }
 
     public ItemBuilder amount(int amount) {

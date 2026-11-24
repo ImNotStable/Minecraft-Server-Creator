@@ -28,6 +28,8 @@ public final class McpBridge {
     private static final Gson ARGS = new com.google.gson.GsonBuilder().serializeSpecialFloatingPointValues().create();
     private static final String INSTRUCTIONS = "Tools for developing a Minecraft server ("
             + Platform.names(p -> true, "or") + "). "
+            + "From scratch: msc gives primitives, guides and reviews, never prefabs or presets; design every build, "
+            + "interior, landscape, texture, model, config and line of code yourself. "
             + "Start: project_scaffold (a bare project: build, empty entry point), then read the project's CLAUDE.md. "
             + Platform.names(Platform::needsEula, "and") + " need the user's agreement to the Minecraft EULA (https://aka.ms/MinecraftEULA): if "
             + "server_setup says this machine lacks it, ask them, then server_setup acceptEula=true; never accept it for them. After each code change call "
@@ -40,7 +42,7 @@ public final class McpBridge {
             + "bar: before building, drawing textures or making menus and HUDs read msc_status guide=build, textures or ux; "
             + "a build is done only when its world_summary review=true passes after a world_render (msc_status lists "
             + "reviews still failing). Textures: "
-            + "draw items with texture rows= (kind=gem, sword... are examples to learn shading from, not to ship), a .png name "
+            + "draw every texture with texture rows= (copy= recolors one of yours), a .png name "
             + "writes a plain file; HUD glyphs, sounds and every other pack file: pack_asset; pack makes the zip with the right pack.mcmeta (file= saves a copy). "
             + "Testing a game: server_setup mode=game, player_test to play it, world_entities, server_wait instead "
             + "of polling, server_command \"tick sprint 600\" to skip ahead. Chunks with no player nearby do not "

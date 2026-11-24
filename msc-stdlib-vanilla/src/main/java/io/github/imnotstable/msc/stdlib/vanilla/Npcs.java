@@ -2,7 +2,6 @@ package io.github.imnotstable.msc.stdlib.vanilla;
 
 import io.github.imnotstable.msc.stdlib.geom.Vec3;
 import io.github.imnotstable.msc.stdlib.npc.Dialogue;
-import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
@@ -108,8 +107,7 @@ public final class Npcs {
             MutableComponent row = Component.empty();
             for (int i = 0; i < choices.size(); i++) {
                 int index = i;
-                row.append(Component.literal("[" + choices.get(i).label() + "]").withStyle(s -> s
-                        .withColor(ChatFormatting.AQUA).withUnderlined(true)
+                row.append(Component.literal(choices.get(i).label()).withStyle(s -> s
                         .withClickEvent(new ClickEvent.RunCommand("/npcchoice " + index))));
                 row.append(Component.literal("  "));
             }

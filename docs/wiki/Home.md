@@ -2,11 +2,13 @@
 
 Minecraft Server Creator (MSC) is a set of tools that helps an AI, such as Claude Code, build custom Minecraft servers. You talk to the AI. The AI uses MSC to create the project, run the server, read the logs, build in the world, look at the world and make textures.
 
+The AI creates everything from scratch: every build, interior, landscape, texture, model, config and line of code. MSC gives it general primitives, guidance and quality reviews, never prefabs, presets or stock assets.
+
 It works with **Paper**, **Purpur**, **Fabric**, **Quilt**, **NeoForge**, **Forge** and **Minestom** (see [Platforms](Platforms)).
 
 ## What the AI can do with it
 
-- Create a ready-to-build plugin, mod or server project.
+- Create a bare plugin, mod or server project (a build and an empty entry point).
 - Download, start and stop a dev server.
 - Build, deploy and restart in one step, and see only the errors that matter.
 - Look up the platform's API (Paper, Fabric, NeoForge, Forge or Minestom) without guessing.

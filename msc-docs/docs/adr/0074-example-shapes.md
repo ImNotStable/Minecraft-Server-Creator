@@ -1,7 +1,7 @@
 # ADR 0074: Texture shapes are examples, not starts
 
 Status: accepted, 2026-11-22. Decided by Claude, on Jeremiah's ask. Supersedes decision 2 of
-[ADR 0072](0072-shaded-presets-to-customise.md).
+[ADR 0072](0072-shaded-presets-to-customise.md). Superseded by [ADR 0106](0106-from-scratch.md): shapes and patterns are gone; every texture is drawn.
 
 ## Context
 

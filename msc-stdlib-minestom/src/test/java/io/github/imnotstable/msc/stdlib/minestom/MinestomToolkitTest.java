@@ -42,7 +42,7 @@ class MinestomToolkitTest {
         }
         assertThat(calls[0]).isGreaterThan(1);
         Boards.hide(p);
-        Feedback.success(p, "ok");
+        Feedback.message(p, "ok");
         Feedback.title(p, "<gold>Hi", "<gray>there");
     }
 

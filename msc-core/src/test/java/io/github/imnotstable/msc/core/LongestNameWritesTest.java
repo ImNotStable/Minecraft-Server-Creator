@@ -1,5 +1,6 @@
 package io.github.imnotstable.msc.core;
 
+import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.imnotstable.msc.core.tool.PathArg;
@@ -33,12 +34,12 @@ class LongestNameWritesTest {
     @Test
     void theLongestNameIsWrittenByEveryWriter() throws Exception {
         String png = name('c', ".png");
-        assertThat(h.ok("texture", "name", png, "kind", "gem", "color", "#d4263a")).startsWith("wrote ");
+        assertThat(h.ok("texture", "name", png, "palette", Drawings.palette("#d4263a"), "rows", Drawings.rows())).startsWith("wrote ");
         assertThat(workspace.resolve(png)).isRegularFile();
 
         // In the pack the longest file is the animation's name.png.mcmeta.
         String id = "d".repeat(PathArg.MAX_NAME_BYTES - ".png.mcmeta".length());
-        h.ok("texture", "name", "item/" + id, "kind", "gem", "color", "#d4263a", "animate", "pulse");
+        h.ok("texture", "name", "item/" + id, "palette", Drawings.palette("#d4263a"), "rows", Drawings.rows(), "animate", "pulse");
         Path textures = workspace.resolve(".msc/pack/assets/msc/textures/item");
         assertThat(textures.resolve(id + ".png.mcmeta")).isRegularFile();
 

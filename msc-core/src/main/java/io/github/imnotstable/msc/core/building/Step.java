@@ -354,24 +354,25 @@ public sealed interface Step {
     }
 
     /**
-     * Land shaped by noise (ADR 0075): every column of {@code region} rises from its bottom to a height the style
-     * gives, up to its top. Toward the rim, {@code edge} blocks wide, the land eases to {@code ground} along a wavy
+     * Land shaped by noise (ADR 0075): every column of {@code region} rises from its bottom to a height the noise
+     * function gives (fbm, ridged, terraced in {@code steps} shelves, or waves along a seeded direction: math, not
+     * landforms; the agent shapes the land with them, ADR 0106), up to its top. Toward the rim, {@code edge} blocks wide, the land eases to {@code ground} along a wavy
      * outline, so it meets the land around it; {@code edge = 0} fills to the box's sides, for tiling a big area with
      * one seed. Below {@code ground} the land is dug out: water up to {@code water} (at most {@code ground}), air above. The top block is
      * {@code top}, the next {@code depth} are {@code under}, the rest {@code body}; with {@code bed} the floor of water and
      * its shore is that, and other steep columns show {@code cliff}.
      */
     record Terrain(Region region, BlockPattern body, BlockPattern top, BlockPattern under, BlockPattern cliff,
-                   BlockPattern bed, String style, int ground, Integer water, int depth, int scale, int edge,
+                   BlockPattern bed, String noise, int ground, Integer water, int depth, int scale, int edge,
                    int octaves, int steps, long seed, List<String> replace) implements Step {
-        public static final List<String> STYLES = List.of("hills", "ridges", "mesa", "dunes");
+        public static final List<String> NOISES = List.of("fbm", "ridged", "terraced", "waves");
         /** A column this much higher or lower than a neighbour is a cliff face. */
         static final int STEEP = 3;
         private static final int[][] SIDES = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
 
         public Terrain {
-            if (!STYLES.contains(style)) {
-                throw new ToolException("unknown terrain style " + style + "; use one of " + STYLES);
+            if (!NOISES.contains(noise)) {
+                throw new ToolException("unknown terrain noise " + noise + "; use one of " + NOISES);
             }
         }
 
@@ -409,16 +410,16 @@ public sealed interface Step {
             return out;
         }
 
-        /** The style's height at a column, 0 (the box's bottom) to 1 (its top). */
+        /** The noise's height at a column, 0 (the box's bottom) to 1 (its top). */
         double shape(int x, int z) {
-            return switch (style) {
-                case "ridges" -> Math.clamp(Noise.ridged(seed, x, z, scale, octaves) * 1.15 - 0.1, 0, 1);
-                case "mesa" -> {
+            return switch (noise) {
+                case "ridged" -> Math.clamp(Noise.ridged(seed, x, z, scale, octaves) * 1.15 - 0.1, 0, 1);
+                case "terraced" -> {
                     double s = Math.clamp(0.5 + 0.8 * Noise.fbm(seed, x, z, scale, octaves), 0, 1) * steps;
                     double floor = Math.floor(s);
                     yield Math.min(1, (floor + Noise.smoothstep(0.8, 1, s - floor)) / steps);
                 }
-                case "dunes" -> {
+                case "waves" -> {
                     double angle = Noise.unit(Noise.hash(seed, 1, 2)) * Math.PI;
                     double along = x * Math.cos(angle) + z * Math.sin(angle);
                     double wave = 0.5 + 0.5 * Math.sin(2 * Math.PI * along / scale

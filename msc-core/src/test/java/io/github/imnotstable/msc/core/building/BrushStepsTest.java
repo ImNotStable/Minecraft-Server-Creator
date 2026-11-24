@@ -108,7 +108,7 @@ class BrushStepsTest {
     void riverKeepsOneWaterLevelThatOnlyFallsDownstream() throws Exception {
         // Ground falls from 20 at x 0 to 8 at x 60.
         Canvas.WorldReader slope = land((x, z) -> 20 - x / 5);
-        Canvas c = draw("river 0,20,10 30,14,10 60,8,10 w=5 depth=2 wander=0", slope);
+        Canvas c = draw("river 0,20,10 30,14,10 60,8,10 w=5 depth=2 wander=0 bed=gravel", slope);
         int last = Integer.MAX_VALUE;
         for (int x = 2; x <= 58; x += 4) {
             int water = Integer.MIN_VALUE;
@@ -126,6 +126,12 @@ class BrushStepsTest {
                 assertThat(c.planned(x, water + 1, z)).isNotEqualTo("minecraft:water");
             }
         }
+    }
+
+    @Test
+    void aRiverBedIsTheAgentsOwnChoice() {
+        assertThatThrownBy(() -> draw("river 0,20,10 60,8,10", land((x, z) -> 20)))
+                .hasMessageContaining("river needs bed=");
     }
 
     @Test

@@ -13,3 +13,7 @@ Velocity proxy plugin, Java {{javaVersion}}, Gradle Kotlin DSL. Scaffolded by Mi
 - `gradle/libs.versions.toml`: dependency and plugin versions.
 - `libs/repo/`: msc-stdlib, an optional library already declared as a dependency. Its API is listed in `libs/stdlib/API.md`; call its Stdlib init method with the plugin and the proxy on proxy initialization before using it.
 - `.msc/`: Minecraft Server Creator's cache. If its tools are available, use them to start the server and read logs.
+
+## From scratch
+
+- Write every system, config, texture, model, structure and piece of text in this project yourself, for this server. Minecraft Server Creator and msc-stdlib give primitives (APIs, build steps, checks), never ready-made content: no stock themes, sounds, messages, prefab builds or textures to copy.

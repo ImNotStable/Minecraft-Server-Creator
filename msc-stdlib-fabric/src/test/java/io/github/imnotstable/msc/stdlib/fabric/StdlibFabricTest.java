@@ -48,7 +48,7 @@ class StdlibFabricTest {
     @Test
     void aGuiKeepsItsItemsExceptEditableSlots() {
         Gui gui = Gui.chest(3, Component.literal("Shop")).set(13, new ItemStack(Items.DIAMOND)).editable(0)
-                .fill(ItemBuilder.filler());
+                .fill(ItemBuilder.pane(Items.STAINED_GLASS_PANE.gray()));
         assertThat(gui.allows(13, ContainerInput.PICKUP)).isFalse();
         assertThat(gui.allows(0, ContainerInput.PICKUP)).isTrue();
         assertThat(gui.allows(40, ContainerInput.PICKUP)).isTrue();      // the player's own inventory
@@ -60,7 +60,9 @@ class StdlibFabricTest {
     void aPagedGuiTurnsPages() {
         List<Integer> picked = new ArrayList<>();
         Gui gui = Gui.paged(2, Component.literal("Numbers"), IntStream.range(0, 20).boxed().toList(),
-                i -> new ItemStack(Items.STONE, i + 1), (i, c) -> picked.add(i));
+                i -> new ItemStack(Items.STONE, i + 1), (i, c) -> picked.add(i),
+                new Gui.Nav(new ItemStack(Items.ARROW), new ItemStack(Items.ARROW),
+                        (n, of) -> ItemBuilder.of(Items.PAPER).name(Component.literal("Page " + n + "/" + of)).build()));
         gui.dispatch(null, 17, 0, ContainerInput.PICKUP);
         gui.dispatch(null, 0, 0, ContainerInput.PICKUP);
         assertThat(picked).containsExactly(9);

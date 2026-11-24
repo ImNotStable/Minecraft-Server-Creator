@@ -1,21 +1,21 @@
-UX GUIDE: how a server feels polished. Use the standard library the template ships (Gui, ItemBuilder, Sidebar, ParticleEffect, Text, PlayerData) instead of writing these again.
+UX GUIDE: how a server feels polished. The standard library the template ships (Gui, ItemBuilder, Sidebar, ParticleEffect, Text, PlayerData) does the plumbing; every look, sound and line of text is yours, designed for this server. It has no stock themes, sounds or messages.
 
 EVERY ACTION GETS FEEDBACK
-- Sound + text + (often) particles. A click plays UI_BUTTON_CLICK, a success a level-up or chime, a failure a low note (BLOCK_NOTE_BLOCK_BASS) and a red message saying why and what to do.
+- Sound + text + (often) particles. Choose one sound per meaning for this server (click, success, failure, reward) and keep to it; a failure says why and what to do.
 - Pick the right channel: chat for things to keep, action bar for live values (mana, cooldowns, combo), title/subtitle for big moments (region entered, boss down, level up), boss bar for progress over time (event timer, objective, boss health), sidebar for the few numbers a player checks often.
 - Never spam: one message per action, cooldowns on repeated warnings.
 
 TEXT
-- MiniMessage with a consistent style: one prefix for the server, one colour per meaning (gold rewards, red errors, aqua info, gray detail). Gradients only for names and headings.
-- Numbers formatted (1,250 Crowns, 3m 20s), symbols for quick reading (★ ⚔ ❤ ⛏ ✦).
+- MiniMessage with a style you design for this server: its own prefix, one colour per meaning, used the same everywhere. Gradients only for names and headings.
+- Numbers formatted (Format: thousands, durations), symbols that fit the server's theme for quick reading.
 
 SIDEBAR
-- 6-10 lines with a title, grouped with blank lines: who you are (rank, class), what you have (currency, level with a progress bar like ▮▮▮▮▯▯), where you are (region), what to do next (current objective). Update on change, not every tick.
+- A few lines with a title, grouped: who you are, what you have, where you are, what to do next, in this game's terms. Update on change, not every tick.
 
 MENUS (Gui)
-- A menu is a designed screen: border or filler panes in a theme colour, a centred layout, an icon with a custom model per entry, a name and 2-4 lore lines (what it is, what it costs, "Click to ...").
+- A menu is a screen you design: your own Gui.Theme (border, filler, click sound), a deliberate layout, an icon per entry (your own textures and models), a name and a few lore lines (what it is, what it costs, what a click does).
 - State shows on the icon: locked entries greyed with the requirement, owned ones glowing (ItemBuilder.glow()), the selected one marked.
-- Back and close buttons in the same slots on every page; paged menus for long lists; confirm screens for spending.
+- Back and close buttons in the same slots on every page; paged menus (Gui.Nav with your buttons) for long lists; a confirm screen you lay out for spending.
 - Click sounds, and the menu refreshes in place instead of closing.
 
 WORLD AND MOMENTS

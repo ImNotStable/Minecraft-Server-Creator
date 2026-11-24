@@ -2,7 +2,6 @@ package io.github.imnotstable.msc.stdlib.bungeecord;
 
 import io.github.imnotstable.msc.stdlib.cmd.CommandTree;
 import java.util.UUID;
-import net.md_5.bungee.api.ChatColor;
 import net.md_5.bungee.api.CommandSender;
 import net.md_5.bungee.api.chat.TextComponent;
 import net.md_5.bungee.api.connection.ProxiedPlayer;
@@ -90,9 +89,7 @@ public final class Cmd {
 
             @Override
             public void fail(String text) {
-                TextComponent c = new TextComponent(text);
-                c.setColor(ChatColor.RED);
-                s.sendMessage(c);
+                s.sendMessage(new TextComponent(text));
             }
         };
     }

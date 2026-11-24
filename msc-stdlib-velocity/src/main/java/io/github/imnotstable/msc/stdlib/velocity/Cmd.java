@@ -5,7 +5,6 @@ import com.velocitypowered.api.command.SimpleCommand;
 import com.velocitypowered.api.proxy.Player;
 import io.github.imnotstable.msc.stdlib.cmd.CommandTree;
 import net.kyori.adventure.text.Component;
-import net.kyori.adventure.text.format.NamedTextColor;
 
 import java.util.List;
 import java.util.UUID;
@@ -74,7 +73,7 @@ public final class Cmd {
 
             @Override
             public void fail(String text) {
-                s.sendMessage(Component.text(text, NamedTextColor.RED));
+                s.sendMessage(Component.text(text));
             }
         };
     }
