@@ -27,6 +27,10 @@ public final class {{name}}Server {
         MscAgent.name(world, "world");
         MscAgent.start();
 
-        server.start("{{serverIp}}", {{serverPort}});
+        // A host (Docker, Pterodactyl) sets the address in SERVER_IP and SERVER_PORT; the dev server's otherwise.
+        String ip = System.getenv().getOrDefault("SERVER_IP", "{{serverIp}}");
+        int port = Integer.parseInt(System.getenv().getOrDefault("SERVER_PORT", "{{serverPort}}"));
+        server.start(ip, port);
+        System.out.println("Minestom listening on " + ip + ":" + port);
     }
 }
