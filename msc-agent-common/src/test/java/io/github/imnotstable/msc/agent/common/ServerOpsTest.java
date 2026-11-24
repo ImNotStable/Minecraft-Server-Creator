@@ -22,13 +22,6 @@ class ServerOpsTest {
         ops = new ServerOps(server, MainThread.inline());
     }
 
-    /** ADR 0045: on Folia the agent offers only the server operations, so the core never calls a world one. */
-    @Test
-    void theServerOnlyRouterOffersNoWorldOperation() {
-        assertThat(AgentRoutes.serverOnly(ops).operations())
-                .containsExactlyInAnyOrder("server.info", "server.command", "pack.apply");
-    }
-
     @Test
     void infoListsWorldsAndPlayers() {
         server.players = 1;

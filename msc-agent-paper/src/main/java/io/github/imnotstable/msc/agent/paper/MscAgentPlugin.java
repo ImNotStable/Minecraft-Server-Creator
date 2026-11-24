@@ -32,18 +32,22 @@ public class MscAgentPlugin extends JavaPlugin implements Listener {
 
     @Override
     public void onEnable() {
-        // Folia has no main thread and refuses Bukkit's scheduler: server work goes to its global region thread, and
-        // the world operations are not offered there (ADR 0045).
+        // Folia has no main thread and refuses Bukkit's scheduler: server work goes to its global region thread, world
+        // jobs to the region thread that owns their chunks (ADR 0045, 0100).
         boolean folia = PaperServer.isFolia(getServer().getClass().getClassLoader());
         MainThread main = folia
-                ? new GlobalRegionMainThread(task -> org.bukkit.Bukkit.getGlobalRegionScheduler().execute(this, task),
-                        org.bukkit.Bukkit::isGlobalTickThread, AgentDefaults.OP_TIMEOUT)
+                ? new RegionThreads(new GlobalRegionMainThread(
+                        task -> org.bukkit.Bukkit.getGlobalRegionScheduler().execute(this, task),
+                        org.bukkit.Bukkit::isGlobalTickThread, AgentDefaults.OP_TIMEOUT), new FoliaRegions(this),
+                        AgentDefaults.TICK_BUDGET, AgentDefaults.OP_TIMEOUT)
                 : new BukkitMainThread(this, AgentDefaults.TICK_BUDGET, AgentDefaults.OP_TIMEOUT);
         PaperServer server = new PaperServer(getServer(), new PaperServerFacts(getServer()),
                 folia ? PaperServer.FOLIA : PaperServer.PLATFORM);
         serverOps = new ServerOps(server, main);
-        OpRouter router = folia ? AgentRoutes.serverOnly(serverOps) : AgentRoutes.router(serverOps, new WorldOps<>(
-                new PaperWorlds(getServer(), new DataCommands(server::runCommand)), main,
+        PaperWorlds worlds = folia
+                ? new PaperWorlds(getServer(), new FoliaBlockNbt(), new FoliaChunks(this, AgentDefaults.OP_TIMEOUT))
+                : new PaperWorlds(getServer(), new DataCommands(server::runCommand));
+        OpRouter router = AgentRoutes.router(serverOps, new WorldOps<>(worlds, main,
                 new EditHistory<>(AgentDefaults.UNDO_BLOCKS)));
         AgentInfo info = new AgentInfo(server.platform(), server.platformVersion(), server.minecraftVersion(),
                 router.operations());

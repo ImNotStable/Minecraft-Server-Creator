@@ -15,11 +15,19 @@ import org.bukkit.block.data.BlockData;
 /** The server's worlds by their Bukkit names (or dimension ids), and Bukkit block data parsing. */
 final class PaperWorlds implements AgentWorlds<BlockData> {
     private final Server server;
-    private final DataCommands data;
+    private final BlockNbt data;
 
-    PaperWorlds(Server server, DataCommands data) {
+    private final FoliaChunks folia;
+
+    PaperWorlds(Server server, BlockNbt data) {
+        this(server, data, null);
+    }
+
+    /** {@code folia}: how worlds load chunks on Folia, null on Paper. */
+    PaperWorlds(Server server, BlockNbt data, FoliaChunks folia) {
         this.server = server;
         this.data = data;
+        this.folia = folia;
     }
 
     @Override
@@ -35,7 +43,7 @@ final class PaperWorlds implements AgentWorlds<BlockData> {
             NamespacedKey key = NamespacedKey.fromString(name);
             world = key == null ? null : server.getWorld(key);
         }
-        return Optional.ofNullable(world).map(w -> new PaperWorld(w, data));
+        return Optional.ofNullable(world).map(w -> new PaperWorld(w, data, folia));
     }
 
     @Override

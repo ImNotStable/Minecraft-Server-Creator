@@ -11,10 +11,9 @@ import java.util.function.BooleanSupplier;
 import java.util.function.Supplier;
 
 /**
- * {@link MainThread} on Folia, which has no main thread and refuses Bukkit's scheduler: server-wide work (info,
- * console commands, packs) runs on the global region thread, as Folia runs console commands. World edits would have to
- * be split by the region that owns each chunk, so this offers none: {@link #run} refuses, and on Folia the agent does
- * not route the world operations at all (ADR 0045).
+ * Folia's global region thread, which has no chunks: server-wide work (info, console commands, packs) runs here, as Folia
+ * runs console commands. {@link #run} refuses; {@link RegionThreads} runs world jobs on the region that owns their
+ * chunks and sends the rest here (ADR 0045, 0100).
  */
 final class GlobalRegionMainThread implements MainThread {
     private final Executor global;

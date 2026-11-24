@@ -9,7 +9,7 @@ import java.util.function.Consumer;
  * entities, so this is what the mod agents do with {@code saveWithoutMetadata} and {@code merge}, done the way the
  * game does it. Main thread only.
  */
-final class DataCommands {
+final class DataCommands implements BlockNbt {
     /** Runs a console command line with full permissions, passing each line of feedback on. */
     @FunctionalInterface
     interface Console {
@@ -20,6 +20,16 @@ final class DataCommands {
 
     DataCommands(Console console) {
         this.console = console;
+    }
+
+    @Override
+    public String get(org.bukkit.World world, int x, int y, int z) {
+        return get(world.getKey().asString(), x, y, z);
+    }
+
+    @Override
+    public void merge(org.bukkit.World world, int x, int y, int z, String snbt) {
+        merge(world.getKey().asString(), x, y, z, snbt);
     }
 
     /**

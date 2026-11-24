@@ -13,7 +13,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
-/** ADR 0045: on Folia, server work runs on the global region thread and world jobs are refused. */
+/** ADR 0045: on Folia, server work runs on the global region thread, which takes no world jobs (ADR 0100). */
 class GlobalRegionMainThreadTest {
     private final ExecutorService global = Executors.newSingleThreadExecutor(r -> new Thread(r, "global-region"));
 

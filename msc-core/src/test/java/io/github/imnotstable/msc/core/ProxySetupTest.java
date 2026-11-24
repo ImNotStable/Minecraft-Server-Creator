@@ -88,7 +88,7 @@ class ProxySetupTest {
         try (CoreHarness s = harness("folia")) {
             assertThat(s.ok("server_setup", "platform", "folia"))
                     .contains("folia " + FakeDownloads.MINECRAFT + " build 3 (downloaded)")
-                    .contains("folia-supported: true").contains("world, build and player tools do not work on Folia");
+                    .contains("folia-supported: true").contains("world tools run on the region that owns each area");
         }
         assertThat(dir.resolve("folia/run/folia.jar")).hasContent("folia server");
     }
