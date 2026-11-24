@@ -90,6 +90,10 @@ advice and quoted names (see ADR 0109).
 | Claude Sonnet 5.5 | r3 | 4 | 28 | 40/27/9/6/10 = **92** | NPC names showed quote marks (fixed in r3 after) |
 | GPT-6.1 Sol | r3 | 7 | 72 | 40/28/9/7/10 = **94** | 6/6 pass; plain interiors |
 | Claude Opus 5.5 | r3 | 8 | 60 | 40/28/8/8/10 = **94** | 5/5 pass, dock included |
+| Gemini 4 Neon | baseline world, r3 review | | | 20/28/9/9/10 = **76** | same world re-reviewed: dock now passes; cottages fail bare base for real |
+| Gemini 4 Hydrogen | baseline world, r3 review | | | 30/28/9/8/10 = **85** | same world re-reviewed: pier passes; one cottage has leaves in walls |
+
+Neon and Hydrogen reruns are pending: the account's Gemini quota resets in about six days (2026-11-30).
 
 What the baseline shows: every model that ran long enough to review its builds passed them, and every model reported
 its state honestly. The points MSC could win back were mostly MSC's own review mistakes on docks and piers (Opus,
