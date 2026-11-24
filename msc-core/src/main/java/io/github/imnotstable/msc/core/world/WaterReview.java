@@ -9,11 +9,13 @@ import java.util.List;
 /**
  * Boats and harbours as a hand would not make them (ADR 0099), from the Shattered Meridian screenshots: a hull that is a
  * box of planks the same width bow to stern, sitting on the water instead of in it, a stump of a mast with no sail, and
- * a harbour dug as a square pit with sheer sides.
+ * a harbour dug as a square pit with sheer sides. MSC has no boat or harbour generator (ADR 0101): the agent builds
+ * them from the general steps, and these checks say what a good one has.
  */
 final class WaterReview {
     static final int MIN_HULL = 6;
     static final int MIN_RIGGED = 10;
+    static final int MIN_SAIL = 12;
     static final int BOX_SHARE = 85;
     static final int MIN_BASIN = 40;
     static final int MIN_SHORE = 20;
@@ -57,6 +59,8 @@ final class WaterReview {
         int dry = 0;
         int bare = 0;
         int stumps = 0;
+        int flat = 0;
+        String firstFlat = null;
         String firstBox = null;
         String firstDry = null;
         String firstBare = null;
@@ -85,6 +89,10 @@ final class WaterReview {
                         bare++;
                         firstBare = firstBare == null ? at : firstBare;
                     }
+                    if (v.sail >= MIN_SAIL && v.flatSail()) {
+                        flat++;
+                        firstFlat = firstFlat == null ? at : firstFlat;
+                    }
                     if (v.length() >= MIN_RIGGED && v.mast > 0 && v.mast * 2 < v.length()) {
                         stumps++;
                         firstStump = firstStump == null ? at : firstStump;
@@ -95,8 +103,8 @@ final class WaterReview {
         List<String> fixes = new ArrayList<>();
         if (boxy > 0) {
             fixes.add("box hull: " + boxy + " boat" + plural(boxy) + " (first at " + firstBox + ") keep one width from "
-                    + "bow to stern, a crate on the water; taper the hull to a pointed bow and a rounded stern and curve "
-                    + "it under the waterline (boat kind=rowboat|sloop|ship, then add your own touches)");
+                    + "bow to stern, a crate on the water; taper the hull to a pointed bow and a rounded stern, narrow each "
+                    + "layer toward the keel and round the steps with upside-down stairs (guide=build, boats)");
         }
         if (dry > 0) {
             fixes.add("floating hull: " + dry + " boat" + plural(dry) + " (first at " + firstDry + ") sit on the "
@@ -111,6 +119,11 @@ final class WaterReview {
         if (stumps > 0) {
             fixes.add("stump mast: " + stumps + " boat" + plural(stumps) + " (first at " + firstStump + ") have a mast "
                     + "under half the hull's length; a mast stands about as tall above the deck as the hull is long");
+        }
+        if (flat > 0) {
+            fixes.add("flat sails: " + flat + " boat" + plural(flat) + " (first at " + firstFlat + ") carry sails that "
+                    + "are one flat sheet; belly each sail: its middle one block forward of its edges, both blocks "
+                    + "filled where it steps");
         }
         return fixes;
     }
@@ -129,6 +142,12 @@ final class WaterReview {
         int[] hi;
         int mast;
         int sail;
+        /** Sail blocks with sail beside them along both x and z: where a bellied sheet steps out. */
+        int sailSteps;
+
+        boolean flatSail() {
+            return sailSteps == 0;
+        }
 
         int length() {
             return maxA - minA + 1;
@@ -230,6 +249,9 @@ final class WaterReview {
             }
             if (n.endsWith("_wool") || n.contains("banner")) {
                 v.sail++;
+                boolean besideX = sail(name(grid, names, p[0] + 1, p[1], p[2])) || sail(name(grid, names, p[0] - 1, p[1], p[2]));
+                boolean besideZ = sail(name(grid, names, p[0], p[1], p[2] + 1)) || sail(name(grid, names, p[0], p[1], p[2] - 1));
+                v.sailSteps += besideX && besideZ ? 1 : 0;
             }
             if (n.endsWith("_log") || n.endsWith("_wood") || n.endsWith("_fence") || n.endsWith("_wall")) {
                 String under = name(grid, names, p[0], p[1] - 1, p[2]);
@@ -253,6 +275,10 @@ final class WaterReview {
             v.mast = Math.max(v.mast, h);
         }
         return v;
+    }
+
+    private static boolean sail(String n) {
+        return n != null && (n.endsWith("_wool") || n.contains("banner"));
     }
 
     /**
@@ -340,13 +366,13 @@ final class WaterReview {
         if (sheer > 0) {
             fixes.add("sheer banks: " + sheer + " bod" + (sheer == 1 ? "y" : "ies") + " of water (first at "
                     + firstSheer + ") have up to " + worstSheer + "% of their natural shore rising 2+ blocks straight "
-                    + "out of the water, a pit dug into the land; slope the banks down to a beach (harbor X,Y,Z X,Y,Z "
-                    + "bank=2, or smooth), and build a quay of stone only where boats tie up (harbor quay=DIR)");
+                    + "out of the water, a pit dug into the land; slope the banks down to a beach or rocks, a block "
+                    + "every 1-3 blocks along a ragged line, and build a stone quay only where boats tie up");
         }
         if (square > 0) {
             fixes.add("square basin: " + square + " bod" + (square == 1 ? "y" : "ies") + " of water (first at "
                     + firstSquare + ") fill their box, a rectangle cut out of the land; give the shore a ragged line "
-                    + "with coves and points (harbor does this), or frame it in built stone as a deliberate pool");
+                    + "with coves and points, or frame it in built stone as a deliberate pool");
         }
         return fixes;
     }
