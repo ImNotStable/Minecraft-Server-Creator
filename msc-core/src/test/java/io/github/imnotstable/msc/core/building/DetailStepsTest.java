@@ -186,7 +186,10 @@ class DetailStepsTest {
         assertThatThrownBy(() -> draw("structure 0,0,0\nlegend: l=lantern\ny=0\nl\nend")).hasMessageContaining("hanging=");
         assertThatThrownBy(() -> draw("set 0,0,0 oak_stairs\nfill 1,0,0 2,0,0 oak_log\nset 3,0,0 stone"))
                 .hasMessageStartingWith("nothing placed").hasMessageContaining("line 1: oak_stairs needs")
-                .hasMessageContaining("line 2: oak_log needs axis"); // every line at once, one round trip
+                .hasMessageContaining("line 2: oak_log needs axis") // every line at once, one round trip
+                .hasMessageContaining("such as oak_stairs[facing=north,half=bottom];");
+        // The example is the refused block's own, not a stairs for a sign.
+        assertThatThrownBy(() -> draw("set 0,0,0 oak_sign")).hasMessageContaining("such as oak_sign[rotation=0];");
         assertThat(BlockRules.missing("oak_log[axis=x]")).isEmpty();
         assertThat(BlockRules.missing("stone_bricks")).isEmpty();
         assertThat(BlockRules.missing("oak_fence")).isEmpty(); // connections come from the neighbours

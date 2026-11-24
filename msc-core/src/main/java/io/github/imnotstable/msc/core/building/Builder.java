@@ -91,7 +91,8 @@ public final class Builder {
         return world.oneAtATime(() -> build(box, steps, physics, tool));
     }
 
-    private static final String NOTHING = "nothing to place: every step was empty or masked out by replace=";
+    private static final String NOTHING = "nothing to place: every step was empty or masked out by replace= (light "
+            + "finds no spot darker than level=; decorate, scatter and flora no open spot)";
 
     /** Draw the steps, reading the world where a step needs it. */
     private Canvas draw(Region bounds, List<Step> steps, String tool) throws InterruptedException {
@@ -303,7 +304,9 @@ public final class Builder {
             return null;
         } catch (OpException e) {
             if (!e.code().equals(ErrorCodes.INVALID_PARAMS) || palette.size() == 1 || e.detail().contains("build height")) {
-                throw new ToolException("nothing placed: " + e.detail());
+                throw new ToolException("nothing placed: " + e.detail() + (e.detail().contains("build height")
+                        ? "; a step reaches past it (a river's or path's depth= and banks dig below its points, a "
+                        + "dome or sphere's radius): move it up or down, or make it smaller" : ""));
             }
         }
         Region one = Region.of(used.world(), used.min().x(), used.min().y(), used.min().z(), used.min().x(),

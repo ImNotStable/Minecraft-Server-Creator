@@ -209,6 +209,10 @@ public final class Profiler {
             return out.append("no samples: the server was idle (a profile of an idle server shows nothing; play or "
                     + "load it while profiling)").toString();
         }
+        if (samples.size() < MIN_SAMPLES) {
+            out.append("only ").append(samples.size()).append(samples.size() == 1 ? " sample" : " samples").append(": the server was nearly idle, so the shares "
+                    + "below are rough and no area is tuned; load it (player_test, a game) while profiling\n");
+        }
         Map<String, Integer> owners = new LinkedHashMap<>();
         Map<String, Integer> areas = new HashMap<>();
         Map<String, Integer> self = new HashMap<>();
@@ -300,6 +304,9 @@ public final class Profiler {
         return (inner < 0 ? simple : simple.substring(0, inner)) + ".java";
     }
 
+    /** Fewer samples than this tune nothing: at the 10 ms sample period, a fifth of a second of busy main thread. */
+    static final int MIN_SAMPLES = 20;
+
     /** Config changes for what took the most: server areas over 15%, garbage collection over 5% of the time. */
     static List<String> tune(Map<String, Integer> areas, int n, Recording r, Path serverDir,
                              Map<String, Integer> owners) {
@@ -310,7 +317,8 @@ public final class Profiler {
         } catch (IOException e) {
             // No server.properties (Minestom, a proxy): the advice names keys without their values.
         }
-        for (Map.Entry<String, Integer> e : top(areas, AREAS.size())) {
+        // A share of a handful of samples is noise: one sample in chunk loading must not advise a view-distance.
+        for (Map.Entry<String, Integer> e : n < MIN_SAMPLES ? List.<Map.Entry<String, Integer>>of() : top(areas, AREAS.size())) {
             if (e.getValue() * 100 < n * 15) {
                 break;
             }
@@ -321,7 +329,7 @@ public final class Profiler {
                     + (a.tune().contains("distance") ? values : ""));
         }
         Integer own = owners.get("your code");
-        if (own != null && own * 100 >= n * 15) {
+        if (own != null && n >= MIN_SAMPLES && own * 100 >= n * 15) {
             out.add("your code is " + pct(own, n) + ": start with the hottest of its methods above");
         }
         if (r.length().toNanos() > 0 && r.gcPauseNanos() * 20 > r.length().toNanos()) {

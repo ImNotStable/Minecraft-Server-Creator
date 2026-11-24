@@ -64,6 +64,12 @@ class ThingsStepsTest {
                 .hasMessageContaining("rotation");
         assertThatThrownBy(() -> draw("banner 0,1,0 white_banner[rotation=0] patterns=stripe_top:plaid"))
                 .isInstanceOf(ToolException.class).hasMessageContaining("pattern:colour");
+        // The game drops an unknown item with only a log line; the build must not say it went well.
+        assertThatThrownBy(() -> draw("container 0,1,0 chest[facing=north] items=bread:2,nope_item:2"))
+                .hasMessageContaining("unknown item minecraft:nope_item");
+        assertThatThrownBy(() -> draw("frame 0,1,0 item=nope_thing facing=north"))
+                .hasMessageContaining("unknown item minecraft:nope_thing");
+        assertThat(Things.itemId("mymod:gadget")).isEqualTo("mymod:gadget");
     }
 
     @Test

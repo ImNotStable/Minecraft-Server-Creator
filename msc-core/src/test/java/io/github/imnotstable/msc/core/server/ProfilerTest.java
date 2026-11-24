@@ -51,7 +51,7 @@ class ProfilerTest {
 
     @Test
     void framesFallInTheServerAreaTheyName() {
-        Profiler.Recording r = new Profiler.Recording(List.of(
+        Profiler.Recording r = new Profiler.Recording(times(5,
                 sample("net.minecraft.world.level.levelgen.NoiseChunk.fill:10", "net.minecraft.server.Main.run:1"),
                 sample("net.minecraft.world.level.levelgen.NoiseChunk.fill:10", "net.minecraft.server.Main.run:1"),
                 sample("net.minecraft.world.entity.Mob.tick:5", "net.minecraft.server.level.ServerLevel.tick:3"),
@@ -66,6 +66,24 @@ class ProfilerTest {
                 .contains("  - chunk generation is 50%: pregenerate the play area")
                 .contains("  - entities is 25%: many entities")
                 .contains("  - garbage collection pauses take over 5% of the time");
+    }
+
+    @Test
+    void aFewSamplesTuneNothing() {
+        Profiler.Recording r = new Profiler.Recording(times(1,
+                sample("net.minecraft.world.level.levelgen.NoiseChunk.fill:10", "net.minecraft.server.Main.run:1"),
+                sample("net.minecraft.server.MinecraftServer.tickServer:1")),
+                0, 0, 0, 0, 0, Map.of(), Duration.ofSeconds(5));
+        assertThat(Profiler.report(r, dir.resolve("run"), Platform.PAPER, null))
+                .contains("only 2 samples: the server was nearly idle").doesNotContain("tune:");
+    }
+
+    private static List<Profiler.Sample> times(int n, Profiler.Sample... samples) {
+        List<Profiler.Sample> out = new java.util.ArrayList<>();
+        for (int i = 0; i < n; i++) {
+            out.addAll(List.of(samples));
+        }
+        return out;
     }
 
     @Test

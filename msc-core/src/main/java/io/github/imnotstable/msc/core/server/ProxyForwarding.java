@@ -261,7 +261,7 @@ public final class ProxyForwarding {
                 - host: %s
                   query_port: 25577
                   query_enabled: false
-                  motd: '&3MSC dev proxy'
+                  motd: 'MSC dev proxy'
                   max_players: 8
                   priorities:
                   - lobby
@@ -416,7 +416,7 @@ public final class ProxyForwarding {
                 # Add backends under [servers]. The secret is in forwarding.secret, the same as the backend's.
                 config-version = "2.9"
                 bind = "%s"
-                motd = "<#09add3>MSC dev proxy"
+                motd = "MSC dev proxy"
                 show-max-players = 8
                 online-mode = false
                 force-key-authentication = false

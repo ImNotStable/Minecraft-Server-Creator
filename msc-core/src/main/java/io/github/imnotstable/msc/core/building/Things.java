@@ -46,6 +46,42 @@ final class Things {
         return t.contains(":") ? t : "minecraft:" + t;
     }
 
+    /**
+     * An item id, refused when it is a minecraft: id no bundled item list has: the game drops an unknown item from a
+     * chest, frame or stand with only a log warning, so the build reported success with the item missing.
+     * shortcut: checked against the item lists player_test bundles (msc-bot items/), so a newer Minecraft's new items
+     * are refused until its list is added there (ItemsTest has the command); with no list at all nothing is checked.
+     */
+    static String itemId(String text) {
+        String id = id(text, "item");
+        if (id.startsWith("minecraft:") && !VANILLA_ITEMS.isEmpty() && !VANILLA_ITEMS.contains(id.substring(10))) {
+            throw new ToolException("unknown item " + id + "; use the game's item id (api_search or /give names "
+                    + "it), and a modded item with its namespace");
+        }
+        return id;
+    }
+
+    private static final java.util.Set<String> VANILLA_ITEMS = vanillaItems();
+
+    private static java.util.Set<String> vanillaItems() {
+        java.util.Set<String> all = new java.util.HashSet<>();
+        // Every list msc-bot bundles, without naming them here: year versions 26 to 30, drops .0 to .20.
+        for (String version : java.util.stream.IntStream.rangeClosed(26, 30).boxed()
+                .flatMap(y -> java.util.stream.IntStream.rangeClosed(0, 20).mapToObj(d -> y + "." + d)).toList()) {
+            try (java.io.InputStream in = Things.class.getResourceAsStream(
+                    "/io/github/imnotstable/msc/bot/items/" + version + ".txt")) {
+                if (in != null) {
+                    new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8).lines()
+                            .map(String::strip).filter(l -> !l.isEmpty()).forEach(all::add);
+                }
+            } catch (java.io.IOException e) {
+                throw new java.io.UncheckedIOException(e);
+            }
+        }
+        all.remove("air");
+        return all;
+    }
+
     /** A string as SNBT, quoted and escaped. */
     static String quote(String text) {
         return "\"" + text.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
@@ -162,7 +198,7 @@ final class Things {
             } else {
                 item = entry.trim();
             }
-            out.add("{Slot:" + slot++ + "b,id:" + quote(id(item, "item")) + ",count:" + count + "}");
+            out.add("{Slot:" + slot++ + "b,id:" + quote(itemId(item)) + ",count:" + count + "}");
         }
         if (slot > 54) {
             throw new ToolException("at most 54 item stacks, got " + slot);
@@ -244,7 +280,7 @@ final class Things {
 
     /** An item stack as SNBT. */
     static String item(String item) {
-        return "{id:" + quote(id(item, "item")) + ",count:1}";
+        return "{id:" + quote(itemId(item)) + ",count:1}";
     }
 
     /** Biome commands for a box, cut into pieces /fillbiome takes (at most 32768 blocks each). */

@@ -137,7 +137,8 @@ public final class BuildScript {
             }
         }
         if (!unsaid.isEmpty()) {
-            throw new ToolException("nothing placed; " + BlockRules.UNSAID + String.join("; ", unsaid) + BlockRules.EXAMPLE);
+            throw new ToolException("nothing placed; " + BlockRules.UNSAID + String.join("; ", unsaid)
+                    + BlockRules.example(unsaid.getFirst()));
         }
         if (steps.isEmpty()) {
             throw new ToolException("no steps; write one step per line, for example: fill 0,64,0 4,64,4 stone");

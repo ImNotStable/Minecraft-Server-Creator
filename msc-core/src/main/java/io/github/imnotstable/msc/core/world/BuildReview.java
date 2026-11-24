@@ -80,9 +80,18 @@ public final class BuildReview {
         LandReview.Result land = LandReview.review(grid, names, fluid, devFloor);
         boolean[] isGround = ground(grid, names, soil);
         int built = 0;
+        int cover = 0;
         for (int i = 0; i < isGround.length; i++) {
             int b = grid.blocks()[i];
-            built += b >= 0 && names[b] != null && !isGround[i] ? 1 : 0;
+            if (b >= 0 && names[b] != null && !isGround[i]) {
+                built++;
+                cover += groundCover(names[b]) ? 1 : 0;
+            }
+        }
+        // Grass, flowers and saplings on shaped land are the land's cover, not a building with flat roofs and no lights.
+        if (built > 0 && cover == built) {
+            return withLand("review: only plants above the ground (" + built + "), so only the land is judged", land,
+                    WaterReview.basins(grid, names, fluid, isGround), false);
         }
         // Builds in a region that is mostly land are still judged: run 8 hid unfinished houses in big land regions.
         if (land.landShare() >= LAND_ONLY && built < MIN_BUILT) {
@@ -195,7 +204,8 @@ public final class BuildReview {
         if (ground >= r.min().y()) {
             out.append(" (ground up to y ").append(ground).append(" left out)");
         }
-        out.append(": ").append(total).append(" blocks, ").append(counts.size()).append(" types: ");
+        out.append(": ").append(total).append(" blocks, ").append(counts.size()).append(counts.size() == 1 ? " type: "
+                : " types: ");
         for (int i = 0; i < Math.min(4, top.size()); i++) {
             out.append(i == 0 ? "" : ", ").append(top.get(i).getKey()).append(' ').append(pct(top.get(i).getValue(), total)).append('%');
         }
@@ -216,7 +226,7 @@ public final class BuildReview {
         }
         if (speckledPct > MAX_SPECKLED && faces >= 50) {
             fixes.add("speckled walls: a random mix of clashing colours reads as noise; mix only near tones "
-                    + "(stone_bricks:70,cracked_stone_bricks:20,mossy_stone_bricks:10) and put contrast in lines: "
+                    + "(a block with its own cracked, mossy or polished variants) and put contrast in lines: "
                     + "trims, bands, frames, an accent at the focal point");
         }
         if (speckledRoofPct > MAX_SPECKLED_ROOF && roof[1] >= 50) {
@@ -229,11 +239,13 @@ public final class BuildReview {
                     + "trapdoors for shutters; lanterns, barrels and plants as props");
         }
         if (counts.size() < MIN_TYPES) {
-            fixes.add("only " + counts.size() + " block types: add 2-3 variants of the main block (cracked, mossy, "
-                    + "polished) and one accent");
+            fixes.add("only " + counts.size() + (counts.size() == 1 ? " block type" : " block types")
+                    + ": add 2-3 variants of the main block (cracked, mossy, polished) and one accent");
         } else if (topShare > MAX_TOP_SHARE) {
-            fixes.add(top.get(0).getKey() + " is " + topShare + "% of the build: mix variants into it (a block mix "
-                    + "such as stone_bricks:70,cracked_stone_bricks:20,mossy_stone_bricks:10)");
+            // The bar is on the whole build: a 70% main block in its mix still ends over it (round 4 of ADR 0107).
+            fixes.add(top.get(0).getKey() + " is " + topShare + "% of the build (aim at most " + MAX_TOP_SHARE
+                    + "%): give its variants more of the mix, so the main block is under half of it, and use a "
+                    + "second material for frames, floors or the roof");
         }
         if (roofPct < MIN_ROOF && height >= 6) {
             fixes.add("flat roofs: pitch them with stairs, overhang 1, and break long ridges with dormers or a tower");
@@ -244,7 +256,7 @@ public final class BuildReview {
         }
         if (bareBasePct > MAX_BARE_BASE && base >= 20) {
             fixes.add("bare base: the build meets the ground on a clean line; add a plinth (trim at=base), bushes "
-                    + "and flowers (decorate on=top), and worn ground at the doors");
+                    + "and flowers (decorate on=ground), and worn ground at the doors");
         }
         if (floor >= 24 && props * FLOOR_PER_PROP < floor) {
             fixes.add("empty rooms: " + floor + " floor blocks under a roof and " + props + " furnishings; furnish "
@@ -813,6 +825,11 @@ public final class BuildReview {
         }
         int i = grid.blocks()[grid.region().index(x, y, z)];
         return i < 0 ? null : names[i];
+    }
+
+    /** Plants that cover ground: not leaves (canopies, hedges) or mossy stone (walls), which are built. */
+    static boolean groundCover(String name) {
+        return matches(name, PLANTS) && !name.contains("leaves") && !name.contains("mossy") && !name.endsWith("_block");
     }
 
     private static boolean matches(String name, List<String> parts) {

@@ -94,7 +94,14 @@ public final class TextureTools {
                     OutputFile.check(source.modelPath(model), "model");
                     String item = new Steps("model_create").then(WRITE_MODEL).run(WRITE_MODEL,
                             () -> source.writeModel(model, kind, slots, withItem));
-                    return "wrote model " + model + (item == null ? "" : "; item_model " + item) + "\nnext: pack";
+                    // Written anyway, so textures can come after the model; said now rather than only at pack time.
+                    List<String> absent = slots.values().stream().distinct()
+                            .filter(t -> !t.namespace().equals("minecraft") && !Files.exists(source.texturePath(t)))
+                            .map(ResourceId::toString).toList();
+                    return "wrote model " + model + (item == null ? "" : "; item_model " + item)
+                            + (absent.isEmpty() ? "" : "\nnot in the pack yet: " + String.join(", ", absent)
+                            + "; draw them with texture")
+                            + "\nnext: pack";
                 }));
         registry.add("pack_asset",
                 "Write any other pack file (HUD glyphs, sounds, element models, GUI sprites...), checked against "
@@ -204,7 +211,7 @@ public final class TextureTools {
         files.putIfAbsent("pack.mcmeta", "{\"pack\":{\"pack_format\":1,\"description\":\"\"}}".getBytes(
                 java.nio.charset.StandardCharsets.UTF_8));
         List<PackLint.Finding> found = PackLint.check(files).findings().stream()
-                .filter(f -> plan.files().containsKey(f.path())).toList();
+                .filter(f -> plan.files().containsKey(f.path())).distinct().toList();
         List<PackLint.Finding> blocking = found.stream()
                 .filter(f -> f.severity() == PackLint.Severity.ERROR && !f.missing()).toList();
         if (!blocking.isEmpty()) {
@@ -214,8 +221,9 @@ public final class TextureTools {
         }
         new Steps("pack_asset").then(WRITE_ASSET).run(WRITE_ASSET, () -> PackAssets.write(source, plan));
         StringBuilder out = new StringBuilder("wrote ").append(plan.note());
-        found.stream().limit(10).forEach(f -> out.append("\n").append(f.severity().name().toLowerCase(Locale.ROOT))
-                .append(": ").append(f.message()));
+        // Not "error:": that prefix is for a refused call, and a file still to add is the next step, not a failure.
+        found.stream().limit(10).forEach(f -> out.append("\n").append(f.missing() ? "still to add"
+                : f.severity().name().toLowerCase(Locale.ROOT)).append(": ").append(f.message()));
         if (found.size() > 10) {
             out.append("\n... ").append(found.size() - 10).append(" more: pack check=true");
         }

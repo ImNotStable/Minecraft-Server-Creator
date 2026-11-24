@@ -207,8 +207,15 @@ final class ServerConsole {
             Ops.CommandResult r = hub.call(Ops.SERVER_COMMAND, new Ops.CommandParams(command));
             List<String> output = r.output() == null ? List.of() : r.output();
             List<String> console = server.running() ? consoleDuring(before, output) : List.of();
-            List<String> reply = new ArrayList<>(r.success() ? List.of() : List.of("command failed"));
-            reply.addAll(output.isEmpty() && console.isEmpty() ? List.of("(no output)") : output);
+            boolean silent = output.isEmpty() && console.isEmpty();
+            // A refused command that printed nothing is almost always an unknown name or a wrong syntax: say so.
+            List<String> reply = new ArrayList<>(r.success() ? List.of() : List.of(silent
+                    ? "command failed with no message: unknown command or wrong arguments (help <command> shows its usage)"
+                    : "command failed"));
+            if (silent && r.success()) {
+                reply.add("(no output)");
+            }
+            reply.addAll(output);
             // Broadcasts reach the console, not the command's sender: without these a /say-style reply is lost.
             return new Output(String.join("\n", reply), console.isEmpty() ? "" : "console during the command:\n",
                     String.join("\n", console));

@@ -28,6 +28,9 @@ dependencies {
 
 application {
     mainClass = "io.github.imnotstable.msc.core.Main"
+    // Quiet stderr, which MCP clients show as server errors: Netty (player_test's client) loads a native library (four
+    // "restricted method" warnings), and SLF4J warns on every start that no logger is bound (msc logs nothing via it).
+    applicationDefaultJvmArgs = listOf("--enable-native-access=ALL-UNNAMED", "-Dslf4j.internal.verbosity=ERROR")
 }
 
 // The agent jars ship inside the distribution (agents/), so server_setup finds them with no setup.
