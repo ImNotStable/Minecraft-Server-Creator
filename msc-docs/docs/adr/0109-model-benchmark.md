@@ -36,6 +36,9 @@ it to work for every strong model, and the weakest of the strong ones shows the 
   Gemini 4 Neon set it to minecraft:normal, built on real coast, and was told it built on the dev world.
 - A build standing mostly in water (a pier) gets no flat-roof or no-plants fix, and a deck over water at the shore's
   level is not on the ground: Gemini 4 Hydrogen's pier failed all three. A hut on stilts over water counts as a pier.
+- bare base names its share and says a full-block plinth is still a clean line (stairs, slabs or walls, plants right
+  against the wall); the build guide says the same. Bare base was the most common failure (Neon, Hydrogen, Sonnet),
+  and Sonnet 5.5 read the old advice as done after laying full stone.
 
 ## Not done
 
