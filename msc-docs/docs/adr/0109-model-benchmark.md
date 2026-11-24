@@ -30,6 +30,8 @@ it to work for every strong model, and the weakest of the strong ones shows the 
 - Builds never reviewed are listed with the failing reviews (build results, msc_status, dev_cycle): a built area of
   150+ placed blocks, merged with builds within 4 blocks, until a review covers its centre. Sonnet 5.5 finished
   without ever reviewing its dock.
+- A text display's text written as a quoted JSON string becomes a component, like CustomName since ADR 0093:
+  Sonnet 5.5's hologram showed its raw JSON.
 
 ## Not done
 
