@@ -160,7 +160,8 @@ public final class Builder {
         return "edit " + id + ": " + changed + " blocks changed"
                 + (changed == canvas.placed() ? "" : " (" + canvas.placed() + " placed)") + ", region "
                 + Coords.show(used) + (canvas.counts().size() > 1 ? "\n" + counts : "") + ran
-                + (backup.isEmpty() ? "" : "\n" + backup) + drops;
+                + (backup.isEmpty() ? "" : "\n" + backup) + drops
+                + (world.reviews().count().isEmpty() ? "" : "\n" + world.reviews().count());
     }
 
     private static final Pattern KILLED = Pattern.compile("Killed (\\d+) entities");

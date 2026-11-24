@@ -16,6 +16,7 @@ class OpenReviewsTest {
         Region hut = Region.of("msc:a", 0, 60, 0, 10, 70, 10);
         open.record(hut, FAILED);
         open.record(Region.of("msc:b", 0, 60, 0, 10, 70, 10), FAILED);
+        assertThat(open.count()).isEqualTo("2 reviews still failing (msc_status lists them): the work is not done");
         assertThat(open.line()).startsWith("reviews still failing (2;")
                 .contains("\n- msc:a 0,60,0 10,70,10: bare base, floating");
         // A wider region that passes does not settle it: run 8 widened regions until one passed.
