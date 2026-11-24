@@ -224,7 +224,8 @@ class BuildReviewTest {
         BlockGrid grid = new BlockGrid(r, List.of("minecraft:air", "minecraft:grass_block", "minecraft:bricks",
                 "minecraft:oak_log[axis=y]"), b);
         assertThat(BuildReview.review(grid)).contains("fix first: 1) buildings failing: 3 of 3 fail on their own "
-                + "(world 4,0,4 11,10,11: ");
+                + "(world 4,0,4 11,10,11: ")
+                .contains("dark streets: 100% of the open ground within 4 blocks of the buildings");
     }
 
     @Test
