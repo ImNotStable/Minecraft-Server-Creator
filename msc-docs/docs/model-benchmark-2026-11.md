@@ -32,13 +32,13 @@ better MineBench place, since MineBench is the Minecraft benchmark.
 | 8 | Gemini 4 Argon | 10 (1147) | 5 (2123) | 7.5 | Antigravity CLI |
 | 9 | Claude Sonnet 5.5 | 5 (1204) | 13 (1948) | 9.0 | Claude Code |
 | 10 | GPT-6.1 Sol | 13 (1121) | 6 (2115) | 9.5 | Codex |
-| 11 | Gemini 4 Hydrogen | 8 (1196) | 11 (1978) | 9.5 | (out: tie lost on MineBench) |
+| 11 | Gemini 4 Hydrogen | 8 (1196) | 11 (1978) | 9.5 | Antigravity CLI (added: tied the tenth) |
 | 12 | GPT-6 Sol | 12 (1131) | 10 (2014) | 11.0 | |
 | 13 | Claude Fable 5.1 | 11 (1139) | 16 (1883) | 13.5 | |
 | 14 | Kimi K3.1 Pro | 14 (1112) | 15 (1943) | 14.5 | |
 
 All ten are reachable on Flux through existing subscriptions, so the benchmark needs no paid API access.
-**GPT-6.1 Sol is the test subject** for improving MSC (step 4 of the plan).
+**GPT-6.1 Sol is the test subject** for improving MSC (step 4 of the plan). Gemini 4 Hydrogen tied it at 9.5 and lost\nonly on the tie-break, so Jeremiah had it added as an eleventh baseline model.
 
 ## The task
 

@@ -13,7 +13,7 @@ it to work for every strong model, and the weakest of the strong ones shows the 
 - Ranking: mean of each model's place on AA-3D and MineBench, models on both boards only, ties to the better
   MineBench place. T3Bench ranks text-to-3D generation methods, not language models, so it gives no model a rank and
   is left out. List and numbers: [model-benchmark-2026-11.md](../model-benchmark-2026-11.md).
-- The test subject is the tenth, GPT-6.1 Sol (it won the 9.5 tie with Gemini 4 Hydrogen on MineBench).
+- The test subject is the tenth, GPT-6.1 Sol (it won the 9.5 tie with Gemini 4 Hydrogen on MineBench). Hydrogen\n  runs as an eleventh baseline model (Jeremiah, 2026-11-24), since only the tie-break left it out.
 - One small brief (a fishing hamlet), medium effort for every model, one run at a time, through the CLIs Flux already
   has (Codex, Antigravity, Claude Code): no paid API use.
 - A fixed 100-point score (reviews 40, brief 25, land 10, looks 15, honesty 10), written down before the first run.
