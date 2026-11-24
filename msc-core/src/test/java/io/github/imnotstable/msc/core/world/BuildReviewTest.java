@@ -67,17 +67,21 @@ class BuildReviewTest {
                 .endsWith("no number below the bar; now judge the render: silhouette, story, scale");
     }
 
-    /** A 9x9 sand seabed, nine log posts up to a plank deck at y=4, {@code fill} (water or air) around the posts. */
     private static BlockGrid dock(char fill) {
+        return dock(fill, 9, 4);
+    }
+
+    /** A sand seabed {@code size} wide, log posts every 4 up to a plank deck at y={@code deck}, {@code fill} around. */
+    private static BlockGrid dock(char fill, int size, int deck) {
         StringBuilder text = new StringBuilder("legend: s=sand l=spruce_log p=spruce_planks w=water\ny=0\n");
-        text.append("sssssssss\n".repeat(9));
-        for (int y = 1; y <= 4; y++) {
+        text.append(("s".repeat(size) + "\n").repeat(size));
+        for (int y = 1; y <= deck; y++) {
             text.append("y=").append(y).append('\n');
-            for (int z = 0; z < 9; z++) {
+            for (int z = 0; z < size; z++) {
                 StringBuilder row = new StringBuilder();
-                for (int x = 0; x < 9; x++) {
+                for (int x = 0; x < size; x++) {
                     boolean post = x % 4 == 0 && z % 4 == 0;
-                    row.append(y == 4 ? 'p' : post ? 'l' : fill);
+                    row.append(y == deck ? 'p' : post ? 'l' : fill);
                 }
                 text.append(row).append('\n');
             }
@@ -89,6 +93,13 @@ class BuildReviewTest {
     void dockPostsStandingInWaterHaveNoBareBase() {
         assertThat(BuildReview.review(dock('.'))).contains("bare base: the build meets the ground");
         assertThat(BuildReview.review(dock('w'))).doesNotContain("bare base: the build meets the ground");
+    }
+
+    @Test
+    void aPierOverDeepWaterIsADeckNotAFlatRoof() {
+        // Gemini 4 Hydrogen's pier was told to pitch its roof and plant flowers (ADR 0109); on dry land it would be.
+        assertThat(BuildReview.review(dock('w', 21, 7))).doesNotContain("flat roofs", "no plants", "bare base:");
+        assertThat(BuildReview.review(dock('.', 21, 7))).contains("flat roofs", "no plants");
     }
 
     @Test
