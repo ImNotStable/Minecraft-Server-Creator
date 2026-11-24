@@ -62,6 +62,11 @@ public final class BuildReview {
 
     /** {@code devFloor}: the region is in the flat dev world, where land does not belong (ADR 0078). */
     public static String review(BlockGrid grid, boolean devFloor) {
+        return review(grid, devFloor, true);
+    }
+
+    /** {@code split}: in a region the size of a town, also judge each building on its own (ADR 0097). */
+    private static String review(BlockGrid grid, boolean devFloor, boolean split) {
         Region r = grid.region();
         String[] names = new String[grid.palette().size()];
         boolean[] fluid = new boolean[names.length];
@@ -257,6 +262,22 @@ public final class BuildReview {
         }
         if (lights == 0 && total >= 200) {
             fixes.add("no lights: lanterns, torches or glowing blocks at doors, paths and windows");
+        }
+        if (split && r.sizeX() * r.sizeZ() > TOWN_AREA) {
+            List<Region> buildings = buildings(grid, names, isGround);
+            List<String> failing = new ArrayList<>();
+            for (Region b : buildings) {
+                String own = review(sub(grid, b), devFloor, false);
+                if (own.contains("\nverdict: NOT DONE")) {
+                    failing.add(Coords.show(b) + ": " + String.join(", ", OpenReviews.fixes(own)));
+                }
+            }
+            if (!failing.isEmpty()) {
+                // A town's numbers average its houses: run 10 passed Havenfall as one 110x90 box (ADR 0097).
+                fixes.add(0, "buildings failing: " + failing.size() + " of " + buildings.size() + " fail on their own ("
+                        + String.join("; ", failing.subList(0, Math.min(4, failing.size()))) + "); review each "
+                        + "building's own region and fix it there");
+            }
         }
         return withLand(out.toString().stripTrailing(), land, fixes, true);
     }
@@ -608,6 +629,86 @@ public final class BuildReview {
             }
         }
         return out;
+    }
+
+    /** Columns in a region above which a review also judges each building on its own (a town, not a house). */
+    static final int TOWN_AREA = 48 * 48;
+
+    /**
+     * The buildings in a region: groups of touching columns (diagonals too) with at least 3 built blocks, 16 columns or
+     * more, each as its box one block wider, within the region. Trees and paths are too thin or low to count.
+     */
+    static List<Region> buildings(BlockGrid grid, String[] names, boolean[] isGround) {
+        Region r = grid.region();
+        int sx = r.sizeX();
+        int sz = r.sizeZ();
+        boolean[] tall = new boolean[sx * sz];
+        for (int z = 0; z < sz; z++) {
+            for (int x = 0; x < sx; x++) {
+                int n = 0;
+                for (int y = r.min().y(); y <= r.max().y(); y++) {
+                    int i = r.index(r.min().x() + x, y, r.min().z() + z);
+                    int b = grid.blocks()[i];
+                    n += b >= 0 && names[b] != null && !isGround[i] && !matches(names[b], PLANTS)
+                            && !LandReview.land(names[b]) ? 1 : 0; // shaped hills are not buildings
+                }
+                tall[z * sx + x] = n >= 3;
+            }
+        }
+        List<Region> out = new ArrayList<>();
+        boolean[] seen = new boolean[tall.length];
+        for (int start = 0; start < tall.length; start++) {
+            if (!tall[start] || seen[start]) {
+                continue;
+            }
+            java.util.ArrayDeque<Integer> todo = new java.util.ArrayDeque<>(List.of(start));
+            seen[start] = true;
+            int count = 0;
+            int x0 = sx;
+            int z0 = sz;
+            int x1 = -1;
+            int z1 = -1;
+            while (!todo.isEmpty()) {
+                int c = todo.pop();
+                int cx = c % sx;
+                int cz = c / sx;
+                count++;
+                x0 = Math.min(x0, cx);
+                x1 = Math.max(x1, cx);
+                z0 = Math.min(z0, cz);
+                z1 = Math.max(z1, cz);
+                for (int dz = -1; dz <= 1; dz++) {
+                    for (int dx = -1; dx <= 1; dx++) {
+                        int nx = cx + dx;
+                        int nz = cz + dz;
+                        if (nx >= 0 && nz >= 0 && nx < sx && nz < sz && tall[nz * sx + nx] && !seen[nz * sx + nx]) {
+                            seen[nz * sx + nx] = true;
+                            todo.push(nz * sx + nx);
+                        }
+                    }
+                }
+            }
+            if (count >= 16 && out.size() < 40) {
+                out.add(Region.of(r.world(), r.min().x() + Math.max(0, x0 - 1), r.min().y(),
+                        r.min().z() + Math.max(0, z0 - 1), r.min().x() + Math.min(sx - 1, x1 + 1), r.max().y(),
+                        r.min().z() + Math.min(sz - 1, z1 + 1)));
+            }
+        }
+        return out;
+    }
+
+    /** The part of {@code grid} inside {@code part}. */
+    private static BlockGrid sub(BlockGrid grid, Region part) {
+        Region r = grid.region();
+        int[] blocks = new int[Math.toIntExact(part.volume())];
+        for (int y = part.min().y(); y <= part.max().y(); y++) {
+            for (int z = part.min().z(); z <= part.max().z(); z++) {
+                for (int x = part.min().x(); x <= part.max().x(); x++) {
+                    blocks[part.index(x, y, z)] = grid.blocks()[r.index(x, y, z)];
+                }
+            }
+        }
+        return new BlockGrid(part, grid.palette(), blocks);
     }
 
     /** Floor inside farther than this from any light is dark. */
