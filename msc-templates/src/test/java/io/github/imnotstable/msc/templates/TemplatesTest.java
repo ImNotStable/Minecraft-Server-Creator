@@ -179,7 +179,8 @@ class TemplatesTest {
             }
         }
         assertThat(Files.readString(r.root().resolve("src/main/java/com/example/spawnlobby/SpawnLobbyServer.java")))
-                .contains("package com.example.spawnlobby;", "MscAgent.start();", "server.start(\"127.0.0.1\", 25565);");
+                .contains("package com.example.spawnlobby;", "MscAgent.start();", "getOrDefault(\"SERVER_IP\", \"127.0.0.1\")",
+                        "getOrDefault(\"SERVER_PORT\", \"25565\")", "Minestom listening on ");
         assertThat(Files.readString(r.root().resolve("build.gradle.kts")))
                 .contains("mainClass = \"com.example.spawnlobby.SpawnLobbyServer\"", "libs/msc-agent-minestom.jar");
         assertThat(Files.readString(r.root().resolve("gradle/libs.versions.toml")))

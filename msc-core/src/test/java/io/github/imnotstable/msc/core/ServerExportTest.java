@@ -6,6 +6,7 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import io.github.imnotstable.msc.core.server.MachineEula;
 import io.github.imnotstable.msc.process.ServerPropertiesFile;
+import io.github.imnotstable.msc.templates.Templates;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -113,6 +114,48 @@ class ServerExportTest {
         }
     }
 
+    /** ADR 0102: the mod loaders install in a JDK image with the dev server's loader version; Minestom ships its jar. */
+    @Test
+    void everyServerPlatformGetsAnEgg() throws Exception {
+        record Case(String platform, String jar, String script, String loader) {
+        }
+        for (Case c : List.of(
+                new Case("neoforge", "server.jar", "--install-server . --server-jar", "neoforgeVersion"),
+                new Case("forge", "forge-server.jar", "cp \"forge-${LOADER_VERSION}-shim.jar\"", "forgeVersion"),
+                new Case("quilt", "quilt-server-launch.jar", "install server ${VERSION} ${LOADER_VERSION}",
+                        "quiltLoaderVersion"))) {
+            try (CoreHarness h = harness("egg-" + c.platform())) {
+                h.ok("server_setup", "platform", c.platform());
+                assertThat(h.ok("server_export", "target", "pterodactyl")).contains("egg-" + c.platform() + ".json")
+                        .contains("with loader " + Templates.versions().get(c.loader()));
+                JsonObject egg = JsonParser.parseString(Files.readString(dir.resolve("egg-" + c.platform()
+                        + "/export/pterodactyl/egg-" + c.platform() + ".json"))).getAsJsonObject();
+                JsonObject install = egg.getAsJsonObject("scripts").getAsJsonObject("installation");
+                assertThat(install.get("container").getAsString()).isEqualTo("eclipse-temurin:25-jdk");
+                assertThat(install.get("script").getAsString()).contains(c.script()).contains("apt-get install");
+                List<String> vars = new ArrayList<>();
+                egg.getAsJsonArray("variables").forEach(v -> vars.add(v.getAsJsonObject().get("env_variable")
+                        .getAsString() + "=" + v.getAsJsonObject().get("default_value").getAsString()));
+                assertThat(vars).contains("LOADER_VERSION=" + Templates.versions().get(c.loader()),
+                        "SERVER_JARFILE=" + c.jar());
+                assertThat(egg.get("features").toString()).contains("eula");
+            }
+        }
+        try (CoreHarness h = harness("egg-minestom")) {
+            h.ok("server_setup", "platform", "minestom");
+            Files.writeString(dir.resolve("egg-minestom/run/server.jar"), "jar");
+            assertThat(h.ok("server_export", "target", "pterodactyl")).contains("the project's jar in server-files.zip")
+                    .contains("SERVER_IP and SERVER_PORT");
+            Path ex = dir.resolve("egg-minestom/export/pterodactyl");
+            JsonObject egg = JsonParser.parseString(Files.readString(ex.resolve("egg-minestom.json"))).getAsJsonObject();
+            assertThat(egg.get("startup").getAsString()).endsWith("-jar {{SERVER_JARFILE}}");
+            assertThat(egg.getAsJsonObject("config").get("startup").getAsString()).contains("Minestom listening on ");
+            try (ZipFile zip = new ZipFile(ex.resolve("server-files.zip").toFile())) {
+                assertThat(zip.getEntry("server.jar")).isNotNull();
+            }
+        }
+    }
+
     @Test
     void aProxyNetworkIsOneComposeProject() throws Exception {
         try (CoreHarness h = harness("net")) {
@@ -138,8 +181,6 @@ class ServerExportTest {
         try (CoreHarness h = harness("refuse")) {
             assertThat(h.error("server_export", "target", "kubernetes"))
                     .isEqualTo("error: target must be docker or pterodactyl, not \"kubernetes\"");
-            h.ok("server_setup", "platform", "neoforge");
-            assertThat(h.error("server_export", "target", "pterodactyl")).contains("neoforge ships with target=docker");
             assertThat(dir.resolve("refuse/export")).doesNotExist();
         }
     }

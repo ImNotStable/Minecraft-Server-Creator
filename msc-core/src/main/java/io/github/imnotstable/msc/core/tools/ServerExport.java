@@ -66,10 +66,6 @@ final class ServerExport {
         if (world && server.running()) {
             throw new ToolException("stop the server before exporting its world, so the copy is whole");
         }
-        if (target.equals("pterodactyl") && egg(platform) == null) {
-            throw new ToolException("the pterodactyl export covers paper, purpur, folia, fabric, velocity and "
-                    + "waterfall; " + platform.id() + " ships with target=docker");
-        }
         if (target.equals("pterodactyl") && !Network.members(run).isEmpty()) {
             throw new ToolException("a proxy network is several servers: target=docker ships it as one Compose "
                     + "project; on Pterodactyl make one server per backend");
@@ -209,6 +205,7 @@ final class ServerExport {
                 + (geyser(run) ? "      - \"19132:19132/udp\"\n" : "");
         if (platform == Platform.MINESTOM) {
             Files.writeString(out.resolve("Dockerfile"), "FROM eclipse-temurin:25-jre\nWORKDIR /data\n"
+                    + "ENV SERVER_IP=0.0.0.0 SERVER_PORT=25565\n"
                     + "COPY data/ /data/\nEXPOSE 25565\nCMD [\"java\", \"-Xmx1G\", \"-jar\", \"server.jar\"]\n");
             Files.copy(run.resolve("server.jar"), out.resolve("data/server.jar"));
             compose.append("  server:\n    build: .\n    restart: unless-stopped\n    stdin_open: true\n").append(ports)
@@ -333,7 +330,25 @@ final class ServerExport {
 
     // ---- pterodactyl --------------------------------------------------------------------------------------------
 
-    /** The install script line that downloads the server jar for an egg, or null where there is no egg. */
+    /** Platforms whose installer is a Java program: their egg installs in a JDK image instead of Alpine (ADR 0102). */
+    private static final Set<Platform> JAVA_INSTALL = Set.of(Platform.NEOFORGE, Platform.FORGE, Platform.QUILT);
+
+    /** The jar the egg starts: the one its install leaves, as the dev server's (ADR 0102), or server.jar. */
+    private static String eggJar(Platform platform) {
+        return JAVA_INSTALL.contains(platform) || platform == Platform.MINESTOM ? platform.serverJar() : "server.jar";
+    }
+
+    /** The loader version an egg installs: the one the dev server runs, pinned in this build of msc-core. */
+    private static String loader(Platform platform) {
+        return switch (platform) {
+            case NEOFORGE -> pinned("neoforgeVersion");
+            case FORGE -> pinned("forgeVersion");
+            case QUILT -> pinned("quiltLoaderVersion");
+            default -> null;
+        };
+    }
+
+    /** The install script lines that put the server in /mnt/server for an egg. */
     private static String egg(Platform platform) {
         String fill = "BUILD=$(curl -fsSL https://fill.papermc.io/v3/projects/%s/versions/${VERSION}/builds/latest)\n"
                 + "URL=$(echo \"$BUILD\" | jq -r '.downloads.\"server:default\".url')\n"
@@ -351,7 +366,22 @@ final class ServerExport {
                     + "https://meta.fabricmc.net/v2/versions/loader/${VERSION} | jq -r '[.[] | "
                     + "select(.loader.stable)][0].loader.version')\ncurl -fsSL -o \"${SERVER_JARFILE}\" "
                     + "\"https://meta.fabricmc.net/v2/versions/loader/${VERSION}/${LOADER}/${INSTALLER}/server/jar\"\n";
-            default -> null;
+            // NeoForge's --server-jar leaves server.jar, a starter that reads the installed libraries.
+            case NEOFORGE -> "curl -fsSL -o installer.jar \"https://maven.neoforged.net/releases/net/neoforged/neoforge/"
+                    + "${LOADER_VERSION}/neoforge-${LOADER_VERSION}-installer.jar\"\njava -jar installer.jar "
+                    + "--install-server . --server-jar\nrm -f installer.jar installer.jar.log\n";
+            // Forge leaves forge-<version>-shim.jar, runnable on its own; the egg starts it under a fixed name.
+            case FORGE -> "curl -fsSL -o installer.jar \"https://maven.minecraftforge.net/net/minecraftforge/forge/"
+                    + "${LOADER_VERSION}/forge-${LOADER_VERSION}-installer.jar\"\njava -jar installer.jar "
+                    + "--installServer .\ncp \"forge-${LOADER_VERSION}-shim.jar\" \"${SERVER_JARFILE}\"\n"
+                    + "rm -f installer.jar installer.jar.log\n";
+            // Quilt's launcher starts the vanilla jar the installer downloads beside it as server.jar.
+            case QUILT -> "curl -fsSL -o installer.jar \"https://maven.quiltmc.org/repository/release/org/quiltmc/"
+                    + "quilt-installer/" + pinned("quiltInstallerVersion") + "/quilt-installer-"
+                    + pinned("quiltInstallerVersion") + ".jar\"\njava -jar installer.jar install server ${VERSION} "
+                    + "${LOADER_VERSION} --download-server --install-dir=.\nrm -f installer.jar\n";
+            // Minestom is the project's own jar, which comes in server-files.zip.
+            case MINESTOM -> "";
         };
     }
 
@@ -362,6 +392,12 @@ final class ServerExport {
         List<String> jars;
         try {
             jars = copy(platform, run, staging, world, Set.of(), behindProxy, notes);
+            if (platform == Platform.MINESTOM) {
+                Files.copy(run.resolve(platform.serverJar()), staging.resolve(platform.serverJar()));
+                notes.add("Minestom runs the project's own jar (in server-files.zip); it binds SERVER_IP and SERVER_PORT, "
+                        + "which Pterodactyl sets, when the project's main reads them (projects scaffolded since "
+                        + "ADR 0102 do)");
+            }
             try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(out.resolve("server-files.zip")))) {
                 zipTree(staging, staging, zip);
             }
@@ -371,12 +407,15 @@ final class ServerExport {
         String version = platform == Platform.VELOCITY ? pinned("velocityVersion")
                 : platform == Platform.WATERFALL ? pinned("waterfallVersion") : minecraft(run);
         String done = platform == Platform.VELOCITY ? "Done (" : platform == Platform.WATERFALL ? "Listening on "
-                : ")! For help, type ";
+                : platform == Platform.MINESTOM ? "Minestom listening on " : ")! For help, type ";
         String startup = "java -Xms128M -XX:MaxRAMPercentage=95.0 -Dterminal.jline=false -Dterminal.ansi=true -jar "
-                + "{{SERVER_JARFILE}}" + (platform.proxy() ? "" : " nogui");
-        String script = "#!/bin/ash\n# Made by Minecraft Server Creator (ADR 0091)\napk add --no-cache curl jq\n"
+                + "{{SERVER_JARFILE}}" + (platform.proxy() || platform == Platform.MINESTOM ? "" : " nogui");
+        boolean jdk = JAVA_INSTALL.contains(platform);
+        String script = (jdk ? "#!/bin/bash\n# Made by Minecraft Server Creator (ADR 0091, 0101)\nset -e\n"
+                + "apt-get update -qq && apt-get install -y -qq curl jq > /dev/null\n"
+                : "#!/bin/ash\n# Made by Minecraft Server Creator (ADR 0091)\napk add --no-cache curl jq\n")
                 + "mkdir -p /mnt/server && cd /mnt/server\n" + egg(platform) + "echo \"installed " + platform.id()
-                + " ${VERSION}\"\n";
+                + " ${VERSION}" + (loader(platform) == null ? "" : " ${LOADER_VERSION}") + "\"\n";
         StringBuilder json = new StringBuilder("{\n  \"_comment\": \"Made by Minecraft Server Creator's server_export\",\n"
                 + "  \"meta\": {\"version\": \"PTDL_v2\", \"update_url\": null},\n");
         json.append("  \"name\": ").append(quote(platform.displayName() + " (" + config.workspace().getFileName()
@@ -392,26 +431,39 @@ final class ServerExport {
                 .append(",\n    \"startup\": ").append(quote("{\"done\": " + quote(done) + "}"))
                 .append(",\n    \"logs\": \"{}\",\n    \"stop\": ").append(quote(platform.stopCommand()))
                 .append("\n  },\n  \"scripts\": {\"installation\": {\"script\": ").append(quote(script))
-                .append(", \"container\": \"ghcr.io/pterodactyl/installers:alpine\", \"entrypoint\": \"ash\"}},\n")
+                .append(jdk ? ", \"container\": \"eclipse-temurin:25-jdk\", \"entrypoint\": \"bash\"}},\n"
+                        : ", \"container\": \"ghcr.io/pterodactyl/installers:alpine\", \"entrypoint\": \"ash\"}},\n")
                 .append("  \"variables\": [\n")
                 .append(variable("Version", "VERSION", version, "The " + (platform.proxy() ? platform.displayName()
                         : "Minecraft") + " version to install; reinstall to update the server jar"))
-                .append(",\n").append(variable("Server jar", "SERVER_JARFILE", "server.jar", "The jar file to run"))
+                .append(loader(platform) == null ? "" : ",\n" + variable("Loader version", "LOADER_VERSION",
+                        loader(platform), "The " + platform.displayName() + " version to install (the dev server's); "
+                                + "reinstall after changing it"))
+                .append(",\n").append(variable("Server jar", "SERVER_JARFILE", eggJar(platform), "The jar file to run"))
                 .append("\n  ]\n}\n");
         Files.writeString(out.resolve("egg-" + platform.id() + ".json"), json);
         Files.writeString(out.resolve("README.md"), "# Pterodactyl\n\nMade by Minecraft Server Creator (ADR 0091).\n\n"
                 + "1. Admin, Nests: import `egg-" + platform.id() + ".json`.\n2. Create a server with it (2 GB or "
-                + "more); the install downloads " + platform.displayName() + " " + version + ".\n3. Files: upload "
+                + "more); " + installs(platform, version) + ".\n3. Files: upload "
                 + "`server-files.zip` and unarchive it (configs, plugins" + (world ? ", world" : "") + ").\n"
                 + "4. Start it" + (platform.needsEula() ? "; the panel asks for the Minecraft EULA" : "") + ".\n\n"
-                + "Updates: the panel's Reinstall downloads the newest build of `VERSION` (change it for a new "
-                + "version); replace plugin jars in `plugins/`.\nBackups: Schedules, a task \"Create backup\" "
+                + (platform == Platform.MINESTOM ? "Updates: rebuild the project and upload its jar as `server.jar`."
+                : "Updates: the panel's Reinstall downloads " + (loader(platform) == null ? "the newest build of "
+                + "`VERSION`" : "`LOADER_VERSION` for `VERSION`") + " (change it for a new version); replace jars in `"
+                + platform.addonDir() + "/`.") + "\nBackups: Schedules, a task \"Create backup\" "
                 + "(for example every 6 hours), and Backups to restore.\n");
         return "exported " + platform.id() + " for Pterodactyl into " + config.workspace().relativize(out).toString()
-                .replace('\\', '/') + ": egg-" + platform.id() + ".json (install script downloads " + platform.id()
-                + " " + version + "), server-files.zip, README.md\nplugins in the zip: "
+                .replace('\\', '/') + ": egg-" + platform.id() + ".json (" + installs(platform, version)
+                + "), server-files.zip, README.md\nplugins in the zip: "
                 + (jars.isEmpty() ? "none" : String.join(", ", jars))
                 + "\nbackups and updates: the panel's schedules and reinstall (README.md)";
+    }
+
+    /** What the egg's install does, for the README and the result. */
+    private static String installs(Platform platform, String version) {
+        return platform == Platform.MINESTOM ? "the server is the project's jar in server-files.zip"
+                : "the install downloads " + platform.displayName() + " " + version
+                + (loader(platform) == null ? "" : " with loader " + loader(platform));
     }
 
     private static String variable(String name, String env, String value, String description) {
