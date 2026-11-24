@@ -1,6 +1,8 @@
 # ADR 0099: Boats and harbours
 
-Status: accepted, 2026-11-24. Decided by Claude, from Jeremiah's open list after the Shattered Meridian screenshots.
+Status: decisions 1-3 superseded by [ADR 0101](0101-no-prefab-boats-or-harbours.md) (no generators); decision 4
+(review checks) accepted, 2026-11-24. Decided by Claude, from Jeremiah's open list after the Shattered Meridian
+screenshots.
 
 ## Context
 
