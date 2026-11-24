@@ -60,7 +60,7 @@ public final class BuildScript {
             forest X,Y,Z X,Y,Z [kind=oak:3,birch:1 spacing=7 chance=80 on=B]
             flora X,Y,Z X,Y,Z style=meadow|B [chance=35 soil=B]   (these three: guide=build)
             smooth|erode|blend X,Y,Z X,Y,Z   paint X,Y,Z X,Y,Z B [slope=A-B]   (shape what is there)
-            river|tunnel X,Y,Z X,Y,Z ...   cave X,Y,Z X,Y,Z   (these seven: guide=build)
+            river|tunnel X,Y,Z X,Y,Z ...  cave|harbor|pier X,Y,Z X,Y,Z  boat X,Y,Z kind=ship  (guide=build)
             sign|banner|head|book|container X,Y,Z B text="a|b"|patterns=|player=|pages=|items=
             entity X,Y,Z TYPE [data={} still=true]  frame X,Y,Z item= facing=  stand X,Y,Z [head= mainhand=]
             biome X,Y,Z X,Y,Z ID  feature X,Y,Z ID [count= spread=]  light X,Y,Z X,Y,Z [B level=8]  (guide=build)
@@ -76,7 +76,8 @@ public final class BuildScript {
     private static final Pattern BAND = Pattern.compile("\\d+=.+");
     private static final Set<String> FLAGS = Set.of("solid", "hollow", "outline", "walls");
     /** Steps that set facing, half and the like on their own blocks from where each lands. */
-    private static final Set<String> SHAPING = Set.of("roof", "trim", "decorate", "weather", "tree", "forest");
+    private static final Set<String> SHAPING = Set.of("roof", "trim", "decorate", "weather", "tree", "forest", "boat",
+            "pier", "harbor");
 
     /** Where structures come from: files in the workspace and the world itself. */
     public interface StructureFiles {
@@ -649,6 +650,60 @@ public final class BuildScript {
                         o.pattern("leaves", null), o.integer("spacing", 7, 2, 256), o.integer("chance", 80, 1, 100),
                         o.list("on"), o.seed(), o.replace());
             }
+            case "boat" -> {
+                o.points(1);
+                o.flags(Set.of());
+                String kind = o.string("kind");
+                kind = kind == null ? "sloop" : kind;
+                Vessels.checkKind(kind);
+                String facing = o.string("facing");
+                int f = Vessels.facing(facing == null ? "north" : facing);
+                String wood = o.string("wood");
+                wood = wood == null ? "spruce" : wood;
+                Vessels.checkWood(wood);
+                Vessels.Size size = Vessels.Size.of(kind, o.integer("len", 0, kind.equals("rowboat") ? 4 : 9, 64));
+                yield new Step.Boat(world, p.points().get(0), kind, f, wood, size,
+                        o.pattern("hull", BlockPattern.single("minecraft:" + wood + "_planks")),
+                        o.pattern("deck", BlockPattern.single("minecraft:" + (wood.equals("oak") ? "spruce" : "oak") + "_planks")),
+                        o.pattern("sail", BlockPattern.single("minecraft:white_wool")));
+            }
+            case "pier" -> {
+                o.points(2);
+                o.flags(Set.of());
+                String wood = o.string("wood");
+                wood = wood == null ? "spruce" : wood;
+                Vessels.checkWood(wood);
+                BlockPos a = p.points().get(0);
+                BlockPos b = p.points().get(1);
+                if (a.y() != b.y()) {
+                    throw new ToolException("pier takes its deck's two corners at one height, got y " + a.y() + " and " + b.y());
+                }
+                yield new Step.Pier(new Region(world, a, b), wood,
+                        o.pattern("deck", BlockPattern.single("minecraft:" + wood + "_planks")));
+            }
+            case "harbor" -> {
+                o.points(2);
+                o.flags(Set.of());
+                Region box = new Region(world, p.points().get(0), p.points().get(1));
+                String quay = o.string("quay");
+                quay = quay == null || quay.equals("none") ? null : quay;
+                if (quay != null) {
+                    Vessels.facing(quay);
+                }
+                int piers = o.integer("piers", quay == null ? 0 : 2, 0, 16);
+                if (piers > 0 && quay == null) {
+                    throw new ToolException("piers= run out from the quay; give quay=north|east|south|west");
+                }
+                String wood = o.string("wood");
+                wood = wood == null ? "spruce" : wood;
+                Vessels.checkWood(wood);
+                yield new Step.Harbor(box, o.integer("water", box.min().y(), -64, 320), o.integer("depth", 3, 1, 16),
+                        o.integer("bank", 2, 1, 8), quay, piers, wood,
+                        o.pattern("quay_block", BlockPattern.parse(
+                                "stone_bricks:70,mossy_stone_bricks:15,cracked_stone_bricks:15", o.seed())),
+                        o.pattern("shore", BlockPattern.parse("sand:3,gravel:1", o.seed())),
+                        o.pattern("bed", BlockPattern.parse("gravel:3,sand:2,clay:1", o.seed())), o.seed());
+            }
             case "weather" -> {
                 o.points(2);
                 o.flags(Set.of());
@@ -680,7 +735,7 @@ public final class BuildScript {
             case "copy" -> copy(p);
             default -> throw new ToolException("unknown step \"" + p.verb()
                     + "\"; use fill, set, cylinder, ring, disc, sphere, dome, line, helix, bands, terrain, path, scatter, roof, trim, "
-                    + "decorate, weather, flora, tree, forest, smooth, erode, blend, paint, river, tunnel, cave, sign, banner, "
+                    + "decorate, weather, flora, tree, forest, boat, pier, harbor, smooth, erode, blend, paint, river, tunnel, cave, sign, banner, "
                     + "head, book, container, entity, frame, stand, biome, feature, light, furnish, image, structure or copy");
         };
         if (!p.verb().equals("structure") && !p.verb().equals("copy")) {

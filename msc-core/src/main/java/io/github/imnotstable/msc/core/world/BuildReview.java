@@ -87,7 +87,8 @@ public final class BuildReview {
         // Builds in a region that is mostly land are still judged: run 8 hid unfinished houses in big land regions.
         if (land.landShare() >= LAND_ONLY && built < MIN_BUILT) {
             return withLand("review: mostly land (" + land.landShare() + "% of the blocks), so only the land is "
-                    + "judged; review each build on its own region", land, List.of(), false);
+                    + "judged; review each build on its own region", land,
+                    WaterReview.basins(grid, names, fluid, isGround), false);
         }
         int[] rgb = new int[names.length];
         for (int i = 0; i < names.length; i++) {
@@ -174,7 +175,8 @@ public final class BuildReview {
         }
         if (total == 0) {
             return withLand("review: nothing built above the ground" + (ground >= r.min().y() ? " (y " + ground
-                    + " and below)" : ""), land, List.of(), false);
+                    + " and below)" : ""), land,
+                    WaterReview.basins(grid, names, fluid, isGround), false);
         }
         int[] roof = roof(grid, names, isGround, ground);
         List<Map.Entry<String, Integer>> top = new ArrayList<>(counts.entrySet());
@@ -206,6 +208,7 @@ public final class BuildReview {
                 MAX_BARE_BASE, floor, props, plants));
         List<String> fixes = new ArrayList<>(doors(grid, names));
         fixes.addAll(masses(grid, names, isGround));
+        fixes.addAll(WaterReview.fixes(grid, names, fluid, isGround));
         if (flatPct > MAX_FLAT && faces >= 20) {
             fixes.add("flat walls: give each wall depth (pillars or a frame 1 out, windows 1 in), a base and a trim "
                     + "line of stairs or slabs (trim at=base, band, top; sills, shutters, frames), and mix in variants "

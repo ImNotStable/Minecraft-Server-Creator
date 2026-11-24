@@ -133,6 +133,23 @@ SHAPING STEPS (build_batch; they reshape what the world and earlier steps hold, 
 - cave X,Y,Z X,Y,Z [density=30 scale=16 roof=4 B]: noise caves through the box's solid ground, keeping roof= blocks
   under the surface.
 
+BOATS AND HARBOURS (build_batch)
+- boat X,Y,Z [kind=rowboat|sloop|ship facing=north len=N wood=spruce hull=B deck=B sail=B]: X,Y,Z is the middle of the
+  boat at the water's surface (the top water block); facing= is where the bow points. The hull tapers to a pointed bow
+  and a rounded stern, curves under the waterline with stairs and sits 1-3 blocks deep with a dry hold (lanterns and
+  barrels in a ship's or sloop's), rails and lanterns on deck. A sloop carries one tall mast with a mainsail on a boom
+  and a jib to the bowsprit; a ship two or three masts of square sails on yards, a raised stern and bow and a fighting
+  top. Default lengths 7, 14, 26 (len= 9-64). Then add your own touches: a name board, cargo, flags, crew.
+- harbor X,Y,Z X,Y,Z [water=Y depth=3 bank=2 quay=DIR piers=2 wood=spruce quay_block=B shore=B bed=B]: digs a basin in
+  the box with water at water= (default the box's lowest y) over a bed depth= deep; banks drop one block every bank=
+  blocks in from the edge along a ragged line, sand and gravel at the waterline. quay=north|east|south|west builds a
+  stone quay along that side (retaining the land behind it) with ladders down the face and lamp posts, and piers= run
+  out from it. A real harbour has a quay where boats tie up and beaches or rocks elsewhere, never sheer dirt sides.
+- pier X,Y,Z X,Y,Z [wood=spruce deck=B]: a plank deck at the points' height on log posts down to the bed, railed, with
+  lanterns at the far end and along it.
+The review flags box hulls (one width bow to stern), hulls sitting on the water instead of in it, masts with no sail
+or under half the hull's length, banks rising straight out of the water, and basins that fill their box.
+
 THINGS IN A BUILD (build_batch; values with spaces in quotes: text="Two words")
 - sign X,Y,Z B text="line 1|line 2" [back= color=dye glow=true wax=false]: B oak_sign[rotation=N], oak_wall_sign[facing=]
   or a hanging sign; waxed by default so players cannot edit it.

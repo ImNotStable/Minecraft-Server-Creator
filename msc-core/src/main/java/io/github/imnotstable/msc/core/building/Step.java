@@ -991,6 +991,50 @@ public sealed interface Step {
         }
     }
 
+    /** A boat on the water (ADR 0099): {@code at} is the midship waterline, the water's surface block. */
+    record Boat(String world, BlockPos at, String kind, int facing, String wood, Vessels.Size size, BlockPattern hull,
+                BlockPattern deck, BlockPattern sail) implements Step {
+        @Override
+        public Region bounds() {
+            return Vessels.boatBounds(this);
+        }
+
+        @Override
+        public void draw(Canvas c) {
+            Vessels.boat(c, this);
+        }
+    }
+
+    /** A pier (ADR 0099): {@code deck} is its plank deck, one block thick; posts go down to the bed. */
+    record Pier(Region deck, String wood, BlockPattern deckBlock) implements Step {
+        @Override
+        public Region bounds() {
+            return Vessels.pierBounds(this);
+        }
+
+        @Override
+        public void draw(Canvas c) throws InterruptedException {
+            Vessels.pier(c, this);
+        }
+    }
+
+    /** A harbour basin with sloped banks, an optional quay and piers (ADR 0099). {@code quay} is null for none. */
+    record Harbor(Region box, int water, int depth, int bank, String quay, int piers, String wood, BlockPattern quayBlock,
+                  BlockPattern shore, BlockPattern bed, long seed) implements Step {
+        /** How far above the box's top the land is cut back to the bank's slope. */
+        static final int LAND_REACH = 24;
+
+        @Override
+        public Region bounds() {
+            return Vessels.harborBounds(this);
+        }
+
+        @Override
+        public void draw(Canvas c) throws InterruptedException {
+            Vessels.harbor(c, this);
+        }
+    }
+
     /** Entities summoned at a block's centre once the blocks are written (ADR 0082), tagged so build_undo removes them. */
     record Summon(String world, BlockPos at, String type, String nbt, int count, double dy) implements Step {
         @Override
