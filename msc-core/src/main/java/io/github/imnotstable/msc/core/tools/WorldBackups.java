@@ -34,6 +34,9 @@ public final class WorldBackups {
     static final String RESTORE = "restore the backup";
     private static final String MINESTOM_NOTE = "\nMinestom saves the world only when it stops: "
             + "this backup is the world as last stopped";
+    /** Folia leaves out save-all, so a running Folia server's world is copied as its regions last autosaved it. */
+    public static final String FOLIA_NOTE = "\nFolia has no save-all: this backup is the world as its regions last autosaved "
+            + "it (edits since are not in it; build_undo still undoes each edit)";
 
     private final CoreConfig config;
     private final AgentHub hub;
@@ -159,6 +162,9 @@ public final class WorldBackups {
     private Taken take(String label, String keep, boolean live) throws IOException, InterruptedException {
         if (!live) {
             return new Taken(backups.save(config.serverDir(), label, keep), "");
+        }
+        if (server.platform() == Platform.FOLIA) {
+            return new Taken(backups.save(config.serverDir(), label, keep), FOLIA_NOTE);
         }
         if (server.platform() == Platform.MINESTOM) {
             return new Taken(backups.save(config.serverDir(), label, keep),

@@ -20,6 +20,19 @@ public interface MainThread {
     /** Run a job across as many ticks as it needs and return its result. */
     <T> T run(SlicedJob<T> job);
 
+    /**
+     * Run once on the thread that owns {@code area}. A server with one main thread runs it there ({@link #call}); Folia
+     * runs it on the region thread that owns those chunks (ADR 0100).
+     */
+    default <T> T call(Supplier<T> task, ChunkArea area) {
+        return call(task);
+    }
+
+    /** As {@link #run(SlicedJob)}, on the thread that owns {@code area}: every block the job touches lies in it. */
+    default <T> T run(SlicedJob<T> job, ChunkArea area) {
+        return run(job);
+    }
+
     /** Runs everything inline on the calling thread. For tests, where the test thread is the main thread. */
     static MainThread inline() {
         return new MainThread() {

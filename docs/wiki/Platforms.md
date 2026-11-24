@@ -56,7 +56,7 @@ Folia runs Paper plugins that say they support it, with the world split into reg
 
 1. Scaffold as for Paper, then add `folia-supported: true` to `plugin.yml` and use Folia's region and entity schedulers instead of `getScheduler()`.
 2. Accept the [EULA](https://aka.ms/MinecraftEULA) yourself, then: "server_setup platform=folia with acceptEula=true."
-3. `dev_cycle`, `server_command`, `server_logs` and `server_wait` work as on Paper. World, build and player tools do not work on Folia yet: they say so in one line. See [ADR 0045](https://github.com/ImNotStable/Minecraft-Server-Creator/blob/main/msc-docs/docs/adr/0045-folia-and-proxies.md).
+3. Everything works as on Paper: `dev_cycle`, server, world, build and player tools. MSC runs each world edit or read on the region thread that owns its chunks, after loading them, so a build is safe on Folia too. Backups while it runs copy the world as Folia last autosaved it (Folia has no `save-all`); `build_undo` still undoes each edit. See [ADR 0100](https://github.com/ImNotStable/Minecraft-Server-Creator/blob/main/msc-docs/docs/adr/0100-folia-world-tools.md).
 
 ## Velocity (proxy)
 
@@ -115,7 +115,7 @@ The template's `main` starts a flat world in memory with the agent; nothing is s
 
 ## Same tools everywhere
 
-All world, building and texture tools work the same on every platform but Folia and Velocity (see above). The agent inside the server does the work; MSC talks to it.
+All world, building and texture tools work the same on every platform but Velocity (see above). The agent inside the server does the work; MSC talks to it.
 
 | Template id | Platform |
 | --- | --- |

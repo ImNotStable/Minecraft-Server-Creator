@@ -19,15 +19,4 @@ public final class AgentRoutes {
                 .on(Ops.WORLD_UNDO, world::undo)
                 .on(Ops.PACK_APPLY, server::applyPack);
     }
-
-    /**
-     * Only the server operations, for a server whose world the agent cannot edit safely (Folia, ADR 0045): the core
-     * sees the world operations missing from the agent's list and says so instead of calling them.
-     */
-    public static OpRouter serverOnly(ServerOps server) {
-        return new OpRouter()
-                .on(Ops.SERVER_INFO, p -> server.info())
-                .on(Ops.SERVER_COMMAND, server::command)
-                .on(Ops.PACK_APPLY, server::applyPack);
-    }
 }

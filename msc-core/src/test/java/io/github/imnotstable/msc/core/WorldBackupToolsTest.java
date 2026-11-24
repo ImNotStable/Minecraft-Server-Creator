@@ -9,6 +9,7 @@ import io.github.imnotstable.msc.core.server.FakeLeftover;
 import io.github.imnotstable.msc.core.server.PidFile;
 import io.github.imnotstable.msc.core.server.PidFileAccess;
 import io.github.imnotstable.msc.core.server.Platform;
+import io.github.imnotstable.msc.core.tools.WorldBackups;
 import io.github.imnotstable.msc.core.tools.WorldBackupsAccess;
 import java.time.Duration;
 import java.nio.file.Files;
@@ -125,6 +126,17 @@ class WorldBackupToolsTest {
         try (CoreHarness h = new CoreHarness(workspace).withAgent()) {
             assertThat(h.ok("build_undo", "backup", "save")).startsWith("backup ").contains(" (world; ").endsWith(
                     "\nMinestom saves the world only when it stops: this backup is the world as last stopped");
+            assertThat(h.agent.commands).isEmpty();
+        }
+    }
+
+    /** ADR 0100: Folia has no save-all, so a running Folia server's world is copied as last autosaved, and says so. */
+    @Test
+    void foliaSendsNoCommandsAndSaysTheBackupIsTheWorldAsLastAutosaved() throws Exception {
+        world("v1");
+        Platform.remember(CoreConfig.forWorkspace(workspace), Platform.FOLIA);
+        try (CoreHarness h = new CoreHarness(workspace).withAgent()) {
+            assertThat(h.ok("build_undo", "backup", "save")).startsWith("backup ").endsWith(WorldBackups.FOLIA_NOTE);
             assertThat(h.agent.commands).isEmpty();
         }
     }

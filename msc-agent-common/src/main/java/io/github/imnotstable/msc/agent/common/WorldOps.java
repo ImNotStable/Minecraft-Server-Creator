@@ -39,7 +39,8 @@ public final class WorldOps<S> {
         try {
             // One main-thread job for the grid, entities and signs: with the chunk wait, a read makes at most
             // Limits.AGENT_WAITS_PER_OP waits, so the core's timeout never fires first (#289).
-            return main.run(new WorldReadJob<>(world, params));
+            return main.run(new WorldReadJob<>(world, params), ChunkArea.ofBlocks(world.name(), region.min().x(),
+                    region.min().z(), region.max().x(), region.max().z()));
         } finally {
             release.run();
         }
@@ -49,7 +50,9 @@ public final class WorldOps<S> {
     public Ops.EntitiesResult entities(Ops.EntitiesParams params) {
         AgentWorld<S> world = world(params.region().world());
         String type = params.type() == null || params.type().isBlank() ? null : params.type();
-        return Ops.EntitiesResult.of(main.call(() -> world.entityInfos(params.region(), type)), params.limit());
+        Region r = params.region();
+        return Ops.EntitiesResult.of(main.call(() -> world.entityInfos(r, type),
+                ChunkArea.ofBlocks(world.name(), r.min().x(), r.min().z(), r.max().x(), r.max().z())), params.limit());
     }
 
     public Ops.HeightmapResult heightmap(Ops.HeightmapParams params) {
@@ -68,7 +71,8 @@ public final class WorldOps<S> {
         int sizeZ = (int) spanZ;
         Runnable release = world.loadAreaToRead(minX, minZ, minX + sizeX - 1, minZ + sizeZ - 1);
         try {
-            int[] heights = main.run(new HeightmapJob(world, minX, minZ, sizeX, sizeZ));
+            int[] heights = main.run(new HeightmapJob(world, minX, minZ, sizeX, sizeZ),
+                    ChunkArea.ofBlocks(world.name(), minX, minZ, minX + sizeX - 1, minZ + sizeZ - 1));
             return new Ops.HeightmapResult(minX, minZ, sizeX, sizeZ, heights);
         } finally {
             release.run();
@@ -98,7 +102,8 @@ public final class WorldOps<S> {
         EditJob<S> job = new EditJob<>(world, new GridCursor<>(region, grid.blocks(), palette, anyData ? data : null),
                 params.updatePhysics());
         try {
-            return apply(job);
+            return apply(job, ChunkArea.ofBlocks(world.name(), region.min().x(), region.min().z(), region.max().x(),
+                    region.max().z()));
         } catch (RuntimeException e) {
             throw keepPartial(job, e);
         }
@@ -130,7 +135,7 @@ public final class WorldOps<S> {
             AgentWorld<S> world = world(record.world());
             world.loadPositions(record.positions());
             // A failed undo keeps its record instead of a partial one: re-running it is safe (#192).
-            return apply(new EditJob<>(world, record.restore(), false));
+            return apply(new EditJob<>(world, record.restore(), false), ChunkArea.ofPositions(world.name(), record.positions()));
         } catch (RuntimeException e) {
             // Keep the record so the core's retry undoes the rest (#192).
             history.putBack(params.editId(), record);
@@ -138,8 +143,8 @@ public final class WorldOps<S> {
         }
     }
 
-    private Ops.EditResult apply(EditJob<S> job) {
-        UndoRecord<S> record = main.run(job);
+    private Ops.EditResult apply(EditJob<S> job, ChunkArea area) {
+        UndoRecord<S> record = main.run(job, area);
         return new Ops.EditResult(history.add(record), record.size());
     }
 

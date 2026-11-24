@@ -86,7 +86,7 @@ The workspace has one platform: `paper` (default), `purpur`, `folia`, `fabric`, 
 |---|---|---|---|---|
 | `paper` | `paper.jar`, agent in `plugins/` | `java -Xmx2G -jar paper.jar --nogui` | `plugins/<jar name without version>.jar` | yes |
 | `purpur` | `purpur.jar` from Purpur's API, the Paper agent in `plugins/` | `java -Xmx2G -jar purpur.jar --nogui` | `plugins/<jar name without version>.jar` | yes |
-| `folia` | `folia.jar` from PaperMC's Fill service, the Paper agent in `plugins/` (it runs server operations only: world, build and player tools say they do not work on Folia) | `java -Xmx2G -jar folia.jar --nogui` | `plugins/<jar name without version>.jar` (the plugin needs `folia-supported: true`) | yes |
+| `folia` | `folia.jar` from PaperMC's Fill service, the Paper agent in `plugins/` (world jobs run on the region thread that owns their chunks, ADR 0100) | `java -Xmx2G -jar folia.jar --nogui` | `plugins/<jar name without version>.jar` (the plugin needs `folia-supported: true`) | yes |
 | `fabric` | `fabric-server-launch.jar` (fetches the Minecraft server on first start), `mods/fabric-api.jar`, agent in `mods/` | `java -Xmx2G -jar fabric-server-launch.jar nogui` | `mods/<jar name without version>.jar` | yes |
 | `quilt` | `quilt-server-launch.jar` and the Minecraft server (Quilt's installer), `mods/fabric-api.jar`, the Fabric agent in `mods/` | `java -Xmx2G -jar quilt-server-launch.jar nogui` | `mods/<jar name without version>.jar` | yes |
 | `neoforge` | NeoForge's installer run in the server directory (its server starter jar becomes `server.jar`, plus `libraries/`), agent in `mods/` | `java -Xmx2G -jar server.jar nogui` | `mods/<jar name without version>.jar` | yes |
