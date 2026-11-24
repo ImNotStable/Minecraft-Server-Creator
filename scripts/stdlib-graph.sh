@@ -7,7 +7,7 @@ root="$(cd "$(dirname "$0")/.." && pwd)"
 out="$root/msc-templates/src/main/stdlib-graphs"
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
-platforms="paper minestom fabric velocity neoforge forge"
+platforms="paper minestom fabric velocity bungeecord neoforge forge"
 # The sources jars are what the templates ship (the mod loaders' include the shared msc-stdlib-vanilla code).
 tasks=":msc-stdlib:stdlibRepo"
 for platform in $platforms; do tasks="$tasks :msc-stdlib-$platform:stdlibRepo"; done
