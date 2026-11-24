@@ -80,9 +80,18 @@ public final class BuildReview {
         LandReview.Result land = LandReview.review(grid, names, fluid, devFloor);
         boolean[] isGround = ground(grid, names, soil);
         int built = 0;
+        int cover = 0;
         for (int i = 0; i < isGround.length; i++) {
             int b = grid.blocks()[i];
-            built += b >= 0 && names[b] != null && !isGround[i] ? 1 : 0;
+            if (b >= 0 && names[b] != null && !isGround[i]) {
+                built++;
+                cover += groundCover(names[b]) ? 1 : 0;
+            }
+        }
+        // Grass, flowers and saplings on shaped land are the land's cover, not a building with flat roofs and no lights.
+        if (built > 0 && cover == built) {
+            return withLand("review: only plants above the ground (" + built + "), so only the land is judged", land,
+                    WaterReview.basins(grid, names, fluid, isGround), false);
         }
         // Builds in a region that is mostly land are still judged: run 8 hid unfinished houses in big land regions.
         if (land.landShare() >= LAND_ONLY && built < MIN_BUILT) {
@@ -244,7 +253,7 @@ public final class BuildReview {
         }
         if (bareBasePct > MAX_BARE_BASE && base >= 20) {
             fixes.add("bare base: the build meets the ground on a clean line; add a plinth (trim at=base), bushes "
-                    + "and flowers (decorate on=top), and worn ground at the doors");
+                    + "and flowers (decorate on=ground), and worn ground at the doors");
         }
         if (floor >= 24 && props * FLOOR_PER_PROP < floor) {
             fixes.add("empty rooms: " + floor + " floor blocks under a roof and " + props + " furnishings; furnish "
@@ -813,6 +822,11 @@ public final class BuildReview {
         }
         int i = grid.blocks()[grid.region().index(x, y, z)];
         return i < 0 ? null : names[i];
+    }
+
+    /** Plants that cover ground: not leaves (canopies, hedges) or mossy stone (walls), which are built. */
+    static boolean groundCover(String name) {
+        return matches(name, PLANTS) && !name.contains("leaves") && !name.contains("mossy") && !name.endsWith("_block");
     }
 
     private static boolean matches(String name, List<String> parts) {

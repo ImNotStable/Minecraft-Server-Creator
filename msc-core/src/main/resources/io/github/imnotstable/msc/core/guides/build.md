@@ -37,7 +37,7 @@ LAND FIRST
 
 THE LOOP (every build)
 1. Plan in 3 lines: purpose and story (who lived here, what happened), silhouette (3+ masses of different heights), palette.
-2. Block out the masses: walls 1-2 thick, real floor heights (4-5 per storey), doors 2-3 tall, roofs (roof step).
+2. Block out the masses: walls 1-2 thick, real floor heights (4-5 per storey), doors 2-3 tall, roofs you shape (DETAIL STEPS).
 3. Detail pass (below). This is most of the work; a block-out is not a build. Straight walls and rows are fine:
    good builds have plenty. What makes them look hand-made is the single blocks layered on that structure.
 4. world_render the build from 2 views (iso and one side), world_tour it (eye-height views at its doors, inside and
@@ -48,14 +48,7 @@ PALETTE
 - 60/30/10: a main material with 2-3 variants mixed in (stone_bricks:70,cracked_stone_bricks:15,mossy_stone_bricks:15), a secondary (wood, a second stone), one accent (copper, gold, a coloured block) used sparingly.
 - Mix only near tones (stone_bricks with its cracked and mossy variants, deepslate_bricks with deepslate_tiles). A random mix of clashing colours (deepslate with prismarine, purpur with gold) reads as static; put contrast in lines instead: trims, bands, frames.
 - Gradient: darker, heavier blocks at the base, lighter near the top. Frame with a contrasting trim (logs or a polished stone).
-- Themes to start from (swap freely):
-  medieval: stone_bricks, cobblestone, spruce_log, spruce_planks, dark_oak_stairs roof, lanterns
-  industrial: deepslate_bricks, polished_blackstone, waxed copper (oxidised variants for age), iron_bars, chains, smooth_stone
-  frost: packed_ice, blue_ice, snow_block, calcite, diorite, light_blue_stained_glass, spruce
-  ember: blackstone, basalt, magma_block, red_nether_bricks, netherrack, crimson_planks, shroomlight
-  drowned: prismarine, dark_prismarine, sea_lantern, mud_bricks, kelp, seagrass, coral
-  verdant/elven: moss_block, mossy_cobblestone, birch and cherry wood, azalea leaves, vines, flowering_azalea
-  astral: end_stone_bricks, purpur, amethyst_block, quartz, crying_obsidian, end_rod, glass panes
+- Pick the palette for this build's story and place yourself; no two regions of a map share one.
 
 DETAIL PASS (use most of these on every build; the steps work on what is already built, so block out first)
 - Decide every block's placement as a builder would: which way a stair, trapdoor, chest or wall torch faces and its half,
@@ -63,10 +56,10 @@ DETAIL PASS (use most of these on every build; the steps work on what is already
   standing, and in or beside water whether it is waterlogged. build_batch refuses a block that leaves these to the game's
   default (every stair facing north, every log upright), naming what to add. Write them in each block or legend entry:
   s=oak_stairs[facing=east,half=bottom]. What follows from the neighbours is added for you: fences, panes, bars and walls
-  connect, stair corners turn, doors, beds and tall plants get their other half, vines cling. roof, trim and decorate turn
+  connect, stair corners turn, doors, beds and tall plants get their other half, vines cling. trim and decorate turn
   their own blocks to where each lands.
-- Roofs: roof (gable, hip, shed) over the wall box: stairs face up the slope with corners joined, overhang=1-2, slabs for a
-  low pitch, gable= closes the ends, a taller box caps it flat. Break long ridges: a second, lower roof, a dormer, a chimney.
+- Roofs: stairs face up the slope with corners joined, overhang 1-2, slabs for a low pitch, gable ends closed in the
+  wall block. Break long ridges: a second, lower roof, a dormer, a chimney.
 - Depth: no wall is one flat plane. trim at=base (plinth), at=band level=Y (belt course), at=top (cornice) and at=corners
   (pillars or quoins of logs or polished stone); windows set 1 in, pillars or a timber frame 1 out.
 - Windows and doors: trim at=sills, lintels, shutters (trapdoors), frames; panes or bars in the hole.

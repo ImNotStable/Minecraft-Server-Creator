@@ -245,20 +245,42 @@ public final class PackAssets {
         if (!p.has("ascent")) {
             p.addProperty("ascent", Math.min(7, p.get("height").getAsInt()));
         }
+        // The same provider again (a repeated call) is not added twice; one without chars gets back the char it has.
+        for (JsonElement e : providers) {
+            if (e instanceof JsonObject had && had.get("chars") instanceof JsonArray chars && !chars.isEmpty()
+                    && (p.has("chars") ? had.equals(p) : without(had, "chars").equals(p))) {
+                return one(path, merged, glyphNote(chars, font));
+            }
+        }
         String note;
         if (!p.has("chars")) {
             int c = freeChar(providers);
             JsonArray chars = new JsonArray();
             chars.add(Character.toString(c));
             p.add("chars", chars);
-            note = String.format(Locale.ROOT, "glyph \\u%04X in %s: show it with {\"text\":\"\\u%04X\",\"font\":\"%s\"}",
-                    c, font, c, font);
+            note = glyphNote(chars, font);
         } else {
             note = "glyphs " + p.get("chars") + " in " + font;
         }
         providers.add(p);
         merged.add("providers", providers);
         return one(path, merged, note);
+    }
+
+    private static String glyphNote(JsonArray chars, ResourceId font) {
+        String row = chars.get(0).getAsString();
+        if (chars.size() != 1 || row.codePointCount(0, row.length()) != 1) {
+            return "glyphs " + chars + " in " + font;
+        }
+        int c = row.codePointAt(0);
+        return String.format(Locale.ROOT, "glyph \\u%04X in %s: show it with {\"text\":\"\\u%04X\",\"font\":\"%s\"}",
+                c, font, c, font);
+    }
+
+    private static JsonObject without(JsonObject o, String key) {
+        JsonObject copy = o.deepCopy();
+        copy.remove(key);
+        return copy;
     }
 
     /** The lowest private-use codepoint no provider of the font maps. */
@@ -303,7 +325,12 @@ public final class PackAssets {
         if (content.json() != null) {
             for (Map.Entry<String, JsonElement> e : content.json().entrySet()) {
                 if (e.getKey().equals("sounds") && e.getValue() instanceof JsonArray given) {
-                    given.forEach(sounds::add);
+                    // A sound already listed is not listed again: a repeated call must not double its weight.
+                    given.forEach(g -> {
+                        if (!sounds.contains(g)) {
+                            sounds.add(g);
+                        }
+                    });
                 } else {
                     entry.add(e.getKey(), e.getValue());
                 }

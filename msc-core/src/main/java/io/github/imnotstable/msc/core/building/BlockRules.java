@@ -48,8 +48,25 @@ final class BlockRules {
 
     /** How a refusal for unsaid placement starts, so a batch gathers every line's into one answer. */
     static final String UNSAID = "say how each block is placed (the game would default it): ";
-    static final String EXAMPLE = ", such as oak_stairs[facing=north,half=bottom]; a world_slice for pasting back keeps "
-            + "them with states=true";
+    private static final String KEEPS = "; a world_slice for pasting back keeps them with states=true";
+
+    /**
+     * The end of a refusal: the first refused block written out with the first choice of each property, such as
+     * {@code oak_sign[rotation=0]} for "oak_sign needs rotation=0-15" (a fixed stairs example misled for signs).
+     */
+    static String example(String firstUnsaid) {
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("(\\S+) needs ((?:[a-z_]+=\\S+ ?)+)")
+                .matcher(firstUnsaid);
+        if (!m.find()) {
+            return KEEPS;
+        }
+        List<String> props = new ArrayList<>();
+        for (String kv : m.group(2).strip().split(" ")) {
+            String[] p = kv.split("=", 2);
+            props.add(p[0] + "=" + p[1].split("[|-]")[0].replaceAll("[;,]$", ""));
+        }
+        return ", such as " + m.group(1) + "[" + String.join(",", props) + "]" + KEEPS;
+    }
 
     private BlockRules() {
     }

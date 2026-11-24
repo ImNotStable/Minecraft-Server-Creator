@@ -256,7 +256,8 @@ public final class Walk {
     /** The feet block for a position: the position itself, or the block above when the position is the floor. */
     private BlockPos feet(BlockPos p, String name) {
         if (!region.contains(p.x(), p.y(), p.z())) {
-            throw new ToolException(name + " " + Coords.show(p) + " is outside the region " + Coords.show(region));
+            throw new ToolException(name + " " + Coords.show(p) + " is outside the region " + Coords.show(region)
+                    + "; widen the region to hold both ends and the way between them");
         }
         if (standable(p.x(), p.y(), p.z())) {
             return p;

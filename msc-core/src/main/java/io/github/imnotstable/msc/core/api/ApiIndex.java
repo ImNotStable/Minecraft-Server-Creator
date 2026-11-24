@@ -236,7 +236,9 @@ public final class ApiIndex {
                 return exactCase.get(0);
             }
             throw new ToolException(name + " is ambiguous: "
-                    + String.join(", ", matches.stream().map(ClassInfo::name).limit(8).toList()));
+                    + String.join(", ", matches.stream().map(ClassInfo::name).limit(8).toList())
+                    + (matches.size() > 8 ? " and " + (matches.size() - 8) + " more" : "")
+                    + "; pass the full name, such as name=" + matches.getFirst().name());
         }
         return matches.get(0);
     }

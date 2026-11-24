@@ -233,4 +233,20 @@ class BuildReviewTest {
         BlockGrid air = TextGrid.parse("legend: #=stone\ny=0\n...\n...", "world", new BlockPos(0, 0, 0));
         assertThat(BuildReview.review(air)).isEqualTo("review: nothing built above the ground");
     }
+
+    @Test
+    void groundCoverAloneIsLandNotABuild() {
+        StringBuilder text = new StringBuilder("legend: g=grass_block s=short_grass p=poppy\ny=0\n");
+        text.append("ggggggggggg\n".repeat(11)).append("y=1\n");
+        for (int z = 0; z < 11; z++) {
+            text.append(z % 3 == 0 ? "sspsssspsss\n" : "s.s.s.s.s.s\n");
+        }
+        String review = BuildReview.review(TextGrid.parse(text.toString(), "world", new BlockPos(0, 64, 0)));
+        assertThat(review).startsWith("review: only plants above the ground").doesNotContain("flat roofs")
+                .doesNotContain("no lights").doesNotContain("block types");
+        assertThat(BuildReview.groundCover("mossy_stone_bricks")).isFalse();
+        assertThat(BuildReview.groundCover("oak_leaves")).isFalse();
+        assertThat(BuildReview.groundCover("moss_block")).isFalse();
+        assertThat(BuildReview.groundCover("oak_sapling")).isTrue();
+    }
 }

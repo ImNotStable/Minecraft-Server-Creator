@@ -329,7 +329,8 @@ class TextureToolsTest {
     void modelCreateFillsTheSlotsOfAVanillaParent() {
         assertThat(h.ok("model_create", "name", "block/ruby_log", "kind", "cube_column",
                 "textures", List.of("end=block/ruby_log_top", "side=block/ruby_log")))
-                .isEqualTo("wrote model msc:block/ruby_log; item_model msc:ruby_log\nnext: pack");
+                .isEqualTo("wrote model msc:block/ruby_log; item_model msc:ruby_log\nnot in the pack yet: "
+                        + "msc:block/ruby_log_top, msc:block/ruby_log; draw them with texture\nnext: pack");
         assertThat(workspace.resolve(".msc/pack/assets/msc/models/block/ruby_log.json")).content()
                 .contains("\"parent\":\"minecraft:block/cube_column\"").contains("\"side\":\"msc:block/ruby_log\"");
         assertThat(workspace.resolve(".msc/pack/assets/msc/items/ruby_log.json")).exists();
@@ -530,7 +531,7 @@ class TextureToolsTest {
     void packAssetWritesChecksAndRefuses() throws Exception {
         assertThat(h.ok("pack_asset", "type", "glyph", "name", "myplugin:icons", "json", "{\"file\":\"myplugin:font/coin.png\"}"))
                 .startsWith("wrote glyph \\uE000 in myplugin:icons: show it with {\"text\":\"\\uE000\",\"font\":\"myplugin:icons\"}")
-                .contains("\nerror: bitmap file myplugin:font/coin.png is not in the pack").endsWith("\nnext: pack");
+                .contains("\nstill to add: bitmap file myplugin:font/coin.png is not in the pack").endsWith("\nnext: pack");
         Path font = workspace.resolve(".msc/pack/assets/myplugin/font/icons.json");
         assertThat(font).content().contains("\uE000");
 

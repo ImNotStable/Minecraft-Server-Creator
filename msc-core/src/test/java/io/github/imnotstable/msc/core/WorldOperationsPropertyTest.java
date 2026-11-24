@@ -251,7 +251,7 @@ class WorldOperationsPropertyTest {
         // And one whose mask is the world before the first build: nothing is stone there any more.
         answers = whileHeld(placing, () -> h.ok("build_batch", "steps", glass),
                 () -> h.ok("build_batch", "steps", gold + " replace=stone"));
-        assertThat(answers[1]).isEqualTo("nothing to place: every step was empty or masked out by replace=");
+        assertThat(answers[1]).isEqualTo("nothing to place: every step was empty or masked out by replace= (light finds no spot darker than level=; decorate, scatter and flora no open spot)");
         assertThat(snapshot(area)).isEqualTo(replay(start, glass));
         assertThat(h.ok("build_undo")).startsWith("undid " + editId(answers[0]) + ":");
         assertThat(snapshot(area)).isEqualTo(start);

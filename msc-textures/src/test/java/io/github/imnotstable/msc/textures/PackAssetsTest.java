@@ -62,6 +62,20 @@ class PackAssetsTest {
     }
 
     @Test
+    void aRepeatedCallAddsNothingTwice() throws IOException {
+        write(PackAssets.Type.GLYPH, "msc:icons", "{\"file\":\"msc:font/coin.png\"}");
+        PackAssets.Plan again = write(PackAssets.Type.GLYPH, "msc:icons", "{\"file\":\"msc:font/coin.png\"}");
+        assertThat(again.note()).contains("\\uE000");
+        write(PackAssets.Type.GLYPH, "msc:icons", "{\"file\":\"msc:font/a.png\",\"chars\":[\"A\"]}");
+        write(PackAssets.Type.GLYPH, "msc:icons", "{\"file\":\"msc:font/a.png\",\"chars\":[\"A\"]}");
+        assertThat(read("assets/msc/font/icons.json").getAsJsonArray("providers")).hasSize(2);
+        write(PackAssets.Type.SOUND, "msc:boss.roar", "{\"sounds\":[\"msc:roar\"]}");
+        write(PackAssets.Type.SOUND, "msc:boss.roar", "{\"sounds\":[\"msc:roar\"]}");
+        assertThat(read("assets/msc/sounds.json").getAsJsonObject("boss.roar").getAsJsonArray("sounds").toString())
+                .isEqualTo("[\"msc:roar\"]");
+    }
+
+    @Test
     void langKeysMergeAndAtlasSourcesAppendOnce() throws IOException {
         write(PackAssets.Type.LANG, "msc:en_us", "{\"a\":\"A\",\"b\":\"B\"}");
         write(PackAssets.Type.LANG, "msc:en_us", "{\"b\":\"Bee\",\"c\":\"C\"}");
