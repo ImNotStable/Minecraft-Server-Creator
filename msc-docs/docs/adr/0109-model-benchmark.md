@@ -1,0 +1,27 @@
+# ADR 0109: Ten-model benchmark, improved on the tenth
+
+Status: accepted, 2026-11-24. Decided by Claude; Jeremiah approved the plan (rank by AA-3D, MineBench and T3Bench,
+top ten, baseline, improve MSC on the tenth, re-check the rest, keep it cheap).
+
+## Why
+
+MSC is tuned on whichever agent a playtest happened to use (mostly Gemini 4 Neon and GPT-6.2 Sol). Jeremiah wants
+it to work for every strong model, and the weakest of the strong ones shows the gaps most clearly.
+
+## Decision
+
+- Ranking: mean of each model's place on AA-3D and MineBench, models on both boards only, ties to the better
+  MineBench place. T3Bench ranks text-to-3D generation methods, not language models, so it gives no model a rank and
+  is left out. List and numbers: [model-benchmark-2026-11.md](../model-benchmark-2026-11.md).
+- The test subject is the tenth, GPT-6.1 Sol (it won the 9.5 tie with Gemini 4 Hydrogen on MineBench).
+- One small brief (a fishing hamlet), medium effort for every model, one run at a time, through the CLIs Flux already
+  has (Codex, Antigravity, Claude Code): no paid API use.
+- A fixed 100-point score (reviews 40, brief 25, land 10, looks 15, honesty 10), written down before the first run.
+- Benchmark runs use their own folders, the core built from this branch run from its own folder (not installed into
+  `~/.msc/core`, which the Shattered Meridian loop picks its core from), and Gemini runs only while that loop is on
+  Codex, so the two never share a folder, a core or Gemini quota.
+- Improvements follow ADR 0106: guides, review checks and gates, never prefabs.
+
+## Not done
+
+- One run per model is noisy; a model whose score moves by less than about 10 points is treated as unchanged.
