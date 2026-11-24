@@ -15,9 +15,9 @@ it to work for every strong model, and the weakest of the strong ones shows the 
   is left out. List and numbers: [model-benchmark-2026-11.md](../model-benchmark-2026-11.md).
 - The test subject is the tenth, GPT-6.1 Sol (it won the 9.5 tie with Gemini 4 Hydrogen on MineBench). Hydrogen
   runs as an eleventh baseline model (Jeremiah, 2026-11-24), since only the tie-break left it out.
-- One small brief (a fishing hamlet), medium effort for every model, up to two runs at once, through the CLIs Flux already
+- One small build-only brief (a fishing hamlet with a hologram and NPCs, no plugin code), medium effort for every model, up to two runs at once, through the CLIs Flux already
   has (Codex, Antigravity, Claude Code): no paid API use.
-- A fixed 100-point score (reviews 40, brief 25, land 10, looks 15, honesty 10), written down before the first run.
+- A fixed 100-point score (reviews 40, brief 28, land 10, looks 12, honesty 10), written down before the first run.
 - Benchmark runs use their own folders, the core built from this branch run from its own folder (not installed into
   `~/.msc/core`, which the Shattered Meridian loop picks its core from), and Gemini runs only while that loop is on
   Codex, so the two never share a folder, a core or Gemini quota.

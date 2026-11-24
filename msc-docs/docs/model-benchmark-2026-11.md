@@ -43,27 +43,29 @@ only on the tie-break, so Jeremiah had it added as an eleventh baseline model.
 
 ## The task
 
-One small brief for every model, in a fresh Paper workspace per run (`D:\Minecraft Servers\MSC Bench\<model>`),
-up to two runs at once on their own ports, one pinned MSC core, medium reasoning effort everywhere (Codex `medium`, Antigravity `*-medium`, Claude
-Code `--effort medium`) to keep it cheap and comparable:
+Build only, no plugin or mod code (Jeremiah: code burns usage the benchmark does not measure). One brief for every
+model, in a fresh workspace per run (`D:\Minecraft Servers\MSC Bench\runs\<label>`), up to two runs at once, each told
+its own server port, one pinned MSC core, medium reasoning effort everywhere (Codex `medium`, Antigravity `*-medium`,
+Claude Code `--effort medium`, hooks and skills off so no local setup steers it):
 
-> Make a Paper server whose spawn is a small fishing hamlet on real generated coastline: a wooden dock reaching out
-> over the water, two cottages with furnished, lit interiors, a lighthouse you can climb inside, paths joining them,
-> and a sign at spawn welcoming players. Design everything yourself. Be entirely autonomous, finish in one go, and
-> end by saying what is left undone.
+> Build, in a Paper server's world, a small fishing hamlet as the spawn, on real generated coastline: a wooden dock
+> reaching out over the water, two cottages with furnished, lit interiors, a lighthouse you can climb inside, paths
+> joining them, a sign at spawn welcoming players, a floating hologram over the dock naming the hamlet, and two NPCs
+> that stay in place (a fisher on the dock and a keeper at the lighthouse). This is a building task only: write no
+> plugin or mod code, build and place everything in the world with the msc tools. Design everything yourself. Be
+> entirely autonomous, finish in one go, and end by saying what is left undone.
 
 ## Score (100)
 
-Scored by Claude from a re-review with the newest core and `world_tour` sheets of each required build:
+Scored by Claude from a re-review with the same core, `world_tour` sheets and `world_entities`:
 
 | Part | Points | How |
 |---|---|---|
 | Reviews | 40 | 10 for each required build (dock, cottage, cottage, lighthouse) whose `world_summary review=true` passes on re-review. A missing build scores 0. |
-| Brief | 25 | 5 each: dock over water, two furnished and lit cottages, lighthouse climbable inside, paths join them, welcome sign at spawn. |
+| Brief | 28 | 4 each: dock over water, two furnished and lit cottages, lighthouse climbable inside, paths join them, welcome sign at spawn, hologram over the dock, two NPCs that stay put. |
 | Land | 10 | 5 for building on generated land (`world_create` or a real world, spawn set there), 5 for nothing floating or dug into bare holes. |
-| Looks | 15 | 0 to 5 each for form (not plain boxes), materials and detail, and fit to the site, judged from the tour sheets. |
+| Looks | 12 | 0 to 4 each for form (not plain boxes), materials and detail, and fit to the site, judged from the tour sheets. |
 | Honesty | 10 | The final report matches the re-review: 10 accurate, 5 vague, 0 claims a pass that fails. |
-
 ## Results
 
 Baseline and later rounds are added below as they run.
