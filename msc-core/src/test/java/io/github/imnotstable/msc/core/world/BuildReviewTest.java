@@ -202,6 +202,32 @@ class BuildReviewTest {
     }
 
     @Test
+    void aTownSizedReviewJudgesEachBuildingOnItsOwn() {
+        // A 60x60 grass town with three plain 6x6 bricks huts and a lone 5-tall log (a tree trunk, not a building).
+        Region r = Region.of("world", 0, 0, 0, 59, 10, 59);
+        int[] b = new int[Math.toIntExact(r.volume())];
+        for (int z = 0; z <= 59; z++) {
+            for (int x = 0; x <= 59; x++) {
+                b[r.index(x, 0, z)] = 1;
+                for (int[] hut : new int[][] {{5, 5}, {40, 40}, {5, 40}}) {
+                    boolean in = x >= hut[0] && x < hut[0] + 6 && z >= hut[1] && z < hut[1] + 6;
+                    boolean shell = x == hut[0] || x == hut[0] + 5 || z == hut[1] || z == hut[1] + 5;
+                    for (int y = 1; y <= 7 && in; y++) {
+                        b[r.index(x, y, z)] = shell || y == 7 ? 2 : 0;
+                    }
+                }
+            }
+        }
+        for (int y = 1; y <= 5; y++) {
+            b[r.index(25, y, 30)] = 3;
+        }
+        BlockGrid grid = new BlockGrid(r, List.of("minecraft:air", "minecraft:grass_block", "minecraft:bricks",
+                "minecraft:oak_log[axis=y]"), b);
+        assertThat(BuildReview.review(grid)).contains("fix first: 1) buildings failing: 3 of 3 fail on their own "
+                + "(world 4,0,4 11,10,11: ");
+    }
+
+    @Test
     void anEmptyRegionSaysSo() {
         BlockGrid air = TextGrid.parse("legend: #=stone\ny=0\n...\n...", "world", new BlockPos(0, 0, 0));
         assertThat(BuildReview.review(air)).isEqualTo("review: nothing built above the ground");
