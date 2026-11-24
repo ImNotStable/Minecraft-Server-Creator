@@ -63,6 +63,13 @@ twice, waits, log modes, plugin ids, workspace switches, Minestom setup):
 14. `build_undo`'s description says it also lists, saves and restores world backups; `player_test`'s says what a
     missed jump means ("hard for players too").
 
+Round 3 (Minestom: scaffold, dev_cycle, build, review, play-test, profile, export; a Velocity network with two Paper
+backends: start, `@backend` commands, a play-test switching servers, stop):
+
+15. The review says "1 block type", not "1 types".
+
+Round 3 found nothing else; with round 2 that is the first round with a single cosmetic finding.
+
 ## Consequences
 
 - Item ids are checked against bundled lists: a Minecraft newer than the newest list refuses its new items until that

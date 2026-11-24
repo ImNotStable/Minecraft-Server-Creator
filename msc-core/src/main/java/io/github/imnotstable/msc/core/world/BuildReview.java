@@ -204,7 +204,8 @@ public final class BuildReview {
         if (ground >= r.min().y()) {
             out.append(" (ground up to y ").append(ground).append(" left out)");
         }
-        out.append(": ").append(total).append(" blocks, ").append(counts.size()).append(" types: ");
+        out.append(": ").append(total).append(" blocks, ").append(counts.size()).append(counts.size() == 1 ? " type: "
+                : " types: ");
         for (int i = 0; i < Math.min(4, top.size()); i++) {
             out.append(i == 0 ? "" : ", ").append(top.get(i).getKey()).append(' ').append(pct(top.get(i).getValue(), total)).append('%');
         }
@@ -238,7 +239,7 @@ public final class BuildReview {
                     + "trapdoors for shutters; lanterns, barrels and plants as props");
         }
         if (counts.size() < MIN_TYPES) {
-            fixes.add("only " + counts.size() + " block types: add 2-3 variants of the main block (cracked, mossy, "
+            fixes.add("only " + counts.size() + (counts.size() == 1 ? " block type" : " block types") + ": add 2-3 variants of the main block (cracked, mossy, "
                     + "polished) and one accent");
         } else if (topShare > MAX_TOP_SHARE) {
             fixes.add(top.get(0).getKey() + " is " + topShare + "% of the build: mix variants into it (a block mix "

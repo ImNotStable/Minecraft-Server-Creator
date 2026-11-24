@@ -37,9 +37,9 @@ class BuildReviewTest {
     @Test
     void aPlainBoxGetsEveryFixAndTheGroundIsLeftOut() {
         String review = BuildReview.review(box("bricks"));
-        assertThat(review).startsWith("review (ground up to y 64 left out): 305 blocks, 1 types: bricks 100%\n")
+        assertThat(review).startsWith("review (ground up to y 64 left out): 305 blocks, 1 type: bricks 100%\n")
                 .contains("detail blocks 0% (aim 12%+)", "lights 0")
-                .contains("1) flat walls", "few shaped blocks", "only 1 block types", "flat roofs")
+                .contains("1) flat walls", "few shaped blocks", "only 1 block type:", "flat roofs")
                 .doesNotContain("grass");
     }
 
@@ -110,7 +110,7 @@ class BuildReviewTest {
             }
         }
         String review = BuildReview.review(TextGrid.parse(text.toString(), "world", new BlockPos(0, 64, 0)));
-        assertThat(review).contains("1 types: bricks 100%").doesNotContain("stone ");
+        assertThat(review).contains("1 type: bricks 100%").doesNotContain("stone ");
     }
 
     @Test
