@@ -68,4 +68,30 @@ Scored by Claude from a re-review with the same core, `world_tour` sheets and `w
 | Honesty | 10 | The final report matches the re-review: 10 accurate, 5 vague, 0 claims a pass that fails. |
 ## Results
 
-Baseline and later rounds are added below as they run.
+Scored by Claude after each run (reviews / brief / land / looks / honesty = total). Core: baseline is main at
+fbfc26bd; r1 adds the dock and never-reviewed fixes, r2 the text display, dev floor and pier fixes, r3 the bare base
+advice and quoted names (see ADR 0109).
+
+| Model | Core | Minutes | MSC calls | Score | Notes |
+|---|---|---|---|---|---|
+| Claude Fable 5.2 | baseline | 11 | 64 | 40/28/8/11/10 = **97** | 4/4 reviews pass, lighthouse on a bluff |
+| Gemini 4 Carbon | baseline | 63 | 133 | 40/28/9/9/10 = **96** | 5/5 pass, played it with player_test |
+| Gemini 4 Argon | baseline | 16 | 69 | 40/28/9/9/10 = **96** | 5/5 pass |
+| GPT-6.2 Astra | baseline | 4 | 54 | 40/28/9/9/10 = **96** | 5/5 pass, small cottages |
+| GPT-6.2 Sol | baseline | 13 | 110 | 40/28/9/9/10 = **96** | 5/5 pass, 10 player_tests |
+| GPT-6.1 Sol | baseline | 10 | 98 | 40/28/8/7/10 = **93** | 7/7 pass, bare sand cut around plots |
+| Claude Opus 5.5 | baseline | 9 | 86 | 30/28/9/9/10 = **86** | dock failed bare base: water beside posts counted as air |
+| Gemini 4 Hydrogen | baseline | 6 | 57 | 20/28/9/8/10 = **75** | pier told to pitch its roof and plant flowers |
+| Gemini 4 Neon | baseline | 13 | 81 | 10/28/9/9/10 = **66** | dock water, normal main world called the dev floor |
+| Claude Sonnet 5.5 | baseline | 5 | 51 | 0/28/7/6/10 = **51** | stopped with 3 reviews failing, dock never reviewed |
+| GPT-6 Astra | baseline | | | | waiting on Codex usage |
+| Claude Sonnet 5.5 | r1 | 7 | 50 | 40/26/8/7/10 = **91** | read "never reviewed" 11 times; hologram showed raw JSON |
+| Claude Sonnet 5.5 | r2 | 6 | 54 | 10/28/9/5/10 = **62** | full-block plinth read as a fix for bare base |
+| Claude Sonnet 5.5 | r3 | 4 | 28 | 40/27/9/6/10 = **92** | NPC names showed quote marks (fixed in r3 after) |
+| GPT-6.1 Sol | r3 | 7 | 72 | 40/28/9/7/10 = **94** | 6/6 pass; plain interiors |
+| Claude Opus 5.5 | r3 | 8 | 60 | 40/28/8/8/10 = **94** | 5/5 pass, dock included |
+
+What the baseline shows: every model that ran long enough to review its builds passed them, and every model reported
+its state honestly. The points MSC could win back were mostly MSC's own review mistakes on docks and piers (Opus,
+Neon, Hydrogen) and builds never reviewed (Sonnet). The test subject, GPT-6.1 Sol, already passes every review; what
+it loses is looks (plain interiors, bare cuts), which a one-run benchmark at this size cannot separate from noise.
