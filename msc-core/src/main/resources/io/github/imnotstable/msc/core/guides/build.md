@@ -45,7 +45,7 @@ THE LOOP (every build)
 5. Name the 3 weakest things concretely ("north wall is a flat 12x8 plane of one block"), fix them in one build_batch, re-render. Repeat until review passes and the render reads well. Never call a build done on its first render, and never praise a render the review flags.
 
 PALETTE
-- 60/30/10: a main material with 2-3 variants mixed in (stone_bricks:70,cracked_stone_bricks:15,mossy_stone_bricks:15), a secondary (wood, a second stone), one accent (copper, gold, a coloured block) used sparingly.
+- 60/30/10: a main material with 2-3 variants mixed in (no one block over half the build: the review fails it), a secondary (wood, a second stone), one accent (copper, gold, a coloured block) used sparingly.
 - Mix only near tones (stone_bricks with its cracked and mossy variants, deepslate_bricks with deepslate_tiles). A random mix of clashing colours (deepslate with prismarine, purpur with gold) reads as static; put contrast in lines instead: trims, bands, frames.
 - Gradient: darker, heavier blocks at the base, lighter near the top. Frame with a contrasting trim (logs or a polished stone).
 - Pick the palette for this build's story and place yourself; no two regions of a map share one.

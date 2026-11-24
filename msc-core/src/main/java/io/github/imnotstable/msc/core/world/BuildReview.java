@@ -226,7 +226,7 @@ public final class BuildReview {
         }
         if (speckledPct > MAX_SPECKLED && faces >= 50) {
             fixes.add("speckled walls: a random mix of clashing colours reads as noise; mix only near tones "
-                    + "(stone_bricks:70,cracked_stone_bricks:20,mossy_stone_bricks:10) and put contrast in lines: "
+                    + "(a block with its own cracked, mossy or polished variants) and put contrast in lines: "
                     + "trims, bands, frames, an accent at the focal point");
         }
         if (speckledRoofPct > MAX_SPECKLED_ROOF && roof[1] >= 50) {
@@ -239,11 +239,13 @@ public final class BuildReview {
                     + "trapdoors for shutters; lanterns, barrels and plants as props");
         }
         if (counts.size() < MIN_TYPES) {
-            fixes.add("only " + counts.size() + (counts.size() == 1 ? " block type" : " block types") + ": add 2-3 variants of the main block (cracked, mossy, "
-                    + "polished) and one accent");
+            fixes.add("only " + counts.size() + (counts.size() == 1 ? " block type" : " block types")
+                    + ": add 2-3 variants of the main block (cracked, mossy, polished) and one accent");
         } else if (topShare > MAX_TOP_SHARE) {
-            fixes.add(top.get(0).getKey() + " is " + topShare + "% of the build: mix variants into it (a block mix "
-                    + "such as stone_bricks:70,cracked_stone_bricks:20,mossy_stone_bricks:10)");
+            // The bar is on the whole build: a 70% main block in its mix still ends over it (round 4 of ADR 0107).
+            fixes.add(top.get(0).getKey() + " is " + topShare + "% of the build (aim at most " + MAX_TOP_SHARE
+                    + "%): give its variants more of the mix, so the main block is under half of it, and use a "
+                    + "second material for frames, floors or the roof");
         }
         if (roofPct < MIN_ROOF && height >= 6) {
             fixes.add("flat roofs: pitch them with stairs, overhang 1, and break long ridges with dormers or a tower");

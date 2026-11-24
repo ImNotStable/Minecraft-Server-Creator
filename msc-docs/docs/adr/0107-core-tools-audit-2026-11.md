@@ -68,7 +68,12 @@ backends: start, `@backend` commands, a play-test switching servers, stop):
 
 15. The review says "1 block type", not "1 types".
 
-Round 3 found nothing else; with round 2 that is the first round with a single cosmetic finding.
+Round 4 (the whole Paper sweep again on the fixed build: a mixed-material house with a door, a chest and a lamp,
+review, tour, a play-test through the door, a drawn block texture, pack, a refused /give):
+
+16. The review's "main block over 50%" fix recommended a 70/20/10 mix, which itself fails the 50% bar, and the guide's
+    palette line gave the same numbers. Both now say to keep the main block under half the build and how; the
+    speckled-walls fix names no blocks either.
 
 ## Consequences
 
