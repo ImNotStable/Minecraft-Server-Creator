@@ -66,6 +66,10 @@ public final class Builder {
         if (bounds == null) {
             throw new ToolException("nothing to build");
         }
+        String gate = dryRun ? null : world.reviews().gate(bounds);
+        if (gate != null) {
+            throw new ToolException(gate);
+        }
         if (bounds.volume() > MAX_VOLUME) {
             throw new ToolException("the steps span " + Coords.show(bounds) + " = " + bounds.volume() + " blocks; "
                     + tool + " covers at most " + MAX_VOLUME + ". Split it into calls over smaller areas.");
