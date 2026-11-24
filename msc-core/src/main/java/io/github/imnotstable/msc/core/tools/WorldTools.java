@@ -249,13 +249,13 @@ public final class WorldTools {
      * real coast, and the review still called it the dev floor (ADR 0109).
      */
     static boolean flatMainWorld(Path serverDir) {
-        java.util.Properties p = new java.util.Properties();
-        try (java.io.Reader in = Files.newBufferedReader(serverDir.resolve("server.properties"))) {
-            p.load(in);
+        try {
+            return io.github.imnotstable.msc.process.ServerPropertiesFile.read(serverDir.resolve(
+                    io.github.imnotstable.msc.process.ServerPropertiesFile.NAME)).getOrDefault("level-type", "minecraft:flat")
+                    .toLowerCase(java.util.Locale.ROOT).contains("flat");
         } catch (IOException | RuntimeException e) {
             return true;
         }
-        return p.getProperty("level-type", "minecraft:flat").toLowerCase(java.util.Locale.ROOT).contains("flat");
     }
 
     /**
