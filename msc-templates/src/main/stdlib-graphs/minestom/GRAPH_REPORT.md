@@ -1,75 +1,81 @@
 
 ## Corpus Check
-- 69 files · ~31,280 words
+- 69 files · ~31,149 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 1232 nodes · 2728 edges · 59 communities (21 shown, 38 thin omitted)
-- Extraction: 93% EXTRACTED · 7% INFERRED · 0% AMBIGUOUS · INFERRED: 182 edges (avg confidence: 0.85)
+- 1251 nodes · 2744 edges · 62 communities (20 shown, 42 thin omitted)
+- Extraction: 93% EXTRACTED · 7% INFERRED · 0% AMBIGUOUS · INFERRED: 185 edges (avg confidence: 0.85)
 - Token cost: 0 input · 0 output
 
 ## Community Hubs (Navigation)
 - net.kyori.adventure.audience.Audience
-- Permissions
-- Gui
 - MongoRepository
+- Codec
 - MinestomScheduler
-- DatabaseType
-- Datapack
+- CommandTree
 - Cache
-- Vec3
-- Redis
-- Scheduler
-- Gui.java
 - Database
 - Format
-- Redis.java
+- Vec3
+- Datapack
+- ColumnType
+- Scheduler
+- Json.java
 - Query
-- Hologram
-- java.util.random.RandomGenerator
-- net.minestom.server.coordinate.Point
-- Codec
-- Override
-- LootTable
-- Game
 - Team
-- Dialogue
-- Repository
-- net.minestom.server.entity.Player
-- Row
-- CommandTree
-- java.sql.Connection
-- Cuboid
-- Arena
+- LootTable
+- Permissions
+- Override
+- net.minestom.server.coordinate.Point
+- Game
+- Cmd.java
+- ItemBuilder
 - .update
-- Cmd
+- Hologram
+- Definition
+- Area
+- list
+- Repository
+- Row
+- Listener
+- java.sql.Connection
+- Store
 - EventBus
+- Cuboid
+- Dialogue
+- net.minestom.server.item.ItemStack
+- DatabaseType
+- WriteBehind
+- Builder
+- Region
+- Text.java
+- GroupEdit
 - .end
 - Leaderboard
-- DatabaseConfig
-- Listener
-- .dispatch
-- Players.java
-- Durations
-- Builder
-- Npcs
+- Npcs.java
+- net.minestom.server.entity.Player
 - Randoms
-- .Fail
-- Cooldowns
-- Phase
+- Locations.java
+- Builder
+- Players.java
+- net.kyori.adventure.text.Component
+- Config
+- Migration
 - RateLimiter
+- Phase
 
 ## God Nodes (most connected - your core abstractions)
-1. `Vec3` - 85 edges
-2. `Game` - 46 edges
-3. `Database` - 41 edges
-4. `Repository` - 41 edges
-5. `Permissions` - 33 edges
-6. `Shapes` - 29 edges
-7. `Datapack` - 28 edges
-8. `Scheduler` - 27 edges
-9. `Store` - 26 edges
-10. `Cache` - 22 edges
+1. `Vec3` - 86 edges
+2. `Game` - 45 edges
+3. `Database` - 43 edges
+4. `Repository` - 40 edges
+5. `Permissions` - 32 edges
+6. `Datapack` - 29 edges
+7. `Shapes` - 29 edges
+8. `Store` - 27 edges
+9. `Scheduler` - 27 edges
+10. `CommandTree` - 25 edges
 
 ## Surprising Connections (you probably didn't know these)
 - `Cmd` --references--> `Permissions`  [EXTRACTED]
@@ -86,111 +92,107 @@
 ## Import Cycles
 - None detected.
 
-## Communities (59 total, 38 thin omitted)
+## Communities (62 total, 42 thin omitted)
 
 ### Community 0 - "net.kyori.adventure.audience.Audience"
-Cohesion: 0.05
-Nodes (17): Messages, Bar, Feedback, Sounds, CLICK, DEFEAT, FAIL, GO (+9 more)
-
-### Community 1 - "Permissions"
 Cohesion: 0.06
-Nodes (7): Store, WriteBehind, Group, GroupEdit, Permissions, User, PlayerData
+Nodes (5): Messages, Bar, Feedback, Sounds, Lang
 
-### Community 2 - "Gui"
-Cohesion: 0.07
-Nodes (6): CustomItems, Definition, Gui, GuiClick, Menu, ItemBuilder
-
-### Community 3 - "MongoRepository"
+### Community 1 - "MongoRepository"
 Cohesion: 0.06
 Nodes (6): Messenger, Messenger, Subscription, Mongo, Store<>, MongoRepository
 
-### Community 4 - "MinestomScheduler"
-Cohesion: 0.09
-Nodes (7): Boards, Shown, MinestomScheduler, Task, Pending, Prompt, Stdlib
-
-### Community 5 - "DatabaseType"
+### Community 2 - "Codec"
 Cohesion: 0.07
-Nodes (20): ColumnType, BOOLEAN, BYTES, DOUBLE, INSTANT, INT, LONG, STRING (+12 more)
+Nodes (8): Codec, Codec<>, FileStore, Redis, Lock, JedisPubSub, Messenger, Store<>
 
-### Community 6 - "Datapack"
+### Community 3 - "MinestomScheduler"
+Cohesion: 0.08
+Nodes (7): Boards, Shown, MinestomScheduler, Task, Prompt, Pending, Stdlib
+
+### Community 4 - "CommandTree"
+Cohesion: 0.08
+Nodes (5): CommandTree, Ctx, Fail, Source, Cooldowns
+
+### Community 5 - "Cache"
 Cohesion: 0.10
-Nodes (3): Config, Validated, Datapack
+Nodes (10): Cache, Builder, Cause, EXPIRED, INVALIDATED, REPLACED, SIZE, Entry (+2 more)
 
-### Community 7 - "Cache"
-Cohesion: 0.10
-Nodes (10): Builder, Cache, Cause, EXPIRED, INVALIDATED, REPLACED, SIZE, Entry (+2 more)
+### Community 6 - "Database"
+Cohesion: 0.09
+Nodes (4): Database, PoolStats, RowMapper, DatabaseConfig
 
-### Community 9 - "Redis"
-Cohesion: 0.12
-Nodes (5): Lock, Redis, JedisPubSub, Messenger, Store<>
+### Community 7 - "Format"
+Cohesion: 0.08
+Nodes (5): Id, Indexed, Length, Durations, Format
 
-### Community 10 - "Scheduler"
-Cohesion: 0.12
+### Community 10 - "ColumnType"
+Cohesion: 0.13
+Nodes (12): ColumnType, BOOLEAN, BYTES, DOUBLE, INSTANT, INT, LONG, STRING (+4 more)
+
+### Community 12 - "Scheduler"
+Cohesion: 0.13
 Nodes (5): Scheduler, Task, Sequence, Scheduler.Task, Step
 
-### Community 12 - "Database"
-Cohesion: 0.12
-Nodes (3): Database, PoolStats, RowMapper
+### Community 17 - "LootTable"
+Cohesion: 0.18
+Nodes (7): LootTable, Builder, Context, Drop, Entry, Pool, PoolBuilder
 
-### Community 13 - "Format"
-Cohesion: 0.12
-Nodes (4): Id, Indexed, Length, Format
-
-### Community 17 - "java.util.random.RandomGenerator"
-Cohesion: 0.13
-Nodes (4): Region, Region, Region, WeightedRandom
-
-### Community 20 - "Codec"
-Cohesion: 0.17
-Nodes (3): Codec, Codec<>, FileStore
-
-### Community 21 - "Override"
+### Community 20 - "Override"
 Cohesion: 0.15
 Nodes (3): Store<>, Store<>, Store<>
 
-### Community 22 - "LootTable"
-Cohesion: 0.19
-Nodes (7): Builder, Context, Drop, Entry, LootTable, Pool, PoolBuilder
-
-### Community 26 - "Dialogue"
+### Community 33 - "java.sql.Connection"
 Cohesion: 0.22
-Nodes (4): Builder, Choice, Dialogue, Page
-
-### Community 32 - "java.sql.Connection"
-Cohesion: 0.21
 Nodes (3): DatabaseException, SqlFunction, Schema
 
-### Community 41 - "EventBus"
-Cohesion: 0.21
-Nodes (5): Cancellable, CancellableEvent, EventBus, Handler, Subscription
+### Community 35 - "EventBus"
+Cohesion: 0.18
+Nodes (5): EventBus, Cancellable, CancellableEvent, Handler, Subscription
 
-### Community 42 - ".end"
-Cohesion: 0.21
+### Community 37 - "Dialogue"
+Cohesion: 0.27
+Nodes (4): Dialogue, Builder, Choice, Page
+
+### Community 39 - "net.minestom.server.item.ItemStack"
+Cohesion: 0.26
+Nodes (3): Gui, GuiClick, Nav
+
+### Community 40 - "DatabaseType"
+Cohesion: 0.13
+Nodes (6): DatabaseType, H2, MARIADB, MYSQL, POSTGRESQL, SQLITE
+
+### Community 44 - "Region"
+Cohesion: 0.18
+Nodes (3): Region, Region, Region
+
+### Community 47 - ".end"
+Cohesion: 0.20
 Nodes (7): Reason, LAST_STANDING, SCORE, STOPPED, TIME, Result, Winner
 
-### Community 56 - "Phase"
-Cohesion: 0.33
+### Community 61 - "Phase"
+Cohesion: 0.40
 Nodes (5): Phase, ENDING, RUNNING, STARTING, WAITING
 
 ## Knowledge Gaps
-- **37 isolated node(s):** `EXPIRED`, `SIZE`, `REPLACED`, `INVALIDATED`, `STRING` (+32 more)
+- **26 isolated node(s):** `EXPIRED`, `SIZE`, `REPLACED`, `INVALIDATED`, `STRING` (+21 more)
   These have ≤1 connection - possible missing edges. (Counts symbols only; 270 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
-- **38 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **42 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `Vec3` connect `Vec3` to `Cuboid`, `Regions.java`, `Arena`, `.orient`, `.join`, `Hologram`, `java.util.random.RandomGenerator`, `net.minestom.server.coordinate.Point`, `map`, `Team`?**
-  _High betweenness centrality (0.124) - this node is a cross-community bridge._
+- **Why does `Vec3` connect `Vec3` to `Listener`, `Cuboid`, `map`, `Builder`, `Gui.java`, `.orient`, `Region`, `Team`, `Locations.java`, `net.minestom.server.coordinate.Point`?**
+  _High betweenness centrality (0.130) - this node is a cross-community bridge._
 - **What connects `EXPIRED`, `SIZE`, `REPLACED` to the rest of the system?**
-  _37 weakly-connected nodes found - possible missing edges._
+  _26 weakly-connected nodes found - possible missing edges._
 - **Should `net.kyori.adventure.audience.Audience` be split into smaller, more focused modules?**
-  _Cohesion score 0.052917232021709636 - nodes in this community are weakly interconnected._
-- **Why does `Repository` connect `Repository` to `DatabaseType`, `.update`, `Database`, `Format`, `Redis.java`, `Query`, `MongoRepository.java`, `Row`?**
-  _High betweenness centrality (0.105) - this node is a cross-community bridge._
-- **Should `Permissions` be split into smaller, more focused modules?**
-  _Cohesion score 0.06241519674355495 - nodes in this community are weakly interconnected._
-- **Why does `Game` connect `Game` to `Regions.java`, `Arena`, `.end`, `Scheduler`, `Listener`, `.join`, `Builder`, `Phase`, `Team`?**
-  _High betweenness centrality (0.080) - this node is a cross-community bridge._
-- **Should `Gui` be split into smaller, more focused modules?**
-  _Cohesion score 0.06558441558441558 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.06110102843315184 - nodes in this community are weakly interconnected._
+- **Why does `Repository` connect `Repository` to `Database`, `Format`, `DatabaseType`, `ColumnType`, `Json.java`, `Query`, `MongoRepository.java`, `.update`, `Row`?**
+  _High betweenness centrality (0.128) - this node is a cross-community bridge._
+- **Should `MongoRepository` be split into smaller, more focused modules?**
+  _Cohesion score 0.06429070580013976 - nodes in this community are weakly interconnected._
+- **Why does `Store` connect `Store` to `MongoRepository`, `Codec`, `WriteBehind`, `ColumnType`, `Gui.java`, `GroupEdit`, `Permissions.java`, `Permissions`, `MongoRepository.java`, `Override`?**
+  _High betweenness centrality (0.096) - this node is a cross-community bridge._
+- **Should `Codec` be split into smaller, more focused modules?**
+  _Cohesion score 0.06561085972850679 - nodes in this community are weakly interconnected._

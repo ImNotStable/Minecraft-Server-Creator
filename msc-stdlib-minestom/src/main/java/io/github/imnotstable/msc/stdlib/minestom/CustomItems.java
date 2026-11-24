@@ -1,8 +1,6 @@
 package io.github.imnotstable.msc.stdlib.minestom;
 
 import io.github.imnotstable.msc.stdlib.time.Cooldowns;
-import io.github.imnotstable.msc.stdlib.ui.Feedback;
-import io.github.imnotstable.msc.stdlib.util.Format;
 import net.minestom.server.entity.Player;
 import net.minestom.server.event.entity.EntityAttackEvent;
 import net.minestom.server.event.item.ItemDropEvent;
@@ -41,6 +39,7 @@ public final class CustomItems {
         private Consumer<EntityAttackEvent> onHit;
         private boolean undroppable;
         private Duration cooldown;
+        private java.util.function.BiConsumer<Player, Duration> tooSoon = (who, left) -> {};
         private final Cooldowns<UUID> cooldowns = new Cooldowns<>();
 
         private Definition(Supplier<ItemStack> factory) {
@@ -59,8 +58,16 @@ public final class CustomItems {
             return this;
         }
 
+        /** Time between uses per player; a use too soon does nothing. */
         public Definition cooldown(Duration time) {
             this.cooldown = time;
+            return this;
+        }
+
+        /** Same, and {@code tooSoon} gets the player and the time left, to tell them your way. */
+        public Definition cooldown(Duration time, java.util.function.BiConsumer<Player, Duration> tooSoon) {
+            this.cooldown = time;
+            this.tooSoon = tooSoon;
             return this;
         }
 
@@ -101,7 +108,7 @@ public final class CustomItems {
         if (d.cooldown == null || d.cooldowns.tryUse(p.getUuid(), d.cooldown)) {
             return true;
         }
-        Feedback.actionBar(p, "<red>Wait <time>", "time", Format.duration(d.cooldowns.remaining(p.getUuid())));
+        d.tooSoon.accept(p, d.cooldowns.remaining(p.getUuid()));
         return false;
     }
 

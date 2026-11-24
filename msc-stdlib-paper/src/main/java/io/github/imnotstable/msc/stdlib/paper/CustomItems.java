@@ -1,6 +1,5 @@
 package io.github.imnotstable.msc.stdlib.paper;
 
-import io.github.imnotstable.msc.stdlib.ui.Feedback;
 import org.bukkit.NamespacedKey;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -51,6 +50,7 @@ public final class CustomItems {
         private boolean undroppable;
         private boolean unplaceable = true;
         private java.time.Duration cooldown;
+        private java.util.function.BiConsumer<Player, java.time.Duration> tooSoon = (who, left) -> {};
         private final io.github.imnotstable.msc.stdlib.time.Cooldowns<java.util.UUID> cooldowns =
                 new io.github.imnotstable.msc.stdlib.time.Cooldowns<>();
 
@@ -82,9 +82,16 @@ public final class CustomItems {
             return this;
         }
 
-        /** Time between uses per player; a use too soon shows the time left in the action bar. */
+        /** Time between uses per player; a use too soon does nothing. */
         public Definition cooldown(java.time.Duration time) {
             this.cooldown = time;
+            return this;
+        }
+
+        /** Same, and {@code tooSoon} gets the player and the time left, to tell them your way. */
+        public Definition cooldown(java.time.Duration time, java.util.function.BiConsumer<Player, java.time.Duration> tooSoon) {
+            this.cooldown = time;
+            this.tooSoon = tooSoon;
             return this;
         }
 
@@ -144,8 +151,7 @@ public final class CustomItems {
         if (d.cooldown == null || d.cooldowns.tryUse(p.getUniqueId(), d.cooldown)) {
             return true;
         }
-        Feedback.actionBar(p, "<red>Wait <time>", "time",
-                io.github.imnotstable.msc.stdlib.util.Format.duration(d.cooldowns.remaining(p.getUniqueId())));
+        d.tooSoon.accept(p, d.cooldowns.remaining(p.getUniqueId()));
         return false;
     }
 

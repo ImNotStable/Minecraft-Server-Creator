@@ -56,7 +56,7 @@ class StdlibPaperTest {
         List<String> clicks = new ArrayList<>();
         Gui gui = Gui.chest(3, Component.text("Shop"))
                 .set(13, ItemStack.of(Material.DIAMOND), c -> clicks.add(c.type() + "@" + c.slot()))
-                .editable(0).fill(ItemBuilder.filler()).open(p);
+                .editable(0).fill(ItemBuilder.pane(Material.GRAY_STAINED_GLASS_PANE)).open(p);
         assertThat(p.getOpenInventory().getTopInventory()).isSameAs(gui.getInventory());
         assertThat(click(p, ClickType.RIGHT, 13).isCancelled()).isTrue();
         assertThat(click(p, ClickType.LEFT, 5).isCancelled()).isTrue();
@@ -68,7 +68,9 @@ class StdlibPaperTest {
         PlayerMock p = server.addPlayer();
         List<Integer> picked = new ArrayList<>();
         Gui gui = Gui.paged(2, Component.text("Numbers"), IntStream.range(0, 20).boxed().toList(),
-                i -> ItemStack.of(Material.STONE, i + 1), (i, c) -> picked.add(i)).open(p);
+                i -> ItemStack.of(Material.STONE, i + 1), (i, c) -> picked.add(i),
+                new Gui.Nav(ItemStack.of(Material.ARROW), ItemStack.of(Material.ARROW),
+                        (n, of) -> ItemBuilder.of(Material.PAPER).name("Page " + n + "/" + of).build())).open(p);
         assertThat(gui.getInventory().getItem(9)).isNull();          // no back arrow on page 1
         click(p, ClickType.LEFT, 17); // next
         click(p, ClickType.LEFT, 0);

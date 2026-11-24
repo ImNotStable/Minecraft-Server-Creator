@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.BiConsumer;
+import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
@@ -28,7 +29,7 @@ import java.util.function.Function;
  *
  * <pre>{@code
  * Gui.chest(3, Text.mm("<gold>Shop"))
- *         .fill(ItemBuilder.filler())
+ *         .fill(ItemBuilder.pane(Material.BROWN_STAINED_GLASS_PANE))
  *         .set(13, ItemBuilder.of(Material.DIAMOND).name("<aqua>Buy").build(), click -> buy(click.player()))
  *         .open(player);
  * }</pre>
@@ -70,9 +71,15 @@ public final class Gui {
         return new Gui(rows, title);
     }
 
-    /** A menu over a list, a page at a time: the last row has back and next arrows. */
+    /**
+     * {@link #paged}'s buttons, made by you: {@code back} and {@code next} arrows, and {@code page} (may be null) for the
+     * middle of the last row, given the page and the page count, both counted from 1. No stock look (ADR 0106).
+     */
+    public record Nav(ItemStack back, ItemStack next, BiFunction<Integer, Integer, ItemStack> page) {}
+
+    /** A menu over a list, a page at a time: the last row has {@code nav}'s buttons. */
     public static <T> Gui paged(int rows, Component title, List<T> entries, Function<T, ItemStack> icon,
-                                BiConsumer<T, GuiClick> onClick) {
+                                BiConsumer<T, GuiClick> onClick, Nav nav) {
         Gui gui = new Gui(Math.max(2, rows), title);
         List<T> list = List.copyOf(entries);
         int perPage = (Math.max(2, rows) - 1) * 9;
@@ -87,19 +94,20 @@ public final class Gui {
                 gui.set(i, icon.apply(entry), c -> onClick.accept(entry, c));
             }
             if (page[0] > 0) {
-                gui.set(perPage, ItemBuilder.of(Material.ARROW).name("<yellow>Back").build(), c -> {
+                gui.set(perPage, nav.back(), c -> {
                     page[0]--;
                     render[0].run();
                 });
             }
             if (page[0] < pages - 1) {
-                gui.set(perPage + 8, ItemBuilder.of(Material.ARROW).name("<yellow>Next").build(), c -> {
+                gui.set(perPage + 8, nav.next(), c -> {
                     page[0]++;
                     render[0].run();
                 });
             }
-            gui.set(perPage + 4, ItemBuilder.of(Material.PAPER)
-                    .name(Text.item("<gray>Page <p>/<n>", "p", page[0] + 1, "n", pages)).build());
+            if (nav.page() != null) {
+                gui.set(perPage + 4, nav.page().apply(page[0] + 1, pages));
+            }
         };
         render[0].run();
         return gui;

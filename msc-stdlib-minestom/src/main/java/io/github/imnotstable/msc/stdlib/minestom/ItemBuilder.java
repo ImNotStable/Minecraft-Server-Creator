@@ -30,10 +30,9 @@ public final class ItemBuilder {
         return new ItemBuilder(ItemStack.builder(material));
     }
 
-    /** An unnamed grey pane with no tooltip, for menu backgrounds. */
-    public static ItemStack filler() {
-        return ItemStack.builder(Material.GRAY_STAINED_GLASS_PANE).customName(Component.empty())
-                .hideExtraTooltip().build();
+    /** {@code material} with no name and no tooltip, for menu borders and backgrounds you choose. */
+    public static ItemStack pane(Material material) {
+        return ItemStack.builder(material).customName(Component.empty()).hideExtraTooltip().build();
     }
 
     public ItemBuilder amount(int amount) {

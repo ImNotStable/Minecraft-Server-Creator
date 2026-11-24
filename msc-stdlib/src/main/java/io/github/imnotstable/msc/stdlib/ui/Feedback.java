@@ -8,12 +8,11 @@ import net.kyori.adventure.title.Title;
 import java.time.Duration;
 
 /**
- * Telling players what happened, in one call each: chat, action bar, title, with a matching sound. Text is MiniMessage
- * with placeholders as in {@link Text#mm}. Works for anything that is an Adventure {@code Audience}: a player, a world or instance, the server.
+ * Telling players what happened, in one call each: chat, action bar, title. Text is MiniMessage with placeholders as
+ * in {@link Text#mm}, styled by you: there is no stock success or fail look (ADR 0106). Works for anything that is an Adventure {@code Audience}: a player, a world or instance, the server.
  *
  * <pre>{@code
- * Feedback.success(player, "Bought <item> for <price>", "item", "a sword", "price", Format.money(50, "$"));
- * Feedback.fail(player, "You need <n> more coins", "n", 20);
+ * Feedback.message(player, "Bought <item> for <price>", "item", "a sword", "price", Format.money(50, "$"));
  * Feedback.title(player, "<gold>Round 2", "<gray>Fight!", Duration.ofMillis(250), Duration.ofSeconds(2), Duration.ofMillis(500));
  * Feedback.actionBar(player, "<yellow>Coins: <c>", "c", Format.number(coins));
  * }</pre>
@@ -25,25 +24,7 @@ public final class Feedback {
 
     private Feedback() {}
 
-    /** A green ✔ chat line and the success sound. */
-    public static void success(Audience to, String miniMessage, Object... placeholders) {
-        to.sendMessage(Text.mm("<green>✔ </green>" + "<green>" + miniMessage, placeholders));
-        Sounds.SUCCESS.play(to);
-    }
-
-    /** A red ✘ chat line and the fail sound. */
-    public static void fail(Audience to, String miniMessage, Object... placeholders) {
-        to.sendMessage(Text.mm("<red>✘ </red>" + "<red>" + miniMessage, placeholders));
-        Sounds.FAIL.play(to);
-    }
-
-    /** A neutral chat line with the notify sound. */
-    public static void info(Audience to, String miniMessage, Object... placeholders) {
-        to.sendMessage(Text.mm("<gray>» </gray>" + miniMessage, placeholders));
-        Sounds.NOTIFY.play(to);
-    }
-
-    /** Plain chat, no prefix or sound. */
+    /** A chat line. */
     public static void message(Audience to, String miniMessage, Object... placeholders) {
         to.sendMessage(Text.mm(miniMessage, placeholders));
     }

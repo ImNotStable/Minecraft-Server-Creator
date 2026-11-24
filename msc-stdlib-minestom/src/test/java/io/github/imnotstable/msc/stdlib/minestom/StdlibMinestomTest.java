@@ -36,7 +36,7 @@ class StdlibMinestomTest {
         Player p = env.createPlayer(world, new Pos(0, 42, 0));
         List<Integer> clicks = new ArrayList<>();
         Gui gui = Gui.chest(3, Component.text("Shop")).set(13, ItemStack.of(Material.DIAMOND), c -> clicks.add(c.slot()))
-                .editable(0).fill(ItemBuilder.filler()).open(p);
+                .editable(0).fill(ItemBuilder.pane(Material.GRAY_STAINED_GLASS_PANE)).open(p);
         assertThat(p.getOpenInventory()).isSameAs(gui.inventory());
         assertThat(click(env, p, new Click.Right(13)).isCancelled()).isTrue();
         assertThat(click(env, p, new Click.Left(0)).isCancelled()).isFalse();
@@ -52,7 +52,9 @@ class StdlibMinestomTest {
         Player p = env.createPlayer(env.createFlatInstance(), new Pos(0, 42, 0));
         List<Integer> picked = new ArrayList<>();
         Gui gui = Gui.paged(2, Component.text("Numbers"), IntStream.range(0, 20).boxed().toList(),
-                i -> ItemStack.of(Material.STONE, i + 1), (i, c) -> picked.add(i)).open(p);
+                i -> ItemStack.of(Material.STONE, i + 1), (i, c) -> picked.add(i),
+                new Gui.Nav(ItemStack.of(Material.ARROW), ItemStack.of(Material.ARROW),
+                        (n, of) -> ItemBuilder.of(Material.PAPER).name(Component.text("Page " + n + "/" + of)).build())).open(p);
         click(env, p, new Click.Left(17));
         click(env, p, new Click.Left(0));
         assertThat(picked).containsExactly(9);

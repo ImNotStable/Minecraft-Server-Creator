@@ -1,6 +1,6 @@
 # ADR 0072: Shaded texture presets to customise, and why Sky Sprint needed no msc tools
 
-Status: accepted, 2026-11-22. Decided by Claude, on Jeremiah's ask for both quality and efficiency.
+Status: accepted, 2026-11-22. Decided by Claude, on Jeremiah's ask for both quality and efficiency. Superseded by [ADR 0106](0106-from-scratch.md): the shapes are gone.
 
 ## Context
 

@@ -5,9 +5,8 @@ The AI draws pixel art as text, so no image model is needed. Everything goes int
 ## Make a custom item in 4 steps
 
 1. **Make the texture.** Pick one:
-   - Generate it: "make a ruby gem texture, color #d4263a." Shapes: `gem`, `ingot`, `orb`, `sword`, `pickaxe`, `food`. Patterns for blocks: `noise`, `ore`, `planks`, `bricks`.
-   - Draw it: the `texture` tool with a palette such as `r=#d4263a` and 16 rows of 16 characters.
-   - Recolour one: "copy item/ruby as a blue sapphire."
+   - Draw it: the `texture` tool with a palette such as `r=#d4263a` and 16 rows of 16 characters. Every texture is drawn this way; MSC has no stock shapes or patterns.
+   - Recolour one you drew: "copy item/ruby as a blue sapphire."
 2. **Look at it.** `texture_view` shows it back as text, about 80 tokens.
 3. **Build and send the pack.** `pack` zips it, serves it from your machine, sends it to players on the server and lists missing textures, bad sizes and broken models. `pack check=true` only checks.
 4. **Use it in your plugin.** Set the item's `item_model` component to the id the tool printed: the texture's namespace and file name without the folder, so `item/ruby` becomes `msc:ruby` (in Paper: `meta.setItemModel(new NamespacedKey("msc", "ruby"))`).

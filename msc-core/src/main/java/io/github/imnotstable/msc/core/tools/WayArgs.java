@@ -18,16 +18,12 @@ import java.util.stream.Collectors;
 public record WayArgs(String arg, Set<String> readers, String refusal) {
     /** The texture tool. Ways: rows, kind or copy; animate; pack (the texture goes into the pack, not a .png path). */
     static final List<WayArgs> TEXTURE = List.of(
-            new WayArgs("palette", Set.of("rows"), "palette is for rows; kind and copy take color"),
-            new WayArgs("color", Set.of("kind", "copy"), "color is for kind and copy; rows take their colors from palette"),
-            new WayArgs("accent", Set.of("kind"), "accent is for kind; leave it out"),
-            new WayArgs("size", Set.of("kind"), "size is for kind; rows set the size by their length"),
-            new WayArgs("seed", Set.of("kind"), "seed is for kind; leave it out"),
-            new WayArgs("contrast", Set.of("kind"), "contrast is for kind; leave it out"),
+            new WayArgs("palette", Set.of("rows"), "palette is for rows; copy takes color"),
+            new WayArgs("color", Set.of("copy"), "color is for copy; rows take their colors from palette"),
             new WayArgs("frames", Set.of("animate"), "frames is for animate; leave it out or add animate"),
             new WayArgs("frametime", Set.of("animate"), "frametime is for animate; leave it out or add animate"),
             new WayArgs("model", Set.of("pack"),
-                    "model is written only with rows, kind or copy into the pack; leave it out"));
+                    "model is written only with rows or copy into the pack; leave it out"));
 
     /** The pack tool. Ways: check (only list problems) or build. */
     static final List<WayArgs> PACK = List.of(

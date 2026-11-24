@@ -76,10 +76,10 @@ class OutputPermissionsTest {
     @Test
     void textureToAPng() throws Exception {
         try (CoreHarness h = new CoreHarness(ws)) {
-            h.ok("texture", "name", "art/new.png", "kind", "gem", "color", "#d4263a");
+            h.ok("texture", "name", "art/new.png", "palette", Drawings.palette("#d4263a"), "rows", Drawings.rows());
             assertThat(mode(ws.resolve("art/new.png"))).isEqualTo(plainNew());
             Path old = odd(ws.resolve("art/old.png"), "old");
-            h.ok("texture", "name", "art/old.png", "kind", "gem", "color", "#d4263a");
+            h.ok("texture", "name", "art/old.png", "palette", Drawings.palette("#d4263a"), "rows", Drawings.rows());
             assertThat(mode(old)).isEqualTo(ODD);
         }
     }
@@ -87,7 +87,7 @@ class OutputPermissionsTest {
     @Test
     void packFile() throws Exception {
         try (CoreHarness h = new CoreHarness(ws)) {
-            h.ok("texture", "name", "item/ruby", "kind", "gem", "color", "#d4263a");
+            h.ok("texture", "name", "item/ruby", "palette", Drawings.palette("#d4263a"), "rows", Drawings.rows());
             h.ok("pack", "file", "out/new.zip");
             assertThat(mode(ws.resolve("out/new.zip"))).isEqualTo(plainNew());
             Path old = odd(ws.resolve("out/old.zip"), "old");
@@ -100,13 +100,13 @@ class OutputPermissionsTest {
     @Test
     void packTakeBack() throws Exception {
         try (CoreHarness h = new CoreHarness(ws).withAgent()) {
-            h.ok("texture", "name", "item/ruby", "kind", "gem", "color", "#d4263a");
+            h.ok("texture", "name", "item/ruby", "palette", Drawings.palette("#d4263a"), "rows", Drawings.rows());
             String built = h.ok("pack");
             String url = built.lines().filter(l -> l.startsWith("url: ")).findFirst().orElseThrow().substring(5);
             Path properties = odd(ws.resolve("run/server.properties"), "motd=kept\nresource-pack=" + url + "\n");
             Path zip = ws.resolve(".msc/build/pack.zip");
             Files.setPosixFilePermissions(zip, ODD);
-            h.ok("texture", "name", "item/ruby", "kind", "gem", "color", "#2655d4");
+            h.ok("texture", "name", "item/ruby", "palette", Drawings.palette("#2655d4"), "rows", Drawings.rows());
             StepsAccess.failAt("send it to the server's players");
             String error;
             try {

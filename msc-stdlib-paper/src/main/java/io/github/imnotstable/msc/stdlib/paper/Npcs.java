@@ -4,8 +4,6 @@ import io.github.imnotstable.msc.stdlib.npc.Dialogue;
 import io.github.imnotstable.msc.stdlib.text.Text;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.event.ClickEvent;
-import net.kyori.adventure.text.format.NamedTextColor;
-import net.kyori.adventure.text.format.TextDecoration;
 import org.bukkit.Location;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.EntityType;
@@ -107,9 +105,7 @@ public final class Npcs {
             Component row = Component.empty();
             for (int i = 0; i < choices.size(); i++) {
                 int index = i;
-                row = row.append(Component.text("[" + choices.get(i).label() + "]", NamedTextColor.AQUA)
-                        .decorate(TextDecoration.UNDERLINED)
-                        .clickEvent(ClickEvent.callback(a -> {
+                row = row.append(Text.mm(choices.get(i).label()).clickEvent(ClickEvent.callback(a -> {
                             if (a instanceof Player p) {
                                 choose(p, index);
                             }

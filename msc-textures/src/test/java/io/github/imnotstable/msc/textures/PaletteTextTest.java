@@ -62,7 +62,7 @@ class PaletteTextTest {
 
     @Test
     void pngRoundTrip() {
-        Texture t = Shapes.draw("gem", Ramp.from(0xFF2AB0D4, 5), null);
+        Texture t = Drawn.gem(Ramp.from(0xFF2AB0D4, 5));
         assertThat(Texture.readPng(t.toPng())).isEqualTo(t);
     }
 

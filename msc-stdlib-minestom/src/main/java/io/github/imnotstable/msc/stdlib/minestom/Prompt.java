@@ -30,7 +30,6 @@ public final class Prompt {
     public static void ask(Player player, String question, Duration timeout, Consumer<String> answer, Runnable cancelled) {
         listen();
         player.sendMessage(Text.mm(question));
-        player.sendMessage(Text.mm("<gray>Type your answer in chat, or <white>cancel</white>."));
         UUID id = player.getUuid();
         Scheduler.Task task = Stdlib.scheduler().later(Math.max(1, timeout.toMillis() / 50), () -> {
             Pending p = PENDING.remove(id);

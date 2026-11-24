@@ -1,7 +1,7 @@
 TEXTURE GUIDE: pixel art that looks made for this server, not generated.
 
 THE RULE
-- Draw every item yourself with rows=, its own silhouette and details. The kind= shapes (gem, ingot, orb, sword, pickaxe, food) are examples, shared by everyone who asks for one: look at one for ideas (outline, ramp, glint placement) and then draw your own, never ship it as is. Vanilla textures (texture_view) are inspiration the same way.
+- Everything from scratch: draw every item and block yourself with rows=, its own silhouette and details. msc has no stock shapes or patterns; copy= only recolors a texture you drew.
 
 DRAWING A 16x16 ITEM
 1. Silhouette first: one readable shape that fills most of the 16x16, centred, 1-pixel dark outline (not pure black: a dark shade of the main colour). Tools and weapons run diagonally, bottom-left to top-right.
@@ -12,7 +12,7 @@ DRAWING A 16x16 ITEM
 - 6-12 colours is typical. The texture tool warns when a drawing has too few tones or one colour floods it.
 
 BLOCKS
-- Blocks tile: edges must meet their neighbours. Start from kind=noise, bricks or planks for the base, or copy= a vanilla block recoloured, then add the signature in rows (cracks, runes, inlays, ore flecks).
+- Blocks tile: edges must meet their neighbours. Draw the base yourself (a 3-5 tone ramp scattered unevenly, grain, mortar lines, whatever the material is), then the signature (cracks, runes, inlays, ore flecks). Check the tiling by viewing it in world_render.
 - Keep contrast lower than items (a wall of high-contrast blocks is noise). Make variants (cracked, mossy, carved) so builds can mix them.
 - animate=pulse for things that glow, scroll for fluids and energy.
 

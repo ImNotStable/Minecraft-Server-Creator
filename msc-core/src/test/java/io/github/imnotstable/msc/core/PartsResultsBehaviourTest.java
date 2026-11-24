@@ -78,24 +78,6 @@ class PartsResultsBehaviourTest {
         }
     }
 
-    @Test
-    void textureDrawingsFitWithTheirClosingLine() throws Exception {
-        try (CoreHarness h = new CoreHarness(workspace).withAgent()) {
-            for (int size : new int[] {16, 32, 64}) {
-                for (String name : List.of("block/" + "n".repeat(200), "n".repeat(200) + ".png")) {
-                    String result = h.ok("texture", "name", name, "kind", "noise", "color", "#7f7f7f",
-                            "size", size, "contrast", 1);
-                    String as = name.length() + " " + size;
-                    assertThat(result).as(as).hasSizeLessThanOrEqualTo(Budget.DEFAULT_CHARS)
-                            .startsWith("wrote ").doesNotContain("Narrow the call.");
-                    if (!name.endsWith(".png")) {
-                        assertThat(result).as(as).endsWith("\nnext: pack");
-                    }
-                }
-            }
-        }
-    }
-
     private static List<String> java(Class<?> main) {
         return List.of(Path.of(System.getProperty("java.home"), "bin", "java").toString(),
                 "-cp", System.getProperty("java.class.path"), main.getName());

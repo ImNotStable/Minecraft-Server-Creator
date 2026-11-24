@@ -90,7 +90,7 @@ class LandStepsTest {
     @Test
     void terrainLayersTopUnderBodyAndShowsRockOnCliffs() throws Exception {
         Canvas c = draw("terrain 0,0,0 63,40,63 stone top=grass_block under=dirt depth=2 cliff=andesite "
-                + "style=ridges scale=24 edge=0 seed=9");
+                + "noise=ridged scale=24 edge=0 seed=9");
         int cliffs = 0;
         int grass = 0;
         for (int z = 0; z < 64; z++) {
@@ -130,8 +130,8 @@ class LandStepsTest {
     }
 
     @Test
-    void mesaHasFlatShelves() throws Exception {
-        Canvas c = draw("terrain 0,0,0 63,32,63 terracotta style=mesa steps=4 edge=0 seed=1");
+    void terracedNoiseHasFlatShelves() throws Exception {
+        Canvas c = draw("terrain 0,0,0 63,32,63 terracotta noise=terraced steps=4 edge=0 seed=1");
         Set<Integer> heights = new HashSet<>();
         for (int z = 0; z < 64; z++) {
             for (int x = 0; x < 64; x++) {
@@ -144,9 +144,9 @@ class LandStepsTest {
     }
 
     @Test
-    void unknownStyleAndBadWaterAreRefused() {
-        assertThatThrownBy(() -> draw("terrain 0,0,0 9,9,9 stone style=volcano")).isInstanceOf(ToolException.class)
-                .hasMessageContaining("hills, ridges, mesa, dunes");
+    void unknownNoiseAndBadWaterAreRefused() {
+        assertThatThrownBy(() -> draw("terrain 0,0,0 9,9,9 stone noise=volcano")).isInstanceOf(ToolException.class)
+                .hasMessageContaining("fbm, ridged, terraced, waves");
         assertThatThrownBy(() -> draw("terrain 0,0,0 9,9,9 stone water=40")).hasMessageContaining("water must be 0 to 0");
     }
 

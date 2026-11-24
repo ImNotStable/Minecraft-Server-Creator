@@ -47,7 +47,7 @@ public final class BuildScript {
             helix X,Y,Z r=R h=H B [turns=T] [w=W] [start=DEG]   (bottom centre; turns<0 anticlockwise; \
             start=0 north)
             bands X,Y,Z [h=H] R1=B R2=B ... [jitter=J]   (flat rings)
-            terrain X,Y,Z X,Y,Z B [top=B under=B depth=3 cliff=B bed=B style=hills|ridges|mesa|dunes scale=N edge=N \
+            terrain X,Y,Z X,Y,Z B [top=B under=B depth=3 cliff=B bed=B noise=fbm|ridged|terraced|waves scale=N edge=N \
             ground=Y water=Y]   (noise land in the box; cliff= on steep sides, bed= under water; rim eases to ground= \
             over edge= blocks, 0 fills the box; below ground= digs, water= fills)
             path X,Y,Z X,Y,Z ... B [w=3 wander=N depth=N bed=B]   (curved way on the ground; depth= digs a stream)
@@ -326,13 +326,13 @@ public final class BuildScript {
                 BlockPattern under = o.pattern("under", body);
                 BlockPattern cliff = o.pattern("cliff", body);
                 BlockPattern bed = o.pattern("bed", null);
-                String style = o.string("style");
+                String noise = o.string("noise");
                 int lo = box.min().y();
                 int hi = box.max().y();
                 int ground = o.integer("ground", lo, lo, hi);
                 String waterText = o.string("water");
                 Integer water = waterText == null ? null : o.integer("water", null, lo, ground);
-                yield new Step.Terrain(box, body, top, under, cliff, bed, style == null ? "hills" : style, ground, water,
+                yield new Step.Terrain(box, body, top, under, cliff, bed, noise == null ? "fbm" : noise, ground, water,
                         o.integer("depth", 3, 0, 64), o.integer("scale", Math.max(8, shortSide / 2), 2, 4096),
                         o.integer("edge", shortSide / 4, 0, 4096), o.integer("octaves", 4, 1, 8),
                         o.integer("steps", 4, 2, 32), o.seed(), o.replace());
@@ -436,11 +436,15 @@ public final class BuildScript {
                 if (p.block() != null) {
                     throw new ToolException("river takes water=, bed= and shore= blocks, not \"" + p.block() + "\"");
                 }
+                if (o.string("bed") == null) {
+                    // From scratch (ADR 0106): the bed's blocks are the agent's choice, there is no stock mix.
+                    throw new ToolException("river needs bed=, the blocks of its bed, such as bed=gravel:3,clay:1");
+                }
                 int w = o.integer("w", 5, 1, 64);
                 yield new Step.River(world, p.points(), w, o.integer("wander", w, 0, 256), o.integer("depth", 3, 1, 16),
                         o.integer("bank", 4, 0, 32), o.decimal("slope", 1, 0.2, 8),
                         o.pattern("water", BlockPattern.single("minecraft:water")),
-                        o.pattern("bed", BlockPattern.parse("gravel:3,sand:2,clay:1", o.seed())), o.pattern("shore", null),
+                        o.pattern("bed", null), o.pattern("shore", null),
                         o.seed(), o.replace());
             }
             case "tunnel" -> {

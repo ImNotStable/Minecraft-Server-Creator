@@ -2,6 +2,8 @@
 
 A toolset that helps an AI develop custom Minecraft servers on any platform. This is one git repo (a monorepo); each folder is a module. It targets the latest stable Minecraft release on Paper, Purpur, Folia, Fabric, Quilt, NeoForge, Forge and Minestom, and the Velocity proxy ([Platforms](docs/wiki/Platforms.md)).
 
+The AI creates everything from scratch: every build, interior, landscape, texture, model, config and line of code. MSC gives it only general primitives, guidance and quality reviews, never prefabs, presets, templates of content or stock assets ([ADR 0106](msc-docs/docs/adr/0106-from-scratch.md)).
+
 ## Quick start (Claude Code)
 
 1. Install msc-core (needs nothing but this repo; Gradle fetches Java 25 if missing):

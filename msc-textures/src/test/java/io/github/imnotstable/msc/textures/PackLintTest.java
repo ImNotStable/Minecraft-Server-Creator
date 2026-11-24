@@ -42,7 +42,7 @@ class PackLintTest {
         files.put("assets/msc/items/ruby.json",
                 text("{\"model\":{\"type\":\"minecraft:select\",\"property\":\"minecraft:main_hand\",\"cases\":[{\"when\":\"left\",\"model\":{\"type\":\"minecraft:model\",\"model\":\"msc:item/gone\"}}],"
                         + "\"fallback\":{\"type\":\"minecraft:model\",\"model\":\"msc:item/ruby\"}}}"));
-        files.put("assets/msc/textures/item/ruby.png", Shapes.draw("gem", Ramp.from(0xFFD4263A, 5), null).toPng());
+        files.put("assets/msc/textures/item/ruby.png", Drawn.gem(Ramp.from(0xFFD4263A, 5)).toPng());
         files.put("assets/minecraft/models/item/stick.json",
                 text("{\"parent\":\"item/generated\",\"textures\":{\"layer0\":\"item/stick\"}}"));
         assertThat(lint(files)).containsExactly(
@@ -92,8 +92,8 @@ class PackLintTest {
         Texture glass = Texture.square(32);
         glass.fill(0x80FFFFFF);
         files.put("assets/minecraft/textures/block/glass.png", glass.toPng());
-        files.put("assets/minecraft/textures/block/stone.png", Patterns.noise(16, Ramp.from(0xFF7F7F7F, 4), 1).toPng());
-        files.put("assets/minecraft/textures/block/dirt.png", Patterns.noise(16, Ramp.from(0xFF7F5F3F, 4), 1).toPng());
+        files.put("assets/minecraft/textures/block/stone.png", Drawn.tile(Ramp.from(0xFF7F7F7F, 4), 1).toPng());
+        files.put("assets/minecraft/textures/block/dirt.png", Drawn.tile(Ramp.from(0xFF7F5F3F, 4), 1).toPng());
         files.put("assets/minecraft/textures/block/Bad.png", full.toPng());
         assertThat(lint(files)).containsExactly(
                 "ERROR assets/minecraft/textures/block/Bad.png: file names must be lowercase a-z, 0-9, _ . - only; the game ignores this file",
@@ -109,7 +109,7 @@ class PackLintTest {
         Map<String, byte[]> files = new HashMap<>();
         files.put("pack.mcmeta", text(META));
         for (int i = 0; i < 5; i++) {
-            files.put("assets/msc/textures/item/t" + i + ".png", Shapes.draw("orb", Ramp.from(0xFF3060E0, 4), null).toPng());
+            files.put("assets/msc/textures/item/t" + i + ".png", Drawn.gem(Ramp.from(0xFF3060E0, 4)).toPng());
         }
         String report = PackLint.check(files).text(2);
         assertThat(report).startsWith("pack check: 6 files, 0 errors, 0 warnings, 5 notes").endsWith("... 3 more");

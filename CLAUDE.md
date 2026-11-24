@@ -17,6 +17,15 @@ A toolset that helps an AI develop custom Minecraft servers. One Gradle monorepo
 - Every change comes with tests (JUnit 6 + AssertJ). Keep test output short.
 - Prefer records and small classes. No new libraries without a catalog entry.
 
+## From scratch (ADR 0106)
+
+- MSC gives the agent general primitives, guidance and quality review checks, never prefabs, presets, one-line
+  builders, canned templates or stock assets (builds, interiors, landforms, textures, models, themes, sounds, styled or
+  canned text, sample code). The agent creates all of that itself. Remove any you find.
+- Want better output? Strengthen a guide (`msc-core/.../guides/`) or a review check, not a generator.
+  `FromScratchTest` (msc-core `repoChecks`) fails on new preset steps, options and stdlib constants; an allowlist
+  entry needs a reason in an ADR.
+
 ## Code graph (graphify)
 
 - A code graph of the repo lives in `D:\Projects\Minecraft Server Creator\graphify-out\` (main checkout only, git-excluded). Read `GRAPH_REPORT.md` there before broad searches.

@@ -3,7 +3,6 @@ package io.github.imnotstable.msc.stdlib.minestom;
 import io.github.imnotstable.msc.stdlib.cmd.CommandTree;
 import io.github.imnotstable.msc.stdlib.perm.Permissions;
 import net.kyori.adventure.text.Component;
-import net.kyori.adventure.text.format.NamedTextColor;
 import net.minestom.server.MinecraftServer;
 import net.minestom.server.command.CommandSender;
 import net.minestom.server.command.builder.Command;
@@ -90,7 +89,7 @@ public final class Cmd {
 
             @Override
             public void fail(String text) {
-                sender.sendMessage(Component.text(text, NamedTextColor.RED));
+                sender.sendMessage(Component.text(text));
             }
         };
     }

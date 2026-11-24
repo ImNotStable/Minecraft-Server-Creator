@@ -75,21 +75,9 @@ class TextureToolsTest {
         assertThat(h.ok("texture_view", "name", "block/big", "maxChars", 400)).hasSizeLessThanOrEqualTo(400);
     }
 
-    /** #473: the largest drawing a texture call shows fits the cap with its closing line, in the pack and outside. */
-    @Test
-    void theLargestDrawingFitsTheCapWithItsClosingLine() {
-        String noise = h.ok("texture", "name", "block/" + "n".repeat(200), "kind", "noise", "color", "#7f7f7f",
-                "size", 64, "contrast", 1);
-        assertThat(noise).hasSizeLessThanOrEqualTo(6000).endsWith("\nnext: pack").doesNotContain("Narrow the call.");
-        String loose = h.ok("texture", "name", "n".repeat(200) + ".png", "kind", "noise", "color", "#7f7f7f",
-                "size", 64, "contrast", 1);
-        assertThat(loose).hasSizeLessThanOrEqualTo(6000).doesNotContain("Narrow the call.");
-    }
-
-    /** #474: a pack description is shown on two lines, so one line break is taken; more, or a tab, is refused. */
     @Test
     void aPackDescriptionMayHaveTwoLines() throws Exception {
-        h.ok("texture", "name", "item/ruby", "kind", "gem", "color", "#d4263a");
+        h.ok("texture", "name", "item/ruby", "palette", Drawings.palette("#d4263a"), "rows", Drawings.rows());
         h.ok("pack", "apply", false, "description", "Ruby pack\r\nby the team");
         assertThat(workspace.resolve(".msc/pack/pack.mcmeta")).content().contains("Ruby pack\\nby the team");
         assertThat(h.error("pack", "apply", false, "description", "a\nb\nc"))
@@ -104,7 +92,7 @@ class TextureToolsTest {
         Path pack = workspace.resolve(".msc/pack");
         java.util.Map<String, String> before = TreeSnapshot.of(pack);
         for (String name : List.of("item/" + "a".repeat(250), "block/deep/" + "b".repeat(300))) {
-            String error = h.error("texture", "name", name, "kind", "gem", "color", "#d4263a");
+            String error = h.error("texture", "name", name, "palette", Drawings.palette("#d4263a"), "rows", Drawings.rows());
             assertThat(error).startsWith("error: texture ").contains("Use a shorter name.").doesNotContain("\n")
                     .doesNotContain("internal");
         }
@@ -112,19 +100,19 @@ class TextureToolsTest {
                 List.of("item/ruby"))).startsWith("error: model ").contains("at most 255").doesNotContain("\n");
         assertThat(TreeSnapshot.of(pack)).isEqualTo(before);
         // The longest name that fits still works, its animation's .png.mcmeta included.
-        assertThat(h.ok("texture", "name", "item/" + "c".repeat(244), "kind", "gem", "color", "#d4263a", "animate", "pulse"))
+        assertThat(h.ok("texture", "name", "item/" + "c".repeat(244), "palette", Drawings.palette("#d4263a"), "rows", Drawings.rows(), "animate", "pulse"))
                 .contains("animated ");
     }
 
     @Test
     void aPngPathWritesALooseFileOutsideThePack() throws Exception {
-        String gem = h.ok("texture", "name", "textures/ruby.png", "kind", "gem", "color", "#d4263a");
-        assertThat(gem).startsWith("wrote " + workspace.resolve("textures/ruby.png") + ": 16x16, ").contains("palette:");
+        String gem = h.ok("texture", "name", "textures/ruby.png", "palette", Drawings.palette("#d4263a"), "rows", Drawings.rows());
+        assertThat(gem).startsWith("wrote " + workspace.resolve("textures/ruby.png") + ": 16x16, ");
         assertThat(ImageIO.read(workspace.resolve("textures/ruby.png").toFile()).getWidth()).isEqualTo(16);
         assertThat(workspace.resolve(".msc/pack/assets")).doesNotExist();
         assertThat(h.ok("texture", "name", "out/Drawn.PNG", "palette", List.of("r=#d4263a"), "rows", List.of("r.", ".r")))
                 .startsWith("wrote " + workspace.resolve("out/Drawn.PNG") + ": 2x2");
-        assertThat(h.error("texture", "name", "a.png", "kind", "gem", "color", "#d4263a", "animate", "pulse"))
+        assertThat(h.error("texture", "name", "a.png", "palette", Drawings.palette("#d4263a"), "rows", Drawings.rows(), "animate", "pulse"))
                 .contains("pack texture name");
     }
 
@@ -168,7 +156,7 @@ class TextureToolsTest {
         assertThat(h.ok("texture", "name", "item/blue/gem", "palette", palette, "rows", List.of("r")))
                 .contains("item_model msc:blue/gem");
         h.ok("texture", "name", "item/ruby", "palette", palette, "rows", List.of("r"));
-        assertThat(h.error("texture", "name", "block/ruby", "kind", "noise", "color", "#d4263a"))
+        assertThat(h.error("texture", "name", "block/ruby", "palette", Drawings.palette("#d4263a"), "rows", Drawings.rows(), "model", "block"))
                 .isEqualTo("error: item msc:ruby already shows model msc:item/ruby; give this one another name");
     }
 
@@ -230,42 +218,27 @@ class TextureToolsTest {
         assertThat(h.ok("texture", "name", "item/big", "palette",
                 List.of("a=#204060", "b=#305070", "c=#406080", "d=#507090", "e=#6080a0"), "rows", big))
                 .contains("warning: #204060 fills 56%: break it up");
-        assertThat(h.ok("texture", "name", "item/stock", "kind", "gem", "color", "#d4263a"))
-                .contains("warning: a stock gem shape, shaded in your colors");
     }
 
     @Test
-    void generateWritesAShadedTextureThatTheOtherToolsRead() throws Exception {
-        String gem = h.ok("texture", "name", "item/ruby", "kind", "gem", "color", "#d4263a");
-        assertThat(gem).startsWith("wrote msc:item/ruby: 16x16, ").contains("main hue 0 (red)")
-                .contains("; item_model msc:ruby\nwarning: a stock gem shape").contains("\n16x16\npalette: .=transparent")
-                .endsWith("pack");
-        assertThat(h.ok("texture_view", "name", "item/ruby")).startsWith("16x16\npalette:");
-        // An outline and five distinct body tones (ADR 0072), framed as an example, not a start (ADR 0074).
-        assertThat(gem).contains("6 colors", "an example to learn from", "draw your own item with rows=");
-        String ore = h.ok("texture", "name", "block/ruby_ore", "kind", "ore", "color", "#7f7f7f",
-                "accent", "#d4263a", "size", 32, "seed", 7, "contrast", 0.5);
-        assertThat(ore).startsWith("wrote msc:block/ruby_ore: 32x32, ").contains("item_model msc:ruby_ore");
-        assertThat(workspace.resolve(".msc/pack/assets/msc/models/block/ruby_ore.json")).content().contains("cube_all");
-        assertThat(h.error("texture", "name", "item/x", "kind", "star", "color", "#fff"))
-                .isEqualTo("error: kind must be noise, ore, planks, bricks, gem, ingot, orb, sword, pickaxe or food");
-        assertThat(h.error("texture", "name", "item/x", "kind", "gem", "color", "#fff", "contrast", 3))
-                .contains("contrast must be 0.2 to 1.5");
-        assertThat(h.error("texture", "name", "item/x", "kind", "gem")).contains("kind and copy need a color");
+    void thereIsNoStockTextureToGenerate() {
+        // From scratch (ADR 0106): no kind= shapes or patterns; every texture is drawn or a recolor of the pack's own.
+        assertThat(h.error("texture", "name", "item/x", "kind", "gem", "color", "#fff")).contains("kind");
+        assertThat(h.error("texture", "name", "item/x", "color", "#fff")).contains("give rows and palette to draw");
     }
 
     @Test
     void recolorKeepsTheShadingOnNewColors() {
-        h.ok("texture", "name", "item/ruby", "kind", "gem", "color", "#d4263a");
+        h.ok("texture", "name", "item/ruby", "palette", Drawings.palette("#d4263a"), "rows", Drawings.rows());
         assertThat(h.ok("texture", "copy", "item/ruby", "name", "item/sapphire", "color", "#2050e0"))
-                .startsWith("wrote msc:item/sapphire: 16x16, ").contains("(blue)").endsWith("next: pack");
+                .startsWith("wrote msc:item/sapphire: 16x16, ").contains("(azure)").endsWith("next: pack");
         assertThat(h.error("texture", "copy", "item/nope", "name", "item/x", "color", "#fff"))
                 .isEqualTo("error: no texture msc:item/nope in the pack (vanilla textures are not in it)");
     }
 
     @Test
     void animateStacksFramesAndWritesTheTiming() throws Exception {
-        h.ok("texture", "name", "block/lava", "kind", "noise", "color", "#e05010");
+        h.ok("texture", "name", "block/lava", "palette", Drawings.palette("#e05010"), "rows", Drawings.rows());
         assertThat(h.ok("texture", "name", "block/lava", "animate", "scroll", "frames", 4, "frametime", 3))
                 .isEqualTo("animated msc:block/lava: 4 frames, 3 ticks each\nnext: pack");
         Path png = workspace.resolve(".msc/pack/assets/msc/textures/block/lava.png");
@@ -274,22 +247,22 @@ class TextureToolsTest {
         // Animating again starts from frame 1; scroll's default is one full loop.
         assertThat(h.ok("texture", "name", "block/lava", "animate", "scroll 0,2")).contains("8 frames, 2 ticks each");
         assertThat(h.ok("texture_view", "name", "block/lava")).startsWith("frame 1 of 8\n16x16\n");
-        // Generate and animate in one call; the pixels are left out of the result.
-        assertThat(h.ok("texture", "name", "item/orb", "kind", "orb", "color", "#40c0ff", "animate", "pulse"))
-                .startsWith("wrote msc:item/orb: 16x16").contains("\nanimated msc:item/orb: 8 frames, 2 ticks each")
+        // Draw and animate in one call; the pixels are left out of the result.
+        assertThat(h.ok("texture", "name", "item/orb", "palette", Drawings.palette("#40c0ff"), "rows", Drawings.rows(), "animate", "pulse"))
+                .startsWith("wrote msc:item/orb 16x16").contains("\nanimated msc:item/orb: 8 frames, 2 ticks each")
                 .doesNotContain("palette:");
         assertThat(h.error("texture", "name", "block/lava", "animate", "spin"))
                 .isEqualTo("error: animate must be scroll, \"scroll dx,dy\" or pulse");
-        h.ok("texture", "name", "block/lava", "kind", "noise", "color", "#e05010");
+        h.ok("texture", "name", "block/lava", "palette", Drawings.palette("#e05010"), "rows", Drawings.rows());
         assertThat(png.resolveSibling("lava.png.mcmeta")).doesNotExist();
     }
 
     @Test
     void scrollDefaultsToAFullLoopAndRefusesAStepThatMovesNothing() throws Exception {
-        h.ok("texture", "name", "block/lava", "kind", "noise", "color", "#e05010");
+        h.ok("texture", "name", "block/lava", "palette", Drawings.palette("#e05010"), "rows", Drawings.rows());
         // 1,2 on 16x16 is back at the start after 16 steps, not after 16 / 2 (#534).
         assertThat(h.ok("texture", "name", "block/lava", "animate", "scroll 1,2")).contains("16 frames");
-        h.ok("texture", "name", "block/lava", "kind", "noise", "color", "#e05010");
+        h.ok("texture", "name", "block/lava", "palette", Drawings.palette("#e05010"), "rows", Drawings.rows());
         assertThat(h.error("texture", "name", "block/lava", "animate", "scroll 16,0"))
                 .isEqualTo("error: scroll 16,0 moves nothing on 16x16: give a step that is not a multiple of 16");
         assertThat(h.error("texture", "name", "block/lava", "animate", "scroll 0,0", "frames", 4))
@@ -299,26 +272,15 @@ class TextureToolsTest {
 
     @Test
     void textureTakesExactlyOneWay() {
-        assertThat(h.error("texture", "name", "item/x")).contains("give rows and palette to draw, kind and color");
-        assertThat(h.error("texture", "name", "item/x", "kind", "gem", "color", "#fff", "copy", "item/y"))
-                .isEqualTo("error: give one of rows, kind or copy, not kind and copy");
+        assertThat(h.error("texture", "name", "item/x")).contains("give rows and palette to draw, copy and color");
+        assertThat(h.error("texture", "name", "item/x", "palette", Drawings.palette("#fff"), "rows", Drawings.rows(), "copy", "item/y"))
+                .isEqualTo("error: give one of rows or copy, not rows and copy");
         assertThat(h.error("texture", "name", "item/x", "rows", List.of("a"))).contains("rows need a palette");
     }
 
     @Test
-    void toolShapesAreHandheldWithAWoodenHandle() throws Exception {
-        assertThat(h.ok("texture", "name", "item/ruby_sword", "kind", "sword", "color", "#d4263a"))
-                .contains("item_model msc:ruby_sword");
-        assertThat(workspace.resolve(".msc/pack/assets/msc/models/item/ruby_sword.json")).content()
-                .contains("minecraft:item/handheld");
-        h.ok("texture", "name", "item/drumstick", "kind", "food", "color", "#c07a3a", "accent", "#ffffff");
-        assertThat(workspace.resolve(".msc/pack/assets/msc/models/item/drumstick.json")).content()
-                .contains("minecraft:item/generated");
-    }
-
-    @Test
     void retexturingAVanillaTextureKeepsVanillasModels() {
-        assertThat(h.ok("texture", "name", "minecraft:block/crimson_stem", "kind", "noise", "color", "#4a1530"))
+        assertThat(h.ok("texture", "name", "minecraft:block/crimson_stem", "palette", Drawings.palette("#4a1530"), "rows", Drawings.rows()))
                 .startsWith("wrote minecraft:block/crimson_stem").doesNotContain("item_model");
         assertThat(workspace.resolve(".msc/pack/assets/minecraft/textures/block/crimson_stem.png")).exists();
         assertThat(workspace.resolve(".msc/pack/assets/minecraft/models/block/crimson_stem.json")).doesNotExist();
@@ -432,7 +394,7 @@ class TextureToolsTest {
 
     @Test
     void packIsZippedServedAndSentToTheServer() throws Exception {
-        h.ok("texture", "name", "item/ruby", "palette", List.of("r=#d4263a"), "rows", List.of("rr", "rr"));
+        h.ok("texture", "name", "item/ruby", "palette", Drawings.palette("#d4263a"), "rows", Drawings.rows());
         String result = h.ok("pack");
         assertThat(result).contains("applied: sent to 1 players");
         String url = result.lines().filter(l -> l.startsWith("url: ")).findFirst().orElseThrow().substring(5);
@@ -467,31 +429,31 @@ class TextureToolsTest {
     void aRefusedTextureLeavesThePackAsItWas() throws Exception {
         Path pack = workspace.resolve(".msc/pack");
         List<List<Object>> refused = List.of(
-                List.of("name", "item/ruby", "kind", "gem", "color", "#d4263a", "animate", "wobble"),
-                List.of("name", "item/ruby", "kind", "gem", "color", "#d4263a", "animate", "pulse", "frames", 999),
-                List.of("name", "item/ruby", "kind", "gem", "color", "#d4263a", "animate", "scroll", "frametime", 0),
-                List.of("name", "item/ruby", "kind", "gem", "color", "#d4263a", "animate", "scroll x,y"),
+                List.of("name", "item/ruby", "palette", Drawings.palette("#d4263a"), "rows", Drawings.rows(), "animate", "wobble"),
+                List.of("name", "item/ruby", "palette", Drawings.palette("#d4263a"), "rows", Drawings.rows(), "animate", "pulse", "frames", 999),
+                List.of("name", "item/ruby", "palette", Drawings.palette("#d4263a"), "rows", Drawings.rows(), "animate", "scroll", "frametime", 0),
+                List.of("name", "item/ruby", "palette", Drawings.palette("#d4263a"), "rows", Drawings.rows(), "animate", "scroll x,y"),
                 List.of("name", "item/ruby", "palette", List.of("r=#d4263a"), "rows", List.of("rr"), "animate", "pulse"),
                 List.of("name", "item/ruby", "palette", List.of("r=#d4263a"), "rows", ruby(), "model", "cube"));
         for (List<Object> call : refused) {
             h.error("texture", call.toArray());
             assertThat(pack.resolve("assets")).as("pack after %s", call).doesNotExist();
         }
-        h.ok("texture", "name", "item/ruby", "kind", "gem", "color", "#d4263a");
+        h.ok("texture", "name", "item/ruby", "palette", Drawings.palette("#d4263a"), "rows", Drawings.rows());
         var before = TreeSnapshot.of(pack);
         for (List<Object> call : refused) {
             h.error("texture", call.toArray());
             assertThat(TreeSnapshot.of(pack)).as("pack after %s", call).isEqualTo(before);
         }
-        assertThat(h.ok("texture", "name", "item/ruby", "kind", "gem", "color", "#d4263a", "animate", "pulse"))
-                .contains("wrote msc:item/ruby: 16x16").contains("animated msc:item/ruby: 8 frames, 2 ticks each");
+        assertThat(h.ok("texture", "name", "item/ruby", "palette", Drawings.palette("#d4263a"), "rows", Drawings.rows(), "animate", "pulse"))
+                .contains("wrote msc:item/ruby 16x16").contains("animated msc:item/ruby: 8 frames, 2 ticks each");
         assertThat(pack.resolve("assets/msc/textures/item/ruby.png.mcmeta")).isRegularFile();
     }
 
     /** A pack call whose apply fails saves no copy of the zip into the workspace (#356). */
     @Test
     void aFailedPackApplySavesNoFile() {
-        h.ok("texture", "name", "item/ruby", "kind", "gem", "color", "#d4263a");
+        h.ok("texture", "name", "item/ruby", "palette", Drawings.palette("#d4263a"), "rows", Drawings.rows());
         h.agent.failPackApply = true;
         assertThat(h.error("pack", "file", "out/ruby-pack.zip")).contains("pack apply failed");
         assertThat(workspace.resolve("out")).doesNotExist();
@@ -507,13 +469,13 @@ class TextureToolsTest {
      */
     @Test
     void anUnwritableFileIsRefusedBeforeThePackIsSent() throws Exception {
-        h.ok("texture", "name", "item/ruby", "kind", "gem", "color", "#d4263a");
+        h.ok("texture", "name", "item/ruby", "palette", Drawings.palette("#d4263a"), "rows", Drawings.rows());
         String url = h.ok("pack").lines().filter(l -> l.startsWith("url: ")).findFirst().orElseThrow().substring(5);
         Files.createDirectories(workspace.resolve("run"));
         Files.writeString(workspace.resolve("run/server.properties"), "resource-pack=" + url + "\n");
         Files.createDirectories(workspace.resolve("packs/old"));
         Files.writeString(workspace.resolve("notes.txt"), "a file");
-        h.ok("texture", "name", "item/ruby", "kind", "gem", "color", "#2655d4");
+        h.ok("texture", "name", "item/ruby", "palette", Drawings.palette("#2655d4"), "rows", Drawings.rows());
         int sent = h.agent.packs.size();
         assertThat(h.error("pack", "file", "packs")).isEqualTo("error: file " + workspace.resolve("packs")
                 + " is a folder; give a file path");

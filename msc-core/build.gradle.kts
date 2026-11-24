@@ -192,10 +192,10 @@ tasks.test {
 val repoCheckClasses = listOf("io.github.imnotstable.msc.core.DocumentedCommandsTest",
     "io.github.imnotstable.msc.core.RepoInputsTest", "io.github.imnotstable.msc.core.EulaWritersTest",
     "io.github.imnotstable.msc.core.ServerPropertiesAccessTest", "io.github.imnotstable.msc.core.DecisionsIndexTest",
-    "io.github.imnotstable.msc.core.DocumentedResultLinesTest")
+    "io.github.imnotstable.msc.core.DocumentedResultLinesTest", "io.github.imnotstable.msc.core.FromScratchTest")
 val repoChecks = tasks.register<Test>("repoChecks") {
     description = "Runs the tests that scan the whole repository (documented commands, test-source reads, EULA writers, " +
-        "server.properties access, ADR index)."
+        "server.properties access, ADR index, the from-scratch rule)."
     group = "verification"
     testClassesDirs = sourceSets.test.get().output.classesDirs
     classpath = sourceSets.test.get().runtimeClasspath

@@ -12,7 +12,7 @@ import org.junit.jupiter.api.Test;
 class EditsTest {
     @Test
     void recolorTurnsADiamondIntoARubyKeepingShading() {
-        Texture diamond = Shapes.draw("gem", Ramp.from(0xFF4AE0D8, 5), null);
+        Texture diamond = Drawn.gem(Ramp.from(0xFF4AE0D8, 5));
         Texture ruby = Edits.recolor(diamond, Ramp.from(0xFFD4263A, 5));
         assertThat(BenchRules.rubyProblems(ruby)).isEmpty();
         assertThat(ruby.opaqueCount()).isEqualTo(diamond.opaqueCount());
