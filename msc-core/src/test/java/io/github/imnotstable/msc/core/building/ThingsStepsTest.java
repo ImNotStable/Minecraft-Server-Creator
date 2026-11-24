@@ -82,6 +82,8 @@ class ThingsStepsTest {
         // Sonnet 5.5's hamlet hologram showed [{"text":"SALTWICK"}] (ADR 0109); front_text is not a text value.
         assertThat(Things.components("{text:'[{\"text\":\"SALTWICK\",\"color\":\"gold\"}]',front_text:{}}"))
                 .isEqualTo("{text:[{\"text\":\"SALTWICK\",\"color\":\"gold\"}],front_text:{}}");
+        // A JSON string in quotes showed its quotes: "Old Fisher" with the quote marks (ADR 0109).
+        assertThat(Things.components("{CustomName:'\"Old Fisher\"'}")).isEqualTo("{CustomName:\"Old Fisher\"}");
     }
 
     @Test

@@ -252,7 +252,7 @@ final class Things {
     }
 
     private static final java.util.regex.Pattern QUOTED_NAME =
-            java.util.regex.Pattern.compile("((?<![A-Za-z_])(?:CustomName|text):)'(\\{[^']*\\}|\\[[^']*\\])'");
+            java.util.regex.Pattern.compile("((?<![A-Za-z_])(?:CustomName|text):)'(\\{[^']*\\}|\\[[^']*\\]|\"[^'\"]*\")'");
 
     /**
      * A text component written as a quoted JSON string (the old format, CustomName:'{"text":"Vela"}') shows its JSON
