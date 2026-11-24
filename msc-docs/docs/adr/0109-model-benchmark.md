@@ -32,9 +32,12 @@ it to work for every strong model, and the weakest of the strong ones shows the 
   without ever reviewing its dock.
 - A text display's text written as a quoted JSON string becomes a component, like CustomName since ADR 0093:
   Sonnet 5.5's hologram showed its raw JSON.
+- The main world counts as the flat dev floor in reviews only when server.properties' level-type is flat (or unset):
+  Gemini 4 Neon set it to minecraft:normal, built on real coast, and was told it built on the dev world.
 
 ## Not done
 
+- A level-type changed after the main world was generated still names the world by the setting, not its land.
 - build_undo does not drop a never-reviewed area: reviewing the spot clears it.
 
 - One run per model is noisy; a model whose score moves by less than about 10 points is treated as unchanged.
