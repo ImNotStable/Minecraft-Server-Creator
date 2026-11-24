@@ -38,12 +38,13 @@ better MineBench place, since MineBench is the Minecraft benchmark.
 | 14 | Kimi K3.1 Pro | 14 (1112) | 15 (1943) | 14.5 | |
 
 All ten are reachable on Flux through existing subscriptions, so the benchmark needs no paid API access.
-**GPT-6.1 Sol is the test subject** for improving MSC (step 4 of the plan). Gemini 4 Hydrogen tied it at 9.5 and lost\nonly on the tie-break, so Jeremiah had it added as an eleventh baseline model.
+**GPT-6.1 Sol is the test subject** for improving MSC (step 4 of the plan). Gemini 4 Hydrogen tied it at 9.5 and lost
+only on the tie-break, so Jeremiah had it added as an eleventh baseline model.
 
 ## The task
 
 One small brief for every model, in a fresh Paper workspace per run (`D:\Minecraft Servers\MSC Bench\<model>`),
-one run at a time, newest MSC core, medium reasoning effort everywhere (Codex `medium`, Antigravity `*-medium`, Claude
+up to two runs at once on their own ports, one pinned MSC core, medium reasoning effort everywhere (Codex `medium`, Antigravity `*-medium`, Claude
 Code `--effort medium`) to keep it cheap and comparable:
 
 > Make a Paper server whose spawn is a small fishing hamlet on real generated coastline: a wooden dock reaching out
