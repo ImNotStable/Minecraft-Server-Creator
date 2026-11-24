@@ -261,8 +261,11 @@ public final class BuildReview {
                     + "trim at=top, a parapet, a roof with overhang)");
         }
         if (bareBasePct > MAX_BARE_BASE && base >= 20) {
-            fixes.add("bare base: the build meets the ground on a clean line; add a plinth (trim at=base), bushes "
-                    + "and flowers (decorate on=ground), and worn ground at the doors");
+            // Sonnet 5.5 laid a plinth of full stone and planted flowers a block away, and still failed (ADR 0109).
+            fixes.add("bare base: " + bareBasePct + "% of the faces where the build meets the ground are full blocks "
+                    + "open to the air, a clean line; a plinth of full blocks is still that line: step it out with "
+                    + "stairs, slabs or walls (trim at=base), and set bushes and flowers right against the wall "
+                    + "(decorate on=ground), worn ground at the doors");
         }
         if (floor >= 24 && props * FLOOR_PER_PROP < floor) {
             fixes.add("empty rooms: " + floor + " floor blocks under a roof and " + props + " furnishings; furnish "

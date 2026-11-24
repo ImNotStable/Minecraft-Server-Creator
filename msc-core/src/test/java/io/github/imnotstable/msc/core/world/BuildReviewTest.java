@@ -91,8 +91,8 @@ class BuildReviewTest {
 
     @Test
     void dockPostsStandingInWaterHaveNoBareBase() {
-        assertThat(BuildReview.review(dock('.'))).contains("bare base: the build meets the ground");
-        assertThat(BuildReview.review(dock('w'))).doesNotContain("bare base: the build meets the ground");
+        assertThat(BuildReview.review(dock('.'))).contains("bare base: ");
+        assertThat(BuildReview.review(dock('w'))).doesNotContain("bare base: ");
     }
 
     @Test
