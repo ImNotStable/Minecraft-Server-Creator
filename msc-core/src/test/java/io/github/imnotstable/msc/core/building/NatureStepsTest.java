@@ -14,7 +14,7 @@ import java.util.List;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
 
-/** tree, forest and flora (ADR 0079), drawn over grass at y 0 with a stone wall at x 20. */
+/** flora (ADR 0079, 0103: your own plant mix, no presets), drawn over grass at y 0 with a stone wall at x 20. */
 class NatureStepsTest {
     private static BlockGrid world(Region r) {
         int[] blocks = new int[Math.toIntExact(r.volume())];
@@ -62,69 +62,8 @@ class NatureStepsTest {
     }
 
     @Test
-    void everyKindAndSizeGrowsPlaceableBlocks() throws Exception {
-        for (String kind : Nature.KINDS) {
-            for (String size : Nature.SIZES) {
-                Canvas c = draw("tree 0,1,0 kind=" + kind + " size=" + size + " seed=3");
-                List<String> blocks = all(c);
-                assertThat(blocks).as(kind + " " + size).isNotEmpty();
-                // Every block says how it is placed, so build_batch would take the tree as it is.
-                BlockRules.require(blocks);
-                assertThat(blocks).as(kind).noneMatch(s -> s.contains("leaves") && !s.contains("persistent=true"));
-            }
-        }
-    }
-
-    @Test
-    void trunkStandsOnTheBaseAndLogsTurnAlongBranches() throws Exception {
-        Canvas c = draw("tree 0,1,0 kind=oak size=huge seed=8");
-        assertThat(c.planned(0, 1, 0)).isEqualTo("minecraft:oak_log[axis=y]");
-        assertThat(all(c)).anyMatch(s -> s.equals("minecraft:oak_log[axis=x]") || s.equals("minecraft:oak_log[axis=z]"));
-    }
-
-    @Test
-    void theSeedVariesTheTreeAndRepeatsIt() throws Exception {
-        assertThat(all(draw("tree 0,1,0 kind=cherry seed=1"))).isEqualTo(all(draw("tree 0,1,0 kind=cherry seed=1")));
-        assertThat(all(draw("tree 0,1,0 kind=cherry seed=1"))).isNotEqualTo(all(draw("tree 0,1,0 kind=cherry seed=2")));
-    }
-
-    @Test
-    void leavesDoNotEatAWall() throws Exception {
-        Canvas c = draw("tree 18,1,0 kind=oak size=large seed=4");
-        for (int y = 1; y < 12; y++) {
-            for (int z = -10; z <= 10; z++) {
-                String s = c.planned(20, y, z);
-                assertThat(s == null || s.contains("log")).as("x=20 y=" + y + " z=" + z + ": " + s).isTrue();
-            }
-        }
-    }
-
-    @Test
-    void logAndLeavesCanBeSwapped() throws Exception {
-        List<String> blocks = all(draw("tree 0,1,0 kind=oak size=small log=stripped_birch_log leaves=cherry_leaves"));
-        assertThat(blocks).contains("minecraft:stripped_birch_log[axis=y]");
-        assertThat(blocks).anyMatch(s -> s.startsWith("minecraft:cherry_leaves"));
-    }
-
-    @Test
-    void forestStandsTreesOnTheGroundOnly() throws Exception {
-        Canvas c = draw("forest 0,0,0 40,0,40 kind=oak:2,spruce:1,bush:1 spacing=8 chance=100 seed=5");
-        int trunks = 0;
-        for (int z = 0; z <= 40; z++) {
-            for (int x = 0; x <= 40; x++) {
-                String s = c.planned(x, 1, z);
-                if (s != null && s.contains("log")) {
-                    trunks++;
-                }
-                assertThat(c.planned(x, 0, z)).as("ground at " + x + "," + z).isNull();
-            }
-        }
-        assertThat(trunks).isGreaterThan(8);
-    }
-
-    @Test
-    void floraPlantsOnlyOnItsSoilInPatches() throws Exception {
-        Canvas c = draw("flora 0,0,0 40,1,40 style=meadow chance=50 seed=2");
+    void floraPlantsItsMixOnlyOnItsSoilInPatches() throws Exception {
+        Canvas c = draw("flora 0,0,0 40,1,40 short_grass:40,fern:10,poppy:3,cornflower:2 soil=grass_block chance=50 seed=2");
         Set<String> ids = new HashSet<>();
         int count = 0;
         for (int z = 0; z <= 40; z++) {
@@ -137,18 +76,18 @@ class NatureStepsTest {
             }
         }
         assertThat(count).isBetween(200, 1400);
-        assertThat(ids).contains("minecraft:short_grass").hasSizeGreaterThan(4);
-        // Sand does not take meadow plants.
-        assertThat(all(draw("flora 0,0,0 10,1,10 style=meadow soil=sand chance=100"))).isEmpty();
+        assertThat(ids).contains("minecraft:short_grass", "minecraft:fern", "minecraft:poppy");
+        assertThat(all(draw("flora 0,0,0 10,1,10 short_grass soil=sand chance=100"))).isEmpty();
     }
 
     @Test
-    void unknownKindsAndStylesAreNamed() {
-        assertThatThrownBy(() -> draw("tree 0,1,0 kind=baobab")).isInstanceOf(ToolException.class)
-                .hasMessageContaining("willow");
-        assertThatThrownBy(() -> draw("flora 0,0,0 4,1,4 style=moon")).isInstanceOf(ToolException.class)
-                .hasMessageContaining("meadow");
-        assertThatThrownBy(() -> draw("flora 0,0,0 4,1,4")).isInstanceOf(ToolException.class)
-                .hasMessageContaining("style=");
+    void presetsAreGone() {
+        assertThatThrownBy(() -> draw("flora 0,0,0 4,1,4 style=meadow")).isInstanceOf(ToolException.class)
+                .hasMessageContaining("your own plant mix");
+        for (String step : List.of("tree 0,1,0 kind=oak", "forest 0,0,0 4,1,4", "furnish 1,1,1 4,4,4 room=bedroom",
+                "roof 0,0,0 4,0,4 oak_stairs", "feature 0,1,0 fancy_oak")) {
+            assertThatThrownBy(() -> draw(step)).as(step).isInstanceOf(ToolException.class)
+                    .hasMessageContaining("unknown step");
+        }
     }
 }

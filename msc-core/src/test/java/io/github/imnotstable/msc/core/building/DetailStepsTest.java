@@ -223,25 +223,6 @@ class DetailStepsTest {
     }
 
     @Test
-    void aGableRoofFacesUpItsSlopesAndClosesItsEnds() throws Exception {
-        Canvas c = draw("""
-                fill 0,0,0 6,3,4 spruce_planks walls
-                roof 0,4,0 6,4,4 dark_oak_stairs axis=x gable=spruce_planks
-                """);
-        assertThat(at(c, 3, 4, -1)).contains("dark_oak_stairs").contains("facing=south"); // overhang row, north side
-        assertThat(at(c, 3, 4, 5)).contains("facing=north");
-        assertThat(at(c, 3, 7, 2)).isEqualTo("dark_oak_slab"); // the ridge of an odd span
-        assertThat(at(c, 0, 5, 2)).isEqualTo("spruce_planks"); // gable end
-        assertThat(at(c, -1, 4, -1)).contains("dark_oak_stairs"); // overhang at the gable end too
-        Canvas hip = draw("roof 0,0,0 4,0,4 oak_stairs style=hip overhang=0");
-        assertThat(at(hip, 0, 0, 0)).contains("shape=outer_");
-        assertThat(at(hip, 2, 2, 2)).isEqualTo("oak_slab");
-        Canvas capped = draw("roof 0,0,0 8,2,4 oak_stairs overhang=0");
-        assertThat(at(capped, 4, 2, 2)).isEqualTo("oak_slab");
-        assertThat(at(capped, 4, 3, 2)).isNull();
-    }
-
-    @Test
     void trimDressesOnlyTheOutsideOfTheWalls() throws Exception {
         Canvas c = draw("""
                 fill 0,0,0 6,4,6 stone_bricks hollow

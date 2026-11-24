@@ -481,8 +481,9 @@ public final class BuildReview {
         }
         if (boxy >= MAX_BOXY_LEAVES) {
             fixes.add("stacked leaves: " + boxy + " leaf blocks stand in columns three or more tall with no wood within "
-                    + "6 blocks, a hedge or canopy built as a box of leaves; grow trees with tree or forest, keep hedges "
-                    + "1-2 tall (decorate on=ground) or round them with sphere rough=");
+                    + "6 blocks, a hedge or canopy built as a box of leaves; build trees with trunks and branches of "
+                    + "logs and leaves in loose clusters at their tips, keep hedges 1-2 tall (decorate on=ground) or round "
+                    + "them with sphere rough=");
         }
         if (cloth >= MAX_CLOTH) {
             fixes.add("hanging wool: " + cloth + " full wool blocks (first at " + firstCloth + ") hang in the air, an "

@@ -9,7 +9,7 @@ import io.github.imnotstable.msc.protocol.world.Region;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
-/** Block entity helpers, entities, biomes, features and light (ADR 0082), drawn over stone floor at y 0. */
+/** Block entity helpers, entities, biomes and light (ADR 0082), drawn over stone floor at y 0. */
 class ThingsStepsTest {
     /** Stone at y 0 and below; a closed stone room from 20,1,0 to 30,5,10. */
     private static BlockGrid world(Region r) {
@@ -102,13 +102,6 @@ class ThingsStepsTest {
                         + "minecraft:plains");
         assertThat(Things.dimension("msc:frostveil")).isEqualTo("msc:frostveil");
         assertThat(Things.dimension("world_nether")).isEqualTo("minecraft:the_nether");
-    }
-
-    @Test
-    void featuresLandOnTheGround() throws Exception {
-        Canvas c = draw("feature 10,5,10 fancy_oak count=4 spread=6 seed=2");
-        assertThat(c.commands()).hasSize(4)
-                .allMatch(s -> s.matches("execute in minecraft:overworld run place feature minecraft:fancy_oak -?\\d+ 1 -?\\d+"));
     }
 
     @Test
