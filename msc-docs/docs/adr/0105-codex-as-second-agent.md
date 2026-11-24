@@ -1,4 +1,4 @@
-# ADR 0103: Codex as the second agent, and the failing count where it is read
+# ADR 0105: Codex as the second agent, and the failing count where it is read
 
 Status: accepted, 2026-11-24. Decided by Claude; the agent and its effort were Jeremiah's choice ("You can utilize
 Codex as well Terra or Sol", "On medium").

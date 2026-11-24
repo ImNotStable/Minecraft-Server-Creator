@@ -66,7 +66,7 @@ public final class OpenReviews {
 
     /**
      * One short line for results of other tools ("2 reviews still failing (msc_status lists them)"), or empty: run 13's
-     * agent read the full list at the end of dev_cycle four times and reported done without it (ADR 0103).
+     * agent read the full list at the end of dev_cycle four times and reported done without it (ADR 0105).
      */
     public synchronized String count() {
         return open.isEmpty() ? "" : open.size() + (open.size() == 1 ? " review" : " reviews")
