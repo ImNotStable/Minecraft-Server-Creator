@@ -79,6 +79,9 @@ class ThingsStepsTest {
                 + "\"color\":\"gold\"}'}")).isEqualTo("{VillagerData:{profession:\"minecraft:librarian\"},"
                 + "CustomName:{\"text\":\"Archivist Vela\",\"color\":\"gold\"}}");
         assertThat(Things.components("{CustomName:\"Plain\"}")).isEqualTo("{CustomName:\"Plain\"}");
+        // Sonnet 5.5's hamlet hologram showed [{"text":"SALTWICK"}] (ADR 0109); front_text is not a text value.
+        assertThat(Things.components("{text:'[{\"text\":\"SALTWICK\",\"color\":\"gold\"}]',front_text:{}}"))
+                .isEqualTo("{text:[{\"text\":\"SALTWICK\",\"color\":\"gold\"}],front_text:{}}");
     }
 
     @Test
