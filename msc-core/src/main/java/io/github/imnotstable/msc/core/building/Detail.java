@@ -24,8 +24,12 @@ final class Detail {
     static void trim(Canvas c, Step.Trim t) throws InterruptedException {
         Region box = t.box();
         Region b = t.bounds();
-        Canvas.Lookup at = c.current(grow(b, 1));
-        Canvas.Mask mask = c.mask(b, t.replace());
+        boolean base = t.at().equals("base");
+        // A base on a slope reaches down to the ground on the low side (ADR 0109): the box may stop above it.
+        Region reach = base ? Region.of(b.world(), b.min().x(), b.min().y() - BASE_DROP, b.min().z(), b.max().x(),
+                b.max().y(), b.max().z()) : b;
+        Canvas.Lookup at = c.current(grow(reach, 1));
+        Canvas.Mask mask = c.mask(reach, t.replace());
         double cx = (box.min().x() + box.max().x()) / 2.0;
         double cz = (box.min().z() + box.max().z()) / 2.0;
         List<Object[]> puts = new ArrayList<>(); // x, y, z, state, replaceSolid
@@ -130,12 +134,35 @@ final class Detail {
             int y = (int) p[1];
             int z = (int) p[2];
             boolean replaceSolid = (boolean) p[4];
+            // Sonnet 5.5 boxed its hillside houses from the uphill ground, so their plinths hung in the air on the
+            // downhill side and bare base kept failing; a base piece drops along its wall until it rests on something.
+            while (base && !replaceSolid && y - 1 >= reach.min().y() && open(at.at(x, y - 1, z))
+                    && beside(at, x, y - 1, z)) {
+                y--;
+            }
             String now = at.at(x, y, z);
             boolean open = BlockNames.isAir(now) || !Joins.solid(now) && Surface.plant(now);
             if ((replaceSolid ? Joins.solid(now) : open) && mask.allows(x, y, z)) {
                 c.set(x, y, z, (String) p[3]);
             }
         }
+    }
+
+    /** How far below its box a base piece may drop to reach the ground beside a wall on a slope. */
+    static final int BASE_DROP = 16;
+
+    /** Whether a wall block stands next to this spot, so a piece dropping here still follows a wall down. */
+    private static boolean beside(Canvas.Lookup at, int x, int y, int z) {
+        for (int[] s : Joins.STEP) {
+            if (Joins.solid(at.at(x + s[0], y, z + s[1]))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean open(String block) {
+        return BlockNames.isAir(block) || !Joins.solid(block) && Surface.plant(block);
     }
 
     private static int lowestWall(Canvas.Lookup at, int x, int y, int z, int floor) {

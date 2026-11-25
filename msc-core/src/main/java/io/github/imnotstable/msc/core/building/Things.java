@@ -252,11 +252,12 @@ final class Things {
     }
 
     private static final java.util.regex.Pattern QUOTED_NAME =
-            java.util.regex.Pattern.compile("(CustomName:)'(\\{[^']*\\}|\\[[^']*\\])'");
+            java.util.regex.Pattern.compile("((?<![A-Za-z_])(?:CustomName|text):)'(\\{[^']*\\}|\\[[^']*\\]|\"[^'\"]*\")'");
 
     /**
      * A text component written as a quoted JSON string (the old format, CustomName:'{"text":"Vela"}') shows its JSON
-     * as the name in today's game, which reads components as SNBT; JSON is valid SNBT, so the quotes go (ADR 0093).
+     * as the name in today's game, which reads components as SNBT; JSON is valid SNBT, so the quotes go (ADR 0093). A text
+     * display's text:'[...]' showed its JSON as Sonnet 5.5's hamlet hologram the same way (ADR 0109).
      */
     static String components(String nbt) {
         return QUOTED_NAME.matcher(nbt).replaceAll("$1$2");

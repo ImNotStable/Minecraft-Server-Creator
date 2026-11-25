@@ -157,11 +157,15 @@ public final class BuildReview {
                         tops++;
                         plainTops += shaped ? 0 : 1;
                     }
-                    boolean onGround = y - 1 <= ground || r.contains(x, y - 1, z) && !built(grid, names, isGround, x, y - 1, z)
+                    // Over water is not on the ground: a dock deck at the shore's level (ADR 0109).
+                    boolean onGround = (y - 1 <= ground && !(r.contains(x, y - 1, z) && wet(grid, fluid, x, y - 1, z)))
+                            || r.contains(x, y - 1, z) && !built(grid, names, isGround, x, y - 1, z)
                             && name(grid, names, x, y - 1, z) != null;
                     if (onGround && !green) {
                         for (int[] s : SIDES) {
-                            if (grid.region().contains(x + s[0], y, z + s[1]) && name(grid, names, x + s[0], y, z + s[1]) == null) {
+                            // A dock post standing in water shows no base line to dress (ADR 0109).
+                            if (grid.region().contains(x + s[0], y, z + s[1]) && name(grid, names, x + s[0], y, z + s[1]) == null
+                                    && !wet(grid, fluid, x + s[0], y, z + s[1])) {
                                 base++;
                                 bareBase += shaped ? 0 : 1;
                             }
@@ -247,7 +251,9 @@ public final class BuildReview {
                     + "%): give its variants more of the mix, so the main block is under half of it, and use a "
                     + "second material for frames, floors or the roof");
         }
-        if (roofPct < MIN_ROOF && height >= 6) {
+        // A pier has a deck, not a roof, and stands where nothing grows (ADR 0109).
+        boolean pier = pier(grid, names, fluid, isGround);
+        if (roofPct < MIN_ROOF && height >= 6 && !pier) {
             fixes.add("flat roofs: pitch them with stairs, overhang 1, and break long ridges with dormers or a tower");
         }
         if (plainTopPct > MAX_PLAIN_TOPS && tops >= 20) {
@@ -255,8 +261,11 @@ public final class BuildReview {
                     + "trim at=top, a parapet, a roof with overhang)");
         }
         if (bareBasePct > MAX_BARE_BASE && base >= 20) {
-            fixes.add("bare base: the build meets the ground on a clean line; add a plinth (trim at=base), bushes "
-                    + "and flowers (decorate on=ground), and worn ground at the doors");
+            // Sonnet 5.5 laid a plinth of full stone and planted flowers a block away, and still failed (ADR 0109).
+            fixes.add("bare base: " + bareBasePct + "% of the faces where the build meets the ground are full blocks "
+                    + "open to the air, a clean line; a plinth of full blocks is still that line: step it out with "
+                    + "stairs, slabs or walls (trim at=base), and set bushes and flowers right against the wall "
+                    + "(decorate on=ground), worn ground at the doors");
         }
         if (floor >= 24 && props * FLOOR_PER_PROP < floor) {
             fixes.add("empty rooms: " + floor + " floor blocks under a roof and " + props + " furnishings; furnish "
@@ -271,7 +280,7 @@ public final class BuildReview {
             fixes.add("broken ladders: " + ladders + " (first at " + firstLadder + ") end in the air above a gap; run "
                     + "each ladder from the floor up, one block above another, against a wall");
         }
-        if (plants == 0 && total >= 300) {
+        if (plants == 0 && total >= 300 && !pier) {
             fixes.add("no plants: vines and leaves on walls (decorate on=wall), bushes and flowers at the base, moss "
                     + "on ledges (weather); leave this where nothing grows");
         }
@@ -875,6 +884,33 @@ public final class BuildReview {
             }
         }
         return false;
+    }
+
+    /** Whether most of the columns the build stands in hold water: a pier or a dock, not a house. */
+    private static boolean pier(BlockGrid grid, String[] names, boolean[] fluid, boolean[] isGround) {
+        Region r = grid.region();
+        int footprint = 0;
+        int wet = 0;
+        for (int z = r.min().z(); z <= r.max().z(); z++) {
+            for (int x = r.min().x(); x <= r.max().x(); x++) {
+                boolean built = false;
+                boolean water = false;
+                for (int y = r.min().y(); y <= r.max().y(); y++) {
+                    int i = r.index(x, y, z);
+                    int b = grid.blocks()[i];
+                    built |= b >= 0 && names[b] != null && !isGround[i];
+                    water |= b >= 0 && fluid[b];
+                }
+                footprint += built ? 1 : 0;
+                wet += built && water ? 1 : 0;
+            }
+        }
+        return footprint > 0 && wet * 2 >= footprint;
+    }
+
+    private static boolean wet(BlockGrid grid, boolean[] fluid, int x, int y, int z) {
+        int i = grid.blocks()[grid.region().index(x, y, z)];
+        return i >= 0 && fluid[i];
     }
 
     private static String name(BlockGrid grid, String[] names, int x, int y, int z) {

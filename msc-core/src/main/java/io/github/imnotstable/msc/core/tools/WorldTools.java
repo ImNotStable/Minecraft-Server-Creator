@@ -122,7 +122,7 @@ public final class WorldTools {
                         .range("stops", 1, Tour.MAX_STOPS, "Views. Default " + Tour.DEFAULT_STOPS),
                 args -> {
                     Region region = Coords.region(world.world(args.str("world", null)), args.str("region"));
-                    boolean devFloor = region.world().equals(world.world(null));
+                    boolean devFloor = region.world().equals(world.world(null)) && flatMainWorld(config.serverDir());
                     BlockGrid build = world.readAll(region, WorldService.MAX_BULK_VOLUME, "world_tour review");
                     String review = BuildReview.review(build, devFloor);
                     world.reviews().record(region, review);
@@ -149,7 +149,7 @@ public final class WorldTools {
                     }
                     if (review) {
                         // The default world is the superflat dev floor (ADR 0078); world_create worlds are not.
-                        boolean devFloor = region.world().equals(world.world(null));
+                        boolean devFloor = region.world().equals(world.world(null)) && flatMainWorld(config.serverDir());
                         String text = BuildReview.review(world.readAll(region, WorldService.MAX_BULK_VOLUME,
                                 "world_summary review"), devFloor);
                         world.reviews().record(region, text);
@@ -241,6 +241,21 @@ public final class WorldTools {
             }
         }
         return out;
+    }
+
+    /**
+     * Whether the main world is the superflat dev floor: what server.properties' level-type says, flat when it says
+     * nothing (MSC sets it up flat). Gemini 4 Neon switched its main world to minecraft:normal and built its hamlet on
+     * real coast, and the review still called it the dev floor (ADR 0109).
+     */
+    static boolean flatMainWorld(Path serverDir) {
+        try {
+            return io.github.imnotstable.msc.process.ServerPropertiesFile.read(serverDir.resolve(
+                    io.github.imnotstable.msc.process.ServerPropertiesFile.NAME)).getOrDefault("level-type", "minecraft:flat")
+                    .toLowerCase(java.util.Locale.ROOT).contains("flat");
+        } catch (IOException | RuntimeException e) {
+            return true;
+        }
     }
 
     /**

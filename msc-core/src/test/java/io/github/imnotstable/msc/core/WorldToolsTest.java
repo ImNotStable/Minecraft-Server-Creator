@@ -236,11 +236,11 @@ class WorldToolsTest {
     void largeFillIsSplitAndUndoneAsOneEdit() {
         // 200 x 1 x 200 = 40,000 blocks fits one agent call.
         assertThat(h.ok("build_batch", "steps", "fill 0,70,0 199,70,199 glass"))
-                .isEqualTo("edit e1: 40000 blocks changed, region world 0,70,0 199,70,199");
+                .isEqualTo("edit e1: 40000 blocks changed, region world 0,70,0 199,70,199\n1 build never reviewed (msc_status lists them): the work is not done");
         // 129 x 64 x 128 is one column of blocks over the region limit: the smallest split, two agent calls.
         h.agent.writes.clear();
         assertThat(h.ok("build_batch", "steps", "fill 0,71,0 128,134,127 glass replace=air"))
-                .isEqualTo("edit e2: 1056768 blocks changed, region world 0,71,0 128,134,127");
+                .isEqualTo("edit e2: 1056768 blocks changed, region world 0,71,0 128,134,127\n1 build never reviewed (msc_status lists them): the work is not done");
         assertThat(h.agent.writes).contains(Region.of("world", 0, 71, 0, 127, 134, 127),
                 Region.of("world", 128, 71, 0, 128, 134, 127));
         assertThat(h.ok("build_undo", "edit", "e2")).isEqualTo("undid e2: 1056768 blocks restored");

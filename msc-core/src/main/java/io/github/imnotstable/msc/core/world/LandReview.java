@@ -118,8 +118,12 @@ public final class LandReview {
         if (floating[0] > 0) {
             StringBuilder at = new StringBuilder();
             for (int k = 0; k < 3 && floating[2 + 3 * k] != Integer.MIN_VALUE; k++) {
-                at.append(k == 0 ? "" : "; ").append(floating[2 + 3 * k]).append(',').append(floating[3 + 3 * k])
-                        .append(',').append(floating[4 + 3 * k]);
+                int fx = floating[2 + 3 * k];
+                int fy = floating[3 + 3 * k];
+                int fz = floating[4 + 3 * k];
+                // Naming the block: Sonnet 5.5 took stray grass over a dug slope for natural terrain (ADR 0109).
+                at.append(k == 0 ? "" : "; ").append(fx).append(',').append(fy).append(',').append(fz).append(' ')
+                        .append(String.valueOf(name(grid, names, fx, fy, fz)));
             }
             parts.add("floating " + floating[0] + " blocks in " + floating[1] + " clumps");
             fixes.add("floating: " + floating[0] + " blocks in " + floating[1] + " clumps touch nothing that reaches "

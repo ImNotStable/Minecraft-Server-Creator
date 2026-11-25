@@ -69,7 +69,7 @@ class LandReviewTest {
         text.append("y=3\n").append(".....\n").append(".ll..\n").append(".ll..\n").append(".....\n".repeat(2));
         BlockGrid g = TextGrid.parse(text.toString(), "world", new BlockPos(10, 64, 20));
         String review = BuildReview.review(g);
-        assertThat(review).contains("floating 4 blocks in 1 clumps", "(at 11,67,21)");
+        assertThat(review).contains("floating 4 blocks in 1 clumps", "(at 11,67,21 oak_leaves)");
         assertThat(review).doesNotContain("12,65,22");
     }
 }
