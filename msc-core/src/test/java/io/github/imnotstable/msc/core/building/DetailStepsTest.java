@@ -340,4 +340,16 @@ class DetailStepsTest {
         }
         return new BlockGrid(r, palette, blocks);
     }
+
+    @Test
+    void aBasePlinthReachesTheGroundBelowItsBox() throws Exception {
+        // Sonnet 5.5 boxed hillside houses from the uphill ground: the plinth hung 3 up the wall (ADR 0109).
+        Canvas c = draw("""
+                fill 0,0,0 6,6,6 stone_bricks
+                fill 1,0,1 5,6,5 air
+                trim 0,3,0 6,6,6 cobblestone_stairs at=base
+                """);
+        assertThat(at(c, -1, 0, 3)).startsWith("cobblestone_stairs");
+        assertThat(at(c, -1, 3, 3)).isNull();
+    }
 }
