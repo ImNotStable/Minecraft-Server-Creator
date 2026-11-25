@@ -49,6 +49,9 @@ it to work for every strong model, and the weakest of the strong ones shows the 
 
 ## Not done
 
+- Gemini 4 Neon and Hydrogen were not rerun on the fixed core: the account's Gemini quota was out until about
+  2026-11-30. Their baseline worlds re-reviewed on it score 76 and 85 (were 66 and 75).
+
 - A level-type changed after the main world was generated still names the world by the setting, not its land.
 - build_undo does not drop a never-reviewed area: reviewing the spot clears it.
 
