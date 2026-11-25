@@ -25,6 +25,44 @@ public final class OpenReviews {
     /** Blocks placed in one area before it counts as a build that needs a review (a sign or a lamp does not). */
     static final int UNREVIEWED_BLOCKS = 150;
 
+    /** Failing reviews of one region in a row, with the same findings and no better numbers, that make a stall. */
+    public static final int STALL = 3;
+    private static final Pattern PERCENT = Pattern.compile("(?:fix first: |; )\\d+\\) [^:;]+: (\\d+)%");
+    private final Map<Region, int[]> streaks = new java.util.HashMap<>();
+    private final Map<Region, List<String>> lastFixes = new java.util.HashMap<>();
+
+    /**
+     * Records a review (as {@link #record}) and returns a stall warning, or empty: the region failed {@link #STALL}
+     * times in a row with the same findings and no finding's percentage lower. Run 34 got "bare base" 45 times and
+     * rebuilt the same walls each time; nothing said it was going in circles (ADR 0117).
+     */
+    public synchronized String recordAndCheck(Region region, String review) {
+        record(region, review);
+        List<String> fixes = fixes(review);
+        if (fixes.isEmpty()) {
+            streaks.remove(region);
+            lastFixes.remove(region);
+            return "";
+        }
+        int score = 0;
+        Matcher m = PERCENT.matcher(review.substring(Math.max(0, review.indexOf("\nfix first: ") + 1)));
+        while (m.find()) {
+            score += Integer.parseInt(m.group(1));
+        }
+        int[] s = streaks.get(region);
+        boolean same = s != null && fixes.equals(lastFixes.get(region)) && score >= s[1];
+        s = same ? new int[] {s[0] + 1, score} : new int[] {1, score};
+        streaks.put(region, s);
+        lastFixes.put(region, fixes);
+        if (s[0] < STALL) {
+            return "";
+        }
+        return "STALLED: this region has failed " + s[0] + " reviews in a row on the same findings ("
+                + String.join(", ", fixes) + ") with no number better. Repeating the same edits will not change it: "
+                + "do exactly what the fix names, at the place it gives, with a different step than before; if that "
+                + "cannot work, stop, say so in your report, and move on.";
+    }
+
     /** Records a review's text for its region: failed when it has fixes, else passed. */
     public synchronized void record(Region region, String review) {
         // Only a review of the same region settles it: run 8 widened failing regions a block at a time until a
