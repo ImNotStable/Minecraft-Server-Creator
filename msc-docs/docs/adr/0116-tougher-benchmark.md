@@ -1,4 +1,4 @@
-# ADR 0113: A tougher benchmark, judged blind on looks
+# ADR 0116: A tougher benchmark, judged blind on looks
 
 Status: accepted, 2026-11-25. Decided by Claude; Jeremiah asked for much tougher benchmarks with stricter, more
 consistent requirements, blind judging, and low usage, and left the design to Claude.
