@@ -40,6 +40,8 @@ class PluginTest {
 
         assertThat(plugin.get("name").getAsString()).isEqualTo("msc").isEqualTo(entry.get("name").getAsString());
         assertThat(RepoFiles.dir(FILES, "").resolve(entry.get("source").getAsString()).normalize()).isEqualTo(PLUGIN);
+        // The repository's license (ADR 0115), so the plugin listing shows it.
+        assertThat(plugin.get("license").getAsString()).isEqualTo("Apache-2.0");
     }
 
     @Test
