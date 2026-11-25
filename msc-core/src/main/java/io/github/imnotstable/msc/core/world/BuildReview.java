@@ -310,8 +310,66 @@ public final class BuildReview {
                         + "%), so mobs spawn in town at night; lamp posts along paths and lanterns at doors "
                         + "(decorate on=ground with a fence and tip=lantern, spacing=8)");
             }
+            String twins = lookAlikes(grid, names, isGround, buildings);
+            if (twins != null) {
+                fixes.add(twins);
+            }
         }
         return withLand(out.toString().stripTrailing(), land, fixes, true);
+    }
+
+    /** Buildings in one group of look-alikes at which a town reads as copies (ADR 0111). */
+    static final int MAX_TWINS = 3;
+
+    /**
+     * A group of {@link #MAX_TWINS} or more buildings with the same footprint, height (each within a block) and two main
+     * materials, or null: run 25's houses all passed their reviews, and stood in a row like copies (ADR 0111).
+     */
+    private static String lookAlikes(BlockGrid grid, String[] names, boolean[] isGround, List<Region> buildings) {
+        Region r = grid.region();
+        List<int[]> shapes = new ArrayList<>();
+        List<String> materials = new ArrayList<>();
+        for (Region b : buildings) {
+            Map<String, Integer> counts = new HashMap<>();
+            int top = b.min().y();
+            for (int y = b.min().y(); y <= b.max().y(); y++) {
+                for (int z = b.min().z(); z <= b.max().z(); z++) {
+                    for (int x = b.min().x(); x <= b.max().x(); x++) {
+                        int i = r.index(x, y, z);
+                        int k = grid.blocks()[i];
+                        if (k >= 0 && names[k] != null && !isGround[i] && !matches(names[k], PLANTS)) {
+                            counts.merge(names[k], 1, Integer::sum);
+                            top = Math.max(top, y);
+                        }
+                    }
+                }
+            }
+            List<String> main = counts.entrySet().stream()
+                    .sorted(Map.Entry.<String, Integer>comparingByValue().reversed()).limit(2).map(Map.Entry::getKey)
+                    .sorted().toList();
+            int w = Math.min(b.sizeX(), b.sizeZ());
+            int l = Math.max(b.sizeX(), b.sizeZ());
+            shapes.add(new int[] {w, l, top});
+            materials.add(String.join("+", main));
+        }
+        for (int a = 0; a < buildings.size(); a++) {
+            List<Integer> group = new ArrayList<>(List.of(a));
+            for (int b = 0; b < buildings.size(); b++) {
+                int[] p = shapes.get(a);
+                int[] q = shapes.get(b);
+                if (b != a && materials.get(a).equals(materials.get(b)) && Math.abs(p[0] - q[0]) <= 1
+                        && Math.abs(p[1] - q[1]) <= 1 && Math.abs(p[2] - q[2]) <= 1) {
+                    group.add(b);
+                }
+            }
+            if (group.size() >= MAX_TWINS) {
+                return "look-alike buildings: " + group.size() + " buildings share one footprint, height and main "
+                        + "materials (" + materials.get(a).replace('+', ' ') + ", first at "
+                        + Coords.show(buildings.get(a)) + "), so the street reads as copies; vary floor plans, storeys, "
+                        + "roof shapes and materials from house to house";
+            }
+        }
+        return null;
     }
 
     static final int STREET_REACH = 4;

@@ -260,7 +260,8 @@ class BuildReviewTest {
                 "minecraft:oak_log[axis=y]"), b);
         assertThat(BuildReview.review(grid)).contains("fix first: 1) buildings failing: 3 of 3 fail on their own "
                 + "(world 4,0,4 11,10,11: ")
-                .contains("dark streets: 100% of the open ground within 4 blocks of the buildings");
+                .contains("dark streets: 100% of the open ground within 4 blocks of the buildings")
+                .contains("look-alike buildings: 3 buildings share one footprint, height and main materials (bricks");
     }
 
     @Test
