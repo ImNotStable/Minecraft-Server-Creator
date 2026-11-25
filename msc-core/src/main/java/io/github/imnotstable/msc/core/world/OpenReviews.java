@@ -56,13 +56,19 @@ public final class OpenReviews {
      * without ever reviewing it (ADR 0109).
      */
     public synchronized void edited(Region box, int changed) {
+        // An edit inside a region already reviewed is tracked there (failing, or edited since it passed): listing it
+        // again as never reviewed told Sonnet 5.5 its own fixes were unreviewed, 42 times in one town (ADR 0109).
+        if (reviewed(box)) {
+            changed = 0;
+        }
         Region area = box;
         int blocks = changed;
         for (boolean merged = true; merged; ) {
             merged = false;
             for (Map.Entry<Region, Integer> e : unreviewed.entrySet()) {
                 Region u = e.getKey();
-                if (near(u, area, 4)) {
+                // Touching edits are one build; a gap between them makes separate builds, each reviewed on its own.
+                if (near(u, area, 1)) {
                     area = Region.of(area.world(), Math.min(u.min().x(), area.min().x()), Math.min(u.min().y(),
                             area.min().y()), Math.min(u.min().z(), area.min().z()), Math.max(u.max().x(), area.max().x()),
                             Math.max(u.max().y(), area.max().y()), Math.max(u.max().z(), area.max().z()));
@@ -73,7 +79,9 @@ public final class OpenReviews {
                 }
             }
         }
-        unreviewed.put(area, blocks);
+        if (blocks > 0) {
+            unreviewed.put(area, blocks);
+        }
         for (java.util.Iterator<Region> it = passed.iterator(); it.hasNext(); ) {
             Region r = it.next();
             if (r.world().equals(box.world()) && r.min().x() <= box.max().x() && box.min().x() <= r.max().x()
@@ -83,6 +91,14 @@ public final class OpenReviews {
                 open.put(r, List.of("edited since it passed"));
             }
         }
+    }
+
+    private boolean reviewed(Region box) {
+        int x = (box.min().x() + box.max().x()) / 2;
+        int y = (box.min().y() + box.max().y()) / 2;
+        int z = (box.min().z() + box.max().z()) / 2;
+        return java.util.stream.Stream.concat(open.keySet().stream(), passed.stream())
+                .anyMatch(r -> r.world().equals(box.world()) && r.contains(x, y, z));
     }
 
     private static boolean near(Region a, Region b, int gap) {
