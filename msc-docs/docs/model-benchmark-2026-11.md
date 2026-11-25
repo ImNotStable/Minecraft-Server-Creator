@@ -112,4 +112,5 @@ building by building.
 | Claude Sonnet 5.5 | r3 | 15 | fails (buildings too close to split) |
 | Claude Sonnet 5.5 | r4 | 14 | 2 of 12 fail (harbour wall plain, stray grass) |
 | Claude Sonnet 5.5 | r5 | 15 | **passes**, every building |
-| GPT-6.1 Sol | baseline / r5 | | queued for the Codex usage reset |
+| GPT-6.1 Sol | baseline | 20 | 1 of 11 fails (a stone mass at 56% stone, few shaped blocks) |
+| GPT-6.1 Sol | r5 | 23 | **passes**, every building (13 player_tests) |
