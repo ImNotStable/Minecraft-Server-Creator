@@ -63,6 +63,17 @@ public final class WorldService {
         return reviews;
     }
 
+    private volatile BuildLedger ledger = BuildLedger.none();
+
+    /** The workspace's build ledger, the world's memory across sessions (ADR 0113). */
+    public BuildLedger ledger() {
+        return ledger;
+    }
+
+    public void ledger(BuildLedger ledger) {
+        this.ledger = ledger;
+    }
+
     public WorldService(AgentHub hub) {
         this.hub = hub;
     }

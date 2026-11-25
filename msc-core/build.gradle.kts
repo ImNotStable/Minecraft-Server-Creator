@@ -3,6 +3,7 @@ import java.time.Instant
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.util.Properties
+import java.util.zip.ZipFile
 
 plugins {
     id("msc.application-conventions")
@@ -43,13 +44,46 @@ dependencies {
     agents(project(path = ":msc-agent-forge", configuration = "shadowRuntimeElements")) { isTransitive = false }
 }
 
+// checkAgentJars: no agent jar may carry Minecraft's own classes (ADR 0115). Agents compile against Minecraft and
+// their platform, which the server supplies; only MSC's classes and the Fabric API jars nested in META-INF/jars belong.
+val checkAgentJars = tasks.register("checkAgentJars") {
+    description = "Fails if an agent jar MSC ships contains Mojang's (net.minecraft, com.mojang) classes."
+    group = "verification"
+    val jars: FileCollection = files(agentJars)
+    inputs.files(jars)
+    val marker = layout.buildDirectory.file("checkAgentJars/ok")
+    outputs.file(marker)
+    doLast {
+        val bad = jars.files.filter { it.name.endsWith(".jar") && !it.name.endsWith("-dev.jar") }.flatMap { jar ->
+            ZipFile(jar).use { zip ->
+                zip.entries().asSequence().map { it.name }
+                    .filter { it.startsWith("net/minecraft/") || it.startsWith("com/mojang/") }
+                    .take(3).map { "${jar.name}: $it" }.toList()
+            }
+        }
+        if (bad.isNotEmpty()) {
+            throw GradleException("Agent jars must not ship Mojang code (ADR 0115):\n" + bad.joinToString("\n"))
+        }
+        marker.get().asFile.writeText("ok\n")
+    }
+}
+tasks.check { dependsOn(checkAgentJars) }
+
 // The test player's client for the previous Minecraft version (Minestom lags Paper by one), in bot/<version>/.
 // Not on the class path: msc-bot's Bots loads it in its own class loader when a server answers with that protocol.
 // The configuration and the bot/<version> layout come from msc.previous-protocol, shared with msc-bot and msc-bench.
 
+// The license, notices and the GNU texts for the one LGPL jar in lib/ go at the distribution's root (ADR 0115).
+val licenseFiles = rootProject.files("LICENSE", "NOTICE", "THIRD-PARTY-NOTICES.md")
+val licenseTexts = rootProject.layout.projectDirectory.dir("licenses")
+
 distributions {
     main {
         contents {
+            from(licenseFiles)
+            into("licenses") {
+                from(licenseTexts)
+            }
             into("agents") {
                 from(agentJars)
                 // Loom's runtimeElements may also carry the dev (named) jar; only the remapped one loads.
@@ -195,7 +229,8 @@ tasks.test {
 val repoCheckClasses = listOf("io.github.imnotstable.msc.core.DocumentedCommandsTest",
     "io.github.imnotstable.msc.core.RepoInputsTest", "io.github.imnotstable.msc.core.EulaWritersTest",
     "io.github.imnotstable.msc.core.ServerPropertiesAccessTest", "io.github.imnotstable.msc.core.DecisionsIndexTest",
-    "io.github.imnotstable.msc.core.DocumentedResultLinesTest", "io.github.imnotstable.msc.core.FromScratchTest")
+    "io.github.imnotstable.msc.core.DocumentedResultLinesTest", "io.github.imnotstable.msc.core.FromScratchTest",
+    "io.github.imnotstable.msc.core.LicenseNoticesTest")
 val repoChecks = tasks.register<Test>("repoChecks") {
     description = "Runs the tests that scan the whole repository (documented commands, test-source reads, EULA writers, " +
         "server.properties access, ADR index, the from-scratch rule)."
@@ -234,6 +269,11 @@ repoInputs.on(repoChecks).set("productionSources", rootProject.fileTree(rootDir)
 // DecisionsIndexTest: the plan and every ADR, checked that each ADR has a row or mention in the plan (#411).
 repoInputs.on(repoChecks).set("decisions", rootProject.fileTree(rootDir) {
     include("msc-docs/docs/plan.md", "msc-docs/docs/adr/*.md")
+})
+
+// LicenseNoticesTest: the license files and the version catalog, checked that every library is in the notices (ADR 0115).
+repoInputs.on(repoChecks).set("licensing", rootProject.fileTree(rootDir) {
+    include("LICENSE", "NOTICE", "THIRD-PARTY-NOTICES.md", "licenses/*.txt", "gradle/libs.versions.toml")
 })
 
 // DocumentedResultLinesTest: tools.md's result line counts, checked against real tool results (#419).

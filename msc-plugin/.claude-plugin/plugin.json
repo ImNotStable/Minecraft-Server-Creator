@@ -6,5 +6,7 @@
     "name": "ImNotStable"
   },
   "homepage": "https://github.com/ImNotStable/Minecraft-Server-Creator",
+  "repository": "https://github.com/ImNotStable/Minecraft-Server-Creator",
+  "license": "Apache-2.0",
   "keywords": ["minecraft", "mcp", "paper", "purpur", "fabric", "quilt", "neoforge", "forge", "minestom"]
 }

@@ -18,6 +18,13 @@ tasks.withType<JavaCompile>().configureEach {
     options.compilerArgs.addAll(listOf("-parameters", "-Xlint:all,-processing,-serial", "-Werror"))
 }
 
+// Every jar MSC builds carries the license and notice (ADR 0115); shaded and remapped jars are Jars too.
+val licenseFiles = files(isolated.rootProject.projectDirectory.file("LICENSE"),
+    isolated.rootProject.projectDirectory.file("NOTICE"))
+tasks.withType<Jar>().configureEach {
+    metaInf { from(licenseFiles) }
+}
+
 tasks.withType<Javadoc>().configureEach {
     (options as StandardJavadocDocletOptions).addStringOption("Xdoclint:none", "-quiet")
 }

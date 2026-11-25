@@ -134,12 +134,19 @@ public final class WorldTools {
                     return Tour.walk(renderer, grid, review, args.integer("stops", Tour.DEFAULT_STOPS));
                 });
         registry.add("world_summary",
-                "Summarize a region: block counts (where rare ones are), non-air bounds, fill per layer, entities. Use before world_slice on unknown areas and to find a block.",
+                "Summarize a region: block counts (where rare ones are), non-air bounds, fill per layer, entities, the builds the "
+                        + "ledger has there (what stands at x,y,z: region=\"x,y,z x,y,z\"). Use before world_slice on "
+                        + "unknown areas and to find a block.",
                 Schema.of().req("region", "string", REGION).opt("world", "string", WORLD)
                         .opt("path", "string", "\"x,y,z x,y,z\": can a player walk/jump from A to B; else the wall or gap")
                         .opt("diff", "string", "structure_save file of this region: what changed since")
-                        .opt("review", "boolean", "Score a build and its land (detail, walls, roofs, lights, flat ground, floating blocks); say what to fix"),
+                        .opt("review", "boolean", "Score a build and its land (detail, walls, roofs, lights, flat ground, floating blocks); say what to fix")
+                        .opt("name", "string", "With review: the build's name in the build ledger (as in the plan); same name on re-reviews")
+                        .opt("why", "string", "With review: one line on what the build is for, kept in the ledger"),
                 args -> {
+                    if (!args.bool("review", false) && (args.has("name") || args.has("why"))) {
+                        throw new ToolException("name and why go with review=true");
+                    }
                     Region region = Coords.region(world.world(args.str("world", null)), args.str("region"));
                     String path = args.str("path", null);
                     String diff = args.str("diff", null);
@@ -150,10 +157,11 @@ public final class WorldTools {
                     if (review) {
                         // The default world is the superflat dev floor (ADR 0078); world_create worlds are not.
                         boolean devFloor = region.world().equals(world.world(null)) && flatMainWorld(config.serverDir());
-                        String text = BuildReview.review(world.readAll(region, WorldService.MAX_BULK_VOLUME,
-                                "world_summary review"), devFloor);
+                        BlockGrid grid = world.readAll(region, WorldService.MAX_BULK_VOLUME, "world_summary review");
+                        String text = BuildReview.review(grid, devFloor);
                         world.reviews().record(region, text);
-                        return text;
+                        return text + world.ledger().reviewed(region, text, grid, args.str("name", null),
+                                args.str("why", null));
                     }
                     if (path != null) {
                         String[] ends = path.trim().split("\\s+");
@@ -166,7 +174,9 @@ public final class WorldTools {
                     if (diff != null) {
                         return diff(config, world, region, diff);
                     }
-                    return world.summary(region, Budget.DEFAULT_CHARS);
+                    String builds = world.ledger().at(region);
+                    String summary = world.summary(region, Budget.DEFAULT_CHARS);
+                    return builds.isEmpty() ? summary : summary + "\n" + builds;
                 });
         registry.add("world_entities", "List entities in a region: type, name, position, health, tags. Loaded chunks only, except on Minestom.",
                 Schema.of().req("region", "string", REGION).opt("type", "string", "Only this type, such as zombie")

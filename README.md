@@ -59,4 +59,10 @@ Java 25 and Gradle 9.9 (wrapper). Gradle downloads Java 25 if it is not installe
 
 Working conventions for humans and AI are in [CLAUDE.md](CLAUDE.md).
 
-The full plan is in [msc-docs/docs/plan.md](msc-docs/docs/plan.md).
+The full plan is in [msc-docs/docs/plan.md](msc-docs/docs/plan.md). To report a bug or propose a change, see [CONTRIBUTING.md](CONTRIBUTING.md); security problems go through [SECURITY.md](SECURITY.md).
+
+## License
+
+Apache License 2.0: see [LICENSE](LICENSE) and [NOTICE](NOTICE). The third-party libraries MSC ships, the ones scaffolded projects bundle and their licenses are listed in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) ([ADR 0115](msc-docs/docs/adr/0115-license.md)). The code MSC scaffolds and the code the AI writes in your project are yours.
+
+MSC is not an official Minecraft product and is not approved by or associated with Mojang or Microsoft. It ships no Mojang code or assets; the Minecraft servers it runs are downloaded from their official sources and run under the [Minecraft EULA](https://aka.ms/MinecraftEULA) ([TERMS.md](TERMS.md)).
