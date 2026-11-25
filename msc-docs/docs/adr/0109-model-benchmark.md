@@ -40,6 +40,13 @@ it to work for every strong model, and the weakest of the strong ones shows the 
   against the wall); the build guide says the same. Bare base was the most common failure (Neon, Hydrogen, Sonnet),
   and Sonnet 5.5 read the old advice as done after laying full stone.
 
+- Never reviewed skips edits inside a region already reviewed (they are tracked there) and merges only touching
+  builds, so neighbouring houses are not one blob no house review clears (Sonnet 5.5's town read it 42 times).
+- trim at=base pieces drop along their wall to the ground (up to 16 below the box): hillside houses boxed from the
+  uphill ground got plinths hanging mid-wall on the low side.
+- A harder town brief (brief-town.md: harbour wall, two piers, market, tavern with cellar, chapel, four hillside
+  houses, lighthouse, four NPCs) for GPT-6.1 Sol, since nine of eleven models score 93+ on the hamlet.
+
 ## Not done
 
 - A level-type changed after the main world was generated still names the world by the setting, not its land.
