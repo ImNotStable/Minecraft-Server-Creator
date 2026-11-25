@@ -265,6 +265,14 @@ class BuildReviewTest {
     }
 
     @Test
+    void aBareBaseSaysWhereItRunsAndWhatToTry() {
+        // Run 34 rebuilt whole houses after "bare base" and never touched the line itself (ADR 0112).
+        assertThat(BuildReview.review(box("bricks"))).contains("The bare line runs x 1..9, z 1..9 at y 65..65; "
+                + "for example trim 1,65,1 9,66,9 <a stair or slab of your palette> at=base, then decorate "
+                + "0,65,0 10,66,10 <your plants> on=ground");
+    }
+
+    @Test
     void anEmptyRegionSaysSo() {
         BlockGrid air = TextGrid.parse("legend: #=stone\ny=0\n...\n...", "world", new BlockPos(0, 0, 0));
         assertThat(BuildReview.review(air)).isEqualTo("review: nothing built above the ground");

@@ -115,6 +115,9 @@ public final class BuildReview {
         int plainTops = 0;
         int base = 0;
         int bareBase = 0;
+        // Where the bare base faces are, so the fix line can say where to work (ADR 0112).
+        int[] bareBox = {Integer.MAX_VALUE, Integer.MAX_VALUE, Integer.MAX_VALUE, Integer.MIN_VALUE, Integer.MIN_VALUE,
+            Integer.MIN_VALUE};
         int plants = 0;
         int floor = 0;
         int props = 0;
@@ -167,7 +170,15 @@ public final class BuildReview {
                             if (grid.region().contains(x + s[0], y, z + s[1]) && name(grid, names, x + s[0], y, z + s[1]) == null
                                     && !wet(grid, fluid, x + s[0], y, z + s[1])) {
                                 base++;
-                                bareBase += shaped ? 0 : 1;
+                                if (!shaped) {
+                                    bareBase++;
+                                    bareBox[0] = Math.min(bareBox[0], x);
+                                    bareBox[1] = Math.min(bareBox[1], y);
+                                    bareBox[2] = Math.min(bareBox[2], z);
+                                    bareBox[3] = Math.max(bareBox[3], x);
+                                    bareBox[4] = Math.max(bareBox[4], y);
+                                    bareBox[5] = Math.max(bareBox[5], z);
+                                }
                             }
                         }
                     }
@@ -265,7 +276,13 @@ public final class BuildReview {
             fixes.add("bare base: " + bareBasePct + "% of the faces where the build meets the ground are full blocks "
                     + "open to the air, a clean line; a plinth of full blocks is still that line: step it out with "
                     + "stairs, slabs or walls (trim at=base), and set bushes and flowers right against the wall "
-                    + "(decorate on=ground), worn ground at the doors");
+                    + "(decorate on=ground), worn ground at the doors. The bare line runs "
+                    + String.format(Locale.ROOT, "x %d..%d, z %d..%d at y %d..%d; for example trim %d,%d,%d %d,%d,%d "
+                            + "<a stair or slab of your palette> at=base, then decorate %d,%d,%d %d,%d,%d <your plants> "
+                            + "on=ground. Rebuilding the walls again does not change this line", bareBox[0], bareBox[3],
+                            bareBox[2], bareBox[5], bareBox[1], bareBox[4], bareBox[0], bareBox[1], bareBox[2], bareBox[3],
+                            bareBox[4] + 1, bareBox[5], bareBox[0] - 1, bareBox[1], bareBox[2] - 1, bareBox[3] + 1,
+                            bareBox[1] + 1, bareBox[5] + 1));
         }
         if (floor >= 24 && props * FLOOR_PER_PROP < floor) {
             fixes.add("empty rooms: " + floor + " floor blocks under a roof and " + props + " furnishings; furnish "
