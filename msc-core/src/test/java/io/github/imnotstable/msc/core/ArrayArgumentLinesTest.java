@@ -24,7 +24,8 @@ import org.junit.jupiter.api.io.TempDir;
 class ArrayArgumentLinesTest {
     /** Every array argument of every tool, each with a test below. */
     private static final Set<String> COVERED = Set.of("player_test actions", "texture palette", "texture rows",
-            "model_create textures", "plugins install", "world_create biomes", "world_create layers", "server_setup servers");
+            "model_create textures", "plugins install", "world_create biomes", "world_create layers", "server_setup servers",
+            "msc_status plan");
 
     @TempDir
     Path workspace;
@@ -72,6 +73,12 @@ class ArrayArgumentLinesTest {
                 .contains("minecraft:plains, minecraft:desert");
         assertThat(h.ok("world_create", "name", "b", "terrain", "flat", "layers", "bedrock\ndirt:2"))
                 .contains("msc:b, flat terrain");
+    }
+
+    @Test
+    void msc_statusTakesOnePlanLinePerLine() {
+        assertThat(h.ok("msc_status", "plan", "smithy: by the ford\ninn: on the rise")).contains("(smithy, inn)");
+        assertThat(h.ok("msc_status", "plan", List.of("a hamlet", "smithy: by the ford"))).contains("(smithy)");
     }
 
     @Test
