@@ -22,8 +22,8 @@ drive them away. So looks has to carry the score, judged by someone who does not
     `world_tour` sheet of it, copied to anonymous names. A judge model picks the village a new player would rather
     stay in, A or B, and the pair is asked again in the other order so position does not decide. Each run meets about
     four others; a Bradley-Terry fit of the wins gives each run a strength, scaled 0-60 across the field. The judge is
-    never one of the two builders' models (Claude Sonnet 5.5 at low effort, Claude Opus 5.5 when Sonnet built one of
-    the pair).
+    never one of the two builders' models: Claude Sonnet 5.5 at low effort, else Opus 5.5, else Haiku 5.5.
+    The overhead render is 1024 px with entity markers off, of the box around every region the run reviewed.
   - Brief 30, from the world and the run's own list: eight distinct buildings (12, 1.5 each, none counted twice when
     the town review calls them look-alike, ADR 0111), the savanna farm quarter (6), sign, hologram and four NPCs that
     stay put (6), lit streets and stairs that walk (6).
