@@ -99,3 +99,17 @@ What the baseline shows: every model that ran long enough to review its builds p
 its state honestly. The points MSC could win back were mostly MSC's own review mistakes on docks and piers (Opus,
 Neon, Hydrogen) and builds never reviewed (Sonnet). The test subject, GPT-6.1 Sol, already passes every review; what
 it loses is looks (plain interiors, bare cuts), which a one-run benchmark at this size cannot separate from noise.
+
+## Harder task: the harbour town
+
+`brief-town.md`: harbour wall, two piers, market, tavern with cellar, chapel, four hillside houses, lighthouse, four
+NPCs. Each world re-reviewed afterwards with the same core (r5) on the box around everything the run reviewed, judged
+building by building.
+
+| Model | Core during the run | Minutes | Same-core re-review of the whole town |
+|---|---|---|---|
+| Claude Sonnet 5.5 | baseline | 18 | 4 of 13 buildings fail |
+| Claude Sonnet 5.5 | r3 | 15 | fails (buildings too close to split) |
+| Claude Sonnet 5.5 | r4 | 14 | 2 of 12 fail (harbour wall plain, stray grass) |
+| Claude Sonnet 5.5 | r5 | 15 | **passes**, every building |
+| GPT-6.1 Sol | baseline / r5 | | queued for the Codex usage reset |
