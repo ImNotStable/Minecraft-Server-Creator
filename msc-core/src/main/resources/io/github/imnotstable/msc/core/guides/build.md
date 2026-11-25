@@ -8,6 +8,8 @@ DONE MEANS (check before you report a build or a map finished)
   or flora for ground cover, trees you built around it. Generated land is the start, not the finish.
 - Every build met the ground: trim at=base (a plinth of stairs or slabs; full blocks are still a clean line),
   decorate on=ground (bushes, flowers against the wall) and worn ground at the doors; rooms furnished (decorate on=edge, corner, ceiling); weather for age.
+- A failing review names what to change and where: add exactly that, in that place (a trim, a decorate, a light), and
+  review again. Rebuilding the whole build from its first script repeats the same numbers.
 - If the run must end with a review still failing, say which and why in the report; never call it done.
 
 WHERE TO BUILD
