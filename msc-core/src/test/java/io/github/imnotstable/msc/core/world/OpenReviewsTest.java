@@ -75,6 +75,22 @@ class OpenReviewsTest {
     }
 
     @Test
+    void theSameFailureThreeTimesWithNoProgressIsAStall() {
+        OpenReviews open = new OpenReviews();
+        Region house = Region.of("msc:a", 0, 60, 0, 10, 70, 10);
+        String bare80 = "review: 10 blocks\nverdict: NOT DONE, 1 check below the bar\nfix first: 1) bare base: 80% of "
+                + "the faces; then review this region again";
+        String bare60 = bare80.replace("80%", "60%");
+        assertThat(open.recordAndCheck(house, bare80)).isEmpty();
+        assertThat(open.recordAndCheck(house, bare60)).isEmpty(); // better: not counted
+        assertThat(open.recordAndCheck(house, bare60)).isEmpty();
+        assertThat(open.recordAndCheck(house, bare60)).startsWith("STALLED: this region has failed 3 reviews in a row "
+                + "on the same findings (bare base)");
+        assertThat(open.recordAndCheck(house, "review: 10 blocks\nno number below the bar")).isEmpty();
+        assertThat(open.recordAndCheck(house, bare60)).isEmpty(); // a fresh streak after a pass
+    }
+
+    @Test
     void aPassingReviewOfAPartLeavesTheWholeFailing() {
         OpenReviews open = new OpenReviews();
         open.record(Region.of("msc:a", 0, 60, 0, 100, 90, 100), FAILED);

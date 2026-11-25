@@ -61,6 +61,27 @@ public final class WorldTools {
         }
     }
 
+    /**
+     * The review with a stall warning in front of it, when there is one, and the stall logged to
+     * {@code .msc/stalls.jsonl} for whoever watches the run (ADR 0117). The log is best effort.
+     */
+    static String stalled(CoreConfig config, Region region, String review, String stall) {
+        if (stall.isEmpty()) {
+            return review;
+        }
+        try {
+            Path log = Files.createDirectories(config.dataDir()).resolve("stalls.jsonl");
+            String line = String.format(java.util.Locale.ROOT, "{\"v\":1,\"ts\":\"%s\",\"region\":\"%s\",\"stall\":\"%s\"}%n",
+                    java.time.Instant.now(), Coords.show(region),
+                    stall.replace("\\", "\\\\").replace("\"", "\\\""));
+            Files.writeString(log, line, java.nio.file.StandardOpenOption.CREATE,
+                    java.nio.file.StandardOpenOption.APPEND);
+        } catch (IOException | RuntimeException e) {
+            // the warning in the result is what matters; the log is for the watcher
+        }
+        return stall + "\n" + review;
+    }
+
     public static void register(ToolRegistry registry, CoreConfig config, WorldService world, WorldBackups backups) {
         registry.add("world_slice",
                 "See blocks as text: one grid per Y layer with a legend, in the structure text build_batch takes. "
@@ -124,8 +145,8 @@ public final class WorldTools {
                     Region region = Coords.region(world.world(args.str("world", null)), args.str("region"));
                     boolean devFloor = region.world().equals(world.world(null)) && flatMainWorld(config.serverDir());
                     BlockGrid build = world.readAll(region, WorldService.MAX_BULK_VOLUME, "world_tour review");
-                    String review = BuildReview.review(build, devFloor);
-                    world.reviews().record(region, review);
+                    String plain = BuildReview.review(build, devFloor);
+                    String review = stalled(config, region, plain, world.reviews().recordAndCheck(region, plain));
                     // Room around the build to stand in front of its doors and walls.
                     Region around = Region.of(region.world(), region.min().x() - Tour.MARGIN, region.min().y(),
                             region.min().z() - Tour.MARGIN, region.max().x() + Tour.MARGIN,
@@ -158,8 +179,8 @@ public final class WorldTools {
                         // The default world is the superflat dev floor (ADR 0078); world_create worlds are not.
                         boolean devFloor = region.world().equals(world.world(null)) && flatMainWorld(config.serverDir());
                         BlockGrid grid = world.readAll(region, WorldService.MAX_BULK_VOLUME, "world_summary review");
-                        String text = BuildReview.review(grid, devFloor);
-                        world.reviews().record(region, text);
+                        String plain = BuildReview.review(grid, devFloor);
+                        String text = stalled(config, region, plain, world.reviews().recordAndCheck(region, plain));
                         return text + world.ledger().reviewed(region, text, grid, args.str("name", null),
                                 args.str("why", null));
                     }
