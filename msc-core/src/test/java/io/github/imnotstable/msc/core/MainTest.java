@@ -57,6 +57,7 @@ class MainTest {
                 .redirectInput(ProcessBuilder.Redirect.from(new File("/dev/null")));
         builder.environment().putAll(Map.of("LC_ALL", "C", "LANG", "C"));
         builder.environment().remove("JAVA_TOOL_OPTIONS");
+        builder.environment().remove("_JAVA_OPTIONS");
         Process p = builder.start();
         String err = new String(p.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
         p.getInputStream().readAllBytes();

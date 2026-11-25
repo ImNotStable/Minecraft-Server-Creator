@@ -1,6 +1,6 @@
 #!/bin/bash
-# Prepares a Claude Code cloud session for this repository (ADR 0038): JDK 25, the Maven Central mirror, and a warm
-# Gradle cache. Does nothing outside the cloud (CLAUDE_CODE_REMOTE != true), so it is harmless on the PC.
+# Prepares a Claude Code cloud session for this repository (ADR 0038): JDK 25, the Maven Central mirror, a warm
+# Gradle cache, and the token-saving tools (agent-tools.sh, ADR 0116). Does nothing outside the cloud (CLAUDE_CODE_REMOTE != true), so it is harmless on the PC.
 #
 # Each step is skipped when already done, so a cached container starts in about a second. The Gradle warm-up runs
 # only when a file that decides the dependencies changed since it last succeeded.
@@ -11,6 +11,9 @@ if [ "${CLAUDE_CODE_REMOTE:-}" != "true" ]; then
 fi
 
 cd "${CLAUDE_PROJECT_DIR:-$(dirname "$0")/../..}"
+
+# 0. graphify, ponytail and the user-level hooks. First, so a failing Gradle warm-up below cannot skip them.
+bash .claude/hooks/agent-tools.sh
 jdk="${MSC_JDK_HOME:-/opt/jdk25}"
 gradle_home="${GRADLE_USER_HOME:-$HOME/.gradle}"
 
@@ -57,8 +60,17 @@ inputs() {
   find . -maxdepth 2 -name '*.gradle.kts' -not -path './build-logic/*'
   echo gradle.properties
 }
-if ! sha256sum --check --status "$hashes" 2>/dev/null; then
+warm() {
   rm -f "$hashes"
   JAVA_HOME="$jdk" ./gradlew --quiet --console=plain testClasses
   inputs | sort | xargs sha256sum > "$hashes"
+}
+# MSC_GRADLE_WARMUP=background (the environment's setup script, ADR 0116) lets the session start while Gradle warms;
+# a build started meanwhile waits for the same daemon and caches instead of downloading twice.
+if ! sha256sum --check --status "$hashes" 2>/dev/null; then
+  if [ "${MSC_GRADLE_WARMUP:-}" = "background" ]; then
+    (warm > "$gradle_home/msc-warmup.log" 2>&1 &)
+  else
+    warm
+  fi
 fi
