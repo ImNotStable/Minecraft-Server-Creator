@@ -28,7 +28,7 @@ import java.util.function.Supplier;
 /** Health and usage tools. */
 public final class MetaTools {
     /** The guides msc_status guide= serves (ADR 0068): read on demand, so they cost nothing until needed. */
-    static final List<String> GUIDES = List.of("build", "textures", "pack", "ux");
+    static final List<String> GUIDES = List.of("build", "textures", "pack", "ux", "atmosphere");
 
     private MetaTools() {
     }
@@ -86,8 +86,9 @@ public final class MetaTools {
                                 ToolLog log, ApiTools api, BooleanSupplier closed, Supplier<String> openReviews,
                                 BuildLedger ledger) {
         registry.add("msc_status", "Where things stand: workspace, platform, server, agent, API index. stats=true: this "
-                        + "session's calls, errors, time and result tokens per tool instead. guide=build, textures, pack or ux: how "
-                        + "to do that work well. plan= and builds=true: the build ledger, what was built where and why.",
+                        + "session's calls, errors, time and result tokens per tool instead. guide=build, textures, pack, ux or "
+                        + "atmosphere: how to do that work well. plan= and builds=true: the build ledger, what was built where "
+                        + "and why.",
                 Schema.of().opt("stats", "boolean", "Show call stats")
                         .opt("guide", "string", String.join(", ", GUIDES))
                         .range("page", 1, 20, "Guide page")

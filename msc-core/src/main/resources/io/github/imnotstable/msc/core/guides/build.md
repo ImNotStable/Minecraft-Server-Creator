@@ -102,6 +102,7 @@ DETAIL PASS (use most of these on every build; the steps work on what is already
   for a ruin's broken tops with chip= slabs and stairs; rubble at the base, a collapsed roof corner.
 - Organic shapes: sphere/dome rough=N for boulders, leaf canopies and hedges, never a perfect ball.
 - Light: lanterns, torches or glowing blocks at doors, paths and windows; no dark interiors.
+- Atmosphere (what a place sounds like, what moves in it, its light and sky): msc_status guide=atmosphere.
 
 DETAIL STEPS (build_batch; each works on what the world and earlier steps already hold)
 - Roofs are yours to shape (no roof generator, ADR 0103): stairs rising row by row from the eave (half=bottom facing
