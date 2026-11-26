@@ -48,8 +48,8 @@ class BuildReviewTest {
         // Neighbours are always different kinds, stairs among them: no flat patch, plenty of detail, a shaped roof.
         StringBuilder text = new StringBuilder(
                 "legend: a=stone_bricks b=cracked_stone_bricks c=mossy_stone_bricks d=andesite e=stone_brick_stairs "
-                        + "f=lantern g=oak_planks\n");
-        String kinds = "abcdefg";
+                        + "f=lantern g=oak_planks h=soul_lantern\n");
+        String kinds = "abcdefgh";
         for (int y = 0; y < 7; y++) {
             // A ring of air around the 5x5 build, so no layer looks like ground.
             text.append("y=").append(y).append("\n.......\n");
@@ -63,7 +63,7 @@ class BuildReviewTest {
             text.append(".......\n");
         }
         String review = BuildReview.review(TextGrid.parse(text.toString(), "world", new BlockPos(0, 0, 0)));
-        assertThat(review).contains("7 types", "flat wall faces 0%", "shaped roof 100%")
+        assertThat(review).contains("8 types", "flat wall faces 0%", "shaped roof 100%", "2 light kinds")
                 .endsWith("no number below the bar; now judge the render: silhouette, story, scale");
     }
 
@@ -125,7 +125,7 @@ class BuildReviewTest {
 
     @Test
     void aFailingReviewSaysNotDone() {
-        assertThat(BuildReview.review(box("bricks"))).contains("\nverdict: NOT DONE, 7 checks below the bar\nfix first: 1)");
+        assertThat(BuildReview.review(box("bricks"))).contains("\nverdict: NOT DONE, 8 checks below the bar\nfix first: 1)");
     }
 
     @Test

@@ -1,10 +1,12 @@
 package io.github.imnotstable.msc.core.world;
 
+import io.github.imnotstable.msc.protocol.world.BlockGrid;
 import io.github.imnotstable.msc.protocol.world.Region;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -24,6 +26,139 @@ public final class OpenReviews {
 
     /** Blocks placed in one area before it counts as a build that needs a review (a sign or a lamp does not). */
     static final int UNREVIEWED_BLOCKS = 150;
+
+    /** Failing reviews of one region in a row, with the same findings and no better numbers, that make a stall. */
+    public static final int STALL = 3;
+    private static final Pattern PERCENT = Pattern.compile("(?:fix first: |; )\\d+\\) [^:;]+: (\\d+)%");
+    private final Map<Region, int[]> streaks = new java.util.HashMap<>();
+    private final Map<Region, List<String>> lastFixes = new java.util.HashMap<>();
+
+    /**
+     * Records a review (as {@link #record}) and returns a stall warning, or empty: the region failed {@link #STALL}
+     * times in a row with the same findings and no finding's percentage lower. Run 34 got "bare base" 45 times and
+     * rebuilt the same walls each time; nothing said it was going in circles (ADR 0117).
+     */
+    public synchronized String recordAndCheck(Region region, String review) {
+        record(region, review);
+        List<String> fixes = fixes(review);
+        if (fixes.isEmpty()) {
+            streaks.remove(region);
+            lastFixes.remove(region);
+            return "";
+        }
+        int score = 0;
+        Matcher m = PERCENT.matcher(review.substring(Math.max(0, review.indexOf("\nfix first: ") + 1)));
+        while (m.find()) {
+            score += Integer.parseInt(m.group(1));
+        }
+        int[] s = streaks.get(region);
+        boolean same = s != null && fixes.equals(lastFixes.get(region)) && score >= s[1];
+        s = same ? new int[] {s[0] + 1, score} : new int[] {1, score};
+        streaks.put(region, s);
+        lastFixes.put(region, fixes);
+        if (s[0] < STALL) {
+            return "";
+        }
+        return "STALLED: this region has failed " + s[0] + " reviews in a row on the same findings ("
+                + String.join(", ", fixes) + ") with no number better. Repeating the same edits will not change it: "
+                + "do exactly what the fix names, at the place it gives, with a different step than before; if that "
+                + "cannot work, stop, say so in your report, and move on.";
+    }
+
+    /** What the last review of a region saw (ADR 0119): a fingerprint of its blocks, and the review it gave. */
+    private record Seen(long print, boolean devFloor, String review) {
+    }
+
+    /** A passed region with the fingerprint and floor it passed with (ADR 0119). */
+    public record Passed(Region region, long print, boolean devFloor) {
+    }
+
+    /**
+     * The passed regions an edit in {@code box} touches whose blocks this session fingerprinted: the builder reads them
+     * after the edit and keeps the pass of each whose blocks did not change ({@link #edited(Region, int, Set)}).
+     */
+    public synchronized List<Passed> touched(Region box) {
+        List<Passed> out = new ArrayList<>();
+        for (Region r : passed) {
+            Seen s = seen.get(r);
+            if (s != null && overlaps(r, box)) {
+                out.add(new Passed(r, s.print(), s.devFloor()));
+            }
+        }
+        return out;
+    }
+
+    private static boolean overlaps(Region r, Region box) {
+        return r.world().equals(box.world()) && r.min().x() <= box.max().x() && box.min().x() <= r.max().x()
+                && r.min().y() <= box.max().y() && box.min().y() <= r.max().y()
+                && r.min().z() <= box.max().z() && box.min().z() <= r.max().z();
+    }
+
+    private final Map<Region, Seen> seen = new java.util.HashMap<>();
+
+    /**
+     * A review as the tools give it (ADR 0119): {@code review} is the full review, kept for the ledger; {@code text}
+     * is what the agent reads; {@code stall} is the {@code STALLED: } line for stalls.jsonl, or empty.
+     */
+    public record Checked(String review, String text, String stall) {
+    }
+
+    /**
+     * Reviews {@code grid}, the blocks of {@code region}, with {@code reviewer}, unless no block there changed since the
+     * last review of the same region: then the answer is that review again, in a few lines, and the agent is told so.
+     * In the village benchmark 9-23% of a run's calls were wasted, mostly reviews of regions that had not changed since
+     * their last review, each answered in full again (ADR 0119). A second failing review in a row with the same
+     * findings and no better number says so at once, before the third makes a stall (ADR 0117).
+     */
+    public synchronized Checked review(Region region, BlockGrid grid, boolean devFloor,
+            java.util.function.Supplier<String> reviewer) {
+        long print = print(grid, devFloor);
+        Seen last = seen.get(region);
+        if (last != null && last.print() == print) {
+            record(region, last.review());
+            return new Checked(last.review(), unchanged(last.review()), "");
+        }
+        String review = reviewer.get();
+        seen.put(region, new Seen(print, devFloor, review));
+        String stall = recordAndCheck(region, review);
+        int[] streak = streaks.get(region);
+        String same = stall.isEmpty() && streak != null && streak[0] == STALL - 1
+                ? "SAME FINDINGS: the edits since your last review of this region left the same findings ("
+                + String.join(", ", lastFixes.get(region)) + ") and no number better. Do what the fix names, at the "
+                + "place it gives, before reviewing again.\n"
+                : "";
+        return new Checked(review, same + review, stall);
+    }
+
+    /** The short answer for a region whose blocks are the same as at its last review (ADR 0119). */
+    static String unchanged(String review) {
+        String head = "UNCHANGED: no block in this region changed since your last review of it, so the answer is the "
+                + "same. ";
+        List<String> fixes = fixes(review);
+        if (fixes.isEmpty()) {
+            return head + "It passed and still passes (no number below the bar): nothing more to check here, move on.";
+        }
+        String verdict = review.lines().filter(l -> l.startsWith("verdict: ")).findFirst().orElse("verdict: NOT DONE");
+        String fix = review.substring(review.indexOf("\nfix first: ") + 1).lines().findFirst().orElse("");
+        return head + "Reviewing again before an edit there gives this answer again.\n" + verdict + "\n" + fix;
+    }
+
+    /** A fingerprint of a grid's blocks, in order, and of the floor it was judged on: equal grids, equal prints. */
+    public static long print(BlockGrid grid, boolean devFloor) {
+        long[] states = new long[grid.palette().size()];
+        for (int i = 0; i < states.length; i++) {
+            long h = 0xcbf29ce484222325L;
+            for (char c : grid.palette().get(i).toCharArray()) {
+                h = (h ^ c) * 0x100000001b3L;
+            }
+            states[i] = h;
+        }
+        long h = devFloor ? 0x9E3779B97F4A7C15L : 0x632BE59BD9B4E019L;
+        for (int b : grid.blocks()) {
+            h = Long.rotateLeft(h ^ (b < 0 ? 0x5bd1e995L : states[b]), 27) * 0x9E3779B97F4A7C15L + 0x165667B19E3779F9L;
+        }
+        return h ^ grid.blocks().length;
+    }
 
     /** Records a review's text for its region: failed when it has fixes, else passed. */
     public synchronized void record(Region region, String review) {
@@ -56,6 +191,15 @@ public final class OpenReviews {
      * without ever reviewing it (ADR 0109).
      */
     public synchronized void edited(Region box, int changed) {
+        edited(box, changed, Set.of());
+    }
+
+    /**
+     * The same, keeping the passes of {@code same}: passed regions the edit's box touched whose blocks are as they
+     * were when they passed. Sonnet 5.5 landscaped around a village and re-reviewed all ten houses, unchanged, three
+     * times over, because the box of the landscaping reopened every house it overlapped (ADR 0119).
+     */
+    public synchronized void edited(Region box, int changed, Set<Region> same) {
         // An edit inside a region already reviewed is tracked there (failing, or edited since it passed): listing it
         // again as never reviewed told Sonnet 5.5 its own fixes were unreviewed, 42 times in one town (ADR 0109).
         if (reviewed(box)) {
@@ -84,9 +228,7 @@ public final class OpenReviews {
         }
         for (java.util.Iterator<Region> it = passed.iterator(); it.hasNext(); ) {
             Region r = it.next();
-            if (r.world().equals(box.world()) && r.min().x() <= box.max().x() && box.min().x() <= r.max().x()
-                    && r.min().y() <= box.max().y() && box.min().y() <= r.max().y()
-                    && r.min().z() <= box.max().z() && box.min().z() <= r.max().z()) {
+            if (overlaps(r, box) && !same.contains(r)) {
                 it.remove();
                 open.put(r, List.of("edited since it passed"));
             }
