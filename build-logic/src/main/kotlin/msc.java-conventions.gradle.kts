@@ -38,10 +38,15 @@ dependencies {
 
 tasks.withType<Test>().configureEach {
     useJUnitPlatform()
-    // Keep test output short: only failures, with full exception details.
+    // Keep test output short: only failures, with full exception details. The same at quiet level, so `./gradlew -q`
+    // (the cloud hook adds it, ADR 0116) still shows each failure.
     testLogging {
         events("failed")
         exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+        quiet {
+            events("failed")
+            exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+        }
     }
     // Windows: a child another concurrent test starts can inherit a handle to a file in this test's temp folder and
     // hold it until that test ends, so a folder that cannot go yet is logged, not failed (ADR 0061). Linux stays strict.
