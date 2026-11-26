@@ -365,6 +365,16 @@ class WorldToolsTest {
     }
 
     @Test
+    void aSteppedHeightmapKeepsTheHighestColumnOfEachCell() {
+        h.ok("build_batch", "steps", "fill 1,64,1 1,66,1 stone");
+        assertThat(h.ok("world_heightmap", "area", "0,0 4,3", "step", 2)).isEqualTo("""
+                heightmap world x 0..4 z 0..3 min 63 max 66 mean 63 rows=z cols=x step 2 (each cell = highest of 2x2 columns)
+                each char = height - 63 (0-9 then a-z)
+                300
+                000""");
+    }
+
+    @Test
     void wideHeightmapsUseRunsAndRepeatedRows() {
         h.ok("build_batch", "steps", "fill 2,100,1 3,100,2 stone");
         assertThat(h.ok("world_heightmap", "area", "0,0 5,4")).isEqualTo("""
