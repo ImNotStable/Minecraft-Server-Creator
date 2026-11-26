@@ -27,6 +27,11 @@ beforeSettings { settings ->
     // A settings file that declares no plugin repositories gets only Gradle's default, the Plugin Portal; the mirror
     // added above would otherwise replace that default, and plugins only the Portal hosts (foojay) would not resolve.
     plugins.gradlePluginPortal()
+    // The Portal answers Fabric's and NeoForge's plugin markers with a redirect to Maven Central, whose 429 ends the
+    // search before Gradle reaches their own repositories, so those groups skip the Portal.
+    plugins.matching { it.name.startsWith('Gradle Central Plugin Repository') }.configureEach { repo ->
+        repo.content { excludeGroupByRegex('net\\.(fabricmc|neoforged)(\\..*)?') }
+    }
     mirrorFirst(settings.dependencyResolutionManagement.repositories)
 }
 

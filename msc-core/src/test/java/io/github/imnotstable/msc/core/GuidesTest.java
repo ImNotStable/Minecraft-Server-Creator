@@ -36,7 +36,7 @@ class GuidesTest {
     @Test
     void everyGuideLoadsAndNamesOnlyRealTools() {
         Set<String> tools = h.core.registry().tools().stream().map(Tool::name).collect(Collectors.toSet());
-        for (String topic : new String[] {"build", "textures", "pack", "ux"}) {
+        for (String topic : new String[] {"build", "textures", "pack", "ux", "atmosphere"}) {
             // ADR 0081: every page fits a result's cap, ends by naming the next, and together they hold the whole guide.
             StringBuilder all = new StringBuilder(h.ok("msc_status", "guide", topic));
             for (int page = 2; all.toString().endsWith(" page=" + page + "]"); page++) {
@@ -55,6 +55,6 @@ class GuidesTest {
                 assertThat(tools).as("%s guide names %s", topic, m.group()).contains(m.group());
             }
         }
-        assertThat(h.error("msc_status", "guide", "music")).contains("guide is one of build, textures, pack, ux, not \"music\"");
+        assertThat(h.error("msc_status", "guide", "music")).contains("guide is one of build, textures, pack, ux, atmosphere, not \"music\"");
     }
 }

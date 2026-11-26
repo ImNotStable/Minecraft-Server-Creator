@@ -10,6 +10,7 @@ import io.github.imnotstable.msc.core.tool.Budget;
 import io.github.imnotstable.msc.core.tool.Schema;
 import io.github.imnotstable.msc.core.tool.ToolException;
 import io.github.imnotstable.msc.core.tool.ToolRegistry;
+import io.github.imnotstable.msc.core.world.BuildLedger;
 import io.github.imnotstable.msc.protocol.transport.CoreServer;
 import java.io.IOException;
 import java.io.InputStream;
@@ -27,7 +28,7 @@ import java.util.function.Supplier;
 /** Health and usage tools. */
 public final class MetaTools {
     /** The guides msc_status guide= serves (ADR 0068): read on demand, so they cost nothing until needed. */
-    static final List<String> GUIDES = List.of("build", "textures", "pack", "ux");
+    static final List<String> GUIDES = List.of("build", "textures", "pack", "ux", "atmosphere");
 
     private MetaTools() {
     }
@@ -82,13 +83,34 @@ public final class MetaTools {
     }
 
     public static void register(ToolRegistry registry, CoreConfig config, AgentHub hub, ServerManager server,
-                                ToolLog log, ApiTools api, BooleanSupplier closed, Supplier<String> openReviews) {
+                                ToolLog log, ApiTools api, BooleanSupplier closed, Supplier<String> openReviews,
+                                BuildLedger ledger) {
         registry.add("msc_status", "Where things stand: workspace, platform, server, agent, API index. stats=true: this "
-                        + "session's calls, errors, time and result tokens per tool instead. guide=build, textures, pack or ux: how "
-                        + "to do that work well.",
+                        + "session's calls, errors, time and result tokens per tool instead. guide=build, textures, pack, ux or "
+                        + "atmosphere: how to do that work well. plan= and builds=true: the build ledger, what was built where "
+                        + "and why.",
                 Schema.of().opt("stats", "boolean", "Show call stats")
                         .opt("guide", "string", String.join(", ", GUIDES))
-                        .range("page", 1, 20, "Guide page"), args -> {
+                        .range("page", 1, 20, "Guide page")
+                        .opt("plan", "strings", "Save the site plan before building: a line for the site, then one per "
+                                + "build, \"name: place, size, palette, roof, what sets it apart\". Kept in the build ledger")
+                        .opt("builds", "boolean", "List the build ledger: plan, each reviewed build, planned ones not yet built"),
+                args -> {
+                    int ledgerAsks = (args.has("plan") ? 1 : 0) + (args.bool("builds", false) ? 1 : 0);
+                    if (ledgerAsks > 0 && ledgerAsks + (args.has("guide") ? 1 : 0)
+                            + (args.bool("stats", false) ? 1 : 0) > 1) {
+                        throw new ToolException("give one of guide, plan, builds or stats");
+                    }
+                    if (args.has("plan")) {
+                        try {
+                            return ledger.plan(String.join("\n", args.strings("plan")));
+                        } catch (IllegalArgumentException e) {
+                            throw new ToolException(e.getMessage());
+                        }
+                    }
+                    if (args.bool("builds", false)) {
+                        return ledger.list();
+                    }
                     if (args.has("guide")) {
                         return guide(args.str("guide"), args.integer("page", 1));
                     }

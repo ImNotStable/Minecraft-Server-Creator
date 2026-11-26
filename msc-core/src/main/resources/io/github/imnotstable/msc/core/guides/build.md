@@ -10,7 +10,28 @@ DONE MEANS (check before you report a build or a map finished)
   decorate on=ground (bushes, flowers against the wall) and worn ground at the doors; rooms furnished (decorate on=edge, corner, ceiling); weather for age.
 - A failing review names what to change and where: add exactly that, in that place (a trim, a decorate, a light), and
   review again. Rebuilding the whole build from its first script repeats the same numbers.
+- Review once per round of edits, not after each: a review of a region no block changed in answers "UNCHANGED" with
+  the last verdict, an identical call answers "same result as your identical call", and a batch that changed nothing
+  answers "nothing changed". Each is a call spent on nothing: edit first, then review.
 - If the run must end with a review still failing, say which and why in the report; never call it done.
+
+PLAN FIRST (strongly suggested: the builds of a planned site read as one place made by players)
+- Before the first block of a site with more than one build, write the plan and save it with msc_status plan=. It is
+  short: a line for the site (what the place is, who lives there, where the land rises, where the water and the ways
+  run, the focal point a visitor walks toward), then one line per build: "name: place and footprint, storeys and
+  silhouette, palette as block ids (main, secondary, one accent), roof form, the one thing that sets it apart".
+- Make the builds differ on purpose: each line changes at least two of footprint, height, roof form, palette and
+  what the build is for. Two lines that read alike will look alike: rewrite one before building.
+- Fit the plan to the land you have (world_heightmap first): bigger and older builds on the best ground, small ones
+  squeezed in, ways following the slope, not a grid.
+- Review each build under its plan name: world_summary review=true name=smithy why="..." adds it to the build ledger
+  (.msc/builds.json) and shows its plan line beside the review, with any block id the line names that the build lacks.
+  Build to the plan, or change the plan and save it again; the ledger keeps the newest plan.
+- The ledger is the world's memory across sessions: world_summary on any region lists the builds there (id, name,
+  review status, why), and msc_status builds=true lists them all with the planned ones not yet built. Read it before
+  building in a world you did not build this session.
+- Protecting builds from players is the server's job: on Paper with WorldGuard installed, set up its regions yourself
+  from the ledger's boxes; MSC does not depend on it.
 
 WHERE TO BUILD
 - Build in the world with build_batch (one building per call), not with plugin code that places blocks: code builds are never seen, reviewed or undone. Plugin code only swaps prepared states at runtime (save each state with structure_save, paste it from code or with build_batch structure file=).
@@ -38,12 +59,14 @@ LAND FIRST
 - Review land as well as builds: world_summary review=true on a land region reports ground at one level, speckled ground (a random mix of clashing blocks) and floating blocks, and it fails land reviewed on the flat dev world: give a map its own world_create worlds. Review the whole map once too, not only each plot.
 
 THE LOOP (every build)
-1. Plan in 3 lines: purpose and story (who lived here, what happened), silhouette (3+ masses of different heights), palette.
+1. Plan in 3 lines (its line in the site plan, PLAN FIRST): purpose and story (who lived here, what happened),
+   silhouette (3+ masses of different heights), palette.
 2. Block out the masses: walls 1-2 thick, real floor heights (4-5 per storey), doors 2-3 tall, roofs you shape (DETAIL STEPS).
 3. Detail pass (below). This is most of the work; a block-out is not a build. Straight walls and rows are fine:
    good builds have plenty. What makes them look hand-made is the single blocks layered on that structure.
 4. world_render the build from 2 views (iso and one side), world_tour it (eye-height views at its doors, inside and
-   at what the review flags: what a visitor sees) and run world_summary review=true on the same region (a wider box that passes does not settle a failing one).
+   at what the review flags: what a visitor sees) and run world_summary review=true name=<its plan name> on the same
+   region (a wider box that passes does not settle a failing one).
 5. Name the 3 weakest things concretely ("north wall is a flat 12x8 plane of one block"), fix them in one build_batch, re-render. Repeat until review passes and the render reads well. Never call a build done on its first render, and never praise a render the review flags.
 
 PALETTE
@@ -82,6 +105,7 @@ DETAIL PASS (use most of these on every build; the steps work on what is already
   for a ruin's broken tops with chip= slabs and stairs; rubble at the base, a collapsed roof corner.
 - Organic shapes: sphere/dome rough=N for boulders, leaf canopies and hedges, never a perfect ball.
 - Light: lanterns, torches or glowing blocks at doors, paths and windows; no dark interiors.
+- Atmosphere (what a place sounds like, what moves in it, its light and sky): msc_status guide=atmosphere.
 
 DETAIL STEPS (build_batch; each works on what the world and earlier steps already hold)
 - Roofs are yours to shape (no roof generator, ADR 0103): stairs rising row by row from the eave (half=bottom facing

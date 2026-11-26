@@ -25,3 +25,6 @@ servers/
 
 # Claude Code worktrees of parallel agents
 .claude/worktrees/
+
+# graphify code graph (ADR 0055, 0116); rebuilt locally
+graphify-out/

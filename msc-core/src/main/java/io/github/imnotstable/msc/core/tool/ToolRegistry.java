@@ -23,6 +23,7 @@ public final class ToolRegistry {
 
     private final Map<String, Tool> tools = new LinkedHashMap<>();
     private final ToolLog log;
+    private final Repeats repeats = new Repeats();
 
     public ToolRegistry(ToolLog log) {
         this.log = log;
@@ -176,6 +177,11 @@ public final class ToolRegistry {
             } catch (Exception e) {
                 text = "error: internal: " + e;
             }
+        }
+        String again = repeats.check(name, args.toString(), ok ? text : null, output == null ? null : output.png());
+        if (again != null) {
+            output = new Tool.Output(again, null, 0);
+            text = again;
         }
         Supplier<String> queued = notice.getAndSet(null);
         String pending = null;

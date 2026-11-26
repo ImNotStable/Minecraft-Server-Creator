@@ -232,6 +232,15 @@ class WorldToolsTest {
         assertThat(h.error("build_undo")).contains("nothing to undo");
     }
 
+    /** ADR 0119: a batch that changed nothing says so, and leaves a passed review standing. */
+    @Test
+    void aBatchThatChangesNothingSaysSo() {
+        h.ok("build_batch", "steps", "fill 0,64,0 1,64,1 gold_block");
+        assertThat(h.ok("build_batch", "steps", "fill 0,64,0 1,64,1 gold_block"))
+                .startsWith("edit e2: nothing changed: all 4 blocks in world 0,64,0 1,64,1 already were what this "
+                        + "batch places");
+    }
+
     @Test
     void largeFillIsSplitAndUndoneAsOneEdit() {
         // 200 x 1 x 200 = 40,000 blocks fits one agent call.

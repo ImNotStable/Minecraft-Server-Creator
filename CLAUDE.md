@@ -26,14 +26,22 @@ A toolset that helps an AI develop custom Minecraft servers. One Gradle monorepo
   `FromScratchTest` (msc-core `repoChecks`) fails on new preset steps, options and stdlib constants; an allowlist
   entry needs a reason in an ADR.
 
-## Code graph (graphify)
+## Token-saving tools (required, ADR 0055, ADR 0116)
 
-- A code graph of the repo lives in `D:\Projects\Minecraft Server Creator\graphify-out\` (main checkout only, git-excluded). Read `GRAPH_REPORT.md` there before broad searches.
-- Ask it: `graphify query "<question>"`, `graphify explain "AgentHub"`, `graphify affected "Region"`, `graphify path "A" "B"`. From a worktree add `--graph "D:\Projects\Minecraft Server Creator\graphify-out\graph.json"`.
-- Refresh after changes, from the main checkout: `graphify update .` (local AST, no API key).
-- Query the graph before grepping or reading source, and say so in subagent prompts that explore code. A hook
-  (`.claude/hooks/graphify-guard.sh`) reminds you on the PC.
-- Saving tokens (tools in use, model by task, what was left out, the standing task to keep looking):
+Use these on every task. If one is missing, say so in your reply instead of silently working without it.
+
+- **graphify** (code graph, local AST, no API key). Ask it before grepping or reading source, and say so in subagent
+  prompts that explore code: `graphify query "<question>" --budget 800`, `graphify explain "AgentHub"`,
+  `graphify affected "Region"`, `graphify path "A" "B"`. Then read only the lines it names (Read `offset`/`limit`).
+  Long docs (`plan.md` 55 KB, `tools.md` 87 KB): read one section, `graphify section "Post-MVP roadmap"` (a heading;
+  when it is ambiguous, pass the id it lists), or grep the Decisions table, not the whole file. Never read `GRAPH_REPORT.md` whole (67 KB).
+- **ponytail** plugin: smallest complete change. `/ponytail-review` before a PR.
+- **Quiet Gradle**: a hook adds `-q` to `./gradlew` runs (failures and warnings still print). Run one module's tests
+  until the end; add `MSC_GRADLE_VERBOSE=1` only when you need task output.
+- Where they are: PC graph in `D:\Projects\Minecraft Server Creator\graphify-out\` (from a worktree add
+  `--graph "D:\Projects\Minecraft Server Creator\graphify-out\graph.json"`; refresh with `graphify update .` from the
+  main checkout). Cloud: the environment's setup script runs `.claude/hooks/session-start.sh`, which installs both and
+  builds the graph in the checkout. Hooks: `.claude/settings.json`. Details and the standing task to keep looking:
   `msc-docs/docs/agent-efficiency.md`.
 
 ## Ownership while threads work in parallel

@@ -27,6 +27,7 @@ import io.github.imnotstable.msc.core.tools.TextureTools;
 import io.github.imnotstable.msc.core.tools.WayArgs;
 import io.github.imnotstable.msc.core.tools.WorldTools;
 import io.github.imnotstable.msc.core.tools.WorldBackups;
+import io.github.imnotstable.msc.core.world.BuildLedger;
 import io.github.imnotstable.msc.core.world.WorldService;
 import io.github.imnotstable.msc.process.ServerPropertiesFile;
 import java.io.IOException;
@@ -179,11 +180,12 @@ public final class Core implements AutoCloseable {
             ToolRegistry tools = new ToolRegistry(log);
             WorldService world = new WorldService(hub);
             world.serverRun(server::serverRun);
+            world.ledger(new BuildLedger(() -> config.dataDir().resolve(BuildLedger.FILE)));
             ApiTools api = new ApiTools(config);
             // Kept for its detached server, it is closed to the tools until a switch back (only after a failed switch
             // is such a workspace the current one).
             MetaTools.register(tools, config, hub, server, log, api,
-                    () -> closed.get() || kept.containsKey(realOrSelf(config.workspace())), () -> world.reviews().line());
+                    () -> closed.get() || kept.containsKey(realOrSelf(config.workspace())), () -> world.reviews().line(), world.ledger());
             WorldBackups backups = LifecycleTools.register(tools, config, hub, server, pack, publisher,
                     new ProjectBuilder(config),
                     new PaperDownloader(config.downloadsUrl(), config.cacheDir(),
