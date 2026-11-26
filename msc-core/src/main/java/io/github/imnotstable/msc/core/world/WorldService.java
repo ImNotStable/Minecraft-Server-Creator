@@ -199,6 +199,14 @@ public final class WorldService {
     }
 
     public String heightmap(Region area, int maxChars) throws InterruptedException {
+        return heightmap(area, 1, maxChars);
+    }
+
+    /**
+     * Surface heights of {@code area}; with {@code step > 1}, one cell per step x step columns holding the highest of
+     * them, so a terrain overview of a wide area costs a fraction of the full grid (ADR 0120).
+     */
+    public String heightmap(Region area, int step, int maxChars) throws InterruptedException {
         if (area.sizeX() > 256 || area.sizeZ() > 256) {
             throw new ToolException("heightmap is at most 256x256");
         }
@@ -208,10 +216,25 @@ public final class WorldService {
         if (heights == null || heights.length != h.sizeX() * h.sizeZ() || heights.length == 0) {
             throw new ToolException("agent returned a malformed heightmap");
         }
+        int cols = h.sizeX();
+        int rows = h.sizeZ();
+        if (step > 1) {
+            int[] full = heights;
+            cols = (h.sizeX() + step - 1) / step;
+            rows = (h.sizeZ() + step - 1) / step;
+            heights = new int[cols * rows];
+            java.util.Arrays.fill(heights, Integer.MIN_VALUE);
+            for (int z = 0; z < h.sizeZ(); z++) {
+                for (int x = 0; x < h.sizeX(); x++) {
+                    int cell = (z / step) * cols + x / step;
+                    heights[cell] = Math.max(heights[cell], full[z * h.sizeX() + x]);
+                }
+            }
+        }
         int min = Integer.MAX_VALUE;
         int max = Integer.MIN_VALUE;
         long sum = 0;
-        for (int v : heights) {
+        for (int v : h.heights()) {
             min = Math.min(min, v);
             max = Math.max(max, v);
             sum += v;
@@ -220,7 +243,9 @@ public final class WorldService {
         out.append("heightmap ").append(area.world()).append(" x ").append(h.minX()).append("..")
                 .append(h.minX() + h.sizeX() - 1).append(" z ").append(h.minZ()).append("..")
                 .append(h.minZ() + h.sizeZ() - 1).append(" min ").append(min).append(" max ").append(max)
-                .append(" mean ").append(Math.round((double) sum / heights.length)).append(" rows=z cols=x\n");
+                .append(" mean ").append(Math.round((double) sum / h.heights().length)).append(" rows=z cols=x")
+                .append(step > 1 ? " step " + step + " (each cell = highest of " + step + "x" + step + " columns)" : "")
+                .append('\n');
         if (min == max) {
             out.append("flat at y=").append(min);
             return out.toString();
@@ -229,9 +254,9 @@ public final class WorldService {
         if (compact) {
             out.append("each char = height ").append(min < 0 ? "+ " + -(long) min : "- " + min)
                     .append(" (0-9 then a-z)\n");
-            for (int z = 0; z < h.sizeZ(); z++) {
-                for (int x = 0; x < h.sizeX(); x++) {
-                    out.append(Character.forDigit(heights[z * h.sizeX() + x] - min, 36));
+            for (int z = 0; z < rows; z++) {
+                for (int x = 0; x < cols; x++) {
+                    out.append(Character.forDigit(heights[z * cols + x] - min, 36));
                 }
                 out.append('\n');
             }
@@ -240,8 +265,8 @@ public final class WorldService {
             out.append("each row: heights by column, v*n = n columns at v, (xN) = row repeated N times\n");
             String previous = null;
             int repeats = 0;
-            for (int z = 0; z < h.sizeZ(); z++) {
-                String row = numberRow(heights, z * h.sizeX(), h.sizeX());
+            for (int z = 0; z < rows; z++) {
+                String row = numberRow(heights, z * cols, cols);
                 if (row.equals(previous)) {
                     repeats++;
                     continue;
@@ -252,7 +277,8 @@ public final class WorldService {
             }
             appendRow(out, previous, repeats);
         }
-        return Budget.truncate(out.toString().stripTrailing(), maxChars, "Ask for a smaller area.");
+        return Budget.truncate(out.toString().stripTrailing(), maxChars,
+                "Ask for a smaller area, or step=4 for an overview.");
     }
 
     private static String numberRow(int[] heights, int start, int length) {

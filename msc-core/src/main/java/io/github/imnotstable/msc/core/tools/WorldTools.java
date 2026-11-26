@@ -95,9 +95,10 @@ public final class WorldTools {
                         args.bool("states", false), args.bool("data", false), Budget.of(args)));
         registry.add("world_heightmap", "Surface height per column, as a compact grid.",
                 Schema.of().req("area", "string", "Corners: \"x1,z1 x2,z2\"").opt("world", "string", WORLD)
+                        .range("step", 1, 16, "One cell per step x step columns, the highest. Default 1")
                         .maxChars(),
                 args -> world.heightmap(Coords.area(world.world(args.str("world", null)), args.str("area")),
-                        Budget.of(args)));
+                        args.integer("step", 1), Budget.of(args)));
         List<Path> textureRoots = new ArrayList<>(List.of(config.packDir()));
         // shortcut: read straight from the environment, not CoreConfig; move it there if more renderer settings appear.
         String clientJar = System.getenv("MSC_CLIENT_JAR");

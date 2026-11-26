@@ -22,8 +22,8 @@ PLAN FIRST (strongly suggested: the builds of a planned site read as one place m
   silhouette, palette as block ids (main, secondary, one accent), roof form, the one thing that sets it apart".
 - Make the builds differ on purpose: each line changes at least two of footprint, height, roof form, palette and
   what the build is for. Two lines that read alike will look alike: rewrite one before building.
-- Fit the plan to the land you have (world_heightmap first): bigger and older builds on the best ground, small ones
-  squeezed in, ways following the slope, not a grid.
+- Fit the plan to the land you have (world_heightmap first; step=4 for a wide area, then step 1 where you build):
+  bigger and older builds on the best ground, small ones squeezed in, ways following the slope, not a grid.
 - Review each build under its plan name: world_summary review=true name=smithy why="..." adds it to the build ledger
   (.msc/builds.json) and shows its plan line beside the review, with any block id the line names that the build lacks.
   Build to the plan, or change the plan and save it again; the ledger keeps the newest plan.
