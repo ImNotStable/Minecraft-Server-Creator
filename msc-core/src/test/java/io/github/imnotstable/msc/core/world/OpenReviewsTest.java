@@ -188,4 +188,15 @@ class OpenReviewsTest {
             assertThat(stall).as("%d floating", n).isEmpty();
         }
     }
+
+    /** ADR 0122: blocks changed but the review says exactly what it said: the short answer, not the whole review. */
+    @Test
+    void theSameResultAfterUnrelatedChangesIsShort() {
+        OpenReviews open = new OpenReviews();
+        Region hut = Region.of("msc:a", 0, 60, 0, 3, 63, 3);
+        String passing = "review: 10 blocks\nno number below the bar";
+        assertThat(open.review(hut, grid(hut, "minecraft:stone"), false, () -> passing).text()).isEqualTo(passing);
+        assertThat(open.review(hut, grid(hut, "minecraft:dirt"), false, () -> passing).text())
+                .startsWith("SAME RESULT: blocks here changed").contains("It passed and still passes");
+    }
 }
