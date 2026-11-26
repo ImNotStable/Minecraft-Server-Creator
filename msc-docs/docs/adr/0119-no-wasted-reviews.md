@@ -33,6 +33,11 @@ reviews of changed blocks, and the benchmark's watcher only stops a run that loo
   agent still has in context. Errors are never replaced, nor are tools that act
   (dev_cycle, pack, server_setup...): they can give the same text after doing their work again, and the first try
   replaced those too, which 15 core tests caught.
+- **An edit box over an unchanged build keeps its pass** (`Builder`, `OpenReviews.touched`). Before, any edit whose box
+  overlapped a passed region reopened it as "edited since it passed" (ADR 0096), and msc_status then listed it for a
+  re-review. After an edit the builder now reads each passed region the box touches (up to 2,000,000 blocks in all)
+  and keeps the pass of each whose fingerprint is unchanged; the ledger does the same. This was the main cause in the
+  logs: Sonnet 5.5 (run b) landscaped the whole village three times and re-reviewed every house each time.
 - **No-op builds** (`Builder`): a `build_batch` whose blocks were all already in place answers
   `edit eN: nothing changed: ... Running it again does the same` and no longer reopens a passed review it touches as
   "edited since it passed", which used to ask for one more review that could only say the same.
@@ -44,7 +49,28 @@ ADR 0106).
 
 ## Measured
 
-See "Replay on the logged runs" below.
+Replayed on the six village runs (core v1, `logs/v1-*.jsonl`): every call the watcher counted as a "repeat" was a
+review of a region identical to its last review of that region (same review text), and all but 3 of those regions had
+passed: 10, 3, 5, 6, 3 and 22 calls (Opus a/b, Fable a/b, Sonnet a/b). Nearly all followed an edit whose box reached
+over passed houses (a road, the landscaping) and an msc_status that then listed them as edited since they passed.
+
+| Run | Calls | Unchanged re-reviews | Est. tokens of those calls |
+|---|---|---|---|
+| Opus 5.5 a | 162 | 10 | 1.3M (6%) |
+| Opus 5.5 b | 185 | 3 | 0.5M (2%) |
+| Fable 5.2 a | 132 | 5 | 0.5M (4%) |
+| Fable 5.2 b | 129 | 6 | 0.5M (5%) |
+| Sonnet 5.5 a | 107 | 3 | 0.25M (3%) |
+| Sonnet 5.5 b | 146 | 22 | 1.9M (15%) |
+
+The token estimate is the run's average per call (each turn re-reads the context), so it is the size of the prize,
+not a measured saving: with the box check those passes are no longer reopened, so nothing asks for these reviews, and
+a model that makes one anyway gets `UNCHANGED` in a few lines. The result text alone was 1-5% of the result tokens;
+the turns are the cost. A rerun of the village benchmark on this core is the real measure.
+
+The watcher's other two counts were smaller than they looked: its "no-op builds" are almost all batches the core
+refused (invalid block names, unsaid door or stair facing, water), which are fixes of real mistakes, and only 2 of the
+six runs had a build of no blocks; no identical reads (slice, render) with identical answers occurred in these runs.
 
 ## Not done
 
