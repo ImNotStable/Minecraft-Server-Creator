@@ -1,5 +1,6 @@
 package io.github.imnotstable.msc.core.world;
 
+import io.github.imnotstable.msc.protocol.world.BlockGrid;
 import io.github.imnotstable.msc.protocol.world.Region;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -61,6 +62,76 @@ public final class OpenReviews {
                 + String.join(", ", fixes) + ") with no number better. Repeating the same edits will not change it: "
                 + "do exactly what the fix names, at the place it gives, with a different step than before; if that "
                 + "cannot work, stop, say so in your report, and move on.";
+    }
+
+    /** What the last review of a region saw (ADR 0119): a fingerprint of its blocks, and the review it gave. */
+    private record Seen(long print, String review) {
+    }
+
+    private final Map<Region, Seen> seen = new java.util.HashMap<>();
+
+    /**
+     * A review as the tools give it (ADR 0119): {@code review} is the full review, kept for the ledger; {@code text}
+     * is what the agent reads; {@code stall} is the {@code STALLED: } line for stalls.jsonl, or empty.
+     */
+    public record Checked(String review, String text, String stall) {
+    }
+
+    /**
+     * Reviews {@code grid}, the blocks of {@code region}, with {@code reviewer}, unless no block there changed since the
+     * last review of the same region: then the answer is that review again, in a few lines, and the agent is told so.
+     * In the village benchmark 9-23% of a run's calls were wasted, mostly reviews of regions that had not changed since
+     * their last review, each answered in full again (ADR 0119). A second failing review in a row with the same
+     * findings and no better number says so at once, before the third makes a stall (ADR 0117).
+     */
+    public synchronized Checked review(Region region, BlockGrid grid, boolean devFloor,
+            java.util.function.Supplier<String> reviewer) {
+        long print = print(grid, devFloor);
+        Seen last = seen.get(region);
+        if (last != null && last.print() == print) {
+            record(region, last.review());
+            return new Checked(last.review(), unchanged(last.review()), "");
+        }
+        String review = reviewer.get();
+        seen.put(region, new Seen(print, review));
+        String stall = recordAndCheck(region, review);
+        int[] streak = streaks.get(region);
+        String same = stall.isEmpty() && streak != null && streak[0] == STALL - 1
+                ? "SAME FINDINGS: the edits since your last review of this region left the same findings ("
+                + String.join(", ", lastFixes.get(region)) + ") and no number better. Do what the fix names, at the "
+                + "place it gives, before reviewing again.\n"
+                : "";
+        return new Checked(review, same + review, stall);
+    }
+
+    /** The short answer for a region whose blocks are the same as at its last review (ADR 0119). */
+    static String unchanged(String review) {
+        String head = "UNCHANGED: no block in this region changed since your last review of it, so the answer is the "
+                + "same. ";
+        List<String> fixes = fixes(review);
+        if (fixes.isEmpty()) {
+            return head + "It passed and still passes (no number below the bar): nothing more to check here, move on.";
+        }
+        String verdict = review.lines().filter(l -> l.startsWith("verdict: ")).findFirst().orElse("verdict: NOT DONE");
+        String fix = review.substring(review.indexOf("\nfix first: ") + 1).lines().findFirst().orElse("");
+        return head + "Reviewing again before an edit there gives this answer again.\n" + verdict + "\n" + fix;
+    }
+
+    /** A fingerprint of a grid's blocks, in order, and of the floor it was judged on: equal grids, equal prints. */
+    static long print(BlockGrid grid, boolean devFloor) {
+        long[] states = new long[grid.palette().size()];
+        for (int i = 0; i < states.length; i++) {
+            long h = 0xcbf29ce484222325L;
+            for (char c : grid.palette().get(i).toCharArray()) {
+                h = (h ^ c) * 0x100000001b3L;
+            }
+            states[i] = h;
+        }
+        long h = devFloor ? 0x9E3779B97F4A7C15L : 0x632BE59BD9B4E019L;
+        for (int b : grid.blocks()) {
+            h = Long.rotateLeft(h ^ (b < 0 ? 0x5bd1e995L : states[b]), 27) * 0x9E3779B97F4A7C15L + 0x165667B19E3779F9L;
+        }
+        return h ^ grid.blocks().length;
     }
 
     /** Records a review's text for its region: failed when it has fixes, else passed. */

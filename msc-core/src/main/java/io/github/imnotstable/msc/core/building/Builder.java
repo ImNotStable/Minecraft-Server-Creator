@@ -159,6 +159,14 @@ public final class Builder {
             return "edit " + id + ": no blocks" + ran + (backup.isEmpty() ? "" : "\n" + backup);
         }
         String counts = counts(canvas.counts());
+        if (changed == 0 && commands.isEmpty()) {
+            // Every block was already what the batch places: nothing a review saw has moved, so a passed review stays
+            // passed instead of asking for a re-review that can only say the same (ADR 0119).
+            return "edit " + id + ": nothing changed: all " + canvas.placed() + " blocks in " + Coords.show(used)
+                    + " already were what this batch places. Running it again does the same; change the steps, or "
+                    + "move on" + (backup.isEmpty() ? "" : "\n" + backup)
+                    + (world.reviews().count().isEmpty() ? "" : "\n" + world.reviews().count());
+        }
         world.reviews().edited(used, (int) Math.min(changed, Integer.MAX_VALUE));
         world.ledger().edited(used);
         String drops = clearDrops(run, used);

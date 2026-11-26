@@ -2,6 +2,7 @@ package io.github.imnotstable.msc.core.world;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.imnotstable.msc.protocol.world.BlockGrid;
 import io.github.imnotstable.msc.protocol.world.Region;
 import org.junit.jupiter.api.Test;
 
@@ -96,5 +97,64 @@ class OpenReviewsTest {
         open.record(Region.of("msc:a", 0, 60, 0, 100, 90, 100), FAILED);
         open.record(Region.of("msc:a", 0, 60, 0, 10, 70, 10), "review: 10 blocks\nno number below the bar");
         assertThat(open.line()).contains("msc:a 0,60,0 100,90,100");
+    }
+
+    private static BlockGrid grid(Region region, String block) {
+        int[] blocks = new int[(int) region.volume()];
+        return new BlockGrid(region, java.util.List.of(block), blocks);
+    }
+
+    /** ADR 0119: a region whose blocks did not change since its last review gets that review back in a few lines. */
+    @Test
+    void anUnchangedRegionGetsItsLastVerdictInAFewLines() {
+        OpenReviews open = new OpenReviews();
+        Region hut = Region.of("msc:a", 0, 60, 0, 3, 63, 3);
+        int[] reviews = {0};
+        java.util.function.Supplier<String> reviewer = () -> {
+            reviews[0]++;
+            return FAILED;
+        };
+        assertThat(open.review(hut, grid(hut, "minecraft:stone"), false, reviewer).text()).isEqualTo(FAILED);
+        OpenReviews.Checked again = open.review(hut, grid(hut, "minecraft:stone"), false, reviewer);
+        assertThat(again.text()).startsWith("UNCHANGED: no block in this region changed")
+                .contains("\nverdict: NOT DONE, 2 checks below the bar\nfix first: 1) bare base")
+                .doesNotContain("review: 10 blocks");
+        assertThat(again.review()).isEqualTo(FAILED);
+        assertThat(again.stall()).isEmpty();
+        assertThat(reviews[0]).isEqualTo(1);
+        // Unchanged re-reviews are not edits that failed: however many, they never make a stall.
+        for (int i = 0; i < OpenReviews.STALL; i++) {
+            assertThat(open.review(hut, grid(hut, "minecraft:stone"), false, reviewer).stall()).isEmpty();
+        }
+        // A changed block, or another floor, reviews again.
+        open.review(hut, grid(hut, "minecraft:cobblestone"), false, reviewer);
+        open.review(hut, grid(hut, "minecraft:cobblestone"), true, reviewer);
+        assertThat(reviews[0]).isEqualTo(3);
+        assertThat(open.line()).contains("msc:a 0,60,0 3,63,3: bare base, floating");
+    }
+
+    @Test
+    void anUnchangedPassStillPassesAfterANoOpEditReopenedIt() {
+        OpenReviews open = new OpenReviews();
+        Region hut = Region.of("msc:a", 0, 60, 0, 3, 63, 3);
+        String pass = "review: 10 blocks\nno number below the bar";
+        open.review(hut, grid(hut, "minecraft:stone"), false, () -> pass);
+        open.edited(hut);
+        assertThat(open.line()).contains("edited since it passed");
+        assertThat(open.review(hut, grid(hut, "minecraft:stone"), false, () -> pass).text())
+                .startsWith("UNCHANGED:").contains("It passed and still passes");
+        assertThat(open.line()).isEmpty();
+    }
+
+    @Test
+    void aSecondReviewWithTheSameFindingsSaysSoBeforeItStalls() {
+        OpenReviews open = new OpenReviews();
+        Region hut = Region.of("msc:a", 0, 60, 0, 3, 63, 3);
+        assertThat(open.review(hut, grid(hut, "minecraft:stone"), false, () -> FAILED).text()).isEqualTo(FAILED);
+        OpenReviews.Checked second = open.review(hut, grid(hut, "minecraft:dirt"), false, () -> FAILED);
+        assertThat(second.text()).startsWith("SAME FINDINGS: the edits since your last review of this region left "
+                + "the same findings (bare base, floating)").endsWith(FAILED);
+        assertThat(second.stall()).isEmpty();
+        assertThat(open.review(hut, grid(hut, "minecraft:sand"), false, () -> FAILED).stall()).startsWith("STALLED: ");
     }
 }
