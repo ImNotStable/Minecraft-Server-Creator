@@ -40,15 +40,15 @@ jobs:
       - uses: gradle/actions/setup-gradle@v6
 
       - name: Build
-        run: ./gradlew build --console=plain
+        run: ./gradlew build -q
 
       - name: Minestom server end to end
         if: success() || failure()
-        run: ./gradlew :msc-core:e2eTest --console=plain
+        run: ./gradlew :msc-core:e2eTest -q
 
       - name: Build every template
         if: success() || failure()
-        run: ./gradlew :msc-templates:verifyTemplates --console=plain
+        run: ./gradlew :msc-templates:verifyTemplates -q
 
       - name: Upload reports
         if: always()
