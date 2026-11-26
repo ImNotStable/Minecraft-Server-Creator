@@ -71,9 +71,12 @@ warm() {
 # MSC_GRADLE_WARMUP=background (the environment's setup script, ADR 0116) lets the session start while Gradle warms;
 # a build started meanwhile waits for the same daemon and caches instead of downloading twice.
 if ! sha256sum --check --status "$hashes" 2>/dev/null; then
+  # Output goes to a log, never to the session: hook output lands in Claude's context (NeoForge alone prints ~3 KB).
   if [ "${MSC_GRADLE_WARMUP:-}" = "background" ]; then
     (warm > "$gradle_home/msc-warmup.log" 2>&1 &)
-  else
-    warm
+  elif ! warm > "$gradle_home/msc-warmup.log" 2>&1; then
+    echo "session-start: Gradle warm-up failed, last lines of $gradle_home/msc-warmup.log:" >&2
+    grep -v '^Picked up ' "$gradle_home/msc-warmup.log" | tail -n 15 >&2
+    exit 1
   fi
 fi
