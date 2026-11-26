@@ -1,4 +1,7 @@
 {
+  "enabledPlugins": {
+    "serena@claude-plugins-official": true
+  },
   "hooks": {
     "SessionStart": [
       {
