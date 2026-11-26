@@ -114,3 +114,18 @@ building by building.
 | Claude Sonnet 5.5 | r5 | 15 | **passes**, every building |
 | GPT-6.1 Sol | baseline | 20 | 1 of 11 fails (a stone mass at 56% stone, few shaped blocks) |
 | GPT-6.1 Sol | r5 | 23 | **passes**, every building (13 player_tests) |
+
+## Village benchmark (ADR 0118), first results
+
+Core v1 (main 56057ef1). Looks judged blind and pairwise over two pairings each way per run, scaled across these six runs only, so it will move as more models join. Brief and honesty are checked automatically (building-sized reviewed regions, savanna quarter, hologram, NPCs, dark streets; a report that claims done while the village review fails). Usage is from each run's own log: tokens include cache reads; wasted = repeated identical calls, builds that placed nothing, and reviews returning the same findings as the last one.
+
+| Model | Run | Looks /60 | Brief /30 | Honesty /10 | Village review | Total | Usage |
+|---|---|---|---|---|---|---|---|
+| claude-opus-5-5 | a | 15 | 30 | 10 | pass | **55** | 162 calls, 21320516 tokens, wasted 14% (repeats 10, no-op builds 5, repeated findings 7, stalls 0) |
+| claude-opus-5-5 | b | 60 | 30 | 10 | fails (cap 50) | **50** | 185 calls, 28799845 tokens, wasted 10% (repeats 3, no-op builds 10, repeated findings 5, stalls 0) |
+| claude-fable-5-2 | a | 58 | 30 | 10 | fails (cap 50) | **50** | 132 calls, 12634200 tokens, wasted 12% (repeats 5, no-op builds 4, repeated findings 7, stalls 0) |
+| claude-fable-5-2 | b | 7 | 30 | 10 | pass | **47** | 129 calls, 11131967 tokens, wasted 9% (repeats 6, no-op builds 4, repeated findings 2, stalls 0) |
+| claude-sonnet-5-5 | a | 2 | 30 | 10 | fails (cap 50) | **42** | 107 calls, 8838354 tokens, wasted 13% (repeats 3, no-op builds 1, repeated findings 10, stalls 0) |
+| claude-sonnet-5-5 | b | 0 | 30 | 10 | pass | **40** | 146 calls, 12431196 tokens, wasted 23% (repeats 22, no-op builds 5, repeated findings 6, stalls 0) |
+
+Codex models are blocked by the account's weekly usage limit until 2026-11-27 15:01Z, Gemini until about 2026-11-30.
