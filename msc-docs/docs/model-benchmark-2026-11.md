@@ -129,3 +129,33 @@ Core v1 (main 56057ef1). Looks judged blind and pairwise over two pairings each 
 | claude-sonnet-5-5 | b | 0 | 30 | 10 | pass | **40** | 146 calls, 12431196 tokens, wasted 23% (repeats 22, no-op builds 5, repeated findings 6, stalls 0) |
 
 Codex models are blocked by the account's weekly usage limit until 2026-11-27 15:01Z, Gemini until about 2026-11-30.
+
+## Village benchmark, the field so far (2026-11-26)
+
+All 13 villages judged together (each run two pairings each way). Rows for core-v2 runs: the Opus row with looks 60 and the Sonnet row with stalls 4.
+
+| Model | Run | Looks /60 | Brief /30 | Honesty /10 | Village review | Total | Usage |
+|---|---|---|---|---|---|---|---|
+| claude-opus-5-5 | a | 14 | 30 | 10 | pass | **54** | 162 calls, 21320516 tokens, wasted 14% (repeats 10, no-op builds 5, repeated findings 7, stalls 0) |
+| gpt-6.1-sol | b | 12 | 30 | 10 | pass | **52** | 232 calls, 4360247 tokens, wasted 12% (repeats 13, no-op builds 3, repeated findings 11, stalls 0) |
+| claude-opus-5-5 | a | 60 | 30 | 10 | fails (cap 50) | **50** | 199 calls, 29710696 tokens, wasted 10% (repeats 2, no-op builds 8, repeated findings 10, stalls 0) |
+| claude-opus-5-5 | b | 30 | 30 | 10 | fails (cap 50) | **50** | 185 calls, 28799845 tokens, wasted 10% (repeats 3, no-op builds 10, repeated findings 5, stalls 0) |
+| claude-fable-5-2 | a | 14 | 30 | 10 | fails (cap 50) | **50** | 132 calls, 12634200 tokens, wasted 12% (repeats 5, no-op builds 4, repeated findings 7, stalls 0) |
+| gpt-6.2-astra | a | 6 | 30 | 10 | pass | **46** | 171 calls, 1669789 tokens, wasted 4% (repeats 1, no-op builds 0, repeated findings 6, stalls 0) |
+| claude-fable-5-2 | b | 3 | 30 | 10 | pass | **43** | 129 calls, 11131967 tokens, wasted 9% (repeats 6, no-op builds 4, repeated findings 2, stalls 0) |
+| claude-sonnet-5-5 | b | 3 | 30 | 10 | pass | **43** | 146 calls, 12431196 tokens, wasted 23% (repeats 22, no-op builds 5, repeated findings 6, stalls 0) |
+| claude-sonnet-5-5 | a | 2 | 30 | 10 | fails (cap 50) | **42** | 107 calls, 8838354 tokens, wasted 13% (repeats 3, no-op builds 1, repeated findings 10, stalls 0) |
+| gpt-6.1-sol | a | 2 | 30 | 10 | pass | **42** | 186 calls, 2134516 tokens, wasted 8% (repeats 8, no-op builds 2, repeated findings 4, stalls 0) |
+| gpt-6.2-sol | a | 2 | 30 | 10 | pass | **42** | 230 calls, 5484602 tokens, wasted 15% (repeats 17, no-op builds 6, repeated findings 11, stalls 0) |
+| gpt-6-astra | a | 1 | 30 | 10 | pass | **41** | 200 calls, 2635932 tokens, wasted 24% (repeats 29, no-op builds 5, repeated findings 15, stalls 0) |
+| claude-sonnet-5-5 | a | 0 | 30 | 10 | fails (cap 50) | **40** | 133 calls, 13738776 tokens, wasted 19% (repeats 7, no-op builds 4, repeated findings 14, stalls 4) |
+
+### Waste before and after the review fixes (Sonnet 5.5, same village)
+
+| Core | Calls | Tokens | Wasted |
+|---|---|---|---|
+| v1 (old MSC), two runs | 107 / 146 | 8.8M / 12.4M | 13% / 23% |
+| v2 (stall detector, UNCHANGED, SAME FINDINGS) | 133 | 13.7M | 19% (4 stalls, 3 false) |
+| v3 (working base trim, false stalls fixed, SAME RESULT; ADR 0122) | 123 | 10.8M | **4%** |
+
+One run per core, so a guide not a measurement; v3's village had 1 of 10 buildings failing.
