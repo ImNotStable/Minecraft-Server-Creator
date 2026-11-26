@@ -231,6 +231,8 @@ public final class BuildReview {
         out.append(String.format(Locale.ROOT, "plain wall tops %d%% (aim under %d%%), bare base %d%% (aim under %d%%), "
                 + "floor under a roof %d with %d furnishings, plants %d\n", plainTopPct, MAX_PLAIN_TOPS, bareBasePct,
                 MAX_BARE_BASE, floor, props, plants));
+        AtmosphereReview.Result atmosphere = AtmosphereReview.review(grid, counts, b -> matches(b, LIGHTS));
+        out.append(atmosphere.line()).append('\n');
         List<String> fixes = new ArrayList<>(doors(grid, names));
         fixes.addAll(masses(grid, names, isGround));
         fixes.addAll(WaterReview.fixes(grid, names, fluid, isGround));
@@ -304,6 +306,7 @@ public final class BuildReview {
         if (lights == 0 && total >= 200) {
             fixes.add("no lights: lanterns, torches or glowing blocks at doors, paths and windows");
         }
+        fixes.addAll(atmosphere.fixes());
         if (split && r.sizeX() * r.sizeZ() > TOWN_AREA) {
             List<Region> buildings = buildings(grid, names, isGround);
             List<String> failing = new ArrayList<>();
