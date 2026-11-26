@@ -175,4 +175,17 @@ class OpenReviewsTest {
         open.edited(landscaping, 200, java.util.Set.of(house));
         assertThat(open.line()).contains("msc:a 10,60,0 13,63,3: edited since it passed").doesNotContain("0,60,0 3,63,3");
     }
+
+    /** ADR 0119: fewer floating blocks is progress, not a stall, though the number is not a percentage. */
+    @Test
+    void fewerFloatingBlocksIsNotAStall() {
+        OpenReviews open = new OpenReviews();
+        Region fields = Region.of("msc:a", 0, 60, 0, 30, 70, 30);
+        for (int n : new int[] {80, 80, 20, 3}) {
+            String review = "review: 1364 blocks\nverdict: NOT DONE, 1 check below the bar\nfix first: 1) floating: "
+                    + n + " blocks in 3 clumps touch nothing (at 1,2,3); then review this region again";
+            String stall = open.recordAndCheck(fields, review);
+            assertThat(stall).as("%d floating", n).isEmpty();
+        }
+    }
 }

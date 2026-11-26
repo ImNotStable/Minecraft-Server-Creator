@@ -29,7 +29,11 @@ public final class OpenReviews {
 
     /** Failing reviews of one region in a row, with the same findings and no better numbers, that make a stall. */
     public static final int STALL = 3;
-    private static final Pattern PERCENT = Pattern.compile("(?:fix first: |; )\\d+\\) [^:;]+: (\\d+)%");
+    /**
+     * The number a finding opens with ("bare base: 72%", "floating: 80 blocks"): lower is better. Counting only
+     * percentages called a village's fields stalled while its floating blocks went 80, 20, 3 (ADR 0119).
+     */
+    private static final Pattern PERCENT = Pattern.compile("(?:fix first: |; )\\d+\\) [^:;]+: (\\d+)");
     private final Map<Region, int[]> streaks = new java.util.HashMap<>();
     private final Map<Region, List<String>> lastFixes = new java.util.HashMap<>();
 

@@ -72,6 +72,12 @@ The watcher's other two counts were smaller than they looked: its "no-op builds"
 refused (invalid block names, unsaid door or stair facing, water), which are fixes of real mistakes, and only 2 of the
 six runs had a build of no blocks; no identical reads (slice, render) with identical answers occurred in these runs.
 
+## Follow-up after the first new-core runs (2026-11-26)
+
+The benchmark's Sonnet run on this core got `STALLED` three times on its fields while their floating blocks went 80,
+20, 3: the stall detector (ADR 0117) only read percentages, so "floating: 80 blocks" never counted as a better number.
+It now reads the number each finding opens with, percentage or count.
+
 ## Not done
 
 - A region reviewed again with different corners is reviewed in full: only the same region settles a review
