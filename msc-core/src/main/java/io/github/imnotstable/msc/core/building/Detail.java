@@ -46,7 +46,7 @@ final class Detail {
                             }
                             boolean row = switch (t.at()) {
                                 case "top" -> !Joins.solid(at.at(x, y + 1, z)) && opening(at, x, y + 1, z, cx, cz) < 0; // not a sill
-                                case "base" -> y == lowestWall(at, x, y, z, lo.y());
+                                case "base" -> y == lowestWall(at, x, y, z, lo.y(), cx, cz);
                                 default -> y == t.level();
                             };
                             if (!row) {
@@ -165,9 +165,15 @@ final class Detail {
         return BlockNames.isAir(block) || !Joins.solid(block) && Surface.plant(block);
     }
 
-    private static int lowestWall(Canvas.Lookup at, int x, int y, int z, int floor) {
+    /**
+     * The lowest block of a wall column that still shows outside. A wall set one block into the ground (floor flush
+     * with the grass) has its true bottom buried: the plinth belongs on the first course above the ground, or it lands
+     * in the soil and places nothing (Sonnet 5.5 trimmed one inn six times without changing it, ADR 0118).
+     */
+    private static int lowestWall(Canvas.Lookup at, int x, int y, int z, int floor, double cx, double cz) {
         int low = y;
-        while (low - 1 >= floor && Joins.solid(at.at(x, low - 1, z)) && !Surface.plant(at.at(x, low - 1, z))) {
+        while (low - 1 >= floor && Joins.solid(at.at(x, low - 1, z)) && !Surface.plant(at.at(x, low - 1, z))
+                && !exterior(at, x, low - 1, z, cx, cz).isEmpty()) {
             low--;
         }
         return low;

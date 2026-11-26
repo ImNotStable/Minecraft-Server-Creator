@@ -33,6 +33,12 @@ drive them away. So looks has to carry the score, judged by someone who does not
 - **Usage:** judge calls are short (two images and one line back); a model's second run only goes ahead when its
   first finished cleanly; runs wait for quota rather than retry.
 
+## Changes it found
+
+- trim at=base puts the plinth on the lowest wall course that shows outside. Walls set one block into the ground
+  (floor flush with the grass) had their buried bottom row picked, so the plinth landed in the soil and placed nothing;
+  Sonnet 5.5 trimmed one inn six times while bare base swung 72, 67, 58, 89, 65, 66%.
+
 ## Not done
 
 - A judge model shares the builders' blind spots; a human pass over the top and bottom pairs is the check on it.

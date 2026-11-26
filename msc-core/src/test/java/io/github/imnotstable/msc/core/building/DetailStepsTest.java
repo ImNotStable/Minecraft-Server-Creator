@@ -352,4 +352,16 @@ class DetailStepsTest {
         assertThat(at(c, -1, 0, 3)).startsWith("cobblestone_stairs");
         assertThat(at(c, -1, 3, 3)).isNull();
     }
+
+    @Test
+    void aBasePlinthSitsOnTheGroundWhenTheWallIsSunkIntoIt() throws Exception {
+        // The world is stone below y 0; the walls start at y -1, one block into it, floor flush with the ground.
+        Canvas c = draw("""
+                fill 0,-1,0 6,5,6 stone_bricks
+                fill 1,-1,1 5,5,5 air
+                fill 1,-1,1 5,-1,5 spruce_planks
+                trim 0,-1,0 6,5,6 cobblestone_stairs at=base
+                """);
+        assertThat(at(c, -1, 0, 3)).startsWith("cobblestone_stairs"); // on the ground beside the first exposed course
+    }
 }
