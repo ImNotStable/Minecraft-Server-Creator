@@ -26,23 +26,39 @@ A toolset that helps an AI develop custom Minecraft servers. One Gradle monorepo
   `FromScratchTest` (msc-core `repoChecks`) fails on new preset steps, options and stdlib constants; an allowlist
   entry needs a reason in an ADR.
 
-## Token-saving tools (required, ADR 0055, ADR 0116)
+## Token rules (required, ADR 0055, ADR 0116, ADR 0120)
 
-Use these on every task. If one is missing, say so in your reply instead of silently working without it.
+Every byte a tool returns stays in context for the rest of the session. Use the cheapest tool that answers, in this
+order. If graphify, Serena or ponytail is missing, say so in your reply instead of silently working without it.
 
-- **graphify** (code graph, local AST, no API key). Ask it before grepping or reading source, and say so in subagent
-  prompts that explore code: `graphify query "<question>" --budget 800`, `graphify explain "AgentHub"`,
-  `graphify affected "Region"`, `graphify path "A" "B"`. Then read only the lines it names (Read `offset`/`limit`).
-  Long docs (`plan.md` 55 KB, `tools.md` 87 KB): read one section, `graphify section "Post-MVP roadmap"` (a heading;
-  when it is ambiguous, pass the id it lists), or grep the Decisions table, not the whole file. Never read `GRAPH_REPORT.md` whole (67 KB).
-- **ponytail** plugin: smallest complete change. `/ponytail-review` before a PR.
-- **Quiet Gradle**: a hook adds `-q` to `./gradlew` runs (failures and warnings still print). Run one module's tests
-  until the end; add `MSC_GRADLE_VERBOSE=1` only when you need task output.
-- Where they are: PC graph in `D:\Projects\Minecraft Server Creator\graphify-out\` (from a worktree add
+| You need | Use | Not |
+|----------|-----|-----|
+| Where a feature or concept lives, how parts connect | `graphify query "<question>" --budget 800` | grep for guessed words, reading files to find out |
+| What a change to X can break (impact radius) | `graphify affected "X"`; `graphify path "A" "B"` | Serena reference chains |
+| One section of a long doc (`plan.md`, `tools.md`, guides) | `graphify section "<heading>"`, or grep then Read `offset`/`limit` | Reading the doc whole; `GRAPH_REPORT.md` ever |
+| What is in a Java file | Serena `lsp.get_symbols_overview(path, depth=1)` | Read of the whole file |
+| The code of a known class or method | Serena `lsp.find_symbol("Class/method", include_body=True)`, or Read with `offset`/`limit` at a line graphify gave | Read of the whole file |
+| Callers of a method with a unique name | `grep -rn "name(" --include=*.java` (Grep, `head_limit`) | Serena (slower, same answer) |
+| Callers of a common or overloaded name (`close`, `run`, `register`, `of`) or one overload | Serena `lsp.find_referencing_symbols(..., max_answer_chars=4000)` | grep (floods with unrelated hits) |
+| Rename or delete a symbol across modules | Serena `lsp.rename_symbol` / `lsp.safe_delete_symbol` | Hand edits in many files |
+| Exact text: strings, config keys, messages, Kotlin DSL, Markdown | Grep with `-l` or `head_limit` | graphify or Serena |
+| Small edit | Edit | Serena `replace_symbol_body` (re-sends the whole body) |
+
+- **Serena** costs about 2.5k tokens to start and 1 to 3 minutes for its Java import: use it when a task needs two or
+  more symbol lookups in Java, not for a one-off. Never run its onboarding or write Serena memories (project memory
+  and this file hold what a session needs). Pass `max_answer_chars` on reference searches.
+- **ponytail**: the smallest complete change; `/ponytail-review` before a PR. It never cuts tests, error handling or
+  what the task asked for.
+- **Plain, short output.** Gradle: a hook adds `-q` (failures and warnings still print); `MSC_GRADLE_VERBOSE=1` only
+  when you need task output. Run one module's tests until the end. Everything else: `git log --oneline`,
+  `git diff --stat` before a full diff, `curl -sS`, and `| tail -n 40` or a grep on any command whose output can be
+  long. Never print a whole log, build report or JSON file; grep it.
+- **Subagents** get these rules in their prompt and return a conclusion, not file dumps.
+- Where the tools are: PC graph in `D:\Projects\Minecraft Server Creator\graphify-out\` (from a worktree add
   `--graph "D:\Projects\Minecraft Server Creator\graphify-out\graph.json"`; refresh with `graphify update .` from the
-  main checkout). Cloud: the environment's setup script runs `.claude/hooks/session-start.sh`, which installs both and
-  builds the graph in the checkout. Hooks: `.claude/settings.json`. Details and the standing task to keep looking:
-  `msc-docs/docs/agent-efficiency.md`.
+  main checkout). Cloud: the environment's setup script runs `.claude/hooks/session-start.sh`; its `agent-tools.sh`
+  installs graphify and ponytail, builds the graph and configures Serena. Details and the standing task to keep
+  looking: `msc-docs/docs/agent-efficiency.md`.
 
 ## Ownership while threads work in parallel
 
