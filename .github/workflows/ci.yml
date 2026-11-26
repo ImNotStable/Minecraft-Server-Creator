@@ -54,7 +54,7 @@ jobs:
       # The default build runs unit tests only. Template builds and the Minestom server run in the
       # e2e job; nothing in CI accepts the Mojang EULA, so no Paper or Fabric server is started.
       - name: Build
-        run: ./gradlew build --console=plain
+        run: ./gradlew build -q
 
       - name: Upload test reports
         if: failure()
@@ -95,12 +95,12 @@ jobs:
       # Minestom has no EULA, so this is the one real server CI may start. e2eTest scaffolds minestom-server, then
       # drives it through the installed core over MCP stdio: dev_cycle, build_batch, world tools, player_test.
       - name: Minestom server end to end
-        run: ./gradlew :msc-core:e2eTest --console=plain
+        run: ./gradlew :msc-core:e2eTest -q
 
       # Scaffolds each template and builds it with its own Gradle wrapper (compiles only, starts no server).
       - name: Build every template
         if: success() || failure()
-        run: ./gradlew :msc-templates:verifyTemplates --console=plain
+        run: ./gradlew :msc-templates:verifyTemplates -q
 
       - name: Upload e2e transcript and reports
         if: always()

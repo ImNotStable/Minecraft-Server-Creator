@@ -42,7 +42,41 @@ if command -v claude >/dev/null && ! claude plugin list 2>/dev/null | grep -q 'p
     >/dev/null 2>&1 || echo "agent-tools: ponytail install failed" >&2
 fi
 
-# 4. This repository's hooks in the user settings, for sessions that start outside it.
+# 4. Serena (the account's Claude plugin, which starts it with uvx). Two settings make its Java server read this
+#    Gradle 9.9 build: the project's wrapper instead of JDTLS's own Gradle, and a Gradle home of its own without
+#    parallel or configuration-cache, whose annotation-processing init script fails under them. Also a smaller answer
+#    cap and no dashboard. The config is created first when Serena never ran here.
+serena_config="$HOME/.serena/serena_config.yml"
+if [ ! -f "$serena_config" ] && command -v uvx >/dev/null; then
+  uvx --quiet --from git+https://github.com/oraios/serena serena init >/dev/null 2>&1 || echo "agent-tools: serena init failed" >&2
+fi
+if [ -f "$serena_config" ]; then
+  serena_gradle="$HOME/.gradle-serena"
+  mkdir -p "$serena_gradle"
+  for d in caches wrapper; do mkdir -p "$HOME/.gradle/$d"; ln -sfn "$HOME/.gradle/$d" "$serena_gradle/$d"; done
+  [ -d "$HOME/.gradle/init.d" ] && mkdir -p "$serena_gradle/init.d" && cp -r "$HOME/.gradle/init.d/." "$serena_gradle/init.d/"
+  { grep -s '^org.gradle.java.installations.paths=' "$HOME/.gradle/gradle.properties"
+    printf 'org.gradle.parallel=false\norg.gradle.configuration-cache=false\n'; } > "$serena_gradle/gradle.properties"
+  serena_jdk="${MSC_JDK_HOME:-/opt/jdk25}"
+  "$serena_jdk/bin/java" -version 2>&1 | grep -q 'version "25' || serena_jdk=""
+  python3 - "$serena_config" "$serena_gradle" "$serena_jdk" <<'EOF2' || echo "agent-tools: serena config not written" >&2
+import re, sys
+path, home, jdk = sys.argv[1], sys.argv[2], sys.argv[3]
+s = open(path).read()
+java = ("ls_specific_settings:\n  java:\n    gradle_wrapper_enabled: true\n    maven_import_enabled: false\n"
+        "    gradle_user_home: %s\n" % home)
+if jdk:  # Fabric Loom needs Gradle itself on Java 25; JDTLS would run it on its own Java 21
+    java += "    gradle_java_home: %s\n" % jdk
+s = re.sub(r"^ls_specific_settings:.*?(?=^\S)", java, s, count=1, flags=re.S | re.M)
+s = re.sub(r"^web_dashboard: .*$", "web_dashboard: false", s, count=1, flags=re.M)
+s = re.sub(r"^default_max_tool_answer_chars: .*$", "default_max_tool_answer_chars: 20000", s, count=1, flags=re.M)
+# No "interactive" mode: it tells the model to ask the user at every doubt, and Jeremiah wants threads to decide.
+s = re.sub(r"^base_modes:\n(?:- .*\n)*", "base_modes:\n- editing\n", s, count=1, flags=re.M)
+open(path, "w").write(s)
+EOF2
+fi
+
+# 5. This repository's hooks in the user settings, for sessions that start outside it.
 settings="$HOME/.claude/settings.json"
 mkdir -p "$HOME/.claude"
 python3 - "$settings" "$repo" <<'EOF' || echo "agent-tools: user hooks not written" >&2

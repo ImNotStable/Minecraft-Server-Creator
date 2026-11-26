@@ -1,6 +1,7 @@
 #!/bin/bash
 # Prepares a Claude Code cloud session for this repository (ADR 0038): JDK 25, the Maven Central mirror, a warm
-# Gradle cache, and the token-saving tools (agent-tools.sh, ADR 0116). Does nothing outside the cloud (CLAUDE_CODE_REMOTE != true), so it is harmless on the PC.
+# Gradle cache, and the token-saving tools (agent-tools.sh, ADR 0116). Does nothing outside the cloud
+# (CLAUDE_CODE_REMOTE != true), so it is harmless on the PC.
 #
 # Each step is skipped when already done, so a cached container starts in about a second. The Gradle warm-up runs
 # only when a file that decides the dependencies changed since it last succeeded.
@@ -12,8 +13,6 @@ fi
 
 cd "${CLAUDE_PROJECT_DIR:-$(dirname "$0")/../..}"
 
-# 0. graphify, ponytail and the user-level hooks. First, so a failing Gradle warm-up below cannot skip them.
-bash .claude/hooks/agent-tools.sh
 jdk="${MSC_JDK_HOME:-/opt/jdk25}"
 gradle_home="${GRADLE_USER_HOME:-$HOME/.gradle}"
 
@@ -45,6 +44,10 @@ fi
 
 # 3. Maven Central answers the cloud's shared address with 429s; Google's mirror of it does not.
 cp .claude/hooks/maven-central-mirror.gradle "$gradle_home/init.d/msc-maven-central-mirror.gradle"
+
+# 3b. graphify, ponytail, Serena's settings and the user-level hooks (ADR 0116, 0120). Before the Gradle warm-up, so a
+#     failing warm-up cannot skip them; after the JDK, which Serena's Gradle import runs on.
+MSC_JDK_HOME="$jdk" bash .claude/hooks/agent-tools.sh
 
 if [ -n "${CLAUDE_ENV_FILE:-}" ]; then
   echo "export JAVA_HOME=$jdk" >> "$CLAUDE_ENV_FILE"
