@@ -86,7 +86,11 @@ class ProxyWorldToolsTest {
             String log = h.ok("server_logs", "mode", "tail");
             assertAllRefused(h, line);
             // Nothing was typed into the proxy's console, and the proxy was neither stopped nor restarted.
-            assertThat(h.ok("server_logs", "mode", "tail")).isEqualTo(log).doesNotContain("console:");
+            String again = h.ok("server_logs", "mode", "tail");
+            // The same log again is one line (ADR 0119), unless the log is too short to shorten.
+            assertThat(again.equals(log) || again.startsWith("same result as your identical server_logs call"))
+                    .as(again).isTrue();
+            assertThat(again).doesNotContain("console:");
             assertThat(h.ok("msc_status")).contains("running");
             assertThat(level).hasContent("paper days");
             try (Stream<Path> backups = Files.list(workspace.resolve(".msc/backups"))) {

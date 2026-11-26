@@ -8,6 +8,7 @@ import io.github.imnotstable.msc.core.tool.ToolException;
 import io.github.imnotstable.msc.core.tool.ToolRegistry;
 import io.github.imnotstable.msc.core.world.BlockNames;
 import io.github.imnotstable.msc.core.world.BuildReview;
+import io.github.imnotstable.msc.core.world.OpenReviews;
 import io.github.imnotstable.msc.core.world.Coords;
 import io.github.imnotstable.msc.core.world.Diff;
 import io.github.imnotstable.msc.core.world.Schematic;
@@ -145,8 +146,9 @@ public final class WorldTools {
                     Region region = Coords.region(world.world(args.str("world", null)), args.str("region"));
                     boolean devFloor = region.world().equals(world.world(null)) && flatMainWorld(config.serverDir());
                     BlockGrid build = world.readAll(region, WorldService.MAX_BULK_VOLUME, "world_tour review");
-                    String plain = BuildReview.review(build, devFloor);
-                    String review = stalled(config, region, plain, world.reviews().recordAndCheck(region, plain));
+                    OpenReviews.Checked checked = world.reviews().review(region, build, devFloor,
+                            () -> BuildReview.review(build, devFloor));
+                    String review = stalled(config, region, checked.text(), checked.stall());
                     // Room around the build to stand in front of its doors and walls.
                     Region around = Region.of(region.world(), region.min().x() - Tour.MARGIN, region.min().y(),
                             region.min().z() - Tour.MARGIN, region.max().x() + Tour.MARGIN,
@@ -179,9 +181,10 @@ public final class WorldTools {
                         // The default world is the superflat dev floor (ADR 0078); world_create worlds are not.
                         boolean devFloor = region.world().equals(world.world(null)) && flatMainWorld(config.serverDir());
                         BlockGrid grid = world.readAll(region, WorldService.MAX_BULK_VOLUME, "world_summary review");
-                        String plain = BuildReview.review(grid, devFloor);
-                        String text = stalled(config, region, plain, world.reviews().recordAndCheck(region, plain));
-                        return text + world.ledger().reviewed(region, text, grid, args.str("name", null),
+                        OpenReviews.Checked checked = world.reviews().review(region, grid, devFloor,
+                                () -> BuildReview.review(grid, devFloor));
+                        String text = stalled(config, region, checked.text(), checked.stall());
+                        return text + world.ledger().reviewed(region, checked.review(), grid, args.str("name", null),
                                 args.str("why", null));
                     }
                     if (path != null) {

@@ -10,6 +10,9 @@ DONE MEANS (check before you report a build or a map finished)
   decorate on=ground (bushes, flowers against the wall) and worn ground at the doors; rooms furnished (decorate on=edge, corner, ceiling); weather for age.
 - A failing review names what to change and where: add exactly that, in that place (a trim, a decorate, a light), and
   review again. Rebuilding the whole build from its first script repeats the same numbers.
+- Review once per round of edits, not after each: a review of a region no block changed in answers "UNCHANGED" with
+  the last verdict, an identical call answers "same result as your identical call", and a batch that changed nothing
+  answers "nothing changed". Each is a call spent on nothing: edit first, then review.
 - If the run must end with a review still failing, say which and why in the report; never call it done.
 
 PLAN FIRST (strongly suggested: the builds of a planned site read as one place made by players)
