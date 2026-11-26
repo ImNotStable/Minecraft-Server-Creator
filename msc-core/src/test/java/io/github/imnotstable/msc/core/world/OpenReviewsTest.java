@@ -157,4 +157,22 @@ class OpenReviewsTest {
         assertThat(second.stall()).isEmpty();
         assertThat(open.review(hut, grid(hut, "minecraft:sand"), false, () -> FAILED).stall()).startsWith("STALLED: ");
     }
+
+    /** ADR 0119: an edit whose box reaches over a passed build reopens it only when its blocks changed. */
+    @Test
+    void anEditBoxOverAnUnchangedPassKeepsIt() {
+        OpenReviews open = new OpenReviews();
+        Region house = Region.of("msc:a", 0, 60, 0, 3, 63, 3);
+        Region shed = Region.of("msc:a", 10, 60, 0, 13, 63, 3);
+        String pass = "review: 10 blocks\nno number below the bar";
+        BlockGrid stone = grid(house, "minecraft:stone");
+        open.review(house, stone, true, () -> pass);
+        open.review(shed, grid(shed, "minecraft:stone"), false, () -> pass);
+        Region landscaping = Region.of("msc:a", -5, 59, -5, 20, 60, 20);
+        assertThat(open.touched(landscaping)).extracting(OpenReviews.Passed::region).containsExactly(house, shed);
+        OpenReviews.Passed p = open.touched(landscaping).getFirst();
+        assertThat(OpenReviews.print(stone, p.devFloor())).isEqualTo(p.print());
+        open.edited(landscaping, 200, java.util.Set.of(house));
+        assertThat(open.line()).contains("msc:a 10,60,0 13,63,3: edited since it passed").doesNotContain("0,60,0 3,63,3");
+    }
 }

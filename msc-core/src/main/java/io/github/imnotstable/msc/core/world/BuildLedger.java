@@ -127,6 +127,11 @@ public final class BuildLedger {
 
     /** A build edit in {@code box}: a passed build it touches is marked edited since its review. */
     public synchronized void edited(Region box) {
+        edited(box, java.util.Set.of());
+    }
+
+    /** The same, leaving passed the builds reviewed as one of {@code same}: their blocks did not change (ADR 0119). */
+    public synchronized void edited(Region box, java.util.Set<Region> same) {
         Path path = file.get();
         if (path == null || !Files.isRegularFile(path)) {
             return;
@@ -136,7 +141,7 @@ public final class BuildLedger {
             boolean changed = false;
             for (int i = 0; i < data.builds().size(); i++) {
                 Entry e = data.builds().get(i);
-                if ("passed".equals(e.status()) && overlap(region(e), box) > 0) {
+                if ("passed".equals(e.status()) && overlap(region(e), box) > 0 && !same.contains(region(e))) {
                     data.builds().set(i, new Entry(e.id(), e.name(), e.world(), e.box(), e.made(), e.reviewed(),
                             "edited since review", e.why()));
                     changed = true;

@@ -4,6 +4,7 @@ import io.github.imnotstable.msc.core.agent.AgentHub;
 import io.github.imnotstable.msc.core.tool.ToolException;
 import io.github.imnotstable.msc.core.world.Coords;
 import io.github.imnotstable.msc.core.world.Footprint;
+import io.github.imnotstable.msc.core.world.OpenReviews;
 import io.github.imnotstable.msc.core.world.WorldService;
 import io.github.imnotstable.msc.protocol.Limits;
 import io.github.imnotstable.msc.protocol.message.ErrorCodes;
@@ -167,8 +168,9 @@ public final class Builder {
                     + "move on" + (backup.isEmpty() ? "" : "\n" + backup)
                     + (world.reviews().count().isEmpty() ? "" : "\n" + world.reviews().count());
         }
-        world.reviews().edited(used, (int) Math.min(changed, Integer.MAX_VALUE));
-        world.ledger().edited(used);
+        java.util.Set<Region> same = unchanged(world.reviews().touched(used));
+        world.reviews().edited(used, (int) Math.min(changed, Integer.MAX_VALUE), same);
+        world.ledger().edited(used, same);
         String drops = clearDrops(run, used);
         // One kind of block, or nothing left unchanged: the extra numbers say nothing new.
         return "edit " + id + ": " + changed + " blocks changed"
@@ -176,6 +178,33 @@ public final class Builder {
                 + Coords.show(used) + (canvas.counts().size() > 1 ? "\n" + counts : "") + ran
                 + (backup.isEmpty() ? "" : "\n" + backup) + drops
                 + (world.reviews().count().isEmpty() ? "" : "\n" + world.reviews().count());
+    }
+
+    /** Blocks read at most to check passed reviews after an edit; past it they reopen as before. */
+    static final long CHECKED_BLOCKS = 2_000_000;
+
+    /**
+     * The passed regions among {@code touched} whose blocks are still those they passed with (ADR 0119): an edit's box
+     * reaching over a build does not mean it changed it.
+     */
+    private java.util.Set<Region> unchanged(List<OpenReviews.Passed> touched) throws InterruptedException {
+        java.util.Set<Region> same = new java.util.HashSet<>();
+        long read = 0;
+        for (OpenReviews.Passed p : touched) {
+            read += p.region().volume();
+            if (read > CHECKED_BLOCKS) {
+                break;
+            }
+            try {
+                BlockGrid grid = world.readAll(p.region(), WorldService.MAX_BULK_VOLUME, "build_batch");
+                if (OpenReviews.print(grid, p.devFloor()) == p.print()) {
+                    same.add(p.region());
+                }
+            } catch (RuntimeException e) {
+                // Not read: the review reopens, as it did before the check.
+            }
+        }
+        return same;
     }
 
     private static final Pattern KILLED = Pattern.compile("Killed (\\d+) entities");
