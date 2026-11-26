@@ -125,6 +125,13 @@ public final class OpenReviews {
         String review = reviewer.get();
         seen.put(region, new Seen(print, devFloor, review));
         String stall = recordAndCheck(region, review);
+        // Blocks changed, but not what the review judges (landscaping around a house): the same answer again, short.
+        // Final sweeps of the village runs re-read whole identical passing reviews this way (ADR 0122). A failing one keeps
+        // its full text and the SAME FINDINGS line.
+        if (last != null && review.equals(last.review()) && fixes(review).isEmpty()) {
+            return new Checked(review, unchanged(review, "SAME RESULT: blocks here changed since your last review of "
+                    + "this region, but nothing it judges, so the answer is the same. "), "");
+        }
         int[] streak = streaks.get(region);
         String same = stall.isEmpty() && streak != null && streak[0] == STALL - 1
                 ? "SAME FINDINGS: the edits since your last review of this region left the same findings ("
@@ -136,8 +143,11 @@ public final class OpenReviews {
 
     /** The short answer for a region whose blocks are the same as at its last review (ADR 0119). */
     static String unchanged(String review) {
-        String head = "UNCHANGED: no block in this region changed since your last review of it, so the answer is the "
-                + "same. ";
+        return unchanged(review, "UNCHANGED: no block in this region changed since your last review of it, so the "
+                + "answer is the same. ");
+    }
+
+    static String unchanged(String review, String head) {
         List<String> fixes = fixes(review);
         if (fixes.isEmpty()) {
             return head + "It passed and still passes (no number below the bar): nothing more to check here, move on.";
