@@ -32,6 +32,17 @@ smaller than the token gap, but turns are the lever MSC has.
 - Sonnet's first run on the new core never used it (99 calls, 0 batched reviews), so the failing-reviews list in build
   results, msc_status and dev_cycle now ends with the batched call itself, ready to copy.
 
+## Results (Sonnet 5.5, same village)
+
+| Core | Runs | Calls | Tokens | Wasted |
+|---|---|---|---|---|
+| v1, old MSC | 2 | 107, 146 | 8.8M, 12.4M | 13%, 23% |
+| v3 to v6 (ADR 0122 and this ADR) | 4 | 123, 92, 99, 87 | 10.8M, 7.1M, 9.5M, 8.5M | 4%, 4%, 8%, 3% |
+
+Waste is down to a quarter; calls about 20% and tokens about 15% lower. With the copyable call in the list, the v6 run
+batched its re-checks once. The 3-5x token gap to Codex stays: it is how Claude Code carries its context, not what MSC
+sends.
+
 ## Not done
 
 - Named reviews (`name=`, `why=`) stay one region per call.
