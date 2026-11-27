@@ -52,3 +52,16 @@ From `model-benchmark-2026-11.md`, "all non-Gemini runs":
 
 Direction 1 and 2 share the saved worlds and verdicts on the PC (`D:\Minecraft Servers\MSC Bench`), so one thread
 does both, then 3. Direction 4 changes only the benchmark scripts and can run beside them.
+
+## Direction 1, first result (2026-11-27)
+
+- **Every capped village failed on "floating", and most on vanilla acacia trees.** The same log positions
+  (-30,73,-84; -60,73,-46; -61,73,-44) came back in runs by different models on the same seed: an acacia trunk forks
+  diagonally, and the floating check only joined blocks face to face. Bigger villages reviewed more of the savanna, so
+  the more a run built, the likelier its cap: much of the "ambitious villages fail" pattern was this bug.
+- **Fix:** logs, wood and leaves also join edge to edge and corner to corner (`LandReview.floating`); any other block
+  still needs a face. Re-reviewed on the fixed core (core-v7): floating fell from 2 to 0 (Opus v1-b), 62 to 1
+  (Opus v2-a), 66 to 6 (Fable v1-a), 122 to 121 (Sonnet v3-a, real wool and copper stairs).
+- **Still failing, and real:** Opus v2-a's 18 stacked leaves (a box of leaves with no wood); Fable v1-a's 6 oak leaves
+  left in the air; Sonnet v3-a's bare base and 121 loose blocks; Opus v1-b's one building that is still with one
+  light (atmosphere, ADR 0114). These keep their cap.
