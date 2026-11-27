@@ -23,7 +23,6 @@ public final class LandReview {
     private static final Set<String> ROCK = Set.of("stone", "deepslate", "andesite", "diorite", "granite", "tuff",
             "calcite", "terracotta", "sandstone", "red_sandstone", "netherrack", "end_stone", "basalt", "blackstone",
             "packed_ice", "ice", "blue_ice", "dripstone_block", "cobblestone", "mossy_cobblestone", "bedrock", "magma_block");
-    private static final int[][] SIDES = {{1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}};
 
     /** Columns a region needs before its ground is judged: a build's own plot is not land. */
     static final int MIN_COLUMNS = 1024;
@@ -197,9 +196,12 @@ public final class LandReview {
         int sz = r.sizeZ();
         int n = sx * sy * sz;
         boolean[] present = new boolean[n];
+        boolean[] tree = new boolean[n];
         for (int i = 0; i < n; i++) {
             int b = grid.blocks()[i];
             present[i] = b >= 0 && (names[b] != null || fluid[b]);
+            tree[i] = b >= 0 && names[b] != null && (names[b].endsWith("_log") || names[b].endsWith("_wood")
+                    || names[b].endsWith("_leaves"));
         }
         boolean[] held = new boolean[n];
         int[] queue = new int[n];
@@ -220,7 +222,7 @@ public final class LandReview {
         if (tail == 0) {
             return new int[] {0, 0, Integer.MIN_VALUE, 0, 0, Integer.MIN_VALUE, 0, 0, Integer.MIN_VALUE, 0, 0};
         }
-        tail = spread(present, held, queue, head, tail, sx, sy, sz);
+        tail = spread(present, tree, held, queue, head, tail, sx, sy, sz);
         int blocks = 0;
         int clumps = 0;
         int[][] biggest = new int[3][2]; // size, index
@@ -228,7 +230,7 @@ public final class LandReview {
             if (present[i] && !held[i]) {
                 held[i] = true;
                 queue[0] = i;
-                int size = spread(present, held, queue, 0, 1, sx, sy, sz);
+                int size = spread(present, tree, held, queue, 0, 1, sx, sy, sz);
                 blocks += size;
                 clumps++;
                 for (int k = 0; k < 3; k++) {
@@ -252,24 +254,34 @@ public final class LandReview {
         return out;
     }
 
-    /** Flood from the queue's entries through present blocks; returns how many entries the queue ended with. */
-    private static int spread(boolean[] present, boolean[] held, int[] queue, int head, int tail, int sx, int sy, int sz) {
+    /**
+     * Flood from the queue's entries through present blocks; returns how many entries the queue ended with. Two tree
+     * blocks (logs, wood, leaves) also join edge to edge and corner to corner: an acacia's trunk forks diagonally, and
+     * every vanilla acacia read as floating (ADR 0123).
+     */
+    private static int spread(boolean[] present, boolean[] tree, boolean[] held, int[] queue, int head, int tail,
+            int sx, int sy, int sz) {
         while (head < tail) {
             int i = queue[head++];
             int x = i % sx;
             int z = i / sx % sz;
             int y = i / (sx * sz);
-            for (int[] d : SIDES) {
-                int nx = x + d[0];
-                int ny = y + d[1];
-                int nz = z + d[2];
-                if (nx < 0 || ny < 0 || nz < 0 || nx >= sx || ny >= sy || nz >= sz) {
-                    continue;
-                }
-                int j = (ny * sz + nz) * sx + nx;
-                if (present[j] && !held[j]) {
-                    held[j] = true;
-                    queue[tail++] = j;
+            for (int dy = -1; dy <= 1; dy++) {
+                for (int dz = -1; dz <= 1; dz++) {
+                    for (int dx = -1; dx <= 1; dx++) {
+                        int off = Math.abs(dx) + Math.abs(dy) + Math.abs(dz);
+                        int nx = x + dx;
+                        int ny = y + dy;
+                        int nz = z + dz;
+                        if (off == 0 || nx < 0 || ny < 0 || nz < 0 || nx >= sx || ny >= sy || nz >= sz) {
+                            continue;
+                        }
+                        int j = (ny * sz + nz) * sx + nx;
+                        if (present[j] && !held[j] && (off == 1 || tree[i] && tree[j])) {
+                            held[j] = true;
+                            queue[tail++] = j;
+                        }
+                    }
                 }
             }
         }
