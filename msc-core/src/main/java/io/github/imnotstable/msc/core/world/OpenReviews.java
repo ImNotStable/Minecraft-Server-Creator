@@ -342,6 +342,17 @@ public final class OpenReviews {
             }
             out.append("\n- ").append(show(e.getKey())).append(": ").append(String.join(", ", e.getValue()));
         }
+        // The batched call, ready to copy: Sonnet re-checked fixes one region per turn even with the option documented,
+        // and each turn re-reads the whole conversation (ADR 0124).
+        List<Region> all = new ArrayList<>(never);
+        all.addAll(open.keySet());
+        String world = all.get(0).world();
+        List<String> same = all.stream().filter(r -> r.world().equals(world)).limit(SHOWN)
+                .map(r -> show(r).substring(world.length() + 1)).toList();
+        if (same.size() > 1) {
+            out.append("\nre-check them in one call: world_summary world=").append(world).append(" region=\"")
+                    .append(String.join("; ", same)).append("\" review=true");
+        }
         return out.toString();
     }
 
