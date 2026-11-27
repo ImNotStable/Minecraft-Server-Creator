@@ -450,4 +450,14 @@ class WorldToolsTest {
                 .contains("65537x1x1").contains("at most 65535");
         assertThat(workspace.resolve("wall.schem")).doesNotExist();
     }
+
+    @Test
+    void severalBuildsAreReviewedInOneCall() {
+        // ADR 0123: a final sweep of many buildings in one call, not one turn each.
+        h.ok("build_batch", "steps", "fill 0,70,0 4,74,4 bricks hollow\nfill 10,70,0 14,74,4 stone_bricks hollow");
+        String both = h.ok("world_summary", "region", "0,70,0 4,74,4; 10,70,0 14,74,4", "review", "true");
+        assertThat(both).startsWith("## 0,70,0 4,74,4\nreview").contains("\n\n## 10,70,0 14,74,4\nreview");
+        assertThat(h.error("world_summary", "region", "0,70,0 4,74,4; 10,70,0 14,74,4", "review", "true", "name", "x"))
+                .contains("name and why go with one region");
+    }
 }

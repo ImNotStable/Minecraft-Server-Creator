@@ -164,14 +164,29 @@ public final class WorldTools {
                 Schema.of().req("region", "string", REGION).opt("world", "string", WORLD)
                         .opt("path", "string", "\"x,y,z x,y,z\": can a player walk/jump from A to B; else the wall or gap")
                         .opt("diff", "string", "structure_save file of this region: what changed since")
-                        .opt("review", "boolean", "Score a build and its land (detail, walls, roofs, lights, flat ground, floating blocks); say what to fix")
+                        .opt("review", "boolean", "Score a build and its land (detail, walls, roofs, lights, flat ground, floating blocks); say what to fix. Many: \"a; b\"")
                         .opt("name", "string", "With review: the build's name in the build ledger (as in the plan); same name on re-reviews")
                         .opt("why", "string", "With review: one line on what the build is for, kept in the ledger"),
                 args -> {
                     if (!args.bool("review", false) && (args.has("name") || args.has("why"))) {
                         throw new ToolException("name and why go with review=true");
                     }
-                    Region region = Coords.region(world.world(args.str("world", null)), args.str("region"));
+                    String regions = args.str("region");
+                    if (args.bool("review", false) && regions.contains(";")) {
+                        // Several builds in one review call: Claude re-reads its whole context every turn, so a
+                        // final sweep of ten buildings in ten calls cost ten re-reads (ADR 0123).
+                        if (args.has("name") || args.has("why")) {
+                            throw new ToolException("name and why go with one region; review named builds one by one");
+                        }
+                        StringBuilder all = new StringBuilder();
+                        for (String one : regions.split(";")) {
+                            Region r = Coords.region(world.world(args.str("world", null)), one.trim());
+                            all.append(all.isEmpty() ? "" : "\n\n").append("## ").append(one.trim()).append('\n')
+                                    .append(review(config, world, r, null, null));
+                        }
+                        return all.toString();
+                    }
+                    Region region = Coords.region(world.world(args.str("world", null)), regions);
                     String path = args.str("path", null);
                     String diff = args.str("diff", null);
                     boolean review = args.bool("review", false);
@@ -179,14 +194,7 @@ public final class WorldTools {
                         throw new ToolException("give one of path, diff or review");
                     }
                     if (review) {
-                        // The default world is the superflat dev floor (ADR 0078); world_create worlds are not.
-                        boolean devFloor = region.world().equals(world.world(null)) && flatMainWorld(config.serverDir());
-                        BlockGrid grid = world.readAll(region, WorldService.MAX_BULK_VOLUME, "world_summary review");
-                        OpenReviews.Checked checked = world.reviews().review(region, grid, devFloor,
-                                () -> BuildReview.review(grid, devFloor));
-                        String text = stalled(config, region, checked.text(), checked.stall());
-                        return text + world.ledger().reviewed(region, checked.review(), grid, args.str("name", null),
-                                args.str("why", null));
+                        return review(config, world, region, args.str("name", null), args.str("why", null));
                     }
                     if (path != null) {
                         String[] ends = path.trim().split("\\s+");
@@ -276,6 +284,18 @@ public final class WorldTools {
             }
         }
         return out;
+    }
+
+    /** One build review, recorded in the open reviews and the ledger: world_summary review=true. */
+    private static String review(CoreConfig config, WorldService world, Region region, String name, String why)
+            throws InterruptedException {
+        // The default world is the superflat dev floor (ADR 0078); world_create worlds are not.
+        boolean devFloor = region.world().equals(world.world(null)) && flatMainWorld(config.serverDir());
+        BlockGrid grid = world.readAll(region, WorldService.MAX_BULK_VOLUME, "world_summary review");
+        OpenReviews.Checked checked = world.reviews().review(region, grid, devFloor,
+                () -> BuildReview.review(grid, devFloor));
+        String text = stalled(config, region, checked.text(), checked.stall());
+        return text + world.ledger().reviewed(region, checked.review(), grid, name, why);
     }
 
     /**

@@ -3,7 +3,8 @@ BUILD GUIDE: what makes a build look hand-made, and the loop that gets it there.
 DONE MEANS (check before you report a build or a map finished)
 - Every build and every land region has a world_summary review=true that ends "no number below the bar". A review
   that says "verdict: NOT DONE" is not done, however good the render looks; msc_status and dev_cycle list the reviews
-  still failing until one of the same region passes.
+  still failing until one of the same region passes. Every call re-reads the whole conversation, so check several
+  builds in one call (region="x,y,z x,y,z; x,y,z x,y,z" review=true) and put a build's fixes in one build_batch.
 - Land was shaped, not only generated: terrain, smooth or paint where the build meets it, path to each door, scatter
   or flora for ground cover, trees you built around it. Generated land is the start, not the finish.
 - Every build met the ground: trim at=base (a plinth of stairs or slabs; full blocks are still a clean line),
