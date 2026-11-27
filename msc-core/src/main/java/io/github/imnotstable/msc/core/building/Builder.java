@@ -371,7 +371,10 @@ public final class Builder {
         world.call(run, Ops.WORLD_WRITE, new Ops.WriteParams(new BlockGrid(region, palette, none), false));
     }
 
-    private static String counts(Map<String, Long> counts) {
+    private static String counts(Map<String, Long> placed) {
+        // waterlogged=false is every block's default and the bulk of a long state: leave it out (ADR 0121).
+        Map<String, Long> counts = new java.util.LinkedHashMap<>();
+        placed.forEach((state, n) -> counts.merge(brief(state), n, Long::sum));
         StringBuilder out = new StringBuilder("blocks:");
         int shown = 0;
         for (Map.Entry<String, Long> e : counts.entrySet()) {
@@ -383,5 +386,11 @@ public final class Builder {
             shown++;
         }
         return out.toString();
+    }
+
+    /** {@code state} without {@code waterlogged=false}, and without the brackets when nothing is left. */
+    static String brief(String state) {
+        String s = state.replaceAll("(?<=[\\[,])waterlogged=false(,|(?=]))", "").replace(",]", "]");
+        return s.endsWith("[]") ? s.substring(0, s.length() - 2) : s;
     }
 }
