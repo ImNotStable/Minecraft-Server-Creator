@@ -54,9 +54,9 @@ order. If graphify, Serena or ponytail is missing, say so in your reply instead 
   `git diff --stat` before a full diff, `curl -sS`, and `| tail -n 40` or a grep on any command whose output can be
   long. Never print a whole log, build report or JSON file; grep it.
 - **Subagents** get these rules in their prompt and return a conclusion, not file dumps.
-- Where the tools are: PC graph in `D:\Projects\Minecraft Server Creator\graphify-out\` (from a worktree add
-  `--graph "D:\Projects\Minecraft Server Creator\graphify-out\graph.json"`; refresh with `graphify update .` from the
-  main checkout). Cloud: the environment's setup script runs `.claude/hooks/session-start.sh`; its `agent-tools.sh`
+- Where the tools are: locally, `graphify-out/` in the main checkout (from a worktree pass `--graph` with that
+  checkout's `graphify-out/graph.json`; refresh with `graphify update .` there). Machine-specific paths and notes go
+  in an untracked `CLAUDE.local.md` (ADR 0125). Cloud: the environment's setup script runs `.claude/hooks/session-start.sh`; its `agent-tools.sh`
   installs graphify and ponytail, builds the graph and configures Serena. Details and the standing task to keep
   looking: `msc-docs/docs/agent-efficiency.md`.
 

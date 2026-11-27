@@ -247,7 +247,7 @@ tasks.check { dependsOn(repoChecks) }
 repoInputs.on(repoChecks).set("documentedCommands", rootProject.fileTree(rootDir) {
     include("**/*.md", "**/*.java", "**/*.kts", "**/*.txt", "**/*.json", "**/*.yml", "**/*.properties")
     exclude("**/build/**", "run/**", "*/run/**", "out/**", "*/out/**", "**/node_modules/**", "**/test/**",
-        "**/testFixtures/**", "graphify-out/**", "**/.*/*/**")
+        "**/testFixtures/**", "graphify-out/**", "**/.*/*/**", "CLAUDE.local.md")
 })
 // RepoInputsTest: every module's test sources, checked for reads that bypass these sets.
 repoInputs.on(repoChecks).set("testSources", rootProject.fileTree(rootDir) {
