@@ -159,3 +159,28 @@ All 13 villages judged together (each run two pairings each way). Rows for core-
 | v3 (working base trim, false stalls fixed, SAME RESULT; ADR 0122) | 123 | 10.8M | **4%** |
 
 One run per core, so a guide not a measurement; v3's village had 1 of 10 buildings failing.
+
+## Village benchmark, all non-Gemini runs (2026-11-27)
+
+18 villages judged together; run labels name the core (v1 old MSC, v2 first waste fixes, v3 after ADR 0122). Gemini runs wait for quota.
+
+| Model | Run | Looks /60 | Brief /30 | Honesty /10 | Village review | Total | Usage |
+|---|---|---|---|---|---|---|---|
+| gpt-6-astra | v1-gpt6astra-b | 23 | 30 | 10 | pass | **63** | 178 calls, 2028035 tokens, wasted 15% (repeats 22, no-op builds 3, repeated findings 2, stalls 0) |
+| claude-opus-5-5 | v1-opus55-a | 20 | 30 | 10 | pass | **60** | 162 calls, 21320516 tokens, wasted 14% (repeats 10, no-op builds 5, repeated findings 7, stalls 0) |
+| claude-opus-5-5 | v2-opus55-a | 60 | 30 | 10 | fails (cap 50) | **50** | 199 calls, 29710696 tokens, wasted 10% (repeats 2, no-op builds 8, repeated findings 10, stalls 0) |
+| claude-fable-5-2 | v1-fable52-a | 40 | 30 | 10 | fails (cap 50) | **50** | 132 calls, 12634200 tokens, wasted 12% (repeats 5, no-op builds 4, repeated findings 7, stalls 0) |
+| claude-opus-5-5 | v1-opus55-b | 18 | 30 | 10 | fails (cap 50) | **50** | 185 calls, 28799845 tokens, wasted 10% (repeats 3, no-op builds 10, repeated findings 5, stalls 0) |
+| claude-sonnet-5-5 | v3-sonnet55-a | 11 | 30 | 10 | fails (cap 50) | **50** | 123 calls, 10773840 tokens, wasted 4% (repeats 0, no-op builds 4, repeated findings 1, stalls 0) |
+| gpt-6.1-sol | v1-gpt61sol-b | 10 | 30 | 10 | pass | **50** | 232 calls, 4360247 tokens, wasted 12% (repeats 13, no-op builds 3, repeated findings 11, stalls 0) |
+| claude-fable-5-2 | v1-fable52-b | 8 | 30 | 10 | pass | **48** | 129 calls, 11131967 tokens, wasted 9% (repeats 6, no-op builds 4, repeated findings 2, stalls 0) |
+| gpt-6.2-astra | v1-gpt62astra-a | 5 | 30 | 10 | pass | **45** | 171 calls, 1669789 tokens, wasted 4% (repeats 1, no-op builds 0, repeated findings 6, stalls 0) |
+| gpt-6.1-sol | v3-gpt61sol-a | 5 | 30 | 10 | pass | **45** | 183 calls, 3061415 tokens, wasted 9% (repeats 5, no-op builds 4, repeated findings 8, stalls 0) |
+| gpt-6.2-sol | v1-gpt62sol-b | 4 | 30 | 10 | pass | **44** | 253 calls, 6855116 tokens, wasted 7% (repeats 8, no-op builds 4, repeated findings 5, stalls 0) |
+| claude-sonnet-5-5 | v1-sonnet55-a | 3 | 30 | 10 | fails (cap 50) | **43** | 107 calls, 8838354 tokens, wasted 13% (repeats 3, no-op builds 1, repeated findings 10, stalls 0) |
+| gpt-6.2-astra | v1-gpt62astra-b | 3 | 30 | 10 | pass | **43** | 207 calls, 1509651 tokens, wasted 11% (repeats 13, no-op builds 2, repeated findings 8, stalls 0) |
+| gpt-6.2-sol | v1-gpt62sol-a | 3 | 30 | 10 | pass | **43** | 230 calls, 5484602 tokens, wasted 15% (repeats 17, no-op builds 6, repeated findings 11, stalls 0) |
+| gpt-6-astra | v1-gpt6astra-a | 2 | 30 | 10 | pass | **42** | 200 calls, 2635932 tokens, wasted 24% (repeats 29, no-op builds 5, repeated findings 15, stalls 0) |
+| gpt-6.1-sol | v1-gpt61sol-a | 1 | 30 | 10 | pass | **41** | 186 calls, 2134516 tokens, wasted 8% (repeats 8, no-op builds 2, repeated findings 4, stalls 0) |
+| claude-sonnet-5-5 | v1-sonnet55-b | 0 | 30 | 10 | pass | **40** | 146 calls, 12431196 tokens, wasted 23% (repeats 22, no-op builds 5, repeated findings 6, stalls 0) |
+| claude-sonnet-5-5 | v2-sonnet55-a | 0 | 30 | 10 | fails (cap 50) | **40** | 133 calls, 13738776 tokens, wasted 19% (repeats 7, no-op builds 4, repeated findings 14, stalls 4) |
