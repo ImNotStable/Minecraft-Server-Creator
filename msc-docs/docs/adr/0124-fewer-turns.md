@@ -29,6 +29,9 @@ smaller than the token gap, but turns are the lever MSC has.
   build's fixes in one `build_batch`.
 - Measured by Sonnet runs on the new core: turns and cached input per village against `v3-sonnet55-a`.
 
+- Sonnet's first run on the new core never used it (99 calls, 0 batched reviews), so the failing-reviews list in build
+  results, msc_status and dev_cycle now ends with the batched call itself, ready to copy.
+
 ## Not done
 
 - Named reviews (`name=`, `why=`) stay one region per call.

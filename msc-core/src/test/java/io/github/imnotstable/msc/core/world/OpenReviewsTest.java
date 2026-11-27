@@ -199,4 +199,14 @@ class OpenReviewsTest {
         assertThat(open.review(hut, grid(hut, "minecraft:dirt"), false, () -> passing).text())
                 .startsWith("SAME RESULT: blocks here changed").contains("It passed and still passes");
     }
+
+    /** ADR 0124: the failing list ends with the one call that re-checks them all. */
+    @Test
+    void theListOffersOneCallForEveryReCheck() {
+        OpenReviews open = new OpenReviews();
+        open.record(Region.of("msc:a", 0, 60, 0, 10, 70, 10), FAILED);
+        open.record(Region.of("msc:a", 20, 60, 0, 30, 70, 10), FAILED);
+        assertThat(open.line()).endsWith("\nre-check them in one call: world_summary world=msc:a "
+                + "region=\"0,60,0 10,70,10; 20,60,0 30,70,10\" review=true");
+    }
 }
