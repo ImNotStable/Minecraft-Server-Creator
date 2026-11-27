@@ -65,3 +65,13 @@ does both, then 3. Direction 4 changes only the benchmark scripts and can run be
 - **Still failing, and real:** Opus v2-a's 18 stacked leaves (a box of leaves with no wood); Fable v1-a's 6 oak leaves
   left in the air; Sonnet v3-a's bare base and 121 loose blocks; Opus v1-b's one building that is still with one
   light (atmosphere, ADR 0114). These keep their cap.
+
+## Direction 4, first step (2026-11-27)
+
+In the bench scripts (`D:\Minecraft Servers\MSC Bench\scripts`, outside the repo; old copies kept as `*.pre0123`):
+
+- `judge.py` scales looks 0-70; after the fit it names pairs of runs within ten points that never met, and
+  `--pairs a:b,c:d` judges just those (two calls each, cached like the rest).
+- `score_village.py` weighs the brief 20 (the same items, scaled by 2/3), and names a model whose two runs differ by
+  more than 20 on looks as needing a third run.
+- Not yet: stricter brief items and the non-Claude judge pass, which needs the Codex CLI wired into `judge.py`.
