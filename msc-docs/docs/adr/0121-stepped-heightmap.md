@@ -24,3 +24,11 @@ step 1 where you build.
 
 - The 161 x 141 overview that cost 22,954 characters costs about 1,500 at `step=4`.
 - Nothing changes for a call without `step`. The agent side of the protocol is unchanged; core samples the grid.
+
+## Addendum, 2026-11-27: shorter block counts, setup warnings kept
+
+- `build_batch`'s block counts leave out `waterlogged=false`, every block's default and the bulk of a long state in
+  the logs (`spruce_slab[type=bottom,waterlogged=false]` is now `spruce_slab[type=bottom]`). `waterlogged=true` and
+  every other property stay.
+- `msc_status` keeps listing setup warnings (wrong workspace, stale install) on every call, as #637 decided: they cost
+  about 2% of result characters in the logs, and a warning that stops showing is easy to miss while it still applies.
