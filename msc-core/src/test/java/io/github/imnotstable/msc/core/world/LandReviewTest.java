@@ -72,4 +72,18 @@ class LandReviewTest {
         assertThat(review).contains("floating 4 blocks in 1 clumps", "(at 11,67,21 oak_leaves)");
         assertThat(review).doesNotContain("12,65,22");
     }
+
+    @Test
+    void anAcaciaForkingDiagonallyStandsButADiagonalPlankFloats() {
+        StringBuilder text = new StringBuilder("legend: g=grass_block a=acacia_log l=acacia_leaves p=oak_planks\n");
+        text.append("y=0\n").append("ggggggg\n".repeat(7));
+        text.append("y=1\n").append(".......\n".repeat(2)).append("..a....\n").append(".......\n".repeat(4));
+        text.append("y=2\n").append(".......\n".repeat(2)).append("...a...\n").append(".......\n".repeat(4));
+        text.append("y=3\n").append(".......\n".repeat(2)).append("....a..\n").append(".......\n".repeat(4));
+        text.append("y=4\n").append(".......\n".repeat(3)).append("...lll.\n").append(".......\n".repeat(3));
+        text.append("y=5\n").append(".......\n".repeat(3)).append("..p....\n").append(".......\n".repeat(3));
+        BlockGrid g = TextGrid.parse(text.toString(), "world", new BlockPos(10, 64, 20));
+        String review = BuildReview.review(g);
+        assertThat(review).contains("floating 1 blocks in 1 clumps", "oak_planks").doesNotContain("acacia_log)");
+    }
 }
