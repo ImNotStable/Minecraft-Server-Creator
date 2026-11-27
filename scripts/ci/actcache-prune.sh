@@ -4,7 +4,7 @@
 # filled the disk on 2026-11-22. This deletes entries older than MAX_AGE_DAYS, then the oldest until the cache is under
 # MAX_GB. A deleted entry is a cache miss for the next job (it rebuilds and saves a fresh one), never a failure.
 set -euo pipefail
-dir="${ACTCACHE_DIR:-/home/jere/.cache/actcache/cache}"
+dir="${ACTCACHE_DIR:-$HOME/.cache/actcache/cache}"
 max_gb="${MAX_GB:-30}"
 max_age_days="${MAX_AGE_DAYS:-3}"
 [ -d "$dir" ] || exit 0

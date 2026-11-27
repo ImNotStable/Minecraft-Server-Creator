@@ -28,3 +28,9 @@ servers/
 
 # graphify code graph (ADR 0055, 0116); rebuilt locally
 graphify-out/
+
+# Personal, machine-specific files: never in the public repo (ADR 0125)
+CLAUDE.local.md
+.claude/settings.local.json
+/.msc/
+/.claire/

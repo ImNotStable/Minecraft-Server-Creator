@@ -23,7 +23,7 @@ The guard finds the graph from a worktree too: it resolves the main checkout thr
 it does nothing. In the cloud the graph is in the checkout itself. From a worktree, pass the graph to the CLI yourself:
 
 ```bash
-graphify query "how does the pack host stop" --graph "D:/Projects/Minecraft Server Creator/graphify-out/graph.json"
+graphify query "how does the pack host stop" --graph "<main checkout>/graphify-out/graph.json"
 ```
 
 Refresh the graph from the main checkout after merges (about a minute, no API cost):
